@@ -10,6 +10,7 @@ import { getActiveCycle } from '~/hiring/lib/cycles'
 import { prisma } from '~/lib/db'
 import { resolvePhotoUrl } from '~/lib/photo'
 import { recordPageView } from '~/lib/analytics'
+import { isTablessRequest } from '~/lib/tabless'
 import type { Route } from './+types/layout'
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -94,6 +95,10 @@ export async function loader({ request }: Route.LoaderArgs) {
   const fetchDest = request.headers.get('sec-fetch-dest')
   const isEmbedded = fetchDest === 'iframe' || fetchDest === 'frame'
 
+  // Tabless mode: render pages directly in the shell instead of the tabbed
+  // workspace. Cookie-backed so this SSR branch is decided per-request.
+  const tabless = isTablessRequest(request)
+
   // Pageview is fire-and-forget — never blocks the response.
   recordPageView({
     request,
@@ -101,11 +106,11 @@ export async function loader({ request }: Route.LoaderArgs) {
     sessionId: auth.sessionId,
   })
 
-  return { user: auth.user, photoUrl, hasCalendarLink, shouldShowTour, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, isEmbedded }
+  return { user: auth.user, photoUrl, hasCalendarLink, shouldShowTour, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, isEmbedded, tabless }
 }
 
 export default function AppLayoutRoute() {
-  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, isLabMentor: isLabMentorFlag, isEmbedded } = useLoaderData<typeof loader>()
+  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, isLabMentor: isLabMentorFlag, isEmbedded, tabless } = useLoaderData<typeof loader>()
   const [searchParams] = useSearchParams()
   const location = useLocation()
   const matches = useMatches()
@@ -236,32 +241,35 @@ export default function AppLayoutRoute() {
     };
   }, [location.key]);
 
-  // Skip the sidebar shell when rendered inside a TabWorkspace iframe. This is
-  // where every routed page actually renders, so the breadcrumb trail (derived
-  // from the iframe document's matched routes) lives here — it picks up each
-  // detail route's `handle.breadcrumb` for the dynamic leaf crumb.
-  if (embedded) {
-    return (
-      <div className="min-h-dvh bg-page overflow-x-hidden">
-        <div
-          className={cn(
-            'w-full px-3 sm:px-6 lg:px-10 pb-6 sm:pb-8',
-            hasAreaSubnav ? 'pt-0' : 'pt-4 sm:pt-8 md:pt-12',
-          )}
-        >
-          <div className="mb-4 empty:mb-0">
-            <Breadcrumbs />
-          </div>
-          <Outlet />
-        </div>
+  // Where every routed page actually renders — inside a TabWorkspace iframe
+  // (tab mode) or directly in the shell's main column (tabless mode). The
+  // breadcrumb trail lives here either way: it picks up each detail route's
+  // `handle.breadcrumb` for the dynamic leaf crumb.
+  const pageContent = (
+    <div
+      className={cn(
+        'w-full px-3 sm:px-6 lg:px-10 pb-6 sm:pb-8',
+        hasAreaSubnav ? 'pt-0' : 'pt-4 sm:pt-8 md:pt-12',
+      )}
+    >
+      <div className="mb-4 empty:mb-0">
+        <Breadcrumbs />
       </div>
-    )
+      <Outlet />
+    </div>
+  )
+
+  // Skip the sidebar shell when rendered inside a TabWorkspace iframe.
+  if (embedded) {
+    return <div className="min-h-dvh bg-page overflow-x-hidden">{pageContent}</div>
   }
 
   return (
     <>
-      <Layout user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} hasHiringAccess={hasHiringAccess} isLabMentor={isLabMentorFlag} />
-      <LaunchWelcome firstName={user.firstName || user.email.split('@')[0]} hasCalendarLink={hasCalendarLink} shouldShowTour={shouldShowTour} />
+      <Layout user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} hasHiringAccess={hasHiringAccess} isLabMentor={isLabMentorFlag}>
+        {tabless ? <div className="flex-1 overflow-x-hidden">{pageContent}</div> : undefined}
+      </Layout>
+      <LaunchWelcome firstName={user.firstName || user.email.split('@')[0]} hasCalendarLink={hasCalendarLink} shouldShowTour={shouldShowTour} tabless={tabless} />
     </>
   )
 }

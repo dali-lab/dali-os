@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useLocation } from "react-router";
 import {
   PartyPopper,
   CalendarDays,
@@ -242,11 +243,16 @@ export function LaunchWelcome({
   // it once, overriding any browser-localStorage "seen" flag (the tour is now
   // tracked per USER on the server).
   shouldShowTour = false,
+  // Tabless mode: pages render in this window, so there's no `dali:tabNavigated`
+  // from an iframe to advance steps — we watch the router location instead.
+  tabless = false,
 }: {
   firstName: string;
   hasCalendarLink?: boolean;
   shouldShowTour?: boolean;
+  tabless?: boolean;
 }) {
+  const routerLocation = useLocation();
   // Steps are stable for a given user within a session; the calendar step is
   // included only when they haven't linked a calendar yet.
   const steps = useRef(buildSteps({ hasCalendarLink })).current;
@@ -386,6 +392,13 @@ export function LaunchWelcome({
     window.addEventListener("message", onMsg);
     return () => window.removeEventListener("message", onMsg);
   }, [handleUrl]);
+
+  // Tabless equivalent of the `dali:tabNavigated` bridge above: the page is a
+  // real navigation in this window, so advance the tour off the router location.
+  useEffect(() => {
+    if (!tabless) return;
+    handleUrl(routerLocation.pathname);
+  }, [tabless, routerLocation.pathname, handleUrl]);
 
   function startTour() {
     try {

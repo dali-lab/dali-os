@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Link, useLocation, useRevalidator } from 'react-router'
+import { Link, useLocation, useNavigate, useRevalidator } from 'react-router'
 import {
   LogOut,
   Calendar,
@@ -36,6 +36,10 @@ interface LayoutProps {
   isInterviewer?: boolean
   hasHiringAccess?: boolean
   isLabMentor?: boolean
+  // Tabless mode: the routed page content, rendered directly in the main
+  // column instead of the tabbed workspace. When provided, the sidebar
+  // navigates the top window instead of opening workspace tabs.
+  children?: React.ReactNode
 }
 
 const SIDEBAR_COLLAPSED_KEY = 'dali:sidebar:collapsed'
@@ -51,13 +55,19 @@ type NavEntry = {
   show: boolean
 }
 
-export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDomainLead = false, canViewForms = false, canViewStaffing = false, isInterviewer = false, hasHiringAccess = false, isLabMentor = false }: LayoutProps) {
+export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDomainLead = false, canViewForms = false, canViewStaffing = false, isInterviewer = false, hasHiringAccess = false, isLabMentor = false, children }: LayoutProps) {
   const location = useLocation()
+  const navigate = useNavigate()
   const { revalidate } = useRevalidator()
-  // Held in a ref so the message listener (mounted once) always calls the
-  // latest revalidate without needing to re-subscribe.
+  const tabless = children !== undefined
+  // Held in refs so the message listener (mounted once) always calls the
+  // latest values without needing to re-subscribe.
   const revalidateRef = useRef(revalidate)
   revalidateRef.current = revalidate
+  const navigateRef = useRef(navigate)
+  navigateRef.current = navigate
+  const tablessRef = useRef(tabless)
+  tablessRef.current = tabless
   const [focusedTabUrl, setFocusedTabUrl] = useState<string | null>(null)
   // Sidebar highlight follows the focused workspace tab when one is open;
   // otherwise it falls back to the parent route.
@@ -67,32 +77,59 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
   const workspaceRef = useRef<TabWorkspaceHandle | null>(null)
 
   const openInWorkspace = (req: OpenTabRequest) => {
+    if (tabless) {
+      navigate(req.url)
+      return
+    }
     workspaceRef.current?.openTab(req)
   }
 
-  // Props bundle for any sidebar button that opens a tab. Adds two browser-
-  // style shortcuts on top of the plain "open & focus" left-click:
-  //   - Cmd/Ctrl + click  → open to the side (split-pane)
-  //   - middle-click       → open in background (don't switch tabs)
+  // Props bundle for any sidebar button that opens a surface. In tab mode it
+  // opens a workspace tab; in tabless mode it navigates the top window like a
+  // normal site. Both preserve the browser-style modifier shortcuts:
+  //   - Cmd/Ctrl + click  → tab mode: open to the side (split-pane);
+  //                         tabless: open a real browser tab
+  //   - middle-click       → tab mode: open in background;
+  //                         tabless: open a real browser tab
   // `auxClick` fires for middle/right-click; we filter to button 1 (middle)
   // and preventDefault so the browser doesn't autoscroll.
-  const tabClickProps = (req: OpenTabRequest) => ({
-    onClick: (e: React.MouseEvent) => {
-      if (e.metaKey || e.ctrlKey) {
-        workspaceRef.current?.openTabToSide(req)
-        return
+  const tabClickProps = (req: OpenTabRequest) => {
+    if (tabless) {
+      return {
+        onClick: (e: React.MouseEvent) => {
+          // These are <button>s (no href), so a new browser tab needs an
+          // explicit window.open — the browser won't synthesize one.
+          if (e.metaKey || e.ctrlKey) {
+            window.open(req.url, '_blank', 'noopener')
+            return
+          }
+          navigate(req.url)
+        },
+        onAuxClick: (e: React.MouseEvent) => {
+          if (e.button !== 1) return
+          e.preventDefault()
+          window.open(req.url, '_blank', 'noopener')
+        },
       }
-      // Single-click from the sidebar opens a preview (ephemeral) tab: it reuses
-      // the pane's preview slot instead of stacking, so skimming sections never
-      // piles up tabs. Promoted to a kept tab on double-click / navigating in it.
-      workspaceRef.current?.openTab(req, { ephemeral: true })
-    },
-    onAuxClick: (e: React.MouseEvent) => {
-      if (e.button !== 1) return
-      e.preventDefault()
-      workspaceRef.current?.openTabInBackground(req)
-    },
-  })
+    }
+    return {
+      onClick: (e: React.MouseEvent) => {
+        if (e.metaKey || e.ctrlKey) {
+          workspaceRef.current?.openTabToSide(req)
+          return
+        }
+        // Single-click from the sidebar opens a preview (ephemeral) tab: it reuses
+        // the pane's preview slot instead of stacking, so skimming sections never
+        // piles up tabs. Promoted to a kept tab on double-click / navigating in it.
+        workspaceRef.current?.openTab(req, { ephemeral: true })
+      },
+      onAuxClick: (e: React.MouseEvent) => {
+        if (e.button !== 1) return
+        e.preventDefault()
+        workspaceRef.current?.openTabInBackground(req)
+      },
+    }
+  }
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -112,12 +149,17 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
       const data = e.data
       if (!data) return
       if (data.type === 'dali:openTab' && typeof data.url === 'string') {
-        workspaceRef.current?.openTab({ url: data.url, label: data.label || data.url })
+        // Tabless has no workspace; navigate the top window instead. (Reaches
+        // here e.g. from the launch tour's "finish" posting to this window.)
+        if (tablessRef.current) navigateRef.current(data.url)
+        else workspaceRef.current?.openTab({ url: data.url, label: data.label || data.url })
       } else if (data.type === 'dali:openTabToSide' && typeof data.url === 'string') {
         // Open in a second pane to the side (splitting if needed) — used by an
         // embedded page that wants its target as a split-screen tab, e.g. a
-        // project document opening beside the project page.
-        workspaceRef.current?.openTabToSide({ url: data.url, label: data.label || data.url })
+        // project document opening beside the project page. No side pane in
+        // tabless mode, so fall back to a plain navigation.
+        if (tablessRef.current) navigateRef.current(data.url)
+        else workspaceRef.current?.openTabToSide({ url: data.url, label: data.label || data.url })
       } else if (
         data.type === 'dali:setTabLabel' &&
         typeof data.url === 'string' &&
@@ -530,21 +572,26 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
 
       <main className={`flex-1 min-w-0 flex flex-col ${collapsed ? 'md:pl-16' : 'md:pl-64'} transition-[padding] duration-200`}>
         <DesktopBanner />
-        {/* Always render the tabbed workspace. The Home tab is the default
-            landing surface and stays available alongside section tabs.
-            Use the actual current URL (not activeSection.to) for the section
-            tab so deep links like /hiring/domain-lead/application/:id open in
-            the iframe instead of the section root. */}
-        <TabWorkspace
-          apiRef={workspaceRef}
-          initialTabs={[
-            { url: '/', label: 'Home' },
-            ...(initialTabLabel && location.pathname !== '/'
-              ? [{ url: location.pathname + location.search, label: initialTabLabel }]
-              : []),
-          ]}
-          onActiveUrlChange={setFocusedTabUrl}
-        />
+        {/* Tabless mode renders the routed page directly here; otherwise the
+            tabbed workspace. The Home tab is the workspace's default landing
+            surface and stays available alongside section tabs. Use the actual
+            current URL (not activeSection.to) for the section tab so deep links
+            like /hiring/domain-lead/application/:id open in the iframe instead
+            of the section root. */}
+        {tabless ? (
+          children
+        ) : (
+          <TabWorkspace
+            apiRef={workspaceRef}
+            initialTabs={[
+              { url: '/', label: 'Home' },
+              ...(initialTabLabel && location.pathname !== '/'
+                ? [{ url: location.pathname + location.search, label: initialTabLabel }]
+                : []),
+            ]}
+            onActiveUrlChange={setFocusedTabUrl}
+          />
+        )}
       </main>
     </div>
   )

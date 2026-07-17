@@ -5,6 +5,7 @@ import {
   Cable,
   KeyRound,
   Palette,
+  PanelTop,
   Slack,
   UserCircle2,
 } from "lucide-react";
@@ -12,6 +13,7 @@ import { useDesktopVersion } from "~/lib/desktop";
 import { SettingsBlock, SettingsLayout } from "~/components/settings/SettingsLayout";
 import { AccountSettingsBlock } from "~/components/settings/AccountSettingsBlock";
 import { AppearanceSettingsBlock } from "~/components/settings/AppearanceSettingsBlock";
+import { WorkspaceSettingsBlock } from "~/components/settings/WorkspaceSettingsBlock";
 import { CalendarSettingsBlock } from "~/components/settings/CalendarSettingsBlock";
 import { SlackSettingsBlock } from "~/components/settings/SlackSettingsBlock";
 import { SessionsSettingsBlock } from "~/components/settings/SessionsSettingsBlock";
@@ -21,6 +23,7 @@ import type { loadSettingsPageData } from "~/lib/settings-page.server";
 const NAV = [
   { id: "account", label: "Account", icon: UserCircle2 },
   { id: "appearance", label: "Appearance", icon: Palette },
+  { id: "workspace", label: "Workspace", icon: PanelTop },
   { id: "calendar", label: "Calendar", icon: CalendarDays },
   { id: "slack", label: "Slack", icon: Slack },
   { id: "devices", label: "Your devices", icon: KeyRound },
@@ -88,6 +91,14 @@ export function SettingsPage({
           description="Light mode, dark mode, or match your device."
         >
           <AppearanceSettingsBlock />
+        </SettingsBlock>
+
+        <SettingsBlock
+          id="workspace"
+          title="Workspace"
+          description="Browse in tabs, or one page at a time."
+        >
+          <WorkspaceSettingsBlock />
         </SettingsBlock>
 
         <SettingsBlock
