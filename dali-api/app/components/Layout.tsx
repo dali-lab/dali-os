@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { Link, useLocation, useNavigate, useRevalidator } from 'react-router'
 import {
   LogOut,
@@ -24,6 +24,7 @@ import { userInitials } from '~/lib/display'
 import { TabWorkspace, type TabWorkspaceHandle, type OpenTabRequest } from '~/components/TabWorkspace'
 import { useOpenTasks, TASKS_CHANGED_EVENT } from '~/components/NotificationBell'
 import { DesktopBanner } from '~/components/DesktopBanner'
+import { CommandPalette } from '~/components/CommandPalette'
 
 interface LayoutProps {
   user: { email: string; firstName?: string; lastName?: string }
@@ -76,12 +77,44 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const workspaceRef = useRef<TabWorkspaceHandle | null>(null)
 
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const togglePalette = useCallback(() => setPaletteOpen((v) => !v), [])
+  // ⌘/Ctrl+K opens the command palette. In tab mode TabWorkspace owns the
+  // listener (its handler is attached to the shell window AND every iframe's
+  // document, so it fires wherever focus is) and calls togglePalette via
+  // onOpenPalette. In tabless mode there's no TabWorkspace, so listen here.
+  // Gating on `tabless` avoids both handlers firing for one keypress.
+  useEffect(() => {
+    if (!tabless) return
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault()
+        togglePalette()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [tabless, togglePalette])
+
   const openInWorkspace = (req: OpenTabRequest) => {
     if (tabless) {
       navigate(req.url)
       return
     }
     workspaceRef.current?.openTab(req)
+  }
+
+  // Open a palette result. Mirrors sidebar navigation: tabless → navigate the
+  // top window (⌘Enter → real browser tab); tab mode → a kept workspace tab
+  // (⌘Enter → split-pane). The user picked this explicitly, so no ephemeral tab.
+  const openFromPalette = (url: string, label: string, toSide: boolean) => {
+    if (tabless) {
+      if (toSide) window.open(url, '_blank', 'noopener')
+      else navigate(url)
+      return
+    }
+    if (toSide) workspaceRef.current?.openTabToSide({ url, label })
+    else workspaceRef.current?.openTab({ url, label })
   }
 
   // Props bundle for any sidebar button that opens a surface. In tab mode it
@@ -583,6 +616,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
         ) : (
           <TabWorkspace
             apiRef={workspaceRef}
+            onOpenPalette={togglePalette}
             initialTabs={[
               { url: '/', label: 'Home' },
               ...(initialTabLabel && location.pathname !== '/'
@@ -593,6 +627,14 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
           />
         )}
       </main>
+
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        tabless={tabless}
+        roles={{ isCore, canViewForms, canViewStaffing, hasHiringAccess, isLabMentor }}
+        onOpen={openFromPalette}
+      />
     </div>
   )
 }

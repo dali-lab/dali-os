@@ -6,6 +6,10 @@ export const meta: Route.MetaFunction = () => [
 
 // Source of truth for these bindings is the keydown handler in
 // components/TabWorkspace.tsx. Keep this page in sync if those change.
+const GENERAL: Array<[string, string]> = [
+  ["⌘ K", "Open the command palette — search people, projects, docs, and run commands"],
+];
+
 const TABS: Array<[string, string]> = [
   ["⌘ ⌥ →", "Next tab in the focused pane"],
   ["⌘ ⌥ ←", "Previous tab in the focused pane"],
@@ -34,6 +38,7 @@ export default function HelpShortcutsPage() {
         browser claims (like ⌘W and ⌘1–9).
       </p>
 
+      <Section title="General" rows={GENERAL} />
       <Section title="Tabs and panes" rows={TABS} />
       <Section title="In-tab navigation" rows={NAV} />
     </main>
