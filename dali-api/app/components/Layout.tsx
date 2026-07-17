@@ -19,12 +19,14 @@ import {
   GraduationCap,
   ListTodo,
   HelpCircle,
+  Search,
 } from 'lucide-react'
 import { userInitials } from '~/lib/display'
 import { TabWorkspace, type TabWorkspaceHandle, type OpenTabRequest } from '~/components/TabWorkspace'
 import { useOpenTasks, TASKS_CHANGED_EVENT } from '~/components/NotificationBell'
 import { DesktopBanner } from '~/components/DesktopBanner'
 import { CommandPalette } from '~/components/CommandPalette'
+import { setFocusPreference } from '~/lib/focus-mode'
 
 interface LayoutProps {
   user: { email: string; firstName?: string; lastName?: string }
@@ -37,6 +39,9 @@ interface LayoutProps {
   isInterviewer?: boolean
   hasHiringAccess?: boolean
   isLabMentor?: boolean
+  /** Focus mode: hide the sidebar entirely; navigate via ⌘K + breadcrumbs.
+   *  A floating launcher keeps search + "show sidebar" reachable. */
+  focusMode?: boolean
   // Tabless mode: the routed page content, rendered directly in the main
   // column instead of the tabbed workspace. When provided, the sidebar
   // navigates the top window instead of opening workspace tabs.
@@ -56,7 +61,7 @@ type NavEntry = {
   show: boolean
 }
 
-export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDomainLead = false, canViewForms = false, canViewStaffing = false, isInterviewer = false, hasHiringAccess = false, isLabMentor = false, children }: LayoutProps) {
+export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDomainLead = false, canViewForms = false, canViewStaffing = false, isInterviewer = false, hasHiringAccess = false, isLabMentor = false, focusMode = false, children }: LayoutProps) {
   const location = useLocation()
   const navigate = useNavigate()
   const { revalidate } = useRevalidator()
@@ -325,6 +330,30 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
 
       {/* Areas + nested sections */}
       <nav className="sidebar-scroll flex-1 overflow-y-auto py-3 px-2 flex flex-col gap-0.5">
+        {/* Global search launcher. The palette is otherwise keyboard-only (⌘K);
+            this is the visible affordance that makes it discoverable and teaches
+            the shortcut — styled like a search field rather than a nav button. */}
+        <button
+          type="button"
+          onClick={() => setPaletteOpen(true)}
+          title="Search (⌘K)"
+          aria-label="Search"
+          className={`flex items-center rounded-md mb-1 text-sm transition-colors ${
+            collapsed
+              ? 'px-3 py-2 justify-center text-white/50 hover:text-white hover:bg-white/5'
+              : 'gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 text-white/55 hover:text-white/90'
+          }`}
+        >
+          <Search className="w-4 h-4 flex-shrink-0" />
+          {!collapsed && (
+            <>
+              <span className="truncate">Search</span>
+              <kbd className="ml-auto text-[10px] font-mono text-white/40 bg-white/10 rounded px-1.5 py-0.5">
+                ⌘K
+              </kbd>
+            </>
+          )}
+        </button>
         {(() => {
           const hasTasks = taskCount > 0
           const homeActive = path === '/'
@@ -515,12 +544,14 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
 
   return (
     <div className="min-h-screen min-h-dvh bg-page flex flex-col md:flex-row pt-14 md:pt-0">
-      {/* Desktop sidebar */}
-      <aside
-        className={`hidden md:flex flex-col fixed inset-y-0 left-0 z-20 ${sidebarWidth} bg-sidebar-bg transition-[width] duration-200`}
-      >
-        {sidebarContent}
-      </aside>
+      {/* Desktop sidebar — omitted entirely in focus mode. */}
+      {!focusMode && (
+        <aside
+          className={`hidden md:flex flex-col fixed inset-y-0 left-0 z-20 ${sidebarWidth} bg-sidebar-bg transition-[width] duration-200`}
+        >
+          {sidebarContent}
+        </aside>
+      )}
 
       {/* Mobile top bar */}
       <div className="md:hidden fixed inset-x-0 top-0 z-20 h-14 bg-sidebar-bg flex items-center justify-between px-3">
@@ -603,7 +634,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
         </>
       )}
 
-      <main className={`flex-1 min-w-0 flex flex-col ${collapsed ? 'md:pl-16' : 'md:pl-64'} transition-[padding] duration-200`}>
+      <main className={`flex-1 min-w-0 flex flex-col ${focusMode ? '' : collapsed ? 'md:pl-16' : 'md:pl-64'} transition-[padding] duration-200`}>
         <DesktopBanner />
         {/* Tabless mode renders the routed page directly here; otherwise the
             tabbed workspace. The Home tab is the workspace's default landing
@@ -627,6 +658,36 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
           />
         )}
       </main>
+
+      {/* Focus-mode launcher: with the sidebar hidden, keep a persistent way to
+          search (⌘K) and to bring the sidebar back. Desktop only — mobile keeps
+          its top bar + drawer. */}
+      {focusMode && (
+        <div className="hidden md:flex fixed bottom-4 left-4 z-30 items-center gap-1 rounded-xl bg-sidebar-bg shadow-brand-2 p-1">
+          <button
+            type="button"
+            onClick={() => setPaletteOpen(true)}
+            title="Search (⌘K)"
+            aria-label="Search"
+            className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-white/60 hover:text-white hover:bg-white/10 text-sm transition-colors"
+          >
+            <Search className="w-4 h-4" />
+            <kbd className="text-[10px] font-mono text-white/40 bg-white/10 rounded px-1 py-0.5">⌘K</kbd>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setFocusPreference(false)
+              window.location.reload()
+            }}
+            title="Show sidebar"
+            aria-label="Show sidebar"
+            className="p-2 rounded-lg text-white/40 hover:text-white/80 hover:bg-white/10 transition-colors"
+          >
+            <PanelLeftOpen className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       <CommandPalette
         open={paletteOpen}

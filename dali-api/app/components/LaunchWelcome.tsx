@@ -7,6 +7,7 @@ import {
   ArrowRight,
   X as XIcon,
   Check,
+  Search,
 } from "lucide-react";
 import { Modal } from "./Modal";
 
@@ -130,6 +131,20 @@ function buildSteps(opts: { hasCalendarLink: boolean }): TourStep[] {
     matches: (p) => p.startsWith("/profile"),
     findTarget: () =>
       findInSidebar((btn) => btn.getAttribute("aria-label") === "Open profile"),
+  });
+
+  // Info-only closer (no findTarget/matches → advances on Next): teach the
+  // command palette, which is otherwise easy to miss.
+  steps.push({
+    icon: <Search className="w-4 h-4" />,
+    eyebrow: "Search",
+    cta: (
+      <>
+        One more thing: press <strong>⌘K</strong> (<strong>Ctrl&nbsp;K</strong>{" "}
+        on Windows) anytime — or click <strong>Search</strong> at the top of the
+        sidebar — to jump to any person, project, or doc, or run a quick command.
+      </>
+    ),
   });
 
   return steps;

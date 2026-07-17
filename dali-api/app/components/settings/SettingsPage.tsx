@@ -128,7 +128,7 @@ export function SettingsPage({
         <SettingsBlock
           id="workspace"
           title="Workspace"
-          description="Browse in tabs, or one page at a time."
+          description="How pages open, and whether to show the sidebar."
         >
           <WorkspaceSettingsBlock />
         </SettingsBlock>
