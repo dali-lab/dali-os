@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 
-export type EpicStatus = "Open" | "InProgress" | "Done" | "Cancelled";
+export type EpicStatus = "Backlog" | "Open" | "InProgress" | "Done" | "Cancelled";
 export type SprintStatus = "Planned" | "Active" | "Closed";
 
 export type TimelineSprint = {
@@ -31,6 +31,7 @@ export type TimelineEpic = {
 // gradient (the brand's heaviest accent) — distinctly bolder than their
 // teal sprint children, which keeps the hierarchy obvious at a glance.
 const EPIC_BAR: Record<EpicStatus, string> = {
+  Backlog: "bg-muted-foreground/40",
   Open: "bg-gradient-to-b from-accent-coral to-accent-coral-light",
   InProgress: "bg-gradient-to-b from-accent-coral to-accent-coral-light",
   Done: "bg-accent-coral/45",
@@ -44,6 +45,7 @@ const SPRINT_BAR: Record<SprintStatus, string> = {
 };
 
 const EPIC_LABEL: Record<EpicStatus, string> = {
+  Backlog: "Backlog",
   Open: "Open",
   InProgress: "In progress",
   Done: "Done",
@@ -61,6 +63,7 @@ const SPRINT_LABEL: Record<SprintStatus, string> = {
 // surface + white text so it stays legible on top of any bar fill, instead
 // of the old gray-on-gray chip that disappeared on muted bars.
 const EPIC_PILL: Record<EpicStatus, string> = {
+  Backlog: "bg-card/90 text-muted-foreground ring-1 ring-black/5",
   Open: "bg-card/90 text-foreground ring-1 ring-black/5",
   InProgress: "bg-card/90 text-foreground ring-1 ring-black/5",
   Done: "bg-card/80 text-muted-foreground",
@@ -75,6 +78,7 @@ const SPRINT_PILL: Record<SprintStatus, string> = {
 
 // Dot color inside the pill — this is what carries the status hue now.
 const EPIC_DOT: Record<EpicStatus, string> = {
+  Backlog: "bg-muted-foreground",
   Open: "bg-accent-coral",
   InProgress: "bg-accent-coral",
   Done: "bg-muted-foreground",

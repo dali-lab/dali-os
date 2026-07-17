@@ -24,8 +24,14 @@ import { requireAuth, forbidden, redirectApplicantToPortal } from "~/lib/auth";
 import { fullName } from "~/lib/display";
 import { prisma } from "~/lib/db";
 import { listVisibleGroupsForUser } from "~/lib/groups";
-import { currentTermMemberWhere } from "~/lib/roles";
+import {
+  currentTermMemberWhere,
+  getUserRoleInstances,
+  resolveRoleRef,
+  type RoleInstance,
+} from "~/lib/roles";
 import { CalendarActionSchema } from "~/lib/calendar-schemas";
+import { syncManualBlockTimeEntry } from "~/lib/time-entry-sync";
 import { fetchBusyEvents, listCalendarsForLink } from "~/lib/google-calendar";
 import { APPLICATION_TZ as DEFAULT_TIMEZONE, getZonedHourFraction, getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
 import type { Route } from "./+types/calendar";
@@ -56,6 +62,9 @@ type ManualBlockDTO = {
   startTime: string;
   endTime: string;
   recurrenceRule: string | null;
+  isWork: boolean;
+  assignmentType: RoleInstance["assignmentType"] | null;
+  roleRefId: string | null;
 };
 
 type SubCalendarDTO = {
@@ -101,9 +110,12 @@ type ProjectOption = { id: string; name: string };
 
 type TimeEntryDTO = {
   id: string;
-  source: "Meeting" | "Manual";
+  source: "Meeting" | "Manual" | "Block";
   scheduledMeetingId: string | null;
+  manualBlockId: string | null;
   meetingNotePageId: string | null;
+  assignmentType: RoleInstance["assignmentType"] | null;
+  roleRefId: string | null;
   projectId: string | null;
   date: string;
   hours: number;
@@ -136,12 +148,15 @@ type LoaderData = {
     endIso: string;
     title: string;
     color: string | null;
+    description?: string;
+    location?: string;
   }[];
   ingestionError: string | null;
   groups: GroupOption[];
   users: UserOption[];
   currentUserId: string;
   myProjects: ProjectOption[];
+  myRoles: RoleInstance[];
   timeEntries: TimeEntryDTO[];
 };
 
@@ -201,7 +216,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   // applicants, partners, and alumni who happen to still have a User row.
   const memberWhere = await currentTermMemberWhere();
 
-  const [settings, whRows, blocks, links, groups, users, myProjects, timeEntryRows] =
+  const [settings, whRows, blocks, links, groups, users, myProjects, myRoles, timeEntryRows] =
     await Promise.all([
       prisma.userAvailabilitySettings.findUnique({ where: { userId } }),
       prisma.workingHoursDay.findMany({ where: { userId } }),
@@ -234,6 +249,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         select: { id: true, name: true },
         orderBy: { name: "asc" },
       }),
+      getUserRoleInstances(userId),
       prisma.timeEntry.findMany({
         where: { userId },
         orderBy: { date: "desc" },
@@ -242,6 +258,9 @@ export async function loader({ request }: Route.LoaderArgs) {
           id: true,
           source: true,
           scheduledMeetingId: true,
+          manualBlockId: true,
+          assignmentType: true,
+          roleRefId: true,
           projectId: true,
           date: true,
           hours: true,
@@ -362,6 +381,9 @@ export async function loader({ request }: Route.LoaderArgs) {
       startTime: b.startTime.toISOString(),
       endTime: b.endTime.toISOString(),
       recurrenceRule: b.recurrenceRule,
+      isWork: b.isWork,
+      assignmentType: b.assignmentType,
+      roleRefId: b.roleRefId,
     })),
     calendarLinks,
     weekStartIso: weekStart.toISOString(),
@@ -371,17 +393,23 @@ export async function loader({ request }: Route.LoaderArgs) {
       endIso: e.end,
       title: e.title ?? "Busy",
       color: e.color ?? null,
+      description: e.description,
+      location: e.location,
     })),
     ingestionError,
     groups,
     users,
     currentUserId: userId,
     myProjects,
+    myRoles,
     timeEntries: timeEntryRows.map((t) => ({
       id: t.id,
       source: t.source,
       scheduledMeetingId: t.scheduledMeetingId,
+      manualBlockId: t.manualBlockId,
       meetingNotePageId: t.meeting?.notePage?.id ?? null,
+      assignmentType: t.assignmentType,
+      roleRefId: t.roleRefId,
       projectId: t.projectId,
       date: t.date.toISOString(),
       hours: t.hours,
@@ -544,16 +572,37 @@ export async function action({ request }: Route.ActionArgs) {
       if (endTime <= startTime) {
         return Response.json({ error: "endTime must be after startTime" }, { status: 400 });
       }
-      await prisma.manualBlock.create({
+      const recurrenceRule = input.recurrenceRule ?? null;
+      if (input.isWork && recurrenceRule) {
+        return Response.json(
+          { error: "Recurring blocks can't be marked as work yet" },
+          { status: 400 },
+        );
+      }
+      const block = await prisma.manualBlock.create({
         data: {
           userId,
           title: input.title,
           startTime,
           endTime,
           allDay: input.allDay,
-          recurrenceRule: input.recurrenceRule ?? null,
+          recurrenceRule,
+          isWork: input.isWork,
+          assignmentType: input.assignmentType ?? null,
+          roleRefId: input.roleRefId ?? null,
         },
       });
+      const sync = await syncManualBlockTimeEntry({
+        manualBlockId: block.id,
+        userId,
+        isWork: input.isWork,
+        assignmentType: input.assignmentType ?? null,
+        roleRefId: input.roleRefId ?? null,
+        title: input.title,
+        startTime,
+        endTime,
+      });
+      if (!sync.ok) return Response.json({ error: sync.error }, { status: 400 });
       return null;
     }
 
@@ -567,17 +616,43 @@ export async function action({ request }: Route.ActionArgs) {
       if (endTime <= startTime) {
         return Response.json({ error: "endTime must be after startTime" }, { status: 400 });
       }
+      const title = input.title ?? existing.title;
+      const recurrenceRule =
+        input.recurrenceRule === undefined ? existing.recurrenceRule : input.recurrenceRule;
+      const isWork = input.isWork ?? existing.isWork;
+      const assignmentType =
+        input.assignmentType === undefined ? existing.assignmentType : input.assignmentType;
+      const roleRefId = input.roleRefId === undefined ? existing.roleRefId : input.roleRefId;
+      if (isWork && recurrenceRule) {
+        return Response.json(
+          { error: "Recurring blocks can't be marked as work yet" },
+          { status: 400 },
+        );
+      }
       await prisma.manualBlock.update({
         where: { id: input.id },
         data: {
-          title: input.title ?? existing.title,
+          title,
           startTime,
           endTime,
           allDay: input.allDay ?? existing.allDay,
-          recurrenceRule:
-            input.recurrenceRule === undefined ? existing.recurrenceRule : input.recurrenceRule,
+          recurrenceRule,
+          isWork,
+          assignmentType,
+          roleRefId,
         },
       });
+      const sync = await syncManualBlockTimeEntry({
+        manualBlockId: input.id,
+        userId,
+        isWork,
+        assignmentType,
+        roleRefId,
+        title,
+        startTime,
+        endTime,
+      });
+      if (!sync.ok) return Response.json({ error: sync.error }, { status: 400 });
       return null;
     }
 
@@ -586,7 +661,10 @@ export async function action({ request }: Route.ActionArgs) {
       if (!existing || existing.userId !== userId) {
         return Response.json({ error: "Not found" }, { status: 404 });
       }
-      await prisma.manualBlock.delete({ where: { id: input.id } });
+      await prisma.$transaction([
+        prisma.timeEntry.deleteMany({ where: { manualBlockId: input.id, userId } }),
+        prisma.manualBlock.delete({ where: { id: input.id } }),
+      ]);
       return null;
     }
 
@@ -615,13 +693,21 @@ export async function action({ request }: Route.ActionArgs) {
     }
 
     case "add-time-entry": {
+      let projectId: string | null = null;
+      if (input.assignmentType && input.roleRefId) {
+        const resolved = await resolveRoleRef(userId, input.assignmentType, input.roleRefId);
+        if (!resolved) return Response.json({ error: "Invalid role" }, { status: 400 });
+        projectId = resolved.projectId;
+      }
       await prisma.timeEntry.create({
         data: {
           userId,
           source: "Manual",
           date: new Date(input.date),
           hours: input.hours,
-          projectId: input.projectId ?? null,
+          assignmentType: input.assignmentType ?? null,
+          roleRefId: input.roleRefId ?? null,
+          projectId,
           note: input.note ?? null,
           startTime: input.startTime ? new Date(input.startTime) : null,
           endTime: input.endTime ? new Date(input.endTime) : null,
@@ -638,12 +724,27 @@ export async function action({ request }: Route.ActionArgs) {
       if (existing.source !== "Manual") {
         return Response.json({ error: "Only manual entries can be edited" }, { status: 400 });
       }
+      const assignmentType =
+        input.assignmentType === undefined ? existing.assignmentType : input.assignmentType;
+      const roleRefId = input.roleRefId === undefined ? existing.roleRefId : input.roleRefId;
+      let projectId = existing.projectId;
+      if (input.assignmentType !== undefined || input.roleRefId !== undefined) {
+        if (assignmentType && roleRefId) {
+          const resolved = await resolveRoleRef(userId, assignmentType, roleRefId);
+          if (!resolved) return Response.json({ error: "Invalid role" }, { status: 400 });
+          projectId = resolved.projectId;
+        } else {
+          projectId = null;
+        }
+      }
       await prisma.timeEntry.update({
         where: { id: input.id },
         data: {
           date: input.date ? new Date(input.date) : existing.date,
           hours: input.hours ?? existing.hours,
-          projectId: input.projectId === undefined ? existing.projectId : input.projectId,
+          assignmentType,
+          roleRefId,
+          projectId,
           note: input.note === undefined ? existing.note : input.note,
           startTime:
             input.startTime === undefined
@@ -725,6 +826,9 @@ function coerceFormToAction(raw: Record<string, FormDataEntryValue>): unknown {
         endTime: get("endTime"),
         allDay: get("allDay") ? asBool(get("allDay")) : false,
         recurrenceRule: get("recurrenceRule") || null,
+        isWork: get("isWork") ? asBool(get("isWork")) : false,
+        assignmentType: get("assignmentType") || null,
+        roleRefId: get("roleRefId") || null,
       };
     case "update-manual-block":
       return {
@@ -736,6 +840,10 @@ function coerceFormToAction(raw: Record<string, FormDataEntryValue>): unknown {
         allDay: get("allDay") === undefined ? undefined : asBool(get("allDay")),
         recurrenceRule:
           get("recurrenceRule") === undefined ? undefined : get("recurrenceRule") || null,
+        isWork: get("isWork") === undefined ? undefined : asBool(get("isWork")),
+        assignmentType:
+          get("assignmentType") === undefined ? undefined : get("assignmentType") || null,
+        roleRefId: get("roleRefId") === undefined ? undefined : get("roleRefId") || null,
       };
     case "remove-manual-block":
       return { intent, id: get("id") };
@@ -753,7 +861,8 @@ function coerceFormToAction(raw: Record<string, FormDataEntryValue>): unknown {
         intent,
         date: get("date"),
         hours: get("hours") ? Number(get("hours")) : undefined,
-        projectId: get("projectId") || null,
+        assignmentType: get("assignmentType") || null,
+        roleRefId: get("roleRefId") || null,
         note: get("note") || null,
         startTime: get("startTime") || null,
         endTime: get("endTime") || null,
@@ -764,7 +873,9 @@ function coerceFormToAction(raw: Record<string, FormDataEntryValue>): unknown {
         id: get("id"),
         date: get("date") || undefined,
         hours: get("hours") ? Number(get("hours")) : undefined,
-        projectId: get("projectId") === undefined ? undefined : get("projectId") || null,
+        assignmentType:
+          get("assignmentType") === undefined ? undefined : get("assignmentType") || null,
+        roleRefId: get("roleRefId") === undefined ? undefined : get("roleRefId") || null,
         note: get("note") === undefined ? undefined : get("note") || null,
         startTime: get("startTime") === undefined ? undefined : get("startTime") || null,
         endTime: get("endTime") === undefined ? undefined : get("endTime") || null,
@@ -948,7 +1059,7 @@ function CalendarIntegrationsCard({
       )}
       <div className="flex flex-col gap-3">
         {links.length === 0 && (
-          <div className="bg-card border border-border rounded-md p-3 text-xs text-muted-foreground">
+          <div className="bg-card border border-border shadow-brand-1 rounded-md p-3 text-xs text-muted-foreground">
             No external calendars connected. Click <em>Add Google Account</em> above to link one.
           </div>
         )}
@@ -963,7 +1074,7 @@ function CalendarIntegrationsCard({
 function CalendarLinkBlock({ link }: { link: CalendarLinkDTO }) {
   const removeFetcher = useFetcher();
   return (
-    <div className="bg-card border border-border border-l-4 border-l-accent-teal rounded-md overflow-hidden">
+    <div className="bg-card border border-border shadow-brand-1 border-l-4 border-l-accent-teal rounded-md overflow-hidden">
       <div className="flex items-center justify-between px-3 py-2 bg-accent-teal/10">
         <div className="flex items-center gap-2 min-w-0">
           <GoogleIcon />
@@ -1169,7 +1280,7 @@ function WorkingHoursCard({
         </div>
       </div>
       {enabled && (
-        <div className="bg-card border border-border rounded-md p-3 flex flex-col gap-2">
+        <div className="bg-card border border-border shadow-brand-1 rounded-md p-3 flex flex-col gap-2">
           {workingHours.map((d) => (
             <DayRow key={d.dayOfWeek} day={d} allDays={workingHours} />
           ))}
@@ -1419,7 +1530,7 @@ function EventBuffersCard({ bufferMin }: { bufferMin: number }) {
         <Shield className="w-4 h-4 text-accent-coral" />
         Event Buffers
       </h2>
-      <div className="bg-card border border-border rounded-md p-3">
+      <div className="bg-card border border-border shadow-brand-1 rounded-md p-3">
         <div className="flex flex-wrap gap-2">
           {options.map((o) => (
             <button
@@ -1492,7 +1603,7 @@ function AddManualBlockForm({ onDone }: { onDone: () => void }) {
         // Optimistically close the form; the loader revalidation will reveal the new row.
         queueMicrotask(onDone);
       }}
-      className="bg-card border border-border rounded-md p-3 mb-2 flex flex-col gap-2"
+      className="bg-card border border-border shadow-brand-1 rounded-md p-3 mb-2 flex flex-col gap-2"
     >
       <input type="hidden" name="intent" value="add-manual-block" />
       <input
@@ -1574,12 +1685,19 @@ function ManualBlockRow({ block, timezone }: { block: ManualBlockDTO; timezone: 
   const removing = fetcher.state !== "idle";
   return (
     <div
-      className={`bg-card border border-border border-l-4 border-l-accent-coral rounded-md px-3 py-2 flex items-start justify-between ${
+      className={`bg-card border border-border shadow-brand-1 border-l-4 border-l-accent-coral rounded-md px-3 py-2 flex items-start justify-between ${
         removing ? "opacity-50" : ""
       }`}
     >
       <div>
-        <div className="text-sm font-medium text-foreground">{block.title}</div>
+        <div className="text-sm font-medium text-foreground">
+          {block.title}
+          {block.isWork && (
+            <span className="ml-1.5 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide rounded bg-accent-teal/15 text-accent-teal">
+              Work
+            </span>
+          )}
+        </div>
         <div className="text-xs text-muted-foreground mt-0.5">
           {formatBlockRange(block.startTime, block.endTime, timezone)}
           {block.recurrenceRule && (
@@ -1632,7 +1750,10 @@ function WeekToolbar({
 }: {
   // `color` is a Tailwind bg-* class; `swatch` is a raw CSS color for tints
   // that are computed at runtime (e.g. the availability gradient stops).
-  legend: { color?: string; swatch?: string; label: string }[];
+  // Unused today (not rendered in this component's JSX) — kept optional so
+  // callers that don't have a color key to show (e.g. Timesheet, which uses
+  // RoleFilterRow instead) don't need to pass a placeholder value.
+  legend?: { color?: string; swatch?: string; label: string }[];
   monthLabel: string;
   weekStartIso: string;
   onRefresh?: () => void;
@@ -1786,6 +1907,8 @@ function AvailabilityWeekGrid({
       className: e.color ? "" : EVENT_CORAL,
       bgColor: e.color ?? undefined,
       borderClassName: e.color ? undefined : "border-accent-coral-light",
+      location: e.location,
+      description: e.description,
     }, eventsByDay);
   }
   for (const b of data.manualBlocks) {
@@ -1816,7 +1939,7 @@ function AvailabilityWeekGrid({
   }
 
   return (
-    <section className="bg-card border border-border rounded-lg p-4 flex flex-col">
+    <section className="bg-card border border-border shadow-brand-1 rounded-lg p-4 flex flex-col">
       <WeekToolbar
         monthLabel={monthLabel}
         weekStartIso={data.weekStartIso}
@@ -1876,6 +1999,7 @@ function AvailabilityWeekGrid({
                 <CreateFromDragPopover
                   startLocal={selection.startLocal}
                   endLocal={selection.endLocal}
+                  myRoles={data.myRoles}
                   onClose={() => setSelection(null)}
                 />
               )
@@ -1977,6 +2101,122 @@ function dayHourToLocal(dayDateUtc: Date, hour: number): string {
   return toDatetimeLocal(new Date(y, m, d, h, mins));
 }
 
+// Small fixed palette for coloring Timesheet blocks by role — accent-coral is
+// reserved for "other calendars" context blocks, so it's excluded here.
+const ROLE_COLOR_PALETTE: { className: string; borderClassName: string; dot: string }[] = [
+  { className: "bg-accent-teal text-white", borderClassName: "border-accent-teal", dot: "var(--color-accent-teal)" },
+  { className: "bg-accent-green text-white", borderClassName: "border-accent-green", dot: "var(--color-accent-green)" },
+  { className: "bg-accent-pink text-white", borderClassName: "border-accent-pink", dot: "var(--color-accent-pink)" },
+  { className: "bg-accent-yellow text-foreground", borderClassName: "border-accent-yellow", dot: "var(--color-accent-yellow)" },
+];
+
+// Deterministic hash of a role bucket key into the palette — stable across
+// reloads/re-renders without needing to persist a color assignment anywhere.
+function roleColor(key: string): (typeof ROLE_COLOR_PALETTE)[number] {
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) | 0;
+  return ROLE_COLOR_PALETTE[Math.abs(hash) % ROLE_COLOR_PALETTE.length]!;
+}
+
+const UNASSIGNED_ROLE_KEY = "unassigned";
+
+function timeEntryRoleKey(t: TimeEntryDTO): string {
+  return t.assignmentType && t.roleRefId ? `${t.assignmentType}:${t.roleRefId}` : UNASSIGNED_ROLE_KEY;
+}
+
+// Overlay-by-default, toggle-to-narrow chip row above the Timesheet grid —
+// mirrors SubCalendarRow's toggle-chip pattern but is a pure client-side
+// filter (no server round-trip): excludedKeys tracks which buckets are
+// hidden, so a fresh page load with no interaction shows everything overlaid.
+function RoleFilterRow({
+  buckets,
+  excludedKeys,
+  onToggle,
+}: {
+  buckets: { key: string; label: string }[];
+  excludedKeys: Set<string>;
+  onToggle: (key: string) => void;
+}) {
+  if (buckets.length < 2) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 px-1 pb-2">
+      {buckets.map((b) => {
+        const active = !excludedKeys.has(b.key);
+        const color = roleColor(b.key);
+        return (
+          <button
+            key={b.key}
+            type="button"
+            onClick={() => onToggle(b.key)}
+            className={`flex items-center gap-1.5 px-2 py-1 rounded-full border text-xs transition-colors ${
+              active
+                ? "border-border bg-muted/60 text-foreground"
+                : "border-border/50 text-muted-foreground opacity-50"
+            }`}
+          >
+            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color.dot }} />
+            {b.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// Encodes a RoleInstance into a single <select> option value (assignmentType
+// and roleRefId travel together — see calendar-schemas.ts's assignmentType).
+function roleOptionKey(role: RoleInstance): string {
+  return `${role.assignmentType}:${role.roleRefId}`;
+}
+
+function parseRoleOptionKey(
+  key: string,
+): { assignmentType: RoleInstance["assignmentType"]; roleRefId: string } | null {
+  if (!key) return null;
+  const idx = key.indexOf(":");
+  if (idx < 0) return null;
+  return {
+    assignmentType: key.slice(0, idx) as RoleInstance["assignmentType"],
+    roleRefId: key.slice(idx + 1),
+  };
+}
+
+// Role picker for a plain (non-fetch, name-attribute-driven) <Form> — pairs a
+// controlled <select> with hidden assignmentType/roleRefId inputs so native
+// FormData submission carries both halves of the encoded role key.
+function RoleSelectField({
+  id,
+  myRoles,
+  defaultValue,
+}: {
+  id: string;
+  myRoles: RoleInstance[];
+  defaultValue: string;
+}) {
+  const [roleKey, setRoleKey] = useState(defaultValue);
+  const parsed = parseRoleOptionKey(roleKey);
+  return (
+    <label htmlFor={id} className="text-xs text-muted-foreground flex flex-col gap-1">
+      Role
+      <select
+        id={id}
+        value={roleKey}
+        onChange={(e) => setRoleKey(e.target.value)}
+        className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
+      >
+        <option value="">Unassigned</option>
+        {myRoles.map((r) => (
+          <option key={roleOptionKey(r)} value={roleOptionKey(r)}>
+            {r.label}
+          </option>
+        ))}
+      </select>
+      <input type="hidden" name="assignmentType" value={parsed?.assignmentType ?? ""} />
+      <input type="hidden" name="roleRefId" value={parsed?.roleRefId ?? ""} />
+    </label>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /* Drag-to-create side modal (My Availability tab)                      */
 /* ------------------------------------------------------------------ */
@@ -1984,10 +2224,12 @@ function dayHourToLocal(dayDateUtc: Date, hour: number): string {
 function CreateFromDragPopover({
   startLocal,
   endLocal,
+  myRoles,
   onClose,
 }: {
   startLocal: string;
   endLocal: string;
+  myRoles: RoleInstance[];
   onClose: () => void;
 }) {
   const revalidator = useRevalidator();
@@ -2002,12 +2244,19 @@ function CreateFromDragPopover({
     setEnd(endLocal);
   }, [startLocal, endLocal]);
   const [repeats, setRepeats] = useState<Repeats>("none");
+  const [isWork, setIsWork] = useState(false);
+  const [roleKey, setRoleKey] = useState(myRoles.length > 0 ? roleOptionKey(myRoles[0]!) : "");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const startEndValid =
     !!start && !!end && new Date(end).getTime() > new Date(start).getTime();
-  const canSubmit = title.trim().length > 0 && startEndValid && !submitting;
+  const isRecurring = repeats !== "none";
+  const canSubmit =
+    title.trim().length > 0 &&
+    startEndValid &&
+    !submitting &&
+    (!isWork || (!isRecurring && roleKey !== ""));
 
   // Close on Escape.
   useEffect(() => {
@@ -2034,6 +2283,14 @@ function CreateFromDragPopover({
       body.set("endTime", new Date(end).toISOString());
       const rrule = repeatsToRRule(repeats);
       if (rrule) body.set("recurrenceRule", rrule);
+      if (isWork && !isRecurring) {
+        const role = parseRoleOptionKey(roleKey);
+        if (role) {
+          body.set("isWork", "true");
+          body.set("assignmentType", role.assignmentType);
+          body.set("roleRefId", role.roleRefId);
+        }
+      }
       const res = await fetch("/calendar", { method: "POST", credentials: "include", body });
       if (!res.ok) {
         const j = await res.json().catch(() => null);
@@ -2138,6 +2395,40 @@ function CreateFromDragPopover({
               ))}
             </select>
           </div>
+
+          {myRoles.length > 0 && !isRecurring && (
+            <div>
+              <label className="flex items-center gap-2 text-sm font-medium text-foreground">
+                <input
+                  type="checkbox"
+                  checked={isWork}
+                  onChange={(e) => setIsWork(e.target.checked)}
+                  className="h-4 w-4 rounded border-border"
+                />
+                This is work
+              </label>
+              {isWork && (
+                <select
+                  aria-label="Which role is this work for"
+                  value={roleKey}
+                  onChange={(e) => setRoleKey(e.target.value)}
+                  className="mt-2 w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground"
+                >
+                  {myRoles.map((r) => (
+                    <option key={roleOptionKey(r)} value={roleOptionKey(r)}>
+                      {r.label}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
+          {isRecurring && (
+            <p className="text-xs text-muted-foreground">
+              Recurring blocks can't be logged as work yet — add each occurrence individually on
+              the Timesheet tab if you need hours for it.
+            </p>
+          )}
 
           {error && <p className="text-sm text-red-700">{error}</p>}
 
@@ -2263,7 +2554,7 @@ function TimesheetView({ data }: { data: LoaderData }) {
 
   return (
     <div className="flex flex-col gap-4 w-full max-w-full min-w-0">
-      <section className="bg-card border border-border rounded-lg p-4">
+      <section className="bg-card border border-border shadow-brand-1 rounded-lg p-4">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-heading font-semibold text-foreground">Timesheet</h2>
           <span className="text-sm text-muted-foreground">{totalHours.toFixed(2)} hrs total</span>
@@ -2301,20 +2592,11 @@ function TimesheetView({ data }: { data: LoaderData }) {
               className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
             />
           </label>
-          <label className="text-xs text-muted-foreground flex flex-col gap-1">
-            Project
-            <select
-              name="projectId"
-              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
-            >
-              <option value="">No project</option>
-              {data.myProjects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <RoleSelectField
+            id="add-time-entry-role"
+            myRoles={data.myRoles}
+            defaultValue={data.myRoles.length === 1 ? roleOptionKey(data.myRoles[0]!) : ""}
+          />
           <label className="text-xs text-muted-foreground flex flex-col gap-1">
             Hours
             <input
@@ -2378,6 +2660,15 @@ function TimesheetWeekGrid({ data }: { data: LoaderData }) {
   });
 
   const [selection, setSelection] = useState<TimesheetSelection | null>(null);
+  // Which role buckets are hidden — empty by default so all roles overlay.
+  const [excludedRoleKeys, setExcludedRoleKeys] = useState<Set<string>>(new Set());
+  const toggleRoleKey = (key: string) =>
+    setExcludedRoleKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
 
   // Maps an ISO start/end range onto this week's grid coordinates. Shared by
   // block placement (below) and by openEdit (which needs the same math run
@@ -2438,6 +2729,8 @@ function TimesheetWeekGrid({ data }: { data: LoaderData }) {
         className: e.color ? "" : EVENT_CORAL,
         bgColor: e.color ?? undefined,
         borderClassName: e.color ? undefined : "border-accent-coral-light",
+        location: e.location,
+        description: e.description,
       },
       eventsByDay,
     );
@@ -2450,20 +2743,41 @@ function TimesheetWeekGrid({ data }: { data: LoaderData }) {
       eventsByDay,
     );
   }
+  // One filter chip per role bucket actually present among this week's
+  // entries (plus "Unassigned"), so every visible block always has a
+  // matching chip — even for a role no longer in data.myRoles.
+  const roleBuckets = new Map<string, { key: string; label: string }>();
   for (const t of data.timeEntries) {
+    const key = timeEntryRoleKey(t);
+    if (roleBuckets.has(key)) continue;
+    const known =
+      t.assignmentType && t.roleRefId
+        ? data.myRoles.find((r) => r.assignmentType === t.assignmentType && r.roleRefId === t.roleRefId)
+        : undefined;
+    roleBuckets.set(key, {
+      key,
+      label: known?.label ?? (key === UNASSIGNED_ROLE_KEY ? "Unassigned" : "Other role"),
+    });
+  }
+
+  for (const t of data.timeEntries) {
+    const roleKey = timeEntryRoleKey(t);
+    if (excludedRoleKeys.has(roleKey)) continue;
     const { startIso, endIso } =
       t.startTime && t.endTime
         ? { startIso: t.startTime, endIso: t.endTime }
         : nominalDayRange(t.date, t.hours, data.timezone);
+    const color = roleColor(roleKey);
     placeBlock(
       startIso,
       endIso,
       {
         label: t.source === "Meeting" ? "Meeting" : t.note || "Time entry",
-        className: "bg-accent-teal text-white",
-        borderClassName: "border-accent-teal",
-        // Meeting-sourced blocks are informational only — attendance drives
-        // them, so clicking one doesn't navigate or open anything.
+        className: color.className,
+        borderClassName: color.borderClassName,
+        // Meeting/Block-sourced blocks are informational only — attendance /
+        // the linked calendar block drives them, so clicking one doesn't
+        // navigate or open anything.
         onClick: t.source === "Manual" ? () => openEdit(t, startIso, endIso) : undefined,
       },
       eventsByDay,
@@ -2477,21 +2791,22 @@ function TimesheetWeekGrid({ data }: { data: LoaderData }) {
   }).format(weekStart);
 
   return (
-    <section className="bg-card border border-border rounded-lg p-4 flex flex-col">
+    <section className="bg-card border border-border shadow-brand-1 rounded-lg p-4 flex flex-col">
       <WeekToolbar
         monthLabel={monthLabel}
         weekStartIso={data.weekStartIso}
         onRefresh={refresh}
         refreshing={revalidator.state !== "idle"}
-        legend={[
-          { color: "bg-accent-coral", label: "Other calendars" },
-          { color: "bg-accent-teal", label: "Timesheet" },
-        ]}
       />
       <p className="px-1 pb-2 text-[11px] text-muted-foreground">
         Drag a range to log time, or click an entry to edit/delete it. Coral blocks are context
         from your linked/personal calendars.
       </p>
+      <RoleFilterRow
+        buckets={Array.from(roleBuckets.values())}
+        excludedKeys={excludedRoleKeys}
+        onToggle={toggleRoleKey}
+      />
       <WeekGrid
         days={days}
         showSubHourGrid
@@ -2521,7 +2836,7 @@ function TimesheetWeekGrid({ data }: { data: LoaderData }) {
                   <TimesheetDragPopover
                     startLocal={selection.startLocal}
                     endLocal={selection.endLocal}
-                    myProjects={data.myProjects}
+                    myRoles={data.myRoles}
                     onClose={() => setSelection(null)}
                   />
                 ) : (
@@ -2529,7 +2844,7 @@ function TimesheetWeekGrid({ data }: { data: LoaderData }) {
                     entry={selection.entry}
                     startLocal={selection.startLocal}
                     endLocal={selection.endLocal}
-                    myProjects={data.myProjects}
+                    myRoles={data.myRoles}
                     onClose={() => setSelection(null)}
                   />
                 )
@@ -2561,12 +2876,12 @@ function TimesheetWeekGrid({ data }: { data: LoaderData }) {
 function TimesheetDragPopover({
   startLocal,
   endLocal,
-  myProjects,
+  myRoles,
   onClose,
 }: {
   startLocal: string;
   endLocal: string;
-  myProjects: ProjectOption[];
+  myRoles: RoleInstance[];
   onClose: () => void;
 }) {
   const revalidator = useRevalidator();
@@ -2577,7 +2892,7 @@ function TimesheetDragPopover({
     setStart(startLocal);
     setEnd(endLocal);
   }, [startLocal, endLocal]);
-  const [projectId, setProjectId] = useState("");
+  const [roleKey, setRoleKey] = useState(myRoles.length === 1 ? roleOptionKey(myRoles[0]!) : "");
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -2608,7 +2923,11 @@ function TimesheetDragPopover({
       body.set("endTime", new Date(end).toISOString());
       body.set("date", start.slice(0, 10));
       body.set("hours", String(hours));
-      if (projectId) body.set("projectId", projectId);
+      const role = parseRoleOptionKey(roleKey);
+      if (role) {
+        body.set("assignmentType", role.assignmentType);
+        body.set("roleRefId", role.roleRefId);
+      }
       if (note.trim()) body.set("note", note.trim());
       const res = await fetch("/calendar", { method: "POST", credentials: "include", body });
       if (!res.ok) {
@@ -2680,24 +2999,26 @@ function TimesheetDragPopover({
           <p className="text-xs text-muted-foreground">{hours.toFixed(2)} hrs</p>
         )}
 
-        <div>
-          <label htmlFor="ts-drag-project" className="block text-sm font-medium text-foreground mb-1">
-            Project
-          </label>
-          <select
-            id="ts-drag-project"
-            value={projectId}
-            onChange={(e) => setProjectId(e.target.value)}
-            className="w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground"
-          >
-            <option value="">No project</option>
-            {myProjects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        </div>
+        {myRoles.length > 0 && (
+          <div>
+            <label htmlFor="ts-drag-role" className="block text-sm font-medium text-foreground mb-1">
+              Role
+            </label>
+            <select
+              id="ts-drag-role"
+              value={roleKey}
+              onChange={(e) => setRoleKey(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground"
+            >
+              <option value="">Unassigned</option>
+              {myRoles.map((r) => (
+                <option key={roleOptionKey(r)} value={roleOptionKey(r)}>
+                  {r.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <div>
           <label htmlFor="ts-drag-note" className="block text-sm font-medium text-foreground mb-1">
@@ -2742,19 +3063,23 @@ function TimesheetEditPopover({
   entry,
   startLocal,
   endLocal,
-  myProjects,
+  myRoles,
   onClose,
 }: {
   entry: TimeEntryDTO;
   startLocal: string;
   endLocal: string;
-  myProjects: ProjectOption[];
+  myRoles: RoleInstance[];
   onClose: () => void;
 }) {
   const revalidator = useRevalidator();
   const [start, setStart] = useState(startLocal);
   const [end, setEnd] = useState(endLocal);
-  const [projectId, setProjectId] = useState(entry.projectId ?? "");
+  const [roleKey, setRoleKey] = useState(
+    entry.assignmentType && entry.roleRefId
+      ? `${entry.assignmentType}:${entry.roleRefId}`
+      : "",
+  );
   const [note, setNote] = useState(entry.note ?? "");
   const [submitting, setSubmitting] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -2788,7 +3113,9 @@ function TimesheetEditPopover({
       body.set("endTime", new Date(end).toISOString());
       body.set("date", start.slice(0, 10));
       body.set("hours", String(hours));
-      body.set("projectId", projectId);
+      const role = parseRoleOptionKey(roleKey);
+      body.set("assignmentType", role?.assignmentType ?? "");
+      body.set("roleRefId", role?.roleRefId ?? "");
       body.set("note", note.trim());
       const res = await fetch("/calendar", { method: "POST", credentials: "include", body });
       if (!res.ok) {
@@ -2883,19 +3210,23 @@ function TimesheetEditPopover({
         )}
 
         <div>
-          <label htmlFor="ts-edit-project" className="block text-sm font-medium text-foreground mb-1">
-            Project
+          <label htmlFor="ts-edit-role" className="block text-sm font-medium text-foreground mb-1">
+            Role
           </label>
           <select
-            id="ts-edit-project"
-            value={projectId}
-            onChange={(e) => setProjectId(e.target.value)}
+            id="ts-edit-role"
+            value={roleKey}
+            onChange={(e) => setRoleKey(e.target.value)}
             className="w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground"
           >
-            <option value="">No project</option>
-            {myProjects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
+            <option value="">Unassigned</option>
+            {roleKey &&
+              !myRoles.some((r) => roleOptionKey(r) === roleKey) && (
+                <option value={roleKey}>Current role (no longer active)</option>
+              )}
+            {myRoles.map((r) => (
+              <option key={roleOptionKey(r)} value={roleOptionKey(r)}>
+                {r.label}
               </option>
             ))}
           </select>
@@ -3090,7 +3421,7 @@ function CreateScheduledMeetingForm({
     title.trim().length > 0 && duration > 0 && startEndValid && meetingTypeValid && !submitting;
 
   return (
-    <section className="bg-card border border-border rounded-lg p-4">
+    <section className="bg-card border border-border shadow-brand-1 rounded-lg p-4">
       <h2 className="font-heading font-semibold text-foreground mb-3">Create Meeting</h2>
       <form onSubmit={submit} className="space-y-3">
         <div>
@@ -3796,7 +4127,7 @@ function ScheduleWeekGrid({
   }
 
   return (
-    <section className="bg-card border border-border rounded-lg p-4 flex flex-col">
+    <section className="bg-card border border-border shadow-brand-1 rounded-lg p-4 flex flex-col">
       <WeekToolbar
         monthLabel={"Schedule preview"}
         weekStartIso={weekStartIso}
@@ -4129,6 +4460,8 @@ type EventBlock = {
   bufferBefore?: number;
   /** Hours of buffer below the event body. */
   bufferAfter?: number;
+  location?: string;
+  description?: string;
   /** When set, the block is clickable (e.g. Timesheet entries opening an edit
    *  popover). Stops the mousedown from bubbling to the column's drag-select
    *  handler so a click doesn't also start a new drag selection. */
@@ -4136,6 +4469,179 @@ type EventBlock = {
 };
 
 const DAY_KEYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+
+function CalendarEventDetailPopover({
+  anchorEl,
+  title,
+  timeRange,
+  location,
+  description,
+}: {
+  anchorEl: HTMLElement | null;
+  title: string;
+  timeRange: string;
+  location?: string;
+  description?: string;
+}) {
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!anchorEl) return;
+    const place = () => {
+      const card = cardRef.current;
+      if (!card) return;
+      const a = anchorEl.getBoundingClientRect();
+      const cw = card.offsetWidth;
+      const ch = card.offsetHeight;
+      const gap = 8;
+      const margin = 8;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      let left = a.right + gap;
+      if (left + cw + margin > vw) left = a.left - gap - cw;
+      left = Math.max(margin, Math.min(left, vw - cw - margin));
+      let top = a.top + ch + margin <= vh ? a.top : vh - ch - margin;
+      top = Math.max(margin, top);
+      setPos((prev) =>
+        prev && prev.left === left && prev.top === top ? prev : { left, top },
+      );
+    };
+    place();
+    const ro = new ResizeObserver(place);
+    if (cardRef.current) ro.observe(cardRef.current);
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [anchorEl, title, timeRange, location, description]);
+
+  if (typeof document === "undefined") return null;
+
+  const measured = pos != null;
+  let left = pos?.left ?? 0;
+  let top = pos?.top ?? 0;
+  if (!measured) {
+    const a = anchorEl?.getBoundingClientRect();
+    if (a) {
+      const CARD_W = 288;
+      const gap = 8;
+      const margin = 8;
+      left =
+        a.right + gap + CARD_W + margin > window.innerWidth
+          ? a.left - gap - CARD_W
+          : a.right + gap;
+      left = Math.max(margin, left);
+      top = Math.max(margin, a.top);
+    }
+  }
+
+  return createPortal(
+    <div
+      ref={cardRef}
+      className="fixed z-50 w-72 max-h-64 overflow-y-auto rounded-md shadow-lg p-2.5 text-xs"
+      style={{
+        left,
+        top,
+        visibility: measured ? "visible" : "hidden",
+        backgroundColor: "var(--color-card)",
+        color: "var(--color-foreground)",
+        border: "1px solid var(--color-border)",
+      }}
+    >
+      <div className="font-semibold text-foreground">{title}</div>
+      <div className="text-muted-foreground mt-0.5">{timeRange}</div>
+      {location && (
+        <div className="mt-2">
+          <div className="uppercase tracking-wide text-[10px] text-muted-foreground mb-0.5">
+            Location
+          </div>
+          <div className="text-foreground whitespace-pre-wrap break-words">{location}</div>
+        </div>
+      )}
+      {description && (
+        <div className="mt-2">
+          <div className="uppercase tracking-wide text-[10px] text-muted-foreground mb-0.5">
+            Description
+          </div>
+          <div className="text-foreground whitespace-pre-wrap break-words">{description}</div>
+        </div>
+      )}
+    </div>,
+    document.body,
+  );
+}
+
+function WeekGridEvent({ e }: { e: EventBlock }) {
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [anchorEl, setAnchorEl] = useState<HTMLDivElement | null>(null);
+  const bufferBefore = e.bufferBefore ?? 0;
+  const bufferAfter = e.bufferAfter ?? 0;
+  const totalHours = bufferBefore + e.duration + bufferAfter;
+  const border = e.borderClassName ? `border-2 ${e.borderClassName}` : "";
+  const bufferBg = e.bufferClassName ?? "";
+  const bodyHeight = e.duration * HOUR_PX;
+  const timeRange = `${formatHourMinute(e.startHour)} – ${formatHourMinute(e.startHour + e.duration)}`;
+  const hasDetails = Boolean(e.location || e.description);
+
+  return (
+    <div
+      className={`absolute left-0 right-0 ${bufferBefore === 0 ? "rounded-t-md" : ""} ${
+        bufferAfter === 0 ? "rounded-b-md" : ""
+      } ${border} ${bufferBg} overflow-hidden ${e.onClick ? "cursor-pointer" : hasDetails ? "cursor-help" : ""}`}
+      style={{
+        top: (e.startHour - bufferBefore - HOURS[0]) * HOUR_PX,
+        height: totalHours * HOUR_PX,
+      }}
+      onMouseDown={e.onClick ? (ev) => ev.stopPropagation() : undefined}
+      onClick={e.onClick}
+    >
+      <div
+        ref={setAnchorEl}
+        className={`absolute left-0 right-0 ${bufferBefore === 0 ? "rounded-t-md" : ""} ${
+          bufferAfter === 0 ? "rounded-b-md" : ""
+        } px-1.5 py-1 text-xs font-semibold leading-tight overflow-hidden transition-shadow shadow-[inset_3px_0_0_0_rgba(0,0,0,0.18),0_1px_2px_-1px_rgba(0,0,0,0.15)] ${e.className} ${
+          e.bgColor ? "text-white" : ""
+        } ${
+          e.onClick
+            ? "hover:ring-2 hover:ring-inset hover:ring-white/60 hover:shadow-[inset_3px_0_0_0_rgba(0,0,0,0.18),0_2px_5px_-1px_rgba(0,0,0,0.25)]"
+            : ""
+        }`}
+        style={{
+          top: bufferBefore * HOUR_PX,
+          height: bodyHeight,
+          ...(e.bgColor ? { backgroundColor: e.bgColor } : {}),
+        }}
+        onMouseEnter={hasDetails ? () => setDetailOpen(true) : undefined}
+        onMouseLeave={hasDetails ? () => setDetailOpen(false) : undefined}
+      >
+        {e.label && <span className="truncate block">{e.label}</span>}
+        {bodyHeight >= 34 && (
+          <span className="block truncate text-[10px] font-normal leading-tight opacity-75">
+            {timeRange}
+          </span>
+        )}
+        {bodyHeight >= 50 && e.location && (
+          <span className="block truncate text-[10px] font-normal leading-tight opacity-90">
+            {e.location}
+          </span>
+        )}
+      </div>
+      {detailOpen && hasDetails && (
+        <CalendarEventDetailPopover
+          anchorEl={anchorEl}
+          title={e.label}
+          timeRange={timeRange}
+          location={e.location}
+          description={e.description}
+        />
+      )}
+    </div>
+  );
+}
 
 function WeekGrid({
   days,
@@ -4460,43 +4966,9 @@ function WeekGrid({
                 </div>
               );
             })()}
-            {(eventsByDay[idx] ?? []).map((e, i) => {
-              const bufferBefore = e.bufferBefore ?? 0;
-              const bufferAfter = e.bufferAfter ?? 0;
-              const totalHours = bufferBefore + e.duration + bufferAfter;
-              // Outer ring is opt-in: only events that supply a borderClassName
-              // get a 2px outline (e.g. the drag selection). Plain fills like
-              // Available / Busy render without an outline.
-              const border = e.borderClassName ? `border-2 ${e.borderClassName}` : "";
-              const bufferBg = e.bufferClassName ?? "";
-              return (
-                <div
-                  key={i}
-                  className={`absolute left-0 right-0 ${border} ${bufferBg} overflow-hidden ${
-                    e.onClick ? "cursor-pointer" : ""
-                  }`}
-                  style={{
-                    top: (e.startHour - bufferBefore - HOURS[0]) * HOUR_PX,
-                    height: totalHours * HOUR_PX,
-                  }}
-                  onMouseDown={e.onClick ? (ev) => ev.stopPropagation() : undefined}
-                  onClick={e.onClick}
-                >
-                  <div
-                    className={`absolute left-0 right-0 px-1.5 py-1 text-[11px] font-medium overflow-hidden ${e.className} ${
-                      e.bgColor ? "text-white" : ""
-                    } ${e.onClick ? "hover:ring-2 hover:ring-inset hover:ring-white/60" : ""}`}
-                    style={{
-                      top: bufferBefore * HOUR_PX,
-                      height: e.duration * HOUR_PX,
-                      ...(e.bgColor ? { backgroundColor: e.bgColor } : {}),
-                    }}
-                  >
-                    {e.label && <span className="truncate block">{e.label}</span>}
-                  </div>
-                </div>
-              );
-            })}
+            {(eventsByDay[idx] ?? []).map((e, i) => (
+              <WeekGridEvent key={i} e={e} />
+            ))}
             {overlayLayer?.(idx)}
           </div>
         </div>

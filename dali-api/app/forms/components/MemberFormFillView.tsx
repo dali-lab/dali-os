@@ -144,7 +144,7 @@ export function MemberFormFillView({
 export function MemberFormShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-section-bg p-4 sm:p-8 pt-10 sm:pt-16">
-      <div className="mx-auto max-w-2xl bg-card border border-border rounded-xl p-6 sm:p-8">
+      <div className="mx-auto max-w-2xl bg-card border border-border shadow-brand-1 rounded-xl p-6 sm:p-8">
         <div className="flex items-center gap-2 mb-6">
           <div className="w-7 h-7 bg-accent-coral rounded-md flex items-center justify-center">
             <span className="text-white font-bold text-base leading-none font-heading">

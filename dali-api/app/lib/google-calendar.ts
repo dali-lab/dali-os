@@ -11,6 +11,8 @@ interface BusyEvent {
   title?: string;
   calendarId?: string; // the Google sub-calendar this event came from
   color?: string; // that calendar's backgroundColor (hex), for per-calendar tint
+  description?: string;
+  location?: string;
 }
 
 interface StoredTokens {
@@ -132,11 +134,29 @@ async function extractGoogleErrorDetail(res: Response): Promise<string> {
 interface GoogleEvent {
   id?: string;
   summary?: string;
+  description?: string;
+  location?: string;
   status?: string; // "confirmed" | "tentative" | "cancelled"
   transparency?: string; // "opaque" (busy) | "transparent" (free)
   start?: { dateTime?: string; date?: string };
   end?: { dateTime?: string; date?: string };
   attendees?: { self?: boolean; responseStatus?: string }[];
+}
+
+/** Google descriptions are often HTML; flatten to plain text for display. */
+function plainTextFromGoogleHtml(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 // One sub-calendar's confirmed, time-bounded, not-declined, busy events in the
@@ -156,7 +176,7 @@ async function fetchEventsForCalendar(
     singleEvents: "true", // expand recurring events into instances
     orderBy: "startTime",
     maxResults: "250",
-    fields: "items(id,summary,status,transparency,start,end,attendees(self,responseStatus))",
+    fields: "items(id,summary,description,location,status,transparency,start,end,attendees(self,responseStatus))",
   });
   const res = await fetch(
     `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?${params}`,
@@ -184,6 +204,8 @@ async function fetchEventsForCalendar(
       title: ev.summary?.trim() || "Busy",
       calendarId,
       color,
+      description: ev.description ? plainTextFromGoogleHtml(ev.description) : undefined,
+      location: ev.location?.trim() || undefined,
     });
   }
   return out;

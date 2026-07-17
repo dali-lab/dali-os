@@ -17,6 +17,7 @@ import { promoteToMember } from "~/members/lib/membership.server";
 import { fullName, primaryEmail } from "~/lib/display";
 import { Avatar } from "~/components/ui/Avatar";
 import { RolePills } from "~/components/ui/RolePills";
+import { buttonClasses } from "~/components/ui/Button";
 import { LAB_MEMBER_WHERE, MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { ViewToggle, useViewPreference } from "~/components/ViewToggle";
@@ -275,7 +276,7 @@ export default function MembersList() {
           <button
             type="button"
             onClick={() => setCreating(true)}
-            className="px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
+            className={buttonClasses("primary", "sm", "rounded-md")}
           >
             + New member
           </button>

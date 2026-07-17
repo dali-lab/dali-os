@@ -23,6 +23,12 @@ type Props = {
   options: TaskBoardOptions;
   /** Admin/Core can drag + create. Others get a read-only board. */
   canManage: boolean;
+  // The acting user — stamped onto optimistically-created cards as
+  // createdBy so the "Created by" line in the modal is correct before the
+  // next revalidation lands (the server independently sets this from the
+  // session, so it's display-only here).
+  currentUserId: string;
+  currentUserName: string;
 };
 
 const PRIORITY_TONE: Record<Priority, string> = {
@@ -36,7 +42,14 @@ const PRIORITY_TONE: Record<Priority, string> = {
 // onward from there. One add affordance for the whole board, not per column.
 const CREATE_STATUS: TaskStatus = TASK_STATUSES[0];
 
-export function TaskBoard({ projectId, initialTasks, options, canManage }: Props) {
+export function TaskBoard({
+  projectId,
+  initialTasks,
+  options,
+  canManage,
+  currentUserId,
+  currentUserName,
+}: Props) {
   // Optimistic board state + rollback live in the shared hook. This board solely
   // owns its task state; the parent project route revalidates on unrelated edits
   // (sprint changes, project rename, fetcher submits), which would otherwise
@@ -80,6 +93,7 @@ export function TaskBoard({ projectId, initialTasks, options, canManage }: Props
         if ("assignees" in patch)
           body.assigneeIds = (patch.assignees ?? []).map((a) => a.id);
         if ("title" in patch) body.title = patch.title;
+        if ("description" in patch) body.description = patch.description;
         if ("priority" in patch) body.priority = patch.priority;
         const res = await fetch(`/api/tasks/${taskId}`, {
           method: "PATCH",
@@ -127,6 +141,7 @@ export function TaskBoard({ projectId, initialTasks, options, canManage }: Props
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title: values.title,
+        description: values.description,
         status: CREATE_STATUS,
         dueAt: values.dueAt,
         ...(values.github ? { github: values.github } : {}),
@@ -153,6 +168,7 @@ export function TaskBoard({ projectId, initialTasks, options, canManage }: Props
       {
         id,
         title: values.title,
+        description: values.description,
         status: CREATE_STATUS,
         priority: values.priority,
         position: nextPositionInColumn(board, CREATE_STATUS),
@@ -165,6 +181,8 @@ export function TaskBoard({ projectId, initialTasks, options, canManage }: Props
         // next loader refresh. Null here means no badge in the meantime.
         githubIssueUrl: null,
         githubIssueNumber: null,
+        createdBy: { id: currentUserId, name: currentUserName },
+        createdAt: new Date().toISOString(),
       },
     ]);
     setIsCreating(false);
@@ -265,7 +283,7 @@ function TaskCard({
 
   return (
     <div
-      className={`border border-border rounded-md bg-background text-sm flex ${
+      className={`border border-border rounded-md bg-background text-sm flex focus-within:ring-2 focus-within:ring-accent-coral/30 ${
         isDragging ? "opacity-60 shadow-lg" : "hover:bg-muted/20"
       }`}
     >
@@ -281,7 +299,7 @@ function TaskCard({
       <button
         type="button"
         onClick={onOpen}
-        className="flex-1 min-w-0 text-left p-2.5 pl-1.5 focus:outline-none focus:ring-2 focus:ring-accent-coral/30 rounded-md"
+        className="flex-1 min-w-0 text-left p-2.5 pl-1.5 focus:outline-none"
       >
         <div className="text-foreground">{card.title}</div>
         <div className="mt-1.5 flex items-center justify-between gap-2">

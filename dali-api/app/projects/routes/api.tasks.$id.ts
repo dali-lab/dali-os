@@ -20,6 +20,8 @@ type Body = {
   dueAt?: string | null;
   // Empty string / null clears the title — rejected (title is required).
   title?: string;
+  // Null clears the description.
+  description?: string | null;
   priority?: Priority;
   // Null clears the domain.
   domainId?: string | null;
@@ -38,6 +40,8 @@ function isBody(x: unknown): x is Body {
     return false;
   }
   if (o.title !== undefined && typeof o.title !== "string") return false;
+  if (o.description !== undefined && o.description !== null && typeof o.description !== "string")
+    return false;
   if (o.priority !== undefined && !isPriority(o.priority)) return false;
   if (
     o.domainId !== undefined &&
@@ -97,6 +101,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const data: {
     dueAt?: Date | null;
     title?: string;
+    description?: string | null;
     priority?: Priority;
     domainId?: string | null;
   } = {};
@@ -113,6 +118,10 @@ export async function action({ request, params }: Route.ActionArgs) {
       return withCors(request, Response.json({ error: "Title is required" }, { status: 400 }));
     }
     data.title = trimmed;
+  }
+  if ("description" in body) {
+    const trimmed = body.description?.trim() ?? "";
+    data.description = trimmed === "" ? null : trimmed;
   }
   if ("priority" in body && body.priority) {
     data.priority = body.priority;

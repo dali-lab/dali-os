@@ -126,6 +126,12 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
         // A profile edit inside a workspace iframe doesn't re-run the shell
         // loader, so re-fetch it to refresh the footer avatar.
         revalidateRef.current()
+      } else if (data.type === 'dali:documentTitleChanged') {
+        // A doc title edit in one tab (e.g. a split-screen document) doesn't
+        // touch a sibling tab's own loader (e.g. the project hub's Documents
+        // list). Relay to every open iframe; each one ignores it unless its
+        // own listener cares about this pageId.
+        workspaceRef.current?.broadcast(data)
       } else if (data.type === TASKS_CHANGED_EVENT) {
         // Confirming/acting on a task inside an iframe (e.g. Home) doesn't
         // touch the shell's task poller. Relay it to a same-window event so

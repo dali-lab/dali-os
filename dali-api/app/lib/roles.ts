@@ -1,5 +1,6 @@
 import { prisma } from "~/lib/db";
 import { cycleSortKeyRange } from "~/lib/core-cycle";
+import type { AssignmentType } from "~/generated/prisma/client";
 
 function getAdminUserIdsFromEnv(): string[] {
   return (process.env.ADMIN_USER_IDS ?? "").split(",").filter(Boolean);
@@ -84,6 +85,199 @@ export async function getUserRoles(userId: string): Promise<UserRoles> {
     canViewForms: isAdminVal || isCoreVal || isInstructorVal,
     canViewStaffing: isAdminVal || isCoreVal,
   };
+}
+
+// ─── Concrete role instances (Timesheet / calendar role attribution) ────────
+
+export interface RoleInstance {
+  assignmentType: AssignmentType;
+  /** The concrete assignment row's id — stored as TimeEntry/ManualBlock.roleRefId. */
+  roleRefId: string;
+  label: string;
+  /** Only set for assignmentType === "Project" — lets callers keep project-grouped display/export logic. */
+  projectId?: string;
+}
+
+/**
+ * Resolve the concrete paid roles a user currently holds — one entry per
+ * ProjectAssignment/CoreAssignment/InstructorAssignment/DomainLeadAssignment
+ * row plus their AdminMembership, term-scoped like `currentTermMemberWhere()`.
+ * Unlike `getUserRoles` (which only returns boolean flags), this is the
+ * source for "which role is this timesheet entry for" pickers — no separate
+ * synced table, resolved at query time against the live assignment tables
+ * (mirrors the JobCodeLookup convention).
+ */
+export async function getUserRoleInstances(
+  userId: string,
+  termId?: string,
+): Promise<RoleInstance[]> {
+  const term = termId ? { id: termId } : await currentTerm();
+
+  const [projectAssignments, coreAssignments, instructorAssignments, domainLeadAssignments, admin] =
+    await Promise.all([
+      term
+        ? prisma.projectAssignment.findMany({
+            where: { userId, termId: term.id },
+            select: { id: true, projectId: true, level: true, project: { select: { name: true } } },
+          })
+        : Promise.resolve([]),
+      term
+        ? prisma.coreAssignment.findMany({
+            where: { userId, termId: term.id },
+            select: { id: true, leadTitle: true },
+          })
+        : Promise.resolve([]),
+      prisma.instructorAssignment.findMany({
+        where: { userId, ...(term ? { termId: term.id } : {}) },
+        select: { id: true, offering: { select: { title: true } } },
+      }),
+      term
+        ? prisma.domainLeadAssignment.findMany({
+            where: { userId, termId: term.id },
+            select: { id: true, domain: { select: { displayName: true } } },
+          })
+        : Promise.resolve([]),
+      prisma.adminMembership.findUnique({ where: { userId }, select: { id: true } }),
+    ]);
+
+  const roles: RoleInstance[] = [];
+
+  for (const pa of projectAssignments) {
+    roles.push({
+      assignmentType: "Project",
+      roleRefId: pa.id,
+      label: `${pa.project.name} (${pa.level})`,
+      projectId: pa.projectId,
+    });
+  }
+  for (const ca of coreAssignments) {
+    roles.push({
+      assignmentType: "Core",
+      roleRefId: ca.id,
+      label: ca.leadTitle ? `Core — ${ca.leadTitle}` : "Core",
+    });
+  }
+  for (const ia of instructorAssignments) {
+    roles.push({
+      assignmentType: "Instructor",
+      roleRefId: ia.id,
+      label: `Instructor — ${ia.offering.title}`,
+    });
+  }
+  for (const dla of domainLeadAssignments) {
+    roles.push({
+      assignmentType: "DomainLead",
+      roleRefId: dla.id,
+      label: `Domain Lead — ${dla.domain.displayName}`,
+    });
+  }
+  if (admin) {
+    roles.push({ assignmentType: "Admin", roleRefId: admin.id, label: "Admin" });
+  }
+
+  return roles;
+}
+
+/**
+ * Validate that `roleRefId` is a real assignment row of the given type
+ * belonging to `userId`, before writing it onto a TimeEntry/ManualBlock.
+ * Returns null if not found/not owned. For assignmentType === "Project",
+ * also resolves the underlying projectId so callers can keep it denormalized
+ * on the write (see TimeEntry.projectId / ManualBlock).
+ */
+export async function resolveRoleRef(
+  userId: string,
+  assignmentType: AssignmentType,
+  roleRefId: string,
+): Promise<{ projectId: string | null } | null> {
+  switch (assignmentType) {
+    case "Project": {
+      const row = await prisma.projectAssignment.findFirst({
+        where: { id: roleRefId, userId },
+        select: { projectId: true },
+      });
+      return row ? { projectId: row.projectId } : null;
+    }
+    case "Core": {
+      const row = await prisma.coreAssignment.findFirst({
+        where: { id: roleRefId, userId },
+        select: { id: true },
+      });
+      return row ? { projectId: null } : null;
+    }
+    case "Instructor": {
+      const row = await prisma.instructorAssignment.findFirst({
+        where: { id: roleRefId, userId },
+        select: { id: true },
+      });
+      return row ? { projectId: null } : null;
+    }
+    case "DomainLead": {
+      const row = await prisma.domainLeadAssignment.findFirst({
+        where: { id: roleRefId, userId },
+        select: { id: true },
+      });
+      return row ? { projectId: null } : null;
+    }
+    case "Admin": {
+      const row = await prisma.adminMembership.findFirst({
+        where: { id: roleRefId, userId },
+        select: { id: true },
+      });
+      return row ? { projectId: null } : null;
+    }
+  }
+}
+
+/**
+ * Display label for a specific assignment row, regardless of term — used for
+ * historical data (e.g. exporting past TimeEntry rows) where the referenced
+ * role may no longer be in `getUserRoleInstances`' current-term list. Callers
+ * are expected to have already scoped the row to the owning user (e.g. via a
+ * `where: { userId }` on the TimeEntry query); this does not re-check
+ * ownership. Returns null if the row no longer exists.
+ */
+export async function getRoleLabel(
+  assignmentType: AssignmentType,
+  roleRefId: string,
+): Promise<string | null> {
+  switch (assignmentType) {
+    case "Project": {
+      const row = await prisma.projectAssignment.findUnique({
+        where: { id: roleRefId },
+        select: { level: true, project: { select: { name: true } } },
+      });
+      return row ? `${row.project.name} (${row.level})` : null;
+    }
+    case "Core": {
+      const row = await prisma.coreAssignment.findUnique({
+        where: { id: roleRefId },
+        select: { leadTitle: true },
+      });
+      return row ? (row.leadTitle ? `Core — ${row.leadTitle}` : "Core") : null;
+    }
+    case "Instructor": {
+      const row = await prisma.instructorAssignment.findUnique({
+        where: { id: roleRefId },
+        select: { offering: { select: { title: true } } },
+      });
+      return row ? `Instructor — ${row.offering.title}` : null;
+    }
+    case "DomainLead": {
+      const row = await prisma.domainLeadAssignment.findUnique({
+        where: { id: roleRefId },
+        select: { domain: { select: { displayName: true } } },
+      });
+      return row ? `Domain Lead — ${row.domain.displayName}` : null;
+    }
+    case "Admin": {
+      const row = await prisma.adminMembership.findUnique({
+        where: { id: roleRefId },
+        select: { id: true },
+      });
+      return row ? "Admin" : null;
+    }
+  }
 }
 
 // ─── Individual checks (for route-level guards) ──────────────────────────────

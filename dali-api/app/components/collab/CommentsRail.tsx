@@ -14,6 +14,19 @@ export type Comment = {
 
 type Thread = { root: Comment; replies: Comment[] };
 
+// Mutation callbacks for a single thread, handed to the host (via
+// registerRefresh) so an inline popover anchored at the highlighted text can
+// resolve/delete/reply without duplicating this rail's fetch + mutate logic.
+export type ThreadActions = {
+  resolve: (id: string, resolved: boolean) => Promise<void>;
+  remove: (id: string) => Promise<void>;
+  reply: (parentId: string, body: string) => Promise<boolean>;
+};
+
+export function formatCommentDate(iso: string) {
+  return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
 // Comment threads for a document or file. Doc-level (anchor === null) and
 // inline (anchor !== null) comments share this rail; the host passes
 // `onFocusAnchor` for inline ones so clicking a thread scrolls the editor to
@@ -38,8 +51,10 @@ export function CommentsRail({
   onClearPendingAnchor?: () => void;
   onFocusAnchor?: (anchor: { from: string; to: string }) => void;
   // Lets the host trigger a refetch (e.g. after creating an inline comment
-  // mark) and receive the live thread list for decoration.
-  registerRefresh?: (refresh: () => void, threads: () => Comment[]) => void;
+  // mark), receive the live thread list for decoration, and reuse this
+  // rail's mutation logic (e.g. for an inline popover anchored at the
+  // highlighted text).
+  registerRefresh?: (refresh: () => void, threads: () => Comment[], actions: ThreadActions) => void;
 }) {
   const [comments, setComments] = useState<Comment[]>([]);
   const [draft, setDraft] = useState("");
@@ -68,6 +83,11 @@ export function CommentsRail({
     registerRefresh?.(
       () => void refresh(),
       () => comments,
+      {
+        resolve: (id, resolved) => mutate(id, "POST", resolved ? "resolve" : "reopen"),
+        remove: (id) => mutate(id, "DELETE"),
+        reply: (parentId, body) => post(body, parentId, null),
+      },
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [comments]);
@@ -125,10 +145,6 @@ export function CommentsRail({
   }));
   const visible = threads.filter((t) => showResolved || !t.root.resolved);
   const resolvedCount = threads.filter((t) => t.root.resolved).length;
-
-  function fmt(iso: string) {
-    return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-  }
 
   return (
     <div className="flex flex-col gap-3 text-sm">
@@ -239,7 +255,7 @@ export function CommentsRail({
               >
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-medium text-foreground">{t.root.author}</span>
-                  <span className="text-[10px] text-muted-foreground">{fmt(t.root.createdAt)}</span>
+                  <span className="text-[10px] text-muted-foreground">{formatCommentDate(t.root.createdAt)}</span>
                 </div>
                 {t.root.anchor && (
                   <span className="text-[10px] text-accent-coral">inline</span>
@@ -251,7 +267,7 @@ export function CommentsRail({
                 <div key={r.id} className="ml-3 mt-1.5 pl-2 border-l border-border">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-medium text-foreground">{r.author}</span>
-                    <span className="text-[10px] text-muted-foreground">{fmt(r.createdAt)}</span>
+                    <span className="text-[10px] text-muted-foreground">{formatCommentDate(r.createdAt)}</span>
                   </div>
                   <p className="text-sm text-foreground whitespace-pre-wrap mt-0.5">{r.body}</p>
                 </div>

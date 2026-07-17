@@ -37,6 +37,37 @@ export async function createProjectPage(input: {
   });
 }
 
+// Creates a top-level Page in the Lab workspace (workspaceId null — see
+// Page.workspaceType comment in schema.prisma). Used for the meeting-note
+// page of a project-less meetingType'd ScheduledMeeting (e.g. an all-lab
+// SelfCheckIn event with no single owning project) — same shape as
+// createProjectPage, just scoped to the Lab workspace instead of a project.
+export async function createLabMeetingPage(input: {
+  title: string;
+  createdById: string;
+  meetingNoteId?: string;
+}): Promise<{ id: string }> {
+  const last = await prisma.page.findFirst({
+    where: { workspaceType: "Lab", workspaceId: null, parentPageId: null },
+    orderBy: { position: "desc" },
+    select: { position: true },
+  });
+  const position = last ? last.position + 1 : 0;
+
+  return prisma.page.create({
+    data: {
+      workspaceType: "Lab",
+      workspaceId: null,
+      title: input.title,
+      kind: "FreeForm",
+      position,
+      createdById: input.createdById,
+      meetingNoteId: input.meetingNoteId ?? null,
+    },
+    select: { id: true },
+  });
+}
+
 export type MeetingNotesFolderKind = "Team" | "Partner";
 
 const MEETING_NOTES_FOLDER_TITLE: Record<MeetingNotesFolderKind, string> = {

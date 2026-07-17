@@ -16,7 +16,13 @@ const Base = {
   organizerCalendarLinkId: z.string().min(1).optional(),
   meetingType: z.enum(["Team", "Partner", "Other"]).optional(),
   meetingTypeLabel: z.string().trim().min(1).max(80).optional(),
+  // Project-less meetingType meetings (e.g. an all-lab Group event) get a
+  // Lab-workspace note page instead of a project one — see
+  // createScheduledMeeting in ~/lib/scheduled-meeting.
   projectId: z.string().min(1).optional(),
+  // SelfCheckIn only makes sense alongside meetingType (that's what creates
+  // MeetingAttendance rows at all) — enforced by the refine below.
+  attendanceMode: z.enum(["Roster", "SelfCheckIn"]).optional(),
 } as const;
 
 const CreateSchema = z
@@ -29,13 +35,13 @@ const CreateSchema = z
       ...Base,
     }),
   ])
-  .refine((v) => !v.meetingType || !!v.projectId, {
-    message: "projectId is required when meetingType is set",
-    path: ["projectId"],
-  })
   .refine((v) => v.meetingType !== "Other" || !!v.meetingTypeLabel, {
     message: "meetingTypeLabel is required when meetingType is Other",
     path: ["meetingTypeLabel"],
+  })
+  .refine((v) => v.attendanceMode !== "SelfCheckIn" || !!v.meetingType, {
+    message: "meetingType is required when attendanceMode is SelfCheckIn",
+    path: ["attendanceMode"],
   });
 
 export async function action({ request }: Route.ActionArgs) {
@@ -75,6 +81,7 @@ export async function action({ request }: Route.ActionArgs) {
     meetingType: body.meetingType,
     meetingTypeLabel: body.meetingTypeLabel,
     projectId: body.projectId,
+    attendanceMode: body.attendanceMode,
   });
 
   if (!result.ok) {
@@ -90,6 +97,7 @@ export async function action({ request }: Route.ActionArgs) {
         notifiedCount: result.notifiedCount,
         gcalError: result.gcalError,
         notePageId: result.notePageId,
+        checkInToken: result.checkInToken,
       },
       { status: 201 },
     ),

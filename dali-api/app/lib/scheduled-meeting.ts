@@ -3,12 +3,13 @@
 // tool. Handles scope resolution, optional Google Calendar push, and
 // participant notification fan-out.
 
+import { randomBytes } from "node:crypto";
 import { prisma } from "~/lib/db";
 import { resolveGroupMembers } from "~/lib/groups";
 import { createGoogleCalendarEvent, type GoogleAttendee } from "~/lib/google-calendar";
 import { primaryEmail, formatDateShort } from "~/lib/display";
-import { createProjectPage, ensureMeetingNotesFolder } from "~/lib/pages";
-import type { ScheduledMeeting, MeetingType } from "~/generated/prisma/client";
+import { createProjectPage, createLabMeetingPage, ensureMeetingNotesFolder } from "~/lib/pages";
+import type { ScheduledMeeting, MeetingType, AttendanceMode } from "~/generated/prisma/client";
 
 export type ScheduledMeetingScope =
   | { type: "None" }
@@ -33,6 +34,11 @@ export type CreateScheduledMeetingInput = {
   meetingType?: MeetingType | null;
   meetingTypeLabel?: string | null;
   projectId?: string | null;
+  // Roster (default): organizer/Core check attendees off by hand. SelfCheckIn:
+  // a checkInToken is generated and attendees mark themselves present via the
+  // check-in route — meant for events too large to check off manually (e.g.
+  // an all-lab Group meeting). Only meaningful alongside meetingType.
+  attendanceMode?: AttendanceMode;
 };
 
 export type CreateScheduledMeetingResult =
@@ -42,6 +48,7 @@ export type CreateScheduledMeetingResult =
       notifiedCount: number;
       gcalError: string | null;
       notePageId: string | null;
+      checkInToken: string | null;
     }
   | { ok: false; error: string };
 
@@ -81,6 +88,9 @@ export async function createScheduledMeeting(
     }
   }
 
+  const attendanceMode = input.attendanceMode ?? "Roster";
+  const checkInToken = attendanceMode === "SelfCheckIn" ? randomBytes(24).toString("base64url") : null;
+
   const meeting = await prisma.scheduledMeeting.create({
     data: {
       organizerId: input.organizerId,
@@ -97,6 +107,8 @@ export async function createScheduledMeeting(
       meetingType: input.meetingType ?? null,
       meetingTypeLabel: input.meetingType === "Other" ? (input.meetingTypeLabel ?? null) : null,
       projectId: input.meetingType ? (input.projectId ?? null) : null,
+      attendanceMode,
+      checkInToken,
     },
   });
 
@@ -144,32 +156,51 @@ export async function createScheduledMeeting(
     }
   }
 
+  // MeetingAttendance fan-out only needs a meetingType — a project-less
+  // all-lab event (e.g. attendanceMode: SelfCheckIn on a scopeType: Group
+  // meeting) still gets attendance rows for every participant + organizer.
+  // Note-page creation branches on whether there's a project: project-scoped
+  // meetings get a Page under the project's shared documents (optionally
+  // nested in the Team/Partner meeting-notes folder); project-less meetings
+  // get a Lab-workspace page instead, so there's still somewhere to host the
+  // QR code / AttendanceChecklist.
   let notePageId: string | null = null;
-  if (input.meetingType && input.projectId) {
+  if (input.meetingType) {
     const label =
       input.meetingType === "Other"
         ? (input.meetingTypeLabel ?? "").trim() || "Other"
         : MEETING_TYPE_LABELS[input.meetingType];
     const noteDate = startDate ?? new Date();
-    // Team/Partner notes nest under their default, undeletable folder;
-    // "Other" notes stay top-level (no default folder for a custom label).
-    let parentPageId: string | null = null;
-    if (input.meetingType === "Team" || input.meetingType === "Partner") {
-      const folder = await ensureMeetingNotesFolder(
-        input.projectId,
-        input.meetingType,
-        input.organizerId,
-      );
-      parentPageId = folder.id;
+    const title = `${label} meeting note (${formatDateShort(noteDate)})`;
+
+    if (input.projectId) {
+      // Team/Partner notes nest under their default, undeletable folder;
+      // "Other" notes stay top-level (no default folder for a custom label).
+      let parentPageId: string | null = null;
+      if (input.meetingType === "Team" || input.meetingType === "Partner") {
+        const folder = await ensureMeetingNotesFolder(
+          input.projectId,
+          input.meetingType,
+          input.organizerId,
+        );
+        parentPageId = folder.id;
+      }
+      const page = await createProjectPage({
+        projectId: input.projectId,
+        title,
+        createdById: input.organizerId,
+        meetingNoteId: meeting.id,
+        parentPageId,
+      });
+      notePageId = page.id;
+    } else {
+      const page = await createLabMeetingPage({
+        title,
+        createdById: input.organizerId,
+        meetingNoteId: meeting.id,
+      });
+      notePageId = page.id;
     }
-    const page = await createProjectPage({
-      projectId: input.projectId,
-      title: `${label} meeting note (${formatDateShort(noteDate)})`,
-      createdById: input.organizerId,
-      meetingNoteId: meeting.id,
-      parentPageId,
-    });
-    notePageId = page.id;
 
     const attendeeIds = Array.from(new Set([...participantUserIds, input.organizerId]));
     await prisma.meetingAttendance.createMany({
@@ -206,7 +237,82 @@ export async function createScheduledMeeting(
     notifiedCount,
     gcalError,
     notePageId,
+    checkInToken,
   };
+}
+
+export type MarkMeetingAttendanceResult =
+  | { ok: true }
+  | { ok: false; error: string; status: number };
+
+/**
+ * Toggle whether a participant was present at a meeting, keeping TimeEntry in
+ * sync: present -> upsert a Meeting-sourced TimeEntry for that user; not
+ * present -> delete it. Shared by the organizer-facing attendance-toggle
+ * route (api.scheduled-meetings.$id.attendance.ts) and the self-check-in
+ * route (api.scheduled-meetings.$id.check-in.ts) so the upsert/delete logic
+ * isn't duplicated between "someone else marks you present" and "you mark
+ * yourself present." Callers are responsible for their own auth/permission
+ * gate before calling this — it does not re-check who `markedByUserId` is.
+ */
+export async function markMeetingAttendance(
+  meetingId: string,
+  userId: string,
+  present: boolean,
+  markedByUserId: string,
+): Promise<MarkMeetingAttendanceResult> {
+  const meeting = await prisma.scheduledMeeting.findUnique({
+    where: { id: meetingId },
+    select: { id: true, projectId: true, durationMinutes: true, selectedAt: true, createdAt: true },
+  });
+  if (!meeting) return { ok: false, error: "Not found", status: 404 };
+
+  const attendance = await prisma.meetingAttendance.findUnique({
+    where: { scheduledMeetingId_userId: { scheduledMeetingId: meeting.id, userId } },
+  });
+  if (!attendance) {
+    return { ok: false, error: "User was not invited to this meeting", status: 400 };
+  }
+
+  await prisma.meetingAttendance.update({
+    where: { scheduledMeetingId_userId: { scheduledMeetingId: meeting.id, userId } },
+    data: { present, markedByUserId, markedAt: new Date() },
+  });
+
+  if (present) {
+    const startTime = meeting.selectedAt;
+    const endTime = startTime
+      ? new Date(startTime.getTime() + meeting.durationMinutes * 60_000)
+      : null;
+    await prisma.timeEntry.upsert({
+      where: {
+        scheduledMeetingId_userId: { scheduledMeetingId: meeting.id, userId },
+      },
+      create: {
+        userId,
+        source: "Meeting",
+        scheduledMeetingId: meeting.id,
+        projectId: meeting.projectId,
+        date: startTime ?? meeting.createdAt,
+        hours: meeting.durationMinutes / 60,
+        startTime,
+        endTime,
+      },
+      update: {
+        projectId: meeting.projectId,
+        date: startTime ?? meeting.createdAt,
+        hours: meeting.durationMinutes / 60,
+        startTime,
+        endTime,
+      },
+    });
+  } else {
+    await prisma.timeEntry.deleteMany({
+      where: { scheduledMeetingId: meeting.id, userId },
+    });
+  }
+
+  return { ok: true };
 }
 
 export type CancelScheduledMeetingResult =

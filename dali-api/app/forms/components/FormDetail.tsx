@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { FormBuilderTab } from "~/hiring/components/ChallengeBuilder";
 import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
-import { Button } from "~/components/ui/Button";
+import { Button, buttonClasses } from "~/components/ui/Button";
 import type { Question } from "~/types";
 import type { loader } from "~/forms/routes/forms.edit.$formId";
 
@@ -53,8 +53,7 @@ function formatDateShort(iso: string) {
 //                         (save-version) and clears the draft. Frozen versions
 //                         are read-only and are what publishing serves.
 export function FormDetail() {
-  const { form, terms, usages, submissionCount, groups } =
-    useLoaderData<typeof loader>();
+  const { form, terms, usages, groups } = useLoaderData<typeof loader>();
   // A dedicated fetcher for saves so the builder's buttons can reflect
   // request state ("Saving…"/"Saved ✓"). The submitted intent tells us which
   // button is in flight; fetcher.state + a brief post-success window drive the
@@ -215,16 +214,6 @@ export function FormDetail() {
             )}
           </div>
           <div className="flex items-center gap-2">
-            <Link
-              to={`/forms/responses/${form.id}`}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md border border-border text-foreground hover:bg-muted/50 transition-colors"
-            >
-              <Inbox className="w-4 h-4" />
-              Responses
-              <span className="text-xs text-muted-foreground">
-                {submissionCount}
-              </span>
-            </Link>
             {!isEditing && (
               <Button
                 variant="primary"
@@ -299,13 +288,22 @@ export function FormDetail() {
               {[...form.versions].reverse().map((version, i) => {
                 const isLatest = i === 0;
                 return (
-                  <button
+                  <div
                     key={version.id}
+                    role="button"
+                    tabIndex={0}
                     onClick={() => {
                       setSelectedVersionId(version.id);
                       setIsEditing(false);
                     }}
-                    className={`w-full text-left p-3 rounded-xl border transition-colors ${
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setSelectedVersionId(version.id);
+                        setIsEditing(false);
+                      }
+                    }}
+                    className={`w-full text-left p-3 rounded-xl border transition-colors cursor-pointer ${
                       selectedVersionId === version.id && !isEditing
                         ? "border-accent-teal bg-accent-teal/10 ring-1 ring-accent-teal"
                         : "border-border bg-card hover:bg-muted/50"
@@ -340,7 +338,24 @@ export function FormDetail() {
                         <span className="truncate">{version.createdByName}</span>
                       </div>
                     </div>
-                  </button>
+                    {/* Responses are stored per-version — link straight into
+                        the responses page pre-filtered to this version. */}
+                    <Link
+                      to={`/forms/responses/${form.id}?version=${version.versionNumber}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className={buttonClasses(
+                        "secondary",
+                        "sm",
+                        "mt-2 w-full gap-1.5",
+                      )}
+                    >
+                      <Inbox className="w-3.5 h-3.5" />
+                      Responses
+                      <span className="tabular-nums opacity-80">
+                        {version.submissionCount}
+                      </span>
+                    </Link>
+                  </div>
                 );
               })}
             </div>
@@ -743,7 +758,7 @@ function FormSettingsCard({
 
 const PUBLISHED_COPY: Record<AudienceValue, string> = {
   Members:
-    "The latest version is live — bound surfaces serve it, and logged-in members can fill it via the link.",
+    "The latest version is live - any logged-in member can fill it via the link.",
   SignedIn:
     "The latest version is live — anyone signed in to DALI OS can fill it via the link.",
   Groups:

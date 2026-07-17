@@ -25,7 +25,7 @@ const CreateSchema = z.object({
   targetType: z.enum(["doc", "file"]),
   targetId: z.string().min(1),
   body: z.string().trim().min(1).max(5000),
-  parentId: z.string().optional(),
+  parentId: z.string().nullable().optional(),
   anchor: AnchorSchema,
 });
 

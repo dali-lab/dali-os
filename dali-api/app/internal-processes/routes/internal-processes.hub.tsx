@@ -10,6 +10,10 @@ import { AreaPillNav } from "~/components/AreaPillNav";
 import { Modal, ModalHeader, ModalFooter } from "~/components/Modal";
 import { Pencil, X } from "lucide-react";
 import { cn } from "~/lib/cn";
+import {
+  LabSticker,
+  type LabStickerId,
+} from "~/internal-processes/LabProcessStickers";
 
 export const handle = { areaPills: true };
 
@@ -134,7 +138,7 @@ const WEEK_META: WeekMeta[] = [
       "PM / Core staffing kickoffs",
     ],
     links: [
-      { label: "Onboarding board", to: "/internal-processes/onboarding", coreOnly: true },
+      { label: "Onboarding board", to: "/hiring/onboarding", coreOnly: true },
     ],
   },
   {
@@ -342,11 +346,36 @@ const CORAL = "#FF8B81";
 const TEAL = "#00ADAB";
 const WHITE = "#FFFFFF";
 
+/** Decorative stickers — illustrated multi-color die-cuts (not flat icons). */
+type StickerPlacement = {
+  id: LabStickerId;
+  xPct: number;
+  yPct: number;
+  size: number;
+  rotate: number;
+};
+
+const STICKERS: StickerPlacement[] = [
+  // Rocket sits next to Week 10 (bottom of the road).
+  { id: "rocket", xPct: 28, yPct: 91, size: 110, rotate: -26 },
+  { id: "starburst", xPct: 11, yPct: 16, size: 78, rotate: -10 },
+  { id: "planet", xPct: 86, yPct: 12, size: 88, rotate: 12 },
+  { id: "heart", xPct: 78, yPct: 30, size: 64, rotate: 8 },
+  { id: "lightning", xPct: 12, yPct: 40, size: 72, rotate: -18 },
+  { id: "trophy", xPct: 88, yPct: 46, size: 80, rotate: 12 },
+  { id: "party", xPct: 9, yPct: 66, size: 86, rotate: -6 },
+  { id: "camera", xPct: 74, yPct: 70, size: 72, rotate: 16 },
+  { id: "flag", xPct: 20, yPct: 80, size: 68, rotate: -8 },
+  { id: "heart-2", xPct: 84, yPct: 84, size: 52, rotate: -14 },
+  { id: "lightning-2", xPct: 48, yPct: 7, size: 56, rotate: 28 },
+  { id: "starburst-2", xPct: 5, yPct: 54, size: 60, rotate: 36 },
+];
+
 export default function LabProcessesHub() {
   const { isCore: core, overrides } = useLoaderData<typeof loader>();
   const [searchParams] = useSearchParams();
   const [selectedWeek, setSelectedWeek] = useState<number | null>(() =>
-    clampWeek(Number(searchParams.get("week"))),
+    parseWeekParam(searchParams.get("week")),
   );
   const [contentTick, setContentTick] = useState(0);
   const [editingWeek, setEditingWeek] = useState(false);
@@ -397,11 +426,27 @@ export default function LabProcessesHub() {
           from { opacity: 0; transform: translateY(calc(-50% + 12px)) scale(0.98); }
           to { opacity: 1; transform: translateY(-50%) scale(1); }
         }
+        @keyframes lp-sticker-bob {
+          0%, 100% { transform: translate(-50%, -50%) rotate(var(--lp-rot)) translateY(0); }
+          50% { transform: translate(-50%, -50%) rotate(var(--lp-rot)) translateY(-6px); }
+        }
         .lp-week-btn {
           transform: translate(-50%, -50%);
         }
         .lp-content-card {
           animation: lp-content-in 0.35s ease both;
+        }
+        .lp-sticker {
+          animation: lp-sticker-bob 3.6s ease-in-out infinite;
+          filter: drop-shadow(0 4px 0 rgba(8, 35, 48, 0.12));
+        }
+        .lp-sticker:nth-child(odd) {
+          animation-duration: 4.2s;
+          animation-delay: -0.8s;
+        }
+        .lp-sticker:nth-child(3n) {
+          animation-duration: 3.2s;
+          animation-delay: -1.4s;
         }
         @media (prefers-reduced-motion: reduce) {
           .lp-content-card {
@@ -409,11 +454,15 @@ export default function LabProcessesHub() {
             opacity: 1 !important;
             transform: translateY(-50%) !important;
           }
+          .lp-sticker {
+            animation: none !important;
+            transform: translate(-50%, -50%) rotate(var(--lp-rot)) !important;
+          }
         }
       `}</style>
 
       <AreaPillNav
-        items={labProcessesPills({ isCore: core, active: "hub" })}
+        items={labProcessesPills({ active: "hub" })}
         className="relative z-40 !mx-0 !mb-0 shrink-0"
       />
 
@@ -447,9 +496,39 @@ export default function LabProcessesHub() {
               className="font-heading text-2xl font-bold leading-tight sm:text-4xl"
               style={{ color: NAVY }}
             >
-              Lab Processes
+              DALI Milestones
             </h1>
           </div>
+
+          {/* Decorative stickers — rocket near Week 10, others on the yellow field. */}
+          {STICKERS.map((s) => {
+            const week10 = WEEKS.find((w) => w.week === 10);
+            const left =
+              s.id === "rocket" && week10
+                ? Math.max(6, week10.xPct - 14)
+                : s.xPct;
+            const top =
+              s.id === "rocket" && week10
+                ? Math.min(94, week10.yPct + 2)
+                : s.yPct;
+            return (
+              <div
+                key={s.id}
+                className="lp-sticker pointer-events-none absolute z-[5]"
+                style={
+                  {
+                    left: `${left}%`,
+                    top: `${top}%`,
+                    "--lp-rot": `${s.rotate}deg`,
+                    transform: `translate(-50%, -50%) rotate(${s.rotate}deg)`,
+                  } as CSSProperties
+                }
+                aria-hidden
+              >
+                <LabSticker id={s.id} size={s.size} />
+              </div>
+            );
+          })}
 
           {WEEKS.map((w) => {
             const active = w.week === selectedWeek;
@@ -696,7 +775,10 @@ function WeekEditModal({
   );
 }
 
-function clampWeek(n: number) {
-  if (!Number.isFinite(n)) return 0;
+/** Only open a week when `?week=` is present and valid — otherwise start closed. */
+function parseWeekParam(raw: string | null): number | null {
+  if (raw == null || raw === "") return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return null;
   return Math.min(10, Math.max(0, Math.round(n)));
 }

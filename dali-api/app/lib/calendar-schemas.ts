@@ -10,6 +10,13 @@ const isoString = z.string().refine(
   "must be an ISO datetime",
 );
 
+// Mirrors the Prisma AssignmentType enum. Paired with roleRefId to identify
+// which concrete ProjectAssignment/CoreAssignment/InstructorAssignment/
+// DomainLeadAssignment/AdminMembership row a TimeEntry or work ManualBlock is
+// attributed to — untyped at the DB layer, dispatched in app code, same
+// pattern as ScheduledMeeting.scopeType/scopeId.
+const assignmentType = z.enum(["Project", "Core", "Instructor", "DomainLead", "Admin"]);
+
 // Each intent is a discriminated variant so the action handler can switch on it.
 // Cross-field checks (e.g. start < end) are enforced by the action handler, not the
 // schema — Zod 4 forbids refined objects inside a discriminatedUnion.
@@ -77,6 +84,12 @@ export const AddManualBlockSchema = z.object({
   endTime: isoString,
   allDay: z.boolean().optional().default(false),
   recurrenceRule: z.string().max(500).nullish(),
+  // "This is work" — mirrors the block into a Block-sourced TimeEntry for the
+  // chosen role. Rejected in the action handler when recurrenceRule is set
+  // (TimeEntry has no occurrence-expansion concept yet).
+  isWork: z.boolean().optional().default(false),
+  assignmentType: assignmentType.nullish(),
+  roleRefId: z.string().min(1).nullish(),
 });
 
 export const UpdateManualBlockSchema = z.object({
@@ -87,6 +100,9 @@ export const UpdateManualBlockSchema = z.object({
   endTime: isoString.optional(),
   allDay: z.boolean().optional(),
   recurrenceRule: z.string().max(500).nullish(),
+  isWork: z.boolean().optional(),
+  assignmentType: assignmentType.nullish(),
+  roleRefId: z.string().min(1).nullish(),
 });
 
 export const RemoveManualBlockSchema = z.object({
@@ -106,14 +122,18 @@ export const ToggleSubCalendarSchema = z.object({
   enabled: z.boolean(),
 });
 
-// Manual Timesheet-tab entries only — Meeting-sourced TimeEntry rows are
-// managed exclusively by the attendance-toggle route
-// (app/calendar/routes/api.scheduled-meetings.$id.attendance.ts).
+// Manual Timesheet-tab entries only — Meeting-sourced and Block-sourced
+// TimeEntry rows are managed exclusively by the attendance-toggle route
+// (app/calendar/routes/api.scheduled-meetings.$id.attendance.ts) and the
+// manual-block action handlers, respectively.
 export const AddTimeEntrySchema = z.object({
   intent: z.literal("add-time-entry"),
   date: isoString,
   hours: z.number().positive().max(24),
-  projectId: z.string().min(1).nullish(),
+  // Which concrete paid role this entry is attributed to (see assignmentType
+  // above). Both null = unattributed ("unassigned" bucket on export).
+  assignmentType: assignmentType.nullish(),
+  roleRefId: z.string().min(1).nullish(),
   note: z.string().max(500).nullish(),
   // Set when the entry was created by dragging on the Timesheet week grid;
   // null for the plain date+hours form (no time-of-day picked).
@@ -126,7 +146,8 @@ export const UpdateTimeEntrySchema = z.object({
   id: z.string().min(1),
   date: isoString.optional(),
   hours: z.number().positive().max(24).optional(),
-  projectId: z.string().min(1).nullish(),
+  assignmentType: assignmentType.nullish(),
+  roleRefId: z.string().min(1).nullish(),
   note: z.string().max(500).nullish(),
   startTime: isoString.nullish(),
   endTime: isoString.nullish(),

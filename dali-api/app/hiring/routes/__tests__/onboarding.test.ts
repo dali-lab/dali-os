@@ -14,12 +14,12 @@ vi.mock("~/lib/auth", () => ({
   ),
   redirectApplicantToPortal: vi.fn(() => null),
 }));
-vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
+vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), getUserRoles: vi.fn() }));
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isCore } from "~/lib/roles";
-import { loader, action } from "~/internal-processes/routes/internal-processes.onboarding";
+import { isCore, getUserRoles } from "~/lib/roles";
+import { loader, action } from "~/hiring/routes/onboarding";
 
 const mockPrisma = prisma as unknown as Record<string, any>;
 const CORE_ID = "core-1";
@@ -54,9 +54,18 @@ function decisionRow(over: {
   };
 }
 
-function call(url = "http://localhost/internal-processes/onboarding") {
+function call(url = "http://localhost/hiring/onboarding") {
   return loader({ request: new Request(url), params: {}, context: {} } as any);
 }
+
+const CORE_ROLES = {
+  isLabMember: true,
+  isCore: true,
+  isAdmin: false,
+  isDomainLead: false,
+  isInstructor: false,
+  isInterviewer: false,
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -67,11 +76,12 @@ beforeEach(() => {
     user: { sub: CORE_ID, type: "member" },
   } as any);
   vi.mocked(isCore).mockResolvedValue(true);
+  vi.mocked(getUserRoles).mockResolvedValue(CORE_ROLES as any);
 });
 
-describe("internal-processes/onboarding loader", () => {
+describe("hiring/onboarding loader", () => {
   it("redirects non-core users home", async () => {
-    vi.mocked(isCore).mockResolvedValueOnce(false);
+    vi.mocked(getUserRoles).mockResolvedValueOnce({ ...CORE_ROLES, isCore: false } as any);
     const res = (await call()) as Response;
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe("/");
@@ -143,7 +153,7 @@ describe("internal-processes/onboarding loader", () => {
       { id: "cyc-new", name: "Spring 2026", cycleType: "Standard" },
       { id: "cyc-old", name: "Fall 2025", cycleType: "Standard" },
     ]);
-    const data = (await call("http://localhost/internal-processes/onboarding?cycle=cyc-old")) as any;
+    const data = (await call("http://localhost/hiring/onboarding?cycle=cyc-old")) as any;
     expect(data.selectedCycleId).toBe("cyc-old");
   });
 
@@ -151,7 +161,7 @@ describe("internal-processes/onboarding loader", () => {
     mockPrisma.applicationCycle.findMany.mockResolvedValue([
       { id: "cyc-new", name: "Spring 2026", cycleType: "Standard" },
     ]);
-    const data = (await call("http://localhost/internal-processes/onboarding?cycle=bogus")) as any;
+    const data = (await call("http://localhost/hiring/onboarding?cycle=bogus")) as any;
     expect(data.selectedCycleId).toBe("cyc-new");
   });
 
@@ -200,7 +210,7 @@ describe("internal-processes/onboarding loader", () => {
       decisionRow({ userId: "u2", first: "Bea", domainCode: "design", domainName: "Design" }),
     ]);
 
-    const data = (await call("http://localhost/internal-processes/onboarding?domain=design")) as any;
+    const data = (await call("http://localhost/hiring/onboarding?domain=design")) as any;
     expect(data.selectedDomain).toBe("design");
     // Dropdown still lists every domain in the cycle, not just the selected one.
     expect(data.domains.map((d: any) => d.key)).toEqual(["design", "fullstack"]);
@@ -216,17 +226,17 @@ describe("internal-processes/onboarding loader", () => {
       decisionRow({ userId: "u2", first: "Bea", domainCode: "design", domainName: "Design" }),
     ]);
 
-    const data = (await call("http://localhost/internal-processes/onboarding?domain=bogus")) as any;
+    const data = (await call("http://localhost/hiring/onboarding?domain=bogus")) as any;
     expect(data.selectedDomain).toBeNull();
     expect(data.rows).toHaveLength(2);
   });
 });
 
-describe("internal-processes/onboarding action (toggle Figma)", () => {
+describe("hiring/onboarding action (toggle Figma)", () => {
   function postForm(fields: Record<string, string>) {
     const body = new URLSearchParams(fields);
     return action({
-      request: new Request("http://localhost/internal-processes/onboarding", {
+      request: new Request("http://localhost/hiring/onboarding", {
         method: "POST",
         body,
         headers: { "content-type": "application/x-www-form-urlencoded" },

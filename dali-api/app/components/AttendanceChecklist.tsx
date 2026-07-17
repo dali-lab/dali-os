@@ -50,7 +50,7 @@ export function AttendanceChecklist({
   return (
     <section className="bg-card border border-border rounded-lg p-4">
       <div className="flex items-center justify-between mb-2">
-        <h2 className="font-heading font-semibold text-foreground">{meetingLabel} attendance</h2>
+        <h2 className="font-heading font-semibold text-foreground">Attendance</h2>
         <span className="text-xs text-muted-foreground">
           {presentCount} of {rows.length} present
         </span>

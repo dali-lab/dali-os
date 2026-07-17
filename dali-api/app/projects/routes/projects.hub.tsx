@@ -17,6 +17,7 @@ import { prisma } from "~/lib/db";
 import { githubTeamSlug } from "~/lib/github-slug";
 import { ensureProjectGroup } from "~/lib/groups";
 import { ViewToggle, useViewPreference } from "~/components/ViewToggle";
+import { buttonClasses } from "~/components/ui/Button";
 import { TermFilter } from "~/components/TermFilter";
 import { resolveTermFilter } from "~/lib/terms";
 
@@ -196,7 +197,7 @@ export default function ProjectsListPage() {
           <button
             type="button"
             onClick={() => setCreating(true)}
-            className="px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
+            className={buttonClasses("primary", "sm", "rounded-md")}
           >
             + New project
           </button>

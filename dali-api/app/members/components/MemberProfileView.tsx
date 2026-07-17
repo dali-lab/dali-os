@@ -94,42 +94,20 @@ export function MemberProfileView({
     yearTail || null,
   ].filter((p): p is string => Boolean(p));
 
-  const page = (
-    <div className="flex flex-col gap-6 max-w-3xl">
-      {/* Self-hides when nobody else is here, so no empty row is left over
-          in the common solo case. `self-end` pushes it to the right of the
-          column when it does render. */}
-      <PresenceBar className="self-end" />
+  const hasEducation =
+    !!data.education &&
+    (data.education.attended.length > 0 ||
+      data.education.taught.length > 0 ||
+      data.education.ceCredits.length > 0);
 
-      <header className="flex flex-col items-center gap-4 text-center">
-        <ProfilePhotoAvatar
-          userId={member.id}
-          name={`${member.firstName} ${member.lastName}`}
-          initialPreviewUrl={photoUrlResolved}
-          canEdit={canEdit}
-        />
-        <div className="min-w-0">
-          <h1 className="font-heading text-2xl font-bold text-foreground">
-            {member.firstName} {member.lastName}
-          </h1>
-          {subtitleParts.length > 0 && (
-            <p className="text-sm text-muted-foreground mt-1">
-              {subtitleParts.join(" · ")}
-            </p>
-          )}
-        </div>
-        {isSelf && (
-          <div className="flex items-center gap-2">
-            <a
-              href="/logout"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md border border-border text-foreground hover:bg-muted transition-colors"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              Log out
-            </a>
-          </div>
-        )}
-      </header>
+  // Flat, card-stacked layout (no left nav, no collapsible chrome) — matches
+  // the partner org detail page: an unboxed identity header up top, then each
+  // section as its own bordered card. Account is the exception — it stays
+  // embedded (no border) so it reads as a continuation of the identity
+  // header above it, same as AccountSettingsBlock does on /settings.
+  const page = (
+    <div className="max-w-4xl w-full flex flex-col gap-6">
+      <PresenceBar className="self-end" />
 
       {actionError && (
         <div className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-md px-3 py-2">
@@ -137,8 +115,48 @@ export function MemberProfileView({
         </div>
       )}
 
-      <AccountSettingsSection member={member} roleLabels={roleLabels} canEdit={canEdit} />
-      <PersonalSection member={member} canEdit={canEdit} />
+      <div className="flex items-center gap-4">
+        <ProfilePhotoAvatar
+          userId={member.id}
+          name={`${member.firstName} ${member.lastName}`}
+          initialPreviewUrl={photoUrlResolved}
+          canEdit={canEdit}
+        />
+        <div className="min-w-0">
+          <p className="font-heading text-lg font-semibold text-foreground">
+            {member.firstName} {member.lastName}
+          </p>
+          {subtitleParts.length > 0 && (
+            <p className="text-sm text-muted-foreground mt-0.5">
+              {subtitleParts.join(" · ")}
+            </p>
+          )}
+          {isSelf && (
+            <a
+              href="/logout"
+              className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md border border-border text-foreground hover:bg-muted transition-colors"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              Log out
+            </a>
+          )}
+        </div>
+      </div>
+
+      <AccountSettingsSection
+        member={member}
+        roleLabels={roleLabels}
+        canEdit={canEdit}
+        embedded
+        showIdentitySummary={false}
+      />
+
+      <PersonalSection
+        member={member}
+        canEdit={canEdit}
+        roleLabels={roleLabels}
+        showIdentitySummary
+      />
 
       <DomainsSection
         eligibilities={member.domainEligibilities}
@@ -155,7 +173,9 @@ export function MemberProfileView({
         showReviewsRow={showReviewsRow}
       />
 
-      {data.education && <EducationSection education={data.education} />}
+      {hasEducation && data.education && (
+        <EducationSection education={data.education} />
+      )}
     </div>
   );
 
@@ -183,6 +203,7 @@ export function AccountSettingsSection({
   canEdit,
   formAction,
   embedded,
+  showIdentitySummary = true,
 }: {
   member: ProfileMember;
   roleLabels: string[];
@@ -190,14 +211,18 @@ export function AccountSettingsSection({
   formAction?: string;
   /** When true, omit section chrome (used inside Settings page blocks). */
   embedded?: boolean;
+  /**
+   * Major/class year (editable) + Roles/Emails (read-only) live here by
+   * default — the /settings page has nowhere else to put them. The member
+   * detail / profile view turns this off and shows them in Personal instead
+   * (see PersonalSection's own showIdentitySummary), leaving Account just
+   * name + pronouns.
+   */
+  showIdentitySummary?: boolean;
 }) {
   const submit = useSubmit();
   const formRef = useRef<HTMLFormElement | null>(null);
-  const emails = [
-    member.daliEmail,
-    member.dartmouthEmail,
-    member.personalEmail,
-  ].filter((e): e is string => Boolean(e));
+  const emails = memberEmails(member);
 
   return (
     <EditableSection
@@ -217,7 +242,10 @@ export function AccountSettingsSection({
         <Form method="post" ref={formRef} action={formAction} className="flex flex-col gap-3">
           <input type="hidden" name="intent" value="profile" />
           {/* Persist personal-section fields when saving identity edits. */}
-          <HiddenProfileFields member={member} skip={ACCOUNT_FIELDS} />
+          <HiddenProfileFields
+            member={member}
+            skip={showIdentitySummary ? ACCOUNT_FIELDS : ACCOUNT_FIELDS_BASE}
+          />
           {editing ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <FieldInput
@@ -237,20 +265,24 @@ export function AccountSettingsSection({
                 label="Pronouns"
                 defaultValue={member.pronouns ?? ""}
               />
-              <FieldInput
-                name="major"
-                label="Major"
-                defaultValue={member.major ?? ""}
-              />
-              <FieldInput
-                name="classYear"
-                label="Class year"
-                type="number"
-                defaultValue={member.classYear?.toString() ?? ""}
-              />
+              {showIdentitySummary && (
+                <>
+                  <FieldInput
+                    name="major"
+                    label="Major"
+                    defaultValue={member.major ?? ""}
+                  />
+                  <FieldInput
+                    name="classYear"
+                    label="Class year"
+                    type="number"
+                    defaultValue={member.classYear?.toString() ?? ""}
+                  />
+                </>
+              )}
             </div>
-          ) : (
-            <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+          ) : showIdentitySummary ? (
+            <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 text-sm">
               <Detail label="Major" value={member.major} />
               <Detail
                 label="Class year"
@@ -292,7 +324,7 @@ export function AccountSettingsSection({
                 </dd>
               </div>
             </dl>
-          )}
+          ) : null}
         </Form>
       )}
     </EditableSection>
@@ -302,18 +334,38 @@ export function AccountSettingsSection({
 function PersonalSection({
   member,
   canEdit,
+  embedded,
+  roleLabels,
+  showIdentitySummary = false,
 }: {
   member: ProfileMember;
   canEdit: boolean;
+  embedded?: boolean;
+  /** Only needed when showIdentitySummary is true. */
+  roleLabels?: string[];
+  /**
+   * Renders Major/class year (editable) + Roles/Emails (read-only) at the
+   * top of this section — moved here from Account on the member detail /
+   * profile view. See AccountSettingsSection's own showIdentitySummary.
+   */
+  showIdentitySummary?: boolean;
 }) {
   const submit = useSubmit();
   const formRef = useRef<HTMLFormElement | null>(null);
+  const emails = showIdentitySummary ? memberEmails(member) : [];
 
   return (
     <EditableSection
-      title="Personal"
-      icon={<UserIcon className="w-4 h-4 text-accent-coral" />}
+      title={embedded ? "" : "Personal"}
+      icon={
+        embedded ? undefined : <UserIcon className="w-4 h-4 text-accent-coral" />
+      }
       canEdit={canEdit}
+      className={
+        embedded
+          ? "flex flex-col gap-3"
+          : "bg-card border border-border rounded-lg p-4 flex flex-col gap-3"
+      }
       onSave={() => {
         if (formRef.current) submit(formRef.current);
       }}
@@ -321,9 +373,27 @@ function PersonalSection({
       {({ editing }) => (
         <Form method="post" ref={formRef} className="flex flex-col gap-3">
           <input type="hidden" name="intent" value="profile" />
-          <HiddenProfileFields member={member} skip={PERSONAL_FIELDS} />
+          <HiddenProfileFields
+            member={member}
+            skip={showIdentitySummary ? PERSONAL_FIELDS_WITH_IDENTITY : PERSONAL_FIELDS}
+          />
           {editing ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {showIdentitySummary && (
+                <>
+                  <FieldInput
+                    name="major"
+                    label="Major"
+                    defaultValue={member.major ?? ""}
+                  />
+                  <FieldInput
+                    name="classYear"
+                    label="Class year"
+                    type="number"
+                    defaultValue={member.classYear?.toString() ?? ""}
+                  />
+                </>
+              )}
               <FieldInput
                 name="hometown"
                 label="Hometown"
@@ -387,7 +457,51 @@ function PersonalSection({
               </div>
             </div>
           ) : (
-            <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+            <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 text-sm">
+              {showIdentitySummary && (
+                <>
+                  <Detail label="Major" value={member.major} />
+                  <Detail
+                    label="Class year"
+                    value={member.classYear?.toString() ?? null}
+                  />
+                  <div className="sm:col-span-2">
+                    <dt className="text-xs text-muted-foreground mb-1">Roles</dt>
+                    <dd className="flex flex-wrap gap-1.5">
+                      {!roleLabels || roleLabels.length === 0 ? (
+                        <span className="text-sm text-foreground">—</span>
+                      ) : (
+                        roleLabels.map((r) => (
+                          <span
+                            key={r}
+                            className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-accent-coral/15 text-accent-coral"
+                          >
+                            {r}
+                          </span>
+                        ))
+                      )}
+                    </dd>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <dt className="text-xs text-muted-foreground mb-1">Emails</dt>
+                    <dd className="flex flex-col gap-0.5">
+                      {emails.length === 0 ? (
+                        <span className="text-sm text-foreground">—</span>
+                      ) : (
+                        emails.map((e) => (
+                          <span
+                            key={e}
+                            className="inline-flex items-center gap-1.5 text-sm text-foreground"
+                          >
+                            <Mail className="w-3.5 h-3.5 text-muted-foreground" />
+                            {e}
+                          </span>
+                        ))
+                      )}
+                    </dd>
+                  </div>
+                </>
+              )}
               <Detail label="Hometown" value={member.hometown} />
               <Detail
                 label="Birthday"
@@ -395,9 +509,10 @@ function PersonalSection({
               />
               <Detail label="Phone" value={member.phoneNumber} />
               <Detail label="NetID" value={member.netId} />
+              <Detail label="Personal email" value={member.personalEmail} />
               <Detail label="Time zone" value={member.timeZone} />
               <div>
-                <dt className="text-xs text-muted-foreground mb-0.5">GitHub</dt>
+                <dt className="text-xs text-muted-foreground mb-1">GitHub</dt>
                 <dd className="text-sm text-foreground">
                   {member.githubUsername ? (
                     <a
@@ -415,9 +530,7 @@ function PersonalSection({
                 </dd>
               </div>
               <div>
-                <dt className="text-xs text-muted-foreground mb-0.5">
-                  LinkedIn
-                </dt>
+                <dt className="text-xs text-muted-foreground mb-1">LinkedIn</dt>
                 <dd className="text-sm text-foreground">
                   {member.linkedinUrl ? (
                     <a
@@ -435,7 +548,7 @@ function PersonalSection({
                 </dd>
               </div>
               <div className="sm:col-span-2">
-                <dt className="text-xs text-muted-foreground mb-0.5">
+                <dt className="text-xs text-muted-foreground mb-1">
                   Personal site
                 </dt>
                 <dd className="text-sm text-foreground">
@@ -455,7 +568,7 @@ function PersonalSection({
                 </dd>
               </div>
               <div className="sm:col-span-2">
-                <dt className="text-xs text-muted-foreground">
+                <dt className="text-xs text-muted-foreground mb-1">
                   Dietary restrictions
                 </dt>
                 <dd className="text-sm text-foreground whitespace-pre-wrap">
@@ -476,24 +589,34 @@ function ActivitySection({
   projectAssignments,
   pendingReviews,
   showReviewsRow,
+  embedded,
 }: {
   isSelf: boolean;
   termCode: string | null;
   projectAssignments: ProfilePageData["projectAssignments"];
   pendingReviews: number;
   showReviewsRow: boolean;
+  embedded?: boolean;
 }) {
   return (
-    <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
-      <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
-        <FolderKanban className="w-4 h-4 text-accent-coral" />
-        {isSelf ? "My activity" : "Activity"}
-        {termCode && (
-          <span className="text-xs font-normal text-muted-foreground">
-            · {termCode}
-          </span>
-        )}
-      </h2>
+    <div
+      className={
+        embedded
+          ? "flex flex-col gap-3"
+          : "bg-card border border-border rounded-lg p-4 flex flex-col gap-3"
+      }
+    >
+      {!embedded && (
+        <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
+          <FolderKanban className="w-4 h-4 text-accent-coral" />
+          {isSelf ? "My activity" : "Activity"}
+          {termCode && (
+            <span className="text-xs font-normal text-muted-foreground">
+              · {termCode}
+            </span>
+          )}
+        </h2>
+      )}
 
       <div className="flex flex-col gap-1.5">
         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
@@ -540,7 +663,7 @@ function ActivitySection({
           )}
         </div>
       )}
-    </section>
+    </div>
   );
 }
 
@@ -548,8 +671,10 @@ function ActivitySection({
 
 function EducationSection({
   education,
+  embedded,
 }: {
   education: NonNullable<ProfilePageData["education"]>;
+  embedded?: boolean;
 }) {
   if (
     education.attended.length === 0 &&
@@ -559,11 +684,19 @@ function EducationSection({
     return null;
   }
   return (
-    <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
-      <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
-        <GraduationCap className="w-4 h-4 text-accent-coral" />
-        Education
-      </h2>
+    <div
+      className={
+        embedded
+          ? "flex flex-col gap-3"
+          : "bg-card border border-border rounded-lg p-4 flex flex-col gap-3"
+      }
+    >
+      {!embedded && (
+        <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
+          <GraduationCap className="w-4 h-4 text-accent-coral" />
+          Education
+        </h2>
+      )}
 
       {education.taught.length > 0 && (
         <div className="flex flex-col gap-1.5">
@@ -631,7 +764,7 @@ function EducationSection({
           </ul>
         </div>
       )}
-    </section>
+    </div>
   );
 }
 
@@ -642,28 +775,43 @@ function DomainsSection({
   allDomains,
   canManage,
   allowedLevels,
+  embedded,
 }: {
   eligibilities: ProfileMember["domainEligibilities"];
   allDomains: Array<{ id: string; displayName: string }>;
   canManage: boolean;
   allowedLevels: readonly Level[];
+  embedded?: boolean;
 }) {
   const assignedDomainIds = new Set(eligibilities.map((e) => e.domain.id));
   const available = allDomains.filter((d) => !assignedDomainIds.has(d.id));
 
   return (
-    <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-2">
-        <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
-          <Shield className="w-4 h-4 text-accent-coral" />
-          Domains &amp; levels
-        </h2>
-        {!canManage && (
-          <span className="text-[11px] text-muted-foreground/70">
-            Only Core or Admin can edit.
-          </span>
-        )}
-      </div>
+    <div
+      className={
+        embedded
+          ? "flex flex-col gap-3"
+          : "bg-card border border-border rounded-lg p-4 flex flex-col gap-3"
+      }
+    >
+      {!embedded && (
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
+            <Shield className="w-4 h-4 text-accent-coral" />
+            Domains &amp; levels
+          </h2>
+          {!canManage && (
+            <span className="text-[11px] text-muted-foreground/70">
+              Only Core or Admin can edit.
+            </span>
+          )}
+        </div>
+      )}
+      {embedded && !canManage && (
+        <p className="text-[11px] text-muted-foreground/70">
+          Only Core or Admin can edit.
+        </p>
+      )}
       {eligibilities.length === 0 && !canManage && (
         <p className="text-sm text-muted-foreground/70 italic">
           No domain eligibilities yet.
@@ -689,7 +837,7 @@ function DomainsSection({
             All active domains are assigned.
           </p>
         )}
-    </section>
+    </div>
   );
 }
 
@@ -855,10 +1003,18 @@ function AddEligibility({
 
 // ─── Field plumbing ─────────────────────────────────────────────────────────
 
-const ACCOUNT_FIELDS = new Set<keyof ProfileMember>([
+// Account's own editable fields, always: name + pronouns. Major/class year
+// join this set only when Account also renders the major/classYear inputs
+// (showIdentitySummary) — on /settings, where there's no Personal section to
+// host them instead. See ACCOUNT_FIELDS below.
+const ACCOUNT_FIELDS_BASE = new Set<keyof ProfileMember>([
   "firstName",
   "lastName",
   "pronouns",
+]);
+
+const ACCOUNT_FIELDS = new Set<keyof ProfileMember>([
+  ...ACCOUNT_FIELDS_BASE,
   "major",
   "classYear",
 ]);
@@ -875,6 +1031,22 @@ const PERSONAL_FIELDS = new Set<keyof ProfileMember>([
   "personalSite",
   "dietaryRestrictions",
 ]);
+
+// Personal's fields when it also hosts major/class year (the member/profile
+// view, where Account only edits name + pronouns).
+const PERSONAL_FIELDS_WITH_IDENTITY = new Set<keyof ProfileMember>([
+  ...PERSONAL_FIELDS,
+  "major",
+  "classYear",
+]);
+
+// Shared by Account and Personal's read-only "Emails" summary — every linked
+// address, regardless of which one is primary.
+function memberEmails(member: ProfileMember): string[] {
+  return [member.daliEmail, member.dartmouthEmail, member.personalEmail].filter(
+    (e): e is string => Boolean(e),
+  );
+}
 
 // Every profile-update form posts the full set of editable fields so the
 // action can treat blank inputs as "set to null" consistently. Whichever
@@ -954,7 +1126,7 @@ function FieldInput({
 function Detail({ label, value }: { label: string; value: string | null }) {
   return (
     <div>
-      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dt className="text-xs text-muted-foreground mb-1">{label}</dt>
       <dd className="text-sm text-foreground">{value || "—"}</dd>
     </div>
   );

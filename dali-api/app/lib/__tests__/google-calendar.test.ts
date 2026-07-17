@@ -120,6 +120,8 @@ describe("fetchBusyEvents", () => {
           {
             id: "e1",
             summary: "Standup",
+            description: "<p>Team sync</p>",
+            location: "Room 101",
             status: "confirmed",
             start: { dateTime: "2026-05-12T13:00:00Z" },
             end: { dateTime: "2026-05-12T14:00:00Z" },
@@ -158,6 +160,8 @@ describe("fetchBusyEvents", () => {
       title: "Standup",
       calendarId: "primary",
       color: "#2952A3",
+      description: "Team sync",
+      location: "Room 101",
     });
   });
 

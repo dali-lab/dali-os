@@ -1473,6 +1473,16 @@ model ScheduledMeeting {
   project          Project?     @relation(fields: [projectId], references: [id])
   notePage         Page?
 
+  // Roster (default): organizer/Core check people off by hand via
+  // AttendanceChecklist. SelfCheckIn: attendees mark themselves present via
+  // the check-in route, scoped to a time window around selectedAt — meant for
+  // events too large to check off manually (e.g. an all-lab Group event).
+  // checkInToken is a routing convenience embedded in the QR/link, not a
+  // bearer credential — the check-in route always authenticates the caller's
+  // own session, never the token, to prevent checking in on someone's behalf.
+  attendanceMode AttendanceMode @default(Roster)
+  checkInToken   String?        @unique
+
   exceptions    MeetingException[]
   notifications Notification[]
   attendance    MeetingAttendance[]
@@ -1493,6 +1503,11 @@ enum MeetingType {
   Team
   Partner
   Other
+}
+
+enum AttendanceMode {
+  Roster
+  SelfCheckIn
 }
 
 // One row per invited participant (including the organizer) on a
@@ -1517,13 +1532,26 @@ model MeetingAttendance {
 // A user's personal timesheet row, shown on the Calendar "Timesheet" tab.
 // Meeting-sourced rows are managed automatically by the attendance-toggle
 // route (one row per present participant, kept in sync as attendance is
-// checked/unchecked) and are not directly editable; Manual rows are
-// user-authored CRUD entries for work not captured by a meeting.
+// checked/unchecked); Block-sourced rows are managed automatically by the
+// manual-block action handlers in the same way (see ManualBlock.isWork);
+// neither is directly editable here — only plain Manual rows are
+// user-authored CRUD entries for work not captured by a block or meeting.
 model TimeEntry {
   id                 String          @id @default(cuid())
   userId             String
   source             TimeEntrySource
   scheduledMeetingId String?
+  manualBlockId      String?
+  // Which concrete paid role (ProjectAssignment / CoreAssignment /
+  // InstructorAssignment / DomainLeadAssignment / AdminMembership) this entry
+  // is attributed to. Untyped at DB layer — dispatched in app code by
+  // assignmentType, same pattern as ScheduledMeeting.scopeType/scopeId. Null
+  // for legacy/unattributed rows (the export route's "unassigned" bucket).
+  assignmentType AssignmentType?
+  roleRefId      String?
+  // Denormalized from the resolved role when assignmentType == Project, so
+  // existing project-grouped readers (export, project hour totals) keep
+  // working without joining through ProjectAssignment.
   projectId          String?
   date               DateTime
   hours              Float
@@ -1539,17 +1567,21 @@ model TimeEntry {
   createdAt          DateTime        @default(now())
   updatedAt          DateTime        @updatedAt
 
-  user    User              @relation(fields: [userId], references: [id])
-  meeting ScheduledMeeting? @relation(fields: [scheduledMeetingId], references: [id])
-  project Project?          @relation(fields: [projectId], references: [id])
+  user        User              @relation(fields: [userId], references: [id])
+  meeting     ScheduledMeeting? @relation(fields: [scheduledMeetingId], references: [id])
+  manualBlock ManualBlock?      @relation(fields: [manualBlockId], references: [id])
+  project     Project?          @relation(fields: [projectId], references: [id])
 
   @@unique([scheduledMeetingId, userId])
+  @@unique([manualBlockId, userId])
   @@index([userId, date])
+  @@index([userId, assignmentType])
 }
 
 enum TimeEntrySource {
   Meeting
   Manual
+  Block
 }
 
 enum MeetingStatus {
@@ -1719,9 +1751,17 @@ model ManualBlock {
   recurrenceRule  String?
   // Optional cached UNTIL for query bounds; not authoritative.
   recurrenceUntil DateTime?
+  // When true (app-level restricted to non-recurring blocks — recurrence
+  // expansion isn't implemented for TimeEntry), this block mirrors itself
+  // into a Block-sourced TimeEntry for the chosen role, kept in sync by the
+  // manual-block action handlers (see syncManualBlockTimeEntry).
+  isWork          Boolean   @default(false)
+  assignmentType  AssignmentType?
+  roleRefId       String?
   createdAt       DateTime  @default(now())
 
-  user User @relation(fields: [userId], references: [id])
+  user       User        @relation(fields: [userId], references: [id])
+  timeEntries TimeEntry[]
 
   @@index([userId, startTime])
 }
@@ -2178,6 +2218,7 @@ model Epic {
 }
 
 enum EpicStatus {
+  Backlog
   Open
   InProgress
   Done
@@ -2244,6 +2285,8 @@ model Task {
   epicId    String?
 
   title            String
+  // Plain-text task description, edited in the task modal.
+  description      String?
   descriptionDocId String?
   status           TaskStatus @default(Todo)
   priority         Priority   @default(Normal)

@@ -286,7 +286,7 @@ export function FormsBrowser({
               <Link
                 key={d.id}
                 to={`/forms/${d.id}`}
-                className="group flex items-center gap-3 bg-card border border-border rounded-lg px-4 py-3 hover:border-accent-coral/60 hover:shadow-sm transition-all"
+                className="group flex items-center gap-3 bg-card border border-border shadow-brand-1 rounded-lg px-4 py-3 hover:border-accent-coral/60 hover:shadow-brand-2 transition-all"
               >
                 <Folder className="w-5 h-5 text-accent-coral fill-accent-coral/20 shrink-0" />
                 <div className="min-w-0 flex-1">
@@ -315,7 +315,7 @@ export function FormsBrowser({
             {formResults.map((f) => (
               <div
                 key={f.id}
-                className="group flex items-center gap-3 bg-card border border-border rounded-lg px-4 py-3 hover:border-accent-coral/60 hover:shadow-sm transition-all"
+                className="group flex items-center gap-3 bg-card border border-border shadow-brand-1 rounded-lg px-4 py-3 hover:border-accent-coral/60 hover:shadow-brand-2 transition-all"
               >
                 <Link
                   to={`/forms/edit/${f.id}`}
@@ -619,7 +619,7 @@ function FolderCardView({
             }
           : undefined
       }
-      className={`group flex items-start gap-3 bg-card border border-border rounded-lg p-4 hover:border-accent-coral/60 hover:shadow-sm transition-all ${
+      className={`group flex items-start gap-3 bg-card border border-border shadow-brand-1 rounded-lg p-4 hover:border-accent-coral/60 hover:shadow-brand-2 transition-all ${
         drop.isOver ? "ring-2 ring-accent-coral/40" : ""
       }`}
     >
@@ -686,7 +686,7 @@ function FormCardView({
             }
           : undefined
       }
-      className="group flex items-start gap-3 bg-card border border-border rounded-lg p-4 hover:border-accent-coral/60 hover:shadow-sm transition-all"
+      className="group flex items-start gap-3 bg-card border border-border shadow-brand-1 rounded-lg p-4 hover:border-accent-coral/60 hover:shadow-brand-2 transition-all"
     >
       <Link
         to={`/forms/edit/${form.id}`}
