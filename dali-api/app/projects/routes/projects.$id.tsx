@@ -2499,7 +2499,11 @@ function DocumentsBlock({
                   ? "Shared with partner — click to stop sharing"
                   : "Share with partner"
               }
-              aria-label={doc.partnerVisible ? "Stop sharing with partner" : "Share with partner"}
+              // Accessible name must stay exactly "Shared with partner" /
+              // "Share with partner": it's the toggle's only name now that the
+              // label is icon-only, and it's the contract partner-portal.spec
+              // matches on via getByRole. The title carries the extra hint.
+              aria-label={doc.partnerVisible ? "Shared with partner" : "Share with partner"}
               className={`flex items-center disabled:opacity-60 ${
                 doc.partnerVisible
                   ? "text-accent-teal"

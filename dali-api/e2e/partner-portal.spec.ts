@@ -61,7 +61,7 @@ test.describe('internal Organizations pages (Core)', () => {
   test('lists partner orgs with counts', async ({ page }) => {
     await page.goto('/partners?embed=1');
     await expect(
-      page.getByRole('heading', { name: 'Organizations' }),
+      page.getByRole('heading', { name: 'Partners' }),
     ).toBeVisible();
     await expect(page.getByText('Tuck School of Business')).toBeVisible();
   });
@@ -125,7 +125,7 @@ test.describe('internal Organizations pages (Core)', () => {
       await page.goto(`/partners/${emptyOrgId}?embed=1`);
       await page.getByRole('button', { name: 'Delete organization' }).click();
       await expect(
-        page.getByRole('heading', { name: 'Organizations' }),
+        page.getByRole('heading', { name: 'Partners' }),
       ).toBeVisible();
       await expect(page.getByText(`Empty Husk ${suffix}`)).toHaveCount(0);
     } finally {
