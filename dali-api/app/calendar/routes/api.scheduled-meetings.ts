@@ -2,6 +2,7 @@ import type { Route } from "./+types/api.scheduled-meetings";
 import { z } from "zod";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
+import { canViewForms } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
 import {
   createScheduledMeeting,
@@ -16,9 +17,9 @@ const Base = {
   organizerCalendarLinkId: z.string().min(1).optional(),
   meetingType: z.enum(["Team", "Partner", "Other"]).optional(),
   meetingTypeLabel: z.string().trim().min(1).max(80).optional(),
-  // Project-less meetingType meetings (e.g. an all-lab Group event) get a
-  // Lab-workspace note page instead of a project one — see
-  // createScheduledMeeting in ~/lib/scheduled-meeting.
+  // Project-less meetingType meetings get a Lab-workspace note page instead of
+  // a project one — see createScheduledMeeting in ~/lib/scheduled-meeting.
+  // Invites still come only from the meeting's participant scope.
   projectId: z.string().min(1).optional(),
   // SelfCheckIn only makes sense alongside meetingType (that's what creates
   // MeetingAttendance rows at all) — enforced by the refine below.
@@ -59,6 +60,11 @@ export async function action({ request }: Route.ActionArgs) {
 
   const body = await parseJson(request, CreateSchema);
   if (body instanceof Response) return withCors(request, body);
+
+  // Self check-in is Core / Admin / Instructor only (same gate as Forms).
+  if (body.attendanceMode === "SelfCheckIn" && !(await canViewForms(auth.user.sub))) {
+    return forbidden(request);
+  }
 
   let scope: ScheduledMeetingScope;
   if (body.scopeType === "Group") {

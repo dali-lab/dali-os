@@ -131,14 +131,15 @@ export const AddTimeEntrySchema = z.object({
   date: isoString,
   hours: z.number().positive().max(24),
   // Which concrete paid role this entry is attributed to (see assignmentType
-  // above). Both null = unattributed ("unassigned" bucket on export).
-  assignmentType: assignmentType.nullish(),
-  roleRefId: z.string().min(1).nullish(),
+  // above). Required: every logged hour bills to a real role, so there's no
+  // "unassigned" path in (legacy rows predating this may still be null).
+  assignmentType,
+  roleRefId: z.string().min(1),
   note: z.string().max(500).nullish(),
-  // Set when the entry was created by dragging on the Timesheet week grid;
-  // null for the plain date+hours form (no time-of-day picked).
-  startTime: isoString.nullish(),
-  endTime: isoString.nullish(),
+  // Required: manual entries always carry a real time-of-day range now,
+  // whether dragged on the grid or typed into the add form.
+  startTime: isoString,
+  endTime: isoString,
 });
 
 export const UpdateTimeEntrySchema = z.object({
@@ -146,12 +147,40 @@ export const UpdateTimeEntrySchema = z.object({
   id: z.string().min(1),
   date: isoString.optional(),
   hours: z.number().positive().max(24).optional(),
-  assignmentType: assignmentType.nullish(),
-  roleRefId: z.string().min(1).nullish(),
+  assignmentType: assignmentType.optional(),
+  roleRefId: z.string().min(1).optional(),
   note: z.string().max(500).nullish(),
-  startTime: isoString.nullish(),
-  endTime: isoString.nullish(),
+  startTime: isoString.optional(),
+  endTime: isoString.optional(),
 });
+
+// Cross-field rules for a manual TimeEntry's time range. Kept out of the
+// schemas themselves because CalendarActionSchema is a discriminatedUnion,
+// which needs plain ZodObjects to narrow on `intent`. Callers run this after
+// parsing and surface the message verbatim.
+//
+// `hours` is always derived from start/end on the client, but it's re-checked
+// rather than trusted: a hand-rolled POST could otherwise log 8h against a
+// 30-minute window.
+const HOURS_TOLERANCE = 0.02; // ~1 minute of float/rounding slack
+
+export function validateTimeEntryRange(v: {
+  startTime?: string | null;
+  endTime?: string | null;
+  hours?: number | null;
+}): string | null {
+  if (!v.startTime || !v.endTime) return null;
+  const start = new Date(v.startTime).getTime();
+  const end = new Date(v.endTime).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return "Invalid start or end time";
+  if (end <= start) return "End time must be after start time";
+  const derived = (end - start) / 3_600_000;
+  if (derived > 24) return "An entry can't be longer than 24 hours";
+  if (typeof v.hours === "number" && Math.abs(derived - v.hours) > HOURS_TOLERANCE) {
+    return "Hours must match the start/end range";
+  }
+  return null;
+}
 
 export const DeleteTimeEntrySchema = z.object({
   intent: z.literal("delete-time-entry"),

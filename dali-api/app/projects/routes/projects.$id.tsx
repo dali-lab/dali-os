@@ -10,7 +10,7 @@ import {
   useSearchParams,
   useSubmit,
 } from "react-router";
-import { Check, Handshake, Pencil, X, Settings, Folder, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2 } from "lucide-react";
+import { Check, Handshake, Pencil, X, Settings, Folder, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload } from "lucide-react";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { EditableSection } from "~/components/EditableSection";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
@@ -326,23 +326,29 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const userName = presenceUser?.name ?? fallbackName;
 
   // Timeline span: prefer the epic's explicit startsAt/endsAt; fall back to
-  // the min/max of its sprint dates when either is unset. Each epic also
-  // carries its own sprint rows (ordered by start) so the timeline can render
-  // one bar per sprint with connectors, not just a single epic bar.
+  // the min/max of its sprint dates when either is unset. When the epic has
+  // sprints, expand the bar to cover the sprint union so the parent epic bar
+  // never disappears while child sprint bars are visible.
   const epics: TimelineEpic[] = project.epics.map((e) => {
     const epicSprints = project.sprints
       .filter((s) => s.epicId === e.id)
       .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
-    const starts = epicSprints.map((s) => s.startsAt.getTime());
-    const ends = epicSprints.map((s) => s.endsAt.getTime());
-    const sprintStart = starts.length ? new Date(Math.min(...starts)).toISOString() : null;
-    const sprintEnd = ends.length ? new Date(Math.max(...ends)).toISOString() : null;
+    const sprintStarts = epicSprints.map((s) => s.startsAt.getTime());
+    const sprintEnds = epicSprints.map((s) => s.endsAt.getTime());
+    const sprintStartMs = sprintStarts.length ? Math.min(...sprintStarts) : null;
+    const sprintEndMs = sprintEnds.length ? Math.max(...sprintEnds) : null;
+
+    let startMs = e.startsAt?.getTime() ?? sprintStartMs;
+    let endMs = e.endsAt?.getTime() ?? sprintEndMs;
+    if (sprintStartMs != null && startMs != null) startMs = Math.min(startMs, sprintStartMs);
+    if (sprintEndMs != null && endMs != null) endMs = Math.max(endMs, sprintEndMs);
+
     return {
       id: e.id,
       title: e.title,
       status: e.status as EpicStatus,
-      startsAt: e.startsAt ? e.startsAt.toISOString() : sprintStart,
-      endsAt: e.endsAt ? e.endsAt.toISOString() : sprintEnd,
+      startsAt: startMs != null ? new Date(startMs).toISOString() : null,
+      endsAt: endMs != null ? new Date(endMs).toISOString() : null,
       sprintCount: epicSprints.length,
       sprints: epicSprints.map((s) => ({
         id: s.id,
@@ -2738,9 +2744,11 @@ function FilesBlock({
               versionForId.current = null;
               fileInputRef.current?.click();
             }}
-            className="text-xs font-medium text-accent-coral hover:underline disabled:opacity-60"
+            title={busy ? "Uploading…" : "Add file"}
+            aria-label={busy ? "Uploading…" : "Add file"}
+            className="p-1 rounded text-accent-coral hover:bg-accent-coral/10 disabled:opacity-60"
           >
-            {busy ? "Uploading…" : "+ Add file"}
+            <Plus className="w-3.5 h-3.5" />
           </button>
         )}
       </div>
@@ -2766,7 +2774,7 @@ function FilesBlock({
                 </span>
               </Link>
               {canEdit && (
-                <div className="flex items-center gap-3 flex-shrink-0">
+                <div className="flex items-center gap-2 flex-shrink-0">
                   <button
                     type="button"
                     disabled={busy}
@@ -2774,17 +2782,21 @@ function FilesBlock({
                       versionForId.current = f.id;
                       fileInputRef.current?.click();
                     }}
-                    className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-60"
+                    title="New version"
+                    aria-label="New version"
+                    className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-60"
                   >
-                    New version
+                    <Upload className="w-3.5 h-3.5" />
                   </button>
                   <button
                     type="button"
                     disabled={busy}
                     onClick={() => void deleteFile(f.id, f.title)}
-                    className="text-xs text-destructive hover:underline disabled:opacity-60"
+                    title="Delete file"
+                    aria-label="Delete file"
+                    className="p-1 rounded text-destructive hover:text-destructive/80 disabled:opacity-60"
                   >
-                    Delete
+                    <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
               )}

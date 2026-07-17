@@ -1,9 +1,102 @@
 import { Link } from "react-router";
 import { termCodeLabel } from "~/lib/display";
-import type { PartnerProjectViewData } from "~/partners/lib/partner-project-view.server";
+import type {
+  PartnerProjectEpic,
+  PartnerProjectSprint,
+  PartnerProjectViewData,
+} from "~/partners/lib/partner-project-view.server";
 
 const fmtDate = (iso: string) =>
   new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+
+const EPIC_STATUS_LABEL: Record<PartnerProjectEpic["status"], string> = {
+  Backlog: "Backlog",
+  Open: "Open",
+  InProgress: "In progress",
+  Done: "Done",
+  Cancelled: "Cancelled",
+};
+
+function SprintProgressCard({
+  s,
+  nested = false,
+}: {
+  s: PartnerProjectSprint;
+  nested?: boolean;
+}) {
+  const total = s.done + s.open;
+  const pct = total > 0 ? Math.round((s.done / total) * 100) : 0;
+  return (
+    <div
+      className={
+        nested ? "bg-muted/30 border border-border rounded-xl p-4" : undefined
+      }
+    >
+      <div className="flex items-center justify-between gap-3">
+        <span className="font-heading font-semibold text-dark-blue text-sm">
+          {s.name}
+        </span>
+        <span
+          className={`text-xs rounded-full px-2 py-0.5 ${
+            s.status === "Active"
+              ? "bg-accent-teal/15 text-accent-teal"
+              : "bg-muted text-muted-foreground"
+          }`}
+        >
+          {s.status === "Active" ? "In progress" : "Wrapped up"}
+        </span>
+      </div>
+      <p className="text-xs text-muted-foreground mt-1">
+        {fmtDate(s.startsAt)} – {fmtDate(s.endsAt)}
+      </p>
+      <div className="mt-3">
+        <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
+          <span>
+            {s.done} of {total} tasks done
+          </span>
+          <span>{pct}%</span>
+        </div>
+        <div className="h-2 rounded-full bg-muted overflow-hidden">
+          <div
+            className="h-full bg-accent-teal rounded-full"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EpicCard({ epic }: { epic: PartnerProjectEpic }) {
+  return (
+    <div className="bg-card border border-border rounded-2xl p-5 flex flex-col gap-4">
+      <div>
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="font-heading font-semibold text-dark-blue text-base">
+            {epic.title}
+          </h3>
+          <span className="text-xs rounded-full px-2 py-0.5 bg-accent-coral/10 text-accent-coral flex-shrink-0">
+            {EPIC_STATUS_LABEL[epic.status]}
+          </span>
+        </div>
+        {epic.startsAt && epic.endsAt && (
+          <p className="text-xs text-muted-foreground mt-1">
+            {fmtDate(epic.startsAt)} – {fmtDate(epic.endsAt)}
+          </p>
+        )}
+      </div>
+      {epic.sprints.length > 0 && (
+        <div className="flex flex-col gap-3 pl-1 border-l-2 border-accent-coral/30 ml-0.5">
+          {epic.sprints.map((s) => (
+            <div key={s.id} className="pl-3">
+              <SprintProgressCard s={s} nested />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // Renders the partner-facing read surface for a project. Shared by the real
 // partner portal (partner.projects.$id.tsx) and the in-app preview any
@@ -27,11 +120,14 @@ export function PartnerProjectHubView({
     partnerSince,
     currentTermCode,
     team,
-    sprints,
+    epics,
+    ungroupedSprints,
     nextSprint,
     recentlyDone,
     sharedPages,
   } = data;
+
+  const hasCurrentWork = epics.length > 0 || ungroupedSprints.length > 0;
 
   return (
     <div className="flex flex-col gap-8">
@@ -70,12 +166,12 @@ export function PartnerProjectHubView({
         </div>
       </div>
 
-      {/* What's going on right now */}
+      {/* What's going on right now — epics first, sprints nested under each */}
       <section>
         <h2 className="font-heading text-lg font-semibold text-dark-blue mb-3">
           Current work
         </h2>
-        {sprints.length === 0 ? (
+        {!hasCurrentWork ? (
           <div className="bg-card border border-border rounded-2xl p-6 text-sm text-muted-foreground">
             No sprint in flight right now.
             {nextSprint && (
@@ -85,46 +181,19 @@ export function PartnerProjectHubView({
             )}
           </div>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2">
-            {sprints.map((s) => {
-              const total = s.done + s.open;
-              const pct = total > 0 ? Math.round((s.done / total) * 100) : 0;
-              return (
-                <div key={s.id} className="bg-card border border-border rounded-2xl p-5">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="font-heading font-semibold text-dark-blue">
-                      {s.name}
-                    </span>
-                    <span
-                      className={`text-xs rounded-full px-2 py-0.5 ${
-                        s.status === "Active"
-                          ? "bg-accent-teal/15 text-accent-teal"
-                          : "bg-muted text-muted-foreground"
-                      }`}
-                    >
-                      {s.status === "Active" ? "In progress" : "Wrapped up"}
-                    </span>
+          <div className="flex flex-col gap-4">
+            {epics.map((epic) => (
+              <EpicCard key={epic.id} epic={epic} />
+            ))}
+            {ungroupedSprints.length > 0 && (
+              <div className="grid gap-4 sm:grid-cols-2">
+                {ungroupedSprints.map((s) => (
+                  <div key={s.id} className="bg-card border border-border rounded-2xl p-5">
+                    <SprintProgressCard s={s} />
                   </div>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {fmtDate(s.startsAt)} – {fmtDate(s.endsAt)}
-                  </p>
-                  <div className="mt-4">
-                    <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
-                      <span>
-                        {s.done} of {total} tasks done
-                      </span>
-                      <span>{pct}%</span>
-                    </div>
-                    <div className="h-2 rounded-full bg-muted overflow-hidden">
-                      <div
-                        className="h-full bg-accent-teal rounded-full"
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+                ))}
+              </div>
+            )}
             {nextSprint && (
               <div className="bg-card border border-dashed border-border rounded-2xl p-5 text-sm text-muted-foreground">
                 <span className="font-medium text-foreground">Next up:</span>{" "}

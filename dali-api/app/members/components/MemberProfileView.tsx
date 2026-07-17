@@ -102,9 +102,11 @@ export function MemberProfileView({
 
   // Flat, card-stacked layout (no left nav, no collapsible chrome) — matches
   // the partner org detail page: an unboxed identity header up top, then each
-  // section as its own bordered card. Account is the exception — it stays
-  // embedded (no border) so it reads as a continuation of the identity
-  // header above it, same as AccountSettingsBlock does on /settings.
+  // section as its own bordered card. Name/pronouns edit inside Personal's
+  // own form (see PersonalSection's showIdentitySummary) rather than a
+  // separate Account card, so there's a single Edit control on this page —
+  // unlike /settings, which has no Personal section and so still renders
+  // AccountSettingsBlock (name/pronouns + major/class year) on its own.
   const page = (
     <div className="max-w-4xl w-full flex flex-col gap-6">
       <PresenceBar className="self-end" />
@@ -142,14 +144,6 @@ export function MemberProfileView({
           )}
         </div>
       </div>
-
-      <AccountSettingsSection
-        member={member}
-        roleLabels={roleLabels}
-        canEdit={canEdit}
-        embedded
-        showIdentitySummary={false}
-      />
 
       <PersonalSection
         member={member}
@@ -381,6 +375,23 @@ function PersonalSection({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {showIdentitySummary && (
                 <>
+                  <FieldInput
+                    name="firstName"
+                    label="First name"
+                    defaultValue={member.firstName}
+                    required
+                  />
+                  <FieldInput
+                    name="lastName"
+                    label="Last name"
+                    defaultValue={member.lastName}
+                    required
+                  />
+                  <FieldInput
+                    name="pronouns"
+                    label="Pronouns"
+                    defaultValue={member.pronouns ?? ""}
+                  />
                   <FieldInput
                     name="major"
                     label="Major"
@@ -1032,10 +1043,12 @@ const PERSONAL_FIELDS = new Set<keyof ProfileMember>([
   "dietaryRestrictions",
 ]);
 
-// Personal's fields when it also hosts major/class year (the member/profile
-// view, where Account only edits name + pronouns).
+// Personal's fields when it also hosts name/pronouns + major/class year (the
+// member/profile view, which has no separate Account card — see
+// MemberProfileView's page layout comment).
 const PERSONAL_FIELDS_WITH_IDENTITY = new Set<keyof ProfileMember>([
   ...PERSONAL_FIELDS,
+  ...ACCOUNT_FIELDS_BASE,
   "major",
   "classYear",
 ]);
