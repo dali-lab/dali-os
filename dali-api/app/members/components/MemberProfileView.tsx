@@ -55,6 +55,7 @@ export function MemberProfileView({
     presencePhotoUrl,
     presenceSubtitle,
     allowedLevels,
+    mentorshipPanel,
   } = data;
 
   // /members/:id renders inside a TabWorkspace iframe; a successful save only
@@ -169,6 +170,10 @@ export function MemberProfileView({
 
       {hasEducation && data.education && (
         <EducationSection education={data.education} />
+      )}
+
+      {mentorshipPanel && (
+        <MentorshipPanel data={mentorshipPanel} memberId={member.id} />
       )}
     </div>
   );
@@ -1169,4 +1174,53 @@ function birthdayInputValue(value: string | null): string {
   const m = String(d.getUTCMonth() + 1).padStart(2, "0");
   const day = String(d.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+// Mentorship pairings + notes link for a viewed-other user. The loader gates
+// `mentorshipPanel` so this only renders when the viewer is a lab mentor or
+// Core looking at someone else's profile, never on their own.
+function MentorshipPanel({
+  data,
+  memberId,
+}: {
+  data: NonNullable<ProfilePageData["mentorshipPanel"]>;
+  memberId: string;
+}) {
+  return (
+    <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <h2 className="font-heading font-semibold text-foreground">
+          Mentorship
+        </h2>
+        {data.recentNoteCount > 0 && (
+          <Link
+            to={`/mentorship/browse?menteeId=${memberId}`}
+            className="text-sm text-accent-coral hover:underline"
+          >
+            View notes ({data.recentNoteCount})
+          </Link>
+        )}
+      </div>
+      {data.pairs.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          No mentorship pairings on record.
+        </p>
+      ) : (
+        <ul className="divide-y divide-border">
+          {data.pairs.map((p) => (
+            <li key={p.id} className="py-2 text-sm flex flex-col">
+              <span className="font-medium text-foreground">
+                {p.role === "mentor"
+                  ? `Mentoring ${p.counterpart.firstName} ${p.counterpart.lastName}`
+                  : `Mentee of ${p.counterpart.firstName} ${p.counterpart.lastName}`}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {p.projectName} · {p.domainCode} · {p.termCode}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
 }

@@ -12,6 +12,7 @@ import {
   FolderKanban,
   UsersRound,
   Handshake,
+  Heart,
   Home,
   Workflow,
   ClipboardList,
@@ -34,6 +35,7 @@ interface LayoutProps {
   canViewStaffing?: boolean
   isInterviewer?: boolean
   hasHiringAccess?: boolean
+  isLabMentor?: boolean
 }
 
 const SIDEBAR_COLLAPSED_KEY = 'dali:sidebar:collapsed'
@@ -49,7 +51,7 @@ type NavEntry = {
   show: boolean
 }
 
-export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDomainLead = false, canViewForms = false, canViewStaffing = false, isInterviewer = false, hasHiringAccess = false }: LayoutProps) {
+export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDomainLead = false, canViewForms = false, canViewStaffing = false, isInterviewer = false, hasHiringAccess = false, isLabMentor = false }: LayoutProps) {
   const location = useLocation()
   const { revalidate } = useRevalidator()
   // Held in a ref so the message listener (mounted once) always calls the
@@ -161,6 +163,9 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
     { key: 'forms', label: 'Forms', to: '/forms', icon: ClipboardList, show: canViewForms },
     { key: 'hiring', label: 'Hiring', to: '/hiring', icon: Briefcase, show: hasHiringAccess },
     { key: 'projects', label: 'Projects', to: '/projects', icon: FolderKanban, show: true },
+    // Hidden from mentees entirely; the routes are gated server-side by
+    // canViewMentorship regardless of what the sidebar shows.
+    { key: 'mentorship', label: 'Mentorship', to: '/mentorship', icon: Heart, show: isLabMentor || isCore },
     { key: 'members', label: 'People', to: '/members', icon: UsersRound, show: true },
     { key: 'partners', label: 'Partners', to: '/partners', icon: Handshake, show: true },
     { key: 'education', label: 'Education', to: '/education', icon: GraduationCap, show: true },

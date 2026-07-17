@@ -9,6 +9,7 @@ import {
   canViewForms,
   canViewStaffing,
   getActiveCoreCycleTermIds,
+  isLabMentor,
 } from "~/lib/roles";
 
 // Phase 2: roles helpers now query AdminMembership / CoreAssignment /
@@ -23,6 +24,9 @@ const mockPrisma = prisma as unknown as {
   instructorAssignment: { findFirst: ReturnType<typeof vi.fn> };
   cycleReviewer: { findFirst: ReturnType<typeof vi.fn> };
   cycleInterviewer: { findFirst: ReturnType<typeof vi.fn> };
+  projectAssignment: { findFirst: ReturnType<typeof vi.fn> };
+  domainEligibility: { findFirst: ReturnType<typeof vi.fn> };
+  user: { findFirst: ReturnType<typeof vi.fn> };
   term: {
     findFirst: ReturnType<typeof vi.fn>;
     findMany: ReturnType<typeof vi.fn>;
@@ -40,6 +44,9 @@ beforeEach(() => {
   (mockPrisma as any).instructorAssignment = { findFirst: vi.fn() };
   (mockPrisma as any).cycleReviewer = { findFirst: vi.fn() };
   (mockPrisma as any).cycleInterviewer = { findFirst: vi.fn() };
+  (mockPrisma as any).projectAssignment = { findFirst: vi.fn().mockResolvedValue(null) };
+  (mockPrisma as any).domainEligibility = { findFirst: vi.fn().mockResolvedValue(null) };
+  (mockPrisma as any).user = { findFirst: vi.fn().mockResolvedValue(null) };
   // Core access scopes to the active election cycle, looked up via
   // currentTerm (findFirst) → cycle window (findMany). Default to a Spring
   // term so Core checks resolve a non-empty cycle.
@@ -220,6 +227,44 @@ describe("getActiveCoreCycleTermIds (Spring-anchored Core cycle)", () => {
       { id: "t-26x" },
     ]);
     expect(await getActiveCoreCycleTermIds()).toEqual(["t-26s", "t-26x"]);
+  });
+});
+
+describe("isLabMentor (broad mentor-collective gate)", () => {
+  it("true for a current-term P3 ProjectAssignment", async () => {
+    mockPrisma.projectAssignment.findFirst.mockResolvedValue({ id: "pa-1" });
+    expect(await isLabMentor("u", "term-1")).toBe(true);
+  });
+
+  it("true for a current-term DomainLeadAssignment", async () => {
+    mockPrisma.domainLeadAssignment.findFirst.mockResolvedValue({ id: "dl-1" });
+    expect(await isLabMentor("u", "term-1")).toBe(true);
+  });
+
+  it("true for a current-term CoreAssignment", async () => {
+    mockPrisma.coreAssignment.findFirst.mockResolvedValue({ id: "c-1" });
+    expect(await isLabMentor("u", "term-1")).toBe(true);
+  });
+
+  it("true for PM Mentor (PM eligibility P3 + any current-term role)", async () => {
+    mockPrisma.domainEligibility.findFirst.mockResolvedValue({ id: "de-1" });
+    mockPrisma.user.findFirst.mockResolvedValue({ id: "u" });
+    expect(await isLabMentor("u", "term-1")).toBe(true);
+  });
+
+  it("false for PM-eligible user with no current-term activity", async () => {
+    mockPrisma.domainEligibility.findFirst.mockResolvedValue({ id: "de-1" });
+    mockPrisma.user.findFirst.mockResolvedValue(null);
+    expect(await isLabMentor("u", "term-1")).toBe(false);
+  });
+
+  it("false when user has no mentor-shaped role this term", async () => {
+    expect(await isLabMentor("u", "term-1")).toBe(false);
+  });
+
+  it("false when termId is unset and there is no current term", async () => {
+    mockPrisma.term.findFirst.mockResolvedValueOnce(null);
+    expect(await isLabMentor("u")).toBe(false);
   });
 });
 

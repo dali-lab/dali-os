@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { fullName as buildFullName } from "~/lib/display";
 import { Avatar } from "~/components/ui/Avatar";
 import { RolePills } from "~/components/ui/RolePills";
@@ -26,6 +27,17 @@ type Props = {
   dragHandleProps: Record<string, unknown>;
   /** The card is the one being dragged — dim it; the DragOverlay floats a copy. */
   isDragging: boolean;
+  /**
+   * Optional mentorship control (the "Mentor" dropdown badge) rendered below
+   * the card body. It's interactive, so it lives outside the card's drag/click
+   * surface and stops propagation itself.
+   */
+  mentorSlot?: ReactNode;
+  /**
+   * Tint the card as an external mentor — this member mentors someone on
+   * another team. A distinct teal edge marks the cross-team relationship.
+   */
+  accentExternal?: boolean;
 };
 
 export function MemberCard({
@@ -37,6 +49,8 @@ export function MemberCard({
   draggable,
   dragHandleProps,
   isDragging,
+  mentorSlot,
+  accentExternal,
 }: Props) {
   const fullName = buildFullName(card);
 
@@ -66,7 +80,11 @@ export function MemberCard({
       }}
       aria-label={`View ${fullName}'s bid`}
       title="View bid"
-      className={`bg-card border border-border rounded-md p-2.5 flex flex-col gap-1.5 select-none ${
+      className={`rounded-md p-2.5 flex flex-col gap-1.5 select-none ${
+        accentExternal
+          ? "bg-accent-teal/[0.06] border border-accent-teal/40"
+          : "bg-card border border-border"
+      } ${
         draggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"
       } ${isDragging ? "opacity-40" : "hover:bg-muted/20"}`}
     >
@@ -77,6 +95,19 @@ export function MemberCard({
         domainNames={domainNames}
         onRemove={onRemove}
       />
+      {mentorSlot && (
+        // Keep drag/click off the mentorship control: a press here must not
+        // start a card drag or open the bid modal.
+        <div
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          className="cursor-default"
+        >
+          {mentorSlot}
+        </div>
+      )}
     </div>
   );
 }

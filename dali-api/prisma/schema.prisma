@@ -107,6 +107,8 @@ model User {
   adminMembership         AdminMembership?
   mentorshipPairsAsMentee MentorshipPair[]       @relation("MenteePairs")
   mentorshipPairsAsMentor MentorshipPair[]       @relation("MentorPairs")
+  stagedPairsAsMentee     StagedMentorshipPair[] @relation("StagedMenteePairs")
+  stagedPairsAsMentor     StagedMentorshipPair[] @relation("StagedMentorPairs")
 
   // ─── Phase 1: project workspace back-relations ────────────────────────────
   createdTasks               Task[]               @relation("TaskCreatedBy")
@@ -456,6 +458,7 @@ model Domain {
   eligibilities             DomainEligibility[]
   projectAssignments        ProjectAssignment[]
   mentorshipPairs           MentorshipPair[]
+  stagedMentorshipPairs     StagedMentorshipPair[]
   tasks                     Task[]
   projectRoleRequests       ProjectRoleRequest[]
   partnerApplicationDomains PartnerApplicationDomain[]
@@ -1899,6 +1902,37 @@ model MentorshipPair {
   @@index([mentorUserId, termId])
 }
 
+// A mentor/mentee pairing STAGED during staffing, before finalize. Core builds
+// these in the staffing board's per-column side panel; they only become real
+// MentorshipPair rows when the mentee's project is finalized (which also
+// promotes any non-P3 mentors to P3 — see api.staffing.finalize). Keeping them
+// separate from MentorshipPair means an in-progress plan never looks live, and
+// a mentor may be picked here even before they're eligible.
+//   - projectId  = the MENTEE's project (an external mentor lives elsewhere).
+//   - domainId   = the mentee's domain on that project.
+//   - mentor may be any lab member; P3-ness is resolved/forced at finalize.
+model StagedMentorshipPair {
+  id              String @id @default(cuid())
+  staffingCycleId String
+  projectId       String
+  menteeUserId    String
+  mentorUserId    String
+  domainId        String
+
+  createdAt   DateTime @default(now())
+  createdById String?
+
+  staffingCycle StaffingCycle @relation(fields: [staffingCycleId], references: [id])
+  project       Project       @relation(fields: [projectId], references: [id])
+  mentee        User          @relation("StagedMenteePairs", fields: [menteeUserId], references: [id])
+  mentor        User          @relation("StagedMentorPairs", fields: [mentorUserId], references: [id])
+  domain        Domain        @relation(fields: [domainId], references: [id])
+
+  // One staged pairing per (cycle, mentee, mentor, domain) — re-adding is a no-op.
+  @@unique([staffingCycleId, menteeUserId, mentorUserId, domainId])
+  @@index([staffingCycleId, projectId])
+}
+
 // Year-long elected lead position. `leadTitle` is display-only — Core has
 // broad access to everything; the title affords UI surfacing but does not
 // gate permissions.
@@ -2054,6 +2088,7 @@ model Project {
   assignments       ProjectAssignment[]
   roleRequests      ProjectRoleRequest[]
   mentorshipPairs   MentorshipPair[]
+  stagedMentorshipPairs StagedMentorshipPair[]
   sprints           Sprint[]
   epics             Epic[]
   tasks             Task[]
@@ -2753,6 +2788,7 @@ model StaffingCycle {
   formSubmissions   FormSubmission[]
   boardMembers      StaffingBoardMember[]
   cardOrders        StaffingCardOrder[]
+  stagedMentorshipPairs StagedMentorshipPair[]
 }
 
 // A member a staffing lead manually placed on the board for a cycle WITHOUT a
@@ -3251,11 +3287,12 @@ model MentorNote {
   projectId    String
   termId       String
   domainId     String
-  // Start-of-week date (Monday) the note covers. App enforces one row
+  // Start-of-week date (Monday, UTC) the note covers. App enforces one row
   // per (mentor, mentee, project, term, domain, week).
   weekOf       DateTime
-  // Note body as collab doc — template seeded on create.
-  contentDocId String
+  // Tiptap/ProseMirror JSON document. Seeded from the current default
+  // MentorNoteTemplate on create. Single-author — no Yjs/Hocuspocus.
+  contentJson  Json     @default("{}")
 
   mentor User @relation("MentorNoteMentor", fields: [mentorId], references: [id])
   mentee User @relation("MentorNoteMentee", fields: [menteeId], references: [id])
@@ -3271,9 +3308,9 @@ model MentorNote {
 model MentorNoteTemplate {
   id            String   @id @default(cuid())
   name          String
-  // Template body as collab doc; new MentorNote contentDocs are seeded
-  // from this on create.
-  contentDocId  String
+  // Tiptap/ProseMirror JSON document; new MentorNotes seed contentJson
+  // from the current isDefault template on create.
+  contentJson   Json     @default("{}")
   isDefault     Boolean  @default(false)
   // Free-form last-updated userId.
   lastUpdatedBy String?

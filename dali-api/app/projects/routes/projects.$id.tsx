@@ -28,7 +28,7 @@ import { Avatar } from "~/components/ui/Avatar";
 import { ProjectImageBanner } from "../components/ProjectImageBanner";
 import { Markdown } from "~/components/Markdown";
 import { parseSessionCookie } from "~/lib/cookies";
-import { isCore, isProjectMember, canManageStaffing, currentTerm } from "~/lib/roles";
+import { isCore, isProjectMember, canManageStaffing, currentTerm, isLabMentor } from "~/lib/roles";
 import {
   linkProjectPartner,
   unlinkProjectPartner,
@@ -36,6 +36,7 @@ import {
 } from "~/partners/lib/partner-access";
 import { getPresenceUser } from "~/lib/presence-user";
 import { TaskBoard } from "../components/TaskBoard";
+import { ProjectMentorshipTab } from "~/mentorship/components/ProjectMentorshipTab";
 import { type TimelineEpic, type EpicStatus } from "../components/EpicsTimeline";
 import {
   EpicSprintManager,
@@ -94,15 +95,16 @@ type ProjectStatus = (typeof STATUSES)[number];
 // "Scope" is no longer a public tab — its domain/term/challenge config moved
 // into a settings popup (gated to Core/Admin/Staff). Public tabs are just the
 // content views.
-const TABS = ["overview", "work"] as const;
+const TABS = ["overview", "work", "mentorship"] as const;
 type Tab = (typeof TABS)[number];
 function isTab(x: string | null): x is Tab {
-  return x === "overview" || x === "work";
+  return x === "overview" || x === "work" || x === "mentorship";
 }
 
 const TAB_LABELS: Record<Tab, string> = {
   overview: "Overview",
   work: "Work",
+  mentorship: "Mentorship",
 };
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -315,6 +317,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // The Scope/challenge settings popup is visible to Core, Admin, or staffing
   // leads. Editing still requires canEditScope (isCore) — the action enforces that.
   const canViewScope = canEditScope || (await canManageStaffing(auth.user.sub));
+  // Mentorship tab is for the mentor collective (lab mentors + Core). Mentees
+  // never see it on the project page.
+  const canViewMentorshipTab = core || (await isLabMentor(auth.user.sub));
 
   // Collab editor wiring (same as the hiring routes): session cookie is the
   // WebSocket auth token; userName labels the presence cursor.
@@ -686,6 +691,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     canViewScope,
     hasActivePartner,
     linkablePartnerOrgs,
+    canViewMentorshipTab,
     currentTerm: current ? { id: current.id, code: current.code } : null,
     collabToken,
     userName,
@@ -976,6 +982,7 @@ export default function ProjectDetail() {
     canViewScope,
     hasActivePartner,
     linkablePartnerOrgs,
+    canViewMentorshipTab,
     currentTerm,
     collabToken,
     userName,
@@ -1016,7 +1023,9 @@ export default function ProjectDetail() {
       {/* Tab bar. Each section now owns its own edit button — there's no
           page-level edit mode left to clear when switching tabs. */}
       <div className="flex items-center gap-1 border-b border-border">
-        {TABS.map((t) => (
+        {TABS.filter(
+          (t) => t !== "mentorship" || canViewMentorshipTab,
+        ).map((t) => (
           <button
             key={t}
             type="button"
@@ -1105,6 +1114,13 @@ export default function ProjectDetail() {
           collabToken={collabToken}
           userName={userName}
           currentUserId={currentUserId}
+        />
+      )}
+
+      {tab === "mentorship" && canViewMentorshipTab && (
+        <ProjectMentorshipTab
+          projectId={project.id}
+          currentTermId={currentTerm?.id ?? null}
         />
       )}
     </div>

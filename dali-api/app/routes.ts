@@ -118,6 +118,13 @@ export default [
     route("education/:offeringId/page/:pageId", "education/routes/education.$offeringId.page.$pageId.tsx"),
     route("education/:offeringId/assignments/:assignmentId", "education/routes/education.$offeringId.assignments.$assignmentId.tsx"),
 
+    // Mentorship — weekly notes hub + browser + templates (Core).
+    // Hidden from mentees entirely; gated server-side by canViewMentorship.
+    route("mentorship", "mentorship/routes/mentorship.tsx"),
+    route("mentorship/browse", "mentorship/routes/mentorship.browse.tsx"),
+    route("mentorship/templates", "mentorship/routes/mentorship.templates.tsx"),
+    route("mentorship/notes/:id", "mentorship/routes/mentorship.notes.$id.tsx"),
+
     // Internal processes. The bare route is the area hub.
     route("internal-processes", "internal-processes/routes/internal-processes.hub.tsx"),
     route("internal-processes/transfer", "internal-processes/routes/internal-processes.transfer.tsx"),
@@ -303,6 +310,7 @@ export default [
   route("api/staffing/board-member", "projects/routes/api.staffing.board-member.ts"),
   route("api/staffing/events", "projects/routes/api.staffing.events.ts"),
   route("api/staffing/reorder", "projects/routes/api.staffing.reorder.ts"),
+  route("api/staffing/mentorship", "projects/routes/api.staffing.mentorship.ts"),
 
   // Core-only level correction for an already-finalized ProjectAssignment.
   route(
@@ -441,4 +449,11 @@ export default [
   // Collaborative editing version history
   route("api/collab/versions", "routes/api.collab.versions.ts"),
   route("api/collab/versions/:id", "routes/api.collab.versions.$id.ts"),
+
+  // Mentorship API — weekly notes, templates, mentor↔mentee pairs.
+  route("api/mentorship/notes", "mentorship/routes/api.mentorship.notes.ts"),
+  route("api/mentorship/notes/:id", "mentorship/routes/api.mentorship.notes.$id.ts"),
+  route("api/mentorship/templates", "mentorship/routes/api.mentorship.templates.ts"),
+  route("api/mentorship/templates/:id", "mentorship/routes/api.mentorship.templates.$id.ts"),
+  route("api/mentorship/pairs", "mentorship/routes/api.mentorship.pairs.ts"),
 ] satisfies RouteConfig;
