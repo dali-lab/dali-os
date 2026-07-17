@@ -286,14 +286,6 @@ export function EpicsTimeline({ epics }: { epics: TimelineEpic[] }) {
     return Math.max(((b - a) / DAY + 1) * PX_PER_DAY, PX_PER_DAY);
   }
 
-  if (epics.length === 0) {
-    return (
-      <div className="text-sm text-muted-foreground italic py-8 text-center border border-border rounded-lg bg-card">
-        No epics yet.
-      </div>
-    );
-  }
-
   const MIN_ROWS = 8;
   const fillerRows = Math.max(MIN_ROWS - epics.length, 0);
   const FILLER_H = 48;
@@ -329,6 +321,19 @@ export function EpicsTimeline({ epics }: { epics: TimelineEpic[] }) {
       scrollerRef.current.scrollLeft = initialScroll;
     }
   }, [initialScroll]);
+
+  // Empty state is returned only AFTER every hook above has run. Bailing out
+  // earlier (as this did) changes the hook count between renders, so adding a
+  // project's first epic — 0 -> 1 — crashed the whole page with "Rendered more
+  // hooks than during the previous render". The hooks above all handle the
+  // empty case (bounds === null), so running them here is harmless.
+  if (epics.length === 0) {
+    return (
+      <div className="text-sm text-muted-foreground italic py-8 text-center border border-border rounded-lg bg-card">
+        No epics yet.
+      </div>
+    );
+  }
 
   return (
     <div className="border border-border rounded-lg bg-card overflow-hidden">

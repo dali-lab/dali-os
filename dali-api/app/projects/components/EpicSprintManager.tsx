@@ -73,17 +73,24 @@ function dateInputValue(iso: string): string {
   return new Date(iso).toISOString().slice(0, 10);
 }
 
-async function api(url: string, method: "POST" | "DELETE", body?: unknown): Promise<void> {
+// Same request/error handling as `api`, but hands back the parsed response.
+// Used by epic creation, which needs the new id to open its detail modal.
+async function apiJson<T>(url: string, method: "POST" | "DELETE", body?: unknown): Promise<T> {
   const res = await fetch(url, {
     method,
     credentials: "include",
     headers: body ? { "Content-Type": "application/json" } : undefined,
     body: body ? JSON.stringify(body) : undefined,
   });
+  const json = (await res.json().catch(() => null)) as (T & { error?: string }) | null;
   if (!res.ok) {
-    const b = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(b.error ?? `Request failed: ${res.status}`);
+    throw new Error(json?.error ?? `Request failed: ${res.status}`);
   }
+  return json as T;
+}
+
+async function api(url: string, method: "POST" | "DELETE", body?: unknown): Promise<void> {
+  await apiJson<unknown>(url, method, body);
 }
 
 export function EpicSprintManager({
@@ -209,6 +216,54 @@ export function EpicSprintManager({
     <div className="flex flex-col gap-4">
       {errorBanner}
 
+      {/* New epic — a modal like the detail view, not inline inputs in the
+          list. On save we immediately reopen as the real detail modal for the
+          created epic (see onSubmit), so sprints/stories can be added right
+          away without hunting for the new row. */}
+      <Modal
+        open={newEpicOpen}
+        onClose={() => setNewEpicOpen(false)}
+        labelledBy="new-epic-title"
+        disableEscape={busy}
+        containerClassName="bg-card rounded-2xl shadow-xl max-w-2xl w-full p-5 sm:p-6 my-auto"
+      >
+        <div className="flex items-center justify-between gap-2 mb-4">
+          <h2 id="new-epic-title" className="font-heading text-lg font-semibold text-foreground">
+            New epic
+          </h2>
+          <button
+            type="button"
+            onClick={() => setNewEpicOpen(false)}
+            aria-label="Close"
+            className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <p className="text-xs text-muted-foreground mb-3">
+          Name it and save — you can add sprints, stories and a description next.
+        </p>
+        <EpicForm
+          busy={busy}
+          onCancel={() => setNewEpicOpen(false)}
+          onSubmit={(values) =>
+            run(async () => {
+              const created = await apiJson<{ id: string }>(
+                `/api/projects/${projectId}/epics`,
+                "POST",
+                values,
+              );
+              setNewEpicOpen(false);
+              // Hand straight off to the detail modal, scrolled to Sprints —
+              // this is what makes "add sprints while creating the first epic"
+              // a single flow. `openEpic` only sets the id; the modal renders
+              // once the revalidate in `run` lands the new row in `epics`.
+              openEpic(created.id, { edit: false, addSprint: true });
+            })
+          }
+        />
+      </Modal>
+
       <Modal
         open={activeEpic != null}
         onClose={closeEpic}
@@ -291,19 +346,6 @@ export function EpicSprintManager({
 
         {epicsOpen && (
           <>
-        {newEpicOpen && (
-          <EpicForm
-            busy={busy}
-            onCancel={() => setNewEpicOpen(false)}
-            onSubmit={(values) =>
-              run(async () => {
-                await api(`/api/projects/${projectId}/epics`, "POST", values);
-                setNewEpicOpen(false);
-              })
-            }
-          />
-        )}
-
         {visibleEpics.length === 0 && !newEpicOpen ? (
           <p className="text-sm text-muted-foreground italic">
             {filtering ? `No epics with status "${statusFilter}".` : "No epics yet."}
@@ -555,7 +597,10 @@ function EpicDetail({
   const [editEpicOpen, setEditEpicOpen] = useState(
     canManage && startInEdit && !startEditSprintId && !startAddSprint,
   );
-  const [newSprintOpen, setNewSprintOpen] = useState(false);
+  // startAddSprint opens the sprint form outright, not just a scroll: both of
+  // its entry points ("Add one" in the list, and landing here right after
+  // creating an epic) mean "I want to add a sprint now".
+  const [newSprintOpen, setNewSprintOpen] = useState(canManage && startAddSprint);
   const [sprintsOpen, setSprintsOpen] = useState(true);
   const [editSprintId, setEditSprintId] = useState<string | null>(
     canManage ? startEditSprintId : null,
