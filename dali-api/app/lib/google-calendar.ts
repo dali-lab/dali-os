@@ -1,3 +1,4 @@
+import DOMPurify from "isomorphic-dompurify";
 import { prisma } from "~/lib/db";
 import { decrypt, encrypt } from "~/lib/calendar-crypto";
 import { GoogleOAuthError, refreshGoogleToken } from "~/lib/google-oauth";
@@ -146,24 +147,27 @@ interface GoogleEvent {
 /**
  * Google descriptions are often HTML; flatten to plain text for display.
  *
- * Entities MUST be decoded before tags are stripped, not after: decoding
- * `&lt;script&gt;` into `<script>` only after the tag-strip regex has already
- * run would leave a live tag in the "plain text" output (CodeQL flagged this
- * exact ordering as an incomplete-sanitization / HTML-injection risk).
- * `&amp;` is decoded last among the entities so a literal, still-encoded
- * `&amp;lt;` in the source can't be double-unescaped into `<`.
+ * DOMPurify (a real HTML parser, not string regex) does the actual
+ * sanitization — restricted to just the tags we turn into newlines — so a
+ * real `<script>` tag, however it's encoded in the source, can't survive.
+ * Deliberately does NOT decode `&lt;`/`&gt;` afterward: those are the only
+ * two entities that can reconstruct an angle bracket, and DOMPurify safely
+ * leaves an inert, escaped `&lt;script&gt;` in the source exactly as such —
+ * decoding it back to `<script>` here would hand the vulnerability right
+ * back (this is what CodeQL flagged: the output must never contain a literal
+ * "<script", not just avoid parsing as one). Everything else DOMPurify is
+ * already used for elsewhere too (~/lib/email.ts).
  */
 function plainTextFromGoogleHtml(html: string): string {
-  return html
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'")
-    .replace(/&amp;/gi, "&")
+  const safe = DOMPurify.sanitize(html, { ALLOWED_TAGS: ["p", "br"], ALLOWED_ATTR: [] });
+  return safe
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/p>/gi, "\n")
     .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&amp;/gi, "&")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
