@@ -160,7 +160,7 @@ export default function PortalOfferingDetail() {
 
       {descriptionHtml && (
         <section
-          className="bg-card border border-border rounded-lg p-5 prose prose-sm max-w-none"
+          className="bg-card border border-border rounded-lg p-5 prose prose-sm dark:prose-invert max-w-none"
           dangerouslySetInnerHTML={{ __html: descriptionHtml }}
         />
       )}
