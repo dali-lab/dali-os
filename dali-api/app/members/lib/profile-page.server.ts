@@ -5,7 +5,7 @@
 
 import { redirect } from "react-router";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { parseSessionCookie } from "~/lib/cookies";
 import { getPresenceUser } from "~/lib/presence-user";
@@ -26,6 +26,7 @@ import {
   removeEligibility,
 } from "~/admin-console/lib/eligibility.server";
 import { NEW_MEMBER_PROFILE_FORM_NAME } from "~/members/lib/profile-form-interpreter";
+import { getEducationProfile } from "~/education/lib/engagement.server";
 
 export type ProfileMember = {
   id: string;
@@ -42,7 +43,7 @@ export type ProfileMember = {
   githubUsername: string | null;
   personalSite: string | null;
   timeZone: string | null;
-  collegeId: string | null;
+  netId: string | null;
   phoneNumber: string | null;
   birthday: string | null;
   dietaryRestrictions: string | null;
@@ -96,6 +97,29 @@ export type ProfilePageData = {
     }>;
     recentNoteCount: number;
   } | null;
+  /** Education engagement — attended offerings (note lanes excluded) and
+   *  offerings taught. Loaded for self and Core viewers only; null hides the
+   *  card entirely for peer viewers. */
+  education: {
+    attended: Array<{
+      offeringId: string;
+      title: string;
+      type: "Miniseries" | "Workshop";
+      startsAt: Date;
+      endsAt: Date;
+      status: string;
+      attendance: { present: number; excused: number; total: number };
+      certificateIssuedAt: Date | null;
+    }>;
+    taught: Array<{
+      offeringId: string;
+      title: string;
+      type: "Miniseries" | "Workshop";
+      termCode: string;
+    }>;
+    ceCredits: Array<{ termCode: string; count: number }>;
+
+  } | null;
 };
 
 const TEXT_FIELDS = [
@@ -110,7 +134,7 @@ const TEXT_FIELDS = [
   "timeZone",
   "dietaryRestrictions",
   "phoneNumber",
-  "collegeId",
+  "netId",
   "personalEmail",
 ] as const;
 
@@ -123,7 +147,8 @@ export async function loadProfilePage({
 }): Promise<ProfilePageData> {
   const auth = await requireAuth(request);
   if (!auth.ok) throw redirect("/login");
-  if (auth.user.type === "applicant") throw redirect("/portal");
+  const portalRedirect = redirectApplicantToPortal(auth);
+  if (portalRedirect) throw portalRedirect;
 
   const isSelf = auth.user.sub === targetId;
 
@@ -172,7 +197,7 @@ export async function loadProfilePage({
       personalSite: true,
       timeZone: true,
       photoUrl: true,
-      collegeId: true,
+      netId: true,
       phoneNumber: true,
       birthday: true,
       dietaryRestrictions: true,
@@ -221,6 +246,14 @@ export async function loadProfilePage({
   const canManageEligibility = await isCore(auth.user.sub);
   const adminViewer = await isAdmin(auth.user.sub);
   const canEdit = adminViewer || isSelf;
+
+  // Education engagement is for the member themself and Core — not peer
+  // browsing. Teaching history is public credit, but keeping one gate for the
+  // whole card is simpler until someone needs the split.
+  const education =
+    isSelf || canManageEligibility
+      ? await getEducationProfile(targetId)
+      : null;
 
   // Mentorship panel: visible only when the viewer is a lab mentor (or Core)
   // AND they are NOT looking at their own profile. Mentees never see
@@ -313,6 +346,8 @@ export async function loadProfilePage({
     presencePhotoUrl: presenceUser?.photoUrl ?? null,
     presenceSubtitle: presenceUser?.subtitle ?? null,
     allowedLevels: ALLOWED_LEVELS,
+    education,
+
     mentorshipPanel,
   };
 }
@@ -330,7 +365,8 @@ export async function runProfileAction({
 }): Promise<ProfileActionResult | Response> {
   const auth = await requireAuth(request);
   if (!auth.ok) throw redirect("/login");
-  if (auth.user.type === "applicant") throw redirect("/portal");
+  const portalRedirect = redirectApplicantToPortal(auth);
+  if (portalRedirect) throw portalRedirect;
 
   const form = await request.formData();
   const intent = String(form.get("intent") ?? "profile");
@@ -392,6 +428,11 @@ export async function runProfileAction({
     const raw = (form.get(field) as string | null)?.trim() ?? "";
     if (field === "firstName" || field === "lastName") {
       data[field] = raw;
+    } else if (field === "netId") {
+      // NetID is case-normalized to lowercase — the CAS handler writes it the
+      // same way, and the column has a unique index. Storing mixed case would
+      // produce false "duplicates" against CAS-written rows.
+      data[field] = raw === "" ? null : raw.toLowerCase();
     } else {
       data[field] = raw === "" ? null : raw;
     }
@@ -426,7 +467,20 @@ export async function runProfileAction({
     data.birthday = d;
   }
 
-  await prisma.user.update({ where: { id: targetId }, data });
+  try {
+    await prisma.user.update({ where: { id: targetId }, data });
+  } catch (e) {
+    // P2002 = Prisma unique-constraint violation. The only unique text field
+    // saved here is netId; surface a friendly error instead of a 500.
+    const code = (e as { code?: string } | null)?.code;
+    if (code === "P2002") {
+      return {
+        error:
+          "That NetID is already on another account — contact ops to merge or correct the duplicate.",
+      };
+    }
+    throw e;
+  }
   return redirect(redirectPathFor(request, targetId));
 }
 

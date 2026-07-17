@@ -26,9 +26,9 @@ const NAV: Array<[string, string]> = [
 
 export default function HelpShortcutsPage() {
   return (
-    <main className="max-w-3xl p-8">
+    <main className="max-w-3xl">
       <h1 className="text-2xl font-semibold">Keyboard shortcuts</h1>
-      <p className="mt-2 text-sm text-zinc-600">
+      <p className="mt-2 text-sm text-muted-foreground">
         On Windows and Linux, use <Kbd>Ctrl</Kbd> wherever <Kbd>⌘</Kbd> is
         shown. ⌘⌥-combinations avoid clashing with browser shortcuts your
         browser claims (like ⌘W and ⌘1–9).
@@ -55,12 +55,12 @@ function Section({
           {rows.map(([combo, desc]) => (
             <tr
               key={combo}
-              className="border-b border-zinc-100 last:border-b-0"
+              className="border-b border-border last:border-b-0"
             >
               <td className="w-48 py-2 align-top">
                 <Kbd>{combo}</Kbd>
               </td>
-              <td className="py-2 text-zinc-700">{desc}</td>
+              <td className="py-2 text-foreground">{desc}</td>
             </tr>
           ))}
         </tbody>
@@ -71,7 +71,7 @@ function Section({
 
 function Kbd({ children }: { children: React.ReactNode }) {
   return (
-    <kbd className="rounded border border-zinc-300 bg-zinc-50 px-1.5 py-0.5 font-mono text-xs text-zinc-700">
+    <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground">
       {children}
     </kbd>
   );

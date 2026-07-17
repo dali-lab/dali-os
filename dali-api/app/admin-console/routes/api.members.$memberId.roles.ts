@@ -1,8 +1,9 @@
 import type { Route } from "./+types/api.members.$memberId.roles";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, forbidden } from "~/lib/auth";
 import { isAdmin, currentTerm } from "~/lib/roles";
+import { coreCycleTermIds } from "~/lib/core-cycle";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import { logAuditEvent } from "~/lib/audit";
@@ -26,7 +27,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
-  if (!(await isAdmin(auth.user.sub))) return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+  if (!(await isAdmin(auth.user.sub))) return forbidden(request);
 
   if (request.method !== "PATCH") {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
@@ -78,19 +79,37 @@ export async function action({ request, params }: Route.ActionArgs) {
       await tx.adminMembership.deleteMany({ where: { userId } });
     }
 
+    // Core titles (Hiring Lead included) are cycle-scoped: one row per term
+    // in [Spring N, Spring N+1). We materialize the missing rows on add and
+    // clear them all on remove so cycle-mate terms stay consistent.
+    const cycleTermIds = await coreCycleTermIds(term.id);
     if (wantHiringLead) {
-      const exists = await tx.coreAssignment.findFirst({
-        where: { userId, termId: term.id, leadTitle: "Hiring Lead" },
-        select: { id: true },
+      const existing = await tx.coreAssignment.findMany({
+        where: {
+          userId,
+          termId: { in: cycleTermIds },
+          leadTitle: "Hiring Lead",
+        },
+        select: { termId: true },
       });
-      if (!exists) {
-        await tx.coreAssignment.create({
-          data: { userId, termId: term.id, leadTitle: "Hiring Lead" },
+      const covered = new Set(existing.map((e) => e.termId));
+      const missing = cycleTermIds.filter((tid) => !covered.has(tid));
+      if (missing.length > 0) {
+        await tx.coreAssignment.createMany({
+          data: missing.map((termId) => ({
+            userId,
+            termId,
+            leadTitle: "Hiring Lead",
+          })),
         });
       }
     } else {
       await tx.coreAssignment.deleteMany({
-        where: { userId, termId: term.id, leadTitle: "Hiring Lead" },
+        where: {
+          userId,
+          termId: { in: cycleTermIds },
+          leadTitle: "Hiring Lead",
+        },
       });
     }
   });

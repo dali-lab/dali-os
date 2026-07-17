@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from "react";
+import { X } from "lucide-react";
 
 const FOCUSABLE_SELECTOR = [
   "a[href]",
@@ -122,6 +123,78 @@ export function Modal({
       <div ref={dialogRef} className={containerClassName} tabIndex={-1}>
         {children}
       </div>
+    </div>
+  );
+}
+
+export interface ModalHeaderProps {
+  /** Must equal the `labelledBy` id passed to <Modal>. */
+  titleId: string;
+  title: ReactNode;
+  subtitle?: ReactNode;
+  onClose: () => void;
+  /** Accessible name for the close button. */
+  closeLabel?: string;
+  /** Hide the standardized close button (rare; e.g. blocking flows). */
+  hideClose?: boolean;
+  className?: string;
+}
+
+export function ModalHeader({
+  titleId,
+  title,
+  subtitle,
+  onClose,
+  closeLabel = "Close",
+  hideClose = false,
+  className = "",
+}: ModalHeaderProps) {
+  return (
+    <div className={`flex items-start justify-between gap-4 mb-4 ${className}`}>
+      <div>
+        <h2 id={titleId} className="font-heading text-lg font-bold text-foreground">
+          {title}
+        </h2>
+        {subtitle && <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>}
+      </div>
+      {!hideClose && (
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label={closeLabel}
+          className="text-muted-foreground/70 hover:text-foreground rounded p-1 hover:bg-muted"
+        >
+          <X className="w-5 h-5" aria-hidden />
+        </button>
+      )}
+    </div>
+  );
+}
+
+export interface ModalFooterProps {
+  onCancel: () => void;
+  cancelLabel?: string;
+  /** Primary action button(s). Rendered right-most. */
+  children: ReactNode;
+  className?: string;
+}
+
+export function ModalFooter({
+  onCancel,
+  cancelLabel = "Cancel",
+  children,
+  className = "",
+}: ModalFooterProps) {
+  return (
+    <div className={`mt-6 flex items-center justify-end gap-2 ${className}`}>
+      <button
+        type="button"
+        onClick={onCancel}
+        className="px-3 py-1.5 text-sm rounded-lg text-foreground/80 hover:bg-muted"
+      >
+        {cancelLabel}
+      </button>
+      {children}
     </div>
   );
 }

@@ -1,10 +1,11 @@
 import type { Route } from "./+types/api.notifications.$id.rsvp";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, forbidden } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import { updateGoogleAttendeeRsvp } from "~/lib/google-calendar";
+import { primaryEmail } from "~/lib/display";
 
 const Schema = z.object({
   response: z.enum(["accepted", "declined", "tentative"]),
@@ -49,7 +50,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Not found" }, { status: 404 }));
   }
   if (notif.recipientUserId !== auth.user.sub) {
-    return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+    return forbidden(request);
   }
   if (!notif.scheduledMeetingId) {
     return withCors(request, Response.json({ error: "Notification has no associated meeting" }, { status: 400 }));
@@ -60,7 +61,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     where: { id: auth.user.sub },
     select: { daliEmail: true, dartmouthEmail: true },
   });
-  const attendeeEmail = recipient?.daliEmail ?? recipient?.dartmouthEmail ?? auth.user.email;
+  const attendeeEmail = (recipient ? primaryEmail(recipient) : null) ?? auth.user.email;
 
   // Best-effort: push the RSVP to Google. If the meeting wasn't pushed to GCal
   // (no externalEventId or no organizer link), we still record the in-app RSVP.

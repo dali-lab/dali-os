@@ -11,6 +11,8 @@ import { parseSessionId } from "~/lib/cookies";
 import { lookupSession } from "~/lib/session";
 import { prisma } from "~/lib/db";
 import type { OAuthAccountType, OAuthProvider } from "~/generated/prisma/enums";
+import { getApiBaseUrl, getCasBaseUrl } from "~/lib/app-env";
+import { buildGoogleAuthUrl } from "~/lib/google-oauth";
 
 const RATE_LIMIT_MAX = 10;
 const RATE_LIMIT_WINDOW_MS = 60_000;
@@ -141,7 +143,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     scopes: requestedScopes,
   });
 
-  const apiBase = process.env.API_BASE_URL ?? "http://localhost:5173";
+  const apiBase = getApiBaseUrl();
 
   // ── Existing-session shortcut ────────────────────────────────────────────
   // If the browser already has a valid first-party cookie session, skip
@@ -217,8 +219,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   // ── CAS flow ─────────────────────────────────────────────────────────────
   if (provider === "cas") {
-    const casBase =
-      process.env.CAS_BASE_URL ?? "https://login.dartmouth.edu/cas";
+    const casBase = getCasBaseUrl();
     const serviceUrl = `${apiBase}/oauth/callback/cas?session_id=${oauthSession.id}`;
     return new Response(null, {
       status: 302,
@@ -229,22 +230,21 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   // ── Google flow ──────────────────────────────────────────────────────────
-  const googleParams = new URLSearchParams({
-    client_id: process.env.GOOGLE_CLIENT_ID!,
-    redirect_uri: `${apiBase}/oauth/callback/google`,
-    response_type: "code",
-    scope: "openid email profile",
+  let googleAuthUrl = buildGoogleAuthUrl({
+    clientId: process.env.GOOGLE_CLIENT_ID!,
+    redirectUri: `${apiBase}/oauth/callback/google`,
+    scopes: ["openid", "email", "profile"],
     state: oauthSession.id,
     prompt: "select_account",
   });
   if (accountType === "member") {
-    googleParams.set("hd", "dali.dartmouth.edu");
+    googleAuthUrl += "&hd=dali.dartmouth.edu";
   }
 
   return new Response(null, {
     status: 302,
     headers: {
-      Location: `https://accounts.google.com/o/oauth2/v2/auth?${googleParams}`,
+      Location: googleAuthUrl,
     },
   });
 }

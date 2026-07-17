@@ -67,8 +67,20 @@ These live in `.github/workflows/` — treat their failures as blocking:
 - **When a CI failure is ambiguous or forces a real tradeoff, stop and leave a PR comment explaining the options.** Do not guess. Handing work back with a written explanation is a valid outcome.
 - **When you push a fix, leave a PR comment** that summarizes what changed, keyed to the failing check or review point it addresses. Keep it short.
 
+## Desktop app (`desktop/`)
+
+The `desktop/` directory is a Tauri v2 macOS shell — a thin native wrapper around the hosted web app. Keep in mind:
+
+- **Separate build pipeline.** Desktop is built and released by `desktop-release.yml` on `desktop-v*` tags, not by the main `deploy.yml`. Don't conflate them.
+- **Two signing layers.** Apple Developer ID (Gatekeeper) + a Tauri updater minisign keypair. The private minisign key lives in CI secrets (`TAURI_SIGNING_PRIVATE_KEY`). Never hardcode or log it.
+- **IPC security boundary.** The main WKWebView window loads a remote origin and has zero IPC access (no capability grants it). All native escalation happens in Rust directly or from the local bundled pairing windows. Don't add `remote.urls` entries to any capability file for the prod origin.
+- **Additive server routes only.** The desktop shell depends on `/auth/pair/*`, `/auth/handoff`, and `/link` routes in `dali-api`. Changes to those routes affect the native app — note that in the PR description.
+- **Don't touch signing config** (`src-tauri/tauri.conf.json` `plugins.updater.pubkey`, or `src-tauri/capabilities/`) without flagging it. Signing mismatches break auto-update for all installed clients.
+- Desktop dev: `npm install && npm run tauri:dev` from `desktop/`. Requires Rust (stable) + Xcode Command Line Tools.
+
 ## Scope discipline
 
 - Don't add features, refactors, or abstractions beyond what the issue asks for.
 - Don't add comments explaining what well-named code does. Only comment the non-obvious *why*.
 - Don't introduce new dependencies to solve something the existing stack already handles.
+- Adhere to DRY principles, add what is needed for the issue and not more

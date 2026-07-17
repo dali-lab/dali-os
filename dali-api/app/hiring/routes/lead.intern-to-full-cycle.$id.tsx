@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Form, redirect, useLoaderData, useFetcher, Link } from "react-router";
 import type { Route } from "./+types/lead.intern-to-full-cycle.$id";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, forbidden } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import type { Question } from "~/types";
 import type { Prisma } from "~/generated/prisma/client";
@@ -18,7 +18,8 @@ import {
   type TemplateSlot,
   type DecisionSlotType,
 } from "~/hiring/lib/email-variables";
-import { AlertTriangle, CheckCircle, Eye, Mail, X } from "lucide-react";
+import { AlertTriangle, CheckCircle, Eye, Mail } from "lucide-react";
+import { Modal, ModalHeader, ModalFooter } from "~/components/Modal";
 
 import {
   zonedDayEndUtc,
@@ -213,7 +214,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
-  if (!(await isCore(auth.user.sub))) return new Response("Forbidden", { status: 403 });
+  if (!(await isCore(auth.user.sub))) return forbidden(request);
 
   const cycleId = params.id!;
   const formData = await request.formData();
@@ -727,15 +728,19 @@ function CreateFormVersionModal({
     );
   }
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
-      <div
-        className="bg-card rounded-lg shadow-xl w-full max-w-2xl p-6 space-y-4 max-h-[90vh] overflow-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-foreground">New shortform version</h2>
-          <button onClick={onClose} className="text-muted-foreground/70">✕</button>
-        </div>
+    <Modal
+      open
+      onClose={onClose}
+      labelledBy="new-shortform-title"
+      containerClassName="bg-card rounded-lg shadow-xl w-full max-w-2xl p-6 space-y-4 max-h-[90vh] overflow-auto my-auto"
+    >
+      <>
+        <ModalHeader
+          titleId="new-shortform-title"
+          title="New shortform version"
+          onClose={onClose}
+          className="mb-0"
+        />
         <div className="space-y-3">
           {qs.map((q, idx) => {
             const isInfo = q.type === "info";
@@ -822,13 +827,7 @@ function CreateFormVersionModal({
             + Add info text
           </button>
         </div>
-        <div className="flex justify-end gap-2 pt-3 border-t border-border">
-          <button
-            onClick={onClose}
-            className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-gray-300 rounded-md hover:bg-muted/50"
-          >
-            Cancel
-          </button>
+        <ModalFooter onCancel={onClose} className="pt-3 border-t border-border">
           <button
             onClick={() => setPreviewing(true)}
             className="px-3 py-2 text-sm font-medium text-blue-700 bg-card border border-blue-300 rounded-md hover:bg-blue-50"
@@ -847,12 +846,8 @@ function CreateFormVersionModal({
           >
             Create
           </button>
-        </div>
-      </div>
-      {previewing && (
-        // Stop propagation so the preview's overlay/close don't bubble up to
-        // the create modal's outer onClick={onClose} and dismiss the draft.
-        <div onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+        </ModalFooter>
+        {previewing && (
           <ChallengePreviewModal
             challengeVersionId="draft"
             challengeName="Shortform"
@@ -862,9 +857,9 @@ function CreateFormVersionModal({
             )}
             onClose={() => setPreviewing(false)}
           />
-        </div>
-      )}
-    </div>
+        )}
+      </>
+    </Modal>
   );
 }
 
@@ -1639,35 +1634,30 @@ function DecisionEmailPreviewModal({
     : null;
 
   return (
-    <div
-      className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
-      onClick={onClose}
+    <Modal
+      open
+      onClose={onClose}
+      labelledBy="itf-email-preview-title"
+      containerClassName="bg-card rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] overflow-y-auto my-auto"
     >
-      <div
-        className="bg-card rounded-lg shadow-xl w-full max-w-2xl max-h-[80vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between gap-3 px-4 sm:px-6 py-3 sm:py-4 border-b border-border">
-          <div className="min-w-0">
-            <h2 className="text-lg font-bold text-foreground">Email preview</h2>
-            <p className="text-xs text-muted-foreground break-words">
+      <>
+        <ModalHeader
+          titleId="itf-email-preview-title"
+          title="Email preview"
+          subtitle={
+            <>
               {decision.domainApplication.application.user.firstName}{" "}
               {decision.domainApplication.application.user.lastName}
               {" · "}
               {domain}
               {" · "}
               <span className="font-medium">{decision.type}</span>
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-muted-foreground/70 hover:text-foreground flex-shrink-0"
-            aria-label="Close preview"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+            </>
+          }
+          onClose={onClose}
+          closeLabel="Close preview"
+          className="px-4 sm:px-6 py-3 sm:py-4 border-b border-border mb-0"
+        />
         <div className="px-4 sm:px-6 py-4 space-y-4">
           {tmpl ? (
             <>
@@ -1694,7 +1684,7 @@ function DecisionEmailPreviewModal({
               <div>
                 <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Body</h3>
                 <div
-                  className="mt-1 prose prose-sm max-w-none text-foreground"
+                  className="mt-1 prose prose-sm dark:prose-invert max-w-none text-foreground"
                   dangerouslySetInnerHTML={{ __html: rendered?.html ?? "" }}
                 />
               </div>
@@ -1721,8 +1711,8 @@ function DecisionEmailPreviewModal({
             Close
           </button>
         </div>
-      </div>
-    </div>
+      </>
+    </Modal>
   );
 }
 

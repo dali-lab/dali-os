@@ -2,15 +2,17 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/s3", () => ({
   getDownloadUrl: vi.fn(),
+  isS3Configured: vi.fn(),
 }));
 
-import { getDownloadUrl } from "~/lib/s3";
+import { getDownloadUrl, isS3Configured } from "~/lib/s3";
 import { resolvePhotoUrl } from "~/lib/photo";
 
 describe("resolvePhotoUrl", () => {
   beforeEach(() => {
     vi.mocked(getDownloadUrl).mockReset();
     vi.mocked(getDownloadUrl).mockResolvedValue("https://s3.example/signed");
+    vi.mocked(isS3Configured).mockReturnValue(true);
   });
 
   it("returns null for null/undefined/empty", async () => {
@@ -33,5 +35,11 @@ describe("resolvePhotoUrl", () => {
     const key = "uploads/avatars/user-1/abc.webp";
     expect(await resolvePhotoUrl(key)).toBe("https://s3.example/signed");
     expect(getDownloadUrl).toHaveBeenCalledWith(key);
+  });
+
+  it("omits S3-backed images when S3 is not configured", async () => {
+    vi.mocked(isS3Configured).mockReturnValue(false);
+    expect(await resolvePhotoUrl("uploads/projects/project-1/image.webp")).toBeNull();
+    expect(getDownloadUrl).not.toHaveBeenCalled();
   });
 });

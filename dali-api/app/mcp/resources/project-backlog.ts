@@ -4,6 +4,7 @@
 // large and a client may only need it when planning the next sprint.
 
 import { prisma } from "~/lib/db";
+import { fullName } from "~/lib/display";
 
 export const PROJECT_BACKLOG_RESOURCE = {
   uriTemplate: "dali://projects/{projectId}/backlog",
@@ -71,7 +72,7 @@ export async function readProjectBacklogResource(projectId: string): Promise<str
         dueAt: t.dueAt?.toISOString() ?? null,
         assignees: t.assignees.map((a) => ({
           id: a.user.id,
-          name: `${a.user.firstName} ${a.user.lastName}`.trim(),
+          name: fullName(a.user),
         })),
       })),
     },

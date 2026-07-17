@@ -42,6 +42,64 @@ export function UrlCheckIndicator({ state }: { state: UrlCheckState }) {
   return null;
 }
 
+// Multi-select over the question's options. Like SkillsRatingField, the
+// answer state stays a string: "" when nothing is checked (so the shared
+// required-answer check treats it as unanswered), else a JSON-stringified
+// array of the selected options in option order. The server re-parses and
+// stores a real string[] (validateAnswers in app/forms/lib/public-form.ts).
+function CheckboxField({
+  options,
+  value,
+  onChange,
+  disabled = false,
+}: {
+  options: string[];
+  value: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
+}) {
+  let selected: string[] = [];
+  if (value) {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) {
+        selected = parsed.filter((v): v is string => typeof v === "string");
+      }
+    } catch {
+      // Unparseable state — treat as nothing selected.
+    }
+  }
+
+  function toggle(option: string) {
+    const next = selected.includes(option)
+      ? selected.filter((o) => o !== option)
+      : options.filter((o) => selected.includes(o) || o === option);
+    onChange(next.length === 0 ? "" : JSON.stringify(next));
+  }
+
+  return (
+    <div className={`flex flex-col gap-1.5 ${disabled ? "opacity-60" : ""}`}>
+      {options.map((option) => (
+        <label
+          key={option}
+          className={`flex items-start gap-2 text-base sm:text-sm text-dark-blue ${
+            disabled ? "cursor-not-allowed" : "cursor-pointer"
+          }`}
+        >
+          <input
+            type="checkbox"
+            checked={selected.includes(option)}
+            onChange={() => toggle(option)}
+            disabled={disabled}
+            className="mt-0.5 w-4 h-4 rounded border-border text-accent-coral focus:ring-accent-coral/30"
+          />
+          <span>{option}</span>
+        </label>
+      ))}
+    </div>
+  );
+}
+
 function SkillsRatingField({
   skills,
   value,
@@ -284,9 +342,12 @@ export function ChallengeQuestionField({
           className={`${inputBase} resize-none${disabledClass}`}
           placeholder="Your answer"
         />
-        <p className={`text-xs mt-1 ${overLimit ? "text-red-500" : "text-muted-foreground"}`}>
-          {maxWords !== undefined ? `${wordCount} / ${maxWords} words` : `${wordCount} words`}
-        </p>
+        {/* Only meaningful against a limit — an unbounded "0 words" is noise. */}
+        {maxWords !== undefined && (
+          <p className={`text-xs mt-1 ${overLimit ? "text-red-500" : "text-muted-foreground"}`}>
+            {wordCount} / {maxWords} words
+          </p>
+        )}
       </div>
     );
   }
@@ -307,6 +368,17 @@ export function ChallengeQuestionField({
           </option>
         ))}
       </select>
+    );
+  }
+
+  if (question.type === "checkbox") {
+    return (
+      <CheckboxField
+        options={question.data.options ?? []}
+        value={value}
+        onChange={onChange}
+        disabled={disabled}
+      />
     );
   }
 

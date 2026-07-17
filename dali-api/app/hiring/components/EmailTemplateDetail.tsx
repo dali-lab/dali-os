@@ -7,20 +7,7 @@ import {
   TEMPLATE_VARIABLE_DESCRIPTIONS,
   lintTemplate,
 } from '~/hiring/lib/email-variables'
-
-function formatDateTime(iso: string | Date) {
-  const d = new Date(iso)
-  return (
-    d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) +
-    ' at ' +
-    d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
-  )
-}
-
-function memberLabel(m: { firstName: string | null; lastName: string | null } | null | undefined) {
-  if (!m) return 'Unknown'
-  return `${m.firstName ?? ''} ${m.lastName ?? ''}`.trim() || 'Unknown'
-}
+import { formatDateTime, fullName, UNKNOWN_LABEL } from '~/lib/display'
 
 function VariableReferencePanel() {
   return (
@@ -180,7 +167,7 @@ export function EmailTemplateDetail() {
                 </div>
                 <p className="text-xs text-muted-foreground mt-1 inline-flex items-center gap-1 truncate">
                   <UserIcon className="w-3 h-3 shrink-0" />
-                  {memberLabel(v.createdBy)}
+                  {v.createdBy ? fullName(v.createdBy) || UNKNOWN_LABEL : UNKNOWN_LABEL}
                 </p>
               </button>
             )

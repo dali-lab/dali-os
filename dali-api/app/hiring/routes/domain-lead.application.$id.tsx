@@ -8,6 +8,16 @@ import { presignAnswers } from "~/hiring/lib/presign";
 import { ChevronDown } from "lucide-react";
 import { ApplicationViewer } from "~/hiring/components/ApplicationViewer";
 import { ReviewSummary } from "~/hiring/components/ReviewSummary";
+import { DetailCard } from "~/hiring/components/DetailCard";
+import { ApplicantDetailHeader } from "~/hiring/components/ApplicantDetailHeader";
+import {
+  InterviewNotesCard,
+  type InterviewNotesData,
+} from "~/hiring/components/InterviewNotesCard";
+import {
+  DecisionHistoryList,
+  type DecisionHistoryRow,
+} from "~/hiring/components/DecisionHistoryList";
 import { buildCriteriaLabelMap } from "~/hiring/lib/rubric-criteria";
 import {
   inferDomainApplicationStatus,
@@ -15,14 +25,7 @@ import {
 } from "~/hiring/lib/domain-application-status";
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
 import type { Question } from "~/types";
-
-const RECOMMENDATION_COLORS: Record<string, string> = {
-  "Strong Hire": "bg-green-100 text-green-800",
-  Hire: "bg-green-50 text-green-700",
-  "Lean Hire": "bg-yellow-50 text-yellow-700",
-  "Lean No Hire": "bg-orange-50 text-orange-700",
-  "No Hire": "bg-red-100 text-red-700",
-};
+import { RECOMMENDATION_COLORS } from "~/hiring/lib/labels";
 
 // bg + text + an explicit same-hue border (e.g. red pill → red border), so the
 // outline always matches the pill and never falls back to the neutral gray
@@ -37,19 +40,6 @@ const STATUS_BADGE: Record<string, { bg: string; label: string }> = {
   PostInterviewPending: { bg: "bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-700", label: "Post-Interview" },
   Accepted: { bg: "bg-green-100 text-green-700 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700", label: "Accepted" },
   Waitlisted: { bg: "bg-yellow-100 text-yellow-700 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-700", label: "Waitlisted" },
-};
-
-const DECISION_COLORS: Record<string, string> = {
-  Rejected: "bg-red-100 text-red-700 border-red-300 dark:bg-red-900/30 dark:text-red-400 dark:border-red-700",
-  InvitedToInterview: "bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-700",
-  Accepted: "bg-green-100 text-green-700 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700",
-  Waitlisted: "bg-yellow-100 text-yellow-700 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-700",
-};
-
-const STAGE_LABELS: Record<string, string> = {
-  Draft: "Draft",
-  Final: "Finalized",
-  Released: "Released",
 };
 
 export const meta: Route.MetaFunction = ({ data }) => {
@@ -274,19 +264,16 @@ export default function DomainLeadApplicationView() {
   return (
     <div className="space-y-6 pb-12">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">
-            {application.user.firstName} {application.user.lastName}
-          </h1>
-          <p className="mt-1 text-muted-foreground">
-            {da.challengeVersion.domain?.name} · {application.applicationCycle.name}
-          </p>
-        </div>
-        <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold border flex-shrink-0 ${statusInfo.bg}`}>
-          {statusInfo.label}
-        </span>
-      </div>
+      <ApplicantDetailHeader
+        name={`${application.user.firstName} ${application.user.lastName}`}
+        domainName={da.challengeVersion.domain?.name}
+        cycleName={application.applicationCycle.name}
+        statusSlot={
+          <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold border ${statusInfo.bg}`}>
+            {statusInfo.label}
+          </span>
+        }
+      />
 
       {/* Two-column layout */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -302,15 +289,15 @@ export default function DomainLeadApplicationView() {
         {/* Right: Context sidebar */}
         <div className="space-y-4 lg:sticky lg:top-24 lg:self-start">
           {/* Reviews */}
-          <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
-            <div className="px-6 py-4 bg-muted/50 border-b border-border">
-              <h2 className="text-lg font-bold text-foreground">Reviews</h2>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {reviews.length === 0
-                  ? "No reviewers assigned yet."
-                  : `${reviews.filter((r: any) => r.submittedAt).length}/${reviews.length} submitted`}
-              </p>
-            </div>
+          <DetailCard
+            title="Reviews"
+            subtitle={
+              reviews.length === 0
+                ? "No reviewers assigned yet."
+                : `${reviews.filter((r: any) => r.submittedAt).length}/${reviews.length} submitted`
+            }
+            className="overflow-hidden"
+          >
             {reviews.length > 0 && (
               <div className="divide-y divide-gray-100">
                 {reviews.map((review: any) => (
@@ -318,112 +305,57 @@ export default function DomainLeadApplicationView() {
                 ))}
               </div>
             )}
-          </div>
+          </DetailCard>
 
           {/* Interview */}
           {interview && (
-            <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
-              <div className="px-6 py-4 bg-muted/50 border-b border-border">
-                <h2 className="text-lg font-bold text-foreground">Interview</h2>
-              </div>
-              <div className="px-4 py-3 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">
-                    {new Date(interview.startTime).toLocaleDateString(undefined, { month: "short", day: "numeric" })}{" "}
-                    {new Date(interview.startTime).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
-                  </span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                    interview.status === "Completed" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"
-                  }`}>
-                    {interview.status}
-                  </span>
-                </div>
-                {interview.recommendation && (
-                  <div className="text-sm">
-                    <span className="text-muted-foreground">Recommendation:</span>{" "}
-                    <span className="font-medium text-foreground">{interview.recommendation}</span>
-                  </div>
-                )}
-                {interview.recommendationNotes && (
-                  <p className="text-xs text-muted-foreground bg-muted/50 rounded p-2">{interview.recommendationNotes}</p>
-                )}
-                {interview.assignments?.length > 0 && (
-                  <div className="text-xs text-muted-foreground pt-1">
-                    Interviewers: {interview.assignments.map((a: any) => {
-                      const m = a.cycleInterviewer?.user;
-                      return m ? `${m.firstName} ${m.lastName}` : "?";
-                    }).join(", ")}
-                  </div>
-                )}
-
-                {/* Joint interview notes (shared by both interviewers). */}
-                <div className="pt-2 border-t border-border">
-                  <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
-                    Interview notes
-                  </div>
-                  {interview.jointNotes ? (
-                    <p className="mt-1 text-sm text-foreground whitespace-pre-wrap">
-                      {interview.jointNotes}
-                    </p>
-                  ) : (
-                    <p className="mt-1 text-xs text-muted-foreground/70 italic">
-                      No interview notes.
-                    </p>
-                  )}
-                </div>
-
-                {/* Per-interviewer recommendation notes, when present. */}
-                {interview.assignments?.some((a: any) => a.recNotes) && (
-                  <div className="pt-2 space-y-2">
-                    {interview.assignments
-                      .filter((a: any) => a.recNotes)
-                      .map((a: any) => {
-                        const m = a.cycleInterviewer?.user;
-                        const who = m ? `${m.firstName} ${m.lastName}` : "Interviewer";
-                        return (
-                          <div key={a.id}>
-                            <div className="text-xs font-medium text-muted-foreground">
-                              {who}&rsquo;s notes
-                            </div>
-                            <p className="mt-0.5 text-sm text-foreground whitespace-pre-wrap">
-                              {a.recNotes}
-                            </p>
-                          </div>
-                        );
-                      })}
-                  </div>
-                )}
-              </div>
-            </div>
+            <DetailCard title="Interview" className="overflow-hidden">
+              <InterviewNotesCard interview={toInterviewNotesData(interview)} variant="compact" />
+            </DetailCard>
           )}
 
           {/* Decision history */}
           {decisions.length > 0 && (
-            <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
-              <div className="px-6 py-4 bg-muted/50 border-b border-border">
-                <h2 className="text-lg font-bold text-foreground">Decision History</h2>
-              </div>
-              <div className="px-4 py-3 space-y-2">
-                {decisions.map((d: any) => (
-                  <div key={d.id} className="flex items-center justify-between text-sm">
-                    <div className="flex items-center gap-2">
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${DECISION_COLORS[d.type] ?? "bg-muted text-foreground/80 border-current/30"}`}>
-                        {d.type}
-                      </span>
-                      <span className="text-xs text-muted-foreground">{STAGE_LABELS[d.stage] ?? d.stage}</span>
-                    </div>
-                    <span className="text-xs text-muted-foreground/70">
-                      {new Date(d.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
+            <DetailCard title="Decision History" className="overflow-hidden">
+              <DecisionHistoryList decisions={decisions.map(toDecisionHistoryRow)} />
+            </DetailCard>
           )}
         </div>
       </div>
     </div>
   );
+}
+
+// Map this route's interview shape (joint notes as a plain string, recNotes
+// per assignment) into the shared InterviewNotesCard prop shape.
+function toInterviewNotesData(interview: any): InterviewNotesData {
+  return {
+    id: interview.id,
+    startTime: interview.startTime,
+    endTime: interview.endTime,
+    status: interview.status,
+    recommendation: interview.recommendation,
+    recommendationNotes: interview.recommendationNotes,
+    jointNotes: interview.jointNotes ?? null,
+    interviewers: (interview.assignments ?? []).map((a: any) => {
+      const m = a.cycleInterviewer?.user;
+      return {
+        id: a.id,
+        name: m ? `${m.firstName} ${m.lastName}` : "Interviewer",
+        notes: a.recNotes ?? null,
+      };
+    }),
+  };
+}
+
+function toDecisionHistoryRow(d: any): DecisionHistoryRow {
+  return {
+    id: d.id,
+    type: d.type,
+    stage: d.stage,
+    waitlistRank: d.waitlistRank,
+    createdAt: d.createdAt,
+  };
 }
 
 function ReviewCard({

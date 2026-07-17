@@ -10,6 +10,11 @@ export const meta: Route.MetaFunction = ({ data }) => {
   return [{ title: `${name || 'Email template'} · DALI OS` }]
 }
 
+export const handle = {
+  breadcrumb: (data: unknown) =>
+    (data as { template?: { name: string } } | undefined)?.template?.name,
+}
+
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request)
   if (!auth.ok) return redirect('/login')

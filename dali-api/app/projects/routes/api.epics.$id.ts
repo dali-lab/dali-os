@@ -1,7 +1,6 @@
 import type { Route } from "./+types/api.epics.$id";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
-import { isCore } from "~/lib/roles";
+import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 
 // POST   /api/epics/:id  — edit. Body: { title?, status?, targetTermId? }
@@ -11,7 +10,7 @@ import { withCors, handlePreflight } from "~/lib/cors";
 //
 // Same permission model as project edit (isCore === Admin || Core).
 
-const EPIC_STATUSES = ["Open", "InProgress", "Done", "Cancelled"] as const;
+const EPIC_STATUSES = ["Backlog", "Open", "InProgress", "Done", "Cancelled"] as const;
 type EpicStatus = (typeof EPIC_STATUSES)[number];
 function isEpicStatus(x: unknown): x is EpicStatus {
   return typeof x === "string" && (EPIC_STATUSES as readonly string[]).includes(x);
@@ -46,24 +45,19 @@ export async function action({ request, params }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
   if (preflight) return preflight;
 
-  const auth = await requireAuth(request);
-  if (!auth.ok) return withCors(request, auth.response);
-
   if (request.method !== "POST" && request.method !== "DELETE") {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
-  if (!(await isCore(auth.user.sub))) {
-    return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
-  }
-
   const epicId = params.id!;
   const epic = await prisma.epic.findUnique({
     where: { id: epicId },
-    select: { id: true, startsAt: true, endsAt: true },
+    select: { id: true, startsAt: true, endsAt: true, projectId: true },
   });
   if (!epic) {
     return withCors(request, Response.json({ error: "Epic not found" }, { status: 404 }));
   }
+  const gate = await requireProjectEditAccess(request, epic.projectId);
+  if (!gate.ok) return gate.response;
 
   if (request.method === "DELETE") {
     await prisma.$transaction([

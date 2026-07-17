@@ -1,23 +1,33 @@
 import { test, expect } from './fixtures';
 
+// Hiring navigation after the sidebar reduction: the sidebar carries a single
+// childless "Hiring" entry landing on the /hiring hub, and the role-gated
+// tools (Reviews / Applications / Domain / Cycles / Analytics / Library) are
+// an in-page pill row rendered inside the workspace iframe.
+const hiringFrame = (page: import('@playwright/test').Page) =>
+  page.frameLocator('iframe[title="Hiring"]');
+
 test.describe('navigation for hiring lead', () => {
   test.beforeEach(async ({ loginAs }) => {
     await loginAs({ daliEmail: 'jordan.taylor@dali.dartmouth.edu' });
   });
 
-  test('shows hiring lead and domain lead nav tabs', async ({ page }) => {
-    await page.goto('/hiring/reviewer');
-    const nav = page.locator('nav');
-    await expect(nav.getByRole('button', { name: 'Reviews' })).toBeVisible();
-    await expect(nav.getByRole('button', { name: 'Domain' })).toBeVisible();
-    await expect(nav.getByRole('button', { name: 'Cycles' })).toBeVisible();
+  test('sidebar shows Hiring; hub pills expose every tool', async ({ page }) => {
+    await page.goto('/hiring');
+    await expect(
+      page.locator('aside').getByRole('button', { name: 'Hiring' }),
+    ).toBeVisible();
+    const frame = hiringFrame(page);
+    await expect(frame.getByRole('link', { name: 'Reviews' })).toBeVisible();
+    await expect(frame.getByRole('link', { name: 'Domain' })).toBeVisible();
+    await expect(frame.getByRole('link', { name: 'Cycles' })).toBeVisible();
+    await expect(frame.getByRole('link', { name: 'Library' })).toBeVisible();
   });
 
   test('can navigate to cycles page', async ({ page }) => {
     await page.goto('/hiring/lead');
     await expect(page).toHaveURL(/\/hiring\/lead/);
-    // The heading lives inside the workspace iframe for the Cycles section.
-    const frame = page.frameLocator('iframe[title="Cycles"]');
+    const frame = hiringFrame(page);
     await expect(frame.getByRole('heading', { name: 'Hiring Cycles' })).toBeVisible();
   });
 });
@@ -27,12 +37,12 @@ test.describe('navigation for domain lead', () => {
     await loginAs({ daliEmail: 'eng.lead@dali.dartmouth.edu' });
   });
 
-  test('shows domain lead tab but not cycles', async ({ page }) => {
-    await page.goto('/hiring/reviewer');
-    const nav = page.locator('nav');
-    await expect(nav.getByRole('button', { name: 'Reviews' })).toBeVisible();
-    await expect(nav.getByRole('button', { name: 'Domain' })).toBeVisible();
-    await expect(nav.getByRole('button', { name: 'Cycles' })).not.toBeVisible();
+  test('hub pills show Domain but not Cycles', async ({ page }) => {
+    await page.goto('/hiring');
+    const frame = hiringFrame(page);
+    await expect(frame.getByRole('link', { name: 'Reviews' })).toBeVisible();
+    await expect(frame.getByRole('link', { name: 'Domain' })).toBeVisible();
+    await expect(frame.getByRole('link', { name: 'Cycles' })).not.toBeVisible();
   });
 });
 
@@ -41,11 +51,11 @@ test.describe('navigation for reviewer', () => {
     await loginAs({ daliEmail: 'reviewer1@dali.dartmouth.edu' });
   });
 
-  test('shows reviews tab only', async ({ page }) => {
-    await page.goto('/hiring/reviewer');
-    const nav = page.locator('nav');
-    await expect(nav.getByRole('button', { name: 'Reviews' })).toBeVisible();
-    await expect(nav.getByRole('button', { name: 'Domain' })).not.toBeVisible();
-    await expect(nav.getByRole('button', { name: 'Cycles' })).not.toBeVisible();
+  test('hub pills show Reviews only', async ({ page }) => {
+    await page.goto('/hiring');
+    const frame = hiringFrame(page);
+    await expect(frame.getByRole('link', { name: 'Reviews' })).toBeVisible();
+    await expect(frame.getByRole('link', { name: 'Domain' })).not.toBeVisible();
+    await expect(frame.getByRole('link', { name: 'Cycles' })).not.toBeVisible();
   });
 });

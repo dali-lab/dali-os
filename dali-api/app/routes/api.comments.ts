@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.comments";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, forbidden } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
@@ -25,7 +25,7 @@ const CreateSchema = z.object({
   targetType: z.enum(["doc", "file"]),
   targetId: z.string().min(1),
   body: z.string().trim().min(1).max(5000),
-  parentId: z.string().optional(),
+  parentId: z.string().nullable().optional(),
   anchor: AnchorSchema,
 });
 
@@ -52,7 +52,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
   if (!(await isCore(auth.user.sub))) {
-    return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+    return forbidden(request);
   }
 
   const url = new URL(request.url);
@@ -103,7 +103,7 @@ export async function action({ request }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
   if (!(await isCore(auth.user.sub))) {
-    return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+    return forbidden(request);
   }
 
   const body = await parseJson(request, CreateSchema);

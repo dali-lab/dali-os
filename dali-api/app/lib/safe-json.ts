@@ -59,3 +59,16 @@ export async function safeJson<T>(
     });
   }
 }
+
+/**
+ * Parses a FormData entry as JSON. Returns null when the entry is absent,
+ * not a string (e.g. a File), or invalid JSON.
+ */
+export function parseFormDataJson(v: FormDataEntryValue | null): unknown {
+  if (typeof v !== "string") return null;
+  try {
+    return JSON.parse(v);
+  } catch {
+    return null;
+  }
+}

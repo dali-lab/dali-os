@@ -6,6 +6,8 @@ import { isCore } from '~/lib/roles'
 import { isApplicationsGmailConnected } from "~/lib/gmail-integration";
 import EmailTemplatesList from '~/hiring/components/EmailTemplates'
 
+export const handle = { areaPills: true };
+
 export const meta: Route.MetaFunction = () => [{ title: 'Email templates · DALI OS' }]
 
 export async function loader({ request }: Route.LoaderArgs) {

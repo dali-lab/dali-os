@@ -1,13 +1,15 @@
 import type { Route } from "./+types/api.staffing.finalize";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, forbidden } from "~/lib/auth";
 import { canManageStaffing } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import {
   postMessage,
   ensureChannel,
   inviteUsersToChannel,
-  slackMissingScopeMsg,
+  slackErrorMessage,
+  slackConfigured,
+  SLACK_NOT_CONFIGURED_MESSAGE,
 } from "~/slack/lib/slack-client";
 import { resolveSlackIdsForInvite } from "~/members/lib/slack-sync.server";
 import { ensureTeam, addTeamMember } from "~/lib/github";
@@ -98,7 +100,7 @@ export async function action({ request }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
   if (!(await canManageStaffing(auth.user.sub))) {
-    return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+    return forbidden(request);
   }
 
   let body: unknown;
@@ -287,7 +289,7 @@ export async function action({ request }: Route.ActionArgs) {
           skipNote,
       };
     } catch (err) {
-      results.assignments = { status: "error", message: errMsg(err) };
+      results.assignments = { status: "error", message: slackErrorMessage(err) };
     }
   }
 
@@ -297,8 +299,8 @@ export async function action({ request }: Route.ActionArgs) {
   // announcement (each member's domain + level, plus the project's repos). The
   // channel id is reused across runs (stored on Project.slackChannelId).
   if (selected.has("slack")) {
-    if (!process.env.SLACK_BOT_TOKEN) {
-      results.slack = { status: "skipped", message: "SLACK_BOT_TOKEN not set." };
+    if (!slackConfigured()) {
+      results.slack = { status: "skipped" as const, message: SLACK_NOT_CONFIGURED_MESSAGE };
     } else {
       try {
         // Confirmed roster with level + slack id, regardless of whether the
@@ -398,7 +400,7 @@ export async function action({ request }: Route.ActionArgs) {
         }
         results.slack = { status: "ok", message: `${parts.join("; ")}.` };
       } catch (err) {
-        results.slack = { status: "error", message: errMsg(err) };
+        results.slack = { status: "error", message: slackErrorMessage(err) };
       }
     }
   }
@@ -492,7 +494,7 @@ export async function action({ request }: Route.ActionArgs) {
           }
         }
       } catch (err) {
-        results.gmail = { status: "error", message: errMsg(err) };
+        results.gmail = { status: "error", message: slackErrorMessage(err) };
       }
     }
   }
@@ -513,6 +515,17 @@ export async function action({ request }: Route.ActionArgs) {
       results.github = {
         status: "skipped",
         message: "No GitHub team slug provided — enter one in the Finalize modal.",
+      };
+    } else if (
+      (await prisma.project.count({
+        where: { id: { not: project.id }, githubTeamSlug: { equals: slug, mode: "insensitive" } },
+      })) > 0
+    ) {
+      // Another project already owns this slug — ensureTeam would merge their
+      // rosters into one team. Skip, matching the sync-teams sweep's guard.
+      results.github = {
+        status: "skipped",
+        message: `GitHub team slug "${slug}" is used by another project — skipped to avoid merging teams. Set a unique slug.`,
       };
     } else {
       try {
@@ -555,7 +568,7 @@ export async function action({ request }: Route.ActionArgs) {
         }
         results.github = { status: "ok", message: `${parts.join("; ")}.` };
       } catch (err) {
-        results.github = { status: "error", message: errMsg(err) };
+        results.github = { status: "error", message: slackErrorMessage(err) };
       }
     }
   }
@@ -578,20 +591,4 @@ export async function action({ request }: Route.ActionArgs) {
   publishCycleChange(cycle.id);
 
   return withCors(request, Response.json({ results }));
-}
-
-function errMsg(err: unknown): string {
-  const raw = err instanceof Error ? err.message : String(err);
-  // Append an actionable hint for the common integration-config failures so a
-  // lead can self-diagnose without reading API docs.
-  if (/missing_scope/i.test(raw)) {
-    return slackMissingScopeMsg(err, raw);
-  }
-  if (/not_in_channel|channel_not_found/i.test(raw)) {
-    return `${raw} — the Slack bot isn't a member of that channel. Invite the bot to it, or let finalize create the channel.`;
-  }
-  if (/\bNot Found\b/.test(raw) && /teams\/members/.test(raw)) {
-    return `${raw} — couldn't add a GitHub team member. Check that the GitHub App is installed on GITHUB_ORG with the "Members: read & write" org permission, and that each member's githubUsername is a real GitHub login.`;
-  }
-  return raw;
 }

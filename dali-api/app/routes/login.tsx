@@ -4,11 +4,15 @@ import type { Route } from "./+types/login";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { checkRateLimit } from "~/lib/rate-limit";
+import { getApiBaseUrl, getCasBaseUrl } from "~/lib/app-env";
+import { buildGoogleAuthUrl } from "~/lib/google-oauth";
 
 const OAUTH_STATE_COOKIE = "__dali_oauth_state";
 
 const RATE_LIMIT_MAX = 5;
 const RATE_LIMIT_WINDOW_MS = 60_000;
+
+const isProduction = process.env.NODE_ENV === "production";
 
 export const meta: Route.MetaFunction = () => [{ title: "DALI OS · Sign in" }];
 
@@ -30,6 +34,14 @@ export async function loader({ request }: Route.LoaderArgs) {
     if (member) {
       return redirect(member.onboardedAt ? "/" : "/onboarding");
     }
+    // Signed-in partners land in their portal, not the applicant one.
+    const partnerUser = await prisma.partnerUser.findUnique({
+      where: { userId: auth.user.sub },
+      select: { id: true },
+    });
+    if (partnerUser) {
+      return redirect("/partner");
+    }
     return redirect("/portal");
   }
   return {};
@@ -46,8 +58,8 @@ export async function action({ request }: Route.ActionArgs) {
   const provider = formData.get("provider") as string;
 
   const state = randomBytes(32).toString("base64url");
-  const apiBase = process.env.API_BASE_URL ?? "http://localhost:3001";
-  const casBase = process.env.CAS_BASE_URL ?? "https://login.dartmouth.edu/cas";
+  const apiBase = getApiBaseUrl();
+  const casBase = getCasBaseUrl();
 
   const headers = new Headers();
 
@@ -60,7 +72,7 @@ export async function action({ request }: Route.ActionArgs) {
       "Max-Age=600",
       "HttpOnly",
       "SameSite=Lax",
-      ...(process.env.NODE_ENV === "production" ? ["Secure"] : []),
+      ...(isProduction ? ["Secure"] : []),
     ].join("; ");
     headers.append("Set-Cookie", stateCookie);
     headers.set(
@@ -77,7 +89,7 @@ export async function action({ request }: Route.ActionArgs) {
     "Max-Age=600",
     "HttpOnly",
     "SameSite=Lax",
-    ...(process.env.NODE_ENV === "production" ? ["Secure"] : []),
+    ...(isProduction ? ["Secure"] : []),
   ].join("; ");
   headers.append("Set-Cookie", stateCookie);
 
@@ -86,19 +98,14 @@ export async function action({ request }: Route.ActionArgs) {
   // Enforcement of the domain still happens server-side in
   // /auth/callback/google; `hd` is purely a UX hint and not a security
   // boundary.
-  const googleParams = new URLSearchParams({
-    client_id: process.env.GOOGLE_CLIENT_ID!,
-    redirect_uri: `${apiBase}/auth/callback/google`,
-    response_type: "code",
-    scope: "openid email profile",
+  const googleAuthUrl = buildGoogleAuthUrl({
+    clientId: process.env.GOOGLE_CLIENT_ID!,
+    redirectUri: `${apiBase}/auth/callback/google`,
+    scopes: ["openid", "email", "profile"],
     state,
-    hd: "dali.dartmouth.edu",
   });
 
-  headers.set(
-    "Location",
-    `https://accounts.google.com/o/oauth2/v2/auth?${googleParams}`,
-  );
+  headers.set("Location", `${googleAuthUrl}&hd=dali.dartmouth.edu`);
   return new Response(null, { status: 302, headers });
 }
 
@@ -170,10 +177,10 @@ export default function Login() {
             </span>
           </div>
           <h1 className="font-heading text-3xl font-bold text-dark-blue mb-2">
-            Sign in to DALI OS
+            Continue to DALI OS
           </h1>
           <p className="text-muted-foreground mb-10">
-            Select how you'd like to continue
+            Choose who you are — we'll take you to the right sign-in.
           </p>
 
           {error && (
@@ -207,10 +214,10 @@ export default function Login() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <span className="font-heading font-semibold text-dark-blue group-hover:text-accent-coral transition block">
-                    Current Member
+                    DALI Member
                   </span>
                   <span className="text-xs text-muted-foreground mt-0.5 block">
-                    @dali.dartmouth.edu Google account
+                    Current lab members
                   </span>
                 </div>
                 <svg
@@ -259,10 +266,10 @@ export default function Login() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <span className="font-heading font-semibold text-dark-blue group-hover:text-accent-coral transition block">
-                    Applicant
+                    Dartmouth Student
                   </span>
                   <span className="text-xs text-muted-foreground mt-0.5 block">
-                    Dartmouth single sign-on
+                    Lab applications, workshops, and more
                   </span>
                 </div>
                 <svg
@@ -280,6 +287,48 @@ export default function Login() {
                 </svg>
               </button>
             </Form>
+            {/* Partner — magic-link auth on its own page, no OAuth */}
+            <a
+              href="/partner/login"
+              className="w-full flex items-center gap-4 p-5 rounded-2xl border-2 border-transparent bg-brand-tint hover:border-accent-coral transition group text-left"
+            >
+              <div className="w-10 h-10 rounded-full bg-card flex items-center justify-center flex-shrink-0 shadow-sm">
+                <svg
+                  className="w-5 h-5 text-dark-blue"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                  />
+                </svg>
+              </div>
+              <div className="flex-1 min-w-0">
+                <span className="font-heading font-semibold text-dark-blue group-hover:text-accent-coral transition block">
+                  Partner
+                </span>
+                <span className="text-xs text-muted-foreground mt-0.5 block">
+                  Working with the lab on a project
+                </span>
+              </div>
+              <svg
+                className="w-4 h-4 text-muted-foreground group-hover:text-accent-coral transition flex-shrink-0"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M9 5l7 7-7 7"
+                />
+              </svg>
+            </a>
           </div>
 
           {/* Public policy links. This page doubles as the app's public home

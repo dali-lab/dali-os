@@ -1,6 +1,6 @@
-import { useSortable } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
-import { initialsFromName } from "~/lib/display";
+import { fullName as buildFullName } from "~/lib/display";
+import { Avatar } from "~/components/ui/Avatar";
+import { RolePills } from "~/components/ui/RolePills";
 import type { MemberCardModel, Level } from "../lib/staffing-board";
 
 const LEVEL_BADGE: Record<Level, { label: string; cls: string }> = {
@@ -11,7 +11,6 @@ const LEVEL_BADGE: Record<Level, { label: string; cls: string }> = {
 
 type Props = {
   card: MemberCardModel;
-  columnId: string;
   projectNames: Record<string, string>;
   domainNames: Record<string, string>;
   onOpenBid: () => void;
@@ -19,39 +18,42 @@ type Props = {
   onRemove?: () => void;
   /** When false the card is static (read-only viewers). */
   draggable: boolean;
+  /**
+   * Drag listeners + a11y attributes from the KanbanBoard sortable wrapper.
+   * Spread onto the card root so the whole card initiates a drag. Empty for
+   * read-only viewers.
+   */
+  dragHandleProps: Record<string, unknown>;
+  /** The card is the one being dragged — dim it; the DragOverlay floats a copy. */
+  isDragging: boolean;
 };
 
-export function MemberCard({ card, columnId, projectNames, domainNames, onOpenBid, onRemove, draggable }: Props) {
-  // The card's sortable id is its userId (unique per board). Column membership
-  // travels in `data` so the drag handler knows where the card came from.
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({
-      id: card.userId,
-      data: { userId: card.userId, fromColumn: columnId },
-      disabled: !draggable,
-    });
-
-  const fullName = `${card.firstName} ${card.lastName}`.trim();
+export function MemberCard({
+  card,
+  projectNames,
+  domainNames,
+  onOpenBid,
+  onRemove,
+  draggable,
+  dragHandleProps,
+  isDragging,
+}: Props) {
+  const fullName = buildFullName(card);
 
   // Only wire dnd listeners + grab cursor when draggable. Read-only viewers
   // still see the card and can click it to open the bid modal.
-  const dragProps = draggable ? { ...attributes, ...listeners } : {};
+  const dragProps = draggable ? dragHandleProps : {};
 
-  // useSortable's transform/transition animate the SIBLINGS shifting to make
-  // room as a card is dragged over them. The dragged card itself is dimmed and
-  // its floating copy is rendered by DragOverlay (portaled above all columns),
-  // so it can never clip under an adjacent column's stacking context.
+  // The wrapper (KanbanBoard's SortableCardWrapper) owns setNodeRef + the
+  // sortable transform that animates SIBLINGS shifting to make room. The dragged
+  // card itself is dimmed; its floating copy is rendered by DragOverlay (portaled
+  // above all columns), so it can never clip under an adjacent column.
   //
-  // Clicking anywhere on the card opens the member's bid. The DndContext uses
-  // a small activation-distance constraint, so a pointer press that doesn't
-  // move past the threshold lands here as a click rather than starting a drag.
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
+  // Clicking anywhere on the card opens the member's bid. The DndContext uses a
+  // small activation-distance constraint, so a pointer press that doesn't move
+  // past the threshold lands here as a click rather than starting a drag.
   return (
     <div
-      ref={setNodeRef}
       {...dragProps}
       onClick={onOpenBid}
       role="button"
@@ -98,7 +100,7 @@ function MemberCardBody({
   return (
     <>
       <div className="flex items-start gap-2">
-        <Avatar photoUrl={card.photoUrl} name={fullName} />
+        <Avatar photoUrl={card.photoUrl} name={fullName} size="sm" />
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-1.5 flex-wrap">
             <span className="text-sm font-semibold text-foreground truncate text-left">
@@ -121,7 +123,12 @@ function MemberCardBody({
               </span>
             )}
           </div>
-          <RoleStrip card={card} />
+          <RolePills
+            isAdmin={card.isAdmin}
+            coreTitles={card.coreTitles}
+            size="sm"
+            className="mt-0.5"
+          />
         </div>
         {onRemove && card.manuallyAdded && (
           <button
@@ -158,7 +165,7 @@ export function MemberCardPreview({
   projectNames: Record<string, string>;
   domainNames: Record<string, string>;
 }) {
-  const fullName = `${card.firstName} ${card.lastName}`.trim();
+  const fullName = buildFullName(card);
   return (
     <div className="bg-card border border-border rounded-md p-2.5 flex flex-col gap-1.5 select-none shadow-lg cursor-grabbing">
       <MemberCardBody
@@ -187,38 +194,6 @@ function DomainLevelStrip({ card }: { card: MemberCardModel }) {
           <span className={`px-1 rounded font-bold ${LEVEL_BADGE[d.level].cls}`}>
             {LEVEL_BADGE[d.level].label}
           </span>
-        </span>
-      ))}
-    </div>
-  );
-}
-
-function Avatar({ photoUrl, name }: { photoUrl: string | null; name: string }) {
-  if (photoUrl) {
-    return <img src={photoUrl} alt="" className="w-8 h-8 rounded-full object-cover flex-shrink-0" />;
-  }
-  return (
-    <div className="w-8 h-8 rounded-full bg-accent-coral/15 text-accent-coral flex items-center justify-center font-bold text-[11px] flex-shrink-0">
-      {initialsFromName(name)}
-    </div>
-  );
-}
-
-function RoleStrip({ card }: { card: MemberCardModel }) {
-  if (!card.isAdmin && card.coreTitles.length === 0) return null;
-  return (
-    <div className="flex flex-wrap gap-1 mt-0.5">
-      {card.isAdmin && (
-        <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded bg-accent-coral/15 text-accent-coral">
-          Admin
-        </span>
-      )}
-      {card.coreTitles.map((t) => (
-        <span
-          key={t}
-          className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded bg-muted text-foreground"
-        >
-          {t}
         </span>
       ))}
     </div>

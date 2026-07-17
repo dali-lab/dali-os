@@ -238,7 +238,7 @@ export default function PortalApplication() {
       <div className="bg-brand-tint px-6 md:px-16 lg:px-24 py-10">
         <div className="max-w-3xl mx-auto">
           <Link
-            to="/portal"
+            to="/portal/hiring"
             className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-accent-coral transition mb-4"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

@@ -1,7 +1,6 @@
 import type { Route } from "./+types/api.tasks.$id.move";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
-import { isCore } from "~/lib/roles";
+import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { isTaskStatus } from "../lib/task-board";
 import { closeIssueForTask, syncIssueForTask } from "../lib/github-task-sync";
@@ -27,15 +26,18 @@ export async function action({ request, params }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
   if (preflight) return preflight;
 
-  const auth = await requireAuth(request);
-  if (!auth.ok) return withCors(request, auth.response);
-
   if (request.method !== "POST") {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
-  if (!(await isCore(auth.user.sub))) {
-    return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+  const task = await prisma.task.findUnique({
+    where: { id: params.id },
+    select: { id: true, githubIssueNumber: true, projectId: true },
+  });
+  if (!task) {
+    return withCors(request, Response.json({ error: "Task not found" }, { status: 404 }));
   }
+  const gate = await requireProjectEditAccess(request, task.projectId);
+  if (!gate.ok) return gate.response;
 
   let body: unknown;
   try {
@@ -48,14 +50,6 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
   if (!isTaskStatus(body.status)) {
     return withCors(request, Response.json({ error: "Invalid status" }, { status: 400 }));
-  }
-
-  const task = await prisma.task.findUnique({
-    where: { id: params.id },
-    select: { id: true, githubIssueNumber: true },
-  });
-  if (!task) {
-    return withCors(request, Response.json({ error: "Task not found" }, { status: 404 }));
   }
 
   await prisma.task.update({

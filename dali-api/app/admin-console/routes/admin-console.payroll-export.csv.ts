@@ -1,13 +1,13 @@
 import type { Route } from "./+types/admin-console.payroll-export.csv";
 import { redirect } from "react-router";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, forbidden } from "~/lib/auth";
+import { csvResponse } from "~/lib/csv";
 import { isAdmin } from "~/lib/roles";
 import {
   buildCoreRows,
   buildInstructorRows,
   buildPayrollRows,
-  formatDate,
   pickDefaultTermId,
   rowsToCsv,
 } from "~/admin-console/lib/payroll-export";
@@ -28,7 +28,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
   if (!(await isAdmin(auth.user.sub))) {
-    return new Response("Forbidden", { status: 403 });
+    return forbidden(request);
   }
 
   const url = new URL(request.url);
@@ -59,14 +59,13 @@ export async function loader({ request }: Route.LoaderArgs) {
     buildInstructorRows(selectedTerm.id, instructorIds),
   ]);
   const csv = rowsToCsv([...projectRows, ...coreRows, ...instructorRows]);
-  const filename = `payroll-${selectedTerm.code}-${formatDate(new Date())}.csv`;
+  // Sortable ISO date stamp for the filename (distinct from the MMDDYY hire
+  // dates inside the CSV).
+  const fileStamp = new Date().toISOString().slice(0, 10);
+  const filename = `payroll-${selectedTerm.code}-${fileStamp}.csv`;
 
-  return new Response(csv, {
+  return csvResponse(csv, filename, {
     status: 200,
-    headers: {
-      "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="${filename}"`,
-      "Cache-Control": "no-store",
-    },
+    headers: { "Cache-Control": "no-store" },
   });
 }

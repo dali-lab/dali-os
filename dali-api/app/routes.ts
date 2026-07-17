@@ -7,8 +7,12 @@ export default [
     route("profile", "routes/profile.tsx"),
     route("onboarding", "routes/onboarding.tsx"),
     route("calendar", "calendar/routes/calendar.tsx"),
+    // My Tasks surface: Open tasks + browsable notification history.
+    route("notifications", "routes/notifications.tsx"),
 
-    // Hiring section
+    // Hiring section. /hiring is the role-aware hub; the tools below are
+    // reached via its pill row (the sidebar carries a single Hiring entry).
+    route("hiring", "hiring/routes/hiring.tsx"),
     route("hiring/reviewer", "hiring/routes/reviewer.tsx"),
     route("hiring/reviewer/application/:id", "hiring/routes/reviewer.application.$id.tsx"),
     // Applications database: list of all submissions for a cycle, scoped by
@@ -21,7 +25,12 @@ export default [
     route("hiring/lead", "hiring/routes/lead.tsx"),
     route("hiring/lead/cycle/:id", "hiring/routes/lead.cycle.$id.tsx"),
     route("hiring/lead/intern-to-full-cycle/:id", "hiring/routes/lead.intern-to-full-cycle.$id.tsx"),
-    route("hiring/lead/waitlists", "hiring/routes/lead.waitlists.tsx"),
+    // Cross-cycle by design (accepting off a waitlist may land in a later
+    // cycle), so it lives beside the other hiring tools, not under /lead.
+    route("hiring/waitlists", "hiring/routes/waitlists.tsx"),
+    // Accepted-applicant provisioning board (DALI email, Slack, Figma,
+    // profile form) — Core-only, same sensitivity tier as the lead dashboard.
+    route("hiring/onboarding", "hiring/routes/onboarding.tsx"),
     // Library — challenges, rubrics, and confidentiality agreements behind one
     // page with pills. The list views are consolidated here; the detail pages
     // keep their original paths.
@@ -32,7 +41,9 @@ export default [
     route("hiring/emails/:id", "hiring/routes/email-templates.$id.tsx"),
     route("hiring/confidentiality-agreements/:id", "hiring/routes/confidentiality-agreements.$id.tsx"),
     route("hiring/cycles/:cycleId/confidentiality", "hiring/routes/cycles.$cycleId.confidentiality.tsx"),
-    route("hiring/interviewer/interview/:interviewId", "hiring/routes/interviewer.interview.$interviewId.tsx"),
+    // Interviewer surfaces: list (availability + assigned) and detail.
+    route("hiring/interviews", "hiring/routes/interviews.tsx"),
+    route("hiring/interviews/:interviewId", "hiring/routes/interviews.$interviewId.tsx"),
     route("hiring/analytics", "hiring/routes/analytics.tsx"),
 
     // Operations (top-level, not hiring)
@@ -40,13 +51,19 @@ export default [
     route("admin-console/members", "admin-console/routes/admin-console.members.tsx"),
     route("admin-console/domains", "admin-console/routes/admin-console.domains.tsx"),
     route("admin-console/announcements", "admin-console/routes/admin-console.announcements.tsx"),
+    route("admin-console/attendance", "admin-console/routes/admin-console.attendance.tsx"),
     route("admin-console/activity", "admin-console/routes/admin-console.activity.tsx"),
     route("admin-console/analytics", "admin-console/routes/admin-console.analytics.tsx"),
     route("admin-console/payroll-export", "admin-console/routes/admin-console.payroll-export.tsx"),
+    route("admin-console/payroll", "admin-console/routes/admin-console.payroll.tsx"),
 
-    // Projects
-    route("projects/list", "projects/routes/projects.list.tsx"),
+    // Projects. The bare /projects route is the area hub (the project list).
+    route("projects", "projects/routes/projects.hub.tsx"),
     route("projects/staffing", "projects/routes/projects.staffing.tsx"),
+    // Member-facing staffing destination (requireMember, not canViewStaffing):
+    // the persistent place a member fills/revisits the cycle's staffing forms.
+    // Must precede projects/:id so it isn't captured by the :id param.
+    route("projects/my-staffing", "projects/routes/projects.my-staffing.tsx"),
     // Staffing input forms (member self-service). Must precede projects/:id
     // so these literal segments aren't captured by the :id param.
     route("projects/intent-to-work", "projects/routes/projects.intent-to-work.tsx"),
@@ -65,6 +82,10 @@ export default [
       "projects/routes/projects.level-up.$userId.tsx",
     ),
     route("projects/:id", "projects/routes/projects.$id.tsx"),
+    route(
+      "projects/:id/partner-view",
+      "projects/routes/projects.$id.partner-view.tsx",
+    ),
 
     // Documents & files — full-page reusable editor + file viewer. Literal
     // "file" segment precedes the :pageId param so it isn't captured.
@@ -80,9 +101,22 @@ export default [
     route("partners", "partners/routes/partners.tsx"),
     route("partners/applications", "partners/routes/partners.applications.tsx"),
     route("partners/applications/:id", "partners/routes/partners.applications.$id.tsx"),
+    // Literal segments above the param route (repo route-ordering convention).
+    route("partners/:orgId", "partners/routes/partners.$orgId.tsx"),
 
-    // Education
+    // Education. Literal "manage" segments must precede the :offeringId param
+    // so /education/manage/* isn't captured as an offering id.
     route("education", "education/routes/education.tsx"),
+    route("education/compliance", "education/routes/education.compliance.tsx"),
+    route("education/manage", "education/routes/education.manage.tsx"),
+    route("education/manage/new", "education/routes/education.manage.new.tsx"),
+    route("education/manage/assignments/:assignmentId", "education/routes/education.manage.assignments.$assignmentId.tsx"),
+    route("education/manage/:offeringId", "education/routes/education.manage.$offeringId.tsx"),
+    route("education/:offeringId", "education/routes/education.$offeringId.tsx"),
+    route("education/:offeringId/apply", "education/routes/education.$offeringId.apply.tsx"),
+    route("education/:offeringId/hub", "education/routes/education.$offeringId.hub.tsx"),
+    route("education/:offeringId/page/:pageId", "education/routes/education.$offeringId.page.$pageId.tsx"),
+    route("education/:offeringId/assignments/:assignmentId", "education/routes/education.$offeringId.assignments.$assignmentId.tsx"),
 
     // Mentorship — weekly notes hub + browser + templates (Core).
     // Hidden from mentees entirely; gated server-side by canViewMentorship.
@@ -91,8 +125,8 @@ export default [
     route("mentorship/templates", "mentorship/routes/mentorship.templates.tsx"),
     route("mentorship/notes/:id", "mentorship/routes/mentorship.notes.$id.tsx"),
 
-    // Internal processes
-    route("internal-processes/onboarding", "internal-processes/routes/internal-processes.onboarding.tsx"),
+    // Internal processes. The bare route is the area hub.
+    route("internal-processes", "internal-processes/routes/internal-processes.hub.tsx"),
     route("internal-processes/transfer", "internal-processes/routes/internal-processes.transfer.tsx"),
     route("internal-processes/level-up", "internal-processes/routes/internal-processes.level-up.tsx"),
     route("internal-processes/jobx", "internal-processes/routes/internal-processes.jobx.tsx"),
@@ -100,23 +134,71 @@ export default [
     // Forms. The :folderId form lets a folder card open its own page with
     // nested folders + forms; the bare /forms route is the top level.
     route("forms", "forms/routes/forms.tsx"),
-    // Static `edit` segment must precede the :folderId catch so /forms/edit/*
-    // isn't read as a folder id.
+    // Static `edit`/`responses` segments must precede the :folderId catch so
+    // /forms/edit/* and /forms/responses/* aren't read as folder ids.
     route("forms/edit/:formId", "forms/routes/forms.edit.$formId.tsx"),
+    route("forms/responses/:formId", "forms/routes/forms.responses.$formId.tsx"),
     route("forms/:folderId", "forms/routes/forms.$folderId.tsx"),
 
     // Internal applicant portal — intern → full-time conversion. Authenticated
     // member route (not under /portal) so interns use their existing session
     // rather than the CAS flow built for external applicants.
     route("intern-to-full", "routes/intern-to-full.tsx"),
+
+    // Settings — opened from the sidebar footer icon. Lives under the layout
+    // so in-iframe navigation posts `dali:tabNavigated` and the workspace's
+    // tab URL tracks it (a stale URL made re-clicking Settings focus the
+    // drifted tab instead of reopening the hub).
+    route("settings", "routes/settings._index.tsx"),
+    route("settings/calendar", "routes/settings.calendar.tsx"),
+    route("settings/sessions", "routes/settings.sessions.tsx"),
+    route("settings/slack", "routes/settings.slack.tsx"),
+    route("settings/connected-apps", "routes/settings.connected-apps.tsx"),
+
+    // Help pages (same convention as Settings).
+    route("help", "routes/help._index.tsx"),
+    route("help/getting-started", "routes/help.getting-started.tsx"),
+    route("help/shortcuts", "routes/help.shortcuts.tsx"),
+    route("help/calendar", "routes/help.calendar.tsx"),
+    route("help/staffing", "routes/help.staffing.tsx"),
+    route("help/notifications", "routes/help.notifications.tsx"),
+    route("help/mcp", "routes/help.mcp.tsx"),
   ]),
 
-  // Applicant portal (lightweight layout)
+  // Applicant portal (lightweight layout). /portal is the non-member home
+  // dashboard; the hiring application tracker lives at /portal/hiring.
   layout("routes/applicant-layout.tsx", [
     route("portal", "routes/portal.tsx"),
+    route("portal/hiring", "routes/portal.hiring.tsx"),
     route("portal/apply", "routes/portal.apply.tsx"),
     route("portal/application", "routes/portal.application.tsx"),
+    route("portal/settings", "routes/portal.settings.tsx"),
+    // Education mirror for non-member Dartmouth students.
+    route("portal/education", "routes/portal.education.tsx"),
+    route("portal/education/:offeringId", "routes/portal.education.$offeringId.tsx"),
+    route("portal/education/:offeringId/apply", "routes/portal.education.$offeringId.apply.tsx"),
+    route("portal/education/:offeringId/hub", "routes/portal.education.$offeringId.hub.tsx"),
+    route("portal/education/:offeringId/page/:pageId", "routes/portal.education.$offeringId.page.$pageId.tsx"),
+    route("portal/education/:offeringId/assignments/:assignmentId", "routes/portal.education.$offeringId.assignments.$assignmentId.tsx"),
   ]),
+
+  // Partner portal (external partner shell). Singular /partner =
+  // partner-facing; plural /partners = the internal Core surface registered
+  // in the member layout above.
+  layout("partners/routes/partner-layout.tsx", [
+    route("partner", "partners/routes/partner.home.tsx"),
+    route("partner/apply", "partners/routes/partner.apply.tsx"),
+    route("partner/applications/:id", "partners/routes/partner.applications.$id.tsx"),
+    route("partner/settings", "partners/routes/partner.settings.tsx"),
+    route("partner/projects/:id", "partners/routes/partner.projects.$id.tsx"),
+    route("partner/projects/:id/pages/:pageId", "partners/routes/partner.projects.$id.pages.$pageId.tsx"),
+  ]),
+
+  // Partner auth (no layout).
+  route("partner/login", "partners/routes/partner.login.tsx"),
+  route("partner/auth/verify", "partners/routes/partner.auth.verify.tsx"),
+  route("partner/invite/:token", "partners/routes/partner.invite.$token.tsx"),
+  route("partner/onboarding", "partners/routes/partner.onboarding.tsx"),
 
   // Authenticated member form fill (no layout), token-addressed. Every form
   // is filled while logged in — the submitter is always the session user, so
@@ -125,10 +207,19 @@ export default [
   route("forms/fill/:token", "routes/forms.fill.$token.tsx"),
   route("api/forms/fill/:token", "routes/api.forms.fill.$token.ts"),
 
+  // Education certificates (no layout — portal users open these too; the PDF
+  // is a resource route that streams a bare body).
+  route("education/certificates/:certificateId", "education/routes/certificates.$certificateId.tsx"),
+  route("education/certificates/:certificateId/pdf", "education/routes/certificates.$certificateId.pdf.ts"),
+
   // Public policy pages (no auth, no layout) — linked from the Google OAuth
   // consent screen, so they must load for an unauthenticated reviewer.
   route("privacy", "routes/privacy.tsx"),
   route("terms", "routes/terms.tsx"),
+
+  // Public, shareable desktop download page (OS auto-detect). Not linked from
+  // anywhere yet — reachable by direct URL.
+  route("download", "routes/download.tsx"),
 
   // Login (no layout)
   route("login", "routes/login.tsx"),
@@ -137,6 +228,15 @@ export default [
   route("logout", "routes/logout.ts"),
   route("auth/callback/google", "routes/auth.callback.google.ts"),
   route("auth/callback/cas", "routes/auth.callback.cas.ts"),
+
+  // Desktop device pairing (GitHub-CLI style). Additive — OAuth + login
+  // untouched. /link is the only new web UI surface. See TAURI_DESKTOP_PLAN.md.
+  route("auth/pair/start", "routes/auth.pair.start.ts"),
+  route("auth/pair/approve", "routes/auth.pair.approve.ts"),
+  route("auth/pair/poll", "routes/auth.pair.poll.ts"),
+  route("auth/handoff", "routes/auth.handoff.ts"),
+  route("link", "routes/link.tsx"),
+  route("api/desktop/version", "routes/api.desktop.version.ts"),
 
   // OAuth endpoints (no layout)
   route("oauth/authorize", "routes/oauth.authorize.ts"),
@@ -163,23 +263,6 @@ export default [
   ),
   route("mcp", "routes/mcp.ts"),
 
-  // Settings pages (no layout — opened in a TabWorkspace iframe via the
-  // sidebar footer icons; their own <main> provides padding).
-  route("settings", "routes/settings._index.tsx"),
-  route("settings/calendar", "routes/settings.calendar.tsx"),
-  route("settings/sessions", "routes/settings.sessions.tsx"),
-  route("settings/slack", "routes/settings.slack.tsx"),
-  route("settings/connected-apps", "routes/settings.connected-apps.tsx"),
-
-  // Help pages (same shell convention as Settings).
-  route("help", "routes/help._index.tsx"),
-  route("help/getting-started", "routes/help.getting-started.tsx"),
-  route("help/shortcuts", "routes/help.shortcuts.tsx"),
-  route("help/calendar", "routes/help.calendar.tsx"),
-  route("help/staffing", "routes/help.staffing.tsx"),
-  route("help/notifications", "routes/help.notifications.tsx"),
-  route("help/mcp", "routes/help.mcp.tsx"),
-
   // Authenticated API endpoints (no layout)
   route("users/:id", "members/routes/users.$id.ts"),
 
@@ -202,7 +285,11 @@ export default [
   // Scheduled meetings
   route("api/scheduled-meetings", "calendar/routes/api.scheduled-meetings.ts"),
   route("api/scheduled-meetings/:id/cancel", "calendar/routes/api.scheduled-meetings.$id.cancel.ts"),
+  route("api/scheduled-meetings/:id/attendance", "calendar/routes/api.scheduled-meetings.$id.attendance.ts"),
+  route("api/scheduled-meetings/:id/check-in", "calendar/routes/api.scheduled-meetings.$id.check-in.ts"),
   route("api/calendar/group-availability", "calendar/routes/api.calendar.group-availability.ts"),
+  // JobX browser extension export — see jobx-extension/README.md.
+  route("api/timesheets/export", "routes/api.timesheets.export.ts"),
 
   // Slack bot (webhook receivers; signature-verified, no auth middleware)
   route("api/slack/events", "slack/routes/api.slack.events.ts"),
@@ -219,9 +306,16 @@ export default [
   route("api/staffing/assign", "projects/routes/api.staffing.assign.ts"),
   route("api/staffing/finalize", "projects/routes/api.staffing.finalize.ts"),
   route("api/staffing/term-channel", "projects/routes/api.staffing.term-channel.ts"),
+  route("api/staffing/sync-teams", "projects/routes/api.staffing.sync-teams.ts"),
   route("api/staffing/board-member", "projects/routes/api.staffing.board-member.ts"),
   route("api/staffing/events", "projects/routes/api.staffing.events.ts"),
   route("api/staffing/reorder", "projects/routes/api.staffing.reorder.ts"),
+
+  // Core-only level correction for an already-finalized ProjectAssignment.
+  route(
+    "api/projects/assignments/:id/level",
+    "projects/routes/api.assignment-level.ts",
+  ),
 
   // Project task board
   route("api/projects/:id/tasks", "projects/routes/api.projects.$id.tasks.ts"),
@@ -230,6 +324,7 @@ export default [
 
   // Project epics & sprints
   route("api/projects/:id/epics", "projects/routes/api.projects.$id.epics.ts"),
+  route("api/projects/:id/epics/reorder", "projects/routes/api.projects.$id.epics.reorder.ts"),
   route("api/epics/:id", "projects/routes/api.epics.$id.ts"),
   route(
     "api/epics/:id/description-doc",
@@ -243,6 +338,7 @@ export default [
   // Project documents (collab Pages scoped to the project)
   route("api/projects/:id/documents", "projects/routes/api.projects.$id.documents.ts"),
   route("api/documents/:id", "projects/routes/api.documents.$id.ts"),
+  route("api/pages/:id/partner-visible", "projects/routes/api.pages.$id.partner-visible.ts"),
 
   // Project files (standalone uploads with versions)
   route("api/projects/:id/files", "projects/routes/api.projects.$id.files.ts"),
@@ -262,6 +358,15 @@ export default [
   // Payroll CSV export (resource route — registered OUTSIDE the app layout so
   // the Response streams as a bare CSV body, not wrapped in an HTML shell).
   route("admin-console/payroll-export.csv", "admin-console/routes/admin-console.payroll-export.csv.ts"),
+
+  // Form responses CSV export (resource route — same bare-body reasoning).
+  route("forms/responses/:formId/export.csv", "forms/routes/forms.responses.$formId.export.csv.ts"),
+
+  // Payroll reconcile — upload (multipart action) + per-view CSV export.
+  // Resource routes registered OUTSIDE the app layout (bare bodies, no shell).
+  route("admin-console/payroll/upload", "admin-console/routes/admin-console.payroll.upload.ts"),
+  route("admin-console/payroll/budget", "admin-console/routes/admin-console.payroll.budget.ts"),
+  route("admin-console/payroll.csv", "admin-console/routes/admin-console.payroll.csv.ts"),
 
   // Partner application status (board drag-and-drop) + domain scope
   route("api/partner-applications/:id/status", "partners/routes/api.partner-applications.$id.status.ts"),

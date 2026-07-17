@@ -1,6 +1,15 @@
-import { useEffect, useMemo, useRef } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
+import { createPortal } from "react-dom";
 
-export type EpicStatus = "Open" | "InProgress" | "Done" | "Cancelled";
+export type EpicStatus = "Backlog" | "Open" | "InProgress" | "Done" | "Cancelled";
 export type SprintStatus = "Planned" | "Active" | "Closed";
 
 export type TimelineSprint = {
@@ -21,29 +30,29 @@ export type TimelineEpic = {
   startsAt: string | null;
   endsAt: string | null;
   sprintCount: number;
-  // Sprints under this epic, ordered by startsAt. Each is its own bar row,
-  // matching the reference timeline (one row per sprint, connectors between
-  // consecutive sprints).
+  // Sprints under this epic, ordered by startsAt. Drawn as thinner bars
+  // directly under the epic bar on the same track.
   sprints: TimelineSprint[];
 };
 
-// Bar fills. Epics are the parent rows, so they get a saturated coral
-// gradient (the brand's heaviest accent) — distinctly bolder than their
-// teal sprint children, which keeps the hierarchy obvious at a glance.
+// Bar fills. Epics are the parent bars (coral / stronger fill so they stay
+// readable above the quieter sprint stack); sprints are subordinate teal.
 const EPIC_BAR: Record<EpicStatus, string> = {
-  Open: "bg-gradient-to-b from-accent-coral to-accent-coral-light",
-  InProgress: "bg-gradient-to-b from-accent-coral to-accent-coral-light",
-  Done: "bg-accent-coral/45",
-  Cancelled: "bg-destructive/50",
+  Backlog: "bg-muted-foreground/70 ring-1 ring-inset ring-border",
+  Open: "bg-accent-coral",
+  InProgress: "bg-accent-coral",
+  Done: "bg-accent-coral/60",
+  Cancelled: "bg-destructive/70",
 };
 
 const SPRINT_BAR: Record<SprintStatus, string> = {
-  Planned: "bg-muted-foreground/40",
-  Active: "bg-gradient-to-b from-accent-teal to-accent-teal-light",
-  Closed: "bg-accent-teal/45",
+  Planned: "bg-muted-foreground/50 ring-1 ring-inset ring-border/60",
+  Active: "bg-accent-teal",
+  Closed: "bg-accent-teal/55",
 };
 
 const EPIC_LABEL: Record<EpicStatus, string> = {
+  Backlog: "Backlog",
   Open: "Open",
   InProgress: "In progress",
   Done: "Done",
@@ -56,42 +65,29 @@ const SPRINT_LABEL: Record<SprintStatus, string> = {
   Closed: "Done",
 };
 
-// Status pill — a small solid chip with a leading dot, sitting at the start
-// of each bar (like the "Done" / "In progress" chips in the reference). Solid
-// surface + white text so it stays legible on top of any bar fill, instead
-// of the old gray-on-gray chip that disappeared on muted bars.
 const EPIC_PILL: Record<EpicStatus, string> = {
+  Backlog: "bg-card/90 text-muted-foreground ring-1 ring-black/5",
   Open: "bg-card/90 text-foreground ring-1 ring-black/5",
   InProgress: "bg-card/90 text-foreground ring-1 ring-black/5",
   Done: "bg-card/80 text-muted-foreground",
   Cancelled: "bg-card/80 text-destructive",
 };
 
-const SPRINT_PILL: Record<SprintStatus, string> = {
-  Planned: "bg-card/90 text-muted-foreground ring-1 ring-black/5",
-  Active: "bg-card/90 text-foreground ring-1 ring-black/5",
-  Closed: "bg-card/80 text-muted-foreground",
-};
-
-// Dot color inside the pill — this is what carries the status hue now.
 const EPIC_DOT: Record<EpicStatus, string> = {
+  Backlog: "bg-muted-foreground",
   Open: "bg-accent-coral",
   InProgress: "bg-accent-coral",
   Done: "bg-muted-foreground",
   Cancelled: "bg-destructive",
 };
 
-const SPRINT_DOT: Record<SprintStatus, string> = {
-  Planned: "bg-muted-foreground",
-  Active: "bg-accent-teal",
-  Closed: "bg-muted-foreground",
-};
-
 const DAY = 86_400_000;
 const LABEL_W = 176; // px — fixed left column for row titles (w-44)
-// Pixels per day. The axis scrolls horizontally rather than squashing, so a
-// fixed scale keeps long projects readable.
 const PX_PER_DAY = 22;
+const EPIC_BAR_H = 26;
+const SPRINT_BAR_H = 14;
+const BAR_GAP = 4;
+const ROW_PAD_Y = 10;
 
 function startOfDay(t: number): number {
   const d = new Date(t);
@@ -107,31 +103,124 @@ function fmtMonth(d: Date): string {
   return d.toLocaleDateString(undefined, { month: "long", year: "numeric" });
 }
 
-type Row =
-  | { kind: "epic"; epic: TimelineEpic }
-  | { kind: "sprint"; sprint: TimelineSprint; epicId: string; prevId: string | null };
+function rowHeight(sprintCount: number): number {
+  // Epic bar + optional stack of sprint bars underneath.
+  const sprintStack =
+    sprintCount > 0 ? BAR_GAP + sprintCount * SPRINT_BAR_H + (sprintCount - 1) * 3 : 0;
+  return ROW_PAD_Y * 2 + EPIC_BAR_H + sprintStack;
+}
+
+function TimelineBarHover({
+  open,
+  anchorEl,
+  title,
+  rows,
+}: {
+  open: boolean;
+  anchorEl: HTMLElement | null;
+  title: string;
+  rows: { label: string; value: string }[];
+}) {
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!open || !anchorEl) {
+      setPos(null);
+      return;
+    }
+    const place = () => {
+      const card = cardRef.current;
+      if (!card) return;
+      const a = anchorEl.getBoundingClientRect();
+      const cw = card.offsetWidth;
+      const ch = card.offsetHeight;
+      const gap = 8;
+      const margin = 8;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      let left = a.left + a.width / 2 - cw / 2;
+      left = Math.max(margin, Math.min(left, vw - cw - margin));
+      let top = a.bottom + gap;
+      if (top + ch + margin > vh) top = a.top - gap - ch;
+      top = Math.max(margin, top);
+      setPos((prev) =>
+        prev && prev.left === left && prev.top === top ? prev : { left, top },
+      );
+    };
+    place();
+    const ro = new ResizeObserver(place);
+    if (cardRef.current) ro.observe(cardRef.current);
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open, anchorEl, title]);
+
+  if (!open || typeof document === "undefined") return null;
+
+  return createPortal(
+    <div
+      ref={cardRef}
+      role="tooltip"
+      className="fixed z-50 w-64 max-w-[min(16rem,calc(100vw-1rem))] rounded-md border border-border bg-card shadow-lg p-2.5 text-xs pointer-events-none"
+      style={{
+        left: pos?.left ?? 0,
+        top: pos?.top ?? 0,
+        visibility: pos ? "visible" : "hidden",
+      }}
+    >
+      <div className="font-heading font-semibold text-foreground leading-snug break-words">
+        {title}
+      </div>
+      <dl className="mt-1.5 space-y-1">
+        {rows.map((r) => (
+          <div key={r.label} className="flex gap-2 justify-between">
+            <dt className="text-muted-foreground flex-shrink-0">{r.label}</dt>
+            <dd className="text-foreground text-right break-words">{r.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>,
+    document.body,
+  );
+}
+
+function HoverBar({
+  className,
+  style,
+  title,
+  rows,
+  children,
+}: {
+  className: string;
+  style: CSSProperties;
+  title: string;
+  rows: { label: string; value: string }[];
+  children?: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
+  return (
+    <>
+      <div
+        ref={setAnchorEl}
+        className={className}
+        style={style}
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+      >
+        {children}
+      </div>
+      <TimelineBarHover open={open} anchorEl={anchorEl} title={title} rows={rows} />
+    </>
+  );
+}
 
 export function EpicsTimeline({ epics }: { epics: TimelineEpic[] }) {
-  // Flatten epics → rows: an epic header row followed by one row per sprint.
-  // `prevId` links a sprint to the one before it in the same epic so we can
-  // draw a connector between them.
-  const rows = useMemo<Row[]>(() => {
-    const out: Row[] = [];
-    for (const epic of epics) {
-      out.push({ kind: "epic", epic });
-      let prevId: string | null = null;
-      for (const sprint of epic.sprints) {
-        out.push({ kind: "sprint", sprint, epicId: epic.id, prevId });
-        prevId = sprint.id;
-      }
-    }
-    return out;
-  }, [epics]);
-
-  // Global date window: the union of every scheduled epic/sprint span (and
-  // today), then padded out by 3 months on each side and snapped to month
-  // boundaries. The extra padding is empty grid you can scroll left/right
-  // into, so the axis never dead-ends right at the data.
   const bounds = useMemo(() => {
     const times: number[] = [startOfDay(Date.now())];
     for (const e of epics) {
@@ -144,8 +233,6 @@ export function EpicsTimeline({ epics }: { epics: TimelineEpic[] }) {
     }
     if (times.length === 0) return null;
 
-    // Snap to the 1st of (earliest month − 3) … 1st of (latest month + 4),
-    // so the window starts/ends on clean month boundaries.
     const lo = new Date(Math.min(...times));
     const hi = new Date(Math.max(...times));
     const minD = new Date(lo.getFullYear(), lo.getMonth() - 3, 1);
@@ -156,7 +243,6 @@ export function EpicsTimeline({ epics }: { epics: TimelineEpic[] }) {
     return { min, max, days, width: days * PX_PER_DAY };
   }, [epics]);
 
-  // One tick per day for the gridlines; group ticks by month for the header.
   const days = useMemo(() => {
     if (!bounds) return [];
     const out: { t: number; isMonthStart: boolean; isToday: boolean }[] = [];
@@ -177,10 +263,10 @@ export function EpicsTimeline({ epics }: { epics: TimelineEpic[] }) {
     const out: { label: string; left: number; width: number }[] = [];
     let i = 0;
     while (i < days.length) {
-      const start = days[i].t;
+      const start = days[i]!.t;
       let j = i;
-      while (j + 1 < days.length && !days[j + 1].isMonthStart) j++;
-      const end = days[j].t;
+      while (j + 1 < days.length && !days[j + 1]!.isMonthStart) j++;
+      const end = days[j]!.t;
       out.push({
         label: fmtMonth(new Date(start)),
         left: ((start - bounds.min) / DAY) * PX_PER_DAY,
@@ -200,50 +286,33 @@ export function EpicsTimeline({ epics }: { epics: TimelineEpic[] }) {
     return Math.max(((b - a) / DAY + 1) * PX_PER_DAY, PX_PER_DAY);
   }
 
-  if (epics.length === 0) {
-    return (
-      <div className="text-sm text-muted-foreground italic py-8 text-center border border-border rounded-lg bg-card">
-        No epics yet.
-      </div>
-    );
-  }
-
-  const ROW_H = 48; // px per row, kept in sync with the row container height
-  // Floor on visible rows so a short timeline still renders a tall, roomy
-  // grid: any rows beyond the real data are empty gridline-only filler.
-  const MIN_ROWS = 10;
-  const fillerRows = Math.max(MIN_ROWS - rows.length, 0);
+  const MIN_ROWS = 8;
+  const fillerRows = Math.max(MIN_ROWS - epics.length, 0);
+  const FILLER_H = 48;
   const todayLeft =
     bounds && startOfDay(Date.now()) >= bounds.min && startOfDay(Date.now()) <= bounds.max
       ? ((startOfDay(Date.now()) - bounds.min) / DAY) * PX_PER_DAY
       : null;
 
-  // The window now extends ~3 months of empty grid before the data, so on
-  // mount jump the scroll to "today" (fallback: the first scheduled item),
-  // sitting it a little in from the left edge rather than at column 0.
   const scrollerRef = useRef<HTMLDivElement>(null);
   const initialScroll = useMemo(() => {
     if (!bounds) return 0;
-    const anchor =
-      todayLeft != null
-        ? todayLeft
-        : rows.length
-          ? // earliest bar position across rows
-            Math.min(
-              ...rows.map((r) =>
-                r.kind === "epic"
-                  ? r.epic.startsAt
-                    ? ((startOfDay(new Date(r.epic.startsAt).getTime()) - bounds.min) /
-                        DAY) *
-                      PX_PER_DAY
-                    : Infinity
-                  : ((startOfDay(new Date(r.sprint.startsAt).getTime()) - bounds.min) /
-                      DAY) *
-                    PX_PER_DAY,
-              ),
-            )
-          : 0;
-    return Math.max(Number.isFinite(anchor) ? anchor - 7 * PX_PER_DAY : 0, 0);
+    const anchors: number[] = [];
+    if (todayLeft != null) anchors.push(todayLeft);
+    for (const e of epics) {
+      if (e.startsAt) {
+        anchors.push(
+          ((startOfDay(new Date(e.startsAt).getTime()) - bounds.min) / DAY) * PX_PER_DAY,
+        );
+      }
+      for (const s of e.sprints) {
+        anchors.push(
+          ((startOfDay(new Date(s.startsAt).getTime()) - bounds.min) / DAY) * PX_PER_DAY,
+        );
+      }
+    }
+    const anchor = anchors.length ? Math.min(...anchors) : 0;
+    return Math.max(anchor - 7 * PX_PER_DAY, 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bounds]);
 
@@ -253,11 +322,23 @@ export function EpicsTimeline({ epics }: { epics: TimelineEpic[] }) {
     }
   }, [initialScroll]);
 
+  // Empty state is returned only AFTER every hook above has run. Bailing out
+  // earlier (as this did) changes the hook count between renders, so adding a
+  // project's first epic — 0 -> 1 — crashed the whole page with "Rendered more
+  // hooks than during the previous render". The hooks above all handle the
+  // empty case (bounds === null), so running them here is harmless.
+  if (epics.length === 0) {
+    return (
+      <div className="text-sm text-muted-foreground italic py-8 text-center border border-border rounded-lg bg-card">
+        No epics yet.
+      </div>
+    );
+  }
+
   return (
     <div className="border border-border rounded-lg bg-card overflow-hidden">
       <div ref={scrollerRef} className="overflow-x-auto">
         <div style={{ width: bounds ? LABEL_W + bounds.width : "100%" }}>
-          {/* Month + day header */}
           {bounds ? (
             <div className="sticky top-0 z-10 bg-card border-b border-border">
               <div className="flex">
@@ -266,7 +347,6 @@ export function EpicsTimeline({ epics }: { epics: TimelineEpic[] }) {
                   style={{ width: LABEL_W }}
                 />
                 <div className="relative" style={{ width: bounds.width, height: 44 }}>
-                  {/* Month band */}
                   <div className="relative h-6 border-b border-border/60">
                     {months.map((m) => (
                       <div
@@ -278,7 +358,6 @@ export function EpicsTimeline({ epics }: { epics: TimelineEpic[] }) {
                       </div>
                     ))}
                   </div>
-                  {/* Day numbers */}
                   <div className="relative h-[18px]">
                     {days.map((d) => (
                       <div
@@ -302,9 +381,7 @@ export function EpicsTimeline({ epics }: { epics: TimelineEpic[] }) {
             </div>
           ) : null}
 
-          {/* Rows */}
           <div className="relative">
-            {/* Vertical gridlines + month boundaries, behind the bars */}
             {bounds && (
               <div
                 className="absolute inset-y-0 pointer-events-none"
@@ -331,35 +408,58 @@ export function EpicsTimeline({ epics }: { epics: TimelineEpic[] }) {
               </div>
             )}
 
-            {rows.map((row) => {
-              if (row.kind === "epic") {
-                const e = row.epic;
-                const has = !!(e.startsAt && e.endsAt && bounds);
-                return (
+            {epics.map((e) => {
+              const h = rowHeight(e.sprints.length);
+              const has = !!(e.startsAt && e.endsAt && bounds);
+              const epicDateRange =
+                e.startsAt && e.endsAt
+                  ? `${fmtDay(new Date(e.startsAt))}–${fmtDay(new Date(e.endsAt))}`
+                  : "—";
+
+              return (
+                <div
+                  key={e.id}
+                  className="relative flex border-b border-border/40 bg-muted/10"
+                  style={{ height: h }}
+                >
                   <div
-                    key={`epic-${e.id}`}
-                    className="relative flex items-center border-b border-border/40 bg-muted/10"
-                    style={{ height: ROW_H }}
+                    className="flex-shrink-0 px-3 flex flex-col justify-center gap-0.5 border-r border-border min-w-0"
+                    style={{ width: LABEL_W }}
                   >
                     <div
-                      className="flex-shrink-0 px-3 text-sm font-semibold text-foreground truncate border-r border-border"
-                      style={{ width: LABEL_W }}
+                      className="text-sm font-semibold text-foreground truncate"
                       title={e.title}
                     >
                       {e.title}
                     </div>
-                    <div
-                      className="relative"
-                      style={{ width: bounds ? bounds.width : "100%", height: ROW_H }}
-                    >
-                      {has ? (
-                        <div
-                          className={`absolute top-1/2 -translate-y-1/2 h-6 rounded-md shadow-sm ${EPIC_BAR[e.status]} flex items-center gap-1.5 px-1.5`}
+                    {e.sprints.length > 0 && (
+                      <div className="text-[10px] text-muted-foreground truncate">
+                        {e.sprints.length} sprint{e.sprints.length === 1 ? "" : "s"}
+                      </div>
+                    )}
+                  </div>
+                  <div
+                    className="relative"
+                    style={{ width: bounds ? bounds.width : "100%", height: h }}
+                  >
+                    {has ? (
+                      <>
+                        {/* Parent epic bar — solid coral so it stays visible
+                            above the thinner sprint stack. */}
+                        <HoverBar
+                          className={`absolute rounded-md shadow-sm ${EPIC_BAR[e.status]} flex items-center gap-1.5 px-1.5 cursor-default min-w-[22px]`}
                           style={{
                             left: x(e.startsAt!),
                             width: w(e.startsAt!, e.endsAt!),
+                            top: ROW_PAD_Y,
+                            height: EPIC_BAR_H,
                           }}
-                          title={`${EPIC_LABEL[e.status]} · ${fmtDay(new Date(e.startsAt!))}–${fmtDay(new Date(e.endsAt!))}`}
+                          title={e.title}
+                          rows={[
+                            { label: "Status", value: EPIC_LABEL[e.status] },
+                            { label: "Dates", value: epicDateRange },
+                            { label: "Sprints", value: String(e.sprintCount) },
+                          ]}
                         >
                           <span
                             className={`flex-shrink-0 inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${EPIC_PILL[e.status]}`}
@@ -369,94 +469,52 @@ export function EpicsTimeline({ epics }: { epics: TimelineEpic[] }) {
                             />
                             {EPIC_LABEL[e.status]}
                           </span>
-                          <span className="text-[11px] font-medium text-white/95 truncate">
-                            {e.sprintCount} sprint{e.sprintCount === 1 ? "" : "s"}
-                          </span>
-                        </div>
-                      ) : (
-                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground italic">
-                          No dates yet
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                );
-              }
+                        </HoverBar>
 
-              // Sprint row
-              const s = row.sprint;
-              const left = x(s.startsAt);
-              const width = w(s.startsAt, s.endsAt);
-              return (
-                <div
-                  key={`sprint-${s.id}`}
-                  className="relative flex items-center border-b border-border/30"
-                  style={{ height: ROW_H }}
-                >
-                  <div
-                    className="flex-shrink-0 pl-6 pr-3 text-[13px] text-muted-foreground truncate border-r border-border"
-                    style={{ width: LABEL_W }}
-                    title={s.name}
-                  >
-                    {s.name}
-                  </div>
-                  <div
-                    className="relative"
-                    style={{ width: bounds!.width, height: ROW_H }}
-                  >
-                    {/* Connector from the previous sprint's end (one row up)
-                        into this bar's start — an elbow like the reference. */}
-                    {row.prevId && (
-                      <svg
-                        className="absolute pointer-events-none overflow-visible"
-                        style={{ left: 0, top: -ROW_H / 2, width: left, height: ROW_H }}
-                        aria-hidden
+                        {/* Subordinate sprint bars stacked under the epic bar */}
+                        {e.sprints.map((s, i) => {
+                          const top =
+                            ROW_PAD_Y + EPIC_BAR_H + BAR_GAP + i * (SPRINT_BAR_H + 3);
+                          return (
+                            <HoverBar
+                              key={s.id}
+                              className={`absolute rounded-sm shadow-sm ${SPRINT_BAR[s.status]} cursor-default`}
+                              style={{
+                                left: x(s.startsAt),
+                                width: w(s.startsAt, s.endsAt),
+                                top,
+                                height: SPRINT_BAR_H,
+                              }}
+                              title={s.name}
+                              rows={[
+                                { label: "Status", value: SPRINT_LABEL[s.status] },
+                                {
+                                  label: "Dates",
+                                  value: `${fmtDay(new Date(s.startsAt))}–${fmtDay(new Date(s.endsAt))}`,
+                                },
+                              ]}
+                            />
+                          );
+                        })}
+                      </>
+                    ) : (
+                      <span
+                        className="absolute left-2 text-[11px] text-muted-foreground italic"
+                        style={{ top: ROW_PAD_Y + 4 }}
                       >
-                        <path
-                          d={`M ${Math.max(left - 14, 0)} ${ROW_H / 2}
-                              C ${left - 7} ${ROW_H / 2}, ${left - 7} ${ROW_H},
-                                ${left} ${ROW_H}`}
-                          fill="none"
-                          className="stroke-muted-foreground/40"
-                          strokeWidth={1.5}
-                        />
-                      </svg>
+                        No dates yet
+                      </span>
                     )}
-                    <div
-                      className={`absolute top-1/2 -translate-y-1/2 h-[26px] rounded-md ${SPRINT_BAR[s.status]} flex items-center gap-1.5 px-1.5 shadow-sm`}
-                      style={{ left, width }}
-                      title={`${s.name} · ${SPRINT_LABEL[s.status]} · ${fmtDay(new Date(s.startsAt))}–${fmtDay(new Date(s.endsAt))}`}
-                    >
-                      <span
-                        className={`truncate flex-1 min-w-0 text-[11px] ${
-                          s.status === "Planned"
-                            ? "text-foreground/80"
-                            : "text-white/95 font-medium"
-                        }`}
-                      >
-                        {s.name}
-                      </span>
-                      <span
-                        className={`flex-shrink-0 inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${SPRINT_PILL[s.status]}`}
-                      >
-                        <span
-                          className={`h-1.5 w-1.5 rounded-full ${SPRINT_DOT[s.status]}`}
-                        />
-                        {SPRINT_LABEL[s.status]}
-                      </span>
-                    </div>
                   </div>
                 </div>
               );
             })}
 
-            {/* Empty trailing rows: pure gridline background so a short
-                timeline still has a tall, open grid to plan into. */}
             {Array.from({ length: fillerRows }).map((_, i) => (
               <div
                 key={`filler-${i}`}
                 className="relative flex items-center border-b border-border/20"
-                style={{ height: ROW_H }}
+                style={{ height: FILLER_H }}
                 aria-hidden
               >
                 <div

@@ -1,3 +1,4 @@
+import { redirect } from "react-router";
 import {
   clearSessionCookie,
   parseSessionIdWithSource,
@@ -5,6 +6,10 @@ import {
 } from "~/lib/cookies";
 import { logAuditEvent } from "~/lib/audit";
 import { lookupSession, rollSession, hashSessionId } from "~/lib/session";
+import { withCors } from "~/lib/cors";
+import { isCore, isDomainLead, isProjectMember } from "~/lib/roles";
+import { prisma } from "~/lib/db";
+import { displayEmail } from "~/lib/display";
 
 // Session-backed auth middleware. See SESSION_AUTH_PLAN.md for design.
 // The `user.sub` shape is preserved from the legacy JWT payload so existing
@@ -19,7 +24,7 @@ export type AuthUser = {
   lastName?: string;
 };
 
-type AuthSuccess = {
+export type AuthSuccess = {
   ok: true;
   user: AuthUser;
   sessionId: string; // hashed PK; not the raw credential
@@ -39,7 +44,7 @@ type AuthFailure = {
 
 export type AuthResult = AuthSuccess | AuthFailure;
 
-function unauthorized(): Response {
+function unauthorizedJson(): Response {
   return new Response(JSON.stringify({ error: "Unauthorized" }), {
     status: 401,
     headers: { "Content-Type": "application/json" },
@@ -68,14 +73,14 @@ function buildAuthUser(user: {
   id: string;
   daliEmail: string | null;
   dartmouthEmail: string | null;
+  personalEmail: string | null;
   netId: string | null;
   firstName: string;
   lastName: string;
 }): AuthUser {
   return {
     sub: user.id,
-    email:
-      user.daliEmail ?? user.dartmouthEmail ?? `${user.netId}@dartmouth.edu`,
+    email: displayEmail(user),
     type: deriveAuthType(user),
     firstName: user.firstName,
     lastName: user.lastName,
@@ -85,7 +90,7 @@ function buildAuthUser(user: {
 export async function requireAuth(request: Request): Promise<AuthResult> {
   const credential = parseSessionIdWithSource(request);
   if (!credential) {
-    return { ok: false, response: unauthorized(), reason: "no_session" };
+    return { ok: false, response: unauthorizedJson(), reason: "no_session" };
   }
 
   const session = await lookupSession(credential.raw);
@@ -157,4 +162,99 @@ export async function validateCasTicket(ticket: string, serviceUrl: string) {
   const lastName = nameParts.length > 1 ? nameParts.slice(-1)[0] : "";
 
   return { netId, firstName, lastName };
+}
+
+export function unauthorized(request: Request): Response {
+  return withCors(request, Response.json({ error: "Unauthorized" }, { status: 401 }));
+}
+
+export function forbidden(request: Request): Response {
+  return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+}
+
+export async function requireCore(
+  request: Request,
+): Promise<{ ok: true; auth: AuthSuccess } | { ok: false; response: Response }> {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return { ok: false, response: auth.response };
+  const core = await isCore(auth.user.sub);
+  if (!core) return { ok: false, response: forbidden(request) };
+  return { ok: true, auth };
+}
+
+export async function requireCoreOrDomainLead(
+  request: Request,
+): Promise<{ ok: true; auth: AuthSuccess } | { ok: false; response: Response }> {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return { ok: false, response: auth.response };
+  const [core, domainLead] = await Promise.all([
+    isCore(auth.user.sub),
+    isDomainLead(auth.user.sub),
+  ]);
+  if (!core && !domainLead) return { ok: false, response: forbidden(request) };
+  return { ok: true, auth };
+}
+
+export async function requireMemberSession(
+  request: Request,
+): Promise<{ ok: true; auth: AuthSuccess } | { ok: false; response: Response }> {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return { ok: false, response: auth.response };
+  const member = await prisma.dALIMember.findUnique({
+    where: { userId: auth.user.sub },
+  });
+  if (!member) {
+    return {
+      ok: false,
+      response: withCors(
+        request,
+        Response.json({ error: "Not a DALI member" }, { status: 403 }),
+      ),
+    };
+  }
+  return { ok: true, auth };
+}
+
+// Matches the loader's canEdit predicate at projects.$id.tsx — Core OR
+// a current/historical assignee of the project may edit project content
+// (tasks, epics, stories, sprints, documents, files).
+export async function requireProjectEditAccess(
+  request: Request,
+  projectId: string,
+): Promise<{ ok: true; auth: AuthSuccess } | { ok: false; response: Response }> {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return { ok: false, response: auth.response };
+  const [core, member] = await Promise.all([
+    isCore(auth.user.sub),
+    isProjectMember(auth.user.sub, projectId),
+  ]);
+  if (!core && !member) return { ok: false, response: forbidden(request) };
+  return { ok: true, auth };
+}
+
+export function redirectApplicantToPortal(auth: AuthSuccess): Response | null {
+  if (auth.user.type === "applicant") return redirect("/portal");
+  return null;
+}
+
+// Partner accounts belong in /partner, not the member shell or applicant
+// portal. Type "partner" alone is a residual bucket (no daliEmail, no netId)
+// that also holds members mid-Workspace-provisioning, so the gate keys off
+// the PartnerUser row. Cheap for everyone else: no query unless the type
+// matches. Prisma is lazy-imported so tests mocking only ~/lib/auth's
+// consumers don't need a db mock (same pattern as lib/audit.ts).
+export async function isPartnerAccount(auth: AuthSuccess): Promise<boolean> {
+  if (auth.user.type !== "partner") return false;
+  const { prisma } = await import("~/lib/db");
+  const partnerUser = await prisma.partnerUser.findUnique({
+    where: { userId: auth.user.sub },
+    select: { id: true },
+  });
+  return partnerUser !== null;
+}
+
+export async function redirectPartnerToPortal(
+  auth: AuthSuccess,
+): Promise<Response | null> {
+  return (await isPartnerAccount(auth)) ? redirect("/partner") : null;
 }

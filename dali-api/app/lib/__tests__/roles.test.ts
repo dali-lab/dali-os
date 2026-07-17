@@ -76,7 +76,13 @@ describe("hasCycleAccess", () => {
 
     expect(result).toBe(true);
     expect(mockPrisma.cycleReviewer.findFirst).not.toHaveBeenCalled();
-    expect(mockPrisma.cycleInterviewer.findFirst).not.toHaveBeenCalled();
+    // getUserRoles probes cycleInterviewer cycle-agnostically for the
+    // isInterviewer flag; only the cycle-scoped access probe must be skipped.
+    expect(mockPrisma.cycleInterviewer.findFirst).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ applicationCycleId: CYCLE_ID }),
+      }),
+    );
   });
 
   it("returns true for a hiring lead (via Core assignment)", async () => {

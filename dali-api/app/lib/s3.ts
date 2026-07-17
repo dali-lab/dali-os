@@ -6,6 +6,15 @@ import { MAX_UPLOAD_BYTES } from './file-validation'
 const REGION = process.env.AWS_REGION
 const BUCKET = process.env.AWS_S3_BUCKET
 
+export function isS3Configured(): boolean {
+  return Boolean(
+    REGION &&
+      BUCKET &&
+      process.env.AWS_ACCESS_KEY_ID &&
+      process.env.AWS_SECRET_ACCESS_KEY,
+  )
+}
+
 // `responseChecksumValidation: "WHEN_REQUIRED"` opts out of the SDK's default
 // behavior of adding `x-amz-checksum-mode=ENABLED` to presigned GetObject URLs.
 // That extra query param breaks SigV4 (signed headers don't account for it),
@@ -45,6 +54,9 @@ export async function getUploadPost(
 
 // Generate a presigned URL for reading a private file.
 export async function getDownloadUrl(key: string, expiresIn = 3600) {
+  if (!isS3Configured()) {
+    throw new Error("AWS S3 is not configured")
+  }
   const command = new GetObjectCommand({ Bucket: BUCKET, Key: key })
   return getSignedUrl(s3, command, { expiresIn })
 }

@@ -1,30 +1,39 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Form,
   Link,
   redirect,
   useActionData,
+  useFetcher,
   useLoaderData,
   useRevalidator,
   useSearchParams,
   useSubmit,
 } from "react-router";
-import { Check, Pencil, X, Settings } from "lucide-react";
-import { Modal } from "~/components/Modal";
+import { Check, Handshake, Pencil, X, Settings, Folder, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload } from "lucide-react";
+import { Modal, ModalHeader } from "~/components/Modal";
 import { EditableSection } from "~/components/EditableSection";
-import { TagPicker } from "~/components/TagPicker";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { PresenceBar } from "~/components/collab/PresenceBar";
 import { uploadFileToS3, formatBytes } from "~/lib/upload-client";
 import type { Route } from "./+types/projects.$id";
 import { prisma } from "~/lib/db";
 import { ensureProjectGroup } from "~/lib/groups";
-import { requireAuth } from "~/lib/auth";
+import { ensureMeetingNotesFolder } from "~/lib/pages";
+import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
+import { fullName } from "~/lib/display";
+import { USER_NAME_SELECT } from "~/lib/prisma-shapes";
 import { resolvePhotoUrl } from "~/lib/photo";
+import { Avatar } from "~/components/ui/Avatar";
 import { ProjectImageBanner } from "../components/ProjectImageBanner";
 import { Markdown } from "~/components/Markdown";
 import { parseSessionCookie } from "~/lib/cookies";
 import { isCore, isProjectMember, canManageStaffing, currentTerm, isLabMentor } from "~/lib/roles";
+import {
+  linkProjectPartner,
+  unlinkProjectPartner,
+  updateProjectPartnerDates,
+} from "~/partners/lib/partner-access";
 import { getPresenceUser } from "~/lib/presence-user";
 import { TaskBoard } from "../components/TaskBoard";
 import { ProjectMentorshipTab } from "~/mentorship/components/ProjectMentorshipTab";
@@ -44,6 +53,24 @@ import type {
 export const meta: Route.MetaFunction = ({ data }) => {
   const p = (data as { project?: { name: string } } | undefined)?.project;
   return [{ title: p ? `${p.name} · Projects · DALI OS` : "Project · DALI OS" }];
+};
+
+export const handle = {
+  breadcrumb: (data: unknown) =>
+    (data as { project?: { name: string } } | undefined)?.project?.name,
+  headerAction: (data: unknown) => {
+    const d = data as { project?: { id: string } } | undefined;
+    if (!d?.project) return null;
+    return (
+      <Link
+        to={`/projects/${d.project.id}/partner-view`}
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md border border-border text-foreground hover:bg-muted/50 transition-colors"
+      >
+        <Handshake className="w-4 h-4" />
+        Partner view
+      </Link>
+    );
+  },
 };
 
 // Open a project document as a split-screen tab. This page renders inside a
@@ -83,7 +110,8 @@ const TAB_LABELS: Record<Tab, string> = {
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  if (auth.user.type === "applicant") return redirect("/portal");
+  const portalRedirect = redirectApplicantToPortal(auth);
+  if (portalRedirect) return portalRedirect;
 
   const project = await prisma.project.findUnique({
     where: { id: params.id },
@@ -107,7 +135,28 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         select: { term: { select: { id: true, code: true, sortKey: true } } },
       },
       termCount: true,
-      partners: { select: { partnerOrg: { select: { name: true } } } },
+      partners: {
+        select: {
+          id: true,
+          startedAt: true,
+          endedAt: true,
+          partnerOrg: {
+            select: {
+              id: true,
+              name: true,
+              logoUrl: true,
+              website: true,
+              users: {
+                select: {
+                  id: true,
+                  displayRole: true,
+                  user: { select: USER_NAME_SELECT },
+                },
+              },
+            },
+          },
+        },
+      },
       termStatuses: {
         select: {
           id: true,
@@ -120,8 +169,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       },
       assignments: {
         select: {
+          id: true,
           level: true,
-          user: { select: { id: true, firstName: true, lastName: true } },
+          userId: true,
+          termId: true,
+          domainId: true,
+          user: { select: { ...USER_NAME_SELECT, photoUrl: true } },
           term: { select: { code: true, sortKey: true } },
           domain: { select: { id: true, name: true } },
         },
@@ -158,6 +211,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         select: {
           id: true,
           title: true,
+          description: true,
           status: true,
           priority: true,
           position: true,
@@ -166,10 +220,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           sprintId: true,
           githubIssueNumber: true,
           githubIssueUrl: true,
+          createdAt: true,
+          createdBy: { select: USER_NAME_SELECT },
           domain: { select: { id: true, displayName: true } },
           assignees: {
             select: {
-              user: { select: { id: true, firstName: true, lastName: true } },
+              user: { select: USER_NAME_SELECT },
             },
           },
         },
@@ -184,29 +240,56 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
   if (!project) throw new Response("Not found", { status: 404 });
 
-  // Project documents — top-level, non-archived FreeForm Pages scoped to
-  // this project's workspace.
-  const documentRows = await prisma.page.findMany({
+  // Backfill the two default, undeletable meeting-note folders (idempotent —
+  // no-ops once they exist) so every project's Documents block always shows
+  // them, including projects created before this feature existed.
+  await Promise.all([
+    ensureMeetingNotesFolder(project.id, "Team", auth.user.sub),
+    ensureMeetingNotesFolder(project.id, "Partner", auth.user.sub),
+  ]);
+
+  // Project documents — non-archived Pages scoped to this project's
+  // workspace, top-level and one level of children (folders only ever nest
+  // one level deep — see the 2-level cap on Page.parentPageId).
+  const pageRows = await prisma.page.findMany({
     where: {
       workspaceType: "Project",
       workspaceId: project.id,
-      parentPageId: null,
       archivedAt: null,
     },
     orderBy: { position: "asc" },
     select: {
       id: true,
       title: true,
-      tags: { select: { tag: { select: { id: true, label: true, slug: true, color: true } } } },
+      kind: true,
+      parentPageId: true,
+      systemKey: true,
+      partnerVisible: true,
     },
   });
-  const documents = documentRows.map((d) => ({
+  const childrenByParent = new Map<string, typeof pageRows>();
+  for (const p of pageRows) {
+    if (!p.parentPageId) continue;
+    const list = childrenByParent.get(p.parentPageId);
+    if (list) list.push(p);
+    else childrenByParent.set(p.parentPageId, [p]);
+  }
+  const toDocumentDto = (d: (typeof pageRows)[number]) => ({
     id: d.id,
     title: d.title,
-    tags: d.tags.map((t) => t.tag).sort((a, b) => a.label.localeCompare(b.label)),
-  }));
+    kind: d.kind,
+    isSystem: d.systemKey !== null,
+    partnerVisible: d.partnerVisible,
+  });
+  const documents = pageRows
+    .filter((p) => p.parentPageId === null)
+    .map((p) => ({
+      ...toDocumentDto(p),
+      children: (childrenByParent.get(p.id) ?? []).map(toDocumentDto),
+    }));
 
-  // Project files — standalone uploads with their current version + tags.
+  // Project files — standalone uploads with their current version.
+  // Tags are edited in the file/document editor, not on this list.
   const fileRows = await prisma.projectFile.findMany({
     where: { projectId: project.id, archivedAt: null },
     orderBy: { createdAt: "asc" },
@@ -215,7 +298,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       title: true,
       currentVersion: { select: { fileName: true, sizeBytes: true } },
       _count: { select: { versions: true } },
-      tags: { select: { tag: { select: { id: true, label: true, slug: true, color: true } } } },
     },
   });
   const files = fileRows.map((f) => ({
@@ -224,15 +306,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     fileName: f.currentVersion?.fileName ?? null,
     sizeBytes: f.currentVersion?.sizeBytes ?? null,
     versionCount: f._count.versions,
-    tags: f.tags.map((t) => t.tag).sort((a, b) => a.label.localeCompare(b.label)),
   }));
-
-  // Lab-wide active tags, for the tag pickers on docs and files.
-  const allTags = await prisma.docTag.findMany({
-    where: { archivedAt: null },
-    orderBy: { label: "asc" },
-    select: { id: true, label: true, slug: true, color: true },
-  });
 
   // Content edits (name/status, description, details, docs/files, epics/
   // sprints/tasks) are open to Core/Admin *and* anyone staffed on this project
@@ -257,23 +331,29 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const userName = presenceUser?.name ?? fallbackName;
 
   // Timeline span: prefer the epic's explicit startsAt/endsAt; fall back to
-  // the min/max of its sprint dates when either is unset. Each epic also
-  // carries its own sprint rows (ordered by start) so the timeline can render
-  // one bar per sprint with connectors, not just a single epic bar.
+  // the min/max of its sprint dates when either is unset. When the epic has
+  // sprints, expand the bar to cover the sprint union so the parent epic bar
+  // never disappears while child sprint bars are visible.
   const epics: TimelineEpic[] = project.epics.map((e) => {
     const epicSprints = project.sprints
       .filter((s) => s.epicId === e.id)
       .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
-    const starts = epicSprints.map((s) => s.startsAt.getTime());
-    const ends = epicSprints.map((s) => s.endsAt.getTime());
-    const sprintStart = starts.length ? new Date(Math.min(...starts)).toISOString() : null;
-    const sprintEnd = ends.length ? new Date(Math.max(...ends)).toISOString() : null;
+    const sprintStarts = epicSprints.map((s) => s.startsAt.getTime());
+    const sprintEnds = epicSprints.map((s) => s.endsAt.getTime());
+    const sprintStartMs = sprintStarts.length ? Math.min(...sprintStarts) : null;
+    const sprintEndMs = sprintEnds.length ? Math.max(...sprintEnds) : null;
+
+    let startMs = e.startsAt?.getTime() ?? sprintStartMs;
+    let endMs = e.endsAt?.getTime() ?? sprintEndMs;
+    if (sprintStartMs != null && startMs != null) startMs = Math.min(startMs, sprintStartMs);
+    if (sprintEndMs != null && endMs != null) endMs = Math.max(endMs, sprintEndMs);
+
     return {
       id: e.id,
       title: e.title,
       status: e.status as EpicStatus,
-      startsAt: e.startsAt ? e.startsAt.toISOString() : sprintStart,
-      endsAt: e.endsAt ? e.endsAt.toISOString() : sprintEnd,
+      startsAt: startMs != null ? new Date(startMs).toISOString() : null,
+      endsAt: endMs != null ? new Date(endMs).toISOString() : null,
       sprintCount: epicSprints.length,
       sprints: epicSprints.map((s) => ({
         id: s.id,
@@ -313,6 +393,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const tasks: TaskCardModel[] = project.tasks.map((t) => ({
     id: t.id,
     title: t.title,
+    description: t.description,
     status: t.status as TaskStatus,
     priority: t.priority as Priority,
     position: t.position,
@@ -321,13 +402,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     sprintId: t.sprintId,
     assignees: t.assignees.map((a) => ({
       id: a.user.id,
-      name: `${a.user.firstName} ${a.user.lastName}`.trim(),
+      name: fullName(a.user),
     })),
     domain: t.domain
       ? { id: t.domain.id, name: t.domain.displayName }
       : null,
     githubIssueUrl: t.githubIssueUrl,
     githubIssueNumber: t.githubIssueNumber,
+    createdBy: { id: t.createdBy.id, name: fullName(t.createdBy) },
+    createdAt: t.createdAt.toISOString(),
   }));
 
   // Board option lists for the TaskModal: members assignable on this project
@@ -337,7 +420,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   for (const a of project.assignments) {
     const id = a.user.id;
     if (!memberMap.has(id)) {
-      memberMap.set(id, `${a.user.firstName} ${a.user.lastName}`.trim());
+      memberMap.set(id, fullName(a.user));
     }
   }
   const boardOptions: TaskBoardOptions = {
@@ -355,19 +438,84 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   };
 
   // Team grouped by term, newest term first. Current = highest sortKey.
+  //
+  // For Core viewers we also surface per-assignment editing context:
+  //   - eligibilityLevel: ceiling enforced by /api/projects/assignments/:id/level
+  //   - activeMenteeCount: a P3→lower demotion is blocked while this > 0
+  // Both lookups are skipped for non-Core viewers (they see read-only badges).
+  const eligibilityCeilings = new Map<string, string>();
+  const menteeCounts = new Map<string, number>();
+  if (core && project.assignments.length > 0) {
+    const eligibilityPairs = new Map<string, { userId: string; domainId: string }>();
+    for (const a of project.assignments) {
+      eligibilityPairs.set(`${a.userId}:${a.domainId}`, {
+        userId: a.userId,
+        domainId: a.domainId,
+      });
+    }
+    const mentorUserIds = [...new Set(project.assignments.map((a) => a.userId))];
+    const [eligibilityRows, mentorRows] = await Promise.all([
+      prisma.domainEligibility.findMany({
+        where: { OR: [...eligibilityPairs.values()] },
+        select: { userId: true, domainId: true, level: true },
+      }),
+      // Over-fetch: any MentorshipPair on this project where any of our
+      // assignees is the mentor. We bucket client-side by the exact
+      // (mentorUserId, termId, domainId) tuple the endpoint checks.
+      prisma.mentorshipPair.findMany({
+        where: { projectId: project.id, mentorUserId: { in: mentorUserIds } },
+        select: { mentorUserId: true, termId: true, domainId: true },
+      }),
+    ]);
+    for (const e of eligibilityRows) {
+      eligibilityCeilings.set(`${e.userId}:${e.domainId}`, e.level);
+    }
+    for (const m of mentorRows) {
+      const key = `${m.mentorUserId}:${m.termId}:${m.domainId}`;
+      menteeCounts.set(key, (menteeCounts.get(key) ?? 0) + 1);
+    }
+  }
+
+  type TeamMember = {
+    assignmentId: string;
+    userId: string;
+    name: string;
+    photoUrl: string | null;
+    domain: string;
+    domainId: string;
+    level: string;
+    eligibilityLevel: string | null;
+    activeMenteeCount: number;
+  };
   const teamByTerm = new Map<
     string,
-    { code: string; sortKey: number; members: { name: string; domain: string; level: string }[] }
+    { code: string; sortKey: number; members: TeamMember[] }
   >();
+  const photoByUserId = new Map<string, string | null>();
+  const uniqueUsers = new Map(
+    project.assignments.map((a) => [a.userId, a.user.photoUrl] as const),
+  );
+  await Promise.all(
+    [...uniqueUsers].map(async ([userId, photoUrl]) => {
+      photoByUserId.set(userId, await resolvePhotoUrl(photoUrl));
+    }),
+  );
   for (const a of project.assignments) {
     const key = a.term.code;
     if (!teamByTerm.has(key)) {
       teamByTerm.set(key, { code: a.term.code, sortKey: a.term.sortKey, members: [] });
     }
     teamByTerm.get(key)!.members.push({
-      name: `${a.user.firstName} ${a.user.lastName}`.trim(),
+      assignmentId: a.id,
+      userId: a.userId,
+      name: fullName(a.user),
+      photoUrl: photoByUserId.get(a.userId) ?? null,
       domain: a.domain.name,
+      domainId: a.domainId,
       level: a.level,
+      eligibilityLevel: eligibilityCeilings.get(`${a.userId}:${a.domainId}`) ?? null,
+      activeMenteeCount:
+        menteeCounts.get(`${a.userId}:${a.termId}:${a.domainId}`) ?? 0,
     });
   }
   const teams = [...teamByTerm.values()].sort((a, b) => b.sortKey - a.sortKey);
@@ -460,6 +608,39 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // project.imageUrl so the upload field round-trips the key on save.
   const imageUrlResolved = await resolvePhotoUrl(project.imageUrl);
 
+  // Partnerships with derived active flag (same definition as
+  // partner-access.ts: window open AND project not archived).
+  const partnershipNow = new Date();
+  const partnerships = project.partners.map((pp) => ({
+    id: pp.id,
+    startedAt: pp.startedAt ? pp.startedAt.toISOString() : null,
+    endedAt: pp.endedAt ? pp.endedAt.toISOString() : null,
+    active:
+      project.status !== "Archived" &&
+      (pp.startedAt === null || pp.startedAt <= partnershipNow) &&
+      (pp.endedAt === null || pp.endedAt > partnershipNow),
+    org: {
+      id: pp.partnerOrg.id,
+      name: pp.partnerOrg.name,
+      logoUrl: pp.partnerOrg.logoUrl,
+      website: pp.partnerOrg.website,
+      contacts: pp.partnerOrg.users.map((u) => ({
+        id: u.id,
+        name: fullName(u.user),
+        displayRole: u.displayRole,
+      })),
+    },
+  }));
+  const hasActivePartner = partnerships.some((p) => p.active);
+  // Orgs not yet linked, for the Core-only link picker.
+  const linkablePartnerOrgs = core
+    ? await prisma.partnerOrg.findMany({
+        where: { projects: { none: { projectId: project.id } } },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true },
+      })
+    : [];
+
   return {
     project: {
       id: project.id,
@@ -487,7 +668,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       isActiveThisTerm,
       actualTermCount: plannedTerms.length,
       termCount: project.termCount,
-      partners: project.partners,
+      partners: partnerships,
       domains: declaredDomains,
       derivedDomains,
     },
@@ -499,7 +680,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     termStatuses,
     documents,
     files,
-    allTags,
     epics,
     editableEpics,
     sprints,
@@ -507,7 +687,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     boardOptions,
     canEdit,
     canEditScope,
+    canEditAssignmentLevel: core,
     canViewScope,
+    hasActivePartner,
+    linkablePartnerOrgs,
     canViewMentorshipTab,
     currentTerm: current ? { id: current.id, code: current.code } : null,
     collabToken,
@@ -521,7 +704,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  if (auth.user.type === "applicant") return redirect("/portal");
+  const portalRedirect = redirectApplicantToPortal(auth);
+  if (portalRedirect) return portalRedirect;
 
   // Content edits are open to Core/Admin or anyone staffed on the project;
   // scope/domain settings (scopesBulk, domains, terms) stay Core/Admin only.
@@ -536,6 +720,40 @@ export async function action({ request, params }: Route.ActionArgs) {
   const SCOPE_INTENTS = ["scopesBulk", "domains", "terms"];
   if (SCOPE_INTENTS.includes(intent) && !core) {
     return { error: "Only Core or Admin can change domain settings." };
+  }
+
+  // Partner links — Core/Admin only, via the shared helpers so validation
+  // and audit stay identical to the Core Hub org pages.
+  const PARTNER_INTENTS = ["partner-link", "partner-end", "partner-unlink"];
+  if (PARTNER_INTENTS.includes(intent)) {
+    if (!core) {
+      return { error: "Only Core or Admin can manage partner organizations." };
+    }
+    const actor = { actorUserId: auth.user.sub, request };
+    if (intent === "partner-link") {
+      const partnerOrgId = (form.get("partnerOrgId") as string | null) ?? "";
+      if (!partnerOrgId) return { error: "Select an organization." };
+      const result = await linkProjectPartner(
+        { projectId: params.id, partnerOrgId },
+        actor,
+      );
+      return "error" in result ? result : redirect(`/projects/${params.id}`);
+    }
+    const projectPartnerId = (form.get("projectPartnerId") as string | null) ?? "";
+    const existing = await prisma.projectPartner.findFirst({
+      where: { id: projectPartnerId, projectId: params.id },
+      select: { id: true, startedAt: true },
+    });
+    if (!existing) return { error: "Partnership not found." };
+    if (intent === "partner-end") {
+      const result = await updateProjectPartnerDates(
+        { projectPartnerId, startedAt: existing.startedAt, endedAt: new Date() },
+        actor,
+      );
+      return "error" in result ? result : redirect(`/projects/${params.id}`);
+    }
+    const result = await unlinkProjectPartner(projectPartnerId, actor);
+    return "error" in result ? result : redirect(`/projects/${params.id}`);
   }
 
   // Header form: name + status only.
@@ -749,7 +967,6 @@ export default function ProjectDetail() {
     teams,
     documents,
     files,
-    allTags,
     epics,
     editableEpics,
     sprints,
@@ -761,7 +978,10 @@ export default function ProjectDetail() {
     domainScopeGrid,
     canEdit,
     canEditScope,
+    canEditAssignmentLevel,
     canViewScope,
+    hasActivePartner,
+    linkablePartnerOrgs,
     canViewMentorshipTab,
     currentTerm,
     collabToken,
@@ -773,7 +993,7 @@ export default function ProjectDetail() {
   const actionData = useActionData<typeof action>();
   const [scopeSettingsOpen, setScopeSettingsOpen] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
-  const partnerNames = project.partners.map((p) => p.partnerOrg.name);
+  const partnerNames = project.partners.map((p) => p.org.name);
 
   const tabParam = searchParams.get("tab");
   const tab: Tab = isTab(tabParam) ? tabParam : "overview";
@@ -840,9 +1060,12 @@ export default function ProjectDetail() {
           teams={teams}
           documents={documents}
           files={files}
-          allTags={allTags}
           canEdit={canEdit}
           canEditFinance={canEditScope}
+          canEditAssignmentLevel={canEditAssignmentLevel}
+          canManagePartners={canEditScope}
+          hasActivePartner={hasActivePartner}
+          linkablePartnerOrgs={linkablePartnerOrgs}
           domainScopeGrid={domainScopeGrid}
           currentTerm={currentTerm}
           actionError={actionData?.error}
@@ -857,25 +1080,13 @@ export default function ProjectDetail() {
           labelledBy="scope-settings-title"
           containerClassName="bg-card rounded-2xl shadow-xl w-full max-w-4xl p-5 sm:p-6 my-auto max-h-[85vh] overflow-y-auto"
         >
-          <div className="flex items-start justify-between gap-3 mb-4">
-            <div>
-              <h2 id="scope-settings-title" className="font-heading text-lg font-bold text-foreground">
-                Domain settings
-              </h2>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Declared domains, planned terms, and the per-domain challenge
-                for each term.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setScopeSettingsOpen(false)}
-              aria-label="Close scope settings"
-              className="text-muted-foreground hover:text-foreground text-xl leading-none px-1"
-            >
-              ×
-            </button>
-          </div>
+          <ModalHeader
+            titleId="scope-settings-title"
+            title="Domain settings"
+            subtitle="Declared domains, planned terms, and the per-domain challenge for each term."
+            onClose={() => setScopeSettingsOpen(false)}
+            closeLabel="Close scope settings"
+          />
           <ScopeTab
             project={project}
             allDomainOptions={allDomainOptions}
@@ -902,6 +1113,7 @@ export default function ProjectDetail() {
           canEdit={canEdit}
           collabToken={collabToken}
           userName={userName}
+          currentUserId={currentUserId}
         />
       )}
 
@@ -966,12 +1178,6 @@ function ProjectHeader({
       {termsLabel}
       {" · "}
       {termCountLabel}
-      {" · "}
-      <span className={project.isActiveThisTerm ? "text-accent-green" : undefined}>
-        {project.isActiveThisTerm ? "Active this term" : "Not this term"}
-      </span>
-      {" · "}
-      {partnerNames.length > 0 ? partnerNames.join(", ") : "No partners"}
     </p>
   );
 
@@ -1018,9 +1224,7 @@ function ProjectHeader({
                 <h1 className="font-heading text-2xl font-bold text-foreground">
                   {project.name}
                 </h1>
-                <span className="text-[11px] px-2 py-0.5 rounded-full border border-border text-muted-foreground">
-                  {project.status}
-                </span>
+                <StatusBadge status={project.status} />
               </>
             )}
 
@@ -1095,6 +1299,7 @@ function DescriptionSegment({
   return (
     <EditableSection
       title="Description"
+      icon={<FileText className="w-4 h-4" />}
       canEdit={canEdit}
       onSave={() => { if (formRef.current) submit(formRef.current); }}
     >
@@ -1390,6 +1595,7 @@ function DetailsSegment({
   return (
     <EditableSection
       title="Project details"
+      icon={<Info className="w-4 h-4" />}
       canEdit={canEdit}
       onSave={() => { if (formRef.current) submit(formRef.current); }}
     >
@@ -1554,7 +1760,7 @@ function DetailsSegment({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-border">
               <label className="flex flex-col gap-1 text-xs sm:col-span-2">
                 <span className="text-muted-foreground font-medium">
-                  Payroll · used for payroll export
+                  Payroll
                 </span>
               </label>
               <label className="flex flex-col gap-1 text-xs">
@@ -1701,7 +1907,28 @@ function DomainChips({
   );
 }
 
-function TeamSection({ teams }: { teams: LoaderData["teams"] }) {
+function StatusBadge({ status }: { status: (typeof STATUSES)[number] }) {
+  const palette: Record<(typeof STATUSES)[number], string> = {
+    Active: "bg-accent-teal/15 text-accent-teal border-accent-teal/40",
+    Paused: "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/40",
+    Archived: "bg-muted/50 text-muted-foreground border-border",
+  };
+  return (
+    <span
+      className={`text-[11px] px-2 py-0.5 rounded-full border font-medium ${palette[status]}`}
+    >
+      {status}
+    </span>
+  );
+}
+
+function TeamSection({
+  teams,
+  canEdit,
+}: {
+  teams: LoaderData["teams"];
+  canEdit: boolean;
+}) {
   const [showAll, setShowAll] = useState(false);
   // teams is pre-sorted newest term first by the loader.
   const visible = showAll ? teams : teams.slice(0, 1);
@@ -1709,7 +1936,9 @@ function TeamSection({ teams }: { teams: LoaderData["teams"] }) {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between">
-        <span className="text-xs text-muted-foreground">Team</span>
+        <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
+          <Users className="w-4 h-4" /> Team
+        </h2>
         {teams.length > 1 && (
           <button
             type="button"
@@ -1729,22 +1958,25 @@ function TeamSection({ teams }: { teams: LoaderData["teams"] }) {
               <div className="text-xs font-medium text-muted-foreground mb-1.5">
                 {team.code}
                 {team.code === teams[0].code && (
-                  <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-accent-teal/15 text-accent-teal">
+                  <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded border border-accent-teal/40 bg-accent-teal/15 text-accent-teal">
                     Current
                   </span>
                 )}
               </div>
               <div className="flex flex-wrap gap-2">
-                {team.members.map((m, j) => (
+                {team.members.map((m) => (
                   <span
-                    key={j}
-                    className="text-xs px-2 py-1 rounded-md border border-border text-foreground"
+                    key={m.assignmentId}
+                    className="text-xs px-2 py-1 rounded-md text-foreground inline-flex items-center gap-1.5"
                   >
+                    <Avatar photoUrl={m.photoUrl} name={m.name} size="xs" />
                     {m.name}
-                    <span className="text-muted-foreground">
-                      {" "}
-                      · {m.domain} {m.level}
-                    </span>
+                    <span className="text-muted-foreground">· {m.domain}</span>
+                    {canEdit ? (
+                      <TeamLevelEditor member={m} />
+                    ) : (
+                      <span className="text-muted-foreground">{m.level}</span>
+                    )}
                   </span>
                 ))}
               </div>
@@ -1756,14 +1988,88 @@ function TeamSection({ teams }: { teams: LoaderData["teams"] }) {
   );
 }
 
+const LEVEL_OPTIONS: ("P1" | "P2" | "P3")[] = ["P1", "P2", "P3"];
+const LEVEL_RANK: Record<"P1" | "P2" | "P3", number> = { P1: 1, P2: 2, P3: 3 };
+
+function TeamLevelEditor({
+  member,
+}: {
+  member: LoaderData["teams"][number]["members"][number];
+}) {
+  const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
+  const ceilingRank = member.eligibilityLevel
+    ? LEVEL_RANK[member.eligibilityLevel as "P1" | "P2" | "P3"]
+    : 0;
+  const currentRank = LEVEL_RANK[member.level as "P1" | "P2" | "P3"];
+  const blockedByMentees = member.activeMenteeCount > 0;
+
+  const value = (fetcher.formData?.get("level") as string | null) ?? member.level;
+  const busy = fetcher.state !== "idle";
+  const error = fetcher.data?.error;
+
+  function disabledReason(opt: "P1" | "P2" | "P3"): string | null {
+    if (opt === member.level) return null;
+    if (LEVEL_RANK[opt] > ceilingRank) {
+      return member.eligibilityLevel
+        ? `Eligible only up to ${member.eligibilityLevel} in ${member.domain}. Promote first.`
+        : `No ${member.domain} eligibility. Promote first.`;
+    }
+    if (blockedByMentees && LEVEL_RANK[opt] < currentRank) {
+      return `Mentoring ${member.activeMenteeCount} mentee${member.activeMenteeCount === 1 ? "" : "s"}. Reassign first.`;
+    }
+    return null;
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1">
+      <select
+        aria-label={`Level for ${member.name} in ${member.domain}`}
+        className="text-xs bg-transparent text-muted-foreground rounded border border-transparent hover:border-border focus:border-border focus:outline-none px-0.5"
+        value={value}
+        disabled={busy}
+        onChange={(e) => {
+          const next = e.target.value;
+          if (next === member.level) return;
+          fetcher.submit(
+            { level: next },
+            {
+              method: "post",
+              action: `/api/projects/assignments/${member.assignmentId}/level`,
+              encType: "application/json",
+            },
+          );
+        }}
+      >
+        {LEVEL_OPTIONS.map((opt) => {
+          const reason = disabledReason(opt);
+          return (
+            <option key={opt} value={opt} disabled={reason !== null} title={reason ?? undefined}>
+              {opt}
+              {reason ? " (locked)" : ""}
+            </option>
+          );
+        })}
+      </select>
+      {error && (
+        <span className="text-[10px] text-destructive" title={error}>
+          !
+        </span>
+      )}
+    </span>
+  );
+}
+
 function OverviewTab({
   project,
   teams,
   documents,
   files,
-  allTags,
   canEdit,
   canEditFinance,
+  canEditAssignmentLevel,
+  canManagePartners,
+  hasActivePartner,
+  linkablePartnerOrgs,
   domainScopeGrid,
   currentTerm,
   actionError,
@@ -1772,9 +2078,12 @@ function OverviewTab({
   teams: LoaderData["teams"];
   documents: LoaderData["documents"];
   files: LoaderData["files"];
-  allTags: LoaderData["allTags"];
   canEdit: boolean;
   canEditFinance: boolean;
+  canEditAssignmentLevel: boolean;
+  canManagePartners: boolean;
+  hasActivePartner: boolean;
+  linkablePartnerOrgs: LoaderData["linkablePartnerOrgs"];
   domainScopeGrid: LoaderData["domainScopeGrid"];
   currentTerm: LoaderData["currentTerm"];
   actionError?: string;
@@ -1822,6 +2131,13 @@ function OverviewTab({
         </section>
       )}
 
+      {/* Partner organizations funding this project. Core manages links. */}
+      <PartnersSection
+        partners={project.partners}
+        linkablePartnerOrgs={linkablePartnerOrgs}
+        canManage={canManagePartners}
+      />
+
       {/* Project details. Editable as one section; commits via intent=details
           which expects the full field set. Section-level Save submits and
           closes; Cancel reverts (the wrapper remounts the body which resets
@@ -1834,7 +2150,7 @@ function OverviewTab({
 
       {/* Team — read-only summary, separate from the editable details. */}
       <section className="bg-card border border-border rounded-lg p-4">
-        <TeamSection teams={teams} />
+        <TeamSection teams={teams} canEdit={canEditAssignmentLevel} />
       </section>
 
       {/* Documents — collab-doc pages; rows + Add open the doc as a split-screen
@@ -1842,15 +2158,14 @@ function OverviewTab({
       <DocumentsBlock
         projectId={project.id}
         documents={documents}
-        allTags={allTags}
         canEdit={canEdit}
+        hasActivePartner={hasActivePartner}
       />
 
-      {/* Files — standalone uploads with versions + tags. */}
+      {/* Files — standalone uploads with versions. Tags are edited in the file editor. */}
       <FilesBlock
         projectId={project.id}
         files={files}
-        allTags={allTags}
         canEdit={canEdit}
       />
     </div>
@@ -1916,25 +2231,205 @@ function ScopeTab({
   );
 }
 
+function PartnersSection({
+  partners,
+  linkablePartnerOrgs,
+  canManage,
+}: {
+  partners: LoaderData["project"]["partners"];
+  linkablePartnerOrgs: LoaderData["linkablePartnerOrgs"];
+  canManage: boolean;
+}) {
+  const [linking, setLinking] = useState(false);
+
+  return (
+    <section className="bg-card border border-border rounded-lg p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
+          <Handshake className="w-4 h-4" /> Partners
+        </h2>
+        {canManage && linkablePartnerOrgs.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setLinking((v) => !v)}
+            className="text-xs font-medium text-accent-coral hover:underline"
+          >
+            + Link organization
+          </button>
+        )}
+      </div>
+
+      {linking && canManage && (
+        <Form method="post" className="flex flex-wrap items-end gap-3 bg-muted/20 rounded-lg p-3 mb-3">
+          <input type="hidden" name="intent" value="partner-link" />
+          <select
+            name="partnerOrgId"
+            required
+            className="flex-1 min-w-[220px] rounded-lg border border-border bg-background px-3 py-2 text-sm"
+          >
+            <option value="">Select an organization…</option>
+            {linkablePartnerOrgs.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.name}
+              </option>
+            ))}
+          </select>
+          <button
+            type="submit"
+            className="rounded-lg bg-dark-blue text-white text-sm font-medium px-4 py-2 hover:opacity-90 transition"
+          >
+            Link
+          </button>
+        </Form>
+      )}
+
+      {partners.length === 0 ? (
+        <p className="text-sm text-muted-foreground italic">
+          No partner organizations linked.
+        </p>
+      ) : (
+        <div className="flex flex-col divide-y divide-border">
+          {partners.map((p) => (
+            <div key={p.id} className="py-2.5 flex items-center gap-3">
+              {p.org.logoUrl ? (
+                <img
+                  src={p.org.logoUrl}
+                  alt=""
+                  className="w-8 h-8 rounded object-contain bg-background border border-border flex-shrink-0"
+                />
+              ) : (
+                <div className="w-8 h-8 rounded bg-brand-tint text-dark-blue flex items-center justify-center text-xs font-bold flex-shrink-0">
+                  {p.org.name.slice(0, 1)}
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {canManage ? (
+                    <Link
+                      to={`/partners/${p.org.id}`}
+                      className="text-sm font-medium text-foreground hover:underline leading-none"
+                    >
+                      {p.org.name}
+                    </Link>
+                  ) : (
+                    <span className="text-sm font-medium text-foreground leading-none">
+                      {p.org.name}
+                    </span>
+                  )}
+                </div>
+                {p.org.contacts.length > 0 && (
+                  <div className="text-xs text-muted-foreground mt-0.5">
+                    {p.org.contacts
+                      .map((c) => (c.displayRole ? `${c.name} (${c.displayRole})` : c.name))
+                      .join(", ")}
+                  </div>
+                )}
+              </div>
+              {canManage && (
+                <Form
+                  method="post"
+                  onSubmit={(e) => {
+                    if (!window.confirm(`Unlink ${p.org.name}? This permanently deletes the partnership record.`)) {
+                      e.preventDefault();
+                    }
+                  }}
+                >
+                  <input type="hidden" name="intent" value="partner-unlink" />
+                  <input type="hidden" name="projectPartnerId" value={p.id} />
+                  <button
+                    type="submit"
+                    className="text-xs text-destructive hover:underline flex-shrink-0"
+                  >
+                    Unlink
+                  </button>
+                </Form>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function DocumentsBlock({
   projectId,
   documents,
-  allTags,
   canEdit,
+  hasActivePartner,
 }: {
   projectId: string;
   documents: LoaderData["documents"];
-  allTags: LoaderData["allTags"];
   canEdit: boolean;
+  hasActivePartner: boolean;
 }) {
   const revalidator = useRevalidator();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Folders default open so the (usually few) default folders' contents are
+  // visible without an extra click; new folders created this session are
+  // added here too (see createFolder).
+  const [expanded, setExpanded] = useState<Set<string>>(
+    () => new Set(documents.filter((d) => d.kind === "Folder").map((d) => d.id)),
+  );
+  function toggleExpanded(id: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  // A document's title is edited in its own split-screen tab, which has its
+  // own loader — it can't touch this route's data directly. The shell relays
+  // a `dali:documentTitleChanged` postMessage to every open tab (see
+  // DocumentEditor's onTitleChange + Layout.tsx); revalidate here so the row
+  // label updates without waiting for the user to leave and reopen the doc.
+  useEffect(() => {
+    const knownIds = new Set(
+      documents.flatMap((d) => [d.id, ...d.children.map((c) => c.id)]),
+    );
+    function onMessage(e: MessageEvent) {
+      if (e.origin !== window.location.origin) return;
+      const data = e.data as { type?: string; pageId?: string } | undefined;
+      if (data?.type !== "dali:documentTitleChanged") return;
+      if (!data.pageId || !knownIds.has(data.pageId)) return;
+      revalidator.revalidate();
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [documents, revalidator]);
+
+  // Share/unshare a page with the project's partner org(s). Persisted via
+  // its own API route; the badge state comes back through the loader.
+  async function togglePartnerVisible(id: string, next: boolean) {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/pages/${id}/partner-visible`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ partnerVisible: next }),
+      });
+      if (!res.ok) {
+        const b = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(b.error ?? "Failed to update sharing");
+      }
+      revalidator.revalidate();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   // Add document: create an "Untitled" page immediately, then open it as a
   // split-screen tab beside the project. The title is renamed inline in the
-  // editor (auto-saves), so there's no separate title prompt first.
-  async function createDocument() {
+  // editor (auto-saves), so there's no separate title prompt first. When
+  // parentPageId is set, the document is nested under that folder.
+  async function createDocument(parentPageId?: string) {
     setBusy(true);
     setError(null);
     try {
@@ -1943,11 +2438,34 @@ function DocumentsBlock({
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title }),
+        body: JSON.stringify({ title, parentPageId }),
       });
       const b = (await res.json().catch(() => ({}))) as { id?: string; error?: string };
       if (!res.ok || !b.id) throw new Error(b.error ?? "Failed to create document");
       openDocumentTab(b.id, title);
+      revalidator.revalidate();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function createFolder() {
+    const title = window.prompt("Folder name");
+    if (!title || !title.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/documents`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: title.trim(), kind: "Folder" }),
+      });
+      const b = (await res.json().catch(() => ({}))) as { id?: string; error?: string };
+      if (!res.ok || !b.id) throw new Error(b.error ?? "Failed to create folder");
+      setExpanded((prev) => new Set(prev).add(b.id!));
       revalidator.revalidate();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
@@ -1974,19 +2492,95 @@ function DocumentsBlock({
     }
   }
 
+  function DocRow({ doc, indent }: { doc: LoaderData["documents"][number]["children"][number]; indent: boolean }) {
+    return (
+      <div className={`py-2.5 flex items-center justify-between gap-3 text-sm ${indent ? "pl-6" : ""}`}>
+        <button
+          type="button"
+          onClick={() => openDocumentTab(doc.id, doc.title)}
+          className="truncate text-left font-medium text-foreground hover:text-accent-coral"
+        >
+          {doc.title}
+        </button>
+        <div className="flex items-center gap-3 flex-shrink-0">
+          {doc.partnerVisible && !canEdit && (
+            <span
+              className="flex items-center text-accent-teal"
+              title="Shared with partner — partners on this project can open and edit this page"
+            >
+              <Handshake className="w-3.5 h-3.5" />
+            </span>
+          )}
+          {canEdit && (hasActivePartner || doc.partnerVisible) && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void togglePartnerVisible(doc.id, !doc.partnerVisible)}
+              title={
+                doc.partnerVisible
+                  ? "Shared with partner — click to stop sharing"
+                  : "Share with partner"
+              }
+              // Accessible name must stay exactly "Shared with partner" /
+              // "Share with partner": it's the toggle's only name now that the
+              // label is icon-only, and it's the contract partner-portal.spec
+              // matches on via getByRole. The title carries the extra hint.
+              aria-label={doc.partnerVisible ? "Shared with partner" : "Share with partner"}
+              className={`flex items-center disabled:opacity-60 ${
+                doc.partnerVisible
+                  ? "text-accent-teal"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Handshake className="w-3.5 h-3.5" />
+            </button>
+          )}
+          {canEdit && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void deleteDocument(doc.id, doc.title)}
+              title="Delete document"
+              aria-label="Delete document"
+              className="text-destructive hover:text-destructive/80 disabled:opacity-60"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <section className="bg-card border border-border rounded-lg p-4">
       <div className="flex items-center justify-between mb-3">
-        <h2 className="text-sm font-semibold text-foreground">Documents</h2>
+        <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
+          <Folder className="w-4 h-4" /> Documents
+        </h2>
         {canEdit && (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void createDocument()}
-            className="text-xs font-medium text-accent-coral hover:underline disabled:opacity-60"
-          >
-            {busy ? "Adding…" : "+ Add document"}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void createFolder()}
+              title="New folder"
+              aria-label="New folder"
+              className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-60"
+            >
+              <FolderPlus className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void createDocument()}
+              title="Add document"
+              aria-label="Add document"
+              className="p-1 rounded text-accent-coral hover:bg-accent-coral/10 disabled:opacity-60"
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </button>
+          </div>
         )}
       </div>
 
@@ -2000,38 +2594,74 @@ function DocumentsBlock({
         <p className="text-sm text-muted-foreground italic">No documents yet.</p>
       ) : (
         <div className="flex flex-col divide-y divide-border">
-          {documents.map((doc) => (
-            <div key={doc.id} className="py-2.5 flex flex-col gap-1.5">
-              <div className="flex items-center justify-between gap-3 text-sm">
-                <button
-                  type="button"
-                  onClick={() => openDocumentTab(doc.id, doc.title)}
-                  className="truncate text-left font-medium text-foreground hover:text-accent-coral"
-                >
-                  {doc.title}
-                </button>
-                {canEdit && (
+          {documents.map((doc) =>
+            doc.kind === "Folder" ? (
+              <div key={doc.id} className="py-2.5 flex flex-col gap-1">
+                <div className="flex items-center justify-between gap-3 text-sm">
                   <button
                     type="button"
-                    disabled={busy}
-                    onClick={() => void deleteDocument(doc.id, doc.title)}
-                    className="text-xs text-destructive hover:underline disabled:opacity-60 flex-shrink-0"
+                    onClick={() => toggleExpanded(doc.id)}
+                    className="flex items-center gap-1.5 text-left font-medium text-foreground min-w-0"
                   >
-                    Delete
+                    {expanded.has(doc.id) ? (
+                      <ChevronDown className="w-3.5 h-3.5 flex-shrink-0 text-muted-foreground" />
+                    ) : (
+                      <ChevronRight className="w-3.5 h-3.5 flex-shrink-0 text-muted-foreground" />
+                    )}
+                    <Folder className="w-3.5 h-3.5 flex-shrink-0 text-muted-foreground" />
+                    <span className="truncate">{doc.title}</span>
+                    {doc.isSystem && (
+                      <span className="text-[10px] uppercase tracking-wide text-muted-foreground/70 flex-shrink-0">
+                        Default
+                      </span>
+                    )}
                   </button>
-                )}
+                  {canEdit && (
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void createDocument(doc.id)}
+                        title="Add document"
+                        aria-label="Add document"
+                        className="p-1 rounded text-accent-coral hover:bg-accent-coral/10 disabled:opacity-60"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                      </button>
+                      {!doc.isSystem && (
+                        <button
+                          type="button"
+                          disabled={busy || doc.children.length > 0}
+                          title={
+                            doc.children.length > 0
+                              ? "Move or delete the documents inside this folder first"
+                              : "Delete folder"
+                          }
+                          aria-label="Delete folder"
+                          onClick={() => void deleteDocument(doc.id, doc.title)}
+                          className="p-1 rounded text-destructive hover:text-destructive/80 disabled:opacity-60"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+                {expanded.has(doc.id) &&
+                  (doc.children.length === 0 ? (
+                    <p className="pl-6 text-xs text-muted-foreground italic">Empty</p>
+                  ) : (
+                    <div className="flex flex-col divide-y divide-border">
+                      {doc.children.map((child) => (
+                        <DocRow key={child.id} doc={child} indent />
+                      ))}
+                    </div>
+                  ))}
               </div>
-              <TagPicker
-                targetType="doc"
-                targetId={doc.id}
-                applied={doc.tags}
-                allTags={allTags}
-                canEdit={canEdit}
-                canCreate={canEdit}
-                onChange={() => revalidator.revalidate()}
-              />
-            </div>
-          ))}
+            ) : (
+              <DocRow key={doc.id} doc={doc} indent={false} />
+            ),
+          )}
         </div>
       )}
     </section>
@@ -2041,12 +2671,10 @@ function DocumentsBlock({
 function FilesBlock({
   projectId,
   files,
-  allTags,
   canEdit,
 }: {
   projectId: string;
   files: LoaderData["files"];
-  allTags: LoaderData["allTags"];
   canEdit: boolean;
 }) {
   const revalidator = useRevalidator();
@@ -2121,7 +2749,9 @@ function FilesBlock({
     <section className="bg-card border border-border rounded-lg p-4">
       <input ref={fileInputRef} type="file" className="hidden" onChange={onPick} />
       <div className="flex items-center justify-between mb-3">
-        <h2 className="text-sm font-semibold text-foreground">Files</h2>
+        <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
+          <Paperclip className="w-4 h-4" /> Files
+        </h2>
         {canEdit && (
           <button
             type="button"
@@ -2130,9 +2760,11 @@ function FilesBlock({
               versionForId.current = null;
               fileInputRef.current?.click();
             }}
-            className="text-xs font-medium text-accent-coral hover:underline disabled:opacity-60"
+            title={busy ? "Uploading…" : "Add file"}
+            aria-label={busy ? "Uploading…" : "Add file"}
+            className="p-1 rounded text-accent-coral hover:bg-accent-coral/10 disabled:opacity-60"
           >
-            {busy ? "Uploading…" : "+ Add file"}
+            <Plus className="w-3.5 h-3.5" />
           </button>
         )}
       </div>
@@ -2148,49 +2780,42 @@ function FilesBlock({
       ) : (
         <div className="flex flex-col divide-y divide-border">
           {files.map((f) => (
-            <div key={f.id} className="py-2.5 flex flex-col gap-1.5">
-              <div className="flex items-center justify-between gap-3 text-sm">
-                <Link to={`/documents/file/${f.id}`} className="min-w-0 truncate hover:text-accent-coral">
-                  <span className="text-foreground font-medium">{f.title}</span>
-                  <span className="text-muted-foreground ml-2 text-xs">
-                    {f.fileName}
-                    {f.sizeBytes != null ? ` · ${formatBytes(f.sizeBytes)}` : ""}
-                    {f.versionCount > 1 ? ` · v${f.versionCount}` : ""}
-                  </span>
-                </Link>
-                {canEdit && (
-                  <div className="flex items-center gap-3 flex-shrink-0">
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => {
-                        versionForId.current = f.id;
-                        fileInputRef.current?.click();
-                      }}
-                      className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-60"
-                    >
-                      New version
-                    </button>
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => void deleteFile(f.id, f.title)}
-                      className="text-xs text-destructive hover:underline disabled:opacity-60"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                )}
-              </div>
-              <TagPicker
-                targetType="file"
-                targetId={f.id}
-                applied={f.tags}
-                allTags={allTags}
-                canEdit={canEdit}
-                canCreate={canEdit}
-                onChange={() => revalidator.revalidate()}
-              />
+            <div key={f.id} className="py-2.5 flex items-center justify-between gap-3 text-sm">
+              <Link to={`/documents/file/${f.id}`} className="min-w-0 truncate hover:text-accent-coral">
+                <span className="text-foreground font-medium">{f.title}</span>
+                <span className="text-muted-foreground ml-2 text-xs">
+                  {f.fileName}
+                  {f.sizeBytes != null ? ` · ${formatBytes(f.sizeBytes)}` : ""}
+                  {f.versionCount > 1 ? ` · v${f.versionCount}` : ""}
+                </span>
+              </Link>
+              {canEdit && (
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      versionForId.current = f.id;
+                      fileInputRef.current?.click();
+                    }}
+                    title="New version"
+                    aria-label="New version"
+                    className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-60"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void deleteFile(f.id, f.title)}
+                    title="Delete file"
+                    aria-label="Delete file"
+                    className="p-1 rounded text-destructive hover:text-destructive/80 disabled:opacity-60"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -2209,6 +2834,7 @@ function WorkTab({
   canEdit,
   collabToken,
   userName,
+  currentUserId,
 }: {
   projectId: string;
   epics: TimelineEpic[];
@@ -2219,7 +2845,10 @@ function WorkTab({
   canEdit: boolean;
   collabToken: string | null;
   userName: string;
+  currentUserId: string;
 }) {
+  const [taskBoardOpen, setTaskBoardOpen] = useState(true);
+
   return (
     <div className="flex flex-col gap-6">
       <section>
@@ -2236,13 +2865,30 @@ function WorkTab({
       </section>
 
       <section>
-        <h2 className="text-sm font-semibold text-foreground mb-3">Task board</h2>
-        <TaskBoard
-          projectId={projectId}
-          initialTasks={tasks}
-          options={boardOptions}
-          canManage={canEdit}
-        />
+        <button
+          type="button"
+          onClick={() => setTaskBoardOpen((o) => !o)}
+          aria-expanded={taskBoardOpen}
+          className={`flex items-center gap-1.5 ${taskBoardOpen ? "mb-3" : ""}`}
+        >
+          <span
+            aria-hidden
+            className={`inline-block text-muted-foreground transition-transform ${taskBoardOpen ? "rotate-90" : ""}`}
+          >
+            ›
+          </span>
+          <h2 className="text-sm font-semibold text-foreground">Task board</h2>
+        </button>
+        {taskBoardOpen && (
+          <TaskBoard
+            projectId={projectId}
+            initialTasks={tasks}
+            options={boardOptions}
+            canManage={canEdit}
+            currentUserId={currentUserId}
+            currentUserName={userName}
+          />
+        )}
       </section>
     </div>
   );

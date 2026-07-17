@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { redirect, useLoaderData, useFetcher } from "react-router";
 import type { Route } from "./+types/admin-console.domains";
+import { adminPills } from "~/admin-console/adminPills";
+import { AreaPillNav } from "~/components/AreaPillNav";
 import { prisma } from "~/lib/db";
 import { ensureDomainGroup } from "~/lib/groups";
-import { requireAuth } from "~/lib/auth";
-import { isAdmin, isCore, currentTerm } from "~/lib/roles";
+import { requireAuth, forbidden } from "~/lib/auth";
+import { isAdmin, isCore, isAdminViaEnv, currentTerm } from "~/lib/roles";
+import { LAB_MEMBER_WHERE, MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { describeDomainUsage, DOMAIN_USAGE_COUNT_SELECT } from "./api.domains.$domainId";
-import { ALLOWED_LEVELS, parseLevel } from "~/admin-console/lib/eligibility";
+import { ALLOWED_LEVELS, parseLevel, type Level } from "~/admin-console/lib/eligibility";
 import {
   addOrUpdateEligibility,
   removeEligibility,
@@ -19,7 +22,9 @@ import {
   RemoveDomainLeadButton,
 } from "~/admin-console/components/admin-console-shared";
 
-export const meta: Route.MetaFunction = () => [{ title: "Domains · Operations · DALI OS" }];
+export const handle = { areaPills: true };
+
+export const meta: Route.MetaFunction = () => [{ title: "Domains · Admin · DALI OS" }];
 
 // Phase 2 rewrite: domain-lead assignments now key off User.id (not
 // DALIMember.id) and require a termId. Lead picker lists Users with a
@@ -33,13 +38,13 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const [users, domains, term] = await Promise.all([
     prisma.user.findMany({
-      where: { daliMember: { isNot: null } },
+      where: { ...LAB_MEMBER_WHERE },
       include: {
         adminMembership: { select: { id: true } },
         coreAssignments: { select: { id: true, termId: true, leadTitle: true } },
         domainLeadAssignmentsAsUser: { include: { domain: true } },
       },
-      orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+      orderBy: MEMBER_LIST_ORDER_BY,
     }),
     prisma.domain.findMany({
       orderBy: { displayName: "asc" },
@@ -70,14 +75,15 @@ export async function loader({ request }: Route.LoaderArgs) {
     const currentCore = term !== null
       ? u.coreAssignments.filter((a) => a.termId === term.id)
       : [];
+    const isAdminUser = u.adminMembership !== null || isAdminViaEnv(u.id);
     return {
       id: u.id,
       firstName: u.firstName,
       lastName: u.lastName,
       daliEmail: u.daliEmail,
       isLabMember: true,
-      isAdmin: u.adminMembership !== null,
-      isCore: currentCore.length > 0,
+      isAdmin: isAdminUser,
+      isCore: isAdminUser || currentCore.length > 0,
       coreAssignments: currentCore.map((a) => ({ id: a.id, leadTitle: a.leadTitle })),
       domainLeadAssignments: u.domainLeadAssignmentsAsUser.map((a) => ({
         id: a.id,
@@ -100,7 +106,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     })),
     eligibilities: d.eligibilities.map((e) => ({
       id: e.id,
-      level: e.level as "P1" | "P2" | "P3",
+      level: e.level as Level,
       user: {
         id: e.user.id,
         firstName: e.user.firstName,
@@ -118,7 +124,7 @@ export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
   if (!(await isCore(auth.user.sub)))
-    return Response.json({ error: "Forbidden" }, { status: 403 });
+    return forbidden(request);
 
   const formData = await request.formData();
   const intent = formData.get("intent") as string;
@@ -127,7 +133,7 @@ export async function action({ request }: Route.ActionArgs) {
   // hiring-cycle state. Lead/eligibility assignments are open to Core.
   const adminOnly = intent === "create-domain" || intent === "delete-domain";
   if (adminOnly && !(await isAdmin(auth.user.sub)))
-    return Response.json({ error: "Forbidden" }, { status: 403 });
+    return forbidden(request);
 
   if (intent === "create-domain") {
     const name = String(formData.get("name") ?? "").trim();
@@ -310,7 +316,7 @@ function DomainLeadsForDomain({ domain, members }: { domain: DomainWithCounts; m
 // the level menu, while the styled badge underneath renders the current value.
 // Transparent background — distinguished by text color only (P1 muted, P2 teal,
 // P3 coral).
-const LEVEL_BADGE: Record<"P1" | "P2" | "P3", string> = {
+const LEVEL_BADGE: Record<Level, string> = {
   P1: "text-muted-foreground",
   P2: "text-accent-teal",
   P3: "text-accent-coral",
@@ -323,12 +329,12 @@ function EligibilityLevelSelect({
 }: {
   domainId: string;
   userId: string;
-  level: "P1" | "P2" | "P3";
+  level: Level;
 }) {
   const fetcher = useFetcher();
   // Optimistic: reflect the just-submitted level while the request is in flight.
   const pending = fetcher.formData?.get("level");
-  const shown = (typeof pending === "string" ? pending : level) as "P1" | "P2" | "P3";
+  const shown = (typeof pending === "string" ? pending : level) as Level;
   return (
     <fetcher.Form method="post" className="relative inline-flex">
       <input type="hidden" name="intent" value="set-eligibility-level" />
@@ -551,6 +557,7 @@ export default function AdminConsoleDomains() {
 
   return (
     <div className="space-y-6">
+      <AreaPillNav items={adminPills({ isAdmin: viewerIsAdmin, active: "domains" })} />
       <div className="bg-card border border-border rounded-lg overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/50">
           <h2 className="text-sm font-medium text-muted-foreground">Domains ({domains.length})</h2>

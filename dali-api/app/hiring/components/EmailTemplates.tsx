@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Link, Form, useLoaderData, useSearchParams } from 'react-router'
-import { Plus, Mail, ChevronRight, X } from 'lucide-react'
+import { Plus, Mail, ChevronRight, X, BookOpen } from 'lucide-react'
+import { Button } from '~/components/ui/Button'
+import { Modal, ModalHeader } from '~/components/Modal'
+import { AreaPillNav } from '~/components/AreaPillNav'
 import type { loader } from '~/hiring/routes/email-templates'
 
 const GMAIL_ERROR_MESSAGES: Record<string, string> = {
@@ -35,6 +38,12 @@ export default function EmailTemplatesList() {
 
   return (
     <div className="space-y-8">
+      <AreaPillNav
+        items={[
+          { label: "Library", to: "/hiring/library", icon: BookOpen },
+          { label: "Emails", to: "/hiring/emails", active: true, icon: Mail },
+        ]}
+      />
       {!dismissed && gmailAuthorized && (
         <div className="flex items-center justify-between bg-green-50 border border-green-200 text-green-800 text-sm rounded-lg px-4 py-3">
           <span>Gmail authorized successfully. Decision emails are now active.</span>
@@ -75,13 +84,10 @@ export default function EmailTemplatesList() {
             to a decision type from the cycle admin page.
           </p>
         </div>
-        <button
-          onClick={() => setShowModal(true)}
-          className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-accent-coral hover:bg-accent-coral/90 shadow-sm"
-        >
-          <Plus className="w-4 h-4 mr-2" />
+        <Button variant="primary" size="sm" onClick={() => setShowModal(true)}>
+          <Plus className="w-4 h-4" />
           New Template
-        </button>
+        </Button>
       </div>
 
       <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-6">
@@ -129,62 +135,55 @@ export default function EmailTemplatesList() {
         )}
       </div>
 
-      {showModal && (
-        <div
-          className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
-          onClick={() => setShowModal(false)}
-        >
-          <div
-            className="bg-card rounded-lg shadow-xl w-full max-w-sm p-6 space-y-4"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-foreground">New Email Template</h2>
-              <button
-                onClick={() => setShowModal(false)}
-                className="text-muted-foreground/70 hover:text-muted-foreground"
-                aria-label="Close"
-              >
-                <X className="w-5 h-5" />
-              </button>
+      <Modal
+        open={showModal}
+        onClose={() => setShowModal(false)}
+        labelledBy="new-email-template-title"
+      >
+        <div className="space-y-4">
+          <ModalHeader
+            titleId="new-email-template-title"
+            title="New Email Template"
+            onClose={() => setShowModal(false)}
+            className="mb-0"
+          />
+          <Form method="post" onSubmit={() => setShowModal(false)} className="space-y-4">
+            <input type="hidden" name="intent" value="create" />
+            <div>
+              <label className="block text-sm font-medium text-foreground/80 mb-1">
+                Template name
+              </label>
+              <input
+                type="text"
+                name="name"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="e.g. Rejection — Standard"
+                className="w-full px-3 py-2 text-sm text-foreground border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                autoFocus
+                autoComplete="off"
+              />
             </div>
-            <Form method="post" onSubmit={() => setShowModal(false)} className="space-y-4">
-              <input type="hidden" name="intent" value="create" />
-              <div>
-                <label className="block text-sm font-medium text-foreground/80 mb-1">
-                  Template name
-                </label>
-                <input
-                  type="text"
-                  name="name"
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  placeholder="e.g. Rejection — Standard"
-                  className="w-full px-3 py-2 text-sm text-foreground border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  autoFocus
-                  autoComplete="off"
-                />
-              </div>
-              <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowModal(false)}
-                  className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-gray-300 rounded-md hover:bg-muted/50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={!newName.trim()}
-                  className="px-3 py-2 text-sm font-medium text-white bg-accent-coral rounded-md hover:bg-accent-coral/90 disabled:opacity-50"
-                >
-                  Create
-                </button>
-              </div>
-            </Form>
-          </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setShowModal(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                size="sm"
+                disabled={!newName.trim()}
+              >
+                Create
+              </Button>
+            </div>
+          </Form>
         </div>
-      )}
+      </Modal>
     </div>
   )
 }

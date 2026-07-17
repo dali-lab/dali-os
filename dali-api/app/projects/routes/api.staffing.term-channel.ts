@@ -1,9 +1,15 @@
 import type { Route } from "./+types/api.staffing.term-channel";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, forbidden } from "~/lib/auth";
 import { canManageStaffing } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { ensureChannel, inviteUsersToChannel, slackMissingScopeMsg } from "~/slack/lib/slack-client";
+import {
+  ensureChannel,
+  inviteUsersToChannel,
+  slackErrorMessage,
+  slackConfigured,
+  SLACK_NOT_CONFIGURED_MESSAGE,
+} from "~/slack/lib/slack-client";
 import { resolveSlackIdsForInvite } from "~/members/lib/slack-sync.server";
 import { logAuditEvent } from "~/lib/audit";
 
@@ -26,17 +32,6 @@ function isBody(x: unknown): x is Body {
   );
 }
 
-function errMsg(err: unknown): string {
-  const raw = err instanceof Error ? err.message : String(err);
-  if (/missing_scope/i.test(raw)) {
-    return slackMissingScopeMsg(err, raw);
-  }
-  if (/not_in_channel|channel_not_found/i.test(raw)) {
-    return `${raw} — the Slack bot isn't a member of that channel.`;
-  }
-  return raw;
-}
-
 export async function action({ request }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
   if (preflight) return preflight;
@@ -47,7 +42,7 @@ export async function action({ request }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
   if (!(await canManageStaffing(auth.user.sub))) {
-    return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+    return forbidden(request);
   }
 
   let body: unknown;
@@ -60,8 +55,8 @@ export async function action({ request }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Invalid body" }, { status: 400 }));
   }
 
-  if (!process.env.SLACK_BOT_TOKEN) {
-    return withCors(request, Response.json({ error: "SLACK_BOT_TOKEN not set." }, { status: 400 }));
+  if (!slackConfigured()) {
+    return withCors(request, Response.json({ error: SLACK_NOT_CONFIGURED_MESSAGE }, { status: 400 }));
   }
 
   const term = await prisma.term.findUnique({
@@ -127,6 +122,6 @@ export async function action({ request }: Route.ActionArgs) {
       Response.json({ ok: true, channel: ch.name, message: `${parts.join("; ")}.` }),
     );
   } catch (err) {
-    return withCors(request, Response.json({ error: errMsg(err) }, { status: 500 }));
+    return withCors(request, Response.json({ error: slackErrorMessage(err) }, { status: 500 }));
   }
 }

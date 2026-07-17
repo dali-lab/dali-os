@@ -1,27 +1,20 @@
 // Gmail sending via OAuth refresh token stored on the applications@ user row.
 // All outbound email comes from applications@dali.dartmouth.edu.
 
-import { getAppEnv } from './app-env'
+import { getAppEnv, APPLICATIONS_FROM_EMAIL as GMAIL_USER, APPLICATIONS_FROM_NAME } from './app-env'
+import { refreshGoogleToken } from '~/lib/google-oauth'
 
-const GMAIL_USER = 'applications@dali.dartmouth.edu'
 const STAGING_REDIRECT = 'systems@dali.dartmouth.edu'
 const CLIENT_ID = process.env.GMAIL_CLIENT_ID ?? process.env.GOOGLE_CLIENT_ID!
 const CLIENT_SECRET = process.env.GMAIL_CLIENT_SECRET ?? process.env.GOOGLE_CLIENT_SECRET!
 
 async function getAccessToken(refreshToken: string): Promise<string> {
-  const res = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      client_id: CLIENT_ID,
-      client_secret: CLIENT_SECRET,
-      refresh_token: refreshToken,
-      grant_type: 'refresh_token',
-    }),
+  const tokens = await refreshGoogleToken({
+    refreshToken,
+    clientId: CLIENT_ID,
+    clientSecret: CLIENT_SECRET,
   })
-  if (!res.ok) throw new Error(`Failed to refresh Gmail token: ${await res.text()}`)
-  const data = await res.json()
-  return data.access_token as string
+  return tokens.access_token
 }
 
 function sanitizeHeader(value: string): string {
@@ -68,7 +61,7 @@ function htmlToPlainText(html: string): string {
 
 function makeRawEmail(to: string, subject: string, htmlBody: string, ics?: string): string {
   const headers = [
-    `From: DALI Lab <${GMAIL_USER}>`,
+    `From: ${APPLICATIONS_FROM_NAME} <${GMAIL_USER}>`,
     `To: ${sanitizeHeader(to)}`,
     `Subject: ${sanitizeHeader(subject)}`,
     'MIME-Version: 1.0',

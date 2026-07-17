@@ -1,4 +1,5 @@
 import { prisma } from "~/lib/db";
+import { rowsToCsv as rowsToCsvShared } from "~/lib/csv";
 
 // ─── Constants per payroll spec ──────────────────────────────────────────────
 // Single hardcoded primary/secondary supervisor for the whole lab. Per spec,
@@ -51,24 +52,21 @@ export type PayrollRow = {
   warnings: string[];
 };
 
-// RFC 4180 quoting: wrap in quotes if value contains a comma, quote, or newline;
-// double up internal quotes.
-function csvCell(raw: string): string {
-  if (raw === "") return "";
-  if (/[",\n\r]/.test(raw)) return `"${raw.replace(/"/g, '""')}"`;
-  return raw;
-}
-
 export function formatDate(d: Date): string {
-  // ISO YYYY-MM-DD; Dartmouth payroll accepts this format.
-  return d.toISOString().slice(0, 10);
+  // MMDDYY with no separators — the format JobX expects for hire dates. UTC to
+  // match how Term start/end dates are stored (midnight UTC), avoiding an
+  // off-by-one from local-timezone conversion.
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  const yy = String(d.getUTCFullYear()).slice(-2);
+  return mm + dd + yy;
 }
 
 // JobCodeLookup uses nullable `level` and `domainId` as wildcards. Match the
 // most specific row first: exact (level, domain) > level-only > domain-only >
 // wildcard. Returns null if nothing matches (admin should seed JobCodeLookup
 // before relying on the export).
-function resolveJobCode(
+export function resolveJobCode(
   lookups: Array<{
     level: string | null;
     domainId: string | null;
@@ -107,6 +105,9 @@ export type RoleCandidate = {
 };
 
 export async function listCoreCandidates(termId: string): Promise<RoleCandidate[]> {
+  // CoreAssignment rows are materialized per-term across the election cycle
+  // (writers in admin-console fan out across [Spring N, Spring N+1)), so a
+  // direct lookup by termId surfaces the full cohort.
   const rows = await prisma.coreAssignment.findMany({
     where: { termId },
     select: {
@@ -291,35 +292,28 @@ export async function buildPayrollRows(termId: string): Promise<PayrollRow[]> {
 }
 
 export function rowsToCsv(rows: PayrollRow[]): string {
-  const lines: string[] = [];
-  lines.push(CSV_HEADERS.map(csvCell).join(","));
+  const allRows: unknown[][] = [CSV_HEADERS.slice()];
   for (const r of rows) {
-    lines.push(
-      [
-        r.netId,
-        r.firstName,
-        r.lastName,
-        r.jobId,
-        PRIMARY_SUPERVISOR_NETID,
-        SECONDARY_SUPERVISOR_NETID,
-        r.hourlyWage,
-        ANTICIPATED_HOURS_PER_WEEK,
-        r.hireStart,
-        r.hireEnd,
-        r.chartStringType,
-        r.chartString,
-        "", // Student Phone Number — blank per spec
-        "", // Term — blank per spec
-        "", // Max Hours – PTO — blank per spec
-        "", // Max Hours – Mental Health — blank per spec
-      ]
-        .map(csvCell)
-        .join(","),
-    );
+    allRows.push([
+      r.netId,
+      r.firstName,
+      r.lastName,
+      r.jobId,
+      PRIMARY_SUPERVISOR_NETID,
+      SECONDARY_SUPERVISOR_NETID,
+      r.hourlyWage,
+      ANTICIPATED_HOURS_PER_WEEK,
+      r.hireStart,
+      r.hireEnd,
+      r.chartStringType,
+      r.chartString,
+      "", // Student Phone Number — blank per spec
+      "", // Term — blank per spec
+      "", // Max Hours – PTO — blank per spec
+      "", // Max Hours – Mental Health — blank per spec
+    ]);
   }
-  // RFC 4180 uses CRLF; payroll importers handle either, CRLF is safer for
-  // Excel on Windows.
-  return lines.join("\r\n") + "\r\n";
+  return rowsToCsvShared(allRows);
 }
 
 // Picks the term that contains today, falling back to the most recent term.

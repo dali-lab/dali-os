@@ -11,6 +11,8 @@ import { prisma } from "~/lib/db";
 import { buildEncryptedTokens } from "~/lib/google-calendar";
 import { requireAuth } from "~/lib/auth";
 import { CAL_STATE_COOKIE } from "~/routes/oauth.calendar.google.start";
+import { getApiBaseUrl } from "~/lib/app-env";
+import { exchangeGoogleCode, GoogleOAuthError } from "~/lib/google-oauth";
 
 function parseCookies(request: Request): Record<string, string> {
   const header = request.headers.get("Cookie") ?? "";
@@ -63,31 +65,25 @@ export async function loader({ request }: Route.LoaderArgs) {
     return redirectToCalendar("calendar_link_error=state_mismatch");
   }
 
-  const apiBase = process.env.API_BASE_URL ?? "http://localhost:3001";
+  const apiBase = getApiBaseUrl();
   const clientId = process.env.GOOGLE_CLIENT_ID!;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET!;
 
-  const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
+  let tokens;
+  try {
+    tokens = await exchangeGoogleCode({
       code,
-      client_id: clientId,
-      client_secret: clientSecret,
       // Must match the redirect_uri sent by /oauth/calendar/google/start.
-      redirect_uri: `${apiBase}/integrations/calendar/google/callback`,
-      grant_type: "authorization_code",
-    }),
-  });
-  if (!tokenRes.ok) {
-    return redirectToCalendar("calendar_link_error=token_exchange_failed");
+      redirectUri: `${apiBase}/integrations/calendar/google/callback`,
+      clientId,
+      clientSecret,
+    });
+  } catch (err) {
+    if (err instanceof GoogleOAuthError) {
+      return redirectToCalendar("calendar_link_error=token_exchange_failed");
+    }
+    throw err;
   }
-  const tokens = (await tokenRes.json()) as {
-    access_token: string;
-    refresh_token?: string;
-    expires_in?: number;
-    id_token?: string;
-  };
   if (!tokens.refresh_token) {
     return redirectToCalendar("calendar_link_error=no_refresh_token");
   }

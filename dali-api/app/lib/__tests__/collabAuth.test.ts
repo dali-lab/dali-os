@@ -7,12 +7,20 @@ vi.mock("~/lib/db", () => ({
     interview: { findUnique: vi.fn() },
     domainApplication: { findUnique: vi.fn() },
     epic: { findFirst: vi.fn() },
+    page: { findUnique: vi.fn() },
+    partnerApplication: { findUnique: vi.fn() },
+    partnerUser: { findUnique: vi.fn() },
   },
 }));
 
 vi.mock("~/lib/roles", () => ({
   isDomainLead: vi.fn().mockResolvedValue(false),
   isCore: vi.fn().mockResolvedValue(false),
+  isProjectMember: vi.fn().mockResolvedValue(false),
+}));
+
+vi.mock("~/partners/lib/partner-access", () => ({
+  partnerHasProjectAccess: vi.fn().mockResolvedValue(false),
 }));
 
 vi.mock("~/hiring/lib/confidentiality", () => ({
@@ -20,7 +28,8 @@ vi.mock("~/hiring/lib/confidentiality", () => ({
 }));
 
 import { prisma } from "~/lib/db";
-import { isDomainLead, isCore } from "~/lib/roles";
+import { isDomainLead, isCore, isProjectMember } from "~/lib/roles";
+import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { authorizeCollabDoc } from "../collabAuth";
 
@@ -30,6 +39,8 @@ beforeEach(() => {
   vi.resetAllMocks();
   (isDomainLead as any).mockResolvedValue(false);
   (isCore as any).mockResolvedValue(false);
+  (isProjectMember as any).mockResolvedValue(false);
+  (partnerHasProjectAccess as any).mockResolvedValue(false);
   (getCycleConfidentialityState as any).mockResolvedValue({ status: "signed", activeVersionId: "v1" });
   (prisma as any).interview.findUnique.mockResolvedValue({ applicationCycleId: "cycle1" });
 });
@@ -154,6 +165,110 @@ describe("authorizeCollabDoc", () => {
       expect(
         await authorizeCollabDoc("user1", "domainApplication:da1:prepNote"),
       ).toBe(true);
+    });
+  });
+
+  describe("page docs (doc:{pageId}:body)", () => {
+    const projectPage = (over: Record<string, unknown> = {}) => ({
+      archivedAt: null,
+      workspaceType: "Project",
+      workspaceId: "proj1",
+      partnerVisible: false,
+      ...over,
+    });
+
+    it("rejects when the page is missing or archived", async () => {
+      mockPrisma.page.findUnique.mockResolvedValue(null);
+      expect(await authorizeCollabDoc("user1", "doc:p1:body")).toBe(false);
+
+      mockPrisma.page.findUnique.mockResolvedValue(
+        projectPage({ archivedAt: new Date() }),
+      );
+      expect(await authorizeCollabDoc("user1", "doc:p1:body")).toBe(false);
+    });
+
+    it("allows Core on any workspace", async () => {
+      (isCore as any).mockResolvedValue(true);
+      mockPrisma.page.findUnique.mockResolvedValue(
+        projectPage({ workspaceType: "Lab", workspaceId: null }),
+      );
+      expect(await authorizeCollabDoc("user1", "doc:p1:body")).toBe(true);
+    });
+
+    it("rejects non-Core on Lab pages", async () => {
+      mockPrisma.page.findUnique.mockResolvedValue(
+        projectPage({ workspaceType: "Lab", workspaceId: null }),
+      );
+      expect(await authorizeCollabDoc("user1", "doc:p1:body")).toBe(false);
+    });
+
+    it("allows a staffed project member on project pages", async () => {
+      mockPrisma.page.findUnique.mockResolvedValue(projectPage());
+      (isProjectMember as any).mockResolvedValue(true);
+      expect(await authorizeCollabDoc("user1", "doc:p1:body")).toBe(true);
+      expect(isProjectMember).toHaveBeenCalledWith("user1", "proj1");
+    });
+
+    it("rejects partners on unshared project pages", async () => {
+      mockPrisma.page.findUnique.mockResolvedValue(projectPage());
+      (partnerHasProjectAccess as any).mockResolvedValue(true);
+      expect(await authorizeCollabDoc("user1", "doc:p1:body")).toBe(false);
+      expect(partnerHasProjectAccess).not.toHaveBeenCalled();
+    });
+
+    it("allows partners with project access on shared pages", async () => {
+      mockPrisma.page.findUnique.mockResolvedValue(
+        projectPage({ partnerVisible: true }),
+      );
+      (partnerHasProjectAccess as any).mockResolvedValue(true);
+      expect(await authorizeCollabDoc("user1", "doc:p1:body")).toBe(true);
+      expect(partnerHasProjectAccess).toHaveBeenCalledWith("user1", "proj1");
+    });
+
+    it("rejects partners without project access even on shared pages", async () => {
+      mockPrisma.page.findUnique.mockResolvedValue(
+        projectPage({ partnerVisible: true }),
+      );
+      expect(await authorizeCollabDoc("user1", "doc:p1:body")).toBe(false);
+    });
+  });
+
+  describe("partner SOW docs (partnersow:{applicationId}:body)", () => {
+    it("rejects when the application is missing", async () => {
+      mockPrisma.partnerApplication.findUnique.mockResolvedValue(null);
+      expect(await authorizeCollabDoc("user1", "partnersow:app1:body")).toBe(false);
+    });
+
+    it("allows Core", async () => {
+      mockPrisma.partnerApplication.findUnique.mockResolvedValue({
+        partnerOrgId: "org1",
+      });
+      (isCore as any).mockResolvedValue(true);
+      expect(await authorizeCollabDoc("user1", "partnersow:app1:body")).toBe(true);
+    });
+
+    it("allows a partner in the owning org", async () => {
+      mockPrisma.partnerApplication.findUnique.mockResolvedValue({
+        partnerOrgId: "org1",
+      });
+      mockPrisma.partnerUser.findUnique.mockResolvedValue({ partnerOrgId: "org1" });
+      expect(await authorizeCollabDoc("user1", "partnersow:app1:body")).toBe(true);
+    });
+
+    it("rejects a partner from another org", async () => {
+      mockPrisma.partnerApplication.findUnique.mockResolvedValue({
+        partnerOrgId: "org1",
+      });
+      mockPrisma.partnerUser.findUnique.mockResolvedValue({ partnerOrgId: "org2" });
+      expect(await authorizeCollabDoc("user1", "partnersow:app1:body")).toBe(false);
+    });
+
+    it("rejects non-partner non-Core users", async () => {
+      mockPrisma.partnerApplication.findUnique.mockResolvedValue({
+        partnerOrgId: "org1",
+      });
+      mockPrisma.partnerUser.findUnique.mockResolvedValue(null);
+      expect(await authorizeCollabDoc("user1", "partnersow:app1:body")).toBe(false);
     });
   });
 

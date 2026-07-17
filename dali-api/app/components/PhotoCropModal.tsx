@@ -1,18 +1,28 @@
 import { useCallback, useState } from "react";
 import Cropper, { type Area } from "react-easy-crop";
-import { Modal } from "./Modal";
+import { Modal, ModalHeader } from "./Modal";
 
-const OUTPUT_SIZE = 512;
+// Short side of the output. The long side follows `aspect`, so a square avatar
+// and a wide banner come out at comparable resolution.
+const OUTPUT_SHORT_SIDE = 512;
 
-// Draw the selected square region of `imageSrc` onto a fixed-size canvas and
-// return it as a normalized image blob. `area` is in natural-image pixels, as
-// react-easy-crop reports it. WebP keeps avatars small; PNG is the fallback for
+// Draw the selected region of `imageSrc` onto a fixed-size canvas and return it
+// as a normalized image blob. `area` is in natural-image pixels, as
+// react-easy-crop reports it. WebP keeps the file small; PNG is the fallback for
 // the rare browser whose canvas can't encode WebP.
-async function getCroppedBlob(imageSrc: string, area: Area): Promise<Blob> {
+async function getCroppedBlob(
+  imageSrc: string,
+  area: Area,
+  aspect: number,
+): Promise<Blob> {
   const image = await loadImage(imageSrc);
   const canvas = document.createElement("canvas");
-  canvas.width = OUTPUT_SIZE;
-  canvas.height = OUTPUT_SIZE;
+  const width =
+    aspect >= 1 ? Math.round(OUTPUT_SHORT_SIDE * aspect) : OUTPUT_SHORT_SIDE;
+  const height =
+    aspect >= 1 ? OUTPUT_SHORT_SIDE : Math.round(OUTPUT_SHORT_SIDE / aspect);
+  canvas.width = width;
+  canvas.height = height;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Could not process image");
 
@@ -24,8 +34,8 @@ async function getCroppedBlob(imageSrc: string, area: Area): Promise<Blob> {
     area.height,
     0,
     0,
-    OUTPUT_SIZE,
-    OUTPUT_SIZE,
+    width,
+    height,
   );
 
   const blob = await canvasToBlob(canvas, "image/webp");
@@ -56,11 +66,16 @@ export function PhotoCropModal({
   imageSrc,
   onCancel,
   onConfirm,
+  aspect = 1,
+  cropShape = "round",
 }: {
   open: boolean;
   imageSrc: string | null;
   onCancel: () => void;
   onConfirm: (blob: Blob) => void;
+  /** Crop box width:height. Defaults to the square avatar crop. */
+  aspect?: number;
+  cropShape?: "round" | "rect";
 }) {
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
@@ -77,7 +92,7 @@ export function PhotoCropModal({
     setError(null);
     setProcessing(true);
     try {
-      const blob = await getCroppedBlob(imageSrc, area);
+      const blob = await getCroppedBlob(imageSrc, area, aspect);
       onConfirm(blob);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not process image");
@@ -96,20 +111,21 @@ export function PhotoCropModal({
       disableEscape={processing}
       containerClassName="bg-card rounded-2xl shadow-brand-2 max-w-md w-full p-5 sm:p-6 my-auto"
     >
-      <h2
-        id="photo-crop-title"
-        className="font-heading text-lg font-bold text-foreground mb-3"
-      >
-        Adjust photo
-      </h2>
+      <ModalHeader
+        titleId="photo-crop-title"
+        title="Adjust photo"
+        onClose={onCancel}
+        hideClose={processing}
+        className="mb-3"
+      />
 
       <div className="relative w-full h-72 bg-black rounded-lg overflow-hidden">
         <Cropper
           image={imageSrc}
           crop={crop}
           zoom={zoom}
-          aspect={1}
-          cropShape="round"
+          aspect={aspect}
+          cropShape={cropShape}
           showGrid={false}
           onCropChange={setCrop}
           onZoomChange={setZoom}

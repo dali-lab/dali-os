@@ -3,6 +3,8 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db");
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
+  forbidden: vi.fn((_req: Request) => Response.json({ error: "Forbidden" }, { status: 403 })),
+  unauthorized: vi.fn((_req: Request) => Response.json({ error: "Unauthorized" }, { status: 401 })),
 }));
 vi.mock("~/lib/roles");
 

@@ -1,7 +1,6 @@
 import type { Route } from "./+types/api.tasks.$id";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
-import { isCore } from "~/lib/roles";
+import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { syncIssueForTask } from "../lib/github-task-sync";
 
@@ -21,6 +20,8 @@ type Body = {
   dueAt?: string | null;
   // Empty string / null clears the title — rejected (title is required).
   title?: string;
+  // Null clears the description.
+  description?: string | null;
   priority?: Priority;
   // Null clears the domain.
   domainId?: string | null;
@@ -39,6 +40,8 @@ function isBody(x: unknown): x is Body {
     return false;
   }
   if (o.title !== undefined && typeof o.title !== "string") return false;
+  if (o.description !== undefined && o.description !== null && typeof o.description !== "string")
+    return false;
   if (o.priority !== undefined && !isPriority(o.priority)) return false;
   if (
     o.domainId !== undefined &&
@@ -66,18 +69,21 @@ export async function action({ request, params }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
   if (preflight) return preflight;
 
-  const auth = await requireAuth(request);
-  if (!auth.ok) return withCors(request, auth.response);
-
   if (request.method !== "PATCH") {
     return withCors(
       request,
       Response.json({ error: "Method not allowed" }, { status: 405 }),
     );
   }
-  if (!(await isCore(auth.user.sub))) {
-    return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+  const task = await prisma.task.findUnique({
+    where: { id: params.id },
+    select: { id: true, githubIssueNumber: true, projectId: true },
+  });
+  if (!task) {
+    return withCors(request, Response.json({ error: "Task not found" }, { status: 404 }));
   }
+  const gate = await requireProjectEditAccess(request, task.projectId);
+  if (!gate.ok) return gate.response;
 
   let body: unknown;
   try {
@@ -89,20 +95,13 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Invalid body" }, { status: 400 }));
   }
 
-  const task = await prisma.task.findUnique({
-    where: { id: params.id },
-    select: { id: true, githubIssueNumber: true },
-  });
-  if (!task) {
-    return withCors(request, Response.json({ error: "Task not found" }, { status: 404 }));
-  }
-
   // Build a partial update: a key being present (even null) is a write; an
   // absent key is a no-op. Assignee changes are handled separately below
   // because they hit the TaskAssignee join table, not Task itself.
   const data: {
     dueAt?: Date | null;
     title?: string;
+    description?: string | null;
     priority?: Priority;
     domainId?: string | null;
   } = {};
@@ -119,6 +118,10 @@ export async function action({ request, params }: Route.ActionArgs) {
       return withCors(request, Response.json({ error: "Title is required" }, { status: 400 }));
     }
     data.title = trimmed;
+  }
+  if ("description" in body) {
+    const trimmed = body.description?.trim() ?? "";
+    data.description = trimmed === "" ? null : trimmed;
   }
   if ("priority" in body && body.priority) {
     data.priority = body.priority;

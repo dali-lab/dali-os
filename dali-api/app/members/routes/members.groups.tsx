@@ -3,11 +3,15 @@ import { Link, redirect, useLoaderData, useFetcher } from "react-router";
 import type { Route } from "./+types/members.groups";
 import { prisma } from "~/lib/db";
 import { listAllGroups } from "~/lib/groups";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, forbidden } from "~/lib/auth";
 import { canViewForms, currentTermMemberWhere } from "~/lib/roles";
+import { MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { resolvePhotoUrl } from "~/lib/photo";
-import { initialsFromName } from "~/lib/display";
-import { Modal } from "~/components/Modal";
+import { Avatar } from "~/components/ui/Avatar";
+import { RolePills } from "~/components/ui/RolePills";
+import { deriveCoreTitles } from "~/lib/core-titles";
+import { Modal, ModalHeader } from "~/components/Modal";
+import { AreaPillNav } from "~/components/AreaPillNav";
 import {
   Users,
   Plus,
@@ -17,7 +21,10 @@ import {
   ChevronDown,
   Archive,
   ArchiveRestore,
+  LayoutGrid,
 } from "lucide-react";
+
+export const handle = { areaPills: true };
 
 export const meta: Route.MetaFunction = () => [{ title: "Groups · Members · DALI OS" }];
 
@@ -86,7 +93,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         select: { level: true, domain: { select: { displayName: true } } },
       },
     },
-    orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+    orderBy: MEMBER_LIST_ORDER_BY,
   });
 
   const termCodeById = new Map(terms.map((t) => [t.id, t.code]));
@@ -123,22 +130,11 @@ export async function loader({ request }: Route.LoaderArgs) {
   return { groups, members, terms };
 }
 
-// Distinct Core lead titles, with title-less Core assignments collapsing to a
-// single "Core" pill. Mirrors the Members directory derivation.
-function deriveCoreTitles(assignments: { leadTitle: string | null }[]): string[] {
-  if (assignments.length === 0) return [];
-  const titles = new Set(
-    assignments.map((a) => a.leadTitle).filter((t): t is string => !!t),
-  );
-  if (assignments.some((a) => !a.leadTitle)) titles.add("Core");
-  return Array.from(titles);
-}
-
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
   if (!(await canViewForms(auth.user.sub)))
-    return Response.json({ error: "Forbidden" }, { status: 403 });
+    return forbidden(request);
 
   const formData = await request.formData();
   const intent = String(formData.get("intent") ?? "");
@@ -270,6 +266,12 @@ export default function AdminConsoleGroups() {
 
   return (
     <div className="space-y-6">
+      <AreaPillNav
+        items={[
+          { label: "Hub", to: "/members", icon: LayoutGrid },
+          { label: "Groups", to: "/members/groups", active: true, icon: Users },
+        ]}
+      />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Users className="w-6 h-6 text-foreground/80" />
@@ -401,19 +403,13 @@ function CreateGroupForm({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h2 id="create-group-title" className="font-semibold text-lg text-foreground">
-          New group
-        </h2>
-        <button
-          type="button"
-          onClick={onDone}
-          className="text-muted-foreground hover:text-foreground"
-          aria-label="Cancel"
-        >
-          <X className="w-4 h-4" />
-        </button>
-      </div>
+      <ModalHeader
+        titleId="create-group-title"
+        title="New group"
+        onClose={onDone}
+        closeLabel="Cancel"
+        className="mb-0"
+      />
       <fetcher.Form
         method="post"
         onSubmit={(e) => {
@@ -815,11 +811,20 @@ function ExpandedMemberCard({
   return (
     <div className="relative border border-border rounded-md p-2 bg-background flex items-start gap-2 hover:bg-muted/10 transition-colors">
       <Link to={`/members/${member.id}`} className="flex items-start gap-2 min-w-0 flex-1">
-        <Avatar photoUrl={member.photoUrl} name={fullName} />
+        <Avatar photoUrl={member.photoUrl} name={fullName} size="sm" className="flex-shrink-0" />
         <div className="min-w-0 flex-1">
           <div className="text-sm font-medium text-foreground truncate">{fullName}</div>
           <div className="mt-1">
-            <RolePills coreTitles={member.coreTitles} domainRoles={member.domainRoles} />
+            {member.coreTitles.length === 0 && member.domainRoles.length === 0 ? (
+              <span className="text-muted-foreground text-xs">—</span>
+            ) : (
+              <RolePills
+                coreTitles={member.coreTitles}
+                domainRoles={member.domainRoles}
+                size="sm"
+                showLevel
+              />
+            )}
           </div>
         </div>
       </Link>
@@ -837,55 +842,6 @@ function ExpandedMemberCard({
           </button>
         </fetcher.Form>
       )}
-    </div>
-  );
-}
-
-function Avatar({ photoUrl, name }: { photoUrl: string | null; name: string }) {
-  if (photoUrl) {
-    return (
-      <img
-        src={photoUrl}
-        alt=""
-        className="w-8 h-8 rounded-full object-cover flex-shrink-0"
-      />
-    );
-  }
-  return (
-    <div className="w-8 h-8 rounded-full bg-accent-coral/15 text-accent-coral flex items-center justify-center font-bold text-[11px] flex-shrink-0">
-      {initialsFromName(name)}
-    </div>
-  );
-}
-
-function RolePills({
-  coreTitles,
-  domainRoles,
-}: {
-  coreTitles: string[];
-  domainRoles: { domainName: string; level: string }[];
-}) {
-  if (coreTitles.length === 0 && domainRoles.length === 0) {
-    return <span className="text-muted-foreground text-xs">—</span>;
-  }
-  return (
-    <div className="flex flex-wrap gap-1">
-      {coreTitles.map((title) => (
-        <span
-          key={title}
-          className="inline-flex items-center px-1.5 py-0.5 text-[11px] font-medium rounded bg-muted text-foreground"
-        >
-          {title}
-        </span>
-      ))}
-      {domainRoles.map((d) => (
-        <span
-          key={`${d.domainName}-${d.level}`}
-          className="inline-flex items-center px-1.5 py-0.5 text-[11px] font-medium rounded bg-blue-50 text-blue-700 border border-blue-100"
-        >
-          {d.domainName} · {d.level}
-        </span>
-      ))}
     </div>
   );
 }

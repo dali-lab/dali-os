@@ -6,6 +6,7 @@
 
 import { prisma } from "~/lib/db";
 import { currentTerm } from "~/lib/roles";
+import { fullName } from "~/lib/display";
 
 export const GET_PROJECT_OVERVIEW_TOOL = {
   name: "get_project_overview",
@@ -121,7 +122,7 @@ export async function runGetProjectOverview(input: Input) {
     })),
     currentTermRoster: currentAssignments.map((a) => ({
       userId: a.user.id,
-      name: `${a.user.firstName} ${a.user.lastName}`.trim(),
+      name: fullName(a.user),
       domain: a.domain.displayName,
       level: a.level,
     })),

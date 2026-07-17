@@ -1,17 +1,12 @@
 import { prisma } from "~/lib/db";
+import { currentTermStrict } from "~/lib/roles";
 
 // A user is eligible to apply to an InternToFull cycle iff they currently
 // hold a ProjectAssignment in the active term where the project's domain is
-// flagged as an intern program. We require the term to be live (now is
-// between startDate and endDate inclusive); we deliberately do NOT fall back
-// to the next upcoming term, so the window between intern terms fails closed.
+// flagged as an intern program. `currentTermStrict` ensures the window
+// between intern terms fails closed (no roll-forward to the next term).
 export async function isInternToFullEligible(userId: string): Promise<boolean> {
-  const now = new Date();
-  const activeTerm = await prisma.term.findFirst({
-    where: { startDate: { lte: now }, endDate: { gte: now } },
-    orderBy: { sortKey: "desc" },
-    select: { id: true },
-  });
+  const activeTerm = await currentTermStrict();
   if (!activeTerm) return false;
 
   const assignment = await prisma.projectAssignment.findFirst({
@@ -30,12 +25,7 @@ export async function isInternToFullEligible(userId: string): Promise<boolean> {
 // is flagged as an intern program. Used to fan out the "cycle is open"
 // notification. Returns [] when no term is currently active.
 export async function eligibleInternUserIds(): Promise<string[]> {
-  const now = new Date();
-  const activeTerm = await prisma.term.findFirst({
-    where: { startDate: { lte: now }, endDate: { gte: now } },
-    orderBy: { sortKey: "desc" },
-    select: { id: true },
-  });
+  const activeTerm = await currentTermStrict();
   if (!activeTerm) return [];
 
   const rows = await prisma.projectAssignment.findMany({
@@ -53,12 +43,7 @@ export async function eligibleInternUserIds(): Promise<string[]> {
 // Used to surface "you're converting from <X>" hints in the applicant UI
 // and reviewer view. Empty when the user is not a current-term intern.
 export async function currentInternDomains(userId: string) {
-  const now = new Date();
-  const activeTerm = await prisma.term.findFirst({
-    where: { startDate: { lte: now }, endDate: { gte: now } },
-    orderBy: { sortKey: "desc" },
-    select: { id: true },
-  });
+  const activeTerm = await currentTermStrict();
   if (!activeTerm) return [];
 
   const assignments = await prisma.projectAssignment.findMany({

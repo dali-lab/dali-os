@@ -1,4 +1,5 @@
 import { prisma } from "~/lib/db";
+import { APPLICATION_TZ } from "~/lib/timezone";
 
 // Emit an in-app Notification to each newly-assigned interviewer so the
 // assignment shows up in the bell + Home tasks banner. The notification
@@ -29,7 +30,7 @@ function formatStart(d: Date): string {
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
-    timeZone: "America/New_York",
+    timeZone: APPLICATION_TZ,
   });
 }
 
@@ -85,7 +86,7 @@ export async function notifyInterviewAssigned(args: {
         kind: "General" as const,
         title,
         body,
-        link: `/hiring/interviewer/interview/${a.interview.id}`,
+        link: `/hiring/interviews/${a.interview.id}`,
         dueAt: a.interview.startTime,
         interviewAssignmentId: a.id,
       };

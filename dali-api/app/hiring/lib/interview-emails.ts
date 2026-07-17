@@ -7,6 +7,7 @@ import { prisma } from "~/lib/db";
 import { sendEmail } from "~/lib/gmail";
 import { type InterpolationVars } from "~/lib/email";
 import { getApplicationsGmailRefreshToken } from "~/lib/gmail-integration";
+import { APPLICATION_TZ, APPLICATION_TZ_LABEL } from "~/lib/timezone";
 import { renderForSlot, notificationSlot } from "./email-variables";
 import { buildInviteIcs, buildCancelIcs, type IcsAttendee } from "./interview-ics";
 
@@ -28,12 +29,8 @@ function formatTime(d: Date): string {
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
-    timeZone: "America/New_York",
-  }) + " ET";
-}
-
-async function getGmailRefreshToken(): Promise<string | null> {
-  return getApplicationsGmailRefreshToken();
+    timeZone: APPLICATION_TZ,
+  }) + ` ${APPLICATION_TZ_LABEL}`;
 }
 
 interface Recipient {
@@ -119,7 +116,7 @@ export async function sendInterviewInviteEmails(
   domainApplicationId: string,
 ): Promise<void> {
   try {
-    const refreshToken = await getGmailRefreshToken();
+    const refreshToken = await getApplicationsGmailRefreshToken();
     if (!refreshToken) return;
 
     const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
@@ -217,7 +214,7 @@ export async function sendInterviewCancelEmails(
   domainApplicationId: string,
 ): Promise<void> {
   try {
-    const refreshToken = await getGmailRefreshToken();
+    const refreshToken = await getApplicationsGmailRefreshToken();
     if (!refreshToken) return;
 
     const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
@@ -315,7 +312,7 @@ export async function sendReassignmentEmails(
   newCycleInterviewerId: string,
 ): Promise<void> {
   try {
-    const refreshToken = await getGmailRefreshToken();
+    const refreshToken = await getApplicationsGmailRefreshToken();
     if (!refreshToken) return;
 
     const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
@@ -453,7 +450,7 @@ export async function sendLocationChangeEmails(
   domainApplicationId: string,
 ): Promise<void> {
   try {
-    const refreshToken = await getGmailRefreshToken();
+    const refreshToken = await getApplicationsGmailRefreshToken();
     if (!refreshToken) return;
 
     const interview = await prisma.interview.findUnique({ where: { id: interviewId } });

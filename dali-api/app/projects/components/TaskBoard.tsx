@@ -1,7 +1,10 @@
 import { useCallback, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
-import { DndContext, useDraggable, useDroppable, type DragEndEvent } from "@dnd-kit/core";
+import { Button } from "~/components/ui/Button";
+import type { DragEndEvent } from "@dnd-kit/core";
 import { GripVertical } from "lucide-react";
+import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
+import { useOptimisticBoardMove } from "~/components/board/useOptimisticBoardMove";
 import {
   buildTaskBoard,
   nextPositionInColumn,
@@ -20,6 +23,12 @@ type Props = {
   options: TaskBoardOptions;
   /** Admin/Core can drag + create. Others get a read-only board. */
   canManage: boolean;
+  // The acting user — stamped onto optimistically-created cards as
+  // createdBy so the "Created by" line in the modal is correct before the
+  // next revalidation lands (the server independently sets this from the
+  // session, so it's display-only here).
+  currentUserId: string;
+  currentUserName: string;
 };
 
 const PRIORITY_TONE: Record<Priority, string> = {
@@ -33,9 +42,20 @@ const PRIORITY_TONE: Record<Priority, string> = {
 // onward from there. One add affordance for the whole board, not per column.
 const CREATE_STATUS: TaskStatus = TASK_STATUSES[0];
 
-export function TaskBoard({ projectId, initialTasks, options, canManage }: Props) {
-  const [tasks, setTasks] = useState<TaskCardModel[]>(initialTasks);
-  const [error, setError] = useState<string | null>(null);
+export function TaskBoard({
+  projectId,
+  initialTasks,
+  options,
+  canManage,
+  currentUserId,
+  currentUserName,
+}: Props) {
+  // Optimistic board state + rollback live in the shared hook. This board solely
+  // owns its task state; the parent project route revalidates on unrelated edits
+  // (sprint changes, project rename, fetcher submits), which would otherwise
+  // clobber an optimistic create/move/edit — so opt out of server adoption.
+  const { items: tasks, move, error, setError, setItems } =
+    useOptimisticBoardMove<TaskCardModel>(initialTasks, { adoptServerItems: false });
   const [isCreating, setIsCreating] = useState(false);
 
   // The open task is tracked in the URL (`?task=<id>`) so GitHub issue mirrors
@@ -60,33 +80,33 @@ export function TaskBoard({ projectId, initialTasks, options, canManage }: Props
   const board = useMemo(() => buildTaskBoard(tasks), [tasks]);
   const openTask = openTaskId ? tasks.find((t) => t.id === openTaskId) ?? null : null;
 
-  // Apply an optimistic local patch, then PATCH the row. On failure restore
-  // and surface the error. Used by both inline (card) edits and the modal.
+  // Apply an optimistic local patch, then PATCH the row. On failure the hook
+  // restores the snapshot and surfaces the error. Used by both inline (card)
+  // edits and the modal.
   async function patchTask(taskId: string, patch: Partial<TaskCardModel>) {
-    const prev = tasks;
-    setTasks((cur) => cur.map((t) => (t.id === taskId ? { ...t, ...patch } : t)));
-    setError(null);
-    try {
-      const body: Record<string, unknown> = {};
-      if ("dueAt" in patch) body.dueAt = patch.dueAt;
-      if ("domain" in patch) body.domainId = patch.domain?.id ?? null;
-      if ("assignees" in patch) body.assigneeIds = (patch.assignees ?? []).map((a) => a.id);
-      if ("title" in patch) body.title = patch.title;
-      if ("priority" in patch) body.priority = patch.priority;
-      const res = await fetch(`/api/tasks/${taskId}`, {
-        method: "PATCH",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        const j = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(j.error ?? `Request failed: ${res.status}`);
-      }
-    } catch (err) {
-      setTasks(prev);
-      setError(err instanceof Error ? err.message : "Failed to update task");
-    }
+    move(
+      (cur) => cur.map((t) => (t.id === taskId ? { ...t, ...patch } : t)),
+      async () => {
+        const body: Record<string, unknown> = {};
+        if ("dueAt" in patch) body.dueAt = patch.dueAt;
+        if ("domain" in patch) body.domainId = patch.domain?.id ?? null;
+        if ("assignees" in patch)
+          body.assigneeIds = (patch.assignees ?? []).map((a) => a.id);
+        if ("title" in patch) body.title = patch.title;
+        if ("description" in patch) body.description = patch.description;
+        if ("priority" in patch) body.priority = patch.priority;
+        const res = await fetch(`/api/tasks/${taskId}`, {
+          method: "PATCH",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+          const j = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(j.error ?? `Request failed: ${res.status}`);
+        }
+      },
+    );
   }
 
   function handleDragEnd(event: DragEndEvent) {
@@ -102,17 +122,12 @@ export function TaskBoard({ projectId, initialTasks, options, canManage }: Props
     const toStatus = overId as TaskStatus;
     if (toStatus === fromStatus) return;
 
-    const prev = tasks;
     const position = nextPositionInColumn(board, toStatus);
-    setTasks((cur) =>
-      cur.map((t) => (t.id === taskId ? { ...t, status: toStatus, position } : t)),
+    move(
+      (cur) =>
+        cur.map((t) => (t.id === taskId ? { ...t, status: toStatus, position } : t)),
+      () => persistMove(taskId, toStatus, position),
     );
-    setError(null);
-
-    void persistMove(taskId, toStatus, position).catch((err) => {
-      setTasks(prev);
-      setError(err instanceof Error ? err.message : "Failed to move task");
-    });
   }
 
   // Create from the modal. The POST endpoint only takes title/status/dueAt, so
@@ -126,6 +141,7 @@ export function TaskBoard({ projectId, initialTasks, options, canManage }: Props
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title: values.title,
+        description: values.description,
         status: CREATE_STATUS,
         dueAt: values.dueAt,
         ...(values.github ? { github: values.github } : {}),
@@ -147,11 +163,12 @@ export function TaskBoard({ projectId, initialTasks, options, canManage }: Props
       return { id: aid, name: m?.name ?? "" };
     });
 
-    setTasks((cur) => [
+    setItems((cur) => [
       ...cur,
       {
         id,
         title: values.title,
+        description: values.description,
         status: CREATE_STATUS,
         priority: values.priority,
         position: nextPositionInColumn(board, CREATE_STATUS),
@@ -164,6 +181,8 @@ export function TaskBoard({ projectId, initialTasks, options, canManage }: Props
         // next loader refresh. Null here means no badge in the meantime.
         githubIssueUrl: null,
         githubIssueNumber: null,
+        createdBy: { id: currentUserId, name: currentUserName },
+        createdAt: new Date().toISOString(),
       },
     ]);
     setIsCreating(false);
@@ -179,40 +198,42 @@ export function TaskBoard({ projectId, initialTasks, options, canManage }: Props
     }
   }
 
+  const columns: KanbanColumn<TaskCardModel>[] = TASK_STATUSES.map((status) => ({
+    id: status,
+    title: TASK_STATUS_LABELS[status],
+    cards: board[status] ?? [],
+    // The status columns keep the original taller drop zone.
+    listClassName: "flex flex-col gap-2 p-2 min-h-[360px]",
+  }));
+
   return (
     <div className="flex flex-col gap-3">
-      {error && (
-        <div className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-md px-3 py-2">
-          {error}
-        </div>
-      )}
-
       {canManage && (
         <div>
-          <button
-            type="button"
-            onClick={() => setIsCreating(true)}
-            className="px-3 py-1.5 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
-          >
+          <Button variant="primary" size="sm" onClick={() => setIsCreating(true)}>
             + Add task
-          </button>
+          </Button>
         </div>
       )}
 
-      {/* Stable id so SSR/client agree when multiple DndContexts mount. */}
-      <DndContext id="task-board" onDragEnd={handleDragEnd}>
-        <div className="flex gap-3 overflow-x-auto pb-3">
-          {TASK_STATUSES.map((status) => (
-            <Column
-              key={status}
-              status={status}
-              cards={board[status] ?? []}
-              canManage={canManage}
-              onOpen={(id) => setOpenTaskId(id)}
-            />
-          ))}
-        </div>
-      </DndContext>
+      <KanbanBoard<TaskCardModel>
+        id="task-board"
+        columns={columns}
+        getCardId={(t) => t.id}
+        getCardData={(t) => ({ taskId: t.id, fromStatus: t.status })}
+        draggable={canManage}
+        onDragEnd={handleDragEnd}
+        error={error}
+        renderCard={(card, { isDragging, dragHandleProps }) => (
+          <TaskCard
+            card={card}
+            draggable={canManage}
+            dragHandleProps={dragHandleProps}
+            isDragging={isDragging}
+            onOpen={() => setOpenTaskId(card.id)}
+          />
+        )}
+      />
 
       {openTask && (
         <TaskModal
@@ -236,53 +257,6 @@ export function TaskBoard({ projectId, initialTasks, options, canManage }: Props
   );
 }
 
-function Column({
-  status,
-  cards,
-  canManage,
-  onOpen,
-}: {
-  status: TaskStatus;
-  cards: TaskCardModel[];
-  canManage: boolean;
-  onOpen: (taskId: string) => void;
-}) {
-  const { isOver, setNodeRef } = useDroppable({ id: status });
-
-  return (
-    <div
-      ref={setNodeRef}
-      className={`flex-shrink-0 w-64 border rounded-lg border-border bg-card ${
-        isOver ? "ring-2 ring-accent-coral/40" : ""
-      } flex flex-col`}
-    >
-      <div className="px-3 py-2 border-b border-border flex items-center justify-between">
-        <div className="text-sm font-semibold text-foreground">
-          {TASK_STATUS_LABELS[status]}
-        </div>
-        <div className="text-[11px] text-muted-foreground">{cards.length}</div>
-      </div>
-
-      <div className="flex flex-col gap-2 p-2 min-h-[360px]">
-        {cards.length === 0 ? (
-          <div className="text-xs text-muted-foreground italic text-center py-4">
-            Empty
-          </div>
-        ) : (
-          cards.map((card) => (
-            <TaskCard
-              key={card.id}
-              card={card}
-              draggable={canManage}
-              onOpen={() => onOpen(card.id)}
-            />
-          ))
-        )}
-      </div>
-    </div>
-  );
-}
-
 // The drag handle and the card body are split so the body's click can open
 // the modal without dnd-kit's pointer listeners swallowing it. Listeners go
 // only on the GripVertical handle; the rest of the card has a regular
@@ -291,22 +265,16 @@ function Column({
 function TaskCard({
   card,
   draggable,
+  dragHandleProps,
+  isDragging,
   onOpen,
 }: {
   card: TaskCardModel;
   draggable: boolean;
+  dragHandleProps: Record<string, unknown>;
+  isDragging: boolean;
   onOpen: () => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id: card.id,
-    data: { taskId: card.id, fromStatus: card.status },
-    disabled: !draggable,
-  });
-
-  const style: React.CSSProperties = transform
-    ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 50 }
-    : {};
-
   const overdue =
     card.dueAt != null &&
     card.status !== "Done" &&
@@ -315,16 +283,13 @@ function TaskCard({
 
   return (
     <div
-      ref={setNodeRef}
-      style={style}
-      className={`border border-border rounded-md bg-background text-sm flex ${
+      className={`border border-border rounded-md bg-background text-sm flex focus-within:ring-2 focus-within:ring-accent-coral/30 ${
         isDragging ? "opacity-60 shadow-lg" : "hover:bg-muted/20"
       }`}
     >
       {draggable && (
         <div
-          {...attributes}
-          {...listeners}
+          {...dragHandleProps}
           aria-label="Drag task"
           className="flex-shrink-0 px-1 py-2.5 cursor-grab active:cursor-grabbing text-muted-foreground/60 hover:text-muted-foreground"
         >
@@ -334,7 +299,7 @@ function TaskCard({
       <button
         type="button"
         onClick={onOpen}
-        className="flex-1 min-w-0 text-left p-2.5 pl-1.5 focus:outline-none focus:ring-2 focus:ring-accent-coral/30 rounded-md"
+        className="flex-1 min-w-0 text-left p-2.5 pl-1.5 focus:outline-none"
       >
         <div className="text-foreground">{card.title}</div>
         <div className="mt-1.5 flex items-center justify-between gap-2">

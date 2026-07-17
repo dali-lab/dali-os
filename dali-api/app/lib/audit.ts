@@ -1,57 +1,9 @@
 import { getClientIp } from "~/lib/rate-limit";
 import type { Prisma } from "~/generated/prisma/client";
+import type { AuditAction } from "./audit-actions";
 
-// The closed set of action strings written to AuditLog. Exported as an array
-// so the activity-log UI can render a filter dropdown without having to scan
-// the table for distinct values.
-export const AUDIT_ACTIONS = [
-  "login.success",
-  "login.failure",
-  "logout",
-  "auth.token.invalid",
-  "auth.token.malformed",
-  "role.change",
-  "decision.finalize",
-  "decision.release",
-  "waitlist.accept",
-  "waitlist.remove",
-  "interview.invite-reminder.sent",
-  "interview.complete",
-  "interview.reopen",
-  "interview.reassign",
-  "interview.decline",
-  "review.submit",
-  "review.unsubmit",
-  "domain.create",
-  "domain.delete",
-  "domain.lead.add",
-  "domain.lead.remove",
-  "group.create",
-  "group.update",
-  "group.delete",
-  "staffing.assign",
-  "staffing.finalize",
-  "staffing.term_channel",
-  "staffing.board-member.add",
-  "staffing.board-member.remove",
-  "staffing.reorder",
-  "slack.connect",
-  "slack.disconnect",
-  "account.linked",
-  "document.delete",
-  "projectFile.create",
-  "projectFile.version",
-  "projectFile.delete",
-  "doctag.create",
-  "email.send",
-  "email.extension_notice",
-  "confidentiality.sign",
-  "mcp.tool_called",
-  "mcp.resource_read",
-  "mcp.prompt_rendered",
-] as const;
-
-export type AuditAction = (typeof AUDIT_ACTIONS)[number];
+// Re-exported so server callers keep one import for actions + logging.
+export { AUDIT_ACTIONS, type AuditAction } from "./audit-actions";
 
 export type AuditEvent = {
   action: AuditAction;
