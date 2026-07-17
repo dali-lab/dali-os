@@ -165,6 +165,49 @@ describe("fetchBusyEvents", () => {
     });
   });
 
+  // Regression: plainTextFromGoogleHtml used to strip literal <tag> markup
+  // before decoding entities, so an entity-encoded tag (e.g. from a Google
+  // event description an attacker controls) decoded into a live <script>
+  // AFTER the strip step had already run — CodeQL flagged this as an
+  // incomplete-sanitization / HTML-injection risk.
+  it("neutralizes entity-encoded markup in event descriptions", async () => {
+    prismaMock.userCalendarLink.findMany.mockResolvedValueOnce([
+      { id: "L1", subCalendarIds: [] },
+    ]);
+    prismaMock.userCalendarLink.findUnique.mockResolvedValue({
+      oauthTokens: encryptedTokens({
+        accessToken: "tok",
+        refreshToken: "r",
+        expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+      }),
+    });
+    mockFetchSequence([
+      { items: [{ id: "primary", summary: "Me", primary: true, backgroundColor: "#2952A3" }] },
+      {
+        items: [
+          {
+            id: "e1",
+            summary: "Malicious",
+            description: "before &lt;script&gt;alert(1)&lt;/script&gt; after",
+            status: "confirmed",
+            start: { dateTime: "2026-05-12T13:00:00Z" },
+            end: { dateTime: "2026-05-12T14:00:00Z" },
+          },
+        ],
+      },
+    ]);
+    prismaMock.userCalendarLink.update.mockResolvedValue({});
+
+    const out = await fetchBusyEvents(
+      "userX",
+      new Date("2026-05-12T00:00:00Z"),
+      new Date("2026-05-13T00:00:00Z"),
+    );
+    expect(out).toHaveLength(1);
+    expect(out[0].description).toBe("before alert(1) after");
+    expect(out[0].description).not.toContain("<script");
+  });
+
   it("returns [] when no UserCalendarLink exists (Phase 2: no legacy User.google* fallback)", async () => {
     prismaMock.userCalendarLink.findMany.mockResolvedValueOnce([]);
     const out = await fetchBusyEvents(

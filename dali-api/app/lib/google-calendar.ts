@@ -143,18 +143,27 @@ interface GoogleEvent {
   attendees?: { self?: boolean; responseStatus?: string }[];
 }
 
-/** Google descriptions are often HTML; flatten to plain text for display. */
+/**
+ * Google descriptions are often HTML; flatten to plain text for display.
+ *
+ * Entities MUST be decoded before tags are stripped, not after: decoding
+ * `&lt;script&gt;` into `<script>` only after the tag-strip regex has already
+ * run would leave a live tag in the "plain text" output (CodeQL flagged this
+ * exact ordering as an incomplete-sanitization / HTML-injection risk).
+ * `&amp;` is decoded last among the entities so a literal, still-encoded
+ * `&amp;lt;` in the source can't be double-unescaped into `<`.
+ */
 function plainTextFromGoogleHtml(html: string): string {
   return html
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/p>/gi, "\n")
-    .replace(/<[^>]+>/g, "")
     .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
     .replace(/&lt;/gi, "<")
     .replace(/&gt;/gi, ">")
     .replace(/&quot;/gi, '"')
     .replace(/&#39;/gi, "'")
+    .replace(/&amp;/gi, "&")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
