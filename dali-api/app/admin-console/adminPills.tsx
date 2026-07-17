@@ -60,6 +60,7 @@ export function adminPills(args: {
       to: "/admin-console/email-templates",
       active: args.active === "email-templates",
       icon: FileText,
+    },
     {
       label: "Attendance",
       to: "/admin-console/attendance",
