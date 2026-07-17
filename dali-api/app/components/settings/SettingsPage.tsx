@@ -25,6 +25,7 @@ import type { loadSettingsPageData } from "~/lib/settings-page.server";
 const SECTION_IDS = [
   "account",
   "appearance",
+  "workspace",
   "calendar",
   "slack",
   "notifications",
@@ -125,21 +126,15 @@ export function SettingsPage({
           </SettingsBlock>
         )}
 
-        <SettingsBlock
-          id="workspace"
-          title="Workspace"
-          description="How pages open, and whether to show the sidebar."
-        >
-          <WorkspaceSettingsBlock />
-        </SettingsBlock>
-
-        <SettingsBlock
-          id="calendar"
-          title="Calendar"
-          description="Linked Google accounts and which sub-calendars block your availability."
-        >
-          <CalendarSettingsBlock calendarLinks={data.calendarLinks} />
-        </SettingsBlock>
+        {active === "workspace" && (
+          <SettingsBlock
+            id="workspace"
+            title="Workspace"
+            description="How pages open, and whether to show the sidebar."
+          >
+            <WorkspaceSettingsBlock />
+          </SettingsBlock>
+        )}
         {active === "slack" && (
           <SettingsBlock
             id="slack"

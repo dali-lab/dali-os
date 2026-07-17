@@ -23,6 +23,8 @@ import {
   Mail,
   ShieldCheck,
   CalendarRange,
+  PanelLeftClose,
+  PanelLeftOpen,
   PanelTop,
   Square,
   Compass,
@@ -31,6 +33,7 @@ import {
 } from "lucide-react";
 import { Modal } from "~/components/Modal";
 import { setTablessPreference } from "~/lib/tabless";
+import { setFocusPreference } from "~/lib/focus-mode";
 import type { SearchResult, SearchResultType } from "~/lib/search";
 
 export interface CommandPaletteRoles {
@@ -46,6 +49,8 @@ interface CommandPaletteProps {
   onClose: () => void;
   /** Current workspace mode — drives the "switch mode" command + how results open. */
   tabless: boolean;
+  /** Whether the sidebar is hidden — drives the focus-mode command. */
+  focusMode: boolean;
   roles: CommandPaletteRoles;
   /** Open a result. `toSide` = ⌘/Ctrl+Enter (split pane in tab mode, new browser tab in tabless). */
   onOpen: (url: string, label: string, toSide: boolean) => void;
@@ -96,7 +101,7 @@ const SECTION_ORDER = [
   "Partner applications",
 ];
 
-export function CommandPalette({ open, onClose, tabless, roles, onOpen }: CommandPaletteProps) {
+export function CommandPalette({ open, onClose, tabless, focusMode, roles, onOpen }: CommandPaletteProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -175,6 +180,19 @@ export function CommandPalette({ open, onClose, tabless, roles, onOpen }: Comman
         },
       },
       {
+        id: "cmd-focus",
+        title: focusMode ? "Show sidebar" : "Hide sidebar (focus mode)",
+        subtitle: "Command",
+        icon: focusMode ? PanelLeftOpen : PanelLeftClose,
+        action: {
+          kind: "run",
+          run: () => {
+            setFocusPreference(!focusMode);
+            window.location.reload();
+          },
+        },
+      },
+      {
         id: "cmd-tour",
         title: "Start the tour",
         subtitle: "Command",
@@ -193,7 +211,7 @@ export function CommandPalette({ open, onClose, tabless, roles, onOpen }: Comman
     const q = query.trim().toLowerCase();
     const match = (i: PaletteItem) => !q || i.title.toLowerCase().includes(q);
     return { nav: nav.filter(match), commands: commands.filter(match) };
-  }, [roles, tabless, query]);
+  }, [roles, tabless, focusMode, query]);
 
   const sections = useMemo(() => {
     const out: { key: string; label: string; items: PaletteItem[] }[] = [];
@@ -232,10 +250,11 @@ export function CommandPalette({ open, onClose, tabless, roles, onOpen }: Comman
   function onKeyDown(e: React.KeyboardEvent) {
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setSelectedIndex((i) => Math.min(i + 1, flatItems.length - 1));
+      // Wrap around: past the last item jumps back to the first, and vice versa.
+      if (flatItems.length) setSelectedIndex((i) => (i + 1) % flatItems.length);
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      setSelectedIndex((i) => Math.max(i - 1, 0));
+      if (flatItems.length) setSelectedIndex((i) => (i - 1 + flatItems.length) % flatItems.length);
     } else if (e.key === "Enter") {
       e.preventDefault();
       const item = flatItems[selectedIndex];

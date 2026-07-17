@@ -693,6 +693,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
         tabless={tabless}
+        focusMode={focusMode}
         roles={{ isCore, canViewForms, canViewStaffing, hasHiringAccess, isLabMentor }}
         onOpen={openFromPalette}
       />
