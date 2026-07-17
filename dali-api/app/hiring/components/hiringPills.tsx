@@ -12,7 +12,7 @@ import type { AreaPill } from "~/components/AreaPillNav";
 
 // The hiring area's top-level surfaces as an AreaPillNav, mirroring the old
 // sidebar sections' role gates (the sidebar now carries a single Hiring entry
-// that lands on the /hiring hub). Emails stays inside Library's segmented row.
+// that lands on the /hiring hub). Email templates live in Admin → Email Templates.
 export function hiringPills(args: {
   isCore: boolean;
   isDomainLead: boolean;

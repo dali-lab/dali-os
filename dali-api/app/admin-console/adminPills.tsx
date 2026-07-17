@@ -2,6 +2,7 @@ import {
   Activity,
   BarChart3,
   Clock,
+  FileText,
   Globe,
   LayoutGrid,
   Mail,
@@ -27,6 +28,7 @@ export function adminPills(args: {
     | "analytics"
     | "jobs"
     | "email-senders"
+    | "email-templates"
     | "payroll"
     | "payroll-reconcile";
 }): AreaPill[] {
@@ -49,6 +51,14 @@ export function adminPills(args: {
       to: "/admin-console/announcements",
       active: args.active === "announcements",
       icon: Megaphone,
+    },
+    // Core-visible: hiring leads and other Core members author the shared
+    // email templates; only sender accounts are Admin-only.
+    {
+      label: "Email Templates",
+      to: "/admin-console/email-templates",
+      active: args.active === "email-templates",
+      icon: FileText,
     },
     ...(args.isAdmin
       ? [

@@ -37,6 +37,12 @@ export default function AdminHub() {
       description:
         "Send an announcement to the lab, with an optional due date and attached form.",
     },
+    {
+      to: "/admin-console/email-templates",
+      title: "Email Templates",
+      description:
+        "Shared library of email templates, bound per hiring cycle or education offering.",
+    },
     ...(admin
       ? [
           {

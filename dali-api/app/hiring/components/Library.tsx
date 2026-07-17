@@ -12,10 +12,9 @@ import { Button } from "~/components/ui/Button";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { hiringPills } from "~/hiring/components/hiringPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
-import { EmailsPanel } from "~/hiring/components/EmailTemplates";
 import type { loader } from "~/hiring/routes/library";
 
-type Tab = "challenges" | "rubrics" | "agreements" | "emails";
+type Tab = "challenges" | "rubrics" | "agreements";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "challenges", label: "Challenges" },
@@ -23,13 +22,8 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "agreements", label: "Agreements" },
 ];
 
-// Emails is Core-only; the loader only ships template data to Core.
-const EMAILS_TAB: { id: Tab; label: string } = { id: "emails", label: "Emails" };
-
 function parseTab(value: string | null): Tab {
-  return value === "rubrics" || value === "agreements" || value === "emails"
-    ? value
-    : "challenges";
+  return value === "rubrics" || value === "agreements" ? value : "challenges";
 }
 
 export default function Library() {
@@ -43,8 +37,6 @@ export default function Library() {
     setSearchParams(params);
   };
 
-  const tabs = data.pillRoles.isCore ? [...TABS, EMAILS_TAB] : TABS;
-
   return (
     <div className="space-y-8">
       <AreaPillNav items={hiringPills({ ...data.pillRoles, active: "library" })} />
@@ -53,7 +45,7 @@ export default function Library() {
         role="tablist"
         aria-label="Library section"
       >
-        {tabs.map((t) => {
+        {TABS.map((t) => {
           const active = t.id === tab;
           return (
             <button
@@ -80,9 +72,6 @@ export default function Library() {
       {tab === "rubrics" && <RubricsPanel rubrics={data.rubrics} />}
       {tab === "agreements" && (
         <AgreementsPanel agreements={data.agreements} canEdit={data.canEdit} />
-      )}
-      {tab === "emails" && data.pillRoles.isCore && (
-        <EmailsPanel templates={data.templates} gmailConnected={data.gmailConnected} />
       )}
     </div>
   );

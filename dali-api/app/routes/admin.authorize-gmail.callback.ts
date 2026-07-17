@@ -38,10 +38,10 @@ function emailFromIdToken(idToken: string | undefined): string | null {
   }
 }
 
-// Hiring keeps its historical landing page; other purposes return to the
-// admin Email Senders page.
-function landing(purpose: EmailPurposeKey): string {
-  return purpose === 'Hiring' ? '/hiring/emails' : '/admin-console/email-senders'
+// All purposes land back on the Email Senders page, where the connect
+// buttons live.
+function landing(_purpose: EmailPurposeKey): string {
+  return '/admin-console/email-senders'
 }
 
 export async function loader({ request }: { request: Request }) {
