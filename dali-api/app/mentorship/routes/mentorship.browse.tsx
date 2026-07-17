@@ -3,11 +3,17 @@ import type { Route } from "./+types/mentorship.browse";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { canViewMentorship } from "../lib/visibility";
+import { isCore } from "~/lib/roles";
 import { startOfWeekUTC } from "../lib/week";
+import { AreaPillNav } from "~/components/AreaPillNav";
+import { mentorshipPills } from "../components/mentorshipPills";
 
 export const meta: Route.MetaFunction = () => [
   { title: "Browse notes · DALI OS" },
 ];
+
+// Surfaces the area subtab row (see layout.tsx's areaPills handling).
+export const handle = { areaPills: true };
 
 type Person = { id: string; firstName: string; lastName: string };
 
@@ -48,6 +54,7 @@ type LoaderData = {
   };
   notes: NoteRow[];
   missing: MissingRow[];
+  isCore: boolean;
 };
 
 function pickFilter(value: string | null): string {
@@ -262,7 +269,13 @@ export async function loader({ request }: Route.LoaderArgs) {
     domainCode: ndm.get(n.domainId)?.code ?? "?",
   }));
 
-  const data: LoaderData = { filters, options, notes, missing };
+  const data: LoaderData = {
+    filters,
+    options,
+    notes,
+    missing,
+    isCore: await isCore(auth.user.sub),
+  };
   return data;
 }
 
@@ -283,7 +296,8 @@ export default function MentorshipBrowse() {
   const [params] = useSearchParams();
 
   return (
-    <main className="px-4 md:px-8 py-6 max-w-6xl mx-auto flex flex-col gap-6">
+    <main className="flex flex-col gap-6">
+      <AreaPillNav items={mentorshipPills({ isCore: data.isCore, active: "browse" })} />
       <header>
         <h1 className="font-heading text-2xl font-bold text-foreground">
           Browse notes

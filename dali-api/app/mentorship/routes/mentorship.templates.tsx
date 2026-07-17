@@ -6,6 +6,11 @@ import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
 import { RichTextEditor } from "~/components/RichTextEditor";
+import { AreaPillNav } from "~/components/AreaPillNav";
+import { mentorshipPills } from "../components/mentorshipPills";
+
+// Surfaces the area subtab row (see layout.tsx's areaPills handling).
+export const handle = { areaPills: true };
 
 export const meta: Route.MetaFunction = () => [
   { title: "Mentorship templates · DALI OS" },
@@ -71,7 +76,8 @@ export default function MentorshipTemplates() {
   }
 
   return (
-    <main className="px-4 md:px-8 py-6 max-w-5xl mx-auto flex flex-col gap-6">
+    <main className="flex flex-col gap-6">
+      <AreaPillNav items={mentorshipPills({ isCore: true, active: "templates" })} />
       <header className="flex items-center justify-between">
         <div>
           <h1 className="font-heading text-2xl font-bold text-foreground">

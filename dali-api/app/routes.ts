@@ -310,6 +310,7 @@ export default [
   route("api/staffing/board-member", "projects/routes/api.staffing.board-member.ts"),
   route("api/staffing/events", "projects/routes/api.staffing.events.ts"),
   route("api/staffing/reorder", "projects/routes/api.staffing.reorder.ts"),
+  route("api/staffing/mentorship", "projects/routes/api.staffing.mentorship.ts"),
 
   // Core-only level correction for an already-finalized ProjectAssignment.
   route(

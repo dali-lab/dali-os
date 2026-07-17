@@ -73,6 +73,10 @@ type Body = {
   // When true, persist the channel/slug fields to the Project and skip all
   // automations (the modal's "Save").
   saveFieldsOnly?: boolean;
+  // When true, any staged mentor who isn't yet P3 in the mentee's domain is
+  // promoted to P3 (assignment + eligibility) as staged pairs are materialized.
+  // Off = materialize pairs but leave levels alone. Part of the assignments step.
+  promoteMentors?: boolean;
 };
 
 function isBody(x: unknown): x is Body {
@@ -85,7 +89,8 @@ function isBody(x: unknown): x is Body {
     o.automations.every((a) => typeof a === "string") &&
     (o.slackChannel === undefined || typeof o.slackChannel === "string") &&
     (o.githubTeamSlug === undefined || typeof o.githubTeamSlug === "string") &&
-    (o.saveFieldsOnly === undefined || typeof o.saveFieldsOnly === "boolean")
+    (o.saveFieldsOnly === undefined || typeof o.saveFieldsOnly === "boolean") &&
+    (o.promoteMentors === undefined || typeof o.promoteMentors === "boolean")
   );
 }
 
@@ -216,6 +221,8 @@ export async function action({ request }: Route.ActionArgs) {
 
       let droppedCount = 0;
       let pairsCreated = 0;
+      let mentorsPromoted = 0;
+      const promoteMentors = body.promoteMentors === true;
       await prisma.$transaction(async (tx) => {
         for (const a of target) {
           if (a.status !== "Confirmed") {
@@ -270,10 +277,79 @@ export async function action({ request }: Route.ActionArgs) {
         // Auto-pair mentees to mentors based on the confirmed roster. Additive
         // only — preserves any Core overrides made via /mentorship/pairs.
         pairsCreated = await derivePairings(tx, project.id, cycle.termId);
+
+        // Materialize the manually-staged pairs for this project (built via the
+        // per-card Mentor badge). Each becomes a real MentorshipPair; if the
+        // mentor isn't P3 in the mentee's domain and promotion was requested,
+        // bump their eligibility + any assignment in that domain to P3 so the
+        // pairing is valid. Staged rows are consumed (deleted) either way.
+        const staged = await tx.stagedMentorshipPair.findMany({
+          where: { staffingCycleId: cycle.id, projectId: project.id },
+          select: { id: true, menteeUserId: true, mentorUserId: true, domainId: true },
+        });
+        for (const sp of staged) {
+          if (promoteMentors) {
+            const elig = await tx.domainEligibility.findUnique({
+              where: { userId_domainId: { userId: sp.mentorUserId, domainId: sp.domainId } },
+              select: { level: true },
+            });
+            if (elig?.level !== "P3") {
+              await tx.domainEligibility.upsert({
+                where: { userId_domainId: { userId: sp.mentorUserId, domainId: sp.domainId } },
+                update: { level: "P3", promotedBy: auth.user.sub },
+                create: { userId: sp.mentorUserId, domainId: sp.domainId, level: "P3", promotedBy: auth.user.sub },
+              });
+              // Reflect the promotion on the mentor's live rows in that domain so
+              // the board + finalized roster show P3, not a stale lower level.
+              await tx.projectAssignment.updateMany({
+                where: { userId: sp.mentorUserId, termId: cycle.termId, domainId: sp.domainId },
+                data: { level: "P3" },
+              });
+              await tx.staffingAssignment.updateMany({
+                where: {
+                  userId: sp.mentorUserId,
+                  staffingCycleId: cycle.id,
+                  domainId: sp.domainId,
+                  status: { not: "Declined" },
+                },
+                data: { level: "P3" },
+              });
+              mentorsPromoted++;
+            }
+          }
+          // Materialize the pair (idempotent — MentorshipPair has no unique key).
+          const exists = await tx.mentorshipPair.findFirst({
+            where: {
+              menteeUserId: sp.menteeUserId,
+              mentorUserId: sp.mentorUserId,
+              projectId: project.id,
+              termId: cycle.termId,
+              domainId: sp.domainId,
+            },
+            select: { id: true },
+          });
+          if (!exists) {
+            await tx.mentorshipPair.create({
+              data: {
+                menteeUserId: sp.menteeUserId,
+                mentorUserId: sp.mentorUserId,
+                projectId: project.id,
+                termId: cycle.termId,
+                domainId: sp.domainId,
+              },
+            });
+            pairsCreated++;
+          }
+        }
+        if (staged.length > 0) {
+          await tx.stagedMentorshipPair.deleteMany({ where: { id: { in: staged.map((s) => s.id) } } });
+        }
       });
 
       const dropNote = droppedCount > 0 ? `, removed ${droppedCount}` : "";
       const pairNote = pairsCreated > 0 ? `, paired ${pairsCreated} mentor link${pairsCreated === 1 ? "" : "s"}` : "";
+      const promoteNote =
+        mentorsPromoted > 0 ? `, promoted ${mentorsPromoted} mentor${mentorsPromoted === 1 ? "" : "s"} to P3` : "";
       const skipNote =
         skippedNames.length > 0
           ? ` Skipped ${skippedNames.length} with an invalid/blank domain (fix their bid): ${skippedNames.join(", ")}.`
@@ -285,7 +361,7 @@ export async function action({ request }: Route.ActionArgs) {
         message:
           (confirmedCount === 0 && droppedCount === 0
             ? "No proposed assignments for this project."
-            : `Confirmed ${confirmedCount} assignment${confirmedCount === 1 ? "" : "s"}${dropNote}${pairNote} → ProjectAssignment.`) +
+            : `Confirmed ${confirmedCount} assignment${confirmedCount === 1 ? "" : "s"}${dropNote}${pairNote}${promoteNote} → ProjectAssignment.`) +
           skipNote,
       };
     } catch (err) {
