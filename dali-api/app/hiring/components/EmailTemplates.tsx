@@ -1,20 +1,29 @@
+// Emails tab of the hiring Library (Core-only): the email template list with
+// its Gmail connection card. Creates POST to /hiring/emails, which kept its
+// action when the standalone page folded into the Library's tab row.
+
 import { useEffect, useState } from 'react'
-import { Link, Form, useLoaderData, useSearchParams } from 'react-router'
-import { Plus, Mail, ChevronRight, X, BookOpen } from 'lucide-react'
+import { Link, Form, useSearchParams } from 'react-router'
+import { Plus, Mail, ChevronRight, X } from 'lucide-react'
 import { Button } from '~/components/ui/Button'
 import { Modal, ModalHeader } from '~/components/Modal'
-import { AreaPillNav } from '~/components/AreaPillNav'
-import type { loader } from '~/hiring/routes/email-templates'
+import type { loader } from '~/hiring/routes/library'
 
 const GMAIL_ERROR_MESSAGES: Record<string, string> = {
   auth_failed: 'Gmail authorization was denied or failed.',
   state_mismatch: 'OAuth state mismatch — please try again.',
   token_exchange_failed: 'Failed to exchange token with Google. Check OAuth credentials.',
   no_refresh_token: 'Google did not return a refresh token. You may need to revoke access and try again.',
+  no_account_email: 'Google did not report which account was authorized. Try again.',
 }
 
-export default function EmailTemplatesList() {
-  const { templates, gmailConnected } = useLoaderData<typeof loader>()
+type LibraryData = Exclude<Awaited<ReturnType<typeof loader>>, Response>
+type Props = {
+  templates: LibraryData['templates']
+  gmailConnected: boolean
+}
+
+export function EmailsPanel({ templates, gmailConnected }: Props) {
   const [showModal, setShowModal] = useState(false)
   const [newName, setNewName] = useState('')
   const [searchParams, setSearchParams] = useSearchParams()
@@ -38,12 +47,6 @@ export default function EmailTemplatesList() {
 
   return (
     <div className="space-y-8">
-      <AreaPillNav
-        items={[
-          { label: "Library", to: "/hiring/library", icon: BookOpen },
-          { label: "Emails", to: "/hiring/emails", active: true, icon: Mail },
-        ]}
-      />
       {!dismissed && gmailAuthorized && (
         <div className="flex items-center justify-between bg-green-50 border border-green-200 text-green-800 text-sm rounded-lg px-4 py-3">
           <span>Gmail authorized successfully. Decision emails are now active.</span>
@@ -147,7 +150,12 @@ export default function EmailTemplatesList() {
             onClose={() => setShowModal(false)}
             className="mb-0"
           />
-          <Form method="post" onSubmit={() => setShowModal(false)} className="space-y-4">
+          <Form
+            method="post"
+            action="/hiring/emails"
+            onSubmit={() => setShowModal(false)}
+            className="space-y-4"
+          >
             <input type="hidden" name="intent" value="create" />
             <div>
               <label className="block text-sm font-medium text-foreground/80 mb-1">

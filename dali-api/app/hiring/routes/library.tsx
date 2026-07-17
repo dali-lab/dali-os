@@ -3,6 +3,7 @@ import type { Route } from "./+types/library";
 import { prisma } from "~/lib/db";
 import { requireCoreOrDomainLead } from "~/lib/auth";
 import { getUserRoles } from "~/lib/roles";
+import { isApplicationsGmailConnected } from "~/lib/gmail-integration";
 import Library from "~/hiring/components/Library";
 
 export const handle = { areaPills: true };
@@ -18,7 +19,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!gate.ok) return gate.response;
 
   const roles = await getUserRoles(gate.auth.user.sub);
-  const [domains, challenges, rubrics, agreements] = await Promise.all([
+  const [domains, challenges, rubrics, agreements, templates, gmailConnected] = await Promise.all([
     prisma.domain.findMany({ orderBy: { name: "asc" } }),
     prisma.challenge.findMany({
       include: {
@@ -47,6 +48,19 @@ export async function loader({ request }: Route.LoaderArgs) {
       },
       orderBy: { createdAt: "desc" },
     }),
+    // Emails tab is Core-only (the library itself admits domain leads too).
+    roles.isCore
+      ? prisma.emailTemplate.findMany({
+          include: {
+            versions: {
+              include: { createdBy: true },
+              orderBy: { versionNumber: "desc" },
+            },
+          },
+          orderBy: { createdAt: "desc" },
+        })
+      : Promise.resolve([]),
+    roles.isCore ? isApplicationsGmailConnected() : Promise.resolve(false),
   ]);
 
   return {
@@ -54,6 +68,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     challenges,
     rubrics,
     agreements,
+    templates,
+    gmailConnected,
     canEdit: true,
     pillRoles: {
       isCore: roles.isCore,

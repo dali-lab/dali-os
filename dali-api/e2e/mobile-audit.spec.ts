@@ -31,7 +31,7 @@ const ROUTES: Array<{ path: string; label: string }> = [
   { path: '/hiring/domain-lead', label: 'hiring-domain-lead' },
   { path: '/hiring/lead', label: 'hiring-lead' },
   { path: '/hiring/library', label: 'hiring-library' },
-  { path: '/hiring/emails', label: 'hiring-emails' },
+  { path: '/hiring/library?tab=emails', label: 'hiring-emails' },
   { path: '/hiring', label: 'hiring-hub' },
   { path: '/hiring/interviews', label: 'hiring-interviews' },
   { path: '/admin-console/members', label: 'admin-members' },

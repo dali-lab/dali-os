@@ -1,33 +1,18 @@
+// The standalone email-templates page folded into the hiring Library's
+// Emails tab. This route keeps the create action (the tab's modal POSTs
+// here) and redirects GETs — including the Gmail OAuth return, whose
+// gmail_authorized / gmail_error params must survive the hop.
+
 import { redirect } from 'react-router'
 import type { Route } from './+types/email-templates'
 import { prisma } from '~/lib/db'
 import { requireAuth } from "~/lib/auth";
 import { isCore } from '~/lib/roles'
-import { isApplicationsGmailConnected } from "~/lib/gmail-integration";
-import EmailTemplatesList from '~/hiring/components/EmailTemplates'
-
-export const handle = { areaPills: true };
-
-export const meta: Route.MetaFunction = () => [{ title: 'Email templates · DALI OS' }]
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const auth = await requireAuth(request)
-  if (!auth.ok) return redirect('/login')
-  if (!(await isCore(auth.user.sub))) return redirect('/')
-
-  const [templates, gmailConnected] = await Promise.all([
-    prisma.emailTemplate.findMany({
-      include: {
-        versions: {
-          include: { createdBy: true },
-          orderBy: { versionNumber: 'desc' },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-    }),
-    isApplicationsGmailConnected(),
-  ])
-  return { templates, gmailConnected }
+  const url = new URL(request.url)
+  url.searchParams.set('tab', 'emails')
+  return redirect(`/hiring/library?${url.searchParams}`)
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -47,5 +32,3 @@ export async function action({ request }: Route.ActionArgs) {
 
   return null
 }
-
-export default EmailTemplatesList

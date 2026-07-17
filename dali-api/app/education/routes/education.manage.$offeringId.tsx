@@ -592,9 +592,9 @@ export default function ManageOffering() {
             <p className="text-xs text-muted-foreground mb-3">
               Pick a template to email applicants when their status changes.
               Unbound statuses fall back to a short built-in message.
-              Templates are shared with hiring — manage them at{" "}
-              <Link to="/hiring/emails" className="underline">
-                /hiring/emails
+              Templates are shared with hiring — manage them in{" "}
+              <Link to="/hiring/library?tab=emails" className="underline">
+                Hiring → Library → Emails
               </Link>
               . <code className="text-[11px]">{"{{domain}}"}</code> carries the
               offering title.
