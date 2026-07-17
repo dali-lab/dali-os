@@ -1,15 +1,18 @@
 // GET /admin/authorize-gmail/callback
-// Receives the Google OAuth callback, exchanges the code for tokens,
-// and stores the refresh token on the applications@dali.dartmouth.edu user row.
+// Receives the Google OAuth callback, exchanges the code for tokens, and
+// stores the refresh token on the purpose's GmailIntegration row. The
+// purpose rides the OAuth state (nonce.purpose, CSRF-pinned by cookie); the
+// authorized mailbox comes from the id_token, so sendAsEmail always reflects
+// the account the admin actually picked.
 
 import { requireAuth } from "~/lib/auth";
 import { isCore } from '~/lib/roles'
 import { prisma } from '~/lib/db'
 import { getApiBaseUrl } from '~/lib/app-env'
 import { exchangeGoogleCode, GoogleOAuthError } from '~/lib/google-oauth'
+import { EMAIL_PURPOSES, isEmailPurpose, type EmailPurposeKey } from '~/lib/email-identities'
 
 const GMAIL_STATE_COOKIE = '__dali_gmail_oauth_state'
-const GMAIL_USER = 'applications@dali.dartmouth.edu'
 
 function parseCookies(request: Request): Record<string, string> {
   const header = request.headers.get('Cookie') ?? ''
@@ -19,6 +22,26 @@ function parseCookies(request: Request): Record<string, string> {
     if (k) entries[k.trim()] = rest.join('=').trim()
   }
   return entries
+}
+
+// The id_token arrives straight from Google's token endpoint over TLS in the
+// code exchange, so decoding without signature verification is safe here.
+function emailFromIdToken(idToken: string | undefined): string | null {
+  if (!idToken) return null
+  try {
+    const payload = JSON.parse(
+      Buffer.from(idToken.split('.')[1], 'base64url').toString('utf8'),
+    )
+    return typeof payload.email === 'string' ? payload.email : null
+  } catch {
+    return null
+  }
+}
+
+// All purposes land back on the Email Senders page, where the connect
+// buttons live.
+function landing(_purpose: EmailPurposeKey): string {
+  return '/admin-console/email-senders'
 }
 
 export async function loader({ request }: { request: Request }) {
@@ -41,21 +64,25 @@ export async function loader({ request }: { request: Request }) {
   const error = url.searchParams.get('error')
 
   const clearCookie = `${GMAIL_STATE_COOKIE}=; Path=/admin/authorize-gmail; Max-Age=0; HttpOnly; SameSite=Lax`
+  const fail = (target: string, code: string) =>
+    new Response(null, {
+      status: 302,
+      headers: { 'Set-Cookie': clearCookie, Location: `${target}?gmail_error=${code}` },
+    })
+
+  // Purpose is recoverable from the returned state even on error paths.
+  const statePurpose = state?.split('.')[1]
+  const purpose: EmailPurposeKey = isEmailPurpose(statePurpose) ? statePurpose : 'Hiring'
+  const target = landing(purpose)
 
   if (error || !code || !state) {
-    return new Response(null, {
-          status: 302,
-          headers: { 'Set-Cookie': clearCookie, Location: '/hiring/emails?gmail_error=auth_failed' },
-        })
+    return fail(target, 'auth_failed')
   }
 
   // CSRF check
   const cookies = parseCookies(request)
   if (cookies[GMAIL_STATE_COOKIE] !== state) {
-    return new Response(null, {
-          status: 302,
-          headers: { 'Set-Cookie': clearCookie, Location: '/hiring/emails?gmail_error=state_mismatch' },
-        })
+    return fail(target, 'state_mismatch')
   }
 
   // Exchange code for tokens
@@ -70,34 +97,30 @@ export async function loader({ request }: { request: Request }) {
   } catch (err) {
     if (err instanceof GoogleOAuthError) {
       console.error('Gmail token exchange failed:', err.upstreamBody ?? err.message)
-      return new Response(null, {
-            status: 302,
-            headers: { 'Set-Cookie': clearCookie, Location: '/hiring/emails?gmail_error=token_exchange_failed' },
-          })
+      return fail(target, 'token_exchange_failed')
     }
     throw err
   }
 
   const refreshToken = tokens.refresh_token as string | undefined
-
   if (!refreshToken) {
-    return new Response(null, {
-          status: 302,
-          headers: { 'Set-Cookie': clearCookie, Location: '/hiring/emails?gmail_error=no_refresh_token' },
-        })
+    return fail(target, 'no_refresh_token')
   }
 
-  // Phase 2: store tokens in GmailIntegration. The applications@ user row
-  // must already exist (created via Google sign-in or seeded). If it
-  // doesn't, we error — there's no longer a path for /admin/authorize-gmail
-  // to create a User row out of thin air without auth identity.
+  const sendAsEmail = emailFromIdToken(tokens.id_token)
+  if (!sendAsEmail) {
+    return fail(target, 'no_account_email')
+  }
+
+  // Service User row keyed by the authorized mailbox (same pattern the
+  // applications@ integration has always used).
   const user = await prisma.user.upsert({
-    where: { daliEmail: GMAIL_USER },
+    where: { daliEmail: sendAsEmail },
     update: {},
     create: {
-      daliEmail: GMAIL_USER,
+      daliEmail: sendAsEmail,
       firstName: 'DALI',
-      lastName: 'Applications',
+      lastName: EMAIL_PURPOSES[purpose].label,
     },
     select: { id: true },
   })
@@ -107,9 +130,9 @@ export async function loader({ request }: { request: Request }) {
     : null;
 
   await prisma.gmailIntegration.upsert({
-    where: { userId: user.id },
+    where: { userId_purpose: { userId: user.id, purpose } },
     update: {
-      sendAsEmail: GMAIL_USER,
+      sendAsEmail,
       oauthTokens: refreshToken,
       tokenExpiresAt,
       enabled: true,
@@ -117,7 +140,8 @@ export async function loader({ request }: { request: Request }) {
     },
     create: {
       userId: user.id,
-      sendAsEmail: GMAIL_USER,
+      purpose,
+      sendAsEmail,
       oauthTokens: refreshToken,
       tokenExpiresAt,
       enabled: true,
@@ -126,6 +150,6 @@ export async function loader({ request }: { request: Request }) {
 
   return new Response(null, {
       status: 302,
-      headers: { 'Set-Cookie': clearCookie, Location: '/hiring/emails?gmail_authorized=1' },
+      headers: { 'Set-Cookie': clearCookie, Location: `${target}?gmail_authorized=1` },
     })
 }

@@ -64,15 +64,6 @@ export default function Library() {
             </button>
           );
         })}
-        {/* Email templates are library content too, but live on their own
-            route — rendered as a fourth segment that navigates instead of
-            switching a local tab (Emails no longer has a sidebar entry). */}
-        <Link
-          to="/hiring/emails"
-          className="px-4 py-1.5 text-sm font-semibold rounded-md transition-colors text-muted-foreground hover:text-foreground hover:bg-background/60"
-        >
-          Emails
-        </Link>
       </div>
 
       {tab === "challenges" && (

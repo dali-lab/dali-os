@@ -154,8 +154,9 @@ model User {
   lastEditedPages Page[] @relation("PageLastEditedBy")
 
   // ─── Phase 1: notification back-relations ─────────────────────────────────
-  notificationEvents      NotificationEvent[]
   notificationPreferences NotificationPreference[]
+  taskReminders           TaskReminder[]
+  scheduledAnnouncements  ScheduledAnnouncement[]
 
   // ─── Phase 1: partner back-relation (single per User) ─────────────────────
   partnerUser PartnerUser?
@@ -166,7 +167,7 @@ model User {
   devicePairings DevicePairing[]
 
   // ─── Phase 1: Gmail integration (single per User) ─────────────────────────
-  gmailIntegration      GmailIntegration?
+  gmailIntegrations     GmailIntegration[]
   // ─── Notification relations ────────────────────────────────────────────────
   receivedNotifications Notification[]    @relation("NotificationRecipient")
   authoredNotifications Notification[]    @relation("NotificationAuthor")
@@ -664,10 +665,29 @@ model Interview {
   // new ICS as a duplicate of the previous publish.
   icsSequence Int @default(0)
 
-  assignments InterviewAssignment[]
+  assignments  InterviewAssignment[]
+  reminderLogs InterviewReminderLog[]
 
   @@index([applicationCycleId, startTime])
   @@index([domainApplicationId, status])
+}
+
+// Dedup ledger for the interview-reminders job: one row per (interview, lead
+// tier), claimed before sending — same pattern as MeetingReminderLog.
+model InterviewReminderLog {
+  id          String                @id @default(cuid())
+  interviewId String
+  kind        InterviewReminderKind
+  sentAt      DateTime              @default(now())
+
+  interview Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+
+  @@unique([interviewId, kind])
+}
+
+enum InterviewReminderKind {
+  DayBefore
+  HourBefore
 }
 
 enum AssignmentRole {
@@ -1229,6 +1249,9 @@ enum NotificationType {
   InterviewCancelledApplicant
   InterviewCancelledInterviewer
   InterviewLocationChanged
+  // Scheduled 24h/1h reminders fired by the interview-reminders job.
+  InterviewReminderApplicant
+  InterviewReminderInterviewer
 }
 
 model CycleNotificationEmail {
@@ -1488,6 +1511,7 @@ model ScheduledMeeting {
 
   exceptions    MeetingException[]
   notifications Notification[]
+  reminderLogs  MeetingReminderLog[]
   attendance    MeetingAttendance[]
   timeEntries   TimeEntry[]
 
@@ -1610,6 +1634,17 @@ model Notification {
   readAt          DateTime?
   createdAt       DateTime         @default(now())
 
+  // Typed event identifier ("meeting.invite", "task.due_reminder", …) used
+  // for preference matching and digest grouping. The registry of valid values
+  // and their per-channel defaults lives in app/lib/notification-events.ts;
+  // `kind` stays the UI/render discriminator. Pre-registry rows carry the
+  // hidden fallback value "general".
+  eventType String @default("general")
+  // Delivery tracking, set by notify()/the digest job on actual delivery.
+  // The digest scan is `emailedAt IS NULL` within its cadence window.
+  emailedAt DateTime?
+  slackDmAt DateTime?
+
   // Announcement extras (kind == SystemAnnouncement). `dueAt` makes the
   // announcement a "todo" with a deadline; `isTodo` marks it as action-needed
   // so it surfaces in the Tasks sidebar / Home banner like a meeting invite.
@@ -1703,6 +1738,24 @@ model MeetingException {
   meeting ScheduledMeeting @relation(fields: [scheduledMeetingId], references: [id])
 
   @@unique([scheduledMeetingId, originalStart])
+}
+
+// Send log for meeting reminders (meeting-reminders job) — the idempotency
+// key. occurrenceStart is the occurrence's ORIGINAL start (pre-exception-
+// override) so a moved occurrence doesn't double-remind; consequence: an
+// exception created after the reminder already fired gets no second one.
+// A dedicated log (rather than deduping on Notification) because per-user
+// preferences can deliver a reminder by email/DM with no in-app row at all.
+model MeetingReminderLog {
+  id                 String   @id @default(cuid())
+  scheduledMeetingId String
+  occurrenceStart    DateTime
+  userId             String
+  sentAt             DateTime @default(now())
+
+  meeting ScheduledMeeting @relation(fields: [scheduledMeetingId], references: [id], onDelete: Cascade)
+
+  @@unique([scheduledMeetingId, occurrenceStart, userId])
 }
 
 // Per-user calendar preferences. Lazily upserted on first write.
@@ -2327,8 +2380,9 @@ model Task {
   priority         Priority   @default(Normal)
   position         Int        @default(0)
   // Optional deadline. UTC instant; UI formats in local time. When set,
-  // assignees get a Slack DM 24h before and at the moment (see
-  // TaskReminder, added in a follow-up). Null = no reminders fire.
+  // the task-due-reminders job notifies assignees 24h before and at the
+  // moment (channels per their preferences; TaskReminder is the idempotency
+  // ledger). Null = no reminders fire.
   dueAt            DateTime?
 
   // Optional domain label (Design, Dev, etc.) — shown as a chip on the card
@@ -2355,6 +2409,7 @@ model Task {
   domain    Domain?        @relation(fields: [domainId], references: [id])
   assignees TaskAssignee[]
   comments  TaskComment[]
+  reminders TaskReminder[]
 
   createdById String
   createdBy   User     @relation("TaskCreatedBy", fields: [createdById], references: [id])
@@ -2378,6 +2433,32 @@ enum Priority {
   Normal
   High
   Urgent
+}
+
+// Idempotency ledger for task deadline reminders (task-due-reminders job).
+// The unique key includes dueAtSnapshot: re-enqueueing while the deadline is
+// unchanged is a no-op (createMany skipDuplicates), and a moved deadline
+// creates a fresh row while old unsent rows go inert — the send phase
+// re-checks snapshot === Task.dueAt.
+model TaskReminder {
+  id            String       @id @default(cuid())
+  taskId        String
+  userId        String // the assignee being reminded
+  kind          ReminderKind
+  dueAtSnapshot DateTime
+  sentAt        DateTime? // null until notify() succeeded
+  createdAt     DateTime     @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([taskId, userId, kind, dueAtSnapshot])
+  @@index([sentAt, dueAtSnapshot])
+}
+
+enum ReminderKind {
+  DayBefore
+  AtDeadline
 }
 
 // Multi-assignee per task (solo or multi both supported).
@@ -2628,9 +2709,9 @@ model EducationSubmission {
   @@unique([assignmentId, studentId])
 }
 
-// Broadcast from instructor to all approved enrollees. On create, emits a
-// NotificationEvent (type="education.announcement_posted") for each
-// recipient via lib/notifications.ts:emitEvent.
+// Broadcast from instructor to all approved enrollees. On create, fans out
+// via notify() (eventType "education.announcement") — in-app rows plus email
+// per each recipient's preference.
 model EducationAnnouncement {
   id         String   @id @default(cuid())
   offeringId String
@@ -2920,6 +3001,12 @@ model Form {
   // publish and reused so a published link stays stable across re-publishes.
   published   Boolean @default(false)
   publicToken String? @unique
+
+  // Scheduled publish window. The form-windows job flips `published` when a
+  // boundary passes (opensAt → publish, closesAt → unpublish), acting on each
+  // boundary exactly once so a later manual publish/unpublish sticks.
+  opensAt  DateTime?
+  closesAt DateTime?
 
   // Per-form response settings (Forms editor "Settings" card).
   // oneResponsePerMember: an authenticated member's ORDINARY fill (not
@@ -3317,45 +3404,28 @@ model MentorNoteTemplate {
   updatedAt     DateTime @updatedAt
 }
 
-// ─── Notifications ───────────────────────────────────────────────────────────
+// ─── Notification preferences ────────────────────────────────────────────────
 //
-// Phase 1 ships `NotificationEvent` (event-log shape from the expansion plan)
-// plus `NotificationPreference`. PR #517 (`sp/notifications`) is currently
-// open with a separate `Notification` model (interactive in-app inbox with
-// rsvp affordances). The two coexist temporarily; a reconciliation PR after
-// PR #517 merges either folds NotificationEvent into Notification or keeps
-// them as distinct concerns (event log vs in-app inbox).
-
-model NotificationEvent {
-  id             String    @id @default(cuid())
-  // Typed event identifier, e.g., "interview_scheduled", "sprint_due",
-  // "miniseries_session_reminder", "mentor_eval_requested",
-  // "staffing_assignment_published".
-  type           String
-  recipientId    String
-  // Event-specific payload (links, names, IDs). Structured per type.
-  payload        Json
-  readAt         DateTime?
-  inAppDelivered Boolean   @default(false)
-  emailDelivered Boolean   @default(false)
-  createdAt      DateTime  @default(now())
-
-  recipient User @relation(fields: [recipientId], references: [id])
-
-  @@index([recipientId, readAt])
-  @@index([recipientId, createdAt])
-}
+// The dormant NotificationEvent event-log model was dropped when notify()
+// (app/lib/notify.server.ts) unified delivery on the Notification model —
+// eventType/emailedAt/slackDmAt now live there.
 
 model NotificationPreference {
-  id              String     @id @default(cuid())
-  userId          String
-  // Matches NotificationEvent.type, or "*" for the user's global default.
-  eventType       String
-  inApp           Boolean    @default(true)
-  email           Boolean    @default(true)
-  digestFrequency DigestFreq @default(Instant)
+  id     String @id @default(cuid())
+  userId String
+  // Matches Notification.eventType (registry: app/lib/notification-events.ts).
+  // No wildcard rows — an absent row means the registry default applies, so
+  // evolving a default never requires a backfill.
+  eventType String
+  inApp     Boolean @default(true)
+  // Slack DM requires a resolved User.slackUserId; without one the channel
+  // silently skips regardless of this toggle.
+  slackDm Boolean @default(false)
+  // Email cadence: Instant = per-notification email at notify() time,
+  // Daily/Weekly = batched digest, Off = in-app only.
+  digestFrequency DigestFreq @default(Off)
 
-  user User @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, eventType])
 }
@@ -3365,6 +3435,78 @@ enum DigestFreq {
   Daily
   Weekly
   Off
+}
+
+// ─── Background jobs ─────────────────────────────────────────────────────────
+//
+// Bookkeeping row per registered background job (registry: app/jobs/registry.ts).
+// Rows self-heal from the registry on every tick — the dev DB is wiped and
+// staging is restored from prod on each deploy, so nothing here can be assumed
+// to survive. Cross-machine dedup is a lease: a tick claims a job with an
+// atomic CAS UPDATE setting lockedUntil; expiry (not explicit release) is the
+// crash recovery.
+
+model ScheduledJob {
+  name            String        @id // registry key, e.g. "task-due-reminders"
+  enabled         Boolean       @default(true)
+  // DB-authoritative once the row exists (editable from Admin → Jobs); the
+  // registry value only seeds it at creation.
+  intervalMinutes Int
+  // Per-job numeric knobs declared by the registry entry (JobSettingDef[]),
+  // e.g. { "leadMinutes": 30 }. Unknown/out-of-range values are ignored in
+  // favor of the declared default at resolution time.
+  settings        Json          @default("{}")
+  nextRunAt       DateTime      @default(now())
+  lockedUntil     DateTime?
+  lastRunAt       DateTime?
+  // Set only on successful runs; handlers receive it as their incremental
+  // cursor (the digest jobs gate on it).
+  lastSuccessAt   DateTime?
+  lastStatus      JobRunStatus?
+  lastError       String?
+  lastDurationMs  Int?
+  updatedAt       DateTime      @updatedAt
+  createdAt       DateTime      @default(now())
+}
+
+enum JobRunStatus {
+  Success
+  Error
+}
+
+// A composed announcement waiting for its send time. Payload + audience
+// mirror the /api/notifications/send schema; the scheduled-announcements job
+// fires due rows through the same shared fan-out (app/lib/announcements.server).
+// sentAt doubles as the CAS claim column — set BEFORE fan-out so a failure
+// can never double-send a lab-wide blast (drops beat dupes here); errors land
+// in lastError for the composer's scheduled list.
+model ScheduledAnnouncement {
+  id              String @id @default(cuid())
+  createdByUserId String
+  createdBy       User   @relation(fields: [createdByUserId], references: [id])
+
+  title  String
+  body   String?
+  link   String?
+  kind   NotificationKind @default(General)
+  isTodo Boolean          @default(false)
+  dueAt  DateTime?
+  // Deliberately not an FK: the payload is a deferred request, re-validated
+  // at fire time — deleting a form must not cascade the pending announcement.
+  formId String?
+
+  allMembers Boolean  @default(false)
+  groupIds   String[] @default([])
+  userIds    String[] @default([])
+
+  sendAt     DateTime
+  sentAt     DateTime?
+  sentCount  Int?
+  lastError  String?
+  canceledAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([sentAt, sendAt])
 }
 
 // ─── Partner portal ──────────────────────────────────────────────────────────
@@ -3625,8 +3767,14 @@ enum DevicePairingStatus {
 // accounts that use Gmail send-as, then drops the User columns.
 
 model GmailIntegration {
-  id             String    @id @default(cuid())
-  userId         String    @unique
+  id     String @id @default(cuid())
+  userId String
+  // Which area's outbound mail this identity serves. Rows that predate
+  // purposes are the applications@ integration and default to Hiring.
+  // Resolution (lib/gmail-integration.ts) falls back to Hiring for purposes
+  // with no connected row, so mail keeps flowing until ops links the
+  // dedicated account.
+  purpose        EmailSendPurpose @default(Hiring)
   // The Gmail account email being sent-as.
   sendAsEmail    String
   // Encrypted at rest (same AES-256-GCM helper used by UserCalendarLink).
@@ -3643,6 +3791,15 @@ model GmailIntegration {
   linkedAt       DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, purpose])
+}
+
+enum EmailSendPurpose {
+  Hiring
+  Education
+  Partners
+  General
 }
 
 // Slack bug-report bot. A draft is created when a teammate @-mentions the bot

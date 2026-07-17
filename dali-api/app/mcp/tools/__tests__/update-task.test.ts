@@ -5,6 +5,9 @@ vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, isCore: vi.fn() };
 });
+vi.mock("~/projects/lib/task-notifications.server", () => ({
+  notifyTaskAssigned: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock("~/projects/lib/github-task-sync", () => ({
   syncIssueForTask: vi.fn().mockResolvedValue(undefined),
 }));
@@ -49,7 +52,7 @@ describe("update_task", () => {
 
   it("rejects an empty title", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
-    mockPrisma.task.findUnique.mockResolvedValue({ id: "t1", githubIssueNumber: null });
+    mockPrisma.task.findUnique.mockResolvedValue({ id: "t1", githubIssueNumber: null, assignees: [] });
     await expect(
       runUpdateTask("u1", { taskId: "t1", title: "   " }),
     ).rejects.toMatchObject({ status: 400 });
@@ -57,7 +60,7 @@ describe("update_task", () => {
 
   it("clears assignees and triggers GH sync when linked", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
-    mockPrisma.task.findUnique.mockResolvedValue({ id: "t1", githubIssueNumber: 42 });
+    mockPrisma.task.findUnique.mockResolvedValue({ id: "t1", githubIssueNumber: 42, assignees: [] });
     mockPrisma.$transaction.mockImplementation(async (fn: unknown) => {
       const cb = fn as (tx: typeof prisma) => Promise<unknown>;
       return cb({
@@ -72,7 +75,7 @@ describe("update_task", () => {
 
   it("returns noop when no fields change", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
-    mockPrisma.task.findUnique.mockResolvedValue({ id: "t1", githubIssueNumber: null });
+    mockPrisma.task.findUnique.mockResolvedValue({ id: "t1", githubIssueNumber: null, assignees: [] });
     const out = await runUpdateTask("u1", { taskId: "t1" });
     expect(out).toMatchObject({ noop: true });
   });

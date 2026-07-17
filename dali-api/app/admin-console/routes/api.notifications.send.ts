@@ -5,7 +5,7 @@ import { requireAuth, forbidden } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
-import { resolveGroupMembers, resolveAllLabMembers } from "~/lib/groups";
+import { sendAnnouncement } from "~/lib/announcements.server";
 
 const KindEnum = z.enum([
   "General",
@@ -20,6 +20,8 @@ const KindEnum = z.enum([
 // + `formId` power the Announcements composer: a todo surfaces in the
 // recipient's Tasks sidebar / Home banner (see ~/lib/tasks), `dueAt` is its
 // deadline, and `formId` optionally attaches a published form to fill.
+// `sendAt` (future instant) schedules instead of sending — the row waits in
+// ScheduledAnnouncement until the scheduled-announcements job fires it.
 const SendSchema = z.object({
   title: z.string().trim().min(1).max(200),
   body: z.string().max(2000).optional(),
@@ -28,6 +30,7 @@ const SendSchema = z.object({
   isTodo: z.boolean().optional(),
   dueAt: z.string().datetime().optional(),
   formId: z.string().min(1).optional(),
+  sendAt: z.string().datetime().optional(),
 
   // Audience (mix freely; union is the recipient set).
   allMembers: z.boolean().optional(),
@@ -53,65 +56,67 @@ export async function action({ request }: Route.ActionArgs) {
 
   const groupIds = body.groupIds ?? [];
   const userIds = body.userIds ?? [];
-  if (!body.allMembers && groupIds.length === 0 && userIds.length === 0) {
-    return withCors(request, Response.json({ error: "Pick an audience" }, { status: 400 }));
-  }
-
-  // Union of every selected source.
-  const collected: string[] = [...userIds];
-  if (body.allMembers) {
-    collected.push(...(await resolveAllLabMembers()));
-  }
-  for (const gid of groupIds) {
-    collected.push(...(await resolveGroupMembers(gid)));
-  }
-  // Provenance hint only (single column): keep it when exactly one group and
-  // nothing else drove the send; otherwise it's a mixed audience.
-  const sourceGroupId =
-    groupIds.length === 1 && !body.allMembers && userIds.length === 0
-      ? groupIds[0]
-      : null;
-
-  // Dedupe and drop empties.
-  const recipientIds = Array.from(new Set(collected.filter(Boolean)));
-  if (recipientIds.length === 0) {
-    return withCors(request, Response.json({ error: "No recipients resolved" }, { status: 400 }));
-  }
-
-  // A todo or an attached form only makes sense on an announcement. Validate
-  // the form is published before attaching (it must be fillable, possibly by
-  // people outside dali-api).
-  if (body.formId) {
-    const form = await prisma.form.findUnique({
-      where: { id: body.formId },
-      select: { id: true, published: true },
-    });
-    if (!form)
-      return withCors(request, Response.json({ error: "Attached form not found" }, { status: 404 }));
-    if (!form.published)
-      return withCors(
-        request,
-        Response.json({ error: "Attach a published form (publish it first)." }, { status: 400 }),
-      );
-  }
-
-  const now = new Date();
   const dueAt = body.dueAt ? new Date(body.dueAt) : null;
-  const result = await prisma.notification.createMany({
-    data: recipientIds.map((rid) => ({
-      recipientUserId: rid,
-      createdByUserId: auth.user.sub,
-      kind: body.kind ?? "General",
-      title: body.title,
-      body: body.body ?? null,
-      link: body.link ?? null,
-      sourceGroupId,
-      isTodo: body.isTodo ?? false,
-      dueAt,
-      formId: body.formId ?? null,
-      createdAt: now,
-    })),
-  });
 
+  // Schedule instead of send when sendAt is in the future.
+  const sendAt = body.sendAt ? new Date(body.sendAt) : null;
+  if (sendAt && sendAt.getTime() > Date.now()) {
+    if (!body.allMembers && groupIds.length === 0 && userIds.length === 0) {
+      return withCors(request, Response.json({ error: "Pick an audience" }, { status: 400 }));
+    }
+    // Validate the form now too — a broken attachment should fail at compose
+    // time, not silently at fire time (the job re-validates regardless).
+    if (body.formId) {
+      const form = await prisma.form.findUnique({
+        where: { id: body.formId },
+        select: { published: true },
+      });
+      if (!form)
+        return withCors(request, Response.json({ error: "Attached form not found" }, { status: 404 }));
+      if (!form.published)
+        return withCors(
+          request,
+          Response.json({ error: "Attach a published form (publish it first)." }, { status: 400 }),
+        );
+    }
+    const scheduled = await prisma.scheduledAnnouncement.create({
+      data: {
+        createdByUserId: auth.user.sub,
+        title: body.title,
+        body: body.body ?? null,
+        link: body.link ?? null,
+        kind: body.kind ?? "General",
+        isTodo: body.isTodo ?? false,
+        dueAt,
+        formId: body.formId ?? null,
+        allMembers: body.allMembers ?? false,
+        groupIds,
+        userIds,
+        sendAt,
+      },
+      select: { id: true, sendAt: true },
+    });
+    return withCors(
+      request,
+      Response.json({ ok: true, scheduled: true, id: scheduled.id }, { status: 201 }),
+    );
+  }
+
+  const result = await sendAnnouncement({
+    createdByUserId: auth.user.sub,
+    title: body.title,
+    body: body.body ?? null,
+    link: body.link ?? null,
+    kind: body.kind ?? "General",
+    isTodo: body.isTodo ?? false,
+    dueAt,
+    formId: body.formId ?? null,
+    allMembers: body.allMembers ?? false,
+    groupIds,
+    userIds,
+  });
+  if (!result.ok) {
+    return withCors(request, Response.json({ error: result.error }, { status: result.status }));
+  }
   return withCors(request, Response.json({ ok: true, count: result.count }, { status: 201 }));
 }

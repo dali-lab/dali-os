@@ -111,6 +111,77 @@ async function renderFromBinding(
 
 // ─── Public API ─────────────────────────────────────────────────────────────
 
+// Reminder emails for the interview-reminders job. Same per-cycle
+// CycleNotificationEmail binding flow as every other hiring email — no
+// binding = no email for that audience. No ICS — recipients already hold
+// the calendar event from the invite. Returns the number of emails sent.
+export async function sendInterviewReminderEmails(interviewId: string): Promise<number> {
+  try {
+    const refreshToken = await getApplicationsGmailRefreshToken();
+    if (!refreshToken) return 0;
+
+    const interview = await prisma.interview.findUnique({ where: { id: interviewId } });
+    // Re-check status: the job claims its ledger row first, and the interview
+    // may have been cancelled in between.
+    if (!interview || interview.status !== "Scheduled") return 0;
+
+    const da = await prisma.domainApplication.findUnique({
+      where: { id: interview.domainApplicationId },
+      include: { challengeVersion: { include: { domain: { select: { name: true } } } } },
+    });
+    const baseVars: Omit<InterpolationVars, "firstName"> = {
+      domain: da?.challengeVersion?.domain?.name ?? "DALI Lab",
+      time: formatTime(interview.startTime),
+      location: formatLocation(interview.location, interview.zoomJoinUrl),
+      meetingUrl: interview.zoomJoinUrl ?? undefined,
+    };
+
+    const applicant = await getApplicantRecipient(interview.domainApplicationId);
+    const interviewers = await getInterviewerRecipients(interviewId);
+
+    const sends: Promise<unknown>[] = [];
+    if (applicant) {
+      const rendered = await renderFromBinding(
+        interview.applicationCycleId,
+        "InterviewReminderApplicant",
+        { firstName: applicant.firstName, ...baseVars },
+      );
+      if (rendered) {
+        sends.push(
+          sendEmail({
+            refreshToken,
+            to: applicant.email,
+            subject: rendered.subject,
+            html: rendered.html,
+          }),
+        );
+      }
+    }
+    for (const interviewer of interviewers) {
+      const rendered = await renderFromBinding(
+        interview.applicationCycleId,
+        "InterviewReminderInterviewer",
+        { firstName: interviewer.firstName, ...baseVars },
+      );
+      if (rendered) {
+        sends.push(
+          sendEmail({
+            refreshToken,
+            to: interviewer.email,
+            subject: rendered.subject,
+            html: rendered.html,
+          }),
+        );
+      }
+    }
+    const results = await Promise.allSettled(sends);
+    return results.filter((r) => r.status === "fulfilled").length;
+  } catch (err) {
+    console.error("Failed to send interview reminder emails:", err);
+    return 0;
+  }
+}
+
 export async function sendInterviewInviteEmails(
   interviewId: string,
   domainApplicationId: string,

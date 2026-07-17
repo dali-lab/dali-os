@@ -1,4 +1,5 @@
 import { prisma } from "~/lib/db";
+import { notify } from "~/lib/notify.server";
 import { APPLICATION_TZ } from "~/lib/timezone";
 
 // Emit an in-app Notification to each newly-assigned interviewer so the
@@ -66,8 +67,11 @@ export async function notifyInterviewAssigned(args: {
   });
   if (assignments.length === 0) return;
 
-  await prisma.notification.createMany({
-    data: assignments.map((a) => {
+  await notify({
+    eventType: "hiring.interview_assigned",
+    createdByUserId: args.createdByUserId ?? null,
+    message: { title: "Interview assigned" },
+    recipients: assignments.map((a) => {
       const applicant = a.interview.domainApplication.application.user;
       const applicantName = [applicant.firstName, applicant.lastName]
         .filter(Boolean)
@@ -76,16 +80,10 @@ export async function notifyInterviewAssigned(args: {
       const domain = a.interview.domainApplication.challengeVersion?.domain?.name ?? null;
       const where = LOCATION_LABEL[a.interview.location] ?? a.interview.location;
       const when = formatStart(a.interview.startTime);
-      const title = applicantName
-        ? `Interview assigned: ${applicantName}`
-        : "Interview assigned";
-      const body = domain ? `${domain} • ${when} • ${where}` : `${when} • ${where}`;
       return {
-        recipientUserId: a.cycleInterviewer.userId,
-        createdByUserId: args.createdByUserId ?? null,
-        kind: "General" as const,
-        title,
-        body,
+        userId: a.cycleInterviewer.userId,
+        title: applicantName ? `Interview assigned: ${applicantName}` : "Interview assigned",
+        body: domain ? `${domain} • ${when} • ${where}` : `${when} • ${where}`,
         link: `/hiring/interviews/${a.interview.id}`,
         dueAt: a.interview.startTime,
         interviewAssignmentId: a.id,

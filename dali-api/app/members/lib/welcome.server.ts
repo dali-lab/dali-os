@@ -1,4 +1,5 @@
 import { prisma } from "~/lib/db";
+import { notify } from "~/lib/notify.server";
 
 // The onboarding task points here; also used as the dedupe/clear key.
 export const ONBOARDING_LINK = "/onboarding";
@@ -55,16 +56,16 @@ export async function sendWelcome(args: {
     select: { id: true },
   });
   if (!existing) {
-    await prisma.notification.create({
-      data: {
-        recipientUserId: args.userId,
-        createdByUserId: args.actorId,
-        kind: "SystemAnnouncement",
+    await notify({
+      eventType: "member.onboarding",
+      createdByUserId: args.actorId,
+      message: {
         title: "Welcome to DALI — finish onboarding",
         body: "Complete a few quick steps to finish setting up your account.",
         isTodo: true,
         link: ONBOARDING_LINK,
       },
+      recipients: [{ userId: args.userId }],
     });
     notified = true;
   }

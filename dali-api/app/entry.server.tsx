@@ -3,10 +3,14 @@ import { ServerRouter } from "react-router";
 import { renderToPipeableStream } from "react-dom/server";
 import { PassThrough } from "node:stream";
 import { startCollabServer } from "~/collab/server";
+import { startJobRunner } from "~/jobs/runner.server";
 import { securityHeaders } from "~/lib/security-headers";
 
 // Start Hocuspocus collab server on a second port (runs once due to module caching).
 startCollabServer();
+// Start the background job tick (cross-machine dedup via DB lease; see
+// app/jobs/runner.server.ts).
+startJobRunner();
 
 export default async function handleRequest(
   request: Request,

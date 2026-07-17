@@ -1,4 +1,5 @@
 import { prisma } from "~/lib/db";
+import { notify } from "~/lib/notify.server";
 import { logAuditEvent } from "~/lib/audit";
 import { educationLink } from "./notifications.server";
 
@@ -206,15 +207,17 @@ async function notifyDiscussionPost(args: {
     select: { id: true, daliEmail: true },
   });
   const preview = args.body.length > 140 ? `${args.body.slice(0, 140)}…` : args.body;
-  await prisma.notification.createMany({
-    data: users.map((u) => ({
-      recipientUserId: u.id,
-      createdByUserId: args.authorId,
-      kind: "Education" as const,
+  await notify({
+    eventType: "education.discussion",
+    createdByUserId: args.authorId,
+    message: {
       title: args.parentId
         ? `New reply in ${offering.title}`
         : `New discussion post in ${offering.title}`,
       body: preview,
+    },
+    recipients: users.map((u) => ({
+      userId: u.id,
       link: `${educationLink(u, offering.id)}/hub?tab=discussions`,
     })),
   });

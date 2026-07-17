@@ -1,5 +1,5 @@
 import type { Question } from "~/types";
-import { isSkillsRatingComplete } from "~/hiring/lib/skills-rating";
+import { isSkillsRatingComplete } from "~/lib/skills-rating";
 
 // Single source of truth for "is this question answered?". Preserves the
 // skills-rating-aware behavior from portal.apply.tsx's external-applicant flow:

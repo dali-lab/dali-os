@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildQuestion } from '../ChallengeBuilder'
+import { buildQuestion } from '../FormBuilder'
 
 describe('buildQuestion (form builder save logic)', () => {
   const base = {

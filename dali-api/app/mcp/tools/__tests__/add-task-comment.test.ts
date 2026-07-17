@@ -5,6 +5,9 @@ vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, isCore: vi.fn() };
 });
+vi.mock("~/projects/lib/task-notifications.server", () => ({
+  notifyTaskComment: vi.fn().mockResolvedValue(undefined),
+}));
 
 import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";

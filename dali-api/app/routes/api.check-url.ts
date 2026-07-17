@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.check-url";
 import { z } from "zod";
 import { requireAuth } from "~/lib/auth";
-import { checkGitHubUrl, checkFigmaUrl, checkDriveUrl } from "~/hiring/lib/submission-check";
+import { checkGitHubUrl, checkFigmaUrl, checkDriveUrl } from "~/lib/submission-check";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { parseJson } from "~/lib/validate";
 

@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db");
 vi.mock("~/lib/gmail", () => ({ sendEmail: vi.fn() }));
 vi.mock("~/lib/gmail-integration", () => ({
-  getApplicationsGmailRefreshToken: vi.fn().mockResolvedValue(null),
+  getSenderRefreshToken: vi.fn().mockResolvedValue(null),
 }));
 
 import { prisma } from "~/lib/db";

@@ -5,11 +5,68 @@
 
 import { randomBytes } from "node:crypto";
 import { prisma } from "~/lib/db";
+import { notify } from "~/lib/notify.server";
 import { resolveGroupMembers } from "~/lib/groups";
 import { createGoogleCalendarEvent, type GoogleAttendee } from "~/lib/google-calendar";
 import { primaryEmail, formatDateShort } from "~/lib/display";
+import { buildIcs } from "~/lib/ics";
 import { createProjectPage, createLabMeetingPage, ensureMeetingNotesFolder } from "~/lib/pages";
 import type { ScheduledMeeting, MeetingType, AttendanceMode } from "~/generated/prisma/client";
+
+function meetingUid(meetingId: string): string {
+  return `meeting-${meetingId}@dali.dartmouth.edu`;
+}
+
+// Invites go out with SEQUENCE:0 and cancels with SEQUENCE:1 — meetings have
+// no intermediate ICS updates, so a persistent counter (interviews'
+// icsSequence) isn't needed.
+const ICS_SEQ_INVITE = 0;
+const ICS_SEQ_CANCEL = 1;
+
+// One ICS per recipient, listing only that recipient as attendee (same
+// pattern as the applicant's interview ICS: nobody sees the full guest list).
+async function buildPerRecipientIcs(args: {
+  meetingId: string;
+  method: "REQUEST" | "CANCEL";
+  title: string;
+  startTime: Date;
+  durationMinutes: number;
+  organizerEmail: string;
+  recurrenceRule: string | null;
+  userIds: string[];
+}): Promise<Map<string, string>> {
+  const users = await prisma.user.findMany({
+    where: { id: { in: args.userIds } },
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      daliEmail: true,
+      dartmouthEmail: true,
+    },
+  });
+  const endTime = new Date(args.startTime.getTime() + args.durationMinutes * 60_000);
+  const byUser = new Map<string, string>();
+  for (const u of users) {
+    const email = primaryEmail(u);
+    if (!email) continue;
+    byUser.set(
+      u.id,
+      buildIcs({
+        uid: meetingUid(args.meetingId),
+        method: args.method,
+        summary: args.title,
+        startTime: args.startTime,
+        endTime,
+        organizer: { email: args.organizerEmail, name: "DALI OS" },
+        attendees: [{ email, name: `${u.firstName} ${u.lastName}`.trim() || email }],
+        sequence: args.method === "CANCEL" ? ICS_SEQ_CANCEL : ICS_SEQ_INVITE,
+        recurrenceRule: args.recurrenceRule,
+      }),
+    );
+  }
+  return byUser;
+}
 
 export type ScheduledMeetingScope =
   | { type: "None" }
@@ -214,21 +271,37 @@ export async function createScheduledMeeting(
   const notifyIds = participantUserIds.filter((id) => id !== input.organizerId);
   let notifiedCount = 0;
   if (notifyIds.length > 0) {
-    const linkUrl = `/calendar?meeting=${meeting.id}`;
-    const notifBody = startDate ? `Starts ${startDate.toISOString()}` : null;
-    const result = await prisma.notification.createMany({
-      data: notifyIds.map((rid) => ({
-        recipientUserId: rid,
-        createdByUserId: input.organizerId,
-        kind: "MeetingInvite" as const,
+    // Attach a calendar invite on the instant-email channel — but only when
+    // Google Calendar isn't already sending real invites for this meeting.
+    const icsByUser =
+      startDate && !externalEventId
+        ? await buildPerRecipientIcs({
+            meetingId: meeting.id,
+            method: "REQUEST",
+            title: input.title,
+            startTime: startDate,
+            durationMinutes: input.durationMinutes,
+            organizerEmail: meeting.ownerCalendarEmail,
+            recurrenceRule: input.recurrenceRule ?? null,
+            userIds: notifyIds,
+          })
+        : null;
+    const result = await notify({
+      eventType: "meeting.invite",
+      createdByUserId: input.organizerId,
+      message: {
         title: `Meeting invite: ${input.title}`,
-        body: notifBody,
-        link: linkUrl,
+        body: startDate ? `Starts ${startDate.toISOString()}` : null,
+        link: `/calendar?meeting=${meeting.id}`,
         sourceGroupId: scopeId,
         scheduledMeetingId: meeting.id,
+      },
+      recipients: notifyIds.map((userId) => ({
+        userId,
+        ics: icsByUser?.get(userId) ?? null,
       })),
     });
-    notifiedCount = result.count;
+    notifiedCount = result.inApp;
   }
 
   return {
@@ -333,7 +406,18 @@ export async function cancelScheduledMeeting(
 ): Promise<CancelScheduledMeetingResult> {
   const meeting = await prisma.scheduledMeeting.findUnique({
     where: { id: meetingId },
-    select: { id: true, organizerId: true, status: true },
+    select: {
+      id: true,
+      organizerId: true,
+      status: true,
+      title: true,
+      participantUserIds: true,
+      selectedAt: true,
+      durationMinutes: true,
+      recurrenceRule: true,
+      ownerCalendarEmail: true,
+      externalEventId: true,
+    },
   });
   if (!meeting) return { ok: false, error: "Not found", status: 404 };
   if (meeting.organizerId !== actorUserId) {
@@ -345,5 +429,47 @@ export async function cancelScheduledMeeting(
     where: { id: meetingId },
     data: { status: "Cancelled" },
   });
+
+  // Tell everyone who was invited. Deliberately NOT stamped with
+  // scheduledMeetingId — surfaces hide rows whose meeting is Cancelled, which
+  // would make this very notification invisible. Best-effort: the cancel
+  // already happened, a delivery hiccup shouldn't fail the request.
+  const recipients = (meeting.participantUserIds ?? []).filter(
+    (id) => id !== actorUserId,
+  );
+  if (recipients.length > 0) {
+    try {
+      // A METHOD:CANCEL ICS (same UID as the invite) removes the event from
+      // recipients' calendars — only where we sent the invite ICS ourselves,
+      // i.e. not for Google-managed events.
+      const icsByUser =
+        meeting.selectedAt && !meeting.externalEventId
+          ? await buildPerRecipientIcs({
+              meetingId: meeting.id,
+              method: "CANCEL",
+              title: meeting.title,
+              startTime: meeting.selectedAt,
+              durationMinutes: meeting.durationMinutes,
+              organizerEmail: meeting.ownerCalendarEmail,
+              recurrenceRule: meeting.recurrenceRule,
+              userIds: recipients,
+            })
+          : null;
+      await notify({
+        eventType: "meeting.cancelled",
+        createdByUserId: actorUserId,
+        message: {
+          title: `Meeting cancelled: ${meeting.title}`,
+          link: "/calendar",
+        },
+        recipients: recipients.map((userId) => ({
+          userId,
+          ics: icsByUser?.get(userId) ?? null,
+        })),
+      });
+    } catch (err) {
+      console.error(`meeting ${meetingId}: cancellation notify failed`, err);
+    }
+  }
   return { ok: true, alreadyCancelled: false };
 }
