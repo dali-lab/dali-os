@@ -4,7 +4,7 @@
 // hands them back via onPatch on close. In create mode there's no task yet, so
 // it collects the full set of fields and hands them to onCreate on submit.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { Modal } from "~/components/Modal";
 import { Button } from "~/components/ui/Button";
@@ -18,6 +18,7 @@ type Patch = Partial<TaskCardModel>;
 // into a POST (title/dueAt/github) plus follow-up patches (priority/domain/assignees).
 export type NewTaskValues = {
   title: string;
+  description: string | null;
   priority: Priority;
   dueAt: string | null;
   domainId: string | null;
@@ -45,6 +46,7 @@ export function TaskModal({
 }) {
   const isCreate = !task;
   const [title, setTitle] = useState(task?.title ?? "");
+  const [description, setDescription] = useState(task?.description ?? "");
   const [priority, setPriority] = useState<Priority>(task?.priority ?? "Normal");
   const [assigneeIds, setAssigneeIds] = useState<string[]>(
     task?.assignees.map((a) => a.id) ?? [],
@@ -54,6 +56,16 @@ export function TaskModal({
   );
   const [domainId, setDomainId] = useState<string>(task?.domain?.id ?? "");
   const [saving, setSaving] = useState(false);
+
+  // Auto-grow the title textarea so long titles wrap into view instead of
+  // scrolling horizontally inside a single-line input.
+  const titleRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const el = titleRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [title]);
 
   // GitHub mirror toggle (create mode only). Default to the first project repo
   // when there are any; hidden entirely when the project has no repos.
@@ -68,6 +80,7 @@ export function TaskModal({
   useEffect(() => {
     if (!task) return;
     setTitle(task.title);
+    setDescription(task.description ?? "");
     setPriority(task.priority);
     setAssigneeIds(task.assignees.map((a) => a.id));
     setDueDate(task.dueAt ? dateInputValue(task.dueAt) : "");
@@ -77,6 +90,8 @@ export function TaskModal({
   function diffPatch(current: TaskCardModel): Patch {
     const patch: Patch = {};
     if (title.trim() && title.trim() !== current.title) patch.title = title.trim();
+    const nextDescription = description.trim() ? description.trim() : null;
+    if (nextDescription !== current.description) patch.description = nextDescription;
     if (priority !== current.priority) patch.priority = priority;
     const nextDueIso = dueDate ? endOfDayIso(dueDate) : null;
     if (nextDueIso !== current.dueAt) patch.dueAt = nextDueIso;
@@ -117,6 +132,7 @@ export function TaskModal({
     try {
       await onCreate({
         title: trimmed,
+        description: description.trim() ? description.trim() : null,
         priority,
         dueAt: dueDate ? endOfDayIso(dueDate) : null,
         domainId: domainId === "" ? null : domainId,
@@ -138,13 +154,20 @@ export function TaskModal({
     >
       <div className="flex flex-col gap-4">
         <div className="flex items-start justify-between gap-3">
-          <input
+          <textarea
             id="task-modal-title"
+            ref={titleRef}
+            rows={1}
             autoFocus={isCreate}
             value={title}
             disabled={!canManage}
             onChange={(e) => setTitle(e.target.value)}
-            className="flex-1 text-lg font-semibold text-foreground bg-transparent border-0 border-b border-transparent focus:border-border focus:outline-none px-0 py-1 disabled:opacity-100"
+            onKeyDown={(e) => {
+              // Titles stay single-line logically; Enter just shouldn't
+              // insert a newline (this textarea only wraps for visibility).
+              if (e.key === "Enter") e.preventDefault();
+            }}
+            className="flex-1 text-lg font-semibold text-foreground bg-transparent border-0 border-b border-transparent focus:border-border focus:outline-none px-0 py-1 disabled:opacity-100 resize-none overflow-hidden"
             placeholder={isCreate ? "New task title" : "Task title"}
           />
           <button
@@ -156,6 +179,17 @@ export function TaskModal({
             <X className="w-5 h-5" aria-hidden />
           </button>
         </div>
+
+        <Field label="Description">
+          <textarea
+            value={description}
+            disabled={!canManage}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={3}
+            placeholder="What does this task involve? (optional)"
+            className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground disabled:opacity-70"
+          />
+        </Field>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="Priority">
@@ -245,6 +279,12 @@ export function TaskModal({
             >
               GitHub issue #{task.githubIssueNumber} ↗
             </a>
+          </div>
+        )}
+
+        {!isCreate && task && (
+          <div className="pt-2 border-t border-border text-[11px] text-muted-foreground">
+            Created by {task.createdBy.name} on {formatCreatedAt(task.createdAt)}
           </div>
         )}
 
@@ -369,4 +409,14 @@ function endOfDayIso(dateOnly: string): string {
   const [y, m, d] = dateOnly.split("-").map(Number);
   const local = new Date(y, (m ?? 1) - 1, d ?? 1, 23, 59, 59);
   return local.toISOString();
+}
+
+function formatCreatedAt(iso: string): string {
+  const d = new Date(iso);
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    ...(sameYear ? {} : { year: "numeric" }),
+  });
 }

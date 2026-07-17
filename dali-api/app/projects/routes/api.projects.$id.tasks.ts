@@ -14,6 +14,7 @@ import { createIssueForTask, normalizeRepo } from "../lib/github-task-sync";
 
 type Body = {
   title: string;
+  description?: string | null;
   status?: string;
   sprintId?: string | null;
   epicId?: string | null;
@@ -28,6 +29,7 @@ function isBody(x: unknown): x is Body {
   if (!x || typeof x !== "object") return false;
   const o = x as Record<string, unknown>;
   if (typeof o.title !== "string") return false;
+  if (o.description != null && typeof o.description !== "string") return false;
   if (o.status !== undefined && typeof o.status !== "string") return false;
   if (o.sprintId != null && typeof o.sprintId !== "string") return false;
   if (o.epicId != null && typeof o.epicId !== "string") return false;
@@ -118,10 +120,13 @@ export async function action({ request, params }: Route.ActionArgs) {
   });
   const position = last ? last.position + 1 : 0;
 
+  const description = body.description?.trim() || null;
+
   const task = await prisma.task.create({
     data: {
       projectId: params.id,
       title,
+      description,
       status,
       position,
       sprintId: body.sprintId ?? null,

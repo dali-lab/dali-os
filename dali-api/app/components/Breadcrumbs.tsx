@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { Link, useMatches, useLocation } from 'react-router'
 import { ChevronRight } from 'lucide-react'
 
@@ -12,9 +13,13 @@ export type Crumb = { label: string; to?: string }
 // A route that renders an AreaPillNav row instead exports
 //   export const handle = { areaPills: true }
 // which suppresses the trail entirely — see the wayfinding contract below.
+// A route can also render a page-specific action at the far right of this
+// same row via `handle.headerAction(data)` (e.g. a "Partner view" button) —
+// only the deepest matching route's action is used.
 type Handle = {
   breadcrumb?: (data: unknown) => string | Crumb[] | null | undefined
   areaPills?: boolean
+  headerAction?: (data: unknown) => ReactNode
 }
 
 // Static label map for the fixed path segments. Keeps lab vocabulary verbatim
@@ -88,7 +93,6 @@ function titleCase(seg: string) {
 // so a crumb can't 404.
 const UNROUTED_SEGMENTS = new Set([
   'documents', // /documents/:pageId only — no bare /documents index
-  'file',
   'challenges',
   'rubrics',
   'confidentiality-agreements',
@@ -109,6 +113,7 @@ const UNROUTED_SEGMENTS = new Set([
 const DROPPED_SEGMENTS = new Set([
   'edit', // /forms/edit/:formId
   'responses', // /forms/responses/:formId
+  'file', // /documents/file/:fileId — the fileId segment supplies its own sub-trail
 ])
 
 // Opaque database ids that would render as gibberish in a trail: cuids
@@ -187,26 +192,39 @@ export function Breadcrumbs() {
     })
   }
 
-  // Home / single-segment pages get no trail.
-  if (crumbs.length <= 1) return null
+  // Deepest match wins — only ever one route in practice defines this.
+  let action: ReactNode = null
+  for (const m of matches as { handle?: Handle; data?: unknown }[]) {
+    if (m.handle?.headerAction && m.data != null) {
+      action = m.handle.headerAction(m.data)
+    }
+  }
+
+  // Home / single-segment pages get no trail (but still show a page action).
+  if (crumbs.length <= 1) {
+    return action ? <div className="flex justify-end">{action}</div> : null
+  }
 
   return (
-    <nav
-      aria-label="Breadcrumb"
-      className="flex flex-wrap items-center gap-1 text-sm text-muted-foreground"
-    >
-      {crumbs.map((c, i) => (
-        <span key={i} className="flex items-center gap-1">
-          {i > 0 && <ChevronRight className="w-3.5 h-3.5 opacity-50" />}
-          {c.to ? (
-            <Link to={c.to} className="hover:text-foreground transition-colors">
-              {c.label}
-            </Link>
-          ) : (
-            <span className="text-foreground font-medium">{c.label}</span>
-          )}
-        </span>
-      ))}
-    </nav>
+    <div className="flex items-center justify-between gap-3 flex-wrap">
+      <nav
+        aria-label="Breadcrumb"
+        className="flex flex-wrap items-center gap-1 text-sm text-muted-foreground"
+      >
+        {crumbs.map((c, i) => (
+          <span key={i} className="flex items-center gap-1">
+            {i > 0 && <ChevronRight className="w-3.5 h-3.5 opacity-50" />}
+            {c.to ? (
+              <Link to={c.to} className="hover:text-foreground transition-colors">
+                {c.label}
+              </Link>
+            ) : (
+              <span className="text-foreground font-medium">{c.label}</span>
+            )}
+          </span>
+        ))}
+      </nav>
+      {action}
+    </div>
   )
 }

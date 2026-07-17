@@ -1,11 +1,12 @@
-import { ArrowLeftRight, Briefcase, LayoutGrid, UserPlus } from "lucide-react";
+import { ArrowLeftRight, Briefcase, LayoutGrid } from "lucide-react";
 import type { AreaPill } from "~/components/AreaPillNav";
 
 // Lab Processes surfaces (the sidebar entry is childless and lands on the
-// hub). Level Up lives under Projects → Staffing, not here.
+// hub). Level Up lives under Projects → Staffing, not here. Onboarding lives
+// under Hiring (hiringPills) — accepted-applicant provisioning, not a lab
+// process.
 export function labProcessesPills(args: {
-  isCore: boolean;
-  active: "hub" | "onboarding" | "transfer" | "jobx";
+  active: "hub" | "transfer" | "jobx";
 }): AreaPill[] {
   return [
     {
@@ -14,16 +15,6 @@ export function labProcessesPills(args: {
       active: args.active === "hub",
       icon: LayoutGrid,
     },
-    ...(args.isCore
-      ? [
-          {
-            label: "Onboarding",
-            to: "/internal-processes/onboarding",
-            active: args.active === "onboarding",
-            icon: UserPlus,
-          },
-        ]
-      : []),
     {
       label: "Transfer",
       to: "/internal-processes/transfer",

@@ -69,7 +69,7 @@ export const EditorShell = forwardRef<HTMLDivElement, EditorShellProps>(
         className={`${relative ? "relative " : ""}rounded-lg border bg-card ${
           disabled
             ? "border-border bg-muted/50 opacity-75"
-            : "border-gray-300 focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent"
+            : "border-gray-300 focus-within:ring-2 focus-within:ring-accent-coral focus-within:border-transparent"
         } ${className ?? ""}`}
       >
         {children}

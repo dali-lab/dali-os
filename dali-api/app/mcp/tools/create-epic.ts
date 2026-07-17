@@ -3,7 +3,7 @@
 import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
 
-const EPIC_STATUSES = ["Open", "InProgress", "Done", "Cancelled"] as const;
+const EPIC_STATUSES = ["Backlog", "Open", "InProgress", "Done", "Cancelled"] as const;
 type EpicStatus = (typeof EPIC_STATUSES)[number];
 
 export const CREATE_EPIC_TOOL = {

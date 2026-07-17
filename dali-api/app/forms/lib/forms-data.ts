@@ -77,6 +77,7 @@ export type FormVersionDetail = {
   createdByName: string;
   questions: Question[];
   description: unknown;
+  submissionCount: number;
 };
 
 export type FormDetail = {
@@ -108,7 +109,10 @@ export async function loadFormForEdit(
     include: {
       versions: {
         orderBy: { versionNumber: "asc" },
-        include: { createdBy: { select: { firstName: true, lastName: true } } },
+        include: {
+          createdBy: { select: { firstName: true, lastName: true } },
+          _count: { select: { submissions: true } },
+        },
       },
     },
   });
@@ -136,6 +140,7 @@ export async function loadFormForEdit(
       questions: (v.questions as unknown as Question[]) ?? [],
       // intro holds serialized ProseMirror JSON (see module note).
       description: v.intro ? safeParseJsonString(v.intro) : null,
+      submissionCount: v._count.submissions,
     })),
     draft: draftQuestions
       ? {

@@ -1,6 +1,10 @@
 @import url("https://fonts.googleapis.com/css2?family=Dosis:wght@600;700&family=Open+Sans:wght@300;400;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
 
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+/* Class-based dark mode (html.dark) so settings can override system preference. */
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
   /* ── DALI brand colors (exact hex, per official style guide §3.1) ── */
@@ -103,9 +107,8 @@
   --font-mono: "JetBrains Mono", "Fira Code", "Monaco", monospace;
 }
 
-/* Dark mode overrides */
-@media (prefers-color-scheme: dark) {
-  :root {
+/* Dark mode overrides — toggled via html.dark (see lib/theme.ts + settings Appearance). */
+html.dark {
     --color-background: hsl(215 35% 10%);
     --color-foreground: hsl(210 20% 95%);
     --color-card: hsl(215 32% 15%);
@@ -155,7 +158,6 @@
     --color-sidebar-accent-foreground: hsl(210 15% 85%);
     --color-sidebar-border: hsl(215 25% 20%);
     --color-sidebar-ring: #00ADAB;
-  }
 
   /* Remap light status colors to dark-friendly equivalents */
 

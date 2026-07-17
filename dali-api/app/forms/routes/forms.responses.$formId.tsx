@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link, redirect, useLoaderData } from "react-router";
+import { Link, redirect, useLoaderData, useSearchParams } from "react-router";
 import { ArrowLeft, Download, Search } from "lucide-react";
 import type { Route } from "./+types/forms.responses.$formId";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
@@ -203,8 +203,11 @@ export default function FormResponses() {
     responses,
   } = useLoaderData<typeof loader>();
 
+  // Preselect the version filter when arriving from a version card's
+  // "Responses" link (?version=N); still user-adjustable afterward.
+  const [searchParams] = useSearchParams();
   const [query, setQuery] = useState("");
-  const [version, setVersion] = useState("");
+  const [version, setVersion] = useState(searchParams.get("version") ?? "");
   const [slot, setSlot] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
 
@@ -320,7 +323,7 @@ export default function FormResponses() {
             </a>
           </div>
 
-          <div className="bg-card border border-border rounded-lg overflow-hidden">
+          <div className="bg-card border border-border shadow-brand-1 rounded-lg overflow-hidden">
             {filteredRows.length === 0 ? (
               <div className="px-4 py-8 text-center text-sm text-muted-foreground">
                 No responses match the current filters.

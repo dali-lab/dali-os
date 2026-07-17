@@ -1,15 +1,15 @@
 import { redirect, useFetcher, useLoaderData, useNavigate, useSearchParams } from "react-router";
-import type { Route } from "./+types/internal-processes.onboarding";
+import type { Route } from "./+types/onboarding";
 import { requireAuth, unauthorized, forbidden } from "~/lib/auth";
-import { isCore } from "~/lib/roles";
-import { labProcessesPills } from "~/internal-processes/labProcessesPills";
+import { isCore, getUserRoles } from "~/lib/roles";
+import { hiringPills } from "~/hiring/components/hiringPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import { prisma } from "~/lib/db";
 
 export const handle = { areaPills: true };
 
 export const meta: Route.MetaFunction = () => [
-  { title: "Onboarding · DALI OS" },
+  { title: "Onboarding · Hiring · DALI OS" },
 ];
 
 // Core-only: this surfaces accepted-applicant PII (DALI emails) and per-member
@@ -17,7 +17,15 @@ export const meta: Route.MetaFunction = () => [
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  if (!(await isCore(auth.user.sub))) return redirect("/");
+  const roles = await getUserRoles(auth.user.sub);
+  if (!roles.isCore) return redirect("/");
+
+  const pillRoles = {
+    isCore: roles.isCore,
+    isDomainLead: roles.isDomainLead,
+    isAdmin: roles.isAdmin,
+    isInterviewer: roles.isInterviewer,
+  };
 
   // Cycle dropdown options — newest first, like the lead dashboard.
   const cycles = await prisma.applicationCycle.findMany({
@@ -34,7 +42,14 @@ export async function loader({ request }: Route.LoaderArgs) {
     null;
 
   if (!selectedCycleId) {
-    return { cycles, selectedCycleId: null, domains: [], selectedDomain: null, rows: [] };
+    return {
+      cycles,
+      selectedCycleId: null,
+      domains: [],
+      selectedDomain: null,
+      rows: [],
+      pillRoles,
+    };
   }
 
   // Accepted applicants for the cycle = released "Accepted" decisions. One row
@@ -127,7 +142,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     ? allRows.filter((r) => r.domainKey === selectedDomain)
     : allRows;
 
-  return { cycles, selectedCycleId, domains, selectedDomain, rows };
+  return { cycles, selectedCycleId, domains, selectedDomain, rows, pillRoles };
 }
 
 // Toggle a member's manual "invited to Figma" state from the onboarding board.
@@ -199,8 +214,9 @@ function FigmaCheckbox({ userId, invited }: { userId: string; invited: boolean }
   );
 }
 
-export default function InternalProcessesOnboarding() {
-  const { cycles, selectedCycleId, domains, selectedDomain, rows } = useLoaderData<typeof loader>();
+export default function HiringOnboarding() {
+  const { cycles, selectedCycleId, domains, selectedDomain, rows, pillRoles } =
+    useLoaderData<typeof loader>();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
 
@@ -213,7 +229,7 @@ export default function InternalProcessesOnboarding() {
 
   return (
     <div className="flex flex-col gap-4">
-      <AreaPillNav items={labProcessesPills({ isCore: true, active: "onboarding" })} />
+      <AreaPillNav items={hiringPills({ ...pillRoles, active: "onboarding" })} />
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="font-heading text-2xl font-bold text-foreground">Onboarding</h1>

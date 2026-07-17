@@ -28,6 +28,9 @@ export default [
     // Cross-cycle by design (accepting off a waitlist may land in a later
     // cycle), so it lives beside the other hiring tools, not under /lead.
     route("hiring/waitlists", "hiring/routes/waitlists.tsx"),
+    // Accepted-applicant provisioning board (DALI email, Slack, Figma,
+    // profile form) — Core-only, same sensitivity tier as the lead dashboard.
+    route("hiring/onboarding", "hiring/routes/onboarding.tsx"),
     // Library — challenges, rubrics, and confidentiality agreements behind one
     // page with pills. The list views are consolidated here; the detail pages
     // keep their original paths.
@@ -78,6 +81,10 @@ export default [
       "projects/routes/projects.level-up.$userId.tsx",
     ),
     route("projects/:id", "projects/routes/projects.$id.tsx"),
+    route(
+      "projects/:id/partner-view",
+      "projects/routes/projects.$id.partner-view.tsx",
+    ),
 
     // Documents & files — full-page reusable editor + file viewer. Literal
     // "file" segment precedes the :pageId param so it isn't captured.
@@ -112,7 +119,6 @@ export default [
 
     // Internal processes. The bare route is the area hub.
     route("internal-processes", "internal-processes/routes/internal-processes.hub.tsx"),
-    route("internal-processes/onboarding", "internal-processes/routes/internal-processes.onboarding.tsx"),
     route("internal-processes/transfer", "internal-processes/routes/internal-processes.transfer.tsx"),
     route("internal-processes/level-up", "internal-processes/routes/internal-processes.level-up.tsx"),
     route("internal-processes/jobx", "internal-processes/routes/internal-processes.jobx.tsx"),
@@ -272,6 +278,7 @@ export default [
   route("api/scheduled-meetings", "calendar/routes/api.scheduled-meetings.ts"),
   route("api/scheduled-meetings/:id/cancel", "calendar/routes/api.scheduled-meetings.$id.cancel.ts"),
   route("api/scheduled-meetings/:id/attendance", "calendar/routes/api.scheduled-meetings.$id.attendance.ts"),
+  route("api/scheduled-meetings/:id/check-in", "calendar/routes/api.scheduled-meetings.$id.check-in.ts"),
   route("api/calendar/group-availability", "calendar/routes/api.calendar.group-availability.ts"),
   // JobX browser extension export — see jobx-extension/README.md.
   route("api/timesheets/export", "routes/api.timesheets.export.ts"),
@@ -309,6 +316,7 @@ export default [
 
   // Project epics & sprints
   route("api/projects/:id/epics", "projects/routes/api.projects.$id.epics.ts"),
+  route("api/projects/:id/epics/reorder", "projects/routes/api.projects.$id.epics.reorder.ts"),
   route("api/epics/:id", "projects/routes/api.epics.$id.ts"),
   route(
     "api/epics/:id/description-doc",

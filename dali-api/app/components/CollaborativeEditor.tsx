@@ -1,9 +1,21 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useEditor, EditorContent } from "@tiptap/react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useEditor, EditorContent, type Editor } from "@tiptap/react";
 import { Extension } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
-import { History } from "lucide-react";
+import {
+  History,
+  Bold,
+  Italic,
+  Strikethrough,
+  Code,
+  Heading1,
+  Heading2,
+  Heading3,
+  List,
+  ListOrdered,
+  Quote,
+} from "lucide-react";
 import * as Y from "yjs";
 import { HocuspocusProvider } from "@hocuspocus/provider";
 import {
@@ -66,6 +78,12 @@ export type InlineCommentOpts = {
   onRequestComment: (anchor: CommentAnchor) => void;
   // Hands the host an imperative scroll-to-anchor fn once the editor mounts.
   onReady?: (api: { focusAnchor: (anchor: CommentAnchor) => void }) => void;
+  // Clicking an existing highlight opens a small popover right next to the
+  // text (Google-Docs-style) instead of making the user scroll down to the
+  // comments rail. The host renders the thread; we just position it and own
+  // open/close state. `close` lets the host's content (e.g. a resolve/delete
+  // button) dismiss the popover itself. Returning null renders nothing.
+  getThreadNode?: (id: string, close: () => void) => ReactNode | null;
 };
 
 const commentDecoKey = new PluginKey("inlineCommentDecorations");
@@ -162,14 +180,20 @@ function createCommentDecorationExtension(
           key: commentDecoKey,
           state: {
             init: () => DecorationSet.empty,
-            apply(tr, old, _oldState, newState) {
+            apply(tr, old, oldState, newState) {
               if (!tr.docChanged && !tr.getMeta(commentDecoKey)) return old;
-              const binding = ySyncPluginKey.getState(newState)?.binding;
+              // Read the binding off `oldState`, not `newState`: ProseMirror
+              // builds plugin state fields on `newState` one at a time in
+              // plugin-registration order, so mid-construction it may not
+              // have reached the y-sync plugin's field yet. `oldState` is
+              // already fully settled, and the binding instance itself is
+              // stable across transactions, so it's always safe to read.
+              const binding = ySyncPluginKey.getState(oldState)?.binding;
               if (!binding) return DecorationSet.empty;
               const decos: Decoration[] = [];
               for (const { id, anchor } of getAnchors()) {
-                const from = decodeAbsolute(ydoc, fragment, binding, anchor.from);
-                const to = decodeAbsolute(ydoc, fragment, binding, anchor.to);
+                const from = decodeAbsolute(ydoc, fragment, binding.mapping, anchor.from);
+                const to = decodeAbsolute(ydoc, fragment, binding.mapping, anchor.to);
                 if (from == null || to == null || from >= to) continue;
                 decos.push(
                   Decoration.inline(from, to, {
@@ -198,11 +222,14 @@ function createCommentDecorationExtension(
 function encodeRelative(
   ydoc: Y.Doc,
   fragment: Y.XmlFragment,
-  binding: unknown,
+  mapping: Map<unknown, unknown>,
   pos: number,
 ): string | null {
   try {
-    const rel = absolutePositionToRelativePosition(pos, fragment, binding as never);
+    // absolutePositionToRelativePosition wants the binding's `mapping` (a Map),
+    // not the ProsemirrorBinding itself — passing the binding silently threw
+    // here (swallowed by this catch), so "comment on selection" never fired.
+    const rel = absolutePositionToRelativePosition(pos, fragment, mapping as never);
     return JSON.stringify(Array.from(Y.encodeRelativePosition(rel)));
   } catch {
     return null;
@@ -212,16 +239,141 @@ function encodeRelative(
 function decodeAbsolute(
   ydoc: Y.Doc,
   fragment: Y.XmlFragment,
-  binding: unknown,
+  mapping: Map<unknown, unknown>,
   encoded: string,
 ): number | null {
   try {
     const rel = Y.decodeRelativePosition(Uint8Array.from(JSON.parse(encoded) as number[]));
-    const abs = relativePositionToAbsolutePosition(ydoc, fragment, rel, binding as never);
+    const abs = relativePositionToAbsolutePosition(ydoc, fragment, rel, mapping as never);
     return abs ?? null;
   } catch {
     return null;
   }
+}
+
+// Markdown shortcuts (# , **, etc.) still work via StarterKit's input rules —
+// they convert typed syntax into real formatting as you type, same as
+// Notion/Google Docs. This toolbar is the mouse-driven equivalent for the
+// same set of marks/nodes, so formatting doesn't require knowing the syntax.
+type ToolbarAction = {
+  label: string;
+  icon: typeof Bold;
+  isActive: (editor: Editor) => boolean;
+  run: (editor: Editor) => void;
+};
+
+const TOOLBAR_ACTIONS: ToolbarAction[] = [
+  {
+    label: "Bold",
+    icon: Bold,
+    isActive: (e) => e.isActive("bold"),
+    run: (e) => e.chain().focus().toggleBold().run(),
+  },
+  {
+    label: "Italic",
+    icon: Italic,
+    isActive: (e) => e.isActive("italic"),
+    run: (e) => e.chain().focus().toggleItalic().run(),
+  },
+  {
+    label: "Strikethrough",
+    icon: Strikethrough,
+    isActive: (e) => e.isActive("strike"),
+    run: (e) => e.chain().focus().toggleStrike().run(),
+  },
+  {
+    label: "Inline code",
+    icon: Code,
+    isActive: (e) => e.isActive("code"),
+    run: (e) => e.chain().focus().toggleCode().run(),
+  },
+  {
+    label: "Heading 1",
+    icon: Heading1,
+    isActive: (e) => e.isActive("heading", { level: 1 }),
+    run: (e) => e.chain().focus().toggleHeading({ level: 1 }).run(),
+  },
+  {
+    label: "Heading 2",
+    icon: Heading2,
+    isActive: (e) => e.isActive("heading", { level: 2 }),
+    run: (e) => e.chain().focus().toggleHeading({ level: 2 }).run(),
+  },
+  {
+    label: "Heading 3",
+    icon: Heading3,
+    isActive: (e) => e.isActive("heading", { level: 3 }),
+    run: (e) => e.chain().focus().toggleHeading({ level: 3 }).run(),
+  },
+  {
+    label: "Bullet list",
+    icon: List,
+    isActive: (e) => e.isActive("bulletList"),
+    run: (e) => e.chain().focus().toggleBulletList().run(),
+  },
+  {
+    label: "Numbered list",
+    icon: ListOrdered,
+    isActive: (e) => e.isActive("orderedList"),
+    run: (e) => e.chain().focus().toggleOrderedList().run(),
+  },
+  {
+    label: "Quote",
+    icon: Quote,
+    isActive: (e) => e.isActive("blockquote"),
+    run: (e) => e.chain().focus().toggleBlockquote().run(),
+  },
+];
+
+function EditorToolbar({ editor, onOpenHistory }: { editor: Editor; onOpenHistory: () => void }) {
+  // Tiptap doesn't trigger a React re-render on its own; re-render on every
+  // transaction so the active-button highlighting (bold/heading/etc. state)
+  // tracks the current selection.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const rerender = () => setTick((t) => t + 1);
+    editor.on("transaction", rerender);
+    return () => {
+      editor.off("transaction", rerender);
+    };
+  }, [editor]);
+
+  return (
+    <div className="flex items-center justify-between gap-1 border-b border-border px-1.5 py-1">
+      <div className="flex flex-wrap items-center gap-0.5">
+        {TOOLBAR_ACTIONS.map(({ label, icon: Icon, isActive, run }) => (
+          <button
+            key={label}
+            type="button"
+            title={label}
+            aria-label={label}
+            aria-pressed={isActive(editor)}
+            onMouseDown={(e) => {
+              // Preserve the current selection through the click.
+              e.preventDefault();
+              run(editor);
+            }}
+            className={`p-1.5 rounded transition-colors ${
+              isActive(editor)
+                ? "bg-accent-coral/15 text-accent-coral"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted"
+            }`}
+          >
+            <Icon size={15} />
+          </button>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={onOpenHistory}
+        title="Version history"
+        aria-label="Version history"
+        className="flex-shrink-0 p-1.5 rounded text-muted-foreground/70 hover:text-foreground/80 hover:bg-muted transition-colors"
+      >
+        <History size={15} />
+      </button>
+    </div>
+  );
 }
 
 // Module-level cache so StrictMode's double-mount reuses the same Y.Doc /
@@ -453,7 +605,7 @@ function CollaborativeEditorInner({
       focusAnchor: (anchor) => {
         const binding = ySyncPluginKey.getState(editor.state)?.binding;
         if (!binding) return;
-        const from = decodeAbsolute(entry.ydoc, entry.fragment, binding, anchor.from);
+        const from = decodeAbsolute(entry.ydoc, entry.fragment, binding.mapping, anchor.from);
         if (from == null) return;
         editor.chain().focus().setTextSelection(from).scrollIntoView().run();
       },
@@ -465,12 +617,46 @@ function CollaborativeEditorInner({
     const binding = ySyncPluginKey.getState(editor.state)?.binding;
     if (!binding) return;
     const { from, to } = editor.state.selection;
-    const fromRel = encodeRelative(entry.ydoc, entry.fragment, binding, from);
-    const toRel = encodeRelative(entry.ydoc, entry.fragment, binding, to);
+    const fromRel = encodeRelative(entry.ydoc, entry.fragment, binding.mapping, from);
+    const toRel = encodeRelative(entry.ydoc, entry.fragment, binding.mapping, to);
     if (!fromRel || !toRel) return;
     setCommentBtn(null);
     onRequestComment?.({ from: fromRel, to: toRel });
   }
+
+  // Clicking an existing inline-comment highlight opens a popover right next
+  // to the text (see getThreadNode) instead of requiring a scroll down to the
+  // comments rail. Positioned off the highlight span's own rect rather than
+  // the selection, since a click doesn't necessarily select anything.
+  const [threadPopover, setThreadPopover] = useState<{ id: string; top: number; left: number } | null>(null);
+  const threadPopoverRef = useRef<HTMLDivElement | null>(null);
+
+  function handleEditorContentClick(e: React.MouseEvent) {
+    if (!inlineComments?.enabled || !inlineComments.getThreadNode) return;
+    const hit = (e.target as HTMLElement).closest<HTMLElement>(".inline-comment-highlight");
+    if (!hit) {
+      setThreadPopover(null);
+      return;
+    }
+    const id = hit.getAttribute("data-comment-id");
+    const container = containerRef.current;
+    if (!id || !container) return;
+    const rect = hit.getBoundingClientRect();
+    const box = container.getBoundingClientRect();
+    setThreadPopover({ id, top: rect.bottom - box.top + 6, left: rect.left - box.left });
+  }
+
+  useEffect(() => {
+    if (!threadPopover) return;
+    function onOutside(e: MouseEvent) {
+      const target = e.target as Node;
+      if (threadPopoverRef.current?.contains(target)) return;
+      if ((target as HTMLElement).closest?.(".inline-comment-highlight")) return;
+      setThreadPopover(null);
+    }
+    document.addEventListener("mousedown", onOutside);
+    return () => document.removeEventListener("mousedown", onOutside);
+  }, [threadPopover]);
 
   // The editor's own awareness carries name/color/idle for inline cursor
   // labels. This is a separate awareness from the page-level presence (one
@@ -599,15 +785,19 @@ function CollaborativeEditorInner({
       disabled={disabled}
       className={className}
     >
-      <button
-        type="button"
-        onClick={() => setHistoryOpen(true)}
-        title="Version history"
-        aria-label="Version history"
-        className="absolute top-1.5 right-1.5 z-10 p-1 rounded text-muted-foreground/70 hover:text-foreground/80 hover:bg-muted transition-colors"
-      >
-        <History size={14} />
-      </button>
+      {editor && !disabled ? (
+        <EditorToolbar editor={editor} onOpenHistory={() => setHistoryOpen(true)} />
+      ) : (
+        <button
+          type="button"
+          onClick={() => setHistoryOpen(true)}
+          title="Version history"
+          aria-label="Version history"
+          className="absolute top-1.5 right-1.5 z-10 p-1 rounded text-muted-foreground/70 hover:text-foreground/80 hover:bg-muted transition-colors"
+        >
+          <History size={14} />
+        </button>
+      )}
       {historyOpen && (
         <VersionHistoryPanel
           documentName={documentName}
@@ -628,7 +818,18 @@ function CollaborativeEditorInner({
           💬 Comment
         </button>
       )}
-      <EditorContent editor={editor} />
+      <div onClick={handleEditorContentClick}>
+        <EditorContent editor={editor} />
+      </div>
+      {inlineComments?.enabled && threadPopover && inlineComments.getThreadNode && (
+        <div
+          ref={threadPopoverRef}
+          style={{ top: threadPopover.top, left: threadPopover.left }}
+          className="absolute z-30 w-72 rounded-lg border border-border bg-card shadow-lg"
+        >
+          {inlineComments.getThreadNode(threadPopover.id, () => setThreadPopover(null))}
+        </div>
+      )}
       {/*
         y-prosemirror's default cursor builder renders:
           <span class="ProseMirror-yjs-cursor" style="border-color: {color}">
