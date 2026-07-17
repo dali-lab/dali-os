@@ -1,13 +1,13 @@
 import { useRef, useState } from "react";
 import type { Question } from "~/types";
-import type { SubmissionCheckResult } from "~/hiring/lib/submission-check";
+import type { SubmissionCheckResult } from "~/lib/submission-check";
 import { countWords } from "~/lib/word-count";
 import {
   MAX_UPLOAD_BYTES,
   MAX_UPLOAD_LABEL,
   fileMatchesAccept,
 } from "~/lib/file-validation";
-import { SKILLS_RATING_UNRATED, parseSkillsRating } from "~/hiring/lib/skills-rating";
+import { SKILLS_RATING_UNRATED, parseSkillsRating } from "~/lib/skills-rating";
 
 export type UrlCheckState = {
   status: "idle" | "checking" | "done";
@@ -306,7 +306,7 @@ function FileUploadField({
   );
 }
 
-export interface ChallengeQuestionFieldProps {
+export interface FormQuestionFieldProps {
   question: Question;
   value: string;
   onChange: (v: string) => void;
@@ -315,14 +315,14 @@ export interface ChallengeQuestionFieldProps {
   disabled?: boolean;
 }
 
-export function ChallengeQuestionField({
+export function FormQuestionField({
   question,
   value,
   onChange,
   urlCheckState,
   onUrlBlur,
   disabled = false,
-}: ChallengeQuestionFieldProps) {
+}: FormQuestionFieldProps) {
   const inputBase =
     "w-full rounded-lg border border-border bg-card text-base sm:text-sm text-dark-blue placeholder:text-muted-foreground/70 focus:outline-none focus:border-accent-coral px-4 py-2";
   const disabledClass = disabled ? " opacity-60 cursor-not-allowed" : "";

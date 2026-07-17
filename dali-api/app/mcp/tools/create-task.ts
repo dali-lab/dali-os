@@ -5,6 +5,7 @@ import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
 import { isTaskStatus, TASK_STATUSES } from "~/projects/lib/task-board";
 import { createIssueForTask, normalizeRepo } from "~/projects/lib/github-task-sync";
+import { notifyTaskAssigned } from "~/projects/lib/task-notifications.server";
 
 const PRIORITIES = ["Low", "Normal", "High", "Urgent"] as const;
 type Priority = (typeof PRIORITIES)[number];
@@ -148,6 +149,16 @@ export async function runCreateTask(callerId: string, input: Input) {
   if (githubRepo) {
     void createIssueForTask(task.id, githubRepo).catch((err) =>
       console.error(`mcp create_task: github mirror failed for ${task.id}`, err),
+    );
+  }
+
+  if (input.assigneeUserIds && input.assigneeUserIds.length > 0) {
+    void notifyTaskAssigned({
+      taskId: task.id,
+      addedUserIds: input.assigneeUserIds,
+      actorUserId: callerId,
+    }).catch((err) =>
+      console.error(`mcp create_task: assignment notify failed for ${task.id}`, err),
     );
   }
 

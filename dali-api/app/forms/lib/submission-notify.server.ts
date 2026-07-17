@@ -1,4 +1,5 @@
 import { prisma } from "~/lib/db";
+import { notify } from "~/lib/notify.server";
 
 // Best-effort, after-commit notification to the form's creator for each new
 // submission (Form.notifyOnSubmission). Callers invoke this AFTER their
@@ -36,15 +37,15 @@ export async function notifyFormSubmission(args: {
       if (user) name = `${user.firstName} ${user.lastName}`.trim();
     }
 
-    await prisma.notification.create({
-      data: {
-        recipientUserId: form.createdById,
-        createdByUserId: args.submitterUserId ?? null,
-        kind: "General",
+    await notify({
+      eventType: "form.submission",
+      createdByUserId: args.submitterUserId ?? null,
+      message: {
         title: `New response: ${form.name}`,
         body: `From ${name || "Anonymous"}`,
         link: `/forms/responses/${form.id}`,
       },
+      recipients: [{ userId: form.createdById }],
     });
   } catch {
     // Best-effort: never let a notification failure break a submission.

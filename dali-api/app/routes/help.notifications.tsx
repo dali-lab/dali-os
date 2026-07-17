@@ -56,13 +56,23 @@ export default function HelpNotificationsPage() {
       </section>
 
       <section className="mt-6">
-        <h2 className="text-lg font-semibold">Email</h2>
+        <h2 className="text-lg font-semibold">Channels &amp; preferences</h2>
         <p className="mt-2 text-sm text-foreground">
-          Important notifications — interview invites, meeting invites,
-          application decisions — also email you at your DALI address.
-          Per-event email opt-outs are coming with the notifications
-          preferences settings; until then, everything is in-app first
-          and email when it's something you might miss otherwise.
+          Every notification can reach you three ways: in-app (the bell and
+          Home inbox), email, and a Slack DM from the DALI OS bot. Email can
+          arrive instantly per notification, or batched into a daily or
+          weekly digest of what you haven&apos;t read (send times are shown
+          on the settings page).
+        </p>
+        <p className="mt-2 text-sm text-foreground">
+          Tune all of this per event type in{" "}
+          <Link to="/settings/notifications" className="text-blue-700 underline">
+            Settings → Notifications
+          </Link>
+          . Action items (meeting invites, assigned interviews, forms to
+          fill) always stay in-app; a few flows — like education application
+          decisions — send their own dedicated emails regardless of these
+          settings.
         </p>
       </section>
     </main>

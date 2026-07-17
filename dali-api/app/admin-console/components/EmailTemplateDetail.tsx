@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { Form, useLoaderData } from 'react-router'
 import { Plus, Clock, UserIcon, Pencil, AlertTriangle } from 'lucide-react'
-import type { loader } from '~/hiring/routes/email-templates.$id'
+import type { loader } from '~/admin-console/routes/admin-console.email-templates.$id'
 import {
   ALL_TEMPLATE_VARIABLES,
   TEMPLATE_VARIABLE_DESCRIPTIONS,

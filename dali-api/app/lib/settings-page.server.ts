@@ -3,6 +3,7 @@ import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { listCalendarsForLink } from "~/lib/google-calendar";
 import { loadProfilePage } from "~/members/lib/profile-page.server";
+import { jobByName, resolveJobSettings } from "~/jobs/registry";
 
 export type CalendarLinkDTO = {
   id: string;
@@ -83,7 +84,7 @@ export async function loadSettingsPageData(request: Request) {
 
   const userId = auth.user.sub;
 
-  const [profile, links, user, sessionRows, grants] = await Promise.all([
+  const [profile, links, user, sessionRows, grants, notificationPrefs, digestRows] = await Promise.all([
     loadProfilePage({ request, targetId: userId }),
     prisma.userCalendarLink.findMany({
       where: { userId },
@@ -121,7 +122,27 @@ export async function loadSettingsPageData(request: Request) {
       include: { client: { select: { name: true } } },
       orderBy: { createdAt: "desc" },
     }),
+    prisma.notificationPreference.findMany({
+      where: { userId },
+      select: { eventType: true, inApp: true, slackDm: true, digestFrequency: true },
+    }),
+    prisma.scheduledJob.findMany({
+      where: { name: { in: ["notification-digest-daily", "notification-digest-weekly"] } },
+      select: { name: true, settings: true },
+    }),
   ]);
+
+  // Render the digest schedule as actually configured (Admin → Jobs), not a
+  // hardcoded time.
+  const digestRowByName = new Map(digestRows.map((r) => [r.name, r]));
+  const dailyDef = jobByName("notification-digest-daily");
+  const weeklyDef = jobByName("notification-digest-weekly");
+  const daily = dailyDef
+    ? resolveJobSettings(dailyDef, digestRowByName.get("notification-digest-daily")?.settings)
+    : { sendHourEt: 9 };
+  const weekly = weeklyDef
+    ? resolveJobSettings(weeklyDef, digestRowByName.get("notification-digest-weekly")?.settings)
+    : { sendHourEt: 9, sendWeekday: 1 };
 
   const calendarLinks: CalendarLinkDTO[] = await Promise.all(
     links.map(async (l) => {
@@ -188,5 +209,14 @@ export async function loadSettingsPageData(request: Request) {
     currentSessionId: auth.sessionId,
     sessions,
     grants: grantRows,
+    notifications: {
+      prefs: notificationPrefs,
+      slackConnected: !!user?.slackUserId,
+      digestSchedule: {
+        dailyHour: daily.sendHourEt,
+        weeklyHour: weekly.sendHourEt,
+        weeklyWeekday: weekly.sendWeekday ?? 1,
+      },
+    },
   };
 }

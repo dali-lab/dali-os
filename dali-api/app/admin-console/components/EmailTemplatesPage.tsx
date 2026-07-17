@@ -1,87 +1,33 @@
-import { useEffect, useState } from 'react'
-import { Link, Form, useLoaderData, useSearchParams } from 'react-router'
-import { Plus, Mail, ChevronRight, X, BookOpen } from 'lucide-react'
+// Admin → Email Templates: the shared template library. Templates serve
+// every area (hiring decisions, education, partners) — bindings stay in each
+// area's own UI (e.g. hiring's Setup tab → Notification Emails). Sending
+// accounts live one pill over in Email Senders.
+
+import { useState } from 'react'
+import { Link, Form, useLoaderData } from 'react-router'
+import { Plus, Mail, ChevronRight } from 'lucide-react'
 import { Button } from '~/components/ui/Button'
 import { Modal, ModalHeader } from '~/components/Modal'
+import { adminPills } from '~/admin-console/adminPills'
 import { AreaPillNav } from '~/components/AreaPillNav'
-import type { loader } from '~/hiring/routes/email-templates'
+import type { loader } from '~/admin-console/routes/admin-console.email-templates'
 
-const GMAIL_ERROR_MESSAGES: Record<string, string> = {
-  auth_failed: 'Gmail authorization was denied or failed.',
-  state_mismatch: 'OAuth state mismatch — please try again.',
-  token_exchange_failed: 'Failed to exchange token with Google. Check OAuth credentials.',
-  no_refresh_token: 'Google did not return a refresh token. You may need to revoke access and try again.',
-}
-
-export default function EmailTemplatesList() {
-  const { templates, gmailConnected } = useLoaderData<typeof loader>()
+export function EmailTemplatesPage() {
+  const { templates, isAdmin } = useLoaderData<typeof loader>()
   const [showModal, setShowModal] = useState(false)
   const [newName, setNewName] = useState('')
-  const [searchParams, setSearchParams] = useSearchParams()
-
-  const gmailAuthorized = searchParams.get('gmail_authorized') === '1'
-  const gmailError = searchParams.get('gmail_error')
-  const [dismissed, setDismissed] = useState(false)
-
-  useEffect(() => {
-    setDismissed(false)
-  }, [gmailAuthorized, gmailError])
-
-  function dismissBanner() {
-    setDismissed(true)
-    setSearchParams((prev) => {
-      prev.delete('gmail_authorized')
-      prev.delete('gmail_error')
-      return prev
-    }, { replace: true })
-  }
 
   return (
     <div className="space-y-8">
-      <AreaPillNav
-        items={[
-          { label: "Library", to: "/hiring/library", icon: BookOpen },
-          { label: "Emails", to: "/hiring/emails", active: true, icon: Mail },
-        ]}
-      />
-      {!dismissed && gmailAuthorized && (
-        <div className="flex items-center justify-between bg-green-50 border border-green-200 text-green-800 text-sm rounded-lg px-4 py-3">
-          <span>Gmail authorized successfully. Decision emails are now active.</span>
-          <button onClick={dismissBanner} className="text-green-600 hover:text-green-800"><X className="w-4 h-4" /></button>
-        </div>
-      )}
-      {!dismissed && gmailError && (
-        <div className="flex items-center justify-between bg-red-50 border border-red-200 text-red-800 text-sm rounded-lg px-4 py-3">
-          <span>{GMAIL_ERROR_MESSAGES[gmailError] ?? 'Gmail authorization failed.'}</span>
-          <button onClick={dismissBanner} className="text-red-600 hover:text-red-800"><X className="w-4 h-4" /></button>
-        </div>
-      )}
-
-      <div className="flex items-center justify-between bg-card border border-border rounded-lg px-4 py-3">
-        <div className="flex items-center gap-3">
-          <Mail className="w-4 h-4 text-muted-foreground" />
-          <span className="text-sm text-foreground/80">
-            Gmail sending ({gmailConnected ? (
-              <span className="text-green-600 font-medium">connected</span>
-            ) : (
-              <span className="text-amber-600 font-medium">not connected</span>
-            )})
-          </span>
-        </div>
-        <a
-          href="/admin/authorize-gmail"
-          className="text-sm font-medium text-blue-600 hover:text-blue-700"
-        >
-          {gmailConnected ? 'Reconnect' : 'Connect Gmail'}
-        </a>
-      </div>
+      <AreaPillNav items={adminPills({ isAdmin, active: 'email-templates' })} />
 
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Email Templates</h1>
           <p className="mt-1 text-muted-foreground">
-            Manage email templates and their versions independently of hiring cycles. Bind a template
-            to a decision type from the cycle admin page.
+            Shared library of email templates and their versions. Bind a
+            template where it's used — e.g. a hiring cycle's Setup tab or an
+            education offering's decision emails.
           </p>
         </div>
         <Button variant="primary" size="sm" onClick={() => setShowModal(true)}>
@@ -96,7 +42,7 @@ export default function EmailTemplatesList() {
           return (
             <Link
               key={template.id}
-              to={`/hiring/emails/${template.id}`}
+              to={`/admin-console/email-templates/${template.id}`}
               className="bg-card rounded-xl border border-border p-6 shadow-sm hover:shadow-md transition-shadow group block"
             >
               <div className="flex items-start justify-between">
@@ -134,6 +80,14 @@ export default function EmailTemplatesList() {
           <p className="text-muted-foreground col-span-3 text-sm italic">No templates yet.</p>
         )}
       </div>
+
+      <p className="text-xs text-muted-foreground">
+        Sending accounts are managed in{' '}
+        <Link to="/admin-console/email-senders" className="underline">
+          Email Senders
+        </Link>{' '}
+        (Admin only).
+      </p>
 
       <Modal
         open={showModal}

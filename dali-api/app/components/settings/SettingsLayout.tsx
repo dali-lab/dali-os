@@ -1,21 +1,38 @@
-import { useEffect, useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { Link } from "react-router";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "~/lib/cn";
+
+// One-section-at-a-time settings shell: the side nav is a switcher, not a
+// scroll index. Anchor items drive the URL hash (SettingsPage derives the
+// visible section from it, so old /settings#devices deep links keep
+// working); items with `to` navigate to their own page instead (the
+// notifications matrix).
 
 export type SettingsNavItem = {
   id: string;
   label: string;
   icon: LucideIcon;
+  // Full page of its own — renders as a route link, not a section switch.
+  to?: string;
 };
 
 export function SettingsLayout({
   nav,
+  active,
   children,
 }: {
   nav: SettingsNavItem[];
+  active: string;
   children: React.ReactNode;
 }) {
+  const itemClass = (isActive: boolean) =>
+    cn(
+      "inline-flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+      isActive
+        ? "bg-accent-coral/10 text-accent-coral"
+        : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+    );
+
   return (
     <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-10">
       <nav
@@ -23,18 +40,23 @@ export function SettingsLayout({
         aria-label="Settings sections"
       >
         <ul className="flex flex-row flex-wrap gap-1 lg:flex-col lg:gap-0.5">
-          {nav.map(({ id, label, icon: Icon }) => (
+          {nav.map(({ id, label, icon: Icon, to }) => (
             <li key={id}>
-              <a
-                href={`#${id}`}
-                className={cn(
-                  "inline-flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                  "text-muted-foreground hover:text-foreground hover:bg-muted/60",
-                )}
-              >
-                <Icon className="h-4 w-4 shrink-0" aria-hidden />
-                {label}
-              </a>
+              {to ? (
+                <Link to={to} className={itemClass(false)}>
+                  <Icon className="h-4 w-4 shrink-0" aria-hidden />
+                  {label}
+                </Link>
+              ) : (
+                <a
+                  href={`#${id}`}
+                  aria-current={active === id ? "page" : undefined}
+                  className={itemClass(active === id)}
+                >
+                  <Icon className="h-4 w-4 shrink-0" aria-hidden />
+                  {label}
+                </a>
+              )}
             </li>
           ))}
         </ul>
@@ -44,59 +66,28 @@ export function SettingsLayout({
   );
 }
 
+// A single settings section. Always expanded — only the active section is
+// mounted, so the old accordion collapse has nothing left to do.
 export function SettingsBlock({
   id,
   title,
   description,
   children,
-  defaultOpen = true,
 }: {
   id: string;
   title: string;
   description?: string;
   children: React.ReactNode;
-  defaultOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
-
-  // Deep-link / sidebar jump opens the target section.
-  useEffect(() => {
-    const openFromHash = () => {
-      if (window.location.hash.slice(1) === id) setOpen(true);
-    };
-    openFromHash();
-    window.addEventListener("hashchange", openFromHash);
-    return () => window.removeEventListener("hashchange", openFromHash);
-  }, [id]);
-
   return (
-    <section id={id} className="scroll-mt-6 border border-border rounded-lg">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        aria-controls={`${id}-panel`}
-        className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left hover:bg-muted/40 transition-colors rounded-lg"
-      >
-        <div className="min-w-0">
-          <h2 className="font-heading text-lg font-semibold text-foreground">{title}</h2>
-          {description && (
-            <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>
-          )}
-        </div>
-        <ChevronDown
-          className={cn(
-            "mt-1 h-5 w-5 shrink-0 text-muted-foreground transition-transform",
-            open && "rotate-180",
-          )}
-          aria-hidden
-        />
-      </button>
-      {open && (
-        <div id={`${id}-panel`} className="border-t border-border px-4 py-5">
-          {children}
-        </div>
-      )}
+    <section id={id} className="border border-border rounded-lg">
+      <div className="px-4 py-3">
+        <h2 className="font-heading text-lg font-semibold text-foreground">{title}</h2>
+        {description && (
+          <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>
+        )}
+      </div>
+      <div className="border-t border-border px-4 py-5">{children}</div>
     </section>
   );
 }

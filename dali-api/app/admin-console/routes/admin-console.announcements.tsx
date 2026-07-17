@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { redirect, useLoaderData, useSearchParams } from "react-router";
+import {
+  redirect,
+  useFetcher,
+  useLoaderData,
+  useRevalidator,
+  useSearchParams,
+} from "react-router";
 import type { Route } from "./+types/admin-console.announcements";
 import { adminPills } from "~/admin-console/adminPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
@@ -40,7 +46,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   // applicants are excluded so a stale autocomplete suggestion can't
   // accidentally notify someone who's no longer on the lab roster.
   const memberWhere = await currentTermMemberWhere();
-  const [users, visibleGroups, forms] = await Promise.all([
+  const [users, visibleGroups, forms, scheduledRows] = await Promise.all([
     prisma.user.findMany({
       where: memberWhere,
       orderBy: MEMBER_LIST_ORDER_BY,
@@ -52,6 +58,16 @@ export async function loader({ request }: Route.LoaderArgs) {
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),
+    // Pending sends plus recently fired-with-error rows (so a fire-time
+    // failure — e.g. the attached form got unpublished — is visible here).
+    prisma.scheduledAnnouncement.findMany({
+      where: {
+        canceledAt: null,
+        OR: [{ sentAt: null }, { lastError: { not: null } }],
+      },
+      orderBy: { sendAt: "asc" },
+      take: 20,
+    }),
   ]);
 
   return {
@@ -62,12 +78,42 @@ export async function loader({ request }: Route.LoaderArgs) {
     })),
     groups: visibleGroups.map((g) => ({ id: g.id, name: g.name })),
     publishedForms: forms,
+    scheduled: scheduledRows.map((s) => ({
+      id: s.id,
+      title: s.title,
+      sendAt: s.sendAt.toISOString(),
+      sentAt: s.sentAt?.toISOString() ?? null,
+      lastError: s.lastError,
+      allMembers: s.allMembers,
+      groupCount: s.groupIds.length,
+      userCount: s.userIds.length,
+    })),
     viewerIsAdmin: await isAdmin(auth.user.sub),
   };
 }
 
+// Cancel a pending scheduled announcement. The updateMany's sentAt guard
+// races cleanly with the job's CAS claim — whichever lands first wins.
+export async function action({ request }: Route.ActionArgs) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return redirect("/login");
+  if (!(await isCore(auth.user.sub))) return redirect("/");
+
+  const form = await request.formData();
+  if (String(form.get("intent")) !== "cancel-scheduled") {
+    return Response.json({ error: "Unknown intent" }, { status: 400 });
+  }
+  const id = String(form.get("id") ?? "");
+  const result = await prisma.scheduledAnnouncement.updateMany({
+    where: { id, sentAt: null, canceledAt: null },
+    data: { canceledAt: new Date() },
+  });
+  return { ok: true, canceled: result.count === 1 };
+}
+
 export default function AnnouncementsPage() {
-  const { members, groups, publishedForms, viewerIsAdmin } = useLoaderData<typeof loader>();
+  const { members, groups, publishedForms, scheduled, viewerIsAdmin } =
+    useLoaderData<typeof loader>();
 
   // Optional deep-link pre-seed (e.g. the staffing boards' "Send to members"
   // affordance opens this composer with the bound form + whole-lab audience
@@ -89,13 +135,17 @@ export default function AnnouncementsPage() {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [dueAt, setDueAt] = useState("");
+  const [sendAt, setSendAt] = useState("");
   const [formId, setFormId] = useState(seededForm);
   const [formSearch, setFormSearch] = useState("");
 
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<
-    { ok: true; count: number } | { ok: false; error: string } | null
+    | { ok: true; count: number; scheduled?: boolean }
+    | { ok: false; error: string }
+    | null
   >(null);
+  const revalidator = useRevalidator();
 
   // Auto-dismiss the success confirmation after a few seconds; errors stay
   // until the next send attempt.
@@ -144,6 +194,7 @@ export default function AnnouncementsPage() {
 
   const hasAudience =
     allMembers || pickedGroups.size > 0 || pickedUsers.size > 0;
+  const scheduling = sendAt !== "";
   const canSend = title.trim().length > 0 && !sending && hasAudience;
 
   async function send() {
@@ -162,6 +213,7 @@ export default function AnnouncementsPage() {
       if (body.trim()) payload.body = body.trim();
       if (dueAt) payload.dueAt = new Date(dueAt).toISOString();
       if (formId) payload.formId = formId;
+      if (sendAt) payload.sendAt = new Date(sendAt).toISOString();
 
       const res = await fetch("/api/notifications/send", {
         method: "POST",
@@ -172,17 +224,20 @@ export default function AnnouncementsPage() {
       const out = (await res.json().catch(() => ({}))) as {
         error?: string;
         count?: number;
+        scheduled?: boolean;
       };
       if (!res.ok) {
         setResult({ ok: false, error: out.error ?? `Failed (${res.status}).` });
         return;
       }
-      setResult({ ok: true, count: out.count ?? 0 });
+      setResult({ ok: true, count: out.count ?? 0, scheduled: out.scheduled });
+      if (out.scheduled) revalidator.revalidate();
       // Full reset after a successful send — clear the message, the attached
       // form, and the audience so the next one starts blank.
       setTitle("");
       setBody("");
       setDueAt("");
+      setSendAt("");
       setFormId("");
       setFormSearch("");
       setAllMembers(false);
@@ -222,25 +277,40 @@ export default function AnnouncementsPage() {
           }`}
         >
           {result.ok
-            ? `Sent to ${result.count} recipient${result.count === 1 ? "" : "s"}.`
+            ? result.scheduled
+              ? "Scheduled — it'll go out at the chosen time."
+              : `Sent to ${result.count} recipient${result.count === 1 ? "" : "s"}.`
             : result.error}
         </div>
       )}
 
-      {/* Due date */}
+      {/* Due date + send time */}
       <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
-        <h2 className="text-sm font-semibold text-foreground">Due date</h2>
-        <label className="flex flex-col gap-1 text-xs">
-          <span className="text-muted-foreground">
-            Optional — shown as the deadline in recipients' Tasks.
-          </span>
-          <input
-            type="datetime-local"
-            value={dueAt}
-            onChange={(e) => setDueAt(e.target.value)}
-            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground w-64"
-          />
-        </label>
+        <h2 className="text-sm font-semibold text-foreground">Timing</h2>
+        <div className="flex flex-wrap gap-6">
+          <label className="flex flex-col gap-1 text-xs">
+            <span className="text-muted-foreground">
+              Due date (optional) — shown as the deadline in recipients' Tasks.
+            </span>
+            <input
+              type="datetime-local"
+              value={dueAt}
+              onChange={(e) => setDueAt(e.target.value)}
+              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground w-64"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs">
+            <span className="text-muted-foreground">
+              Send later (optional) — schedule instead of sending now.
+            </span>
+            <input
+              type="datetime-local"
+              value={sendAt}
+              onChange={(e) => setSendAt(e.target.value)}
+              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground w-64"
+            />
+          </label>
+        </div>
       </section>
 
       {/* Message */}
@@ -485,7 +555,7 @@ export default function AnnouncementsPage() {
           disabled={!canSend}
           className="px-4 py-2 text-sm font-medium rounded-lg bg-accent-coral text-white hover:bg-accent-coral/90 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
         >
-          {sending ? "Sending…" : "Send"}
+          {sending ? (scheduling ? "Scheduling…" : "Sending…") : scheduling ? "Schedule" : "Send"}
         </button>
         {/* Inline confirmation next to the action, where the user is looking. */}
         {result?.ok && (
@@ -494,11 +564,81 @@ export default function AnnouncementsPage() {
             className="inline-flex items-center gap-1.5 text-sm font-medium text-green-700"
           >
             <CheckCircle2 className="w-4 h-4" />
-            Sent to {result.count} recipient
-            {result.count === 1 ? "" : "s"}.
+            {result.scheduled
+              ? "Scheduled."
+              : `Sent to ${result.count} recipient${result.count === 1 ? "" : "s"}.`}
           </span>
         )}
       </div>
+
+      {scheduled.length > 0 && <ScheduledList scheduled={scheduled} />}
     </div>
+  );
+}
+
+function ScheduledList({
+  scheduled,
+}: {
+  scheduled: {
+    id: string;
+    title: string;
+    sendAt: string;
+    sentAt: string | null;
+    lastError: string | null;
+    allMembers: boolean;
+    groupCount: number;
+    userCount: number;
+  }[];
+}) {
+  const fetcher = useFetcher();
+
+  const audienceSummary = (s: (typeof scheduled)[number]) => {
+    if (s.allMembers) return "whole lab";
+    const parts: string[] = [];
+    if (s.groupCount > 0) parts.push(`${s.groupCount} group${s.groupCount === 1 ? "" : "s"}`);
+    if (s.userCount > 0) parts.push(`${s.userCount} ${s.userCount === 1 ? "person" : "people"}`);
+    return parts.join(" + ") || "—";
+  };
+
+  return (
+    <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
+      <h2 className="text-sm font-semibold text-foreground">Scheduled</h2>
+      <ul className="divide-y divide-border">
+        {scheduled.map((s) => (
+          <li key={s.id} className="flex items-start justify-between gap-3 py-2">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-foreground truncate">{s.title}</p>
+              <p className="text-xs text-muted-foreground">
+                {new Date(s.sendAt).toLocaleString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                  hour: "numeric",
+                  minute: "2-digit",
+                })}{" "}
+                · {audienceSummary(s)}
+              </p>
+              {s.lastError && (
+                <p className="text-xs text-destructive mt-0.5">
+                  Failed to send: {s.lastError}
+                </p>
+              )}
+            </div>
+            {!s.sentAt && (
+              <fetcher.Form method="post">
+                <input type="hidden" name="intent" value="cancel-scheduled" />
+                <input type="hidden" name="id" value={s.id} />
+                <button
+                  type="submit"
+                  disabled={fetcher.state !== "idle"}
+                  className="text-xs text-muted-foreground hover:text-destructive disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+              </fetcher.Form>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

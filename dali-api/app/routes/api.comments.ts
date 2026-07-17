@@ -6,6 +6,7 @@ import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import { hydrateAuthors } from "~/lib/collabAuth";
+import { notify } from "~/lib/notify.server";
 
 // Comments + inline annotations on documents (Pages) and files (ProjectFile).
 //   GET  /api/comments?targetType=doc|file&targetId=...   → threads (roots + replies)
@@ -145,5 +146,65 @@ export async function action({ request }: Route.ActionArgs) {
     select: { id: true },
   });
 
+  if (body.parentId) {
+    void notifyThreadReply({
+      targetType: body.targetType,
+      targetId: body.targetId,
+      rootId: body.parentId,
+      authorId: auth.user.sub,
+      body: body.body,
+    }).catch((err) =>
+      console.error(`comment ${created.id}: reply notify failed`, err),
+    );
+  }
+
   return withCors(request, Response.json({ id: created.id }, { status: 201 }));
+}
+
+// A reply notifies everyone already in the thread (root author + prior
+// repliers), except the reply's own author. True @-mentions need mention
+// capture in the composer first — this covers the "nobody hears about
+// replies" gap the comment pipeline has today.
+async function notifyThreadReply(args: {
+  targetType: "doc" | "file";
+  targetId: string;
+  rootId: string;
+  authorId: string;
+  body: string;
+}): Promise<void> {
+  const thread = await prisma.docComment.findMany({
+    where: { OR: [{ id: args.rootId }, { parentId: args.rootId }] },
+    select: { authorId: true },
+  });
+  const recipients = [...new Set(thread.map((c) => c.authorId))].filter(
+    (id) => id !== args.authorId,
+  );
+  if (recipients.length === 0) return;
+
+  const target =
+    args.targetType === "doc"
+      ? await prisma.page.findUnique({
+          where: { id: args.targetId },
+          select: { title: true },
+        })
+      : await prisma.projectFile.findUnique({
+          where: { id: args.targetId },
+          select: { title: true },
+        });
+  const link =
+    args.targetType === "doc"
+      ? `/documents/${args.targetId}`
+      : `/documents/file/${args.targetId}`;
+  const preview = args.body.length > 200 ? `${args.body.slice(0, 200)}…` : args.body;
+
+  await notify({
+    eventType: "collab.comment_reply",
+    createdByUserId: args.authorId,
+    message: {
+      title: `New reply on: ${target?.title ?? "a document"}`,
+      body: preview,
+      link,
+    },
+    recipients: recipients.map((userId) => ({ userId })),
+  });
 }

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChallengeQuestionField } from "~/hiring/components/ChallengeQuestionField";
+import { FormQuestionField } from "~/components/form-builder/QuestionField";
 import { FormFieldList } from "~/forms/components/FormField";
 import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
 import { Button } from "~/components/ui/Button";
@@ -117,7 +117,7 @@ export function MemberFormFillView({
                 File uploads aren’t available here.
               </div>
             ) : (
-              <ChallengeQuestionField
+              <FormQuestionField
                 question={q}
                 value={answers[q.key] ?? ""}
                 onChange={(v) => set(q.key, v)}

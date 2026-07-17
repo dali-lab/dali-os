@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useSubmit, useActionData, useNavigation } from "react-router";
-import { ChallengeQuestionField } from "~/hiring/components/ChallengeQuestionField";
+import { FormQuestionField } from "~/components/form-builder/QuestionField";
 import { FormFieldList } from "~/forms/components/FormField";
 import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
 import { Button } from "~/components/ui/Button";
@@ -77,7 +77,7 @@ export function OfferingApplyForm({
                 File uploads aren&apos;t available on applications.
               </div>
             ) : (
-              <ChallengeQuestionField
+              <FormQuestionField
                 question={q}
                 value={answers[q.key] ?? ""}
                 onChange={(v) => set(q.key, v)}

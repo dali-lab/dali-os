@@ -4,6 +4,7 @@
 
 import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
+import { notifyTaskComment } from "~/projects/lib/task-notifications.server";
 
 export const ADD_TASK_COMMENT_TOOL = {
   name: "add_task_comment",
@@ -49,6 +50,11 @@ export async function runAddTaskComment(callerId: string, input: Input) {
     data: { taskId: input.taskId, authorId: callerId, body },
     select: { id: true, createdAt: true },
   });
+
+  void notifyTaskComment({ taskId: input.taskId, authorId: callerId, body }).catch(
+    (err) =>
+      console.error(`mcp add_task_comment: notify failed for ${input.taskId}`, err),
+  );
 
   return {
     id: comment.id,

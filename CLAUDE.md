@@ -7,6 +7,8 @@ Project conventions for Claude when running inside `anthropics/claude-code-actio
 - **App**: `dali-api/` — React Router 7 (full-stack), TypeScript, React 19.
 - **DB**: Postgres 16 via Prisma 7 ORM. Hosted on Neon (serverless). Adapters: `@prisma/adapter-neon` (prod-ish), `@prisma/adapter-pg` (local).
 - **Realtime collab**: Hocuspocus server + Yjs CRDT + Tiptap editor.
+- **Background jobs**: in-process 60s runner (`dali-api/app/jobs/`), cross-machine dedup via a Postgres CAS lease on `ScheduledJob` rows (no Redis). Per-job toggles/intervals/settings live in Admin → Jobs.
+- **Notifications**: three channels (in-app, email/digest, Slack DM) dispatched by `notify()` per user preference — see "Background jobs & notifications" below.
 - **Auth**: Google OAuth, Dartmouth CAS, JWT via `jose`.
 - **Styling**: Tailwind CSS 4.
 - **Deploy**: Fly.io. Branches: `dev` → `staging` → `prod`. Migrations require `DIRECT_URL` (non-pooled Neon endpoint) in addition to pooled `DATABASE_URL` — see `dali-api/prisma/MIGRATIONS.md`.
@@ -57,6 +59,13 @@ These live in `.github/workflows/` — treat their failures as blocking:
 ## Realtime / collab caveats
 
 - The `@tiptap/*`, `@hocuspocus/*`, and `yjs` bits are CRDT-based. Schema changes to collaboratively edited documents need extra care — tests may pass locally but break document sync in production. Flag any such change in the PR description.
+
+## Background jobs & notifications
+
+- **Adding a job**: write a handler and add one entry to `dali-api/app/jobs/registry.ts` — the DB row, admin-panel row, and tick pickup all follow. The `ScheduledJob` row is authoritative for interval/settings once created (operator-edited in Admin → Jobs); the registry only seeds defaults. Handlers must be idempotent (the lease recovers crashes by re-running) and keep per-tick work bounded well under the 5-minute lease.
+- **Adding a notification type**: add one entry to `app/lib/notification-events.ts` and dispatch via `notify()` (`app/lib/notify.server.ts`) — **never write `prisma.notification` directly** for member-facing notifications; the settings page, preference matching, and digest grouping all derive from the registry. Pick defaults that preserve behavior for users with no preference rows. Renaming an `eventType` requires backfilling both `Notification` and `NotificationPreference`.
+- **Outbound gating**: `sendEmail` handles env safety itself (dev skips, staging redirects to the test inbox); Slack DMs are prod-only (`NOTIFY_SLACK_DM_OVERRIDE=1` to test). Applicant/portal/partner transactional email stays on its direct per-feature pipelines, outside the preference layer.
+- Manual trigger: `POST /internal/jobs/tick` (`x-jobs-secret` header or an Admin session), or Run-now in Admin → Jobs. Digest jobs self-gate on wall clock — Run-now outside the send window is a no-op by design.
 
 ## Operating rules when running in CI
 

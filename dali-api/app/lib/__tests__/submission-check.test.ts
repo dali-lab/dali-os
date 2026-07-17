@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { checkGitHubUrl, checkFigmaUrl, checkDriveUrl, checkUrl } from "~/hiring/lib/submission-check";
+import { checkGitHubUrl, checkFigmaUrl, checkDriveUrl, checkUrl } from "~/lib/submission-check";
 
 const fetchMock = vi.fn();
 vi.stubGlobal("fetch", fetchMock);

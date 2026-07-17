@@ -3,6 +3,7 @@ import { prisma } from "~/lib/db";
 import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { syncIssueForTask } from "../lib/github-task-sync";
+import { notifyTaskAssigned } from "../lib/task-notifications.server";
 
 // PATCH /api/tasks/:id
 //
@@ -139,11 +140,17 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ ok: true }));
   }
 
+  let addedAssigneeIds: string[] = [];
   await prisma.$transaction(async (tx) => {
     if (Object.keys(data).length > 0) {
       await tx.task.update({ where: { id: params.id }, data });
     }
     if (wantsAssignees) {
+      const prior = await tx.taskAssignee.findMany({
+        where: { taskId: params.id },
+        select: { userId: true },
+      });
+      const priorIds = new Set(prior.map((p) => p.userId));
       await tx.taskAssignee.deleteMany({ where: { taskId: params.id } });
       const ids = body.assigneeIds ?? [];
       if (ids.length > 0) {
@@ -152,8 +159,19 @@ export async function action({ request, params }: Route.ActionArgs) {
           skipDuplicates: true,
         });
       }
+      addedAssigneeIds = ids.filter((id) => !priorIds.has(id));
     }
   });
+
+  if (addedAssigneeIds.length > 0) {
+    void notifyTaskAssigned({
+      taskId: params.id,
+      addedUserIds: addedAssigneeIds,
+      actorUserId: gate.auth.user.sub,
+    }).catch((err) =>
+      console.error(`task ${params.id}: assignment notify failed`, err),
+    );
+  }
 
   // Mirror title/assignee changes to GitHub when this task is linked. Other
   // edited fields (priority, dueAt, domainId) don't have a GH equivalent.

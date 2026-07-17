@@ -3,6 +3,23 @@ export const APPLICATION_TZ = "America/New_York";
 /** Short label shown next to displayed application close dates/times. */
 export const APPLICATION_TZ_LABEL = "ET";
 
+/**
+ * Human-readable instant in the lab's timezone, for server-rendered copy
+ * (Slack DMs, reminder emails). The server runs UTC on Fly — never format
+ * with server-local time there.
+ */
+export function formatApplicationDateTime(date: Date): string {
+  const text = date.toLocaleString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: APPLICATION_TZ,
+  });
+  return `${text} ${APPLICATION_TZ_LABEL}`;
+}
+
 export function isValidTimezone(tz: unknown): tz is string {
   if (typeof tz !== "string" || tz.length === 0) return false;
   try {
