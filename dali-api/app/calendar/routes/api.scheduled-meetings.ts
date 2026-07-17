@@ -2,6 +2,7 @@ import type { Route } from "./+types/api.scheduled-meetings";
 import { z } from "zod";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
+import { canViewForms } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
 import {
   createScheduledMeeting,
@@ -16,7 +17,13 @@ const Base = {
   organizerCalendarLinkId: z.string().min(1).optional(),
   meetingType: z.enum(["Team", "Partner", "Other"]).optional(),
   meetingTypeLabel: z.string().trim().min(1).max(80).optional(),
+  // Project-less meetingType meetings get a Lab-workspace note page instead of
+  // a project one — see createScheduledMeeting in ~/lib/scheduled-meeting.
+  // Invites still come only from the meeting's participant scope.
   projectId: z.string().min(1).optional(),
+  // SelfCheckIn only makes sense alongside meetingType (that's what creates
+  // MeetingAttendance rows at all) — enforced by the refine below.
+  attendanceMode: z.enum(["Roster", "SelfCheckIn"]).optional(),
 } as const;
 
 const CreateSchema = z
@@ -29,13 +36,13 @@ const CreateSchema = z
       ...Base,
     }),
   ])
-  .refine((v) => !v.meetingType || !!v.projectId, {
-    message: "projectId is required when meetingType is set",
-    path: ["projectId"],
-  })
   .refine((v) => v.meetingType !== "Other" || !!v.meetingTypeLabel, {
     message: "meetingTypeLabel is required when meetingType is Other",
     path: ["meetingTypeLabel"],
+  })
+  .refine((v) => v.attendanceMode !== "SelfCheckIn" || !!v.meetingType, {
+    message: "meetingType is required when attendanceMode is SelfCheckIn",
+    path: ["attendanceMode"],
   });
 
 export async function action({ request }: Route.ActionArgs) {
@@ -53,6 +60,11 @@ export async function action({ request }: Route.ActionArgs) {
 
   const body = await parseJson(request, CreateSchema);
   if (body instanceof Response) return withCors(request, body);
+
+  // Self check-in is Core / Admin / Instructor only (same gate as Forms).
+  if (body.attendanceMode === "SelfCheckIn" && !(await canViewForms(auth.user.sub))) {
+    return forbidden(request);
+  }
 
   let scope: ScheduledMeetingScope;
   if (body.scopeType === "Group") {
@@ -75,6 +87,7 @@ export async function action({ request }: Route.ActionArgs) {
     meetingType: body.meetingType,
     meetingTypeLabel: body.meetingTypeLabel,
     projectId: body.projectId,
+    attendanceMode: body.attendanceMode,
   });
 
   if (!result.ok) {
@@ -90,6 +103,7 @@ export async function action({ request }: Route.ActionArgs) {
         notifiedCount: result.notifiedCount,
         gcalError: result.gcalError,
         notePageId: result.notePageId,
+        checkInToken: result.checkInToken,
       },
       { status: 201 },
     ),

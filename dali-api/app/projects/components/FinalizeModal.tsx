@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRevalidator } from "react-router";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { Button } from "~/components/ui/Button";
@@ -81,6 +81,45 @@ export function FinalizeModal({
   const [savedNote, setSavedNote] = useState<string | null>(null);
   const fieldsDirty = slackChannel !== initialSlack || githubSlug !== initialGithub;
 
+  // Staged mentors on this project who aren't P3 yet in their mentee's domain —
+  // finalize can promote them. Loaded when the modal opens; drives the promote
+  // notice + toggle below. Defaults to promoting (the common intent).
+  const [nonP3Mentors, setNonP3Mentors] = useState<{ name: string }[]>([]);
+  const [promoteMentors, setPromoteMentors] = useState(true);
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/staffing/mentorship?cycleId=${encodeURIComponent(cycleId)}`, {
+          credentials: "include",
+        });
+        if (!res.ok) return;
+        const d = (await res.json()) as {
+          mentors: { userId: string; firstName: string; lastName: string; levelByDomain: Record<string, string> }[];
+          pairs: { projectId: string; mentorUserId: string; domainId: string }[];
+        };
+        const byId = new Map(d.mentors.map((m) => [m.userId, m]));
+        const seen = new Set<string>();
+        const flagged: { name: string }[] = [];
+        for (const p of d.pairs) {
+          if (p.projectId !== projectId) continue;
+          const m = byId.get(p.mentorUserId);
+          if (!m || m.levelByDomain[p.domainId] === "P3") continue;
+          if (seen.has(m.userId)) continue;
+          seen.add(m.userId);
+          flagged.push({ name: `${m.firstName} ${m.lastName}`.trim() });
+        }
+        if (!cancelled) setNonP3Mentors(flagged);
+      } catch {
+        /* best-effort — the promote notice just won't show */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, cycleId, projectId]);
+
   // Persist the channel name + GitHub slug to the Project WITHOUT running
   // automations (keeps the project details page in sync). Cancel reverts edits.
   async function saveFields() {
@@ -151,6 +190,7 @@ export function FinalizeModal({
           automations: ids,
           slackChannel: slackChannel.trim() || undefined,
           githubTeamSlug: githubSlug.trim() || undefined,
+          promoteMentors,
         }),
       });
       const json = (await res.json().catch(() => ({}))) as {
@@ -190,6 +230,31 @@ export function FinalizeModal({
       {error && (
         <div className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-md px-3 py-2 mb-3">
           {error}
+        </div>
+      )}
+
+      {nonP3Mentors.length > 0 && (
+        <div className="mb-3 rounded-md border border-accent-yellow/40 bg-accent-yellow/10 px-3 py-2.5">
+          <label className="flex items-start gap-2 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              checked={promoteMentors}
+              disabled={running}
+              onChange={(e) => setPromoteMentors(e.target.checked)}
+              className="mt-0.5"
+            />
+            <span className="min-w-0">
+              <span className="font-medium text-foreground">
+                Promote {nonP3Mentors.length} mentor{nonP3Mentors.length === 1 ? "" : "s"} to P3
+              </span>
+              <span className="block text-xs text-muted-foreground mt-0.5">
+                {nonP3Mentors.map((m) => m.name).join(", ")}{" "}
+                {nonP3Mentors.length === 1 ? "is" : "are"} staged to mentor but not yet P3. Finalizing
+                promotes {nonP3Mentors.length === 1 ? "them" : "them"} (assignment + eligibility) so the
+                pairing is valid. Uncheck to pair without promoting.
+              </span>
+            </span>
+          </label>
         </div>
       )}
 

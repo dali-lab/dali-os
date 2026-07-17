@@ -5,12 +5,14 @@ import {
   CalendarDays,
   Cable,
   KeyRound,
+  Palette,
   Slack,
   UserCircle2,
 } from "lucide-react";
 import { useDesktopVersion } from "~/lib/desktop";
 import { SettingsBlock, SettingsLayout } from "~/components/settings/SettingsLayout";
 import { AccountSettingsBlock } from "~/components/settings/AccountSettingsBlock";
+import { AppearanceSettingsBlock } from "~/components/settings/AppearanceSettingsBlock";
 import { CalendarSettingsBlock } from "~/components/settings/CalendarSettingsBlock";
 import { SlackSettingsBlock } from "~/components/settings/SlackSettingsBlock";
 import { SessionsSettingsBlock } from "~/components/settings/SessionsSettingsBlock";
@@ -30,6 +32,7 @@ type SectionId = (typeof SECTION_IDS)[number];
 
 const NAV = [
   { id: "account", label: "Account", icon: UserCircle2 },
+  { id: "appearance", label: "Appearance", icon: Palette },
   { id: "calendar", label: "Calendar", icon: CalendarDays },
   { id: "slack", label: "Slack", icon: Slack },
   { id: "notifications", label: "Notifications", icon: Bell },
@@ -127,6 +130,21 @@ export function SettingsPage({
             <SlackSettingsBlock {...data.slack} />
           </SettingsBlock>
         )}
+        <SettingsBlock
+          id="appearance"
+          title="Appearance"
+          description="Light mode, dark mode, or match your device."
+        >
+          <AppearanceSettingsBlock />
+        </SettingsBlock>
+
+        <SettingsBlock
+          id="calendar"
+          title="Calendar"
+          description="Linked Google accounts and which sub-calendars block your availability."
+        >
+          <CalendarSettingsBlock calendarLinks={data.calendarLinks} />
+        </SettingsBlock>
 
         {active === "notifications" && (
           <SettingsBlock

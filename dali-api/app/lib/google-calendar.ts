@@ -1,3 +1,4 @@
+import DOMPurify from "isomorphic-dompurify";
 import { prisma } from "~/lib/db";
 import { decrypt, encrypt } from "~/lib/calendar-crypto";
 import { GoogleOAuthError, refreshGoogleToken } from "~/lib/google-oauth";
@@ -11,6 +12,8 @@ interface BusyEvent {
   title?: string;
   calendarId?: string; // the Google sub-calendar this event came from
   color?: string; // that calendar's backgroundColor (hex), for per-calendar tint
+  description?: string;
+  location?: string;
 }
 
 interface StoredTokens {
@@ -132,11 +135,47 @@ async function extractGoogleErrorDetail(res: Response): Promise<string> {
 interface GoogleEvent {
   id?: string;
   summary?: string;
+  description?: string;
+  location?: string;
   status?: string; // "confirmed" | "tentative" | "cancelled"
   transparency?: string; // "opaque" (busy) | "transparent" (free)
   start?: { dateTime?: string; date?: string };
   end?: { dateTime?: string; date?: string };
   attendees?: { self?: boolean; responseStatus?: string }[];
+}
+
+/**
+ * Google descriptions are often HTML; flatten to plain text for display.
+ *
+ * DOMPurify (a real HTML parser, not string regex) does the actual
+ * sanitization — restricted to just the tags we turn into newlines — so a
+ * real `<script>` tag, however it's encoded in the source, can't survive.
+ * Deliberately does NOT decode `&lt;`/`&gt;` afterward: those are the only
+ * two entities that can reconstruct an angle bracket, and DOMPurify safely
+ * leaves an inert, escaped `&lt;script&gt;` in the source exactly as such —
+ * decoding it back to `<script>` here would hand the vulnerability right
+ * back (this is what CodeQL flagged: the output must never contain a literal
+ * "<script", not just avoid parsing as one). Everything else DOMPurify is
+ * already used for elsewhere too (~/lib/email.ts).
+ */
+function plainTextFromGoogleHtml(html: string): string {
+  // ALLOWED_TAGS + ALLOWED_ATTR: [] means DOMPurify's output can only ever
+  // contain the bare strings <p>, </p>, <br>, <br/> as markup — nothing else
+  // survives sanitization. So the three replacements below are each an exact,
+  // bounded substring match, not a generic "<...>" wildcard sweep (CodeQL's
+  // incomplete-sanitization query specifically distrusts that broader shape,
+  // regardless of what ran before it — it doesn't credit DOMPurify's pass).
+  const safe = DOMPurify.sanitize(html, { ALLOWED_TAGS: ["p", "br"], ALLOWED_ATTR: [] });
+  return safe
+    .replace(/<br\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<p>/gi, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&amp;/gi, "&")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 // One sub-calendar's confirmed, time-bounded, not-declined, busy events in the
@@ -156,7 +195,7 @@ async function fetchEventsForCalendar(
     singleEvents: "true", // expand recurring events into instances
     orderBy: "startTime",
     maxResults: "250",
-    fields: "items(id,summary,status,transparency,start,end,attendees(self,responseStatus))",
+    fields: "items(id,summary,description,location,status,transparency,start,end,attendees(self,responseStatus))",
   });
   const res = await fetch(
     `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?${params}`,
@@ -184,6 +223,8 @@ async function fetchEventsForCalendar(
       title: ev.summary?.trim() || "Busy",
       calendarId,
       color,
+      description: ev.description ? plainTextFromGoogleHtml(ev.description) : undefined,
+      location: ev.location?.trim() || undefined,
     });
   }
   return out;

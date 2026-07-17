@@ -19,17 +19,12 @@ button. It pulls your finalized period from DALI (you must be logged into DALI i
 browser) and fills the form. It never submits — you click Save.</p>
 
 <label for="base">DALI base URL</label>
-<input id="base" placeholder="http://localhost:5173" />
-<p class="hint">Leave blank to auto-try localhost then the DALI domain.</p>
+<input id="base" placeholder="http://localhost:3001" />
+<p class="hint">Required. Local dev: http://localhost:3001 — prod: https://os.dali.dartmouth.edu</p>
 
 <label for="period">Period id (optional)</label>
 <input id="period" placeholder="current" />
 <p class="hint">Blank = the current finalized period.</p>
-
-<label style="display:flex;align-items:center;gap:6px;font-weight:600;margin-top:12px;">
-  <input type="checkbox" id="demo" style="width:auto;" /> Demo mode (test without DALI backend)
-</label>
-<p class="hint">Uses built-in sample hours instead of fetching DALI. Turn off for real use.</p>
 
 <button id="save">Save</button>
 <div class="ok" id="status"></div>

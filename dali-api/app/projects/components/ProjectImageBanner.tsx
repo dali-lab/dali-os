@@ -10,6 +10,11 @@ import { PhotoCropModal } from "~/components/PhotoCropModal";
 
 const ACCEPT = "image/png,image/jpeg,image/webp,image/gif";
 
+// Banner crop ratio. Sits between the detail page's wide hero box and the
+// hub card's shorter thumbnail; both use object-cover, so each trims a little
+// rather than either letterboxing.
+const BANNER_ASPECT = 3;
+
 // Full-width project banner that doubles as the image-upload control. When the
 // project has no image, a default gradient (with the project initial) shows
 // instead. Clicking the banner (or its camera button) picks → crops → uploads
@@ -193,6 +198,15 @@ export function ProjectImageBanner({
       />
 
       {error && <p className="text-xs text-red-500">{error}</p>}
+
+      <PhotoCropModal
+        open={cropSrc !== null}
+        imageSrc={cropSrc}
+        onCancel={closeCrop}
+        onConfirm={handleConfirm}
+        aspect={BANNER_ASPECT}
+        cropShape="rect"
+      />
     </div>
   );
 }

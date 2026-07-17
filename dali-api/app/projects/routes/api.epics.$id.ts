@@ -10,7 +10,7 @@ import { withCors, handlePreflight } from "~/lib/cors";
 //
 // Same permission model as project edit (isCore === Admin || Core).
 
-const EPIC_STATUSES = ["Open", "InProgress", "Done", "Cancelled"] as const;
+const EPIC_STATUSES = ["Backlog", "Open", "InProgress", "Done", "Cancelled"] as const;
 type EpicStatus = (typeof EPIC_STATUSES)[number];
 function isEpicStatus(x: unknown): x is EpicStatus {
   return typeof x === "string" && (EPIC_STATUSES as readonly string[]).includes(x);

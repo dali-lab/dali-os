@@ -1684,7 +1684,7 @@ function DecisionEmailPreviewModal({
               <div>
                 <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Body</h3>
                 <div
-                  className="mt-1 prose prose-sm max-w-none text-foreground"
+                  className="mt-1 prose prose-sm dark:prose-invert max-w-none text-foreground"
                   dangerouslySetInnerHTML={{ __html: rendered?.html ?? "" }}
                 />
               </div>

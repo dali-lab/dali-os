@@ -28,6 +28,9 @@ export default [
     // Cross-cycle by design (accepting off a waitlist may land in a later
     // cycle), so it lives beside the other hiring tools, not under /lead.
     route("hiring/waitlists", "hiring/routes/waitlists.tsx"),
+    // Accepted-applicant provisioning board (DALI email, Slack, Figma,
+    // profile form) — Core-only, same sensitivity tier as the lead dashboard.
+    route("hiring/onboarding", "hiring/routes/onboarding.tsx"),
     // Library — challenges, rubrics, and confidentiality agreements behind one
     // page with pills. The list views are consolidated here; the detail pages
     // keep their original paths.
@@ -48,6 +51,7 @@ export default [
     route("admin-console/members", "admin-console/routes/admin-console.members.tsx"),
     route("admin-console/domains", "admin-console/routes/admin-console.domains.tsx"),
     route("admin-console/announcements", "admin-console/routes/admin-console.announcements.tsx"),
+    route("admin-console/attendance", "admin-console/routes/admin-console.attendance.tsx"),
     route("admin-console/activity", "admin-console/routes/admin-console.activity.tsx"),
     route("admin-console/analytics", "admin-console/routes/admin-console.analytics.tsx"),
     route("admin-console/jobs", "admin-console/routes/admin-console.jobs.tsx"),
@@ -82,6 +86,10 @@ export default [
       "projects/routes/projects.level-up.$userId.tsx",
     ),
     route("projects/:id", "projects/routes/projects.$id.tsx"),
+    route(
+      "projects/:id/partner-view",
+      "projects/routes/projects.$id.partner-view.tsx",
+    ),
 
     // Documents & files — full-page reusable editor + file viewer. Literal
     // "file" segment precedes the :pageId param so it isn't captured.
@@ -114,9 +122,15 @@ export default [
     route("education/:offeringId/page/:pageId", "education/routes/education.$offeringId.page.$pageId.tsx"),
     route("education/:offeringId/assignments/:assignmentId", "education/routes/education.$offeringId.assignments.$assignmentId.tsx"),
 
+    // Mentorship — weekly notes hub + browser + templates (Core).
+    // Hidden from mentees entirely; gated server-side by canViewMentorship.
+    route("mentorship", "mentorship/routes/mentorship.tsx"),
+    route("mentorship/browse", "mentorship/routes/mentorship.browse.tsx"),
+    route("mentorship/templates", "mentorship/routes/mentorship.templates.tsx"),
+    route("mentorship/notes/:id", "mentorship/routes/mentorship.notes.$id.tsx"),
+
     // Internal processes. The bare route is the area hub.
     route("internal-processes", "internal-processes/routes/internal-processes.hub.tsx"),
-    route("internal-processes/onboarding", "internal-processes/routes/internal-processes.onboarding.tsx"),
     route("internal-processes/transfer", "internal-processes/routes/internal-processes.transfer.tsx"),
     route("internal-processes/level-up", "internal-processes/routes/internal-processes.level-up.tsx"),
     route("internal-processes/jobx", "internal-processes/routes/internal-processes.jobx.tsx"),
@@ -282,6 +296,7 @@ export default [
   route("api/scheduled-meetings", "calendar/routes/api.scheduled-meetings.ts"),
   route("api/scheduled-meetings/:id/cancel", "calendar/routes/api.scheduled-meetings.$id.cancel.ts"),
   route("api/scheduled-meetings/:id/attendance", "calendar/routes/api.scheduled-meetings.$id.attendance.ts"),
+  route("api/scheduled-meetings/:id/check-in", "calendar/routes/api.scheduled-meetings.$id.check-in.ts"),
   route("api/calendar/group-availability", "calendar/routes/api.calendar.group-availability.ts"),
   // JobX browser extension export — see jobx-extension/README.md.
   route("api/timesheets/export", "routes/api.timesheets.export.ts"),
@@ -305,6 +320,7 @@ export default [
   route("api/staffing/board-member", "projects/routes/api.staffing.board-member.ts"),
   route("api/staffing/events", "projects/routes/api.staffing.events.ts"),
   route("api/staffing/reorder", "projects/routes/api.staffing.reorder.ts"),
+  route("api/staffing/mentorship", "projects/routes/api.staffing.mentorship.ts"),
 
   // Core-only level correction for an already-finalized ProjectAssignment.
   route(
@@ -319,6 +335,7 @@ export default [
 
   // Project epics & sprints
   route("api/projects/:id/epics", "projects/routes/api.projects.$id.epics.ts"),
+  route("api/projects/:id/epics/reorder", "projects/routes/api.projects.$id.epics.reorder.ts"),
   route("api/epics/:id", "projects/routes/api.epics.$id.ts"),
   route(
     "api/epics/:id/description-doc",
@@ -442,4 +459,11 @@ export default [
   // Collaborative editing version history
   route("api/collab/versions", "routes/api.collab.versions.ts"),
   route("api/collab/versions/:id", "routes/api.collab.versions.$id.ts"),
+
+  // Mentorship API — weekly notes, templates, mentor↔mentee pairs.
+  route("api/mentorship/notes", "mentorship/routes/api.mentorship.notes.ts"),
+  route("api/mentorship/notes/:id", "mentorship/routes/api.mentorship.notes.$id.ts"),
+  route("api/mentorship/templates", "mentorship/routes/api.mentorship.templates.ts"),
+  route("api/mentorship/templates/:id", "mentorship/routes/api.mentorship.templates.$id.ts"),
+  route("api/mentorship/pairs", "mentorship/routes/api.mentorship.pairs.ts"),
 ] satisfies RouteConfig;

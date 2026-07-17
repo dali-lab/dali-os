@@ -14,6 +14,7 @@ import {
   getUserRoles,
   isAdmin,
   isCore,
+  isLabMentor,
 } from "~/lib/roles";
 import {
   ALLOWED_LEVELS,
@@ -81,6 +82,21 @@ export type ProfilePageData = {
   /** Re-exported so the view can render the Domains & levels picker without
    *  needing its own admin-console import. */
   allowedLevels: readonly Level[];
+  /** Mentorship pairings + note count for this member. Populated only when
+   *  the VIEWER is a lab mentor or Core AND they are not looking at their
+   *  own profile — mentees never see anything about notes written about
+   *  them. Null in every other case. */
+  mentorshipPanel: {
+    pairs: Array<{
+      id: string;
+      role: "mentor" | "mentee";
+      counterpart: { id: string; firstName: string; lastName: string };
+      projectName: string;
+      domainCode: string;
+      termCode: string;
+    }>;
+    recentNoteCount: number;
+  } | null;
   /** Education engagement — attended offerings (note lanes excluded) and
    *  offerings taught. Loaded for self and Core viewers only; null hides the
    *  card entirely for peer viewers. */
@@ -102,6 +118,7 @@ export type ProfilePageData = {
       termCode: string;
     }>;
     ceCredits: Array<{ termCode: string; count: number }>;
+
   } | null;
 };
 
@@ -238,6 +255,62 @@ export async function loadProfilePage({
       ? await getEducationProfile(targetId)
       : null;
 
+  // Mentorship panel: visible only when the viewer is a lab mentor (or Core)
+  // AND they are NOT looking at their own profile. Mentees never see
+  // anything about notes written about them.
+  const viewerCanSeeMentorshipPanel = !isSelf
+    ? canManageEligibility || (await isLabMentor(auth.user.sub))
+    : false;
+  let mentorshipPanel: ProfilePageData["mentorshipPanel"] = null;
+  if (viewerCanSeeMentorshipPanel) {
+    const [asMentor, asMentee, noteCount] = await Promise.all([
+      prisma.mentorshipPair.findMany({
+        where: { mentorUserId: targetId },
+        select: {
+          id: true,
+          mentee: { select: { id: true, firstName: true, lastName: true } },
+          project: { select: { name: true } },
+          domain: { select: { code: true } },
+          term: { select: { code: true } },
+        },
+      }),
+      prisma.mentorshipPair.findMany({
+        where: { menteeUserId: targetId },
+        select: {
+          id: true,
+          mentor: { select: { id: true, firstName: true, lastName: true } },
+          project: { select: { name: true } },
+          domain: { select: { code: true } },
+          term: { select: { code: true } },
+        },
+      }),
+      prisma.mentorNote.count({
+        where: { OR: [{ mentorId: targetId }, { menteeId: targetId }] },
+      }),
+    ]);
+    mentorshipPanel = {
+      pairs: [
+        ...asMentor.map((p) => ({
+          id: p.id,
+          role: "mentor" as const,
+          counterpart: p.mentee,
+          projectName: p.project.name,
+          domainCode: p.domain.code,
+          termCode: p.term.code,
+        })),
+        ...asMentee.map((p) => ({
+          id: p.id,
+          role: "mentee" as const,
+          counterpart: p.mentor,
+          projectName: p.project.name,
+          domainCode: p.domain.code,
+          termCode: p.term.code,
+        })),
+      ],
+      recentNoteCount: noteCount,
+    };
+  }
+
   const roleLabels = [
     roles.isAdmin && "Admin",
     roles.isCore && "Hiring Lead",
@@ -274,6 +347,8 @@ export async function loadProfilePage({
     presenceSubtitle: presenceUser?.subtitle ?? null,
     allowedLevels: ALLOWED_LEVELS,
     education,
+
+    mentorshipPanel,
   };
 }
 

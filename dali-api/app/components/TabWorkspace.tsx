@@ -24,6 +24,11 @@ export interface TabWorkspaceHandle {
   /** Rename any tab matching `url` (across all panes). Used by embedded
    *  iframes to announce their preferred label after route meta resolves. */
   setTabLabel: (url: string, label: string) => void
+  /** Post a message to every open tab's iframe (across all panes). Used to
+   *  relay a data-changed event from the iframe that made the change to
+   *  sibling iframes that show the same data (e.g. a doc title edit in a
+   *  split-screen document tab refreshing the project tab's Documents list). */
+  broadcast: (message: Record<string, unknown>) => void
 }
 
 interface Tab {
@@ -768,6 +773,11 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
           }))
           return changed ? { ...prev, panes } : prev
         })
+      },
+      broadcast: (message) => {
+        for (const iframe of iframeElsRef.current.values()) {
+          iframe.contentWindow?.postMessage(message, window.location.origin)
+        }
       },
     }
   }, [apiRef])

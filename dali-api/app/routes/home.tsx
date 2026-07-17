@@ -179,7 +179,7 @@ export default function Home() {
 function FormsForYouPanel({ forms }: { forms: ListedForm[] }) {
   if (forms.length === 0) return null;
   return (
-    <div className="bg-card border border-border rounded-lg p-3">
+    <div className="bg-card border border-border shadow-brand-1 rounded-lg p-3">
       <div className="flex items-center gap-2 mb-2">
         <FileText className="w-4 h-4 text-accent-coral" />
         <span className="font-heading font-semibold text-sm text-foreground">
@@ -301,7 +301,7 @@ function TaskCard({ task: t }: { task: Task }) {
   const revalidator = useRevalidator();
   const [confirming, setConfirming] = useState(false);
   const cls =
-    "flex-shrink-0 w-56 bg-card border border-border rounded-md px-3 py-2";
+    "flex-shrink-0 w-56 bg-card border border-border shadow-brand-1 rounded-md px-3 py-2";
 
   const meta = t.dueAt ? (
     <span className="inline-flex items-center gap-1 text-[11px] font-medium text-accent-coral mt-1">
@@ -565,7 +565,7 @@ function NotificationCard({ notification }: { notification: HomeNotification }) 
 
   return (
     <div
-      className={`group bg-card border border-border border-l-4 ${accent} rounded-md px-3 py-2.5 flex items-start gap-3`}
+      className={`group bg-card border border-border shadow-brand-1 border-l-4 ${accent} rounded-md px-3 py-2.5 flex items-start gap-3`}
     >
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
@@ -677,7 +677,7 @@ function WeekCalendarPanel({
 }) {
   const hasEvents = events.length > 0;
   return (
-    <section className="bg-card border border-border rounded-lg p-4 flex flex-col">
+    <section className="bg-card border border-border shadow-brand-1 rounded-lg p-4 flex flex-col">
       <div className="flex items-center justify-between mb-3">
         <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
           <CalendarDays className="w-4 h-4 text-accent-coral" />

@@ -3,19 +3,20 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { APPLICATION_TZ, zonedDayStartUtc } from "~/lib/timezone";
+import { getRoleLabel } from "~/lib/roles";
 
 // Export the caller's Timesheet-tab entries in the shape the JobX browser
 // extension (jobx-extension/) consumes:
 //   { hireLabel, entries: [{ startAt, endAt, description, projectLabel }] }
 //
 // JobX timesheets are per-job, so the extension fills one "hire" at a time.
-// There's no separate job-code concept on TimeEntry — each Project a member
-// has logged hours against stands in for a hire, plus a catch-all
-// "unassigned" bucket for entries with no project. Pass ?hire=<projectId
-// or "unassigned"> to pick which bucket to export; omit it to export the
-// member's first available bucket. ?from / ?to (ISO dates) bound the
-// window; default is the last 30 days, which comfortably covers a JobX pay
-// period.
+// Bucketed by (assignmentType, roleRefId) — the concrete paid role a
+// TimeEntry is attributed to (see app/lib/roles.ts#getUserRoleInstances) —
+// plus a catch-all "unassigned" bucket for legacy/unattributed entries. Pass
+// ?hire=<roleRefId or "unassigned"> to pick which bucket to export; omit it
+// to export the member's first available bucket. ?from / ?to (ISO dates)
+// bound the window; default is the last 30 days, which comfortably covers a
+// JobX pay period.
 const UNASSIGNED_KEY = "unassigned";
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -49,7 +50,8 @@ export async function loader({ request }: Route.LoaderArgs) {
         note: true,
         startTime: true,
         endTime: true,
-        project: { select: { id: true, name: true } },
+        assignmentType: true,
+        roleRefId: true,
       },
     }),
     prisma.userAvailabilitySettings.findUnique({ where: { userId }, select: { timezone: true } }),
@@ -66,11 +68,17 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const byKey = new Map<string, { label: string; entries: typeof entries }>();
   for (const e of entries) {
-    const key = e.project?.id ?? UNASSIGNED_KEY;
-    const label = e.project?.name ?? "DALI Hours";
-    const bucket = byKey.get(key);
-    if (bucket) bucket.entries.push(e);
-    else byKey.set(key, { label, entries: [e] });
+    const key = e.roleRefId ?? UNASSIGNED_KEY;
+    let bucket = byKey.get(key);
+    if (!bucket) {
+      const label =
+        e.assignmentType && e.roleRefId
+          ? ((await getRoleLabel(e.assignmentType, e.roleRefId)) ?? "DALI Hours")
+          : "DALI Hours";
+      bucket = { label, entries: [] };
+      byKey.set(key, bucket);
+    }
+    bucket.entries.push(e);
   }
   const availableHires = Array.from(byKey.entries()).map(([key, v]) => ({ key, label: v.label }));
 

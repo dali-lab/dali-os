@@ -25,6 +25,8 @@ export type Priority = "Low" | "Normal" | "High" | "Urgent";
 export type TaskCardModel = {
   id: string;
   title: string;
+  // Plain-text task description, edited in the task modal. Null when unset.
+  description: string | null;
   status: TaskStatus;
   priority: Priority;
   position: number;
@@ -45,6 +47,9 @@ export type TaskCardModel = {
   // null means the task is not mirrored.
   githubIssueUrl: string | null;
   githubIssueNumber: number | null;
+  createdBy: { id: string; name: string };
+  // ISO timestamp (UTC).
+  createdAt: string;
 };
 
 // Choices the TaskModal needs to populate its assignee + domain dropdowns.

@@ -14,9 +14,11 @@ import { projectsPills } from "../components/projectsPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { prisma } from "~/lib/db";
+import { resolvePhotoUrl } from "~/lib/photo";
 import { githubTeamSlug } from "~/lib/github-slug";
 import { ensureProjectGroup } from "~/lib/groups";
 import { ViewToggle, useViewPreference } from "~/components/ViewToggle";
+import { buttonClasses } from "~/components/ui/Button";
 import { TermFilter } from "~/components/TermFilter";
 import { resolveTermFilter } from "~/lib/terms";
 
@@ -74,22 +76,27 @@ export async function loader({ request }: Route.LoaderArgs) {
     },
   });
 
-  const rows: ProjectRow[] = projects.map((p) => {
-    const startTerm = p.projectTerms
-      .map((pt) => pt.term)
-      .sort((a, b) => a.sortKey - b.sortKey)[0];
-    return {
-      id: p.id,
-      name: p.name,
-      status: p.status,
-      firstTermCode: startTerm?.code ?? null,
-      imageUrl: p.imageUrl,
-      partners: p.partners.map((pp) => ({
-        name: pp.partnerOrg.name,
-        logoUrl: pp.partnerOrg.logoUrl,
-      })),
-    };
-  });
+  const rows: ProjectRow[] = await Promise.all(
+    projects.map(async (p) => {
+      const startTerm = p.projectTerms
+        .map((pt) => pt.term)
+        .sort((a, b) => a.sortKey - b.sortKey)[0];
+      return {
+        id: p.id,
+        name: p.name,
+        status: p.status,
+        firstTermCode: startTerm?.code ?? null,
+        // Uploaded images are stored as S3 keys; presign for display.
+        imageUrl: await resolvePhotoUrl(p.imageUrl),
+        partners: await Promise.all(
+          p.partners.map(async (pp) => ({
+            name: pp.partnerOrg.name,
+            logoUrl: await resolvePhotoUrl(pp.partnerOrg.logoUrl),
+          })),
+        ),
+      };
+    }),
+  );
 
   const [partnerOrgs, canEdit, canStaff] = await Promise.all([
     prisma.partnerOrg.findMany({
@@ -196,7 +203,7 @@ export default function ProjectsListPage() {
           <button
             type="button"
             onClick={() => setCreating(true)}
-            className="px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
+            className={buttonClasses("primary", "sm", "rounded-md")}
           >
             + New project
           </button>
@@ -350,7 +357,12 @@ function ProjectsTable({ rows }: { rows: ProjectRow[] }) {
               }}
               className="border-t border-border hover:bg-muted/20 cursor-pointer"
             >
-              <td className="px-4 py-2 text-foreground">{p.name}</td>
+              <td className="px-4 py-2">
+                <div className="flex items-center gap-3 min-w-0">
+                  <ProjectThumb project={p} />
+                  <span className="text-foreground truncate">{p.name}</span>
+                </div>
+              </td>
               <td className="px-4 py-2">
                 <StatusPill status={p.status} />
               </td>
@@ -407,6 +419,30 @@ function ProjectCard({ project }: { project: ProjectRow }) {
       )}
       </div>
     </Link>
+  );
+}
+
+// Row thumbnail for the list view. Falls back to the project's initial so the
+// name column stays aligned whether or not an image is set — same shape as the
+// partners hub's OrgAvatar, but object-cover since these are photos, not logos.
+function ProjectThumb({
+  project,
+}: {
+  project: Pick<ProjectRow, "name" | "imageUrl">;
+}) {
+  if (project.imageUrl) {
+    return (
+      <img
+        src={project.imageUrl}
+        alt=""
+        className="w-8 h-8 rounded object-cover bg-background border border-border flex-shrink-0"
+      />
+    );
+  }
+  return (
+    <div className="w-8 h-8 rounded bg-brand-tint text-dark-blue flex items-center justify-center text-xs font-bold flex-shrink-0">
+      {project.name.slice(0, 1)}
+    </div>
   );
 }
 

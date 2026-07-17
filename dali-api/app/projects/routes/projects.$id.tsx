@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Form,
   Link,
@@ -10,10 +10,9 @@ import {
   useSearchParams,
   useSubmit,
 } from "react-router";
-import { Check, Handshake, Pencil, X, Settings, Folder, FolderPlus, ChevronRight, ChevronDown } from "lucide-react";
+import { Check, Handshake, Pencil, X, Settings, Folder, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload } from "lucide-react";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { EditableSection } from "~/components/EditableSection";
-import { TagPicker } from "~/components/TagPicker";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { PresenceBar } from "~/components/collab/PresenceBar";
 import { uploadFileToS3, formatBytes } from "~/lib/upload-client";
@@ -29,7 +28,7 @@ import { Avatar } from "~/components/ui/Avatar";
 import { ProjectImageBanner } from "../components/ProjectImageBanner";
 import { Markdown } from "~/components/Markdown";
 import { parseSessionCookie } from "~/lib/cookies";
-import { isCore, isProjectMember, canManageStaffing, currentTerm } from "~/lib/roles";
+import { isCore, isProjectMember, canManageStaffing, currentTerm, isLabMentor } from "~/lib/roles";
 import {
   linkProjectPartner,
   unlinkProjectPartner,
@@ -37,6 +36,7 @@ import {
 } from "~/partners/lib/partner-access";
 import { getPresenceUser } from "~/lib/presence-user";
 import { TaskBoard } from "../components/TaskBoard";
+import { ProjectMentorshipTab } from "~/mentorship/components/ProjectMentorshipTab";
 import { type TimelineEpic, type EpicStatus } from "../components/EpicsTimeline";
 import {
   EpicSprintManager,
@@ -58,6 +58,19 @@ export const meta: Route.MetaFunction = ({ data }) => {
 export const handle = {
   breadcrumb: (data: unknown) =>
     (data as { project?: { name: string } } | undefined)?.project?.name,
+  headerAction: (data: unknown) => {
+    const d = data as { project?: { id: string } } | undefined;
+    if (!d?.project) return null;
+    return (
+      <Link
+        to={`/projects/${d.project.id}/partner-view`}
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md border border-border text-foreground hover:bg-muted/50 transition-colors"
+      >
+        <Handshake className="w-4 h-4" />
+        Partner view
+      </Link>
+    );
+  },
 };
 
 // Open a project document as a split-screen tab. This page renders inside a
@@ -82,15 +95,16 @@ type ProjectStatus = (typeof STATUSES)[number];
 // "Scope" is no longer a public tab — its domain/term/challenge config moved
 // into a settings popup (gated to Core/Admin/Staff). Public tabs are just the
 // content views.
-const TABS = ["overview", "work"] as const;
+const TABS = ["overview", "work", "mentorship"] as const;
 type Tab = (typeof TABS)[number];
 function isTab(x: string | null): x is Tab {
-  return x === "overview" || x === "work";
+  return x === "overview" || x === "work" || x === "mentorship";
 }
 
 const TAB_LABELS: Record<Tab, string> = {
   overview: "Overview",
   work: "Work",
+  mentorship: "Mentorship",
 };
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -197,6 +211,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         select: {
           id: true,
           title: true,
+          description: true,
           status: true,
           priority: true,
           position: true,
@@ -205,6 +220,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           sprintId: true,
           githubIssueNumber: true,
           githubIssueUrl: true,
+          createdAt: true,
+          createdBy: { select: USER_NAME_SELECT },
           domain: { select: { id: true, displayName: true } },
           assignees: {
             select: {
@@ -248,7 +265,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       parentPageId: true,
       systemKey: true,
       partnerVisible: true,
-      tags: { select: { tag: { select: { id: true, label: true, slug: true, color: true } } } },
     },
   });
   const childrenByParent = new Map<string, typeof pageRows>();
@@ -264,7 +280,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     kind: d.kind,
     isSystem: d.systemKey !== null,
     partnerVisible: d.partnerVisible,
-    tags: d.tags.map((t) => t.tag).sort((a, b) => a.label.localeCompare(b.label)),
   });
   const documents = pageRows
     .filter((p) => p.parentPageId === null)
@@ -273,7 +288,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       children: (childrenByParent.get(p.id) ?? []).map(toDocumentDto),
     }));
 
-  // Project files — standalone uploads with their current version + tags.
+  // Project files — standalone uploads with their current version.
+  // Tags are edited in the file/document editor, not on this list.
   const fileRows = await prisma.projectFile.findMany({
     where: { projectId: project.id, archivedAt: null },
     orderBy: { createdAt: "asc" },
@@ -282,7 +298,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       title: true,
       currentVersion: { select: { fileName: true, sizeBytes: true } },
       _count: { select: { versions: true } },
-      tags: { select: { tag: { select: { id: true, label: true, slug: true, color: true } } } },
     },
   });
   const files = fileRows.map((f) => ({
@@ -291,15 +306,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     fileName: f.currentVersion?.fileName ?? null,
     sizeBytes: f.currentVersion?.sizeBytes ?? null,
     versionCount: f._count.versions,
-    tags: f.tags.map((t) => t.tag).sort((a, b) => a.label.localeCompare(b.label)),
   }));
-
-  // Lab-wide active tags, for the tag pickers on docs and files.
-  const allTags = await prisma.docTag.findMany({
-    where: { archivedAt: null },
-    orderBy: { label: "asc" },
-    select: { id: true, label: true, slug: true, color: true },
-  });
 
   // Content edits (name/status, description, details, docs/files, epics/
   // sprints/tasks) are open to Core/Admin *and* anyone staffed on this project
@@ -310,6 +317,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // The Scope/challenge settings popup is visible to Core, Admin, or staffing
   // leads. Editing still requires canEditScope (isCore) — the action enforces that.
   const canViewScope = canEditScope || (await canManageStaffing(auth.user.sub));
+  // Mentorship tab is for the mentor collective (lab mentors + Core). Mentees
+  // never see it on the project page.
+  const canViewMentorshipTab = core || (await isLabMentor(auth.user.sub));
 
   // Collab editor wiring (same as the hiring routes): session cookie is the
   // WebSocket auth token; userName labels the presence cursor.
@@ -321,23 +331,29 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const userName = presenceUser?.name ?? fallbackName;
 
   // Timeline span: prefer the epic's explicit startsAt/endsAt; fall back to
-  // the min/max of its sprint dates when either is unset. Each epic also
-  // carries its own sprint rows (ordered by start) so the timeline can render
-  // one bar per sprint with connectors, not just a single epic bar.
+  // the min/max of its sprint dates when either is unset. When the epic has
+  // sprints, expand the bar to cover the sprint union so the parent epic bar
+  // never disappears while child sprint bars are visible.
   const epics: TimelineEpic[] = project.epics.map((e) => {
     const epicSprints = project.sprints
       .filter((s) => s.epicId === e.id)
       .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
-    const starts = epicSprints.map((s) => s.startsAt.getTime());
-    const ends = epicSprints.map((s) => s.endsAt.getTime());
-    const sprintStart = starts.length ? new Date(Math.min(...starts)).toISOString() : null;
-    const sprintEnd = ends.length ? new Date(Math.max(...ends)).toISOString() : null;
+    const sprintStarts = epicSprints.map((s) => s.startsAt.getTime());
+    const sprintEnds = epicSprints.map((s) => s.endsAt.getTime());
+    const sprintStartMs = sprintStarts.length ? Math.min(...sprintStarts) : null;
+    const sprintEndMs = sprintEnds.length ? Math.max(...sprintEnds) : null;
+
+    let startMs = e.startsAt?.getTime() ?? sprintStartMs;
+    let endMs = e.endsAt?.getTime() ?? sprintEndMs;
+    if (sprintStartMs != null && startMs != null) startMs = Math.min(startMs, sprintStartMs);
+    if (sprintEndMs != null && endMs != null) endMs = Math.max(endMs, sprintEndMs);
+
     return {
       id: e.id,
       title: e.title,
       status: e.status as EpicStatus,
-      startsAt: e.startsAt ? e.startsAt.toISOString() : sprintStart,
-      endsAt: e.endsAt ? e.endsAt.toISOString() : sprintEnd,
+      startsAt: startMs != null ? new Date(startMs).toISOString() : null,
+      endsAt: endMs != null ? new Date(endMs).toISOString() : null,
       sprintCount: epicSprints.length,
       sprints: epicSprints.map((s) => ({
         id: s.id,
@@ -377,6 +393,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const tasks: TaskCardModel[] = project.tasks.map((t) => ({
     id: t.id,
     title: t.title,
+    description: t.description,
     status: t.status as TaskStatus,
     priority: t.priority as Priority,
     position: t.position,
@@ -392,6 +409,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       : null,
     githubIssueUrl: t.githubIssueUrl,
     githubIssueNumber: t.githubIssueNumber,
+    createdBy: { id: t.createdBy.id, name: fullName(t.createdBy) },
+    createdAt: t.createdAt.toISOString(),
   }));
 
   // Board option lists for the TaskModal: members assignable on this project
@@ -661,7 +680,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     termStatuses,
     documents,
     files,
-    allTags,
     epics,
     editableEpics,
     sprints,
@@ -673,6 +691,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     canViewScope,
     hasActivePartner,
     linkablePartnerOrgs,
+    canViewMentorshipTab,
     currentTerm: current ? { id: current.id, code: current.code } : null,
     collabToken,
     userName,
@@ -948,7 +967,6 @@ export default function ProjectDetail() {
     teams,
     documents,
     files,
-    allTags,
     epics,
     editableEpics,
     sprints,
@@ -964,6 +982,7 @@ export default function ProjectDetail() {
     canViewScope,
     hasActivePartner,
     linkablePartnerOrgs,
+    canViewMentorshipTab,
     currentTerm,
     collabToken,
     userName,
@@ -1004,7 +1023,9 @@ export default function ProjectDetail() {
       {/* Tab bar. Each section now owns its own edit button — there's no
           page-level edit mode left to clear when switching tabs. */}
       <div className="flex items-center gap-1 border-b border-border">
-        {TABS.map((t) => (
+        {TABS.filter(
+          (t) => t !== "mentorship" || canViewMentorshipTab,
+        ).map((t) => (
           <button
             key={t}
             type="button"
@@ -1039,7 +1060,6 @@ export default function ProjectDetail() {
           teams={teams}
           documents={documents}
           files={files}
-          allTags={allTags}
           canEdit={canEdit}
           canEditFinance={canEditScope}
           canEditAssignmentLevel={canEditAssignmentLevel}
@@ -1093,6 +1113,14 @@ export default function ProjectDetail() {
           canEdit={canEdit}
           collabToken={collabToken}
           userName={userName}
+          currentUserId={currentUserId}
+        />
+      )}
+
+      {tab === "mentorship" && canViewMentorshipTab && (
+        <ProjectMentorshipTab
+          projectId={project.id}
+          currentTermId={currentTerm?.id ?? null}
         />
       )}
     </div>
@@ -1271,6 +1299,7 @@ function DescriptionSegment({
   return (
     <EditableSection
       title="Description"
+      icon={<FileText className="w-4 h-4" />}
       canEdit={canEdit}
       onSave={() => { if (formRef.current) submit(formRef.current); }}
     >
@@ -1566,6 +1595,7 @@ function DetailsSegment({
   return (
     <EditableSection
       title="Project details"
+      icon={<Info className="w-4 h-4" />}
       canEdit={canEdit}
       onSave={() => { if (formRef.current) submit(formRef.current); }}
     >
@@ -1730,7 +1760,7 @@ function DetailsSegment({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-border">
               <label className="flex flex-col gap-1 text-xs sm:col-span-2">
                 <span className="text-muted-foreground font-medium">
-                  Payroll · used for payroll export
+                  Payroll
                 </span>
               </label>
               <label className="flex flex-col gap-1 text-xs">
@@ -1906,7 +1936,9 @@ function TeamSection({
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between">
-        <span className="text-xs text-muted-foreground">Team</span>
+        <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
+          <Users className="w-4 h-4" /> Team
+        </h2>
         {teams.length > 1 && (
           <button
             type="button"
@@ -1935,7 +1967,7 @@ function TeamSection({
                 {team.members.map((m) => (
                   <span
                     key={m.assignmentId}
-                    className="text-xs px-2 py-1 rounded-md border border-border text-foreground inline-flex items-center gap-1.5"
+                    className="text-xs px-2 py-1 rounded-md text-foreground inline-flex items-center gap-1.5"
                   >
                     <Avatar photoUrl={m.photoUrl} name={m.name} size="xs" />
                     {m.name}
@@ -2032,7 +2064,6 @@ function OverviewTab({
   teams,
   documents,
   files,
-  allTags,
   canEdit,
   canEditFinance,
   canEditAssignmentLevel,
@@ -2047,7 +2078,6 @@ function OverviewTab({
   teams: LoaderData["teams"];
   documents: LoaderData["documents"];
   files: LoaderData["files"];
-  allTags: LoaderData["allTags"];
   canEdit: boolean;
   canEditFinance: boolean;
   canEditAssignmentLevel: boolean;
@@ -2128,16 +2158,14 @@ function OverviewTab({
       <DocumentsBlock
         projectId={project.id}
         documents={documents}
-        allTags={allTags}
         canEdit={canEdit}
         hasActivePartner={hasActivePartner}
       />
 
-      {/* Files — standalone uploads with versions + tags. */}
+      {/* Files — standalone uploads with versions. Tags are edited in the file editor. */}
       <FilesBlock
         projectId={project.id}
         files={files}
-        allTags={allTags}
         canEdit={canEdit}
       />
     </div>
@@ -2288,15 +2316,6 @@ function PartnersSection({
                       {p.org.name}
                     </span>
                   )}
-                  <span
-                    className={`text-xs rounded-full px-2 py-0.5 border ${
-                      p.active
-                        ? "bg-accent-teal/15 text-accent-teal border-accent-teal/40"
-                        : "bg-muted text-muted-foreground border-border"
-                    }`}
-                  >
-                    {p.active ? "Active" : "Ended"}
-                  </span>
                 </div>
                 {p.org.contacts.length > 0 && (
                   <div className="text-xs text-muted-foreground mt-0.5">
@@ -2336,13 +2355,11 @@ function PartnersSection({
 function DocumentsBlock({
   projectId,
   documents,
-  allTags,
   canEdit,
   hasActivePartner,
 }: {
   projectId: string;
   documents: LoaderData["documents"];
-  allTags: LoaderData["allTags"];
   canEdit: boolean;
   hasActivePartner: boolean;
 }) {
@@ -2363,6 +2380,26 @@ function DocumentsBlock({
       return next;
     });
   }
+
+  // A document's title is edited in its own split-screen tab, which has its
+  // own loader — it can't touch this route's data directly. The shell relays
+  // a `dali:documentTitleChanged` postMessage to every open tab (see
+  // DocumentEditor's onTitleChange + Layout.tsx); revalidate here so the row
+  // label updates without waiting for the user to leave and reopen the doc.
+  useEffect(() => {
+    const knownIds = new Set(
+      documents.flatMap((d) => [d.id, ...d.children.map((c) => c.id)]),
+    );
+    function onMessage(e: MessageEvent) {
+      if (e.origin !== window.location.origin) return;
+      const data = e.data as { type?: string; pageId?: string } | undefined;
+      if (data?.type !== "dali:documentTitleChanged") return;
+      if (!data.pageId || !knownIds.has(data.pageId)) return;
+      revalidator.revalidate();
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [documents, revalidator]);
 
   // Share/unshare a page with the project's partner org(s). Persisted via
   // its own API route; the badge state comes back through the loader.
@@ -2457,65 +2494,60 @@ function DocumentsBlock({
 
   function DocRow({ doc, indent }: { doc: LoaderData["documents"][number]["children"][number]; indent: boolean }) {
     return (
-      <div className={`py-2.5 flex flex-col gap-1.5 ${indent ? "pl-6" : ""}`}>
-        <div className="flex items-center justify-between gap-3 text-sm">
-          <button
-            type="button"
-            onClick={() => openDocumentTab(doc.id, doc.title)}
-            className="truncate text-left font-medium text-foreground hover:text-accent-coral"
-          >
-            {doc.title}
-          </button>
-          <div className="flex items-center gap-3 flex-shrink-0">
-            {doc.partnerVisible && !canEdit && (
-              <span
-                className="flex items-center gap-1 text-xs text-accent-teal"
-                title="Partners on this project can open and edit this page"
-              >
-                <Handshake className="w-3.5 h-3.5" /> Shared with partner
-              </span>
-            )}
-            {canEdit && (hasActivePartner || doc.partnerVisible) && (
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void togglePartnerVisible(doc.id, !doc.partnerVisible)}
-                title={
-                  doc.partnerVisible
-                    ? "Partners can open and edit this page — click to stop sharing"
-                    : "Share this page with the project's partner org"
-                }
-                className={`flex items-center gap-1 text-xs disabled:opacity-60 ${
-                  doc.partnerVisible
-                    ? "text-accent-teal hover:underline"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <Handshake className="w-3.5 h-3.5" />
-                {doc.partnerVisible ? "Shared with partner" : "Share with partner"}
-              </button>
-            )}
-            {canEdit && (
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void deleteDocument(doc.id, doc.title)}
-                className="text-xs text-destructive hover:underline disabled:opacity-60"
-              >
-                Delete
-              </button>
-            )}
-          </div>
+      <div className={`py-2.5 flex items-center justify-between gap-3 text-sm ${indent ? "pl-6" : ""}`}>
+        <button
+          type="button"
+          onClick={() => openDocumentTab(doc.id, doc.title)}
+          className="truncate text-left font-medium text-foreground hover:text-accent-coral"
+        >
+          {doc.title}
+        </button>
+        <div className="flex items-center gap-3 flex-shrink-0">
+          {doc.partnerVisible && !canEdit && (
+            <span
+              className="flex items-center text-accent-teal"
+              title="Shared with partner — partners on this project can open and edit this page"
+            >
+              <Handshake className="w-3.5 h-3.5" />
+            </span>
+          )}
+          {canEdit && (hasActivePartner || doc.partnerVisible) && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void togglePartnerVisible(doc.id, !doc.partnerVisible)}
+              title={
+                doc.partnerVisible
+                  ? "Shared with partner — click to stop sharing"
+                  : "Share with partner"
+              }
+              // Accessible name must stay exactly "Shared with partner" /
+              // "Share with partner": it's the toggle's only name now that the
+              // label is icon-only, and it's the contract partner-portal.spec
+              // matches on via getByRole. The title carries the extra hint.
+              aria-label={doc.partnerVisible ? "Shared with partner" : "Share with partner"}
+              className={`flex items-center disabled:opacity-60 ${
+                doc.partnerVisible
+                  ? "text-accent-teal"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Handshake className="w-3.5 h-3.5" />
+            </button>
+          )}
+          {canEdit && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void deleteDocument(doc.id, doc.title)}
+              title="Delete document"
+              aria-label="Delete document"
+              className="text-destructive hover:text-destructive/80 disabled:opacity-60"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
-        <TagPicker
-          targetType="doc"
-          targetId={doc.id}
-          applied={doc.tags}
-          allTags={allTags}
-          canEdit={canEdit}
-          canCreate={canEdit}
-          onChange={() => revalidator.revalidate()}
-        />
       </div>
     );
   }
@@ -2523,24 +2555,30 @@ function DocumentsBlock({
   return (
     <section className="bg-card border border-border rounded-lg p-4">
       <div className="flex items-center justify-between mb-3">
-        <h2 className="text-sm font-semibold text-foreground">Documents</h2>
+        <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
+          <Folder className="w-4 h-4" /> Documents
+        </h2>
         {canEdit && (
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <button
               type="button"
               disabled={busy}
               onClick={() => void createFolder()}
-              className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground disabled:opacity-60"
+              title="New folder"
+              aria-label="New folder"
+              className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-60"
             >
-              <FolderPlus className="w-3.5 h-3.5" /> New folder
+              <FolderPlus className="w-3.5 h-3.5" />
             </button>
             <button
               type="button"
               disabled={busy}
               onClick={() => void createDocument()}
-              className="text-xs font-medium text-accent-coral hover:underline disabled:opacity-60"
+              title="Add document"
+              aria-label="Add document"
+              className="p-1 rounded text-accent-coral hover:bg-accent-coral/10 disabled:opacity-60"
             >
-              {busy ? "Adding…" : "+ Add document"}
+              <Plus className="w-3.5 h-3.5" />
             </button>
           </div>
         )}
@@ -2579,14 +2617,16 @@ function DocumentsBlock({
                     )}
                   </button>
                   {canEdit && (
-                    <div className="flex items-center gap-3 flex-shrink-0">
+                    <div className="flex items-center gap-2 flex-shrink-0">
                       <button
                         type="button"
                         disabled={busy}
                         onClick={() => void createDocument(doc.id)}
-                        className="text-xs font-medium text-accent-coral hover:underline disabled:opacity-60"
+                        title="Add document"
+                        aria-label="Add document"
+                        className="p-1 rounded text-accent-coral hover:bg-accent-coral/10 disabled:opacity-60"
                       >
-                        + Add document
+                        <Plus className="w-3.5 h-3.5" />
                       </button>
                       {!doc.isSystem && (
                         <button
@@ -2595,12 +2635,13 @@ function DocumentsBlock({
                           title={
                             doc.children.length > 0
                               ? "Move or delete the documents inside this folder first"
-                              : undefined
+                              : "Delete folder"
                           }
+                          aria-label="Delete folder"
                           onClick={() => void deleteDocument(doc.id, doc.title)}
-                          className="text-xs text-destructive hover:underline disabled:opacity-60"
+                          className="p-1 rounded text-destructive hover:text-destructive/80 disabled:opacity-60"
                         >
-                          Delete
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       )}
                     </div>
@@ -2630,12 +2671,10 @@ function DocumentsBlock({
 function FilesBlock({
   projectId,
   files,
-  allTags,
   canEdit,
 }: {
   projectId: string;
   files: LoaderData["files"];
-  allTags: LoaderData["allTags"];
   canEdit: boolean;
 }) {
   const revalidator = useRevalidator();
@@ -2710,7 +2749,9 @@ function FilesBlock({
     <section className="bg-card border border-border rounded-lg p-4">
       <input ref={fileInputRef} type="file" className="hidden" onChange={onPick} />
       <div className="flex items-center justify-between mb-3">
-        <h2 className="text-sm font-semibold text-foreground">Files</h2>
+        <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
+          <Paperclip className="w-4 h-4" /> Files
+        </h2>
         {canEdit && (
           <button
             type="button"
@@ -2719,9 +2760,11 @@ function FilesBlock({
               versionForId.current = null;
               fileInputRef.current?.click();
             }}
-            className="text-xs font-medium text-accent-coral hover:underline disabled:opacity-60"
+            title={busy ? "Uploading…" : "Add file"}
+            aria-label={busy ? "Uploading…" : "Add file"}
+            className="p-1 rounded text-accent-coral hover:bg-accent-coral/10 disabled:opacity-60"
           >
-            {busy ? "Uploading…" : "+ Add file"}
+            <Plus className="w-3.5 h-3.5" />
           </button>
         )}
       </div>
@@ -2737,49 +2780,42 @@ function FilesBlock({
       ) : (
         <div className="flex flex-col divide-y divide-border">
           {files.map((f) => (
-            <div key={f.id} className="py-2.5 flex flex-col gap-1.5">
-              <div className="flex items-center justify-between gap-3 text-sm">
-                <Link to={`/documents/file/${f.id}`} className="min-w-0 truncate hover:text-accent-coral">
-                  <span className="text-foreground font-medium">{f.title}</span>
-                  <span className="text-muted-foreground ml-2 text-xs">
-                    {f.fileName}
-                    {f.sizeBytes != null ? ` · ${formatBytes(f.sizeBytes)}` : ""}
-                    {f.versionCount > 1 ? ` · v${f.versionCount}` : ""}
-                  </span>
-                </Link>
-                {canEdit && (
-                  <div className="flex items-center gap-3 flex-shrink-0">
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => {
-                        versionForId.current = f.id;
-                        fileInputRef.current?.click();
-                      }}
-                      className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-60"
-                    >
-                      New version
-                    </button>
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => void deleteFile(f.id, f.title)}
-                      className="text-xs text-destructive hover:underline disabled:opacity-60"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                )}
-              </div>
-              <TagPicker
-                targetType="file"
-                targetId={f.id}
-                applied={f.tags}
-                allTags={allTags}
-                canEdit={canEdit}
-                canCreate={canEdit}
-                onChange={() => revalidator.revalidate()}
-              />
+            <div key={f.id} className="py-2.5 flex items-center justify-between gap-3 text-sm">
+              <Link to={`/documents/file/${f.id}`} className="min-w-0 truncate hover:text-accent-coral">
+                <span className="text-foreground font-medium">{f.title}</span>
+                <span className="text-muted-foreground ml-2 text-xs">
+                  {f.fileName}
+                  {f.sizeBytes != null ? ` · ${formatBytes(f.sizeBytes)}` : ""}
+                  {f.versionCount > 1 ? ` · v${f.versionCount}` : ""}
+                </span>
+              </Link>
+              {canEdit && (
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      versionForId.current = f.id;
+                      fileInputRef.current?.click();
+                    }}
+                    title="New version"
+                    aria-label="New version"
+                    className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-60"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void deleteFile(f.id, f.title)}
+                    title="Delete file"
+                    aria-label="Delete file"
+                    className="p-1 rounded text-destructive hover:text-destructive/80 disabled:opacity-60"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -2798,6 +2834,7 @@ function WorkTab({
   canEdit,
   collabToken,
   userName,
+  currentUserId,
 }: {
   projectId: string;
   epics: TimelineEpic[];
@@ -2808,7 +2845,10 @@ function WorkTab({
   canEdit: boolean;
   collabToken: string | null;
   userName: string;
+  currentUserId: string;
 }) {
+  const [taskBoardOpen, setTaskBoardOpen] = useState(true);
+
   return (
     <div className="flex flex-col gap-6">
       <section>
@@ -2825,13 +2865,30 @@ function WorkTab({
       </section>
 
       <section>
-        <h2 className="text-sm font-semibold text-foreground mb-3">Task board</h2>
-        <TaskBoard
-          projectId={projectId}
-          initialTasks={tasks}
-          options={boardOptions}
-          canManage={canEdit}
-        />
+        <button
+          type="button"
+          onClick={() => setTaskBoardOpen((o) => !o)}
+          aria-expanded={taskBoardOpen}
+          className={`flex items-center gap-1.5 ${taskBoardOpen ? "mb-3" : ""}`}
+        >
+          <span
+            aria-hidden
+            className={`inline-block text-muted-foreground transition-transform ${taskBoardOpen ? "rotate-90" : ""}`}
+          >
+            ›
+          </span>
+          <h2 className="text-sm font-semibold text-foreground">Task board</h2>
+        </button>
+        {taskBoardOpen && (
+          <TaskBoard
+            projectId={projectId}
+            initialTasks={tasks}
+            options={boardOptions}
+            canManage={canEdit}
+            currentUserId={currentUserId}
+            currentUserName={userName}
+          />
+        )}
       </section>
     </div>
   );

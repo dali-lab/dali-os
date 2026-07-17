@@ -3621,7 +3621,7 @@ async function main() {
               termId: term26S.id,
               domainId: mentorPref.domainId,
               weekOf: new Date("2026-03-30"),
-              contentDocId: "mentor-note:seed-week-1",
+              contentJson: { type: "doc", content: [] },
             },
           });
         }
@@ -3817,7 +3817,29 @@ async function main() {
         await prisma.mentorNoteTemplate.create({
           data: {
             name: "Weekly Mentor Note",
-            contentDocId: "mentor-note-template:default",
+            contentJson: {
+              type: "doc",
+              content: [
+                {
+                  type: "heading",
+                  attrs: { level: 3 },
+                  content: [{ type: "text", text: "Wins" }],
+                },
+                { type: "paragraph" },
+                {
+                  type: "heading",
+                  attrs: { level: 3 },
+                  content: [{ type: "text", text: "Blockers" }],
+                },
+                { type: "paragraph" },
+                {
+                  type: "heading",
+                  attrs: { level: 3 },
+                  content: [{ type: "text", text: "Follow-ups" }],
+                },
+                { type: "paragraph" },
+              ],
+            },
             isDefault: true,
           },
         });

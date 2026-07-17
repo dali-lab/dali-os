@@ -107,6 +107,8 @@ model User {
   adminMembership         AdminMembership?
   mentorshipPairsAsMentee MentorshipPair[]       @relation("MenteePairs")
   mentorshipPairsAsMentor MentorshipPair[]       @relation("MentorPairs")
+  stagedPairsAsMentee     StagedMentorshipPair[] @relation("StagedMenteePairs")
+  stagedPairsAsMentor     StagedMentorshipPair[] @relation("StagedMentorPairs")
 
   // ─── Phase 1: project workspace back-relations ────────────────────────────
   createdTasks               Task[]               @relation("TaskCreatedBy")
@@ -457,6 +459,7 @@ model Domain {
   eligibilities             DomainEligibility[]
   projectAssignments        ProjectAssignment[]
   mentorshipPairs           MentorshipPair[]
+  stagedMentorshipPairs     StagedMentorshipPair[]
   tasks                     Task[]
   projectRoleRequests       ProjectRoleRequest[]
   partnerApplicationDomains PartnerApplicationDomain[]
@@ -1496,6 +1499,16 @@ model ScheduledMeeting {
   project          Project?     @relation(fields: [projectId], references: [id])
   notePage         Page?
 
+  // Roster (default): organizer/Core check people off by hand via
+  // AttendanceChecklist. SelfCheckIn: attendees mark themselves present via
+  // the check-in route, scoped to a time window around selectedAt — meant for
+  // events too large to check off manually (e.g. an all-lab Group event).
+  // checkInToken is a routing convenience embedded in the QR/link, not a
+  // bearer credential — the check-in route always authenticates the caller's
+  // own session, never the token, to prevent checking in on someone's behalf.
+  attendanceMode AttendanceMode @default(Roster)
+  checkInToken   String?        @unique
+
   exceptions    MeetingException[]
   notifications Notification[]
   reminderLogs  MeetingReminderLog[]
@@ -1517,6 +1530,11 @@ enum MeetingType {
   Team
   Partner
   Other
+}
+
+enum AttendanceMode {
+  Roster
+  SelfCheckIn
 }
 
 // One row per invited participant (including the organizer) on a
@@ -1541,13 +1559,26 @@ model MeetingAttendance {
 // A user's personal timesheet row, shown on the Calendar "Timesheet" tab.
 // Meeting-sourced rows are managed automatically by the attendance-toggle
 // route (one row per present participant, kept in sync as attendance is
-// checked/unchecked) and are not directly editable; Manual rows are
-// user-authored CRUD entries for work not captured by a meeting.
+// checked/unchecked); Block-sourced rows are managed automatically by the
+// manual-block action handlers in the same way (see ManualBlock.isWork);
+// neither is directly editable here — only plain Manual rows are
+// user-authored CRUD entries for work not captured by a block or meeting.
 model TimeEntry {
   id                 String          @id @default(cuid())
   userId             String
   source             TimeEntrySource
   scheduledMeetingId String?
+  manualBlockId      String?
+  // Which concrete paid role (ProjectAssignment / CoreAssignment /
+  // InstructorAssignment / DomainLeadAssignment / AdminMembership) this entry
+  // is attributed to. Untyped at DB layer — dispatched in app code by
+  // assignmentType, same pattern as ScheduledMeeting.scopeType/scopeId. Null
+  // for legacy/unattributed rows (the export route's "unassigned" bucket).
+  assignmentType AssignmentType?
+  roleRefId      String?
+  // Denormalized from the resolved role when assignmentType == Project, so
+  // existing project-grouped readers (export, project hour totals) keep
+  // working without joining through ProjectAssignment.
   projectId          String?
   date               DateTime
   hours              Float
@@ -1563,17 +1594,21 @@ model TimeEntry {
   createdAt          DateTime        @default(now())
   updatedAt          DateTime        @updatedAt
 
-  user    User              @relation(fields: [userId], references: [id])
-  meeting ScheduledMeeting? @relation(fields: [scheduledMeetingId], references: [id])
-  project Project?          @relation(fields: [projectId], references: [id])
+  user        User              @relation(fields: [userId], references: [id])
+  meeting     ScheduledMeeting? @relation(fields: [scheduledMeetingId], references: [id])
+  manualBlock ManualBlock?      @relation(fields: [manualBlockId], references: [id])
+  project     Project?          @relation(fields: [projectId], references: [id])
 
   @@unique([scheduledMeetingId, userId])
+  @@unique([manualBlockId, userId])
   @@index([userId, date])
+  @@index([userId, assignmentType])
 }
 
 enum TimeEntrySource {
   Meeting
   Manual
+  Block
 }
 
 enum MeetingStatus {
@@ -1772,9 +1807,17 @@ model ManualBlock {
   recurrenceRule  String?
   // Optional cached UNTIL for query bounds; not authoritative.
   recurrenceUntil DateTime?
+  // When true (app-level restricted to non-recurring blocks — recurrence
+  // expansion isn't implemented for TimeEntry), this block mirrors itself
+  // into a Block-sourced TimeEntry for the chosen role, kept in sync by the
+  // manual-block action handlers (see syncManualBlockTimeEntry).
+  isWork          Boolean   @default(false)
+  assignmentType  AssignmentType?
+  roleRefId       String?
   createdAt       DateTime  @default(now())
 
-  user User @relation(fields: [userId], references: [id])
+  user       User        @relation(fields: [userId], references: [id])
+  timeEntries TimeEntry[]
 
   @@index([userId, startTime])
 }
@@ -1910,6 +1953,37 @@ model MentorshipPair {
 
   @@index([menteeUserId, projectId, termId])
   @@index([mentorUserId, termId])
+}
+
+// A mentor/mentee pairing STAGED during staffing, before finalize. Core builds
+// these in the staffing board's per-column side panel; they only become real
+// MentorshipPair rows when the mentee's project is finalized (which also
+// promotes any non-P3 mentors to P3 — see api.staffing.finalize). Keeping them
+// separate from MentorshipPair means an in-progress plan never looks live, and
+// a mentor may be picked here even before they're eligible.
+//   - projectId  = the MENTEE's project (an external mentor lives elsewhere).
+//   - domainId   = the mentee's domain on that project.
+//   - mentor may be any lab member; P3-ness is resolved/forced at finalize.
+model StagedMentorshipPair {
+  id              String @id @default(cuid())
+  staffingCycleId String
+  projectId       String
+  menteeUserId    String
+  mentorUserId    String
+  domainId        String
+
+  createdAt   DateTime @default(now())
+  createdById String?
+
+  staffingCycle StaffingCycle @relation(fields: [staffingCycleId], references: [id])
+  project       Project       @relation(fields: [projectId], references: [id])
+  mentee        User          @relation("StagedMenteePairs", fields: [menteeUserId], references: [id])
+  mentor        User          @relation("StagedMentorPairs", fields: [mentorUserId], references: [id])
+  domain        Domain        @relation(fields: [domainId], references: [id])
+
+  // One staged pairing per (cycle, mentee, mentor, domain) — re-adding is a no-op.
+  @@unique([staffingCycleId, menteeUserId, mentorUserId, domainId])
+  @@index([staffingCycleId, projectId])
 }
 
 // Year-long elected lead position. `leadTitle` is display-only — Core has
@@ -2067,6 +2141,7 @@ model Project {
   assignments       ProjectAssignment[]
   roleRequests      ProjectRoleRequest[]
   mentorshipPairs   MentorshipPair[]
+  stagedMentorshipPairs StagedMentorshipPair[]
   sprints           Sprint[]
   epics             Epic[]
   tasks             Task[]
@@ -2231,6 +2306,7 @@ model Epic {
 }
 
 enum EpicStatus {
+  Backlog
   Open
   InProgress
   Done
@@ -2297,6 +2373,8 @@ model Task {
   epicId    String?
 
   title            String
+  // Plain-text task description, edited in the task modal.
+  description      String?
   descriptionDocId String?
   status           TaskStatus @default(Todo)
   priority         Priority   @default(Normal)
@@ -2791,6 +2869,7 @@ model StaffingCycle {
   formSubmissions   FormSubmission[]
   boardMembers      StaffingBoardMember[]
   cardOrders        StaffingCardOrder[]
+  stagedMentorshipPairs StagedMentorshipPair[]
 }
 
 // A member a staffing lead manually placed on the board for a cycle WITHOUT a
@@ -3295,11 +3374,12 @@ model MentorNote {
   projectId    String
   termId       String
   domainId     String
-  // Start-of-week date (Monday) the note covers. App enforces one row
+  // Start-of-week date (Monday, UTC) the note covers. App enforces one row
   // per (mentor, mentee, project, term, domain, week).
   weekOf       DateTime
-  // Note body as collab doc — template seeded on create.
-  contentDocId String
+  // Tiptap/ProseMirror JSON document. Seeded from the current default
+  // MentorNoteTemplate on create. Single-author — no Yjs/Hocuspocus.
+  contentJson  Json     @default("{}")
 
   mentor User @relation("MentorNoteMentor", fields: [mentorId], references: [id])
   mentee User @relation("MentorNoteMentee", fields: [menteeId], references: [id])
@@ -3315,9 +3395,9 @@ model MentorNote {
 model MentorNoteTemplate {
   id            String   @id @default(cuid())
   name          String
-  // Template body as collab doc; new MentorNote contentDocs are seeded
-  // from this on create.
-  contentDocId  String
+  // Tiptap/ProseMirror JSON document; new MentorNotes seed contentJson
+  // from the current isDefault template on create.
+  contentJson   Json     @default("{}")
   isDefault     Boolean  @default(false)
   // Free-form last-updated userId.
   lastUpdatedBy String?

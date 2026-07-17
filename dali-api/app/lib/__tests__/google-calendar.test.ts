@@ -120,6 +120,8 @@ describe("fetchBusyEvents", () => {
           {
             id: "e1",
             summary: "Standup",
+            description: "<p>Team sync</p>",
+            location: "Room 101",
             status: "confirmed",
             start: { dateTime: "2026-05-12T13:00:00Z" },
             end: { dateTime: "2026-05-12T14:00:00Z" },
@@ -158,7 +160,129 @@ describe("fetchBusyEvents", () => {
       title: "Standup",
       calendarId: "primary",
       color: "#2952A3",
+      description: "Team sync",
+      location: "Room 101",
     });
+  });
+
+  // Regression: plainTextFromGoogleHtml used to hand-roll tag-stripping +
+  // entity-unescaping via regex. However the two steps were ordered, a
+  // literal `<script>` tag OR an entity-encoded one (`&lt;script&gt;`) could
+  // end up surviving into the "plain text" output — CodeQL flagged this as
+  // incomplete sanitization / HTML injection. Now DOMPurify (a real parser)
+  // strips real tags, and `&lt;`/`&gt;` are deliberately left undecoded so
+  // an inert, still-escaped `&lt;script&gt;` can never be turned back into a
+  // live angle bracket by this function.
+  it("strips a literal <script> tag from event descriptions", async () => {
+    prismaMock.userCalendarLink.findMany.mockResolvedValueOnce([
+      { id: "L1", subCalendarIds: [] },
+    ]);
+    prismaMock.userCalendarLink.findUnique.mockResolvedValue({
+      oauthTokens: encryptedTokens({
+        accessToken: "tok",
+        refreshToken: "r",
+        expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+      }),
+    });
+    mockFetchSequence([
+      { items: [{ id: "primary", summary: "Me", primary: true, backgroundColor: "#2952A3" }] },
+      {
+        items: [
+          {
+            id: "e1",
+            summary: "Malicious",
+            description: "before <script>alert(1)</script> after",
+            status: "confirmed",
+            start: { dateTime: "2026-05-12T13:00:00Z" },
+            end: { dateTime: "2026-05-12T14:00:00Z" },
+          },
+        ],
+      },
+    ]);
+    prismaMock.userCalendarLink.update.mockResolvedValue({});
+
+    const out = await fetchBusyEvents(
+      "userX",
+      new Date("2026-05-12T00:00:00Z"),
+      new Date("2026-05-13T00:00:00Z"),
+    );
+    expect(out).toHaveLength(1);
+    expect(out[0].description).not.toContain("<script");
+    expect(out[0].description).not.toContain("</script>");
+  });
+
+  it("never reconstructs an angle bracket from an entity-encoded tag", async () => {
+    prismaMock.userCalendarLink.findMany.mockResolvedValueOnce([
+      { id: "L1", subCalendarIds: [] },
+    ]);
+    prismaMock.userCalendarLink.findUnique.mockResolvedValue({
+      oauthTokens: encryptedTokens({
+        accessToken: "tok",
+        refreshToken: "r",
+        expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+      }),
+    });
+    mockFetchSequence([
+      { items: [{ id: "primary", summary: "Me", primary: true, backgroundColor: "#2952A3" }] },
+      {
+        items: [
+          {
+            id: "e1",
+            summary: "Malicious",
+            description: "before &lt;script&gt;alert(1)&lt;/script&gt; after",
+            status: "confirmed",
+            start: { dateTime: "2026-05-12T13:00:00Z" },
+            end: { dateTime: "2026-05-12T14:00:00Z" },
+          },
+        ],
+      },
+    ]);
+    prismaMock.userCalendarLink.update.mockResolvedValue({});
+
+    const out = await fetchBusyEvents(
+      "userX",
+      new Date("2026-05-12T00:00:00Z"),
+      new Date("2026-05-13T00:00:00Z"),
+    );
+    expect(out).toHaveLength(1);
+    expect(out[0].description).not.toContain("<script");
+  });
+
+  it("still decodes &amp; for readability (e.g. 'Q&A')", async () => {
+    prismaMock.userCalendarLink.findMany.mockResolvedValueOnce([
+      { id: "L1", subCalendarIds: [] },
+    ]);
+    prismaMock.userCalendarLink.findUnique.mockResolvedValue({
+      oauthTokens: encryptedTokens({
+        accessToken: "tok",
+        refreshToken: "r",
+        expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+      }),
+    });
+    mockFetchSequence([
+      { items: [{ id: "primary", summary: "Me", primary: true, backgroundColor: "#2952A3" }] },
+      {
+        items: [
+          {
+            id: "e1",
+            summary: "Q&A",
+            description: "<p>Q&amp;A session</p>",
+            status: "confirmed",
+            start: { dateTime: "2026-05-12T13:00:00Z" },
+            end: { dateTime: "2026-05-12T14:00:00Z" },
+          },
+        ],
+      },
+    ]);
+    prismaMock.userCalendarLink.update.mockResolvedValue({});
+
+    const out = await fetchBusyEvents(
+      "userX",
+      new Date("2026-05-12T00:00:00Z"),
+      new Date("2026-05-13T00:00:00Z"),
+    );
+    expect(out).toHaveLength(1);
+    expect(out[0].description).toBe("Q&A session");
   });
 
   it("returns [] when no UserCalendarLink exists (Phase 2: no legacy User.google* fallback)", async () => {

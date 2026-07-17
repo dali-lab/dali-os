@@ -42,6 +42,10 @@ export default function AdminHub() {
       title: "Email Templates",
       description:
         "Shared library of email templates, bound per hiring cycle or education offering.",
+      to: "/admin-console/attendance",
+      title: "Attendance",
+      description:
+        "Self check-in events — see who was invited and who checked in.",
     },
     ...(admin
       ? [
@@ -93,7 +97,7 @@ export default function AdminHub() {
           <Link
             key={t.to}
             to={t.to}
-            className="bg-card border border-border rounded-lg p-4 hover:border-accent-coral/60 hover:shadow-sm transition-all"
+            className="bg-card border border-border shadow-brand-1 rounded-lg p-4 hover:border-accent-coral/60 hover:shadow-brand-2 transition-all"
           >
             <h2 className="font-heading font-semibold text-foreground">{t.title}</h2>
             <p className="text-sm text-muted-foreground mt-1">{t.description}</p>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useRevalidator } from "react-router";
 import type { DragEndEvent } from "@dnd-kit/core";
 import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
@@ -14,6 +14,7 @@ import {
 import { CheckCircle2 } from "lucide-react";
 import { Button } from "~/components/ui/Button";
 import { MemberCard, MemberCardPreview } from "./MemberCard";
+import { MentorBadge, type MenteeCandidate, type MentorPair } from "./MentorBadge";
 import { BidModal } from "./BidModal";
 import { FinalizeModal } from "./FinalizeModal";
 import { AddMemberControl } from "./AddMemberControl";
@@ -86,6 +87,27 @@ export function StaffingBoard({
   // Project id whose finalize modal is open, or null.
   const [finalizeProjectId, setFinalizeProjectId] = useState<string | null>(null);
 
+  // Cycle-wide mentorship staging data (mentor pool + staged pairs + each
+  // member's live project/domain), fetched once and distributed to the mentor
+  // badge on each card. Refetched whenever the board revalidates.
+  type Mentorship = {
+    mentees: MenteeCandidate[];
+    mentors: { userId: string; levelByDomain: Record<string, "P1" | "P2" | "P3"> }[];
+    pairs: (MentorPair & { projectId: string; mentorUserId: string; domainId: string })[];
+  };
+  const [mentorship, setMentorship] = useState<Mentorship | null>(null);
+  const loadMentorship = useCallback(() => {
+    if (!canManage) return;
+    fetch(`/api/staffing/mentorship?cycleId=${encodeURIComponent(cycleId)}`, { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setMentorship(d))
+      .catch(() => {});
+  }, [cycleId, canManage]);
+  useEffect(() => loadMentorship(), [loadMentorship]);
+  // Held in a ref so the once-mounted SSE listener always calls the latest.
+  const loadMentorshipRef = useRef(loadMentorship);
+  loadMentorshipRef.current = loadMentorship;
+
   // Number of drag saves currently in flight. While > 0 we hold off adopting
   // server data so a live push from someone else can't revert our own unsaved
   // optimistic move mid-drag. Once our save lands it revalidates and this clears.
@@ -115,7 +137,10 @@ export function StaffingBoard({
       `/api/staffing/events?cycleId=${encodeURIComponent(cycleId)}`,
       { withCredentials: true },
     );
-    const onPush = () => revalidateRef.current();
+    const onPush = () => {
+      revalidateRef.current();
+      loadMentorshipRef.current();
+    };
     es.addEventListener("change", onPush);
     es.addEventListener("sync", onPush);
     return () => es.close();
@@ -153,6 +178,29 @@ export function StaffingBoard({
     }
     return map;
   }, [board]);
+
+  // Mentorship lookups for the per-card badge (badge lives on the MENTOR card):
+  // a member's live (project,domain), the staged pairs keyed by mentor, and each
+  // member's per-domain level (to flag "→P3 at finalize").
+  const menteeInfoByUser = useMemo(() => {
+    const map = new Map<string, { projectId: string; domainId: string }>();
+    for (const m of mentorship?.mentees ?? []) map.set(m.userId, { projectId: m.projectId, domainId: m.domainId });
+    return map;
+  }, [mentorship]);
+  const pairsByMentor = useMemo(() => {
+    const map = new Map<string, (MentorPair & { domainId: string })[]>();
+    for (const p of mentorship?.pairs ?? []) {
+      const list = map.get(p.mentorUserId) ?? [];
+      list.push({ id: p.id, menteeUserId: p.menteeUserId, mentee: p.mentee, domainId: p.domainId });
+      map.set(p.mentorUserId, list);
+    }
+    return map;
+  }, [mentorship]);
+  const levelByUserDomain = useMemo(() => {
+    const map = new Map<string, Record<string, "P1" | "P2" | "P3">>();
+    for (const m of mentorship?.mentors ?? []) map.set(m.userId, m.levelByDomain);
+    return map;
+  }, [mentorship]);
 
   function handleDragEnd(event: DragEndEvent) {
     if (!canManage) return;
@@ -445,6 +493,40 @@ export function StaffingBoard({
             draggable={canManage}
             dragHandleProps={dragHandleProps}
             isDragging={isDragging}
+            accentExternal={(() => {
+              // External mentor = mentors at least one mentee on another team.
+              if (!mentorship) return false;
+              const myProject = menteeInfoByUser.get(card.userId)?.projectId;
+              if (!myProject) return false;
+              return (pairsByMentor.get(card.userId) ?? []).some(
+                (p) => menteeInfoByUser.get(p.menteeUserId)?.projectId !== myProject,
+              );
+            })()}
+            mentorSlot={(() => {
+              // The badge lives on the MENTOR card: any project-column member
+              // can be made a mentor and have mentees assigned to them. Only for
+              // managers, on project columns, once the member has a live
+              // assignment (its project → to flag cross-team mentees).
+              if (!canManage || !mentorship) return undefined;
+              if (columnIdOf.get(card.userId) === UNASSIGNED) return undefined;
+              const info = menteeInfoByUser.get(card.userId);
+              if (!info) return undefined;
+              const myPairs = pairsByMentor.get(card.userId) ?? [];
+              const levels = levelByUserDomain.get(card.userId) ?? {};
+              // P3 across every domain they mentor in → no promotion needed.
+              const mentorIsP3 = myPairs.every((p) => levels[p.domainId] === "P3");
+              return (
+                <MentorBadge
+                  cycleId={cycleId}
+                  mentorUserId={card.userId}
+                  mentorProjectId={info.projectId}
+                  mentorIsP3={mentorIsP3}
+                  pairs={myPairs}
+                  candidates={mentorship.mentees}
+                  onChanged={loadMentorship}
+                />
+              );
+            })()}
           />
         )}
         renderOverlay={(activeId) => {
@@ -488,6 +570,7 @@ export function StaffingBoard({
           }
         />
       )}
+
     </div>
   );
 }

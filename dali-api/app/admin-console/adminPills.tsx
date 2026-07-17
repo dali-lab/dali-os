@@ -3,6 +3,7 @@ import {
   BarChart3,
   Clock,
   FileText,
+  ClipboardCheck,
   Globe,
   LayoutGrid,
   Mail,
@@ -14,9 +15,8 @@ import {
 import type { AreaPill } from "~/components/AreaPillNav";
 
 // The Admin area's tools (the sidebar entry is childless and lands on the
-// hub). Every admin page is already Core-gated, so the first four pills
-// always show; the last three are Admin-only, matching the old sidebar
-// section gates.
+// hub). Every admin page is already Core-gated, so Core tools always show;
+// Admin-only tools are appended when isAdmin.
 export function adminPills(args: {
   isAdmin: boolean;
   active:
@@ -24,6 +24,7 @@ export function adminPills(args: {
     | "members"
     | "domains"
     | "announcements"
+    | "attendance"
     | "activity"
     | "analytics"
     | "jobs"
@@ -59,6 +60,11 @@ export function adminPills(args: {
       to: "/admin-console/email-templates",
       active: args.active === "email-templates",
       icon: FileText,
+    {
+      label: "Attendance",
+      to: "/admin-console/attendance",
+      active: args.active === "attendance",
+      icon: ClipboardCheck,
     },
     ...(args.isAdmin
       ? [

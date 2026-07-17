@@ -7,6 +7,7 @@ import {
   LayoutGrid,
   Mic,
   RotateCw,
+  UserPlus,
 } from "lucide-react";
 import type { AreaPill } from "~/components/AreaPillNav";
 
@@ -26,6 +27,7 @@ export function hiringPills(args: {
     | "domain"
     | "cycles"
     | "waitlists"
+    | "onboarding"
     | "library";
 }): AreaPill[] {
   const { isCore, isDomainLead, isAdmin, isInterviewer, active } = args;
@@ -71,6 +73,12 @@ export function hiringPills(args: {
             to: "/hiring/waitlists",
             active: active === "waitlists",
             icon: Clock,
+          },
+          {
+            label: "Onboarding",
+            to: "/hiring/onboarding",
+            active: active === "onboarding",
+            icon: UserPlus,
           },
         ]
       : []),
