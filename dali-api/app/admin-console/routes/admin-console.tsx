@@ -42,6 +42,8 @@ export default function AdminHub() {
       title: "Email Templates",
       description:
         "Shared library of email templates, bound per hiring cycle or education offering.",
+    },
+    {
       to: "/admin-console/attendance",
       title: "Attendance",
       description:

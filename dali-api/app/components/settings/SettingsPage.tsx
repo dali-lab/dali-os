@@ -22,6 +22,7 @@ import type { loadSettingsPageData } from "~/lib/settings-page.server";
 
 const SECTION_IDS = [
   "account",
+  "appearance",
   "calendar",
   "slack",
   "notifications",
@@ -130,21 +131,15 @@ export function SettingsPage({
             <SlackSettingsBlock {...data.slack} />
           </SettingsBlock>
         )}
-        <SettingsBlock
-          id="appearance"
-          title="Appearance"
-          description="Light mode, dark mode, or match your device."
-        >
-          <AppearanceSettingsBlock />
-        </SettingsBlock>
-
-        <SettingsBlock
-          id="calendar"
-          title="Calendar"
-          description="Linked Google accounts and which sub-calendars block your availability."
-        >
-          <CalendarSettingsBlock calendarLinks={data.calendarLinks} />
-        </SettingsBlock>
+        {active === "appearance" && (
+          <SettingsBlock
+            id="appearance"
+            title="Appearance"
+            description="Light mode, dark mode, or match your device."
+          >
+            <AppearanceSettingsBlock />
+          </SettingsBlock>
+        )}
 
         {active === "notifications" && (
           <SettingsBlock
