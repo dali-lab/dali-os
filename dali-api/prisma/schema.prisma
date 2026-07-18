@@ -3293,6 +3293,9 @@ model MentorNote {
   // Tiptap/ProseMirror JSON document. Seeded from the current default
   // MentorNoteTemplate on create. Single-author — no Yjs/Hocuspocus.
   contentJson  Json     @default("{}")
+  // Mentor's at-a-glance read on how the mentee is doing this week. Null until
+  // the mentor picks one — the browse grid renders it as a colored cell.
+  vibe         MentorNoteVibe?
 
   mentor User @relation("MentorNoteMentor", fields: [mentorId], references: [id])
   mentee User @relation("MentorNoteMentee", fields: [menteeId], references: [id])
@@ -3303,6 +3306,13 @@ model MentorNote {
   @@unique([mentorId, menteeId, projectId, termId, domainId, weekOf])
   @@index([menteeId, termId])
   @@index([mentorId, termId])
+}
+
+// Mentor's weekly vibe read on a mentee: Good (green), Ok (yellow), Bad (red).
+enum MentorNoteVibe {
+  Good
+  Ok
+  Bad
 }
 
 model MentorNoteTemplate {

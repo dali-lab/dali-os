@@ -122,7 +122,6 @@ export default [
     // Hidden from mentees entirely; gated server-side by canViewMentorship.
     route("mentorship", "mentorship/routes/mentorship.tsx"),
     route("mentorship/browse", "mentorship/routes/mentorship.browse.tsx"),
-    route("mentorship/templates", "mentorship/routes/mentorship.templates.tsx"),
     route("mentorship/notes/:id", "mentorship/routes/mentorship.notes.$id.tsx"),
 
     // Internal processes. The bare route is the area hub.

@@ -271,7 +271,7 @@ export default function MentorshipHub() {
 
   return (
     <main className="flex flex-col gap-6">
-      <AreaPillNav items={mentorshipPills({ isCore: data.isCore, active: "hub" })} />
+      <AreaPillNav items={mentorshipPills({ active: "hub" })} />
       <header className="flex flex-col gap-1">
         <h1 className="font-heading text-2xl font-bold text-foreground">
           Mentorship
@@ -304,7 +304,7 @@ export default function MentorshipHub() {
       <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
         <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
           <Users className="w-4 h-4 text-accent-coral" />
-          My mentees this week
+          My mentees
         </h2>
         {data.myMentees.length === 0 ? (
           <p className="text-sm text-muted-foreground">
@@ -366,13 +366,13 @@ export default function MentorshipHub() {
         <div className="flex items-center justify-between">
           <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
             <FileText className="w-4 h-4 text-accent-coral" />
-            My recent notes
+            My notes
           </h2>
           <Link
             to="/mentorship/browse"
             className="text-sm text-accent-coral hover:underline"
           >
-            Browse all
+            Show all
           </Link>
         </div>
         {data.myRecentNotes.length === 0 ? (
@@ -404,43 +404,6 @@ export default function MentorshipHub() {
         )}
       </section>
 
-      {data.isCore && (
-        <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
-          <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
-            <FileText className="w-4 h-4 text-accent-coral" />
-            Lab-wide recent notes
-          </h2>
-          {data.labRecentNotes.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No notes have been written across the lab yet.
-            </p>
-          ) : (
-            <ul className="flex flex-col divide-y divide-border">
-              {data.labRecentNotes.map((n) => (
-                <li
-                  key={n.id}
-                  className="py-2 flex items-center justify-between gap-3"
-                >
-                  <div className="flex flex-col">
-                    <span className="font-medium text-foreground">
-                      {fullName(n.mentor)} → {fullName(n.mentee)}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      {n.projectName} · {n.domainCode} · week of {fmtDate(n.weekOf)}
-                    </span>
-                  </div>
-                  <Link
-                    to={`/mentorship/notes/${n.id}`}
-                    className="text-sm text-accent-coral hover:underline"
-                  >
-                    Open
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      )}
     </main>
   );
 }
