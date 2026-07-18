@@ -12,7 +12,7 @@ export function mentorshipPills(args: {
 }): AreaPill[] {
   return [
     { label: "Hub", to: "/mentorship", active: args.active === "hub", icon: Heart },
-    { label: "Browse notes", to: "/mentorship/browse", active: args.active === "browse", icon: FileText },
+    { label: "Mentorship notes", to: "/mentorship/browse", active: args.active === "browse", icon: FileText },
     ...(args.isCore
       ? [
           {

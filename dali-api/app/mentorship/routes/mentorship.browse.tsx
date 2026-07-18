@@ -3,13 +3,13 @@ import type { Route } from "./+types/mentorship.browse";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { canViewMentorship } from "../lib/visibility";
-import { isCore } from "~/lib/roles";
-import { startOfWeekUTC } from "../lib/week";
+import { isCore, currentTerm } from "~/lib/roles";
+import { weekNumberInTerm, weekStartForNumber, weeksInTerm } from "../lib/week";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import { mentorshipPills } from "../components/mentorshipPills";
 
 export const meta: Route.MetaFunction = () => [
-  { title: "Browse notes · DALI OS" },
+  { title: "Notes · DALI OS" },
 ];
 
 // Surfaces the area subtab row (see layout.tsx's areaPills handling).
@@ -20,6 +20,10 @@ type Person = { id: string; firstName: string; lastName: string };
 type NoteRow = {
   id: string;
   weekOf: string;
+  // Week number within the note's term, computed from the term's start
+  // (null if the note's term has no dates — shouldn't happen). Displayed as
+  // "Week N" instead of the raw date.
+  week: number | null;
   mentor: Person;
   mentee: Person;
   projectName: string;
@@ -42,7 +46,9 @@ type LoaderData = {
     projectId: string;
     domainId: string;
     termId: string;
-    weekOf: string;
+    // Week number within the selected term ("" = any week). The date-based
+    // weekOf is derived from this + the term's start server-side.
+    week: string;
     status: "any" | "exists" | "missing";
   };
   options: {
@@ -51,6 +57,8 @@ type LoaderData = {
     projects: FilterOption[];
     domains: FilterOption[];
     terms: FilterOption[];
+    // Week 1..N for the selected term (empty when no term is selected).
+    weeks: FilterOption[];
   };
   notes: NoteRow[];
   missing: MissingRow[];
@@ -73,13 +81,17 @@ export async function loader({ request }: Route.LoaderArgs) {
   const status =
     (url.searchParams.get("status") as LoaderData["filters"]["status"] | null) ??
     "any";
+  // Term defaults to the current term when the URL doesn't pin one (first load).
+  // An explicit `termId=` (the "Any" option) clears it back to unfiltered.
+  const termParam = url.searchParams.get("termId");
+  const defaultTerm = termParam === null ? await currentTerm() : null;
   const filters = {
     mentorId: pickFilter(url.searchParams.get("mentorId")),
     menteeId: pickFilter(url.searchParams.get("menteeId")),
     projectId: pickFilter(url.searchParams.get("projectId")),
     domainId: pickFilter(url.searchParams.get("domainId")),
-    termId: pickFilter(url.searchParams.get("termId")),
-    weekOf: pickFilter(url.searchParams.get("weekOf")),
+    termId: termParam !== null ? termParam : defaultTerm?.id ?? "",
+    week: pickFilter(url.searchParams.get("week")),
     status,
   };
 
@@ -112,9 +124,20 @@ export async function loader({ request }: Route.LoaderArgs) {
       }),
       prisma.term.findMany({
         orderBy: { sortKey: "desc" },
-        select: { id: true, code: true },
+        select: { id: true, code: true, startDate: true, endDate: true },
       }),
     ]);
+
+  // The selected term (defaulted to current) drives the week-number mapping:
+  // Week N ↔ a Monday-UTC weekOf date relative to the term's start.
+  const selectedTerm = terms.find((t) => t.id === filters.termId) ?? null;
+  const selectedWeek = filters.week ? Number(filters.week) : null;
+  const weekOfDate =
+    selectedTerm && selectedWeek && Number.isFinite(selectedWeek)
+      ? weekStartForNumber(selectedTerm.startDate, selectedWeek)
+      : null;
+  // id → term start, so each note's weekOf can be labelled "Week N".
+  const termStartById = new Map(terms.map((t) => [t.id, t.startDate]));
 
   function uniquePeople(
     ...lists: { id: string; firstName: string; lastName: string }[][]
@@ -150,6 +173,14 @@ export async function loader({ request }: Route.LoaderArgs) {
       label: `${d.displayName} (${d.code})`,
     })),
     terms: terms.map((t) => ({ id: t.id, label: t.code })),
+    // Week 1..N of the selected term. Empty when no term is selected (week
+    // numbering has no origin then).
+    weeks: selectedTerm
+      ? Array.from({ length: weeksInTerm(selectedTerm.startDate, selectedTerm.endDate) }, (_, i) => ({
+          id: String(i + 1),
+          label: `Week ${i + 1}`,
+        }))
+      : [],
   };
 
   // Notes matching the filters (status=any or exists).
@@ -159,7 +190,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (filters.projectId) where.projectId = filters.projectId;
   if (filters.domainId) where.domainId = filters.domainId;
   if (filters.termId) where.termId = filters.termId;
-  if (filters.weekOf) where.weekOf = startOfWeekUTC(filters.weekOf);
+  if (weekOfDate) where.weekOf = weekOfDate;
 
   const notesRaw =
     status === "missing"
@@ -171,6 +202,7 @@ export async function loader({ request }: Route.LoaderArgs) {
           select: {
             id: true,
             weekOf: true,
+            termId: true,
             projectId: true,
             domainId: true,
             mentor: { select: { id: true, firstName: true, lastName: true } },
@@ -181,8 +213,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Missing rows: for the selected term + weekOf, list pairs without notes.
   // Requires both termId and weekOf — otherwise it would be unbounded.
   let missing: MissingRow[] = [];
-  if (status === "missing" && filters.termId && filters.weekOf) {
-    const weekOf = startOfWeekUTC(filters.weekOf);
+  if (status === "missing" && filters.termId && weekOfDate) {
+    const weekOf = weekOfDate;
     const pairWhere: Record<string, unknown> = { termId: filters.termId };
     if (filters.mentorId) pairWhere.mentorUserId = filters.mentorId;
     if (filters.menteeId) pairWhere.menteeUserId = filters.menteeId;
@@ -260,14 +292,23 @@ export async function loader({ request }: Route.LoaderArgs) {
   ]);
   const npm = new Map(noteProjects.map((p) => [p.id, p]));
   const ndm = new Map(noteDomains.map((d) => [d.id, d]));
-  const notes: NoteRow[] = notesRaw.map((n) => ({
-    id: n.id,
-    weekOf: n.weekOf.toISOString(),
-    mentor: n.mentor,
-    mentee: n.mentee,
-    projectName: npm.get(n.projectId)?.name ?? "Unknown",
-    domainCode: ndm.get(n.domainId)?.code ?? "?",
-  }));
+  const notes: NoteRow[] = notesRaw.map((n) => {
+    // Label each note by its week number within its own term (not the filter's).
+    // A note dated before its term's start yields a non-positive number that
+    // reads as broken ("Week -10"); leave `week` null so it falls back to the
+    // date label.
+    const termStart = termStartById.get(n.termId);
+    const wk = termStart ? weekNumberInTerm(n.weekOf, termStart) : null;
+    return {
+      id: n.id,
+      weekOf: n.weekOf.toISOString(),
+      week: wk != null && wk >= 1 ? wk : null,
+      mentor: n.mentor,
+      mentee: n.mentee,
+      projectName: npm.get(n.projectId)?.name ?? "Unknown",
+      domainCode: ndm.get(n.domainId)?.code ?? "?",
+    };
+  });
 
   const data: LoaderData = {
     filters,
@@ -300,12 +341,8 @@ export default function MentorshipBrowse() {
       <AreaPillNav items={mentorshipPills({ isCore: data.isCore, active: "browse" })} />
       <header>
         <h1 className="font-heading text-2xl font-bold text-foreground">
-          Browse notes
+          Mentorship notes
         </h1>
-        <p className="text-sm text-muted-foreground">
-          Filter by mentor, mentee, project, domain, term, or week. Use
-          “missing” to see who's behind for a specific term + week.
-        </p>
       </header>
 
       <Form
@@ -342,15 +379,12 @@ export default function MentorshipBrowse() {
           options={data.options.terms}
           value={data.filters.termId}
         />
-        <label className="flex flex-col gap-1 text-xs">
-          <span className="text-muted-foreground">Week of</span>
-          <input
-            type="date"
-            name="weekOf"
-            defaultValue={data.filters.weekOf}
-            className="rounded-md border border-border bg-background px-2 py-1 text-sm text-foreground"
-          />
-        </label>
+        <FilterSelect
+          name="week"
+          label="Week"
+          options={data.options.weeks}
+          value={data.filters.week}
+        />
         <label className="flex flex-col gap-1 text-xs">
           <span className="text-muted-foreground">Status</span>
           <select
@@ -385,11 +419,11 @@ export default function MentorshipBrowse() {
         <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
           <h2 className="font-heading font-semibold text-foreground">
             Missing notes
-            {data.filters.termId && data.filters.weekOf
-              ? ` · week of ${fmt(data.filters.weekOf)}`
+            {data.filters.termId && data.filters.week
+              ? ` · Week ${data.filters.week}`
               : ""}
           </h2>
-          {!data.filters.termId || !data.filters.weekOf ? (
+          {!data.filters.termId || !data.filters.week ? (
             <p className="text-sm text-muted-foreground">
               Pick both a term and a week to compute missing notes.
             </p>
@@ -435,7 +469,8 @@ export default function MentorshipBrowse() {
                       {fullName(n.mentor)} → {fullName(n.mentee)}
                     </span>
                     <span className="text-xs text-muted-foreground">
-                      {n.projectName} · {n.domainCode} · week of {fmt(n.weekOf)}
+                      {n.projectName} · {n.domainCode} ·{" "}
+                      {n.week != null ? `Week ${n.week}` : `week of ${fmt(n.weekOf)}`}
                     </span>
                   </div>
                   <Link
