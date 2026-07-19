@@ -126,7 +126,6 @@ export default [
     // Hidden from mentees entirely; gated server-side by canViewMentorship.
     route("mentorship", "mentorship/routes/mentorship.tsx"),
     route("mentorship/browse", "mentorship/routes/mentorship.browse.tsx"),
-    route("mentorship/templates", "mentorship/routes/mentorship.templates.tsx"),
     route("mentorship/notes/:id", "mentorship/routes/mentorship.notes.$id.tsx"),
 
     // Internal processes. The bare route is the area hub.
@@ -320,7 +319,8 @@ export default [
   route("api/staffing/board-member", "projects/routes/api.staffing.board-member.ts"),
   route("api/staffing/events", "projects/routes/api.staffing.events.ts"),
   route("api/staffing/reorder", "projects/routes/api.staffing.reorder.ts"),
-  route("api/staffing/mentorship", "projects/routes/api.staffing.mentorship.ts"),
+  route("api/staffing/mentor-role", "projects/routes/api.staffing.mentor-role.ts"),
+  route("api/staffing/external-mentor", "projects/routes/api.staffing.external-mentor.ts"),
 
   // Core-only level correction for an already-finalized ProjectAssignment.
   route(

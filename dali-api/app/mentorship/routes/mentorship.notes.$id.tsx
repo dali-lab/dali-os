@@ -1,21 +1,21 @@
 import { useEffect, useRef, useState } from "react";
 import { redirect, useLoaderData } from "react-router";
-import { Trash2 } from "lucide-react";
+import { Trash2, Smile, Meh, Frown } from "lucide-react";
 import type { Route } from "./+types/mentorship.notes.$id";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
 import { RichTextEditor } from "~/components/RichTextEditor";
-import { canViewMentorship } from "../lib/visibility";
-
-export const meta: Route.MetaFunction = () => [
-  { title: "Mentor note · DALI OS" },
-];
+import { AreaPillNav } from "~/components/AreaPillNav";
+import { canViewMentorship, canViewMentorNote } from "../lib/visibility";
+import { mentorshipPills } from "../components/mentorshipPills";
+import { VIBES, VIBE_META, type Vibe } from "../lib/vibe";
 
 type LoaderData = {
   id: string;
   weekOfIso: string;
   contentJson: unknown;
+  vibe: Vibe | null;
   mentor: { id: string; firstName: string; lastName: string };
   mentee: { id: string; firstName: string; lastName: string };
   projectName: string;
@@ -23,6 +23,17 @@ type LoaderData = {
   domainDisplay: string;
   canEdit: boolean;
 };
+
+function fullName(u: { firstName: string; lastName: string }) {
+  return `${u.firstName} ${u.lastName}`.trim();
+}
+
+export const meta: Route.MetaFunction = () => [
+  { title: "Mentor note · DALI OS" },
+];
+
+// Suppresses the breadcrumb trail (see layout wayfinding contract).
+export const handle = { areaPills: true };
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -43,11 +54,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       domainId: true,
       weekOf: true,
       contentJson: true,
+      vibe: true,
       mentor: { select: { id: true, firstName: true, lastName: true } },
       mentee: { select: { id: true, firstName: true, lastName: true } },
     },
   });
   if (!note) throw new Response("Not found", { status: 404 });
+  if (!(await canViewMentorNote(auth.user.sub, note))) {
+    throw new Response("Forbidden", { status: 403 });
+  }
 
   const [project, term, domain, core] = await Promise.all([
     prisma.project.findUnique({
@@ -69,6 +84,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     id: note.id,
     weekOfIso: note.weekOf.toISOString(),
     contentJson: note.contentJson,
+    vibe: note.vibe,
     mentor: note.mentor,
     mentee: note.mentee,
     projectName: project?.name ?? "Unknown",
@@ -87,17 +103,36 @@ function fmt(d: string) {
   });
 }
 
-function fullName(u: { firstName: string; lastName: string }) {
-  return `${u.firstName} ${u.lastName}`.trim();
-}
+const VIBE_ICON = { Good: Smile, Ok: Meh, Bad: Frown } as const;
 
 export default function MentorNoteEditor() {
   const data = useLoaderData() as LoaderData;
   const [value, setValue] = useState<unknown>(data.contentJson);
+  const [vibe, setVibe] = useState<Vibe | null>(data.vibe);
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">(
     "idle",
   );
   const saveTimer = useRef<number | null>(null);
+
+  // The vibe is a discrete choice, so persist it immediately (no debounce).
+  // Clicking the active vibe again clears it back to "no vibe set".
+  async function pickVibe(next: Vibe) {
+    if (!data.canEdit) return;
+    const value = vibe === next ? null : next;
+    setVibe(value);
+    setStatus("saving");
+    try {
+      const res = await fetch(`/api/mentorship/notes/${data.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vibe: value }),
+      });
+      if (!res.ok) throw new Error(`save failed: ${res.status}`);
+      setStatus("saved");
+    } catch {
+      setStatus("error");
+    }
+  }
 
   // Debounced autosave on edit. Authoritative state is server-side; if we miss
   // a flush, the next edit re-triggers it.
@@ -134,19 +169,50 @@ export default function MentorNoteEditor() {
   }
 
   return (
-    <main className="px-4 md:px-8 py-6 max-w-3xl mx-auto flex flex-col gap-4">
+    <main className="flex flex-col gap-4 w-full min-w-0">
+      <AreaPillNav items={mentorshipPills({ active: "browse" })} />
       <header className="flex flex-col gap-1">
         <h1 className="font-heading text-xl font-bold text-foreground">
           Notes on {fullName(data.mentee)}
         </h1>
-        <p className="text-sm text-muted-foreground">
-          {data.projectName} · {data.domainDisplay} · {data.termCode} · week of{" "}
-          {fmt(data.weekOfIso)}
-        </p>
         <p className="text-xs text-muted-foreground">
           Author: {fullName(data.mentor)}
         </p>
       </header>
+
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground">
+          Vibe check
+          <span className="text-accent-coral ml-0.5" aria-hidden>
+            *
+          </span>
+          :
+        </span>
+        <div className="flex items-center gap-1.5">
+          {VIBES.map((v) => {
+            const Icon = VIBE_ICON[v];
+            const active = vibe === v;
+            return (
+              <button
+                key={v}
+                type="button"
+                onClick={() => pickVibe(v)}
+                disabled={!data.canEdit}
+                aria-pressed={active}
+                title={VIBE_META[v].label}
+                className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition ${
+                  active
+                    ? VIBE_META[v].pill
+                    : "border-border text-muted-foreground hover:text-foreground"
+                } ${data.canEdit ? "" : "cursor-default opacity-70"}`}
+              >
+                <Icon className="h-3.5 w-3.5" aria-hidden />
+                {VIBE_META[v].label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <span>
@@ -177,7 +243,7 @@ export default function MentorNoteEditor() {
         onChange={setValue}
         disabled={!data.canEdit}
         placeholder="What went well, what's blocked, what to follow up on…"
-        className="min-h-[16rem]"
+        className="min-h-[24rem] w-full"
       />
     </main>
   );

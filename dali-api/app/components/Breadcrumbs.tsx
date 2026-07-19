@@ -78,6 +78,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   documents: 'Documents',
   forms: 'Forms',
   calendar: 'Calendar',
+  mentorship: 'Mentorship',
   profile: 'Profile',
   settings: 'Settings',
   help: 'Help',
@@ -114,6 +115,7 @@ const DROPPED_SEGMENTS = new Set([
   'edit', // /forms/edit/:formId
   'responses', // /forms/responses/:formId
   'file', // /documents/file/:fileId — the fileId segment supplies its own sub-trail
+  'notes', // /mentorship/notes/:id — leaf breadcrumb links back to /mentorship/browse
 ])
 
 // Opaque database ids that would render as gibberish in a trail: cuids

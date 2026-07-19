@@ -164,7 +164,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
     { key: 'hiring', label: 'Hiring', to: '/hiring', icon: Briefcase, show: hasHiringAccess },
     { key: 'projects', label: 'Projects', to: '/projects', icon: FolderKanban, show: true },
     // Hidden from mentees entirely; the routes are gated server-side by
-    // canViewMentorship regardless of what the sidebar shows.
+    // canViewMentorship. Mentors only see own-domain notes; Core/Admin see all.
     { key: 'mentorship', label: 'Mentorship', to: '/mentorship', icon: Heart, show: isLabMentor || isCore },
     { key: 'members', label: 'People', to: '/members', icon: UsersRound, show: true },
     { key: 'partners', label: 'Partners', to: '/partners', icon: Handshake, show: true },
