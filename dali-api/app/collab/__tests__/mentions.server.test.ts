@@ -1,5 +1,11 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import * as Y from "yjs";
+
+// extractMentionUserIds is pure, but ../mentions.server imports prisma + notify
+// at load; mock them so the CI test job (no generated client) can import it.
+vi.mock("~/lib/db");
+vi.mock("~/lib/notify.server", () => ({ notify: vi.fn() }));
+
 import { extractMentionUserIds } from "../mentions.server";
 
 // Build a Y.Doc "default" XmlFragment shaped like what y-prosemirror produces:

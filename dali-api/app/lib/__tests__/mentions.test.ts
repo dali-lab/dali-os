@@ -1,4 +1,11 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+
+// The functions under test are pure, but ~/lib/mentions imports prisma +
+// notify at module load; mock them so the test doesn't pull in the generated
+// client (absent in the CI test job — matches the repo-wide pattern).
+vi.mock("~/lib/db");
+vi.mock("~/lib/notify.server", () => ({ notify: vi.fn() }));
+
 import {
   extractHandlesFromText,
   extractMentionUserIds,
