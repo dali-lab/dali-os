@@ -86,6 +86,11 @@ export type MemberCardModel = {
   unresolvedBid: boolean;
   // Mirrors MemberInput.manuallyAdded — drives the card's remove (×) button.
   manuallyAdded: boolean;
+  // Set for synthetic external-mentor cards (see ExternalMentor): a non-roster
+  // mentor placed on a project column. Rendered distinctly, not draggable, and
+  // removed via its placement id rather than board-member APIs.
+  isExternalMentor?: boolean;
+  externalMentorId?: string;
 };
 
 export const UNASSIGNED = "__unassigned__";

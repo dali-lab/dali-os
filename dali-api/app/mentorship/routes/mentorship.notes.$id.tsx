@@ -6,12 +6,10 @@ import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
 import { RichTextEditor } from "~/components/RichTextEditor";
-import { canViewMentorship } from "../lib/visibility";
+import { AreaPillNav } from "~/components/AreaPillNav";
+import { canViewMentorship, canViewMentorNote } from "../lib/visibility";
+import { mentorshipPills } from "../components/mentorshipPills";
 import { VIBES, VIBE_META, type Vibe } from "../lib/vibe";
-
-export const meta: Route.MetaFunction = () => [
-  { title: "Mentor note · DALI OS" },
-];
 
 type LoaderData = {
   id: string;
@@ -25,6 +23,17 @@ type LoaderData = {
   domainDisplay: string;
   canEdit: boolean;
 };
+
+function fullName(u: { firstName: string; lastName: string }) {
+  return `${u.firstName} ${u.lastName}`.trim();
+}
+
+export const meta: Route.MetaFunction = () => [
+  { title: "Mentor note · DALI OS" },
+];
+
+// Suppresses the breadcrumb trail (see layout wayfinding contract).
+export const handle = { areaPills: true };
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -51,6 +60,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
   });
   if (!note) throw new Response("Not found", { status: 404 });
+  if (!(await canViewMentorNote(auth.user.sub, note))) {
+    throw new Response("Forbidden", { status: 403 });
+  }
 
   const [project, term, domain, core] = await Promise.all([
     prisma.project.findUnique({
@@ -89,10 +101,6 @@ function fmt(d: string) {
     day: "numeric",
     year: "numeric",
   });
-}
-
-function fullName(u: { firstName: string; lastName: string }) {
-  return `${u.firstName} ${u.lastName}`.trim();
 }
 
 const VIBE_ICON = { Good: Smile, Ok: Meh, Bad: Frown } as const;
@@ -161,22 +169,25 @@ export default function MentorNoteEditor() {
   }
 
   return (
-    <main className="px-4 md:px-8 py-6 max-w-3xl mx-auto flex flex-col gap-4">
+    <main className="flex flex-col gap-4 w-full min-w-0">
+      <AreaPillNav items={mentorshipPills({ active: "browse" })} />
       <header className="flex flex-col gap-1">
         <h1 className="font-heading text-xl font-bold text-foreground">
           Notes on {fullName(data.mentee)}
         </h1>
-        <p className="text-sm text-muted-foreground">
-          {data.projectName} · {data.domainDisplay} · {data.termCode} · week of{" "}
-          {fmt(data.weekOfIso)}
-        </p>
         <p className="text-xs text-muted-foreground">
           Author: {fullName(data.mentor)}
         </p>
       </header>
 
       <div className="flex items-center gap-2">
-        <span className="text-xs text-muted-foreground">Vibe check:</span>
+        <span className="text-xs text-muted-foreground">
+          Vibe check
+          <span className="text-accent-coral ml-0.5" aria-hidden>
+            *
+          </span>
+          :
+        </span>
         <div className="flex items-center gap-1.5">
           {VIBES.map((v) => {
             const Icon = VIBE_ICON[v];
@@ -232,7 +243,7 @@ export default function MentorNoteEditor() {
         onChange={setValue}
         disabled={!data.canEdit}
         placeholder="What went well, what's blocked, what to follow up on…"
-        className="min-h-[16rem]"
+        className="min-h-[24rem] w-full"
       />
     </main>
   );

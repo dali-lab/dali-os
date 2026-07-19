@@ -3,9 +3,9 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { canViewMentorship } from "../lib/visibility";
+import { canViewMentorship, canViewMentorNote } from "../lib/visibility";
 
-// GET    /api/mentorship/notes/:id  — read one (any lab mentor or Core)
+// GET    /api/mentorship/notes/:id  — read one (author, same-domain mentor, or Core/Admin)
 // PATCH  /api/mentorship/notes/:id  — update contentJson. Author or Core only.
 // DELETE /api/mentorship/notes/:id  — delete. Author or Core only.
 
@@ -50,6 +50,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
   if (!note) {
     return withCors(request, Response.json({ error: "Not found" }, { status: 404 }));
+  }
+  if (!(await canViewMentorNote(auth.user.sub, note))) {
+    return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
   }
   const [project, term, domain] = await Promise.all([
     prisma.project.findUnique({

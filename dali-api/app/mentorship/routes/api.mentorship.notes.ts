@@ -2,12 +2,12 @@ import type { Route } from "./+types/api.mentorship.notes";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { canViewMentorship } from "../lib/visibility";
+import { canViewMentorship, mentorNoteWhere } from "../lib/visibility";
 import { startOfWeekUTC } from "../lib/week";
 
-// GET  /api/mentorship/notes — filterable note list. Any lab mentor or Core
-//      member can read any note (mentor-collective). Mentees are not granted
-//      access by this endpoint. Filters (all optional, AND-combined):
+// GET  /api/mentorship/notes — filterable note list. Lab mentors see their own
+//      notes plus notes in domains they mentor in; Core/Admin see everything.
+//      Mentees are not granted access. Filters (all optional, AND-combined):
 //        mentorId, menteeId, projectId, termId, domainId, weekOf (yyyy-mm-dd)
 //      Returns notes ordered by weekOf desc, with denormalized labels.
 //
@@ -46,22 +46,23 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   const url = new URL(request.url);
-  const where: Record<string, unknown> = {};
+  const filters: Record<string, unknown> = {};
   const mentorId = url.searchParams.get("mentorId");
   const menteeId = url.searchParams.get("menteeId");
   const projectId = url.searchParams.get("projectId");
   const termId = url.searchParams.get("termId");
   const domainId = url.searchParams.get("domainId");
   const weekOf = url.searchParams.get("weekOf");
-  if (mentorId) where.mentorId = mentorId;
-  if (menteeId) where.menteeId = menteeId;
-  if (projectId) where.projectId = projectId;
-  if (termId) where.termId = termId;
-  if (domainId) where.domainId = domainId;
-  if (weekOf) where.weekOf = startOfWeekUTC(weekOf);
+  if (mentorId) filters.mentorId = mentorId;
+  if (menteeId) filters.menteeId = menteeId;
+  if (projectId) filters.projectId = projectId;
+  if (termId) filters.termId = termId;
+  if (domainId) filters.domainId = domainId;
+  if (weekOf) filters.weekOf = startOfWeekUTC(weekOf);
 
+  const scope = await mentorNoteWhere(auth.user.sub);
   const notes = await prisma.mentorNote.findMany({
-    where,
+    where: { AND: [scope, filters] },
     orderBy: [{ weekOf: "desc" }, { updatedAt: "desc" }],
     take: 200,
     select: {

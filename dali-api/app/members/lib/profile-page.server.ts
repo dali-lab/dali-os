@@ -27,6 +27,10 @@ import {
 } from "~/admin-console/lib/eligibility.server";
 import { NEW_MEMBER_PROFILE_FORM_NAME } from "~/members/lib/profile-form-interpreter";
 import { getEducationProfile } from "~/education/lib/engagement.server";
+import {
+  mentorshipPairWhere,
+  mentorNoteWhere,
+} from "~/mentorship/lib/visibility";
 
 export type ProfileMember = {
   id: string;
@@ -257,15 +261,20 @@ export async function loadProfilePage({
 
   // Mentorship panel: visible only when the viewer is a lab mentor (or Core)
   // AND they are NOT looking at their own profile. Mentees never see
-  // anything about notes written about them.
+  // anything about notes written about them. Non-Core mentors only see
+  // pairs/notes in domains they mentor in (plus notes they authored).
   const viewerCanSeeMentorshipPanel = !isSelf
     ? canManageEligibility || (await isLabMentor(auth.user.sub))
     : false;
   let mentorshipPanel: ProfilePageData["mentorshipPanel"] = null;
   if (viewerCanSeeMentorshipPanel) {
+    const [pairScope, noteScope] = await Promise.all([
+      mentorshipPairWhere(auth.user.sub),
+      mentorNoteWhere(auth.user.sub),
+    ]);
     const [asMentor, asMentee, noteCount] = await Promise.all([
       prisma.mentorshipPair.findMany({
-        where: { mentorUserId: targetId },
+        where: { AND: [pairScope, { mentorUserId: targetId }] },
         select: {
           id: true,
           mentee: { select: { id: true, firstName: true, lastName: true } },
@@ -275,7 +284,7 @@ export async function loadProfilePage({
         },
       }),
       prisma.mentorshipPair.findMany({
-        where: { menteeUserId: targetId },
+        where: { AND: [pairScope, { menteeUserId: targetId }] },
         select: {
           id: true,
           mentor: { select: { id: true, firstName: true, lastName: true } },
@@ -285,7 +294,12 @@ export async function loadProfilePage({
         },
       }),
       prisma.mentorNote.count({
-        where: { OR: [{ mentorId: targetId }, { menteeId: targetId }] },
+        where: {
+          AND: [
+            noteScope,
+            { OR: [{ mentorId: targetId }, { menteeId: targetId }] },
+          ],
+        },
       }),
     ]);
     mentorshipPanel = {

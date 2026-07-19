@@ -7,17 +7,25 @@ import {
   useNavigate,
   useSearchParams,
 } from "react-router";
-import { LayoutTemplate, Plus } from "lucide-react";
+import { LayoutTemplate } from "lucide-react";
 import type { Route } from "./+types/mentorship.browse";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
-import { canViewMentorship } from "../lib/visibility";
+import {
+  canViewMentorship,
+  mentorNoteWhere,
+  mentorshipPairWhere,
+} from "../lib/visibility";
 import { isCore, currentTerm } from "~/lib/roles";
-import { weekNumberInTerm, weekStartForNumber, weeksInTerm } from "../lib/week";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import { mentorshipPills } from "../components/mentorshipPills";
 import { TemplatesModal } from "../components/TemplatesModal";
-import { VIBE_META, type Vibe } from "../lib/vibe";
+import { MentorGrid } from "../components/MentorGrid";
+import {
+  buildGrid,
+  termWeekCount,
+  type MentorGridResult,
+} from "../lib/mentor-grid.server";
 
 export const meta: Route.MetaFunction = () => [
   { title: "Notes · DALI OS" },
@@ -25,38 +33,6 @@ export const meta: Route.MetaFunction = () => [
 
 // Surfaces the area subtab row (see layout.tsx's areaPills handling).
 export const handle = { areaPills: true };
-
-type Person = { id: string; firstName: string; lastName: string };
-
-// One week's status for a pair. `submitted` = a note exists (with its vibe);
-// `missing` = a due week with no note; `future` = a week not yet due.
-type Cell = {
-  week: number;
-  // Monday-UTC ISO date for this week, so the client can create a note for it.
-  weekOfIso: string;
-  state: "submitted" | "missing" | "future";
-  noteId: string | null;
-  vibe: Vibe | null;
-  // The viewer is this pair's mentor and the week is due but has no note yet —
-  // clicking the cell opens (creates) the note.
-  canCreate: boolean;
-};
-
-type MenteeRow = {
-  key: string;
-  mentee: Person;
-  menteeId: string;
-  projectId: string;
-  domainId: string;
-  projectName: string;
-  domainCode: string;
-  cells: Cell[];
-};
-
-type MentorGroup = {
-  mentor: Person;
-  rows: MenteeRow[];
-};
 
 type FilterOption = { id: string; label: string };
 
@@ -70,7 +46,6 @@ type LoaderData = {
     // Week number within the selected term ("" = any week). When set, the grid
     // shows only that week's column.
     week: string;
-    status: "any" | "exists" | "missing";
   };
   options: {
     mentors: FilterOption[];
@@ -81,15 +56,7 @@ type LoaderData = {
     // Week 1..N for the selected term (empty when no term is selected).
     weeks: FilterOption[];
   };
-  grid: {
-    // Week numbers shown as columns (all weeks, or a single filtered week).
-    weeks: number[];
-    // The term's current week (0 = not started, weeksCount = ended).
-    currentWeek: number | null;
-    mentors: MentorGroup[];
-    // False when no term is selected — the grid has no week axis then.
-    termSelected: boolean;
-  };
+  grid: MentorGridResult;
   isCore: boolean;
   viewerId: string;
 };
@@ -107,9 +74,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   const url = new URL(request.url);
-  const status =
-    (url.searchParams.get("status") as LoaderData["filters"]["status"] | null) ??
-    "any";
   // Term defaults to the current term when the URL doesn't pin one (first load).
   // An explicit `termId=` (the "Any" option) clears it back to unfiltered.
   const termParam = url.searchParams.get("termId");
@@ -121,8 +85,13 @@ export async function loader({ request }: Route.LoaderArgs) {
     domainId: pickFilter(url.searchParams.get("domainId")),
     termId: termParam !== null ? termParam : defaultTerm?.id ?? "",
     week: pickFilter(url.searchParams.get("week")),
-    status,
   };
+
+  // Scope non-Core viewers to their own notes/pairs + own-domain mentee data.
+  const [pairScope, noteScope] = await Promise.all([
+    mentorshipPairWhere(auth.user.sub),
+    mentorNoteWhere(auth.user.sub),
+  ]);
 
   // Build pickers from people/projects/domains/terms touched by notes or
   // pairs. Skipping pure-lookup tables keeps the option lists short and
@@ -130,24 +99,26 @@ export async function loader({ request }: Route.LoaderArgs) {
   const [pairUsers, noteUsers, projectsWithPairs, domainsWithPairs, terms] =
     await Promise.all([
       prisma.mentorshipPair.findMany({
+        where: pairScope,
         select: {
           mentor: { select: { id: true, firstName: true, lastName: true } },
           mentee: { select: { id: true, firstName: true, lastName: true } },
         },
       }),
       prisma.mentorNote.findMany({
+        where: noteScope,
         select: {
           mentor: { select: { id: true, firstName: true, lastName: true } },
           mentee: { select: { id: true, firstName: true, lastName: true } },
         },
       }),
       prisma.project.findMany({
-        where: { mentorshipPairs: { some: {} } },
+        where: { mentorshipPairs: { some: pairScope } },
         select: { id: true, name: true },
         orderBy: { name: "asc" },
       }),
       prisma.domain.findMany({
-        where: { mentorshipPairs: { some: {} } },
+        where: { mentorshipPairs: { some: pairScope } },
         select: { id: true, code: true, displayName: true },
         orderBy: { code: "asc" },
       }),
@@ -198,7 +169,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     // Week 1..N of the selected term. Empty when no term is selected (week
     // numbering has no origin then).
     weeks: selectedTerm
-      ? Array.from({ length: weeksInTerm(selectedTerm.startDate, selectedTerm.endDate) }, (_, i) => ({
+      ? Array.from({ length: termWeekCount(selectedTerm.startDate, selectedTerm.endDate) }, (_, i) => ({
           id: String(i + 1),
           label: `Week ${i + 1}`,
         }))
@@ -213,7 +184,8 @@ export async function loader({ request }: Route.LoaderArgs) {
         filters,
         weekFilter: selectedWeek,
         viewerId: auth.user.sub,
-        onlyMissing: status === "missing",
+        pairScope,
+        noteScope,
       })
     : { weeks: [], currentWeek: null, mentors: [], termSelected: false };
 
@@ -227,165 +199,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   return data;
 }
 
-// Builds the term's mentor → mentee → week matrix. Each pair (mentor, mentee,
-// project, domain) is one row; each shown week is one cell that is either a
-// submitted note (with its vibe), a missing note (a due week with no note), or
-// a future week (not yet due). Weeks past `currentWeek` are future; the rest
-// are due. `onlyMissing` prunes to mentors/rows that owe at least one note.
-async function buildGrid({
-  term,
-  filters,
-  weekFilter,
-  viewerId,
-  onlyMissing,
-}: {
-  term: { id: string; startDate: Date; endDate: Date };
-  filters: LoaderData["filters"];
-  weekFilter: number | null;
-  viewerId: string;
-  onlyMissing: boolean;
-}): Promise<LoaderData["grid"]> {
-  const weeksCount = weeksInTerm(term.startDate, term.endDate);
-  // Which week we're in now, clamped to [0, weeksCount]: 0 = term hasn't started
-  // (everything future), weeksCount = term is over (everything due).
-  const rawCurrent = weekNumberInTerm(new Date(), term.startDate);
-  const currentWeek = Math.max(0, Math.min(weeksCount, rawCurrent));
-
-  // Columns: a single week when the Week filter is set, else 1..weeksCount.
-  const weeks =
-    weekFilter && weekFilter >= 1 && weekFilter <= weeksCount
-      ? [weekFilter]
-      : Array.from({ length: weeksCount }, (_, i) => i + 1);
-
-  const pairWhere: Record<string, unknown> = { termId: term.id };
-  if (filters.mentorId) pairWhere.mentorUserId = filters.mentorId;
-  if (filters.menteeId) pairWhere.menteeUserId = filters.menteeId;
-  if (filters.projectId) pairWhere.projectId = filters.projectId;
-  if (filters.domainId) pairWhere.domainId = filters.domainId;
-
-  const noteWhere: Record<string, unknown> = { termId: term.id };
-  if (filters.mentorId) noteWhere.mentorId = filters.mentorId;
-  if (filters.menteeId) noteWhere.menteeId = filters.menteeId;
-  if (filters.projectId) noteWhere.projectId = filters.projectId;
-  if (filters.domainId) noteWhere.domainId = filters.domainId;
-
-  const [pairs, notes] = await Promise.all([
-    prisma.mentorshipPair.findMany({
-      where: pairWhere,
-      select: {
-        mentorUserId: true,
-        menteeUserId: true,
-        projectId: true,
-        domainId: true,
-        mentor: { select: { id: true, firstName: true, lastName: true } },
-        mentee: { select: { id: true, firstName: true, lastName: true } },
-      },
-    }),
-    prisma.mentorNote.findMany({
-      where: noteWhere,
-      select: {
-        id: true,
-        mentorId: true,
-        menteeId: true,
-        projectId: true,
-        domainId: true,
-        weekOf: true,
-        vibe: true,
-      },
-    }),
-  ]);
-
-  // Denormalize project names + domain codes for the pair rows.
-  const projectIds = [...new Set(pairs.map((p) => p.projectId))];
-  const domainIds = [...new Set(pairs.map((p) => p.domainId))];
-  const [projects, domains] = await Promise.all([
-    prisma.project.findMany({
-      where: { id: { in: projectIds } },
-      select: { id: true, name: true },
-    }),
-    prisma.domain.findMany({
-      where: { id: { in: domainIds } },
-      select: { id: true, code: true },
-    }),
-  ]);
-  const pm = new Map(projects.map((p) => [p.id, p.name]));
-  const dm = new Map(domains.map((d) => [d.id, d.code]));
-
-  // Note lookup keyed by pair identity + week number.
-  const noteByKey = new Map<string, { id: string; vibe: Vibe | null }>();
-  for (const n of notes) {
-    const wk = weekNumberInTerm(n.weekOf, term.startDate);
-    noteByKey.set(
-      `${n.mentorId}|${n.menteeId}|${n.projectId}|${n.domainId}|${wk}`,
-      { id: n.id, vibe: n.vibe as Vibe | null },
-    );
-  }
-
-  // Group pairs by mentor.
-  const byMentor = new Map<string, MentorGroup>();
-  for (const p of pairs) {
-    let group = byMentor.get(p.mentorUserId);
-    if (!group) {
-      group = { mentor: p.mentor, rows: [] };
-      byMentor.set(p.mentorUserId, group);
-    }
-    const cells: Cell[] = weeks.map((week) => {
-      const weekOfIso = weekStartForNumber(term.startDate, week).toISOString();
-      const note = noteByKey.get(
-        `${p.mentorUserId}|${p.menteeUserId}|${p.projectId}|${p.domainId}|${week}`,
-      );
-      if (note) {
-        return { week, weekOfIso, state: "submitted", noteId: note.id, vibe: note.vibe, canCreate: false };
-      }
-      const future = week > currentWeek;
-      return {
-        week,
-        weekOfIso,
-        state: future ? "future" : "missing",
-        noteId: null,
-        vibe: null,
-        // Only the pair's mentor can start a note, and only for a due week.
-        canCreate: !future && p.mentorUserId === viewerId,
-      };
-    });
-    group.rows.push({
-      key: `${p.mentorUserId}|${p.menteeUserId}|${p.projectId}|${p.domainId}`,
-      mentee: p.mentee,
-      menteeId: p.menteeUserId,
-      projectId: p.projectId,
-      domainId: p.domainId,
-      projectName: pm.get(p.projectId) ?? "Unknown",
-      domainCode: dm.get(p.domainId) ?? "?",
-      cells,
-    });
-  }
-
-  let mentors = [...byMentor.values()];
-  if (onlyMissing) {
-    // Keep only rows that owe a note, and mentors that still have such rows.
-    for (const g of mentors) {
-      g.rows = g.rows.filter((r) => r.cells.some((c) => c.state === "missing"));
-    }
-    mentors = mentors.filter((g) => g.rows.length > 0);
-  }
-
-  // Stable ordering: mentors by name, rows by mentee name then domain.
-  const name = (u: Person) => `${u.firstName} ${u.lastName}`.trim().toLowerCase();
-  mentors.sort((a, b) => name(a.mentor).localeCompare(name(b.mentor)));
-  for (const g of mentors) {
-    g.rows.sort(
-      (a, b) =>
-        name(a.mentee).localeCompare(name(b.mentee)) ||
-        a.domainCode.localeCompare(b.domainCode),
-    );
-  }
-
-  return { weeks, currentWeek, mentors, termSelected: true };
-}
-
-function fullName(u: Person) {
-  return `${u.firstName} ${u.lastName}`.trim();
-}
 
 const FILTERS_STORAGE_KEY = "mentorship.browse.filters";
 
@@ -422,20 +235,39 @@ export default function MentorshipBrowse() {
   return (
     <main className="flex flex-col gap-6">
       <AreaPillNav items={mentorshipPills({ active: "browse" })} />
-      <header className="flex items-center justify-between gap-3">
+      <header className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="font-heading text-2xl font-bold text-foreground">
           Mentorship notes
         </h1>
-        {data.isCore && (
-          <button
-            type="button"
-            onClick={() => setTemplatesOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border text-sm text-foreground hover:bg-muted"
+        <div className="flex items-center gap-2 ml-auto">
+          {data.isCore && (
+            <button
+              type="button"
+              onClick={() => setTemplatesOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border text-sm text-foreground hover:bg-muted"
+            >
+              <LayoutTemplate className="w-4 h-4 text-accent-coral" aria-hidden />
+              Templates
+            </button>
+          )}
+          <select
+            value={data.filters.termId}
+            onChange={(e) => {
+              const next = new URLSearchParams(params);
+              next.set("termId", e.target.value);
+              navigate(`/mentorship/browse?${next.toString()}`);
+            }}
+            aria-label="Filter by term"
+            className="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground sm:w-40"
           >
-            <LayoutTemplate className="w-4 h-4 text-accent-coral" aria-hidden />
-            Templates
-          </button>
-        )}
+            <option value="">Any term</option>
+            {data.options.terms.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
       </header>
 
       {data.isCore && (
@@ -447,8 +279,10 @@ export default function MentorshipBrowse() {
 
       <Form
         method="get"
-        className="bg-card border border-border rounded-lg p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3"
+        className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm"
       >
+        {/* Keep the header term when applying secondary filters. */}
+        <input type="hidden" name="termId" value={data.filters.termId} />
         <FilterSelect
           name="mentorId"
           label="Mentor"
@@ -474,32 +308,15 @@ export default function MentorshipBrowse() {
           value={data.filters.domainId}
         />
         <FilterSelect
-          name="termId"
-          label="Term"
-          options={data.options.terms}
-          value={data.filters.termId}
-        />
-        <FilterSelect
           name="week"
           label="Week"
           options={data.options.weeks}
           value={data.filters.week}
         />
-        <label className="flex flex-col gap-1 text-xs">
-          <span className="text-muted-foreground">Status</span>
-          <select
-            name="status"
-            defaultValue={data.filters.status}
-            className="rounded-md border border-border bg-background px-2 py-1 text-sm text-foreground"
-          >
-            <option value="any">All weeks</option>
-            <option value="missing">Only owed notes</option>
-          </select>
-        </label>
-        <div className="flex items-end gap-2">
+        <div className="ml-auto flex items-center gap-2">
           <button
             type="submit"
-            className="px-3 py-1.5 rounded-md bg-accent-coral text-white text-sm hover:opacity-90"
+            className="px-3 py-1 rounded-md bg-accent-coral text-white text-sm hover:opacity-90"
           >
             Apply
           </button>
@@ -511,7 +328,7 @@ export default function MentorshipBrowse() {
                   window.localStorage.removeItem(FILTERS_STORAGE_KEY);
                 }
               }}
-              className="px-3 py-1.5 rounded-md border border-border text-sm text-muted-foreground hover:text-foreground"
+              className="px-3 py-1 rounded-md border border-border text-sm text-muted-foreground hover:text-foreground"
             >
               Clear
             </Link>
@@ -519,16 +336,10 @@ export default function MentorshipBrowse() {
         </div>
       </Form>
 
-      <Legend />
-
       {!data.grid.termSelected ? (
         <EmptyState>Pick a term to see the weekly mentorship grid.</EmptyState>
       ) : data.grid.mentors.length === 0 ? (
-        <EmptyState>
-          {data.filters.status === "missing"
-            ? "No mentor owes a note for these filters. Nice."
-            : "No mentorship pairs match these filters."}
-        </EmptyState>
+        <EmptyState>No mentorship pairs match these filters.</EmptyState>
       ) : (
         data.grid.mentors.map((group) => (
           <MentorGrid
@@ -537,32 +348,11 @@ export default function MentorshipBrowse() {
             weeks={data.grid.weeks}
             currentWeek={data.grid.currentWeek}
             termId={data.filters.termId}
+            highlightMissing={data.isCore}
           />
         ))
       )}
     </main>
-  );
-}
-
-// The vibe/state key so cell colors are legible at a glance.
-function Legend() {
-  const items: { swatch: string; label: string }[] = [
-    { swatch: `${VIBE_META.Good.dot}`, label: "Good" },
-    { swatch: `${VIBE_META.Ok.dot}`, label: "So-so" },
-    { swatch: `${VIBE_META.Bad.dot}`, label: "Bad" },
-    { swatch: "bg-muted-foreground/40", label: "Submitted (no vibe)" },
-    { swatch: "border border-red-400 border-dashed bg-transparent", label: "Missing" },
-    { swatch: "bg-muted", label: "Future" },
-  ];
-  return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
-      {items.map((it) => (
-        <span key={it.label} className="inline-flex items-center gap-1.5">
-          <span className={`inline-block h-3 w-3 rounded-full ${it.swatch}`} />
-          {it.label}
-        </span>
-      ))}
-    </div>
   );
 }
 
@@ -574,156 +364,6 @@ function EmptyState({ children }: { children: React.ReactNode }) {
   );
 }
 
-// One mentor's card: their mentees down the rows, weeks across the columns.
-function MentorGrid({
-  group,
-  weeks,
-  currentWeek,
-  termId,
-}: {
-  group: MentorGroup;
-  weeks: number[];
-  currentWeek: number | null;
-  termId: string;
-}) {
-  return (
-    <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
-      <h2 className="font-heading font-semibold text-foreground">
-        {fullName(group.mentor)}
-      </h2>
-      <div className="overflow-x-auto">
-        <table className="border-separate border-spacing-1 text-sm">
-          <thead>
-            <tr>
-              <th className="text-left font-medium text-muted-foreground pr-3 pb-1">
-                Mentee
-              </th>
-              {weeks.map((w) => (
-                <th
-                  key={w}
-                  className={`w-9 text-center text-[11px] font-medium pb-1 ${
-                    w === currentWeek ? "text-accent-coral" : "text-muted-foreground"
-                  }`}
-                  title={w === currentWeek ? `Week ${w} (current)` : `Week ${w}`}
-                >
-                  {w}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {group.rows.map((row) => (
-              <tr key={row.key}>
-                <td className="pr-3 whitespace-nowrap">
-                  <span className="font-medium text-foreground">
-                    {fullName(row.mentee)}
-                  </span>{" "}
-                  <span className="text-xs text-muted-foreground">
-                    {row.projectName} · {row.domainCode}
-                  </span>
-                </td>
-                {row.cells.map((cell) => (
-                  <td key={cell.week} className="text-center">
-                    <GridCell cell={cell} row={row} termId={termId} />
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
-}
-
-// A single week cell: a submitted note (colored by vibe, links to the note), a
-// missing note (dashed red; clickable to create if the viewer is the mentor),
-// or a future week (muted, inert).
-function GridCell({
-  cell,
-  row,
-  termId,
-}: {
-  cell: Cell;
-  row: MenteeRow;
-  termId: string;
-}) {
-  const navigate = useNavigate();
-  const [busy, setBusy] = useState(false);
-
-  const base =
-    "inline-flex h-6 w-6 items-center justify-center rounded-full text-[10px] transition";
-
-  if (cell.state === "submitted") {
-    const swatch = cell.vibe ? VIBE_META[cell.vibe].dot : "bg-muted-foreground/40";
-    return (
-      <Link
-        to={`/mentorship/notes/${cell.noteId}`}
-        title={`Week ${cell.week}${cell.vibe ? ` · ${VIBE_META[cell.vibe].label}` : " · no vibe"}`}
-        className={`${base} ${swatch} text-white hover:ring-2 hover:ring-offset-1 hover:ring-border`}
-      >
-        <span className="sr-only">Open note</span>
-      </Link>
-    );
-  }
-
-  if (cell.state === "future") {
-    return (
-      <span
-        className={`${base} bg-muted text-muted-foreground/60`}
-        title={`Week ${cell.week} · not yet due`}
-      >
-        –
-      </span>
-    );
-  }
-
-  // Missing: mentor can create; others just see the gap.
-  if (!cell.canCreate) {
-    return (
-      <span
-        className={`${base} border border-dashed border-red-400 text-red-400`}
-        title={`Week ${cell.week} · no note`}
-      />
-    );
-  }
-
-  async function createNote() {
-    if (busy) return;
-    setBusy(true);
-    try {
-      const res = await fetch("/api/mentorship/notes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          menteeId: row.menteeId,
-          projectId: row.projectId,
-          termId,
-          domainId: row.domainId,
-          weekOf: cell.weekOfIso,
-        }),
-      });
-      if (!res.ok) throw new Error(`create failed: ${res.status}`);
-      const { id } = (await res.json()) as { id: string };
-      navigate(`/mentorship/notes/${id}`);
-    } catch {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={createNote}
-      disabled={busy}
-      title={`Week ${cell.week} · start note`}
-      className={`${base} border border-dashed border-red-400 text-red-400 hover:bg-red-400/10`}
-    >
-      <Plus className="h-3 w-3" aria-hidden />
-      <span className="sr-only">Start note for week {cell.week}</span>
-    </button>
-  );
-}
 
 function FilterSelect({
   name,
@@ -737,8 +377,8 @@ function FilterSelect({
   value: string;
 }) {
   return (
-    <label className="flex flex-col gap-1 text-xs">
-      <span className="text-muted-foreground">{label}</span>
+    <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+      {label}
       <select
         name={name}
         defaultValue={value}
