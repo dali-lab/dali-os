@@ -13,7 +13,7 @@ Internal operations platform for DALI Lab. Single React Router 7 app (`dali-api/
 | Styling | Tailwind CSS 4 |
 | Runtime | Node 22, npm |
 | Tests | Vitest (unit), Playwright (e2e) |
-| Deploy | Fly.io, branches `dev` → `staging` → `prod` |
+| Deploy | Fly.io, branches `staging` → `prod` |
 
 ## Repo layout
 
@@ -83,11 +83,10 @@ No ESLint/Prettier is wired up.
 
 | Env | Branch | Fly app | Neon branch | DB on deploy |
 |---|---|---|---|---|
-| Dev | `dev` | `dali-api-dev` | `development` | wipe → migrate → seed |
 | Staging | `staging` | `dali-api-staging` | `staging` | restore from prod → migrate |
 | Prod | `prod` | `dali-api-prod` | `production` | migrate only |
 
-Promotion is staged: PRs merge to `dev`, then `promote-to-staging.yml` and `promote-to-prod.yml` move code forward. Per-PR previews spin up their own Neon branch + Fly app via `preview-deploy.yml` and tear down on close.
+Promotion is staged: PRs merge to `staging`, then `promote-to-prod.yml` moves code to `prod` (a `/push` comment from a write-access user on a staging → prod PR). Per-PR previews spin up their own Neon branch + Fly app via `preview-deploy.yml` and tear down on close.
 
 ## Database & migrations
 

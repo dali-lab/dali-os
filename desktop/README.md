@@ -51,7 +51,7 @@ This generates `src-tauri/icons/*`. A templated menubar icon (`tray-Template.png
 
 ## Release
 
-Releases are cut automatically when the `version` field in `src-tauri/tauri.conf.json` changes on `dev`. CI (`desktop-release.yml`) builds all three platforms in parallel, then publishes a merged `latest.json` and tags the release.
+Releases are cut automatically when the `version` field in `src-tauri/tauri.conf.json` changes on `prod` (i.e. when the version bump is promoted). CI (`desktop-release.yml`) builds all three platforms in parallel, then publishes a merged `latest.json` and tags the release.
 
 You can also trigger a release manually via `workflow_dispatch` or a `desktop-v*` tag push.
 

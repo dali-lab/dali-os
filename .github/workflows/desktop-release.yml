@@ -1,6 +1,6 @@
 # Builds, signs, notarizes (macOS), and publishes the desktop shell for macOS and
 # Linux — separate from the web app's CI/deploy. It auto-releases when
-# desktop/src-tauri/tauri.conf.json's version changes on `dev` (a version-bump
+# desktop/src-tauri/tauri.conf.json's version changes on `prod` (a version-bump
 # merge IS the release), and also accepts a manual `desktop-v*` tag or a
 # workflow_dispatch as a fallback. Re-runs for an already-released version are
 # skipped (idempotent).
@@ -17,7 +17,7 @@ name: Desktop Release (macOS + Windows + Linux)
 
 on:
   push:
-    branches: [dev]
+    branches: [prod]
     paths:
       - "desktop/src-tauri/tauri.conf.json"
     tags:
