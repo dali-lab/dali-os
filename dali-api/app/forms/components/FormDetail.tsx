@@ -15,6 +15,7 @@ import {
 import { FormBuilderTab } from "~/components/form-builder/FormBuilder";
 import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
 import { Button, buttonClasses } from "~/components/ui/Button";
+import { Tooltip } from "~/components/ui/IconButton";
 import type { Question } from "~/types";
 import type { loader } from "~/forms/routes/forms.edit.$formId";
 
@@ -940,21 +941,20 @@ function PublishControl({
             onFocus={(e) => e.currentTarget.select()}
             className="flex-1 min-w-0 px-2 py-1.5 text-xs border border-border rounded-md bg-background text-foreground font-mono"
           />
-          <button
-            type="button"
-            onClick={copy}
-            className="inline-flex items-center gap-1 px-2 py-1.5 text-xs border border-border rounded-md text-foreground hover:bg-muted/50 transition-colors"
-          >
-            {copied ? (
-              <>
-                <Check className="w-3.5 h-3.5" /> Copied
-              </>
-            ) : (
-              <>
-                <Copy className="w-3.5 h-3.5" /> Copy
-              </>
-            )}
-          </button>
+          <Tooltip label="Copy link">
+            <button
+              type="button"
+              onClick={copy}
+              aria-label="Copy link"
+              className="inline-flex items-center justify-center p-1.5 text-xs border border-border rounded-md text-foreground hover:bg-muted/50 transition-colors"
+            >
+              {copied ? (
+                <Check className="w-3.5 h-3.5" />
+              ) : (
+                <Copy className="w-3.5 h-3.5" />
+              )}
+            </button>
+          </Tooltip>
         </div>
       )}
     </div>

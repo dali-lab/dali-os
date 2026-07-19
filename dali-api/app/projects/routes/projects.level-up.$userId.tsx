@@ -20,6 +20,11 @@ export const meta: Route.MetaFunction = ({ data }) => [
   },
 ];
 
+export const handle = {
+  breadcrumb: (data: unknown) =>
+    (data as { record?: { name?: string } } | undefined)?.record?.name,
+};
+
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");

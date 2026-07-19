@@ -5,6 +5,7 @@ import { verifyCollabToken } from "./auth";
 import { loadDocument, maybeSnapshot, storeDocument } from "./persistence";
 import { isPresenceRoom } from "./roomName";
 import { authorizeCollabDoc } from "~/lib/collabAuth";
+import { notifyCollabDocMentions } from "./mentions.server";
 
 const WS_MAX_PAYLOAD_BYTES = 1_048_576; // 1 MB
 const WS_MAX_CONNECTIONS = 100;
@@ -124,6 +125,10 @@ export function startCollabServer() {
       const stored = await storeDocument(documentName, document);
       if (!stored) return;
       const authors = drainAuthors(documentName);
+      // Notify anyone newly @-mentioned in the body (best-effort, deduped).
+      void notifyCollabDocMentions(documentName, document, authors).catch((err) =>
+        console.error(`[collab:server] mention notify failed doc=${documentName}`, err),
+      );
       try {
         const wrote = await maybeSnapshot(documentName, stored, authors);
         if (!wrote) for (const a of authors) recordAuthor(documentName, a);
@@ -145,6 +150,9 @@ export function startCollabServer() {
       const stored = await storeDocument(documentName, document);
       if (!stored) return;
       const authors = drainAuthors(documentName);
+      void notifyCollabDocMentions(documentName, document, authors).catch((err) =>
+        console.error(`[collab:server] mention notify failed doc=${documentName}`, err),
+      );
       try {
         const wrote = await maybeSnapshot(documentName, stored, authors);
         if (!wrote) for (const a of authors) recordAuthor(documentName, a);

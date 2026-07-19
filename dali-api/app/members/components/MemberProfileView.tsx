@@ -24,6 +24,7 @@ import { EditableSection } from "~/components/EditableSection";
 import { ProfilePhotoAvatar } from "~/components/ProfilePhotoAvatar";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { PresenceBar } from "~/components/collab/PresenceBar";
+import { buttonClasses } from "~/components/ui/Button";
 import type { Level } from "~/admin-console/lib/eligibility";
 import type {
   ProfileMember,
@@ -84,16 +85,6 @@ export function MemberProfileView({
     }
   }, [navigation.state, actionError]);
 
-  const primaryEmail =
-    member.daliEmail ?? member.dartmouthEmail ?? member.personalEmail ?? "";
-  const yearTail = member.classYear
-    ? `'${String(member.classYear).slice(-2)}`
-    : "";
-  const subtitleParts = [
-    member.pronouns,
-    primaryEmail || null,
-    yearTail || null,
-  ].filter((p): p is string => Boolean(p));
 
   const hasEducation =
     !!data.education &&
@@ -129,10 +120,8 @@ export function MemberProfileView({
           <p className="font-heading text-lg font-semibold text-foreground">
             {member.firstName} {member.lastName}
           </p>
-          {subtitleParts.length > 0 && (
-            <p className="text-sm text-muted-foreground mt-0.5">
-              {subtitleParts.join(" · ")}
-            </p>
+          {member.handle && (
+            <p className="text-sm text-accent-coral">@{member.handle}</p>
           )}
           {isSelf && (
             <a
@@ -444,6 +433,11 @@ function PersonalSection({
                 defaultValue={member.timeZone ?? ""}
               />
               <FieldInput
+                name="handle"
+                label="Handle (for @mentions)"
+                defaultValue={member.handle ?? ""}
+              />
+              <FieldInput
                 name="githubUsername"
                 label="GitHub username"
                 defaultValue={member.githubUsername ?? ""}
@@ -476,6 +470,11 @@ function PersonalSection({
             <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 text-sm">
               {showIdentitySummary && (
                 <>
+                  <Detail label="Pronouns" value={member.pronouns} />
+                  <Detail
+                    label="Handle"
+                    value={member.handle ? `@${member.handle}` : null}
+                  />
                   <Detail label="Major" value={member.major} />
                   <Detail
                     label="Class year"
@@ -999,7 +998,7 @@ function AddEligibility({
       <button
         type="submit"
         disabled={submitting || !domainId}
-        className="px-3 py-1.5 text-sm rounded-md bg-gray-900 text-white hover:bg-gray-700 disabled:opacity-50"
+        className={buttonClasses("primary", "sm")}
       >
         Add
       </button>
@@ -1042,6 +1041,7 @@ const PERSONAL_FIELDS = new Set<keyof ProfileMember>([
   "netId",
   "personalEmail",
   "timeZone",
+  "handle",
   "githubUsername",
   "linkedinUrl",
   "personalSite",
@@ -1094,6 +1094,7 @@ function HiddenProfileFields({
   if (!skip.has("personalEmail"))
     entries.push(["personalEmail", member.personalEmail ?? ""]);
   if (!skip.has("timeZone")) entries.push(["timeZone", member.timeZone ?? ""]);
+  if (!skip.has("handle")) entries.push(["handle", member.handle ?? ""]);
   if (!skip.has("githubUsername"))
     entries.push(["githubUsername", member.githubUsername ?? ""]);
   if (!skip.has("linkedinUrl"))

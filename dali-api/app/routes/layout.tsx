@@ -3,6 +3,7 @@ import { Outlet, redirect, useLoaderData, useLocation, useMatches, useNavigate, 
 import { cn } from '~/lib/cn'
 import { Layout } from '~/components/Layout'
 import { Breadcrumbs } from '~/components/Breadcrumbs'
+import { PageDocButton } from '~/components/page-docs/PageDocButton'
 import { LaunchWelcome } from '~/components/LaunchWelcome'
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { getUserRoles, isLabMentor } from '~/lib/roles'
@@ -259,6 +260,25 @@ export default function AppLayoutRoute() {
     >
       <div className="mb-4 empty:mb-0">
         <Breadcrumbs />
+  // Skip the sidebar shell when rendered inside a TabWorkspace iframe. This is
+  // where every routed page actually renders, so the breadcrumb trail (derived
+  // from the iframe document's matched routes) lives here — it picks up each
+  // detail route's `handle.breadcrumb` for the dynamic leaf crumb.
+  if (embedded) {
+    return (
+      <div className="min-h-dvh bg-page overflow-x-hidden">
+        <div
+          className={cn(
+            'w-full px-3 sm:px-6 lg:px-10 pb-6 sm:pb-8',
+            hasAreaSubnav ? 'pt-0' : 'pt-4 sm:pt-8 md:pt-12',
+          )}
+        >
+          <div className="mb-2 flex items-start justify-between gap-3 empty:mb-0">
+            <Breadcrumbs />
+            <PageDocButton suppressWhenPills />
+          </div>
+          <Outlet />
+        </div>
       </div>
       <Outlet />
     </div>

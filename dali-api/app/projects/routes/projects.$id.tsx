@@ -10,8 +10,9 @@ import {
   useSearchParams,
   useSubmit,
 } from "react-router";
-import { Check, Handshake, Pencil, X, Settings, Folder, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload } from "lucide-react";
+import { Check, Handshake, Pencil, X, Settings, Folder, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink } from "lucide-react";
 import { Modal, ModalHeader } from "~/components/Modal";
+import { Tooltip } from "~/components/ui/IconButton";
 import { EditableSection } from "~/components/EditableSection";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { PresenceBar } from "~/components/collab/PresenceBar";
@@ -719,7 +720,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const SCOPE_INTENTS = ["scopesBulk", "domains", "terms"];
   if (SCOPE_INTENTS.includes(intent) && !core) {
-    return { error: "Only Core or Admin can change domain settings." };
+    return { error: "Only Core or Admin can change project settings." };
   }
 
   // Partner links — Core/Admin only, via the shared helpers so validation
@@ -1009,9 +1010,7 @@ export default function ProjectDetail() {
 
   const page = (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-end gap-3">
-        <PresenceBar />
-      </div>
+      <PresenceBar className="self-end" />
 
       {/* Overview header — always on top, not behind a tab */}
       <ProjectHeader
@@ -1042,15 +1041,17 @@ export default function ProjectDetail() {
         {/* Scope/challenge config lives behind this gear, visible only to
             Core/Admin/Staff. */}
         {canViewScope && (
-          <button
-            type="button"
-            onClick={() => setScopeSettingsOpen(true)}
-            className="ml-auto -mb-px inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-            title="Domain settings & challenges"
-          >
-            <Settings className="w-4 h-4" />
-            <span className="hidden sm:inline">Domain settings</span>
-          </button>
+          <Tooltip label="Project settings" className="ml-auto -mb-px">
+            <button
+              type="button"
+              onClick={() => setScopeSettingsOpen(true)}
+              aria-label="Project settings"
+              className="inline-flex items-center justify-center p-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+              title="Project settings & challenges"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
+          </Tooltip>
         )}
       </div>
 
@@ -1082,7 +1083,7 @@ export default function ProjectDetail() {
         >
           <ModalHeader
             titleId="scope-settings-title"
-            title="Domain settings"
+            title="Project settings"
             subtitle="Declared domains, planned terms, and the per-domain challenge for each term."
             onClose={() => setScopeSettingsOpen(false)}
             closeLabel="Close scope settings"
@@ -1243,39 +1244,44 @@ function ProjectHeader({
             <div className="flex items-center gap-1.5 shrink-0">
               {editing ? (
                 <>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setResetKey((k) => k + 1);
-                      setEditing(false);
-                    }}
-                    className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (formRef.current) submit(formRef.current);
-                      setEditing(false);
-                    }}
-                    className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
-                  >
-                    <Check className="w-3.5 h-3.5" />
-                    Save
-                  </button>
+                  <Tooltip label="Cancel">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setResetKey((k) => k + 1);
+                        setEditing(false);
+                      }}
+                      aria-label="Cancel"
+                      className="inline-flex items-center justify-center p-1.5 text-xs font-medium rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </Tooltip>
+                  <Tooltip label="Save">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (formRef.current) submit(formRef.current);
+                        setEditing(false);
+                      }}
+                      aria-label="Save"
+                      className="inline-flex items-center justify-center p-1.5 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                    </button>
+                  </Tooltip>
                 </>
               ) : (
-                <button
-                  type="button"
-                  onClick={() => setEditing(true)}
-                  aria-label="Edit project name and status"
-                  className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
-                >
-                  <Pencil className="w-3.5 h-3.5" />
-                  Edit
-                </button>
+                <Tooltip label="Edit">
+                  <button
+                    type="button"
+                    onClick={() => setEditing(true)}
+                    aria-label="Edit project name and status"
+                    className="inline-flex items-center justify-center p-1.5 text-xs font-medium rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                </Tooltip>
               )}
             </div>
           )}
@@ -2336,12 +2342,15 @@ function PartnersSection({
                 >
                   <input type="hidden" name="intent" value="partner-unlink" />
                   <input type="hidden" name="projectPartnerId" value={p.id} />
-                  <button
-                    type="submit"
-                    className="text-xs text-destructive hover:underline flex-shrink-0"
-                  >
-                    Unlink
-                  </button>
+                  <Tooltip label="Unlink organization">
+                    <button
+                      type="submit"
+                      aria-label="Unlink organization"
+                      className="inline-flex items-center justify-center p-1.5 rounded-md text-destructive hover:bg-destructive/10 flex-shrink-0"
+                    >
+                      <Unlink className="w-3.5 h-3.5" />
+                    </button>
+                  </Tooltip>
                 </Form>
               )}
             </div>
@@ -2504,48 +2513,51 @@ function DocumentsBlock({
         </button>
         <div className="flex items-center gap-3 flex-shrink-0">
           {doc.partnerVisible && !canEdit && (
-            <span
-              className="flex items-center text-accent-teal"
-              title="Shared with partner — partners on this project can open and edit this page"
-            >
-              <Handshake className="w-3.5 h-3.5" />
-            </span>
+            <Tooltip label="Shared with partner — partners on this project can open and edit this page">
+              <span className="flex items-center text-accent-teal">
+                <Handshake className="w-3.5 h-3.5" />
+              </span>
+            </Tooltip>
           )}
           {canEdit && (hasActivePartner || doc.partnerVisible) && (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void togglePartnerVisible(doc.id, !doc.partnerVisible)}
-              title={
+            <Tooltip
+              label={
                 doc.partnerVisible
                   ? "Shared with partner — click to stop sharing"
                   : "Share with partner"
               }
-              // Accessible name must stay exactly "Shared with partner" /
-              // "Share with partner": it's the toggle's only name now that the
-              // label is icon-only, and it's the contract partner-portal.spec
-              // matches on via getByRole. The title carries the extra hint.
-              aria-label={doc.partnerVisible ? "Shared with partner" : "Share with partner"}
-              className={`flex items-center disabled:opacity-60 ${
-                doc.partnerVisible
-                  ? "text-accent-teal"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
             >
-              <Handshake className="w-3.5 h-3.5" />
-            </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void togglePartnerVisible(doc.id, !doc.partnerVisible)}
+                // Accessible name must stay exactly "Shared with partner" /
+                // "Share with partner": it's the toggle's only name now that the
+                // label is icon-only, and it's the contract partner-portal.spec
+                // matches on via getByRole. The tooltip carries the extra hint.
+                aria-label={doc.partnerVisible ? "Shared with partner" : "Share with partner"}
+                className={`flex items-center disabled:opacity-60 ${
+                  doc.partnerVisible
+                    ? "text-accent-teal"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Handshake className="w-3.5 h-3.5" />
+              </button>
+            </Tooltip>
           )}
           {canEdit && (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void deleteDocument(doc.id, doc.title)}
-              title="Delete document"
-              aria-label="Delete document"
-              className="text-destructive hover:text-destructive/80 disabled:opacity-60"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
+            <Tooltip label="Delete document">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void deleteDocument(doc.id, doc.title)}
+                aria-label="Delete document"
+                className="text-destructive hover:text-destructive/80 disabled:opacity-60"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </Tooltip>
           )}
         </div>
       </div>
@@ -2560,26 +2572,28 @@ function DocumentsBlock({
         </h2>
         {canEdit && (
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void createFolder()}
-              title="New folder"
-              aria-label="New folder"
-              className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-60"
-            >
-              <FolderPlus className="w-3.5 h-3.5" />
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void createDocument()}
-              title="Add document"
-              aria-label="Add document"
-              className="p-1 rounded text-accent-coral hover:bg-accent-coral/10 disabled:opacity-60"
-            >
-              <Plus className="w-3.5 h-3.5" />
-            </button>
+            <Tooltip label="New folder">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void createFolder()}
+                aria-label="New folder"
+                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-60"
+              >
+                <FolderPlus className="w-3.5 h-3.5" />
+              </button>
+            </Tooltip>
+            <Tooltip label="Add document">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void createDocument()}
+                aria-label="Add document"
+                className="p-1 rounded text-accent-coral hover:bg-accent-coral/10 disabled:opacity-60"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+            </Tooltip>
           </div>
         )}
       </div>
@@ -2618,16 +2632,17 @@ function DocumentsBlock({
                   </button>
                   {canEdit && (
                     <div className="flex items-center gap-2 flex-shrink-0">
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => void createDocument(doc.id)}
-                        title="Add document"
-                        aria-label="Add document"
-                        className="p-1 rounded text-accent-coral hover:bg-accent-coral/10 disabled:opacity-60"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                      </button>
+                      <Tooltip label="Add document">
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => void createDocument(doc.id)}
+                          aria-label="Add document"
+                          className="p-1 rounded text-accent-coral hover:bg-accent-coral/10 disabled:opacity-60"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </button>
+                      </Tooltip>
                       {!doc.isSystem && (
                         <button
                           type="button"
@@ -2753,19 +2768,20 @@ function FilesBlock({
           <Paperclip className="w-4 h-4" /> Files
         </h2>
         {canEdit && (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => {
-              versionForId.current = null;
-              fileInputRef.current?.click();
-            }}
-            title={busy ? "Uploading…" : "Add file"}
-            aria-label={busy ? "Uploading…" : "Add file"}
-            className="p-1 rounded text-accent-coral hover:bg-accent-coral/10 disabled:opacity-60"
-          >
-            <Plus className="w-3.5 h-3.5" />
-          </button>
+          <Tooltip label={busy ? "Uploading…" : "Add file"}>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                versionForId.current = null;
+                fileInputRef.current?.click();
+              }}
+              aria-label={busy ? "Uploading…" : "Add file"}
+              className="p-1 rounded text-accent-coral hover:bg-accent-coral/10 disabled:opacity-60"
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </button>
+          </Tooltip>
         )}
       </div>
 
@@ -2791,29 +2807,31 @@ function FilesBlock({
               </Link>
               {canEdit && (
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => {
-                      versionForId.current = f.id;
-                      fileInputRef.current?.click();
-                    }}
-                    title="New version"
-                    aria-label="New version"
-                    className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-60"
-                  >
-                    <Upload className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => void deleteFile(f.id, f.title)}
-                    title="Delete file"
-                    aria-label="Delete file"
-                    className="p-1 rounded text-destructive hover:text-destructive/80 disabled:opacity-60"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  <Tooltip label="New version">
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => {
+                        versionForId.current = f.id;
+                        fileInputRef.current?.click();
+                      }}
+                      aria-label="New version"
+                      className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-60"
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                    </button>
+                  </Tooltip>
+                  <Tooltip label="Delete file">
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void deleteFile(f.id, f.title)}
+                      aria-label="Delete file"
+                      className="p-1 rounded text-destructive hover:text-destructive/80 disabled:opacity-60"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </Tooltip>
                 </div>
               )}
             </div>

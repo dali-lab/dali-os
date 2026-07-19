@@ -32,6 +32,11 @@ export const meta: Route.MetaFunction = () => [
   { title: "Fellowship cycle · DALI OS" },
 ];
 
+export const handle = {
+  breadcrumb: (data: unknown) =>
+    (data as { cycle?: { name?: string } } | undefined)?.cycle?.name,
+};
+
 const MIN_POOL_SIZE = 2;
 
 export async function loader({ request, params }: Route.LoaderArgs) {

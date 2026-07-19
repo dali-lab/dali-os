@@ -288,6 +288,15 @@ export async function getRoleLabel(
  * cycle remains active for the handoff. If the Term table is empty
  * (e.g. seed hasn't run), Admin is the only path that passes.
  */
+/** Lab member: has a DALIMember marker row. The broad "signed-in member" gate. */
+export async function isLabMember(userId: string): Promise<boolean> {
+  const member = await prisma.dALIMember.findUnique({
+    where: { userId },
+    select: { id: true },
+  });
+  return member !== null;
+}
+
 export async function isCore(userId: string): Promise<boolean> {
   const envIds = getAdminUserIdsFromEnv();
   if (envIds.includes(userId)) return true;
@@ -481,10 +490,10 @@ export async function canManageStaffing(userId: string): Promise<boolean> {
 
 /**
  * Lab-mentor gate: true if the user is an active mentor anywhere in the lab
- * for the given term. Used to gate mentor-collective surfaces — `/mentorship`
- * hub, MentorNote visibility, notes browser. The check is broad on purpose
- * (not scoped to "mentor of this specific mentee"); the lab's mentors are
- * treated as a collective.
+ * for the given term. Used as the area gate for `/mentorship` (hub, browse,
+ * notes) — mentees are excluded. Per-note / per-pair reads are further scoped
+ * by domain in `mentorship/lib/visibility` (own notes + own-domain mentee
+ * notes; Core/Admin see everything).
  *
  * Returns true if the user has, for the given term, ANY of:
  *   - a P3-level ProjectAssignment

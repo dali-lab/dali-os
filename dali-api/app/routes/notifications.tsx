@@ -17,6 +17,7 @@ import {
   type NotificationState,
 } from "~/lib/tasks";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
+import { RsvpButtons } from "~/components/RsvpButtons";
 import type { Route } from "./+types/notifications";
 
 export const meta: Route.MetaFunction = () => [
@@ -130,8 +131,22 @@ function OpenTab({ tasks }: { tasks: Task[] }) {
                 {t.body}
               </p>
             )}
+            {t.source === "meeting" ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <RsvpButtons notificationId={t.id} />
+                {t.link && (
+                  <button
+                    type="button"
+                    onClick={() => openLink(t.link!, t.title)}
+                    className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground mt-2"
+                  >
+                    Open calendar <ExternalLink className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            ) : null}
           </div>
-          {t.link && (
+          {t.source !== "meeting" && t.link && (
             <button
               type="button"
               onClick={() => openLink(t.link!, t.title)}
@@ -317,6 +332,7 @@ function HistoryTab({
                         sent {timeLabel(n.sentAt)}
                         {n.clearedAt ? ` · cleared ${timeLabel(n.clearedAt)}` : ""}
                       </p>
+                      {n.canRsvp ? <RsvpButtons notificationId={n.id} /> : null}
                     </div>
                     <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
                       {n.link && (
@@ -325,7 +341,11 @@ function HistoryTab({
                           onClick={() => openLink(n.link!, n.title)}
                           className="flex items-center gap-1 text-xs font-medium text-accent-coral hover:underline"
                         >
-                          {n.state === "Submitted" ? "View" : "Open"}{" "}
+                          {n.canRsvp
+                            ? "Open calendar"
+                            : n.state === "Submitted"
+                              ? "View"
+                              : "Open"}{" "}
                           <ExternalLink className="w-3 h-3" />
                         </button>
                       )}
@@ -376,7 +396,7 @@ export default function NotificationsRoute() {
     (searchParams.get("status") as "open" | "cleared" | "all") || "all";
 
   return (
-    <div className="w-full max-w-3xl flex flex-col gap-6">
+    <div className="w-full flex flex-col gap-6">
       <div>
         <h1 className="font-heading text-2xl font-bold text-foreground">
           My Tasks

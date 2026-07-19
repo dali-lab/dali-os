@@ -40,6 +40,7 @@ import {
 import { useRegisterCollabEditor } from "./collab/PresenceProvider";
 import { VersionHistoryPanel } from "./collab/VersionHistoryPanel";
 import { EDITOR_CONTENT_CLASS, EditorShell } from "./editor/shared";
+import { mentionEditorExtension, searchMentionableUsers } from "./editor/mention";
 
 interface CollaborativeEditorProps {
   documentName: string;
@@ -66,6 +67,21 @@ interface CollaborativeEditorProps {
    * imperative `focusAnchor` exposed via onReady.
    */
   inlineComments?: InlineCommentOpts;
+
+  /**
+   * Enable the @-mention typeahead + mention nodes in the body (project
+   * documents, guides). Off by default. NOTE: this adds a `mention` node to the
+   * ProseMirror schema for this collab room — additive, but all clients on the
+   * room should run with it enabled so the schema stays consistent.
+   */
+  enableMentions?: boolean;
+
+  /**
+   * When set (arriving from a mention notification), once the doc syncs the
+   * editor scrolls to the first mention node tagging this user id and briefly
+   * flashes it. No-op if that user isn't mentioned.
+   */
+  focusMentionUserId?: string;
 }
 
 export type CommentAnchor = { from: string; to: string };
@@ -499,6 +515,8 @@ function CollaborativeEditorInner({
   className,
   editorId,
   inlineComments,
+  enableMentions = false,
+  focusMentionUserId,
   entry,
 }: CollaborativeEditorProps & { entry: DocEntry }) {
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -530,6 +548,7 @@ function CollaborativeEditorInner({
       }),
       Placeholder.configure({ placeholder }),
       TabKeymap,
+      ...(enableMentions ? [mentionEditorExtension(searchMentionableUsers)] : []),
       createCollabExtension(entry.fragment, entry.provider),
       ...(inlineComments?.enabled
         ? [
@@ -557,6 +576,43 @@ function CollaborativeEditorInner({
       );
     }
   }, [editor, documentName]);
+
+  // Deep-link from a mention notification: once the collab doc has synced,
+  // scroll to the first mention node tagging this user and flash it. The doc
+  // arrives asynchronously over the websocket, so poll briefly until the node
+  // exists (or give up).
+  useEffect(() => {
+    if (!editor || !focusMentionUserId) return;
+    let cancelled = false;
+    let tries = 0;
+    const attempt = () => {
+      if (cancelled) return;
+      let pos = -1;
+      editor.state.doc.descendants((node, p) => {
+        if (pos >= 0) return false;
+        if (node.type.name === "mention" && node.attrs?.id === focusMentionUserId) {
+          pos = p;
+          return false;
+        }
+        return undefined;
+      });
+      if (pos >= 0) {
+        editor.chain().setTextSelection(pos + 1).scrollIntoView().run();
+        const dom = editor.view.nodeDOM(pos);
+        if (dom instanceof HTMLElement) {
+          dom.classList.add("mention-flash");
+          setTimeout(() => dom.classList.remove("mention-flash"), 2600);
+        }
+        return;
+      }
+      if (tries++ < 24) setTimeout(attempt, 250); // ~6s of retries during sync
+    };
+    const t = setTimeout(attempt, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [editor, focusMentionUserId]);
 
   useEffect(() => {
     if (editor) editor.setEditable(!disabled);

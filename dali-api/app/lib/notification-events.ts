@@ -100,6 +100,20 @@ export const EVENT_TYPES = {
     description: "Replies in document and file comment threads you're part of.",
     defaults: { inApp: true, slackDm: false, email: "Off" },
   },
+  "pagedoc.mention": {
+    kind: "General",
+    area: "Documents",
+    label: "Mentions",
+    description: "When someone @mentions you in a document, guide, or comment.",
+    defaults: { inApp: true, slackDm: true, email: "Off" },
+  },
+  "pagedoc.maintainer_assigned": {
+    kind: "General",
+    area: "Documents",
+    label: "Guide maintainer role",
+    description: "When you're made the maintainer of a page's guide.",
+    defaults: { inApp: true, slackDm: true, email: "Off" },
+  },
   "staffing.assigned": {
     kind: "General",
     area: "Staffing",

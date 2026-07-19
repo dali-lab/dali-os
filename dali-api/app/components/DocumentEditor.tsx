@@ -6,6 +6,7 @@ import { PresenceProvider } from "./collab/PresenceProvider";
 import { PresenceBar } from "./collab/PresenceBar";
 import { CommentsRail, formatCommentDate, type Comment, type ThreadActions } from "./collab/CommentsRail";
 import { TagPicker, type DocTag } from "./TagPicker";
+import { MentionTextInput } from "./editor/MentionTextInput";
 
 // Reusable, abstract document surface: a Notion-style large title, a
 // collaborative rich-text body, lab tags, inline + doc-level comments, and
@@ -27,6 +28,8 @@ export function DocumentEditor({
   canEdit,
   tags,
   allTags,
+  focusMentionUserId,
+  focusCommentId,
 }: {
   pageId: string;
   initialTitle: string;
@@ -38,6 +41,12 @@ export function DocumentEditor({
   canEdit: boolean;
   tags: DocTag[];
   allTags: DocTag[];
+  // When set (arriving from a mention notification), scroll to + flash this
+  // user's mention in the body once it syncs.
+  focusMentionUserId?: string;
+  // When set (arriving from a comment-mention notification), scroll to + flash
+  // this comment in the rail.
+  focusCommentId?: string;
 }) {
   const revalidator = useRevalidator();
   const [title, setTitle] = useState(initialTitle);
@@ -174,6 +183,8 @@ export function DocumentEditor({
             token={collabToken}
             userName={userName}
             disabled={!canEdit}
+            enableMentions
+            focusMentionUserId={focusMentionUserId}
             placeholder="Start writing…"
             className="min-h-[60vh]"
             inlineComments={{
@@ -203,6 +214,7 @@ export function DocumentEditor({
           onClearPendingAnchor={() => setPendingAnchor(null)}
           onFocusAnchor={(a) => focusAnchorRef.current?.(a)}
           registerRefresh={registerRefresh}
+          focusCommentId={focusCommentId}
         />
       </aside>
     </div>
@@ -271,12 +283,13 @@ function InlineThreadPopover({
       {canComment && (
         <>
           <div className="flex items-end gap-1">
-            <input
+            <MentionTextInput
               autoFocus
               value={replyDraft}
-              onChange={(e) => setReplyDraft(e.target.value)}
-              placeholder="Reply…"
-              className="flex-1 px-2 py-1 text-xs border border-border rounded bg-background focus:outline-none focus:ring-1 focus:ring-accent-coral/40"
+              onChange={setReplyDraft}
+              placeholder="Reply… "
+              wrapperClassName="relative flex-1"
+              className="w-full px-2 py-1 text-xs border border-border rounded bg-background focus:outline-none focus:ring-1 focus:ring-accent-coral/40"
               onKeyDown={async (e) => {
                 if (e.key !== "Enter" || !replyDraft.trim()) return;
                 e.preventDefault();

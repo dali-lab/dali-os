@@ -15,6 +15,7 @@ import {
   removeEligibility,
 } from "~/admin-console/lib/eligibility.server";
 import { ChevronDown, Trash2, Plus, X } from "lucide-react";
+import { Tooltip } from "~/components/ui/IconButton";
 import {
   type DomainWithCounts,
   type Member,
@@ -525,15 +526,17 @@ function DomainRowItem({
         <fetcher.Form method="post">
           <input type="hidden" name="intent" value="delete-domain" />
           <input type="hidden" name="domainId" value={domain.id} />
-          <button
-            type="submit"
-            disabled={inUse || isDeleting}
-            title={inUse ? `Cannot delete — in use by ${inUseBy.join(", ")}` : "Delete domain"}
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-red-50 text-red-700 hover:bg-red-100 disabled:bg-muted disabled:text-muted-foreground/60 disabled:cursor-not-allowed"
-          >
-            <Trash2 className="w-3 h-3" />
-            Delete
-          </button>
+          <Tooltip label="Delete">
+            <button
+              type="submit"
+              disabled={inUse || isDeleting}
+              title={inUse ? `Cannot delete — in use by ${inUseBy.join(", ")}` : "Delete domain"}
+              aria-label="Delete"
+              className="inline-flex items-center justify-center p-1.5 rounded-md text-xs font-medium bg-red-50 text-red-700 hover:bg-red-100 disabled:bg-muted disabled:text-muted-foreground/60 disabled:cursor-not-allowed"
+            >
+              <Trash2 className="w-3 h-3" />
+            </button>
+          </Tooltip>
         </fetcher.Form>
       )}
     </li>

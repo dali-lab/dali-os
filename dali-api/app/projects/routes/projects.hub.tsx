@@ -22,7 +22,11 @@ import { buttonClasses } from "~/components/ui/Button";
 import { TermFilter } from "~/components/TermFilter";
 import { resolveTermFilter } from "~/lib/terms";
 
-export const handle = { areaPills: true };
+export const handle = {
+  areaPills: true,
+  docKey: "projects.hub",
+  docTitle: "Projects",
+};
 
 export const meta: Route.MetaFunction = () => [{ title: "Projects · DALI OS" }];
 
@@ -203,7 +207,7 @@ export default function ProjectsListPage() {
           <button
             type="button"
             onClick={() => setCreating(true)}
-            className={buttonClasses("primary", "sm", "rounded-md")}
+            className={buttonClasses("primary", "sm")}
           >
             + New project
           </button>
@@ -292,14 +296,11 @@ export default function ProjectsListPage() {
             <button
               type="button"
               onClick={() => setCreating(false)}
-              className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors"
+              className={buttonClasses("ghost", "sm")}
             >
               Cancel
             </button>
-            <button
-              type="submit"
-              className="px-3 py-1.5 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
-            >
+            <button type="submit" className={buttonClasses("primary", "sm")}>
               Create
             </button>
           </div>

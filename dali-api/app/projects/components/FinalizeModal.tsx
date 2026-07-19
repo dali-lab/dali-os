@@ -81,9 +81,9 @@ export function FinalizeModal({
   const [savedNote, setSavedNote] = useState<string | null>(null);
   const fieldsDirty = slackChannel !== initialSlack || githubSlug !== initialGithub;
 
-  // Staged mentors on this project who aren't P3 yet in their mentee's domain —
-  // finalize can promote them. Loaded when the modal opens; drives the promote
-  // notice + toggle below. Defaults to promoting (the common intent).
+  // Mentors designated via the board's role badge who aren't P3 yet — finalize
+  // can promote them. Loaded when the modal opens; drives the promote notice +
+  // toggle below. Defaults to promoting (the common intent).
   const [nonP3Mentors, setNonP3Mentors] = useState<{ name: string }[]>([]);
   const [promoteMentors, setPromoteMentors] = useState(true);
   useEffect(() => {
@@ -91,26 +91,18 @@ export function FinalizeModal({
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`/api/staffing/mentorship?cycleId=${encodeURIComponent(cycleId)}`, {
+        const res = await fetch(`/api/staffing/mentor-role?cycleId=${encodeURIComponent(cycleId)}`, {
           credentials: "include",
         });
         if (!res.ok) return;
         const d = (await res.json()) as {
-          mentors: { userId: string; firstName: string; lastName: string; levelByDomain: Record<string, string> }[];
-          pairs: { projectId: string; mentorUserId: string; domainId: string }[];
+          nonP3Mentors: { userId: string; firstName: string; lastName: string }[];
         };
-        const byId = new Map(d.mentors.map((m) => [m.userId, m]));
-        const seen = new Set<string>();
-        const flagged: { name: string }[] = [];
-        for (const p of d.pairs) {
-          if (p.projectId !== projectId) continue;
-          const m = byId.get(p.mentorUserId);
-          if (!m || m.levelByDomain[p.domainId] === "P3") continue;
-          if (seen.has(m.userId)) continue;
-          seen.add(m.userId);
-          flagged.push({ name: `${m.firstName} ${m.lastName}`.trim() });
+        if (!cancelled) {
+          setNonP3Mentors(
+            d.nonP3Mentors.map((m) => ({ name: `${m.firstName} ${m.lastName}`.trim() })),
+          );
         }
-        if (!cancelled) setNonP3Mentors(flagged);
       } catch {
         /* best-effort — the promote notice just won't show */
       }
@@ -118,7 +110,7 @@ export function FinalizeModal({
     return () => {
       cancelled = true;
     };
-  }, [open, cycleId, projectId]);
+  }, [open, cycleId]);
 
   // Persist the channel name + GitHub slug to the Project WITHOUT running
   // automations (keeps the project details page in sync). Cancel reverts edits.

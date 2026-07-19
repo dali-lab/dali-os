@@ -3,11 +3,9 @@ import { redirect, useLoaderData, useRevalidator } from "react-router";
 import {
   ListTodo,
   Check,
-  X as XIcon,
   CalendarDays,
   ExternalLink,
   FileText,
-  HelpCircle,
   CalendarClock,
 } from "lucide-react";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
@@ -16,6 +14,7 @@ import { listOpenTasks, type Task } from "~/lib/tasks";
 import { listedFormsFor, type ListedForm } from "~/forms/lib/public-form";
 import { fetchGeneralCalendarEvents } from "~/lib/general-calendar";
 import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
+import { RsvpButtons, notifyTasksChanged } from "~/components/RsvpButtons";
 import type { Route } from "./+types/home";
 
 // The home week calendar is rendered in this fixed lab timezone, matching the
@@ -410,22 +409,6 @@ function openTaskLink(
   }
 }
 
-// Tell the shell's sidebar task poller that the task list changed, so its
-// count + list update immediately instead of on the next poll. Inside the
-// TabWorkspace iframe the poller lives in the parent, so relay via postMessage;
-// the shell re-dispatches it as a same-window event (see Layout.tsx). On a
-// standalone Home page (no iframe) dispatch the event directly.
-function notifyTasksChanged() {
-  if (window.self !== window.top) {
-    window.parent.postMessage(
-      { type: "dali:tasksChanged" },
-      window.location.origin,
-    );
-  } else {
-    window.dispatchEvent(new Event("dali:tasksChanged"));
-  }
-}
-
 /* ------------------------------------------------------------------ */
 /* Notification card (rendered inside the attention banner)             */
 /* ------------------------------------------------------------------ */
@@ -444,99 +427,6 @@ function relativeTime(iso: string): string {
   return new Date(iso).toLocaleDateString();
 }
 
-
-/* ------------------------------------------------------------------ */
-/* RSVP buttons — shared by the meeting-invite task card and the         */
-/* notification card. On a response, POSTs to the rsvp endpoint (which   */
-/* records the RSVP and marks the notification read), then revalidates   */
-/* so the now-answered invite drops out of tasks.                        */
-/* ------------------------------------------------------------------ */
-
-function RsvpButtons({
-  notificationId,
-  onResponded,
-}: {
-  notificationId: string;
-  onResponded?: (rsvp: "Accepted" | "Declined" | "Tentative") => void;
-}) {
-  const revalidator = useRevalidator();
-  const [submitting, setSubmitting] = useState<
-    null | "accepted" | "declined" | "tentative"
-  >(null);
-  const [error, setError] = useState<string | null>(null);
-
-  async function sendRsvp(response: "accepted" | "declined" | "tentative") {
-    setSubmitting(response);
-    setError(null);
-    try {
-      const res = await fetch(`/api/notifications/${notificationId}/rsvp`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ response }),
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        setError(json.error ?? "Failed to RSVP");
-        return;
-      }
-      const enumVal =
-        response === "accepted"
-          ? "Accepted"
-          : response === "declined"
-            ? "Declined"
-            : "Tentative";
-      onResponded?.(enumVal);
-      if (json.gcalError) {
-        setError(`Recorded in-app, but Google sync failed: ${json.gcalError}`);
-      } else {
-        // Drop the answered invite from tasks/banner on the next loader pass,
-        // and refresh the shell's sidebar task count right away.
-        revalidator.revalidate();
-        notifyTasksChanged();
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Network error");
-    } finally {
-      setSubmitting(null);
-    }
-  }
-
-  return (
-    <>
-      <div className="flex items-center gap-1.5 mt-2">
-        <button
-          type="button"
-          onClick={() => sendRsvp("accepted")}
-          disabled={!!submitting}
-          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
-        >
-          <Check className="w-3 h-3" />
-          {submitting === "accepted" ? "Accepting…" : "Accept"}
-        </button>
-        <button
-          type="button"
-          onClick={() => sendRsvp("tentative")}
-          disabled={!!submitting}
-          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md border border-border text-foreground hover:bg-muted disabled:opacity-50"
-        >
-          <HelpCircle className="w-3 h-3" />
-          {submitting === "tentative" ? "…" : "Maybe"}
-        </button>
-        <button
-          type="button"
-          onClick={() => sendRsvp("declined")}
-          disabled={!!submitting}
-          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md border border-border text-foreground hover:bg-muted disabled:opacity-50"
-        >
-          <XIcon className="w-3 h-3" />
-          {submitting === "declined" ? "…" : "Decline"}
-        </button>
-      </div>
-      {error && <p className="text-[10px] text-red-700 mt-1">{error}</p>}
-    </>
-  );
-}
 
 function NotificationCard({ notification }: { notification: HomeNotification }) {
   const revalidator = useRevalidator();
@@ -575,9 +465,10 @@ function NotificationCard({ notification }: { notification: HomeNotification }) 
               <a
                 href={notification.link}
                 onClick={(e) => {
-                  if (!notification.readAt) {
+                  if (!notification.readAt && !isInvite) {
                     // keepalive: true so the POST survives the navigation
                     // that the anchor's default action is about to start.
+                    // Meeting invites clear only via RSVP — never via link.
                     fetch(`/api/notifications/${notification.id}/read`, {
                       method: "POST",
                       credentials: "include",

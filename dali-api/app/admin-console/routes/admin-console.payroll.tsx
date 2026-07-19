@@ -40,6 +40,7 @@ import { Modal, ModalHeader } from "~/components/Modal";
 import { formatUsd } from "~/lib/money";
 import { cn } from "~/lib/cn";
 import { useChartColors } from "~/components/analytics/useChartColors";
+import { Tooltip as UiTooltip } from "~/components/ui/IconButton";
 import { PayrollUploadModal } from "~/admin-console/components/PayrollUploadModal";
 import { PayrollBudgetPanel } from "~/admin-console/components/PayrollBudgetPanel";
 
@@ -196,14 +197,17 @@ export default function PayrollReconcile() {
         <div className="flex items-center gap-2 flex-wrap">
           <TermFilter terms={data.terms} selected={data.selected} />
           {hasData && (
-            <a
-              href={csvHref(tab)}
-              download
-              data-discover="false"
-              className={buttonClasses("secondary", "sm")}
-            >
-              <Download className="w-4 h-4" /> Export CSV
-            </a>
+            <UiTooltip label="Export CSV">
+              <a
+                href={csvHref(tab)}
+                download
+                data-discover="false"
+                aria-label="Export CSV"
+                className={buttonClasses("secondary", "sm")}
+              >
+                <Download className="w-4 h-4" />
+              </a>
+            </UiTooltip>
           )}
           <button
             type="button"

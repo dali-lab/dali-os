@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { GraduationCap } from "lucide-react";
 import { fullName as buildFullName } from "~/lib/display";
 import { Avatar } from "~/components/ui/Avatar";
 import { RolePills } from "~/components/ui/RolePills";
@@ -54,6 +55,14 @@ export function MemberCard({
 }: Props) {
   const fullName = buildFullName(card);
 
+  // External-mentor cards are a distinct, non-roster placement: their own
+  // rendering (teal edge, no bid, a Remove ×), never draggable, no bid modal.
+  if (card.isExternalMentor) {
+    return (
+      <ExternalMentorCard card={card} fullName={fullName} onRemove={onRemove} />
+    );
+  }
+
   // Only wire dnd listeners + grab cursor when draggable. Read-only viewers
   // still see the card and can click it to open the bid modal.
   const dragProps = draggable ? dragHandleProps : {};
@@ -108,6 +117,50 @@ export function MemberCard({
           {mentorSlot}
         </div>
       )}
+    </div>
+  );
+}
+
+// A non-roster external mentor placed on a project column. Distinct teal
+// styling marks it apart from staffed members; it isn't draggable and has no
+// bid to open — just a name, its mentoring domain, and a Remove control.
+function ExternalMentorCard({
+  card,
+  fullName,
+  onRemove,
+}: {
+  card: MemberCardModel;
+  fullName: string;
+  onRemove?: () => void;
+}) {
+  return (
+    <div className="rounded-md p-2.5 flex flex-col gap-1.5 select-none bg-accent-teal/[0.06] border border-accent-teal/40">
+      <div className="flex items-start gap-2">
+        <Avatar photoUrl={card.photoUrl} name={fullName} size="sm" />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline gap-1.5 flex-wrap">
+            <span className="text-sm font-semibold text-foreground truncate text-left">
+              {fullName}
+            </span>
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded bg-accent-teal/15 text-accent-teal">
+              <GraduationCap className="w-2.5 h-2.5" aria-hidden />
+              External mentor
+            </span>
+          </div>
+        </div>
+        {onRemove && (
+          <button
+            type="button"
+            onClick={onRemove}
+            title="Remove external mentor"
+            aria-label={`Remove external mentor ${fullName}`}
+            className="flex-shrink-0 text-muted-foreground hover:text-destructive text-sm leading-none px-1 rounded hover:bg-muted"
+          >
+            ×
+          </button>
+        )}
+      </div>
+      <DomainLevelStrip card={card} />
     </div>
   );
 }

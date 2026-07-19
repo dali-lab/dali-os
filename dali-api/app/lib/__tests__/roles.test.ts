@@ -230,7 +230,7 @@ describe("getActiveCoreCycleTermIds (Spring-anchored Core cycle)", () => {
   });
 });
 
-describe("isLabMentor (broad mentor-collective gate)", () => {
+describe("isLabMentor (mentorship area gate)", () => {
   it("true for a current-term P3 ProjectAssignment", async () => {
     mockPrisma.projectAssignment.findFirst.mockResolvedValue({ id: "pa-1" });
     expect(await isLabMentor("u", "term-1")).toBe(true);

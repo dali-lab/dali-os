@@ -3,10 +3,11 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { canViewMentorship } from "../lib/visibility";
+import { canViewMentorship, mentorshipPairWhere } from "../lib/visibility";
 
-// GET    /api/mentorship/pairs — list pairs. Filters: projectId, termId,
-//        mentorUserId, menteeUserId. Visible to any lab mentor / Core.
+// GET    /api/mentorship/pairs — list pairs. Mentors see their own pairs plus
+//        pairs in domains they mentor in; Core/Admin see everything.
+//        Filters: projectId, termId, mentorUserId, menteeUserId.
 // POST   /api/mentorship/pairs — manual create. Core only.
 //        Body: { menteeUserId, mentorUserId, projectId, termId, domainId }
 // DELETE /api/mentorship/pairs?id=...&id=... — delete by id. Core only.
@@ -39,18 +40,19 @@ export async function loader({ request }: Route.LoaderArgs) {
     return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
   }
   const url = new URL(request.url);
-  const where: Record<string, unknown> = {};
+  const filters: Record<string, unknown> = {};
   const projectId = url.searchParams.get("projectId");
   const termId = url.searchParams.get("termId");
   const mentorUserId = url.searchParams.get("mentorUserId");
   const menteeUserId = url.searchParams.get("menteeUserId");
-  if (projectId) where.projectId = projectId;
-  if (termId) where.termId = termId;
-  if (mentorUserId) where.mentorUserId = mentorUserId;
-  if (menteeUserId) where.menteeUserId = menteeUserId;
+  if (projectId) filters.projectId = projectId;
+  if (termId) filters.termId = termId;
+  if (mentorUserId) filters.mentorUserId = mentorUserId;
+  if (menteeUserId) filters.menteeUserId = menteeUserId;
 
+  const scope = await mentorshipPairWhere(auth.user.sub);
   const pairs = await prisma.mentorshipPair.findMany({
-    where,
+    where: { AND: [scope, filters] },
     take: 500,
     select: {
       id: true,

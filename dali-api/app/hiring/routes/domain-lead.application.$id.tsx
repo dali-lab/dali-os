@@ -48,6 +48,20 @@ export const meta: Route.MetaFunction = ({ data }) => {
   return [{ title: `${name || "Application"} · Domain lead · DALI OS` }];
 };
 
+export const handle = {
+  breadcrumb: (data: unknown) => {
+    const user = (
+      data as
+        | { application?: { user?: { firstName?: string; lastName?: string } } }
+        | undefined
+    )?.application?.user;
+    return (
+      [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim() ||
+      undefined
+    );
+  },
+};
+
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");

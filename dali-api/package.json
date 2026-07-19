@@ -41,6 +41,7 @@
     "@tiptap/extension-collaboration": "^3.22.3",
     "@tiptap/extension-collaboration-cursor": "^3.0.0",
     "@tiptap/extension-link": "^3.22.3",
+    "@tiptap/extension-mention": "^3.23.6",
     "@tiptap/extension-placeholder": "^3.22.3",
     "@tiptap/pm": "^3.22.3",
     "@tiptap/react": "^3.22.3",

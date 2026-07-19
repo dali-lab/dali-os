@@ -15,6 +15,7 @@ import {
   hasAnyFilter,
 } from "~/lib/audit-query";
 import { ListTodo, ChevronLeft, ChevronRight, X } from "lucide-react";
+import { Tooltip } from "~/components/ui/IconButton";
 
 export const handle = { areaPills: true };
 
@@ -208,13 +209,15 @@ export default function AdminConsoleActivity() {
             Apply
           </button>
           {anyFilter && (
-            <Link
-              to="?"
-              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-sm bg-card border border-border text-muted-foreground hover:text-foreground"
-            >
-              <X className="w-3.5 h-3.5" />
-              Clear filters
-            </Link>
+            <Tooltip label="Clear filters">
+              <Link
+                to="?"
+                aria-label="Clear filters"
+                className="inline-flex items-center justify-center p-1.5 rounded-md text-sm bg-card border border-border text-muted-foreground hover:text-foreground"
+              >
+                <X className="w-3.5 h-3.5" />
+              </Link>
+            </Tooltip>
           )}
         </div>
       </Form>
@@ -268,26 +271,30 @@ export default function AdminConsoleActivity() {
 
       <nav className="flex items-center justify-between" aria-label="Activity pagination">
         {page > 1 ? (
-          <Link
-            to={pageHref(page - 1)}
-            prefetch="render"
-            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-sm bg-card border border-border text-foreground hover:bg-muted/50"
-          >
-            <ChevronLeft className="w-4 h-4" />
-            Previous
-          </Link>
+          <Tooltip label="Previous">
+            <Link
+              to={pageHref(page - 1)}
+              prefetch="render"
+              aria-label="Previous"
+              className="inline-flex items-center justify-center p-1.5 rounded-md text-sm bg-card border border-border text-foreground hover:bg-muted/50"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </Link>
+          </Tooltip>
         ) : (
           <span />
         )}
         {hasNext ? (
-          <Link
-            to={pageHref(page + 1)}
-            prefetch="render"
-            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-sm bg-card border border-border text-foreground hover:bg-muted/50"
-          >
-            Next
-            <ChevronRight className="w-4 h-4" />
-          </Link>
+          <Tooltip label="Next">
+            <Link
+              to={pageHref(page + 1)}
+              prefetch="render"
+              aria-label="Next"
+              className="inline-flex items-center justify-center p-1.5 rounded-md text-sm bg-card border border-border text-foreground hover:bg-muted/50"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </Link>
+          </Tooltip>
         ) : (
           <span className="text-xs text-muted-foreground/60">End of log</span>
         )}

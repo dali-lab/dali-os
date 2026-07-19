@@ -244,7 +244,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
     { key: 'hiring', label: 'Hiring', to: '/hiring', icon: Briefcase, show: hasHiringAccess },
     { key: 'projects', label: 'Projects', to: '/projects', icon: FolderKanban, show: true },
     // Hidden from mentees entirely; the routes are gated server-side by
-    // canViewMentorship regardless of what the sidebar shows.
+    // canViewMentorship. Mentors only see own-domain notes; Core/Admin see all.
     { key: 'mentorship', label: 'Mentorship', to: '/mentorship', icon: Heart, show: isLabMentor || isCore },
     { key: 'members', label: 'People', to: '/members', icon: UsersRound, show: true },
     { key: 'partners', label: 'Partners', to: '/partners', icon: Handshake, show: true },
@@ -420,6 +420,21 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
                     {openTasks.map((t) => {
                       const cls =
                         'flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] font-medium text-left transition-colors'
+                      // Meeting invites clear only via RSVP — open My Tasks so
+                      // Accept/Maybe/Decline are available (same as Home).
+                      if (t.source === 'meeting') {
+                        return (
+                          <button
+                            key={t.id}
+                            type="button"
+                            title={t.title}
+                            {...tabClickProps({ url: '/notifications', label: 'My Tasks' })}
+                            className={`${cls} text-white/55 hover:text-white hover:bg-white/5`}
+                          >
+                            <span className="truncate">{t.title}</span>
+                          </button>
+                        )
+                      }
                       return t.link ? (
                         <button
                           key={t.id}

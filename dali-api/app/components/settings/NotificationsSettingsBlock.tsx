@@ -12,6 +12,7 @@ import {
   type EventDef,
   type EventType,
 } from "~/lib/notification-events";
+import { buttonClasses } from "~/components/ui/Button";
 
 // `general` is the pre-registry backfill value — nothing emits it.
 export const VISIBLE_EVENTS = EVENT_TYPE_KEYS.filter((k) => k !== "general");
@@ -190,7 +191,7 @@ export function NotificationsSettingsBlock({
           <button
             type="submit"
             disabled={busy}
-            className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-700 disabled:opacity-50"
+            className={buttonClasses("primary", "sm")}
           >
             {busy ? "Saving…" : "Save preferences"}
           </button>
