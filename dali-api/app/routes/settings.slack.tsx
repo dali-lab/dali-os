@@ -1,5 +1,5 @@
 import { redirect } from "react-router";
-import { requireAuth, unauthorized, forbidden, redirectPartnerToPortal, isPartnerAccount } from "~/lib/auth";
+import { requireAuth, unauthorized, forbidden, isPartnerAccount } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { lookupSlackUserByEmail } from "~/slack/lib/slack-client";
 import { logAuditEvent } from "~/lib/audit";

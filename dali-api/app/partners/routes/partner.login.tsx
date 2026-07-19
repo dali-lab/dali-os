@@ -5,7 +5,7 @@ import type { Route } from "./+types/partner.login";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { checkRateLimit } from "~/lib/rate-limit";
-import { getApiBaseUrl } from "~/lib/app-env";
+import { getApiBaseUrl, getAppEnv } from "~/lib/app-env";
 import { buildGoogleAuthUrl } from "~/lib/google-oauth";
 import {
   issuePartnerMagicLink,
@@ -17,7 +17,6 @@ import {
 const RESEND_COOLDOWN_S = 30;
 
 const OAUTH_STATE_COOKIE = "__dali_oauth_state";
-const isProduction = process.env.NODE_ENV === "production";
 
 export const meta: Route.MetaFunction = () => [
   { title: "DALI OS · Partner sign in" },
@@ -46,13 +45,14 @@ export async function action({ request }: Route.ActionArgs) {
     const limited = checkRateLimit(request, { max: 5, windowMs: 60_000 });
     if (limited) return limited;
     const state = randomBytes(32).toString("base64url");
+    const secure = getAppEnv() !== "dev";
     const stateCookie = [
       `${OAUTH_STATE_COOKIE}=${state}`,
       "Path=/auth/callback/google",
       "Max-Age=600",
       "HttpOnly",
       "SameSite=Lax",
-      ...(isProduction ? ["Secure"] : []),
+      ...(secure ? ["Secure"] : []),
     ].join("; ");
     const headers = new Headers();
     headers.append("Set-Cookie", stateCookie);

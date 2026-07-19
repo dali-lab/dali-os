@@ -21,14 +21,14 @@ async function loadHeaders(env: Record<string, string | undefined>) {
 
 describe("securityHeaders / contentSecurityPolicy", () => {
   it("emits a Content-Security-Policy-Report-Only header in non-production", async () => {
-    const { securityHeaders } = await loadHeaders({ NODE_ENV: "test" });
+    const { securityHeaders } = await loadHeaders({ DALI_APP_ENV: "dev" });
     const h = securityHeaders();
     expect(h["Content-Security-Policy-Report-Only"]).toBeTruthy();
     expect(h["Content-Security-Policy"]).toBeUndefined();
   });
 
   it("includes the expected core directives", async () => {
-    const { contentSecurityPolicy } = await loadHeaders({ NODE_ENV: "test" });
+    const { contentSecurityPolicy } = await loadHeaders({ DALI_APP_ENV: "dev" });
     const csp = contentSecurityPolicy();
     expect(csp).toContain("default-src 'self'");
     expect(csp).toContain("script-src 'self'");
@@ -42,20 +42,20 @@ describe("securityHeaders / contentSecurityPolicy", () => {
   });
 
   it("preserves single-quoted CSP keywords like 'self' and 'none'", async () => {
-    const { contentSecurityPolicy } = await loadHeaders({ NODE_ENV: "test" });
+    const { contentSecurityPolicy } = await loadHeaders({ DALI_APP_ENV: "dev" });
     const csp = contentSecurityPolicy();
     expect(csp).toMatch(/'self'/);
     expect(csp).toMatch(/'none'/);
   });
 
   it("permits ws:/wss: in connect-src outside production", async () => {
-    const { contentSecurityPolicy } = await loadHeaders({ NODE_ENV: "development" });
+    const { contentSecurityPolicy } = await loadHeaders({ DALI_APP_ENV: "dev" });
     expect(contentSecurityPolicy()).toContain("connect-src 'self' ws: wss:");
   });
 
   it("uses Report-Only in production when CSP_ENFORCE is unset", async () => {
     const { securityHeaders } = await loadHeaders({
-      NODE_ENV: "production",
+      DALI_APP_ENV: "prod",
       CSP_ENFORCE: undefined,
       COLLAB_URL: undefined,
     });
@@ -66,7 +66,7 @@ describe("securityHeaders / contentSecurityPolicy", () => {
 
   it("flips to enforcing mode when CSP_ENFORCE=1 in production", async () => {
     const { securityHeaders } = await loadHeaders({
-      NODE_ENV: "production",
+      DALI_APP_ENV: "prod",
       CSP_ENFORCE: "1",
     });
     const h = securityHeaders();
@@ -75,13 +75,13 @@ describe("securityHeaders / contentSecurityPolicy", () => {
   });
 
   it("includes upgrade-insecure-requests in production", async () => {
-    const { contentSecurityPolicy } = await loadHeaders({ NODE_ENV: "production" });
+    const { contentSecurityPolicy } = await loadHeaders({ DALI_APP_ENV: "prod" });
     expect(contentSecurityPolicy()).toContain("upgrade-insecure-requests");
   });
 
   it("narrows connect-src in production to the COLLAB_URL origin", async () => {
     const { contentSecurityPolicy } = await loadHeaders({
-      NODE_ENV: "production",
+      DALI_APP_ENV: "prod",
       COLLAB_URL: "wss://collab.example.com:443/path",
     });
     const csp = contentSecurityPolicy();
@@ -92,7 +92,7 @@ describe("securityHeaders / contentSecurityPolicy", () => {
 
   it("falls back to 'self' only in production when COLLAB_URL is unset", async () => {
     const { contentSecurityPolicy } = await loadHeaders({
-      NODE_ENV: "production",
+      DALI_APP_ENV: "prod",
       COLLAB_URL: undefined,
     });
     const csp = contentSecurityPolicy();
@@ -102,7 +102,7 @@ describe("securityHeaders / contentSecurityPolicy", () => {
   });
 
   it("keeps the existing non-CSP security headers", async () => {
-    const { securityHeaders } = await loadHeaders({ NODE_ENV: "test" });
+    const { securityHeaders } = await loadHeaders({ DALI_APP_ENV: "dev" });
     const h = securityHeaders();
     expect(h["X-Content-Type-Options"]).toBe("nosniff");
     expect(h["X-Frame-Options"]).toBe("SAMEORIGIN");

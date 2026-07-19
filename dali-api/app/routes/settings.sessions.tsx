@@ -1,5 +1,5 @@
 import { redirect } from "react-router";
-import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
+import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import type { Route } from "./+types/settings.sessions";
 
