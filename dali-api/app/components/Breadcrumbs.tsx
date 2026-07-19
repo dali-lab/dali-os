@@ -136,6 +136,7 @@ const DROPPED_SEGMENTS = new Set([
   'responses', // /forms/responses/:formId
   'file', // /documents/file/:fileId — the fileId segment supplies its own sub-trail
   'application', // /hiring/{reviewer,domain-lead}/application/:id — the :id leaf names the applicant
+  'notes', // /mentorship/notes/:id — leaf breadcrumb links back to /mentorship/browse
 ])
 
 // Opaque database ids that would render as gibberish in a trail: cuids
