@@ -3,6 +3,7 @@ import { Outlet, redirect, useLoaderData, useLocation, useMatches, useNavigate, 
 import { cn } from '~/lib/cn'
 import { Layout } from '~/components/Layout'
 import { Breadcrumbs } from '~/components/Breadcrumbs'
+import { PageDocButton } from '~/components/page-docs/PageDocButton'
 import { LaunchWelcome } from '~/components/LaunchWelcome'
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { getUserRoles, isLabMentor } from '~/lib/roles'
@@ -249,8 +250,9 @@ export default function AppLayoutRoute() {
             hasAreaSubnav ? 'pt-0' : 'pt-4 sm:pt-8 md:pt-12',
           )}
         >
-          <div className="mb-4 empty:mb-0">
+          <div className="mb-2 flex items-start justify-between gap-3 empty:mb-0">
             <Breadcrumbs />
+            <PageDocButton suppressWhenPills />
           </div>
           <Outlet />
         </div>

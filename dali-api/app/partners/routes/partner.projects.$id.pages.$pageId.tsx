@@ -1,4 +1,5 @@
-import { Link, useLoaderData } from "react-router";
+import { useLoaderData } from "react-router";
+import { PartnerBackLink } from "~/partners/components/PartnerBackLink";
 import type { Route } from "./+types/partner.projects.$id.pages.$pageId";
 import { prisma } from "~/lib/db";
 import { parseSessionCookie } from "~/lib/cookies";
@@ -52,12 +53,10 @@ export default function PartnerProjectPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <Link
+      <PartnerBackLink
         to={`/partner/projects/${projectId}`}
-        className="text-xs text-muted-foreground hover:text-foreground"
-      >
-        ← Back to project
-      </Link>
+        label="Back to project"
+      />
       <PartnerDocumentView
         pageId={page.id}
         title={page.title}

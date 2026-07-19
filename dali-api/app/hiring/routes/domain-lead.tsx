@@ -18,6 +18,7 @@ import { ConfidentialityGate } from "~/hiring/components/ConfidentialityGate";
 import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
 import { Modal } from "~/components/Modal";
 import { ChallengePreviewModal } from "~/hiring/components/ChallengePreviewModal";
+import { Tooltip } from "~/components/ui/IconButton";
 import { CycleSelector } from "~/hiring/components/CycleSelector";
 import {
   summarizeDecisionPills,
@@ -1496,15 +1497,16 @@ function ChallengeSelector({ cycleId, domainId, options, linkedChallengeVersions
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setPreviewCvId(cv.id)}
-                      aria-label={`Preview ${cv.challenge?.name ?? "challenge"}`}
-                      className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium"
-                    >
-                      <Eye className="w-3.5 h-3.5" />
-                      Preview
-                    </button>
+                    <Tooltip label="Preview">
+                      <button
+                        type="button"
+                        onClick={() => setPreviewCvId(cv.id)}
+                        aria-label="Preview"
+                        className="inline-flex items-center justify-center p-1.5 rounded-md text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                      </button>
+                    </Tooltip>
                     <button
                       type="button"
                       onClick={() => setPendingRemove(cv)}

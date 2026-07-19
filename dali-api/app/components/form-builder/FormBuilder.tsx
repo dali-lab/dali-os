@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { GripVertical, Plus, Pencil, Trash2, Save, Check, Loader2 } from 'lucide-react'
 import type { Question } from '~/types'
 import { RichTextEditor } from '~/components/RichTextEditor'
+import { Tooltip } from '~/components/ui/IconButton'
 import { referenceSourceChoices, referenceSourceNeedsTerm } from '~/forms/lib/reference-sources.shared'
 
 const ACCEPT_PRESETS = [
@@ -535,13 +536,16 @@ export function FormBuilderTab({
         </div>
 
         <div className="flex justify-between items-center gap-3 pt-2">
-          <button
-            onClick={() => editForm.key && handleDelete(editForm.key)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md text-red-600 hover:bg-red-50"
-          >
-            <Trash2 className="w-4 h-4" />
-            Remove question
-          </button>
+          <Tooltip label="Remove question">
+            <button
+              type="button"
+              onClick={() => editForm.key && handleDelete(editForm.key)}
+              aria-label="Remove question"
+              className="inline-flex items-center justify-center p-1.5 rounded-md text-red-600 hover:bg-red-50"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </Tooltip>
           <button
             onClick={handleDoneEditing}
             className="px-3 py-1.5 border border-transparent text-sm font-medium rounded-md text-white bg-accent-coral hover:bg-accent-coral/90 shadow-sm"

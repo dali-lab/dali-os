@@ -11,6 +11,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
 import { listSenderIntegrations } from "~/lib/gmail-integration";
+import { buttonClasses } from "~/components/ui/Button";
 import {
   EMAIL_PURPOSES,
   EMAIL_PURPOSE_KEYS,
@@ -153,7 +154,7 @@ export default function EmailSendersAdmin() {
               <div className="flex flex-shrink-0 items-center gap-2">
                 <a
                   href={`/admin/authorize-gmail?purpose=${s.purpose}`}
-                  className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-zinc-700"
+                  className={buttonClasses("primary", "sm")}
                 >
                   {s.sendAsEmail ? "Reconnect" : "Connect"}
                 </a>
@@ -165,7 +166,7 @@ export default function EmailSendersAdmin() {
                         { method: "post" },
                       )
                     }
-                    className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50"
+                    className={buttonClasses("ghost", "sm")}
                   >
                     Disable
                   </button>

@@ -10,6 +10,20 @@ export const meta: Route.MetaFunction = ({ data }) => {
   return [{ title: `${name || "Confidentiality agreement"} · DALI OS` }];
 };
 
+export const handle = {
+  // The Library owns confidentiality agreements (list at
+  // /hiring/library?tab=agreements); the bare prefix has no page.
+  breadcrumbTrail: (data: unknown) => {
+    const name = (data as { agreement?: { name?: string } } | undefined)
+      ?.agreement?.name;
+    return [
+      { label: "Hiring", to: "/hiring" },
+      { label: "Confidentiality", to: "/hiring/library?tab=agreements" },
+      { label: name || "Agreement" },
+    ];
+  },
+};
+
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");

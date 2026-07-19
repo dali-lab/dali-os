@@ -20,6 +20,11 @@ export const meta: Route.MetaFunction = ({ data }) => [
   },
 ];
 
+export const handle = {
+  breadcrumb: (data: unknown) =>
+    (data as { record?: { name?: string } } | undefined)?.record?.name,
+};
+
 // One member's full Intent to Work submission for the cycle — every column,
 // including ones hidden from the board table. Read-only; Core/Admin only.
 export async function loader({ request, params }: Route.LoaderArgs) {

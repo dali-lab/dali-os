@@ -76,7 +76,11 @@ describe("listOpenTasks", () => {
         link: "/calendar?meeting=m1",
         dueAt: null,
         createdAt: new Date("2026-05-20T10:00:00Z"),
-        scheduledMeeting: { selectedAt: new Date("2026-05-22T15:00:00Z") },
+        readAt: null,
+        formId: null,
+        scheduledMeetingId: "m1",
+        scheduledMeeting: { selectedAt: new Date("2026-05-22T15:00:00Z"), status: "Scheduled" },
+        interviewAssignment: null,
         form: null,
       },
     ]);
@@ -87,6 +91,34 @@ describe("listOpenTasks", () => {
       id: "n1",
       source: "meeting",
       dueAt: "2026-05-22T15:00:00.000Z",
+      hasAction: true,
+    });
+  });
+
+  it("does not treat MeetingInvite without scheduledMeetingId as RSVP-able", async () => {
+    mockPrisma.notification.findMany.mockResolvedValue([
+      {
+        id: "n2",
+        kind: "MeetingInvite",
+        title: "Meeting invite: Orphan",
+        body: null,
+        link: "/calendar",
+        dueAt: null,
+        createdAt: new Date("2026-05-20T10:00:00Z"),
+        readAt: null,
+        formId: null,
+        scheduledMeetingId: null,
+        scheduledMeeting: null,
+        interviewAssignment: null,
+        form: null,
+      },
+    ]);
+
+    const tasks = await listOpenTasks("user-1");
+    expect(tasks[0]).toMatchObject({
+      id: "n2",
+      source: "general",
+      hasAction: false,
     });
   });
 });
@@ -202,6 +234,7 @@ describe("listNotificationHistory", () => {
       sender: "Ada Lovelace",
       state: "Open",
       clearedAt: null,
+      canRsvp: false,
     });
     expect(res.nextCursor).toBeNull();
   });

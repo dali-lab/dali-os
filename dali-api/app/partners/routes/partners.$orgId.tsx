@@ -7,7 +7,8 @@ import {
   useLoaderData,
   useSubmit,
 } from "react-router";
-import { Building2, FolderKanban, Mail, Users } from "lucide-react";
+import { Building2, FolderKanban, Mail, Users, Unlink } from "lucide-react";
+import { Tooltip } from "~/components/ui/IconButton";
 import type { Route } from "./+types/partners.$orgId";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
@@ -823,12 +824,15 @@ export default function PartnerOrgDetail() {
                     >
                       <input type="hidden" name="intent" value="project-unlink" />
                       <input type="hidden" name="projectPartnerId" value={pp.id} />
-                      <button
-                        type="submit"
-                        className="px-3 py-1.5 text-xs font-medium rounded-md border border-destructive/40 text-destructive hover:bg-destructive/10 transition"
-                      >
-                        Unlink
-                      </button>
+                      <Tooltip label="Unlink project">
+                        <button
+                          type="submit"
+                          aria-label="Unlink project"
+                          className="inline-flex items-center justify-center p-1.5 rounded-md border border-destructive/40 text-destructive hover:bg-destructive/10 transition"
+                        >
+                          <Unlink className="w-3.5 h-3.5" />
+                        </button>
+                      </Tooltip>
                     </Form>
                   </div>
                 )}

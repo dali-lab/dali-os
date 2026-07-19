@@ -288,6 +288,15 @@ export async function getRoleLabel(
  * cycle remains active for the handoff. If the Term table is empty
  * (e.g. seed hasn't run), Admin is the only path that passes.
  */
+/** Lab member: has a DALIMember marker row. The broad "signed-in member" gate. */
+export async function isLabMember(userId: string): Promise<boolean> {
+  const member = await prisma.dALIMember.findUnique({
+    where: { userId },
+    select: { id: true },
+  });
+  return member !== null;
+}
+
 export async function isCore(userId: string): Promise<boolean> {
   const envIds = getAdminUserIdsFromEnv();
   if (envIds.includes(userId)) return true;

@@ -1,4 +1,5 @@
 import { Form, Link, useLoaderData, useNavigation } from "react-router";
+import { PartnerBackLink } from "~/partners/components/PartnerBackLink";
 import type { Route } from "./+types/partner.applications.$id";
 import { prisma } from "~/lib/db";
 import { parseSessionCookie } from "~/lib/cookies";
@@ -154,12 +155,7 @@ export default function PartnerApplicationDetail({
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <Link
-          to="/partner"
-          className="text-xs text-muted-foreground hover:text-foreground"
-        >
-          ← Back to portal
-        </Link>
+        <PartnerBackLink to="/partner" label="Back to portal" />
         <div className="flex items-start justify-between gap-4 mt-2 flex-wrap">
           <h1 className="font-heading text-3xl font-bold text-dark-blue">
             {application.title}

@@ -16,11 +16,32 @@ export type Crumb = { label: string; to?: string }
 // A route can also render a page-specific action at the far right of this
 // same row via `handle.headerAction(data)` (e.g. a "Partner view" button) —
 // only the deepest matching route's action is used.
+//
+// When a route's URL prefix does NOT match the item's conceptual home — e.g.
+// the shared /documents/* file viewer showing a *project* file, whose home is
+// Projects, not Documents — the leaf-only `breadcrumb` above can't help: it can
+// relabel its own segment but never the inherited prefix crumbs. Such a route
+// exports
+//   export const handle = { breadcrumbTrail: (data) => Crumb[] }
+// to declare its ENTIRE trail; the deepest match's non-empty return replaces
+// the URL-derived crumbs wholesale.
 type Handle = {
   breadcrumb?: (data: unknown) => string | Crumb[] | null | undefined
+  breadcrumbTrail?: (data: unknown) => Crumb[] | null | undefined
   areaPills?: boolean
   headerAction?: (data: unknown) => ReactNode
+  // A page opts into a documentation guide by declaring a stable docKey (and an
+  // optional human title). PageDocButton (rendered globally in the layout)
+  // surfaces the "Docs" button for the deepest match that sets one — see
+  // app/components/page-docs/PageDocButton.tsx.
+  docKey?: string
+  docTitle?: string
 }
+
+// Shared shape so PageDocButton can read the same handle contract. Exported
+// separately from the internal Handle type to keep this module's default export
+// focused on breadcrumbs.
+export type DocHandle = { docKey?: string; docTitle?: string }
 
 // Static label map for the fixed path segments. Keeps lab vocabulary verbatim
 // (Domain, Delibs, Intent to Work, Project Bids, JobX, Level Up, Core, Hub,
@@ -100,7 +121,6 @@ const UNROUTED_SEGMENTS = new Set([
   'cycle', // /hiring/lead/cycle/:id
   'cycles', // /hiring/cycles/:cycleId/confidentiality
   'intern-to-full-cycle',
-  'application', // /hiring/{reviewer,domain-lead}/application/:id
   'delibs',
   'assignments', // /education/manage/assignments/:assignmentId
   'page',
@@ -115,6 +135,7 @@ const DROPPED_SEGMENTS = new Set([
   'edit', // /forms/edit/:formId
   'responses', // /forms/responses/:formId
   'file', // /documents/file/:fileId — the fileId segment supplies its own sub-trail
+  'application', // /hiring/{reviewer,domain-lead}/application/:id — the :id leaf names the applicant
   'notes', // /mentorship/notes/:id — leaf breadcrumb links back to /mentorship/browse
 ])
 
@@ -139,6 +160,18 @@ export function Breadcrumbs() {
     return null
   }
 
+  // A route whose home differs from its URL prefix owns the whole trail via
+  // handle.breadcrumbTrail — the deepest match wins and short-circuits the
+  // segment walk below. The last crumb never links (same invariant the walk
+  // enforces).
+  let fullTrail: Crumb[] | null = null
+  for (const m of matches as { handle?: Handle; data?: unknown }[]) {
+    if (m.handle?.breadcrumbTrail && m.data != null) {
+      const t = m.handle.breadcrumbTrail(m.data)
+      if (t && t.length > 0) fullTrail = t
+    }
+  }
+
   // Build crumbs from the path segments. Any matched route may supply a
   // dynamic label for its own path via `handle.breadcrumb(loaderData)`;
   // in flat-route land that's usually just the leaf, so unlabeled dynamic
@@ -156,8 +189,14 @@ export function Breadcrumbs() {
   }
 
   const crumbs: Crumb[] = []
+  if (fullTrail) {
+    fullTrail.forEach((c, i) => {
+      const leaf = i === fullTrail!.length - 1
+      crumbs.push({ label: c.label, to: leaf ? undefined : c.to })
+    })
+  }
   let afterDroppedId = false
-  for (let i = 0; i < segments.length; i += 1) {
+  for (let i = 0; !fullTrail && i < segments.length; i += 1) {
     const seg = segments[i]!
     if (DROPPED_SEGMENTS.has(seg)) continue
     const to = '/' + segments.slice(0, i + 1).join('/')
@@ -204,11 +243,11 @@ export function Breadcrumbs() {
 
   // Home / single-segment pages get no trail (but still show a page action).
   if (crumbs.length <= 1) {
-    return action ? <div className="flex justify-end">{action}</div> : null
+    return action ? <div className="flex justify-end w-full">{action}</div> : null
   }
 
   return (
-    <div className="flex items-center justify-between gap-3 flex-wrap">
+    <div className="flex items-center justify-between gap-3 flex-wrap w-full min-w-0 flex-1">
       <nav
         aria-label="Breadcrumb"
         className="flex flex-wrap items-center gap-1 text-sm text-muted-foreground"

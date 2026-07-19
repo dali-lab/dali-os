@@ -10,6 +10,7 @@ import type { Route } from "./+types/link";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { formatUserCode, normalizeUserCode } from "~/lib/pairing";
+import { buttonClasses } from "~/components/ui/Button";
 
 export const meta: Route.MetaFunction = () => [
   { title: "Link a device · DALI OS" },
@@ -169,7 +170,7 @@ export default function LinkPage({ loaderData }: Route.ComponentProps) {
           />
           <button
             type="submit"
-            className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-700"
+            className={buttonClasses("primary", "sm")}
           >
             Continue
           </button>
@@ -261,7 +262,7 @@ export default function LinkPage({ loaderData }: Route.ComponentProps) {
           type="submit"
           name="intent"
           value="approve"
-          className="flex-1 rounded-lg bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-zinc-700"
+          className={buttonClasses("primary", "md", "flex-1")}
         >
           Approve device
         </button>

@@ -14,6 +14,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
 import { JOBS, resolveJobSettings } from "~/jobs/registry";
+import { buttonClasses } from "~/components/ui/Button";
 
 export const handle = { areaPills: true };
 
@@ -252,7 +253,7 @@ function JobRow({ job }: { job: JobView }) {
               type="button"
               disabled={busy}
               onClick={save}
-              className="rounded-md bg-zinc-900 px-2 py-1 text-xs font-semibold text-white hover:bg-zinc-700 disabled:opacity-50"
+              className={buttonClasses("primary", "sm")}
             >
               {saveFetcher.state !== "idle" ? "Saving…" : "Save"}
             </button>

@@ -14,7 +14,11 @@ import { MentorGrid } from "../components/MentorGrid";
 export const meta: Route.MetaFunction = () => [{ title: "Mentorship · DALI OS" }];
 
 // Surfaces the area subtab row (see layout.tsx's areaPills handling).
-export const handle = { areaPills: true };
+export const handle = {
+  areaPills: true,
+  docKey: "mentorship.hub",
+  docTitle: "Mentorship",
+};
 
 type LoaderData = {
   isCore: boolean;

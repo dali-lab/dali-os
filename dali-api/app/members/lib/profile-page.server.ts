@@ -26,6 +26,7 @@ import {
   removeEligibility,
 } from "~/admin-console/lib/eligibility.server";
 import { NEW_MEMBER_PROFILE_FORM_NAME } from "~/members/lib/profile-form-interpreter";
+import { normalizeHandle } from "~/lib/handle";
 import { getEducationProfile } from "~/education/lib/engagement.server";
 import {
   mentorshipPairWhere,
@@ -48,6 +49,7 @@ export type ProfileMember = {
   personalSite: string | null;
   timeZone: string | null;
   netId: string | null;
+  handle: string | null;
   phoneNumber: string | null;
   birthday: string | null;
   dietaryRestrictions: string | null;
@@ -139,6 +141,7 @@ const TEXT_FIELDS = [
   "dietaryRestrictions",
   "phoneNumber",
   "netId",
+  "handle",
   "personalEmail",
 ] as const;
 
@@ -202,6 +205,7 @@ export async function loadProfilePage({
       timeZone: true,
       photoUrl: true,
       netId: true,
+      handle: true,
       phoneNumber: true,
       birthday: true,
       dietaryRestrictions: true,
@@ -447,6 +451,11 @@ export async function runProfileAction({
       // same way, and the column has a unique index. Storing mixed case would
       // produce false "duplicates" against CAS-written rows.
       data[field] = raw === "" ? null : raw.toLowerCase();
+    } else if (field === "handle") {
+      // Handle is lowercased and stripped to [a-z0-9_] (same normalization the
+      // seeder uses), unique-indexed. Empty clears it.
+      const normalized = normalizeHandle(raw);
+      data[field] = normalized === "" ? null : normalized;
     } else {
       data[field] = raw === "" ? null : raw;
     }
@@ -484,10 +493,15 @@ export async function runProfileAction({
   try {
     await prisma.user.update({ where: { id: targetId }, data });
   } catch (e) {
-    // P2002 = Prisma unique-constraint violation. The only unique text field
-    // saved here is netId; surface a friendly error instead of a 500.
-    const code = (e as { code?: string } | null)?.code;
-    if (code === "P2002") {
+    // P2002 = Prisma unique-constraint violation. Two unique text fields are
+    // saved here (netId, handle); use meta.target to name the right one.
+    const err = e as { code?: string; meta?: { target?: string[] | string } } | null;
+    if (err?.code === "P2002") {
+      const target = err.meta?.target;
+      const fields = Array.isArray(target) ? target : target ? [target] : [];
+      if (fields.some((f) => f.includes("handle"))) {
+        return { error: "That handle is already taken — pick another." };
+      }
       return {
         error:
           "That NetID is already on another account — contact ops to merge or correct the duplicate.",

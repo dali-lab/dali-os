@@ -37,9 +37,16 @@ import { fetchBusyEvents, listCalendarsForLink } from "~/lib/google-calendar";
 import { APPLICATION_TZ as DEFAULT_TIMEZONE, getZonedHourFraction, getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
 import type { Route } from "./+types/calendar";
 import { UnderlineTabButtons } from "~/components/AreaPillNav";
+import { Tooltip } from "~/components/ui/IconButton";
+import { buttonClasses } from "~/components/ui/Button";
+import { RsvpButtons } from "~/components/RsvpButtons";
 
 // Underline subnav sits flush under the workspace tab bar (see layout embed padding).
-export const handle = { areaPills: true };
+export const handle = {
+  areaPills: true,
+  docKey: "calendar",
+  docTitle: "Calendar",
+};
 
 const DEFAULT_BUFFER_MIN = 15;
 const DEFAULT_WORK_START_MIN = 9 * 60;
@@ -161,6 +168,22 @@ type LoaderData = {
   timeEntries: TimeEntryDTO[];
   /** Core, Admin, or Instructor — can enable Self check-in (QR) on meetings. */
   canSetSelfCheckIn: boolean;
+  // Scheduled meetings the viewer was invited to whose start falls in the
+  // visible week. Rendered as RSVP-able blocks on the My Availability grid so
+  // Accept/Maybe/Decline is available in the calendar, not just in tasks.
+  // notificationId targets the RSVP endpoint (RSVP lives on the MeetingInvite
+  // Notification, not on MeetingAttendance).
+  meetingInvites: MeetingInviteDTO[];
+};
+
+type MeetingInviteDTO = {
+  notificationId: string;
+  meetingId: string;
+  title: string;
+  startIso: string;
+  endIso: string;
+  rsvp: "Accepted" | "Declined" | "Tentative" | null;
+  notePageId: string | null;
 };
 
 function defaultWorkingHours(): WhDay[] {
@@ -346,7 +369,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Fetch external busy + sub-calendar lists in parallel. Don't fail the page
   // if a single link errors — surface the error on the link card.
   let ingestionError: string | null = null;
-  const [externalBusyRaw, calendarLinks] = await Promise.all([
+  const [externalBusyRaw, calendarLinks, inviteRows] = await Promise.all([
     fetchBusyEvents(userId, weekStart, weekEnd).catch((err) => {
       ingestionError = err instanceof Error ? err.message : "Failed to fetch external busy";
       return [] as Awaited<ReturnType<typeof fetchBusyEvents>>;
@@ -383,7 +406,53 @@ export async function loader({ request }: Route.LoaderArgs) {
         }
       }),
     ),
+    // Meetings the viewer was invited to whose selected time lands in this
+    // week — the MeetingInvite notification carries both the per-user RSVP and
+    // the id the RSVP endpoint expects. Cancelled meetings are hidden, matching
+    // the tasks/banner surfaces.
+    prisma.notification.findMany({
+      where: {
+        recipientUserId: userId,
+        kind: "MeetingInvite",
+        scheduledMeetingId: { not: null },
+        scheduledMeeting: {
+          status: { not: "Cancelled" },
+          selectedAt: { gte: weekStart, lt: weekEnd },
+        },
+      },
+      select: {
+        id: true,
+        rsvp: true,
+        scheduledMeeting: {
+          select: {
+            id: true,
+            title: true,
+            selectedAt: true,
+            durationMinutes: true,
+            notePage: { select: { id: true } },
+          },
+        },
+      },
+    }),
   ]);
+
+  const meetingInvites: MeetingInviteDTO[] = inviteRows.flatMap((n) => {
+    const m = n.scheduledMeeting;
+    if (!m?.selectedAt) return [];
+    const start = m.selectedAt;
+    const end = new Date(start.getTime() + m.durationMinutes * 60_000);
+    return [
+      {
+        notificationId: n.id,
+        meetingId: m.id,
+        title: m.title,
+        startIso: start.toISOString(),
+        endIso: end.toISOString(),
+        rsvp: n.rsvp,
+        notePageId: m.notePage?.id ?? null,
+      },
+    ];
+  });
 
   const data: LoaderData = {
     timezone,
@@ -433,6 +502,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       startTime: t.startTime ? t.startTime.toISOString() : null,
       endTime: t.endTime ? t.endTime.toISOString() : null,
     })),
+    meetingInvites,
   };
   return data;
 }
@@ -1938,6 +2008,20 @@ function AvailabilityWeekGrid({
       borderClassName: "border-accent-coral-light",
     }, eventsByDay);
   }
+  // Meeting invites: clickable RSVP blocks, styled by response state.
+  for (const inv of data.meetingInvites) {
+    const style = meetingBlockStyle(inv.rsvp);
+    placeBlock(inv.startIso, inv.endIso, {
+      label: inv.title,
+      className: style.className,
+      borderClassName: style.borderClassName,
+      meeting: {
+        notificationId: inv.notificationId,
+        rsvp: inv.rsvp,
+        notePageId: inv.notePageId,
+      },
+    }, eventsByDay);
+  }
 
   const monthLabel = new Intl.DateTimeFormat("en-US", {
     timeZone: data.timezone,
@@ -2743,14 +2827,16 @@ function TimesheetView({ data }: { data: LoaderData }) {
               >
                 Add
               </button>
-              <button
-                type="button"
-                onClick={resetAddForm}
-                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-md border border-border text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-              >
-                <RotateCcw className="w-3 h-3" aria-hidden />
-                Reset
-              </button>
+              <Tooltip label="Reset">
+                <button
+                  type="button"
+                  onClick={resetAddForm}
+                  aria-label="Reset"
+                  className="inline-flex items-center justify-center p-1.5 text-xs font-semibold rounded-md border border-border text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                >
+                  <RotateCcw className="w-3 h-3" aria-hidden />
+                </button>
+              </Tooltip>
             </div>
           </addFetcher.Form>
         )}
@@ -3830,7 +3916,7 @@ function CreateScheduledMeetingForm({
           <button
             type="submit"
             disabled={!canSubmit}
-            className="px-4 py-2 rounded-md bg-gray-900 text-white text-sm hover:bg-gray-700 disabled:opacity-50"
+            className={buttonClasses("primary", "sm")}
           >
             {submitting ? "Creating…" : "Create meeting"}
           </button>
@@ -4652,6 +4738,39 @@ type EventBlock = {
    *  popover). Stops the mousedown from bubbling to the column's drag-select
    *  handler so a click doesn't also start a new drag selection. */
   onClick?: () => void;
+  /** When set, the block is a meeting invite: clicking opens a persistent
+   *  popover with Accept/Maybe/Decline (RSVP lives on the invite Notification,
+   *  so notificationId targets the RSVP endpoint). */
+  meeting?: {
+    notificationId: string;
+    rsvp: "Accepted" | "Declined" | "Tentative" | null;
+    notePageId: string | null;
+  };
+};
+
+// RSVP status → block styling on the calendar. Pending (unanswered) invites get
+// a dashed teal outline to read as "needs response"; answered ones adopt a
+// solid tint keyed to the response (declined is muted/greyed).
+function meetingBlockStyle(rsvp: MeetingInviteDTO["rsvp"]): {
+  className: string;
+  borderClassName: string;
+} {
+  switch (rsvp) {
+    case "Accepted":
+      return { className: `bg-accent-teal-light ${EVENT_TEXT}`, borderClassName: "border-accent-teal" };
+    case "Tentative":
+      return { className: `bg-accent-yellow ${EVENT_TEXT}`, borderClassName: "border-accent-yellow" };
+    case "Declined":
+      return { className: "bg-muted text-muted-foreground line-through", borderClassName: "border-border" };
+    default:
+      return { className: `bg-accent-teal-light ${EVENT_TEXT}`, borderClassName: "border-dashed border-accent-teal" };
+  }
+}
+
+const RSVP_BADGE: Record<"Accepted" | "Declined" | "Tentative", string> = {
+  Accepted: "bg-green-100 text-green-800",
+  Declined: "bg-red-100 text-red-800",
+  Tentative: "bg-yellow-100 text-yellow-800",
 };
 
 const DAY_KEYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
@@ -4662,15 +4781,30 @@ function CalendarEventDetailPopover({
   timeRange,
   location,
   description,
+  onClose,
+  footer,
 }: {
   anchorEl: HTMLElement | null;
   title: string;
   timeRange: string;
   location?: string;
   description?: string;
+  // When set, the popover is interactive (click-opened): a backdrop dismisses
+  // it and Escape closes it. Hover popovers leave this undefined.
+  onClose?: () => void;
+  footer?: React.ReactNode;
 }) {
   const cardRef = useRef<HTMLDivElement | null>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+
+  useEffect(() => {
+    if (!onClose) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
   useLayoutEffect(() => {
     if (!anchorEl) return;
@@ -4726,37 +4860,43 @@ function CalendarEventDetailPopover({
   }
 
   return createPortal(
-    <div
-      ref={cardRef}
-      className="fixed z-50 w-72 max-h-64 overflow-y-auto rounded-md shadow-lg p-2.5 text-xs"
-      style={{
-        left,
-        top,
-        visibility: measured ? "visible" : "hidden",
-        backgroundColor: "var(--color-card)",
-        color: "var(--color-foreground)",
-        border: "1px solid var(--color-border)",
-      }}
-    >
-      <div className="font-semibold text-foreground">{title}</div>
-      <div className="text-muted-foreground mt-0.5">{timeRange}</div>
-      {location && (
-        <div className="mt-2">
-          <div className="uppercase tracking-wide text-[10px] text-muted-foreground mb-0.5">
-            Location
-          </div>
-          <div className="text-foreground whitespace-pre-wrap break-words">{location}</div>
-        </div>
+    <>
+      {onClose && (
+        <div className="fixed inset-0 z-40" onMouseDown={onClose} />
       )}
-      {description && (
-        <div className="mt-2">
-          <div className="uppercase tracking-wide text-[10px] text-muted-foreground mb-0.5">
-            Description
+      <div
+        ref={cardRef}
+        className="fixed z-50 w-72 max-h-80 overflow-y-auto rounded-md shadow-lg p-2.5 text-xs"
+        style={{
+          left,
+          top,
+          visibility: measured ? "visible" : "hidden",
+          backgroundColor: "var(--color-card)",
+          color: "var(--color-foreground)",
+          border: "1px solid var(--color-border)",
+        }}
+      >
+        <div className="font-semibold text-foreground">{title}</div>
+        <div className="text-muted-foreground mt-0.5">{timeRange}</div>
+        {location && (
+          <div className="mt-2">
+            <div className="uppercase tracking-wide text-[10px] text-muted-foreground mb-0.5">
+              Location
+            </div>
+            <div className="text-foreground whitespace-pre-wrap break-words">{location}</div>
           </div>
-          <div className="text-foreground whitespace-pre-wrap break-words">{description}</div>
-        </div>
-      )}
-    </div>,
+        )}
+        {description && (
+          <div className="mt-2">
+            <div className="uppercase tracking-wide text-[10px] text-muted-foreground mb-0.5">
+              Description
+            </div>
+            <div className="text-foreground whitespace-pre-wrap break-words">{description}</div>
+          </div>
+        )}
+        {footer}
+      </div>
+    </>,
     document.body,
   );
 }
@@ -4771,13 +4911,17 @@ function WeekGridEvent({ e }: { e: EventBlock }) {
   const bufferBg = e.bufferClassName ?? "";
   const bodyHeight = e.duration * HOUR_PX;
   const timeRange = `${formatHourMinute(e.startHour)} – ${formatHourMinute(e.startHour + e.duration)}`;
+  const isMeeting = Boolean(e.meeting);
+  // Meeting invites open a persistent (click) popover with RSVP controls;
+  // other detail-bearing blocks keep the hover popover.
   const hasDetails = Boolean(e.location || e.description);
+  const clickable = Boolean(e.onClick || isMeeting);
 
   return (
     <div
       className={`absolute left-0 right-0 ${bufferBefore === 0 ? "rounded-t-md" : ""} ${
         bufferAfter === 0 ? "rounded-b-md" : ""
-      } ${border} ${bufferBg} overflow-hidden ${e.onClick ? "cursor-pointer" : hasDetails ? "cursor-help" : ""}`}
+      } ${border} ${bufferBg} overflow-hidden ${clickable ? "cursor-pointer" : hasDetails ? "cursor-help" : ""}`}
       style={{
         top: (e.startHour - bufferBefore - HOURS[0]) * HOUR_PX,
         height: totalHours * HOUR_PX,
@@ -4789,7 +4933,7 @@ function WeekGridEvent({ e }: { e: EventBlock }) {
       // Previously this was gated on `e.onClick`, which is why only the
       // clickable (Manual) blocks were protected.
       onMouseDown={(ev) => ev.stopPropagation()}
-      onClick={e.onClick}
+      onClick={isMeeting ? () => setDetailOpen((v) => !v) : e.onClick}
     >
       <div
         ref={setAnchorEl}
@@ -4798,7 +4942,7 @@ function WeekGridEvent({ e }: { e: EventBlock }) {
         } px-1.5 py-1 text-xs font-semibold leading-tight overflow-hidden transition-shadow shadow-[inset_3px_0_0_0_rgba(0,0,0,0.18),0_1px_2px_-1px_rgba(0,0,0,0.15)] ${e.className} ${
           e.bgColor ? "text-white" : ""
         } ${
-          e.onClick
+          clickable
             ? "hover:ring-2 hover:ring-inset hover:ring-white/60 hover:shadow-[inset_3px_0_0_0_rgba(0,0,0,0.18),0_2px_5px_-1px_rgba(0,0,0,0.25)]"
             : ""
         }`}
@@ -4807,8 +4951,8 @@ function WeekGridEvent({ e }: { e: EventBlock }) {
           height: bodyHeight,
           ...(e.bgColor ? { backgroundColor: e.bgColor } : {}),
         }}
-        onMouseEnter={hasDetails ? () => setDetailOpen(true) : undefined}
-        onMouseLeave={hasDetails ? () => setDetailOpen(false) : undefined}
+        onMouseEnter={hasDetails && !isMeeting ? () => setDetailOpen(true) : undefined}
+        onMouseLeave={hasDetails && !isMeeting ? () => setDetailOpen(false) : undefined}
       >
         {e.label && <span className="truncate block">{e.label}</span>}
         {bodyHeight >= 34 && (
@@ -4816,13 +4960,56 @@ function WeekGridEvent({ e }: { e: EventBlock }) {
             {timeRange}
           </span>
         )}
-        {bodyHeight >= 50 && e.location && (
+        {isMeeting && e.meeting?.rsvp && bodyHeight >= 50 && (
+          <span className="block truncate text-[10px] font-normal leading-tight opacity-90">
+            {e.meeting.rsvp}
+          </span>
+        )}
+        {bodyHeight >= 50 && e.location && !isMeeting && (
           <span className="block truncate text-[10px] font-normal leading-tight opacity-90">
             {e.location}
           </span>
         )}
       </div>
-      {detailOpen && hasDetails && (
+      {detailOpen && isMeeting && e.meeting && (
+        <CalendarEventDetailPopover
+          anchorEl={anchorEl}
+          title={e.label}
+          timeRange={timeRange}
+          onClose={() => setDetailOpen(false)}
+          footer={
+            <div className="mt-2 border-t border-border pt-2" onMouseDown={(ev) => ev.stopPropagation()}>
+              <div className="flex items-center gap-2">
+                <span className="uppercase tracking-wide text-[10px] text-muted-foreground">
+                  Your RSVP
+                </span>
+                {e.meeting.rsvp ? (
+                  <span
+                    className={`inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded ${RSVP_BADGE[e.meeting.rsvp]}`}
+                  >
+                    {e.meeting.rsvp}
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-muted-foreground">No response yet</span>
+                )}
+              </div>
+              <RsvpButtons
+                notificationId={e.meeting.notificationId}
+                onResponded={() => setDetailOpen(false)}
+              />
+              {e.meeting.notePageId && (
+                <Link
+                  to={`/documents/${e.meeting.notePageId}`}
+                  className="mt-2 inline-block text-[11px] font-medium text-accent-coral hover:underline"
+                >
+                  Open meeting note →
+                </Link>
+              )}
+            </div>
+          }
+        />
+      )}
+      {detailOpen && hasDetails && !isMeeting && (
         <CalendarEventDetailPopover
           anchorEl={anchorEl}
           title={e.label}

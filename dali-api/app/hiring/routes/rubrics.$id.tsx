@@ -10,8 +10,18 @@ export const meta: Route.MetaFunction = ({ data }) => {
 }
 
 export const handle = {
-  breadcrumb: (data: unknown) =>
-    (data as { rubric?: { name: string } } | undefined)?.rubric?.name,
+  // The Library owns rubrics (list at /hiring/library?tab=rubrics); the bare
+  // /hiring/rubrics prefix has no page, so declare the trail back to it.
+  breadcrumbTrail: (data: unknown) => {
+    const name = (data as { rubric?: { name: string } } | undefined)?.rubric
+      ?.name;
+    if (!name) return null;
+    return [
+      { label: "Hiring", to: "/hiring" },
+      { label: "Rubrics", to: "/hiring/library?tab=rubrics" },
+      { label: name },
+    ];
+  },
 }
 
 export async function loader({ request, params }: Route.LoaderArgs) {

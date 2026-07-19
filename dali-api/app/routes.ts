@@ -363,6 +363,10 @@ export default [
   route("api/comments", "routes/api.comments.ts"),
   route("api/comments/:id", "routes/api.comments.$id.ts"),
 
+  // Per-page documentation guides + the member search that backs @-mentions
+  route("api/page-docs/:key", "routes/api.page-docs.$key.ts"),
+  route("api/mentions/search", "routes/api.mentions.search.ts"),
+
   // Document export (server-rendered PDF / Word)
   route("documents/:pageId/export", "routes/documents.$pageId.export.ts"),
 
