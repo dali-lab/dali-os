@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link, redirect, useLoaderData, useSearchParams } from "react-router";
-import { ArrowLeft, Download, Search } from "lucide-react";
+import { Download, Search } from "lucide-react";
+import { Tooltip } from "~/components/ui/IconButton";
 import type { Route } from "./+types/forms.responses.$formId";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
@@ -237,14 +238,7 @@ export default function FormResponses() {
   return (
     <div className="space-y-6">
       <div>
-        <Link
-          to={`/forms/edit/${formId}`}
-          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ArrowLeft className="w-3.5 h-3.5" />
-          Back to form
-        </Link>
-        <h1 className="mt-1 text-2xl font-bold text-foreground">
+        <h1 className="text-2xl font-bold text-foreground">
           {formName} · Responses
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -312,15 +306,17 @@ export default function FormResponses() {
                 className="w-full pl-8 pr-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
               />
             </div>
-            <a
-              href={`/forms/responses/${formId}/export.csv`}
-              download
-              title="Exports all responses (ignores filters)"
-              className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md border border-border text-foreground hover:bg-muted/50 transition-colors whitespace-nowrap"
-            >
-              <Download className="w-4 h-4" />
-              Export CSV
-            </a>
+            <Tooltip label="Export CSV">
+              <a
+                href={`/forms/responses/${formId}/export.csv`}
+                download
+                title="Exports all responses (ignores filters)"
+                aria-label="Export CSV"
+                className="inline-flex items-center justify-center p-1.5 text-sm font-medium rounded-md border border-border text-foreground hover:bg-muted/50 transition-colors whitespace-nowrap"
+              >
+                <Download className="w-4 h-4" />
+              </a>
+            </Tooltip>
           </div>
 
           <div className="bg-card border border-border shadow-brand-1 rounded-lg overflow-hidden">

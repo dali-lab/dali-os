@@ -61,6 +61,11 @@ model User {
   // username is silently skipped (and reported) by that automation.
   githubUsername String?
   personalSite   String?
+  // Short public handle for @-mentions (e.g. "spark" for Sophie Park). Seeded
+  // from first-initial + last-name (lowercased), auto-suffixed on collision,
+  // and editable in profile. Nullable + unique like the other identity handles;
+  // a user with no handle simply can't be @-mentioned until they set one.
+  handle         String?   @unique
 
   // ─── Onboarding profile fields (collected on the New Member Profile form) ──
   // Name as it appears on file with the College, when different from the
@@ -186,6 +191,11 @@ model User {
   // ─── Documents & files ───────────────────────────────────────────────────
   projectFileVersionsUploaded ProjectFileVersion[] @relation("ProjectFileVersionUploader")
   docComments                 DocComment[]         @relation("DocCommentAuthor")
+
+  // ─── Page documentation (per-page guides) ─────────────────────────────────
+  pageDocsMaintained  PageDoc[] @relation("PageDocMaintainer")
+  pageDocsCreated     PageDoc[] @relation("PageDocCreatedBy")
+  pageDocsLastEdited  PageDoc[] @relation("PageDocLastEditedBy")
 
   // ─── Payroll: Reconcile back-relation ─────────────────────────────────────
   timesheetImports TimesheetImport[]
@@ -907,6 +917,13 @@ model CollabDocument {
   state     Bytes
   updatedAt DateTime @updatedAt
 
+  // User ids already notified of an @-mention in this document's body. The
+  // store hook (onStoreDocument) notifies only ids that appear as mention nodes
+  // and aren't in here yet, then unions the current mention set in — so each
+  // @-mention notifies its target at most once per document, despite throttled
+  // saves re-running the hook.
+  notifiedMentionUserIds String[] @default([])
+
   versions CollabDocumentVersion[]
 }
 
@@ -1062,6 +1079,40 @@ model DocComment {
 enum DocCommentTarget {
   doc
   file
+  // A per-page documentation guide (PageDoc.id). FAQ threads on a page's docs
+  // modal are DocComments with this target — reuses the doc-comment pipeline
+  // rather than a second comment table.
+  pagedoc
+}
+
+// Per-page documentation / guide surfaced in a "Docs" modal on hard-to-navigate
+// pages. Keyed by a stable `pageKey` a route declares via `handle.docKey`, so
+// the doc is independent of any DB entity. Body is ProseMirror JSON (the shared
+// RichTextEditor); the walkthrough video is an uploaded S3 object (videoKey).
+// A maintainer (assignable by Core/Admin) plus Core/Admin can edit; any lab
+// member can read it and post FAQ comments (see DocCommentTarget.pagedoc).
+model PageDoc {
+  id       String  @id @default(cuid())
+  pageKey  String  @unique
+  title    String
+  // ProseMirror JSON. Null until the maintainer writes the guide.
+  body     Json?
+  // S3 key of the uploaded walkthrough video (read via presigned URL). Null =
+  // no video yet.
+  videoKey String?
+
+  maintainerId   String?
+  createdById    String?
+  lastEditedById String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  maintainer User? @relation("PageDocMaintainer", fields: [maintainerId], references: [id], onDelete: SetNull)
+  createdBy  User? @relation("PageDocCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  lastEditedBy User? @relation("PageDocLastEditedBy", fields: [lastEditedById], references: [id], onDelete: SetNull)
+
+  @@index([maintainerId])
 }
 
 // ─── OAuth & Sessions ────────────────────────────────────────────────────────

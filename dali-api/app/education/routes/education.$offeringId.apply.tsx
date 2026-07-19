@@ -1,4 +1,4 @@
-import { redirect, useLoaderData, Link } from "react-router";
+import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/education.$offeringId.apply";
 import { requireAuth } from "~/lib/auth";
 import { redirectDartmouthToPortal } from "~/education/lib/access.server";
@@ -13,14 +13,25 @@ import {
 } from "~/education/lib/apply.server";
 import { OfferingApplyForm } from "~/education/components/OfferingApplyForm";
 import { MyStatusChip, TypeBadge } from "~/education/components/OfferingCard";
-import { buttonClasses } from "~/components/ui/Button";
 
 export const meta: Route.MetaFunction = ({ data }) => [
   { title: `Apply · ${data?.offering.title ?? "Offering"} · DALI OS` },
 ];
 
 export const handle = {
-  breadcrumb: () => "Apply",
+  // /education/:offeringId/apply — the opaque :offeringId drops from the segment
+  // walk, so declare the trail to keep the offering in the path.
+  breadcrumbTrail: (data: unknown) => {
+    const o = (
+      data as { offering?: { id?: string; title?: string } } | undefined
+    )?.offering;
+    if (!o?.id) return null;
+    return [
+      { label: "Education", to: "/education" },
+      { label: o.title ?? "Offering", to: `/education/${o.id}` },
+      { label: "Apply" },
+    ];
+  },
 };
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -59,7 +70,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       myApplication?.status === "Submitted"
         ? ((myApplication.formSubmission?.answers ?? {}) as Record<string, string>)
         : undefined,
-    backTo: `/education/${offering.id}`,
   };
 }
 
@@ -89,7 +99,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function ApplyToOffering() {
-  const { offering, open, myStatus, questions, description, defaultAnswers, backTo } =
+  const { offering, open, myStatus, questions, description, defaultAnswers } =
     useLoaderData<typeof loader>();
 
   return (
@@ -131,9 +141,6 @@ export default function ApplyToOffering() {
               ? "Check the offering page for your current status."
               : "Check back when the registration window opens."}
           </p>
-          <Link to={backTo} className={buttonClasses("secondary", "sm") + " mt-4 inline-flex"}>
-            Back to offering
-          </Link>
         </div>
       )}
     </div>

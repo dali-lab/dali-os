@@ -6,19 +6,27 @@ import {
   isEmptyDoc,
   linkExtension,
 } from "./editor/shared";
+import { mentionViewerExtension } from "./editor/mention";
 
 interface RichTextViewerProps {
   content: unknown;
   className?: string;
+  // Render @-mention nodes (page-doc guides). Off elsewhere — no other surface
+  // stores mention nodes today.
+  enableMentions?: boolean;
 }
 
 // Re-exported for back-compat: many call sites import isEmptyDoc from here.
 export { isEmptyDoc };
 
-export function RichTextViewer({ content, className }: RichTextViewerProps) {
+export function RichTextViewer({ content, className, enableMentions = false }: RichTextViewerProps) {
   const editor = useEditor({
     immediatelyRender: false,
-    extensions: [StarterKit, linkExtension({ interactive: true })],
+    extensions: [
+      StarterKit,
+      linkExtension({ interactive: true }),
+      ...(enableMentions ? [mentionViewerExtension()] : []),
+    ],
     content: isEmptyDoc(content) ? "" : (content as object),
     editable: false,
     editorProps: {

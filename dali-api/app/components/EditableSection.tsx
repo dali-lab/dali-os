@@ -14,7 +14,8 @@
 // changes are required to the route's action handlers.
 
 import { useState, type ReactNode } from "react";
-import { Check, Pencil, X } from "lucide-react";
+import { Check, Loader2, Pencil, X } from "lucide-react";
+import { Tooltip } from "~/components/ui/IconButton";
 
 export function EditableSection({
   title,
@@ -92,35 +93,44 @@ export function EditableSection({
           <div className="flex items-center gap-1.5 shrink-0">
             {editing ? (
               <>
-                <button
-                  type="button"
-                  onClick={cancel}
-                  disabled={busy}
-                  className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
-                >
-                  <X className="w-3.5 h-3.5" />
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void save()}
-                  disabled={busy}
-                  className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors disabled:opacity-60"
-                >
-                  <Check className="w-3.5 h-3.5" />
-                  {busy ? "Saving…" : "Save"}
-                </button>
+                <Tooltip label="Cancel">
+                  <button
+                    type="button"
+                    onClick={cancel}
+                    disabled={busy}
+                    aria-label="Cancel"
+                    className="inline-flex items-center justify-center p-1.5 rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors disabled:opacity-60"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </Tooltip>
+                <Tooltip label="Save changes">
+                  <button
+                    type="button"
+                    onClick={() => void save()}
+                    disabled={busy}
+                    aria-label="Save changes"
+                    className="inline-flex items-center justify-center p-1.5 rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors disabled:opacity-60"
+                  >
+                    {busy ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Check className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                </Tooltip>
               </>
             ) : (
-              <button
-                type="button"
-                onClick={() => setEditing(true)}
-                aria-label={`Edit ${title}`}
-                className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
-              >
-                <Pencil className="w-3.5 h-3.5" />
-                Edit
-              </button>
+              <Tooltip label={`Edit ${title}`}>
+                <button
+                  type="button"
+                  onClick={() => setEditing(true)}
+                  aria-label={`Edit ${title}`}
+                  className="inline-flex items-center justify-center p-1.5 rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                </button>
+              </Tooltip>
             )}
           </div>
         )}

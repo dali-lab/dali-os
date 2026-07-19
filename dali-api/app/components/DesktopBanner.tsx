@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Download, X } from "lucide-react";
+import { buttonClasses } from "~/components/ui/Button";
 
 // Remove this flag (set to true) when signed releases are live.
 const ENABLED = false;
@@ -53,7 +54,7 @@ export function DesktopBanner() {
         <button
           type="button"
           onClick={openInApp}
-          className="rounded-md bg-zinc-900 px-3 py-1 text-xs font-semibold text-white hover:bg-zinc-700 transition"
+          className={buttonClasses("primary", "sm")}
         >
           Open in app
         </button>
@@ -61,7 +62,7 @@ export function DesktopBanner() {
       {state === "fallback" && (
         <a
           href="/download"
-          className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-3 py-1 text-xs font-semibold text-white hover:bg-zinc-700 transition"
+          className={buttonClasses("primary", "sm")}
         >
           <Download className="w-3.5 h-3.5" />
           Download

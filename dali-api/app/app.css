@@ -336,6 +336,19 @@ h1, h2, h3, h4, h5, h6 {
   letter-spacing: -0.005em;
 }
 
+/* Tailwind v4's preflight no longer sets a pointer cursor on buttons. Restore
+   it for every clickable control (native buttons, role=button, custom
+   selects/summaries) so the affordance reads as clickable — an accessibility
+   expectation (guide §12). Disabled controls keep the default arrow. */
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+[role="tab"]:not([aria-disabled="true"]),
+label[for],
+summary,
+select:not(:disabled) {
+  cursor: pointer;
+}
+
 .font-heading {
   font-family: var(--font-heading);
 }
@@ -350,6 +363,18 @@ h1, h2, h3, h4, h5, h6 {
 
 .text-balance {
   text-wrap: balance;
+}
+
+/* Brief pulse on a mention node when you arrive from a "you were mentioned"
+   notification (see CollaborativeEditor's focusMentionUserId). */
+@keyframes mention-flash {
+  0%   { box-shadow: 0 0 0 0 rgba(255, 139, 129, 0); }
+  25%  { box-shadow: 0 0 0 3px rgba(255, 139, 129, 0.55); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 139, 129, 0); }
+}
+.mention-flash {
+  border-radius: 4px;
+  animation: mention-flash 1.6s ease-out 2;
 }
 
 /* Brand elevation utilities (paired with neutral surfaces, guide §3.2/§6) */

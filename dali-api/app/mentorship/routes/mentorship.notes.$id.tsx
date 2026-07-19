@@ -6,6 +6,7 @@ import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
 import { RichTextEditor } from "~/components/RichTextEditor";
+import { Tooltip } from "~/components/ui/IconButton";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import { canViewMentorship, canViewMentorNote } from "../lib/visibility";
 import { mentorshipPills } from "../components/mentorshipPills";
@@ -33,7 +34,11 @@ export const meta: Route.MetaFunction = () => [
 ];
 
 // Suppresses the breadcrumb trail (see layout wayfinding contract).
-export const handle = { areaPills: true };
+export const handle = {
+  areaPills: true,
+  docKey: "mentorship.notes",
+  docTitle: "Mentorship notes",
+};
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -227,14 +232,16 @@ export default function MentorNoteEditor() {
             : "Read only"}
         </span>
         {data.canEdit && (
-          <button
-            type="button"
-            onClick={handleDelete}
-            className="inline-flex items-center gap-1 text-accent-coral hover:underline"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-            Delete
-          </button>
+          <Tooltip label="Delete">
+            <button
+              type="button"
+              onClick={handleDelete}
+              aria-label="Delete"
+              className="inline-flex items-center justify-center p-1.5 text-accent-coral hover:underline"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </Tooltip>
         )}
       </div>
 

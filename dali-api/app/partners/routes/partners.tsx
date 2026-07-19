@@ -150,7 +150,7 @@ export default function PartnersOrganizations() {
           <button
             type="button"
             onClick={() => setCreating(true)}
-            className={buttonClasses("primary", "sm", "rounded-md")}
+            className={buttonClasses("primary", "sm")}
           >
             + New organization
           </button>
@@ -203,14 +203,11 @@ export default function PartnersOrganizations() {
             <button
               type="button"
               onClick={() => setCreating(false)}
-              className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors"
+              className={buttonClasses("ghost", "sm")}
             >
               Cancel
             </button>
-            <button
-              type="submit"
-              className="px-3 py-1.5 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
-            >
+            <button type="submit" className={buttonClasses("primary", "sm")}>
               Create
             </button>
           </div>

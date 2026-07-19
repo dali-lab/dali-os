@@ -1,0 +1,45 @@
+import { describe, it, expect } from "vitest";
+import * as Y from "yjs";
+import { extractMentionUserIds } from "../mentions.server";
+
+// Build a Y.Doc "default" XmlFragment shaped like what y-prosemirror produces:
+// paragraph elements containing text + `mention` elements whose `id` attr is
+// the tagged user id.
+function docWith(mentionIds: string[][]): Y.Doc {
+  const doc = new Y.Doc();
+  const fragment = doc.getXmlFragment("default");
+  for (const ids of mentionIds) {
+    const p = new Y.XmlElement("paragraph");
+    p.push([new Y.XmlText("hi ")]);
+    for (const id of ids) {
+      const mention = new Y.XmlElement("mention");
+      mention.setAttribute("id", id);
+      mention.setAttribute("label", `user-${id}`);
+      p.push([mention]);
+    }
+    fragment.push([p]);
+  }
+  return doc;
+}
+
+describe("extractMentionUserIds", () => {
+  it("collects ids from mention nodes across paragraphs, deduped", () => {
+    const doc = docWith([["u1", "u2"], ["u1", "u3"]]);
+    expect(extractMentionUserIds(doc).sort()).toEqual(["u1", "u2", "u3"]);
+  });
+
+  it("returns nothing for a doc with no mentions", () => {
+    const doc = docWith([[], []]);
+    expect(extractMentionUserIds(doc)).toEqual([]);
+  });
+
+  it("ignores mention elements with no id", () => {
+    const doc = new Y.Doc();
+    const fragment = doc.getXmlFragment("default");
+    const p = new Y.XmlElement("paragraph");
+    const bare = new Y.XmlElement("mention"); // no id attribute
+    p.push([bare]);
+    fragment.push([p]);
+    expect(extractMentionUserIds(doc)).toEqual([]);
+  });
+});

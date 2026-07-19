@@ -9,6 +9,7 @@ import {
   X,
 } from "lucide-react";
 import { Modal } from "~/components/Modal";
+import { Tooltip } from "~/components/ui/IconButton";
 import { RichTextEditor } from "~/components/RichTextEditor";
 
 // Template management, moved out of the (removed) Templates subtab into a modal
@@ -395,14 +396,16 @@ function TemplateDetail({
             </button>
           </span>
         ) : (
-          <button
-            type="button"
-            onClick={() => setConfirmingDelete(true)}
-            className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-accent-coral"
-          >
-            <Trash2 className="w-4 h-4" aria-hidden />
-            Delete
-          </button>
+          <Tooltip label="Delete">
+            <button
+              type="button"
+              onClick={() => setConfirmingDelete(true)}
+              aria-label="Delete"
+              className="inline-flex items-center justify-center p-1.5 text-sm text-muted-foreground hover:text-accent-coral"
+            >
+              <Trash2 className="w-4 h-4" aria-hidden />
+            </button>
+          </Tooltip>
         )}
       </div>
     </div>

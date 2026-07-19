@@ -7,6 +7,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
 import { Download, FileDown, AlertTriangle, Users } from "lucide-react";
+import { buttonClasses } from "~/components/ui/Button";
 import {
   buildPayrollRows,
   listCoreCandidates,
@@ -160,7 +161,7 @@ export default function PayrollExport() {
             href={csvHref}
             download
             data-discover="false"
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md bg-gray-900 text-white hover:bg-gray-800 transition-colors"
+            className={buttonClasses("primary", "sm")}
           >
             <Download className="w-4 h-4" /> Download CSV
           </a>

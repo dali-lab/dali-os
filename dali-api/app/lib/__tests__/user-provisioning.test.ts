@@ -19,6 +19,7 @@ const mockPrisma = prisma as unknown as {
   user: {
     upsert: ReturnType<typeof vi.fn>;
     findFirst: ReturnType<typeof vi.fn>;
+    findUnique: ReturnType<typeof vi.fn>;
     create: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
   };
@@ -34,6 +35,9 @@ beforeEach(() => {
   mockPrisma.user = {
     upsert: vi.fn(),
     findFirst: vi.fn(),
+    // assignHandleIfMissing reads this after provisioning; undefined → the
+    // helper early-returns (no handle to seed in these unit tests).
+    findUnique: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
   } as any;

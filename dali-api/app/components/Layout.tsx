@@ -316,6 +316,21 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
                     {openTasks.map((t) => {
                       const cls =
                         'flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] font-medium text-left transition-colors'
+                      // Meeting invites clear only via RSVP — open My Tasks so
+                      // Accept/Maybe/Decline are available (same as Home).
+                      if (t.source === 'meeting') {
+                        return (
+                          <button
+                            key={t.id}
+                            type="button"
+                            title={t.title}
+                            {...tabClickProps({ url: '/notifications', label: 'My Tasks' })}
+                            className={`${cls} text-white/55 hover:text-white hover:bg-white/5`}
+                          >
+                            <span className="truncate">{t.title}</span>
+                          </button>
+                        )
+                      }
                       return t.link ? (
                         <button
                           key={t.id}
