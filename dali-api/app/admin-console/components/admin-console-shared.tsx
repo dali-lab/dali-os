@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useFetcher } from "react-router";
 import { Shield, ChevronDown, X, Check, Plus } from "lucide-react";
+import { fullName } from "~/lib/display";
 
 // Phase 2 reshape: Member is rooted at User. Role flags derive from typed
 // assignment tables (AdminMembership, CoreAssignment, DomainLeadAssignment)
@@ -85,7 +86,7 @@ export interface DomainWithCounts extends DomainRow {
 }
 
 export function memberLabel(member: { firstName: string; lastName: string; daliEmail: string | null }) {
-  const name = `${member.firstName ?? ""} ${member.lastName ?? ""}`.trim();
+  const name = fullName(member);
   return name || member.daliEmail || "Unnamed member";
 }
 

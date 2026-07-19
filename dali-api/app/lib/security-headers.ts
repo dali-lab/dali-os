@@ -1,4 +1,6 @@
-const isProduction = process.env.NODE_ENV === "production";
+import { getAppEnv } from "./app-env";
+
+const isDeployed = getAppEnv() !== "dev";
 
 type Directives = Record<string, string[] | true>;
 
@@ -18,6 +20,19 @@ function collabConnectSource(): string | null {
   }
 }
 
+/**
+ * S3 bucket origin for `connect-src` — the browser uploads directly to S3 via
+ * presigned POST, and (for the desktop shell) the updater feed lives there.
+ * Derived from the same env the runtime uses (app/lib/s3.ts), so it tracks the
+ * per-environment bucket without hardcoding.
+ */
+function s3ConnectSource(): string | null {
+  const bucket = process.env.AWS_S3_BUCKET;
+  const region = process.env.AWS_REGION;
+  if (!bucket || !region) return null;
+  return `https://${bucket}.s3.${region}.amazonaws.com`;
+}
+
 function cspDirectives(): Directives {
   // 'unsafe-inline' on style-src is required for Google Fonts' returned CSS
   // and React's inline `style={...}` attributes. Removing it would mean
@@ -25,8 +40,16 @@ function cspDirectives(): Directives {
   const styleSrc = ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"];
 
   const collabOrigin = collabConnectSource();
-  const connectSrc = isProduction
-    ? ["'self'", ...(collabOrigin ? [collabOrigin] : [])]
+  const s3Origin = s3ConnectSource();
+  const connectSrc = isDeployed
+    ? [
+        "'self'",
+        ...(collabOrigin ? [collabOrigin] : []),
+        ...(s3Origin ? [s3Origin] : []),
+        // Google sign-in / APIs (additive; the desktop pairing login runs in
+        // the system browser, so this is a forward-compat allowance).
+        "https://accounts.google.com",
+      ]
     : ["'self'", "ws:", "wss:"];
 
   const directives: Directives = {
@@ -42,7 +65,7 @@ function cspDirectives(): Directives {
     "frame-ancestors": ["'self'"],
   };
 
-  if (isProduction) {
+  if (isDeployed) {
     directives["upgrade-insecure-requests"] = true;
   }
 
@@ -65,7 +88,7 @@ export function contentSecurityPolicy(): string {
  * which would prevent client hydration and break interactive behaviour.
  */
 function cspHeaderName(): string {
-  if (isProduction && process.env.CSP_ENFORCE === "1") {
+  if (isDeployed && process.env.CSP_ENFORCE === "1") {
     return "Content-Security-Policy";
   }
   return "Content-Security-Policy-Report-Only";
@@ -81,7 +104,7 @@ export function securityHeaders(): Record<string, string> {
     [cspHeaderName()]: contentSecurityPolicy(),
   };
 
-  if (isProduction) {
+  if (isDeployed) {
     headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains";
   }
 

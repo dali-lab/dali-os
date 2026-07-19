@@ -5,13 +5,7 @@
 // Requires the `mcp:read` scope.
 
 import { prisma } from "~/lib/db";
-import rrulePkg from "rrule";
-import type { RRule as RRuleType } from "rrule";
-
-const { RRule, rrulestr } = rrulePkg as unknown as {
-  RRule: typeof import("rrule").RRule;
-  rrulestr: typeof import("rrule").rrulestr;
-};
+import { expandOccurrences } from "~/lib/meeting-occurrences";
 
 export const LIST_MY_UPCOMING_MEETINGS_TOOL = {
   name: "list_my_upcoming_meetings",
@@ -44,21 +38,6 @@ type MeetingOut = {
   source: "dali" | "interview";
 };
 
-function buildRule(rule: string, dtstart: Date): RRuleType | null {
-  try {
-    const trimmed = rule.trim();
-    const rrulePart = trimmed.toUpperCase().startsWith("RRULE:") ? trimmed : `RRULE:${trimmed}`;
-    const pad = (n: number) => String(n).padStart(2, "0");
-    const dt =
-      `${dtstart.getUTCFullYear()}${pad(dtstart.getUTCMonth() + 1)}${pad(dtstart.getUTCDate())}` +
-      `T${pad(dtstart.getUTCHours())}${pad(dtstart.getUTCMinutes())}${pad(dtstart.getUTCSeconds())}Z`;
-    const parsed = rrulestr(`DTSTART:${dt}\n${rrulePart}`);
-    return parsed instanceof RRule ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
 export async function runListMyUpcomingMeetings(userId: string, input: Input) {
   const daysAhead = Math.min(Math.max(input.daysAhead ?? 7, 1), 30);
   const now = new Date();
@@ -83,35 +62,7 @@ export async function runListMyUpcomingMeetings(userId: string, input: Input) {
     const attendeeCount = new Set([m.organizerId, ...m.participantUserIds]).size;
     if (!m.selectedAt) continue; // still in Searching state with no start time
 
-    const baseEnd = new Date(m.selectedAt.getTime() + m.durationMinutes * 60_000);
-    const exceptionsByStart = new Map<number, (typeof m.exceptions)[number]>();
-    for (const ex of m.exceptions) {
-      exceptionsByStart.set(ex.originalStart.getTime(), ex);
-    }
-
-    const candidates: { start: Date; end: Date }[] = [];
-    if (m.recurrenceRule) {
-      const rule = buildRule(m.recurrenceRule, m.selectedAt);
-      if (rule) {
-        const occurrences = rule.between(now, windowEnd, true);
-        for (const occStart of occurrences) {
-          const ex = exceptionsByStart.get(occStart.getTime());
-          if (ex?.cancelled) continue;
-          const start = ex?.overrideStart ?? occStart;
-          const dur = ex?.overrideDurationMin ?? m.durationMinutes;
-          candidates.push({ start, end: new Date(start.getTime() + dur * 60_000) });
-        }
-      }
-    } else {
-      if (m.selectedAt < windowEnd && baseEnd > now) {
-        const ex = exceptionsByStart.get(m.selectedAt.getTime());
-        if (!ex?.cancelled) {
-          const start = ex?.overrideStart ?? m.selectedAt;
-          const dur = ex?.overrideDurationMin ?? m.durationMinutes;
-          candidates.push({ start, end: new Date(start.getTime() + dur * 60_000) });
-        }
-      }
-    }
+    const candidates = expandOccurrences(m, m.exceptions, now, windowEnd);
 
     for (const c of candidates) {
       if (c.end <= now || c.start >= windowEnd) continue;

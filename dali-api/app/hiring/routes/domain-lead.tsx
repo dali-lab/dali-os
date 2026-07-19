@@ -4,6 +4,9 @@ import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { redirect } from "react-router";
 import type { Route } from "./+types/domain-lead";
 import { prisma } from "~/lib/db";
+import { getUserRoles } from "~/lib/roles";
+import { hiringPills } from "~/hiring/components/hiringPills";
+import { AreaPillNav } from "~/components/AreaPillNav";
 import { requireAuth } from "~/lib/auth";
 import { CheckCircle, Plus, Trash2, Check, Clock, X, CircleDashed, ChevronDown, Eye, Send, Search, ChevronUp } from "lucide-react";
 import { inferDomainApplicationStatus } from "~/hiring/lib/domain-application-status";
@@ -15,6 +18,7 @@ import { ConfidentialityGate } from "~/hiring/components/ConfidentialityGate";
 import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
 import { Modal } from "~/components/Modal";
 import { ChallengePreviewModal } from "~/hiring/components/ChallengePreviewModal";
+import { Tooltip } from "~/components/ui/IconButton";
 import { CycleSelector } from "~/hiring/components/CycleSelector";
 import {
   summarizeDecisionPills,
@@ -27,22 +31,7 @@ import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
 import type { DecisionType } from "~/types";
 import { formatVersionLabel, buildVersionNumberMap } from "~/lib/formatVersion";
 import { selectActiveCycleForDomainLead } from "~/hiring/lib/cycle-picker";
-
-const STATUS_LABELS: Record<string, string> = {
-  Draft: "Draft",
-  Open: "Open",
-  UnderReview: "Under Review",
-  Completed: "Completed",
-};
-
-// Every status/decision pill carries a border in its OWN hue (never a neutral
-// black/gray line on a colored pill) so the whole page reads consistently.
-const STATUS_COLORS: Record<string, string> = {
-  Draft: "bg-muted text-foreground/80 border border-current/30",
-  Open: "bg-green-100 text-green-700 border border-green-200",
-  UnderReview: "bg-yellow-100 text-yellow-700 border border-yellow-200",
-  Completed: "bg-blue-100 text-blue-700 border border-blue-200",
-};
+import { STATUS_LABELS, DECISION_LABELS, STATUS_COLORS, DECISION_COLORS } from "~/hiring/lib/labels";
 
 const STATUS_MESSAGES: Record<string, string> = {
   Draft: "This cycle is still being set up.",
@@ -51,11 +40,21 @@ const STATUS_MESSAGES: Record<string, string> = {
   Completed: "Decisions have been released to applicants.",
 };
 
+export const handle = { areaPills: true };
+
 export const meta: Route.MetaFunction = () => [{ title: "Domain lead · DALI OS" }];
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return { domainData: [] };
+  if (!auth.ok) return { domainData: [], pillRoles: null };
+
+  const roles = await getUserRoles(auth.user.sub);
+  const pillRoles = {
+    isCore: roles.isCore,
+    isDomainLead: roles.isDomainLead,
+    isAdmin: roles.isAdmin,
+    isInterviewer: roles.isInterviewer,
+  };
 
   const assignments = await prisma.domainLeadAssignment.findMany({
     where: { userId: auth.user.sub },
@@ -63,7 +62,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   });
 
   if (assignments.length === 0) {
-    return { domainData: [] };
+    return { domainData: [], pillRoles };
   }
 
   const domainData = await Promise.all(
@@ -436,7 +435,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     })
   );
 
-  return { domainData: domainData.flat() };
+  return { domainData: domainData.flat(), pillRoles };
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -666,6 +665,10 @@ export default function DomainLeadDashboard() {
   const revalidator = useRevalidator();
   const domainData = data?.domainData ?? [];
 
+  const areaPills = data?.pillRoles && (
+    <AreaPillNav items={hiringPills({ ...data.pillRoles, active: "domain" })} />
+  );
+
   if (domainData.length === 0) {
     return (
       <div className="text-center py-16">
@@ -677,6 +680,7 @@ export default function DomainLeadDashboard() {
 
   return (
     <div className="space-y-8">
+      {areaPills}
       <h1 className="font-heading text-2xl font-bold text-foreground">Domain Lead Dashboard</h1>
 
       {domainData.map(({ assignment, cycle, availableCycles, apps, challengeVersionOptions, linkedChallengeVersions, isChallengeReady, interviews, reviewers: cycleReviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, initialDelibsCount, finalDelibsCount, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews, confidentialityRequired }: any, idx: number) => {
@@ -721,7 +725,7 @@ export default function DomainLeadDashboard() {
                       <span className="text-muted-foreground/70 hidden sm:inline">·</span>
                       <span className="text-lg text-muted-foreground">{cycle.name}</span>
                       {currentStatus && (
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[currentStatus]}`}>
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border border-current/30 ${STATUS_COLORS[currentStatus]}`}>
                           {STATUS_LABELS[currentStatus]}
                         </span>
                       )}
@@ -1493,15 +1497,16 @@ function ChallengeSelector({ cycleId, domainId, options, linkedChallengeVersions
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setPreviewCvId(cv.id)}
-                      aria-label={`Preview ${cv.challenge?.name ?? "challenge"}`}
-                      className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium"
-                    >
-                      <Eye className="w-3.5 h-3.5" />
-                      Preview
-                    </button>
+                    <Tooltip label="Preview">
+                      <button
+                        type="button"
+                        onClick={() => setPreviewCvId(cv.id)}
+                        aria-label="Preview"
+                        className="inline-flex items-center justify-center p-1.5 rounded-md text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                      </button>
+                    </Tooltip>
                     <button
                       type="button"
                       onClick={() => setPendingRemove(cv)}
@@ -1622,7 +1627,9 @@ function ReviewerSection({ cycleId, domainId, initialReviewers }: {
   useEffect(() => { setReviewers(initialReviewers); }, [initialReviewers]);
 
   useEffect(() => {
-    fetch('/api/members', { credentials: 'include' })
+    // Reviewer assignment targets current-term members only — alumni shouldn't
+    // surface as options for an active cycle's reviewer pool.
+    fetch('/api/members?scope=current', { credentials: 'include' })
       .then(r => r.ok ? r.json() : [])
       .then(setMembers)
       .catch(() => {});
@@ -1812,7 +1819,9 @@ function InterviewerSection({ cycleId, domainId, initialInterviewers }: {
   useEffect(() => { setInterviewers(initialInterviewers); }, [initialInterviewers]);
 
   useEffect(() => {
-    fetch("/api/members", { credentials: "include" })
+    // Interviewer assignment targets current-term members only — alumni
+    // shouldn't surface as options for an active cycle's interviewer pool.
+    fetch("/api/members?scope=current", { credentials: "include" })
       .then(r => r.ok ? r.json() : [])
       .then(setMembers)
       .catch(() => {});
@@ -2032,23 +2041,6 @@ function DelibsSection({ cycleId, domainId, sessions, initialCount, finalCount }
   );
 }
 
-// bg + text + an explicit same-hue border (e.g. red pill → red border), so the
-// outline always matches the pill and never falls back to the neutral gray
-// border from the global `*` rule.
-const DECISION_COLORS: Record<string, string> = {
-  Rejected: "bg-red-100 text-red-700 border-red-300 dark:bg-red-900/30 dark:text-red-400 dark:border-red-700",
-  InvitedToInterview: "bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-700",
-  Accepted: "bg-green-100 text-green-700 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700",
-  Waitlisted: "bg-yellow-100 text-yellow-700 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-700",
-};
-
-const DECISION_LABELS: Record<string, string> = {
-  Rejected: "Reject",
-  InvitedToInterview: "Interview",
-  Accepted: "Accept",
-  Waitlisted: "Waitlist",
-};
-
 // Stage treatment composes on top of the `border border-current/40` the badge
 // always applies. Draft reads as "tentative" (faded + dashed, same hue);
 // Final/Released keep the solid same-hue border.
@@ -2088,7 +2080,7 @@ function DecisionPillBadge({ pill, isCurrent = false }: { pill: DecisionPill; is
     <span
       title={tooltip}
       aria-label={tooltip}
-      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold border ${DECISION_COLORS[pill.type] ?? "bg-muted text-muted-foreground border-current/40"} ${STAGE_TREATMENT[pill.stage]} ${accent}`}
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold border border-current/40 ${DECISION_COLORS[pill.type] ?? "bg-muted text-muted-foreground"} ${STAGE_TREATMENT[pill.stage]} ${accent}`}
     >
       {Icon && <Icon className="w-3 h-3" />}
       {baseLabel}{rankSuffix}{stageSuffix}
@@ -2141,6 +2133,27 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
   const isUnderReview = currentStatus === "UnderReview";
   const [searchParams, setSearchParams] = useSearchParams();
   const revalidator = useRevalidator();
+  // Which draft is currently being finalized — disables its Finalize button so a
+  // double-click can't POST twice (the append-only Decision model would otherwise
+  // create duplicate Final rows before the revalidate lands).
+  const [finalizingId, setFinalizingId] = useState<string | null>(null);
+  const handleFinalize = async (draftId: string) => {
+    if (finalizingId) return;
+    setFinalizingId(draftId);
+    try {
+      const res = await fetch(`/api/hiring/decisions/${draftId}/finalize`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok && res.status !== 409) {
+        const body = await res.json().catch(() => null);
+        alert(body?.error ?? "Failed to finalize. Please try again.");
+      }
+    } finally {
+      setFinalizingId(null);
+      revalidator.revalidate();
+    }
+  };
   const filter: "all" | "finalize" = searchParams.get("app_filter") === "finalize" ? "finalize" : "all";
   const query = searchParams.get("q") ?? "";
   // Default sort is "none" — preserves the loader's order (newest application
@@ -2447,13 +2460,11 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                   <div className="flex flex-wrap items-center justify-end gap-2">
                   {isUnderReview && draftToFinalize ? (
                     <button
-                      onClick={async () => {
-                        await fetch(`/api/hiring/decisions/${draftToFinalize.id}/finalize`, { method: "POST", credentials: "include" });
-                        revalidator.revalidate();
-                      }}
-                      className="px-2 py-1 text-xs font-medium rounded bg-accent-coral hover:bg-accent-coral/90 text-white transition"
+                      onClick={() => handleFinalize(draftToFinalize.id)}
+                      disabled={finalizingId === draftToFinalize.id}
+                      className="px-2 py-1 text-xs font-medium rounded bg-accent-coral hover:bg-accent-coral/90 text-white transition disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      Finalize
+                      {finalizingId === draftToFinalize.id ? "Finalizing…" : "Finalize"}
                     </button>
                   ) : (
                     <span className="text-xs text-muted-foreground/60">—</span>
@@ -2542,13 +2553,11 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
               {isUnderReview && draftToFinalize && (
                 <div className="flex flex-wrap items-center gap-2">
                   <button
-                    onClick={async () => {
-                      await fetch(`/api/hiring/decisions/${draftToFinalize.id}/finalize`, { method: "POST", credentials: "include" });
-                      revalidator.revalidate();
-                    }}
-                    className="px-2 py-1 text-xs font-medium rounded bg-accent-coral hover:bg-accent-coral/90 text-white transition"
+                    onClick={() => handleFinalize(draftToFinalize.id)}
+                    disabled={finalizingId === draftToFinalize.id}
+                    className="px-2 py-1 text-xs font-medium rounded bg-accent-coral hover:bg-accent-coral/90 text-white transition disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    Finalize
+                    {finalizingId === draftToFinalize.id ? "Finalizing…" : "Finalize"}
                   </button>
                 </div>
               )}
@@ -2806,15 +2815,6 @@ function ReviewModal({ review, rubricCriteria, onClose }: {
     if (c?.key) criteriaByKey[c.key] = { label: c.label ?? c.key, description: c.description, maxScore: c.maxScore };
   }
 
-  // Close on Escape
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
   const hasAnyContent =
     scoreEntries.length > 0 ||
     (review.feedback && review.feedback.trim() !== "") ||
@@ -2822,17 +2822,16 @@ function ReviewModal({ review, rubricCriteria, onClose }: {
     !!review.overallRecommendation;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-      onClick={onClose}
+    <Modal
+      open
+      onClose={onClose}
+      labelledBy="reviewer-detail-title"
+      containerClassName="relative bg-card rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto my-auto"
     >
-      <div
-        className="relative bg-card rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <>
         <div className="flex items-start justify-between px-6 py-4 border-b border-border">
           <div>
-            <h2 className="text-lg font-semibold text-foreground">{reviewerName}</h2>
+            <h2 id="reviewer-detail-title" className="text-lg font-semibold text-foreground">{reviewerName}</h2>
             <div className="mt-1 flex items-center gap-2 text-xs">
               {isSubmitted ? (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-medium bg-green-50 text-green-700 border border-green-200">
@@ -2858,11 +2857,12 @@ function ReviewModal({ review, rubricCriteria, onClose }: {
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="text-muted-foreground/70 hover:text-foreground/80 transition"
+            className="text-muted-foreground/70 hover:text-foreground rounded p-1 hover:bg-muted"
             aria-label="Close"
           >
-            <X className="w-5 h-5" />
+            <X className="w-5 h-5" aria-hidden />
           </button>
         </div>
 
@@ -2936,8 +2936,8 @@ function ReviewModal({ review, rubricCriteria, onClose }: {
             </>
           )}
         </div>
-      </div>
-    </div>
+      </>
+    </Modal>
   );
 }
 

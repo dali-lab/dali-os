@@ -1,7 +1,11 @@
-import { useMemo } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { usePresence, type Peer } from "./PresenceProvider";
 import { initialsFromName } from "./util";
+
+// Short grace period so moving the cursor from the chip across the gap to the
+// hover card doesn't briefly drop hover state and dismiss the card.
+const HOVER_CLOSE_DELAY_MS = 120;
 
 interface PresenceBarProps {
   className?: string;
@@ -48,9 +52,11 @@ export function PresenceBar({ className, max = 4 }: PresenceBarProps) {
   }, [peers]);
 
   if (!ctx) return null;
-  // Hide entirely when nobody else is here.
+  // Hide entirely when nobody else is here, even while still connecting —
+  // showing a yellow "connecting" dot beside your own avatar is just visual
+  // noise on every page that has nobody to be present with.
   const remoteCount = visiblePeers.filter((p) => !p.isMe).length;
-  if (remoteCount === 0 && ctx.connected) return null;
+  if (remoteCount === 0) return null;
 
   const shown = visiblePeers.slice(0, max);
   const overflow = Math.max(0, visiblePeers.length - shown.length);
@@ -122,16 +128,44 @@ function PresenceChip({
       ? "cursor-pointer hover:z-10 hover:scale-110"
       : "cursor-default";
 
+  // The hover card is driven by explicit pointer state on the chip and the
+  // card so the trigger zone is exactly the avatar (not the bounding box of
+  // any wrapper), and so moving the cursor onto the card keeps it open. CSS
+  // group-hover wrapped both the trigger and the absolutely-positioned card,
+  // which made the trigger zone hard to reason about and let stray hover
+  // events near the chip obscure adjacent buttons.
+  const [open, setOpen] = useState(false);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelClose = useCallback(() => {
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  }, []);
+  const show = useCallback(() => {
+    cancelClose();
+    setOpen(true);
+  }, [cancelClose]);
+  const hideSoon = useCallback(() => {
+    cancelClose();
+    closeTimer.current = setTimeout(() => setOpen(false), HOVER_CLOSE_DELAY_MS);
+  }, [cancelClose]);
+
   const chipInner = (
     <span
       className={`relative inline-flex items-center justify-center w-6 h-6 rounded-full overflow-hidden ring-2 ring-white transition-transform ${interactiveClass} ${idleClass}`}
+      onPointerEnter={show}
+      onPointerLeave={hideSoon}
+      onFocus={show}
+      onBlur={hideSoon}
     >
       <ChipAvatar peer={peer} />
     </span>
   );
 
   return (
-    <div className="relative group">
+    <div className="relative">
       {linkable ? (
         <Link
           to={`/members/${peer.userId}`}
@@ -151,7 +185,14 @@ function PresenceChip({
       ) : (
         chipInner
       )}
-      <HoverCard peer={peer} followable={followable} onFollow={onFollow} />
+      <HoverCard
+        peer={peer}
+        followable={followable}
+        onFollow={onFollow}
+        open={open}
+        onPointerEnter={show}
+        onPointerLeave={hideSoon}
+      />
     </div>
   );
 }
@@ -160,20 +201,34 @@ function HoverCard({
   peer,
   followable,
   onFollow,
+  open,
+  onPointerEnter,
+  onPointerLeave,
 }: {
   peer: Peer;
   followable: boolean;
   onFollow: (clientId: number) => void;
+  open: boolean;
+  onPointerEnter: () => void;
+  onPointerLeave: () => void;
 }) {
   const meTag = peer.isMe ? " (you)" : "";
   const idleTag = peer.idle ? " · idle" : "";
 
+  // Unmount when closed so the invisible card doesn't intercept clicks on
+  // anything below it (the prior implementation kept pointer-events-auto on
+  // the inner div even at opacity-0, which could absorb a click meant for
+  // a button the card was covering).
+  if (!open) return null;
+
   return (
     <div
       role="tooltip"
-      className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 -translate-x-1/2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
+      className="absolute left-1/2 top-full z-20 mt-2 -translate-x-1/2 transition-opacity"
+      onPointerEnter={onPointerEnter}
+      onPointerLeave={onPointerLeave}
     >
-      <div className="pointer-events-auto min-w-[12rem] max-w-[16rem] rounded-md border border-border bg-popover text-popover-foreground shadow-lg p-2.5 text-left">
+      <div className="min-w-[12rem] max-w-[16rem] rounded-md border border-border bg-popover text-popover-foreground shadow-lg p-2.5 text-left">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 shrink-0 rounded-full overflow-hidden">
             <ChipAvatar peer={peer} />

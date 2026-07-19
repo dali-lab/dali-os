@@ -1,28 +1,12 @@
-import { useEffect } from "react";
 import { useFetcher } from "react-router";
-import { X } from "lucide-react";
 import { CollaborativeEditor } from "~/components/CollaborativeEditor";
-
-const RECOMMENDATION_COLORS: Record<string, string> = {
-  "Strong Hire": "bg-green-100 text-green-800",
-  Hire: "bg-green-50 text-green-700",
-  "Lean Hire": "bg-yellow-50 text-yellow-700",
-  "Lean No Hire": "bg-orange-50 text-orange-700",
-  "No Hire": "bg-red-100 text-red-700",
-};
-
-const DECISION_COLORS: Record<string, string> = {
-  Rejected: "bg-red-100 text-red-700",
-  InvitedToInterview: "bg-blue-100 text-blue-700",
-  Accepted: "bg-green-100 text-green-700",
-  Waitlisted: "bg-yellow-100 text-yellow-700",
-};
-
-const STAGE_LABELS: Record<string, string> = {
-  Draft: "Draft",
-  Final: "Finalized",
-  Released: "Released",
-};
+import { Modal } from "~/components/Modal";
+import {
+  DECISION_COLORS,
+  RECOMMENDATION_COLORS,
+  STAGE_LABELS,
+} from "~/hiring/lib/labels";
+import { useEffect } from "react";
 
 export interface ApplicantContextModalProps {
   domainApplicationId: string;
@@ -51,64 +35,50 @@ export function ApplicantContextModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [domainApplicationId]);
 
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
   const data = fetcher.data as any;
   const isError = data && typeof data === "object" && "error" in data;
   const isLoading = fetcher.state === "loading" || (!data && !isError);
 
   return (
-    <div
-      className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-4"
-      onClick={onClose}
+    <Modal
+      open
+      onClose={onClose}
+      labelledBy="applicant-context-title"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 overflow-y-auto"
+      containerClassName="bg-card rounded-xl shadow-xl w-full max-w-5xl my-8 max-h-[90vh] flex flex-col"
     >
-      <div
-        className="bg-card rounded-xl shadow-xl w-full max-w-5xl my-8 max-h-[90vh] flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-card rounded-t-xl flex-shrink-0">
-          <div>
-            {isLoading || isError || !data ? (
-              <h2 className="text-lg font-semibold text-foreground">Applicant Context</h2>
-            ) : (
-              <>
-                <h2 className="text-lg font-semibold text-foreground">
-                  {data.application.applicant.firstName} {data.application.applicant.lastName}
-                </h2>
-                <p className="text-xs text-muted-foreground">
-                  {data.domainApplication.domain?.name ?? ""}
-                  {data.decisions?.length > 0 && (
-                    <>
-                      {" · "}
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                          DECISION_COLORS[data.decisions[0].type] ?? "bg-muted text-foreground/80"
-                        }`}
-                      >
-                        {data.decisions[0].type} ({STAGE_LABELS[data.decisions[0].stage] ?? data.decisions[0].stage})
-                      </span>
-                    </>
-                  )}
-                </p>
-              </>
-            )}
-          </div>
-          <button
-            onClick={onClose}
-            aria-label="Close"
-            className="text-muted-foreground/70 hover:text-muted-foreground"
-          >
-            <X className="w-5 h-5" />
-          </button>
+      <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-card rounded-t-xl flex-shrink-0">
+        <div>
+          {isLoading || isError || !data ? (
+            <h2 id="applicant-context-title" className="text-lg font-semibold text-foreground">
+              Applicant Context
+            </h2>
+          ) : (
+            <>
+              <h2 id="applicant-context-title" className="text-lg font-semibold text-foreground">
+                {data.application.applicant.firstName} {data.application.applicant.lastName}
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                {data.domainApplication.domain?.name ?? ""}
+                {data.decisions?.length > 0 && (
+                  <>
+                    {" · "}
+                    <span
+                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                        DECISION_COLORS[data.decisions[0].type] ?? "bg-muted text-foreground/80"
+                      }`}
+                    >
+                      {data.decisions[0].type} ({STAGE_LABELS[data.decisions[0].stage] ?? data.decisions[0].stage})
+                    </span>
+                  </>
+                )}
+              </p>
+            </>
+          )}
         </div>
+      </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden flex flex-col p-6 gap-6">
+      <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden flex flex-col p-6 gap-6">
           <InterviewPrepNoteSection
             domainApplicationId={domainApplicationId}
             editable={editable}
@@ -157,8 +127,7 @@ export function ApplicantContextModal({
             </div>
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 

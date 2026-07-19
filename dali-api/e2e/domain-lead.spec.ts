@@ -1,9 +1,11 @@
 import { test, expect } from './fixtures';
 
 // Section content is rendered inside an iframe inside the workspace shell.
-// The iframe title matches the sidebar label for the workspace tab.
+// The Hiring sidebar area is childless, so direct navigation seeds the tab
+// with the area label ("Hiring"); lateral moves between hiring tools happen
+// via the in-page pill row and keep the same iframe.
 const domainFrame = (page: import('@playwright/test').Page) =>
-  page.frameLocator('iframe[title="Domain"]');
+  page.frameLocator('iframe[title="Hiring"]');
 
 test.describe('domain lead workflow', () => {
   test.beforeEach(async ({ loginAs }) => {
@@ -50,19 +52,18 @@ test.describe('domain lead workflow', () => {
     await expect(frame.getByText('Engineering Challenge')).toBeVisible();
   });
 
-  test('domain lead can reach Rubrics from the sidebar', async ({ page }) => {
+  test('domain lead can reach Rubrics via the hiring pills', async ({ page }) => {
     await page.goto('/hiring/domain-lead');
-    // Challenges / Rubrics / Agreements were consolidated into one "Library"
-    // page with tabs. The sidebar Library button opens a "Library" workspace
-    // tab; Rubrics live behind the in-page Rubrics tab.
-    await page.getByRole('button', { name: 'Library' }).click();
-    const libraryFrame = page.frameLocator('iframe[title="Library"]');
+    const frame = domainFrame(page);
+    // The sidebar Library entry is gone — lateral navigation between hiring
+    // tools is the in-page pill row, which navigates within the same iframe.
+    await frame.getByRole('link', { name: 'Library' }).click();
     // Wait for the Library route to finish loading inside the iframe before
     // interacting — otherwise the Rubrics tab click can race the iframe's
     // navigation and land on a not-yet-ready frame.
-    const rubricsTab = libraryFrame.getByRole('tab', { name: 'Rubrics' });
+    const rubricsTab = frame.getByRole('tab', { name: 'Rubrics' });
     await expect(rubricsTab).toBeVisible();
     await rubricsTab.click();
-    await expect(libraryFrame.getByRole('heading', { name: 'Evaluation Rubrics' })).toBeVisible();
+    await expect(frame.getByRole('heading', { name: 'Evaluation Rubrics' })).toBeVisible();
   });
 });

@@ -1,10 +1,11 @@
 import { prisma } from "~/lib/db";
+import { getActiveCoreCycleTermIds } from "~/lib/roles";
 
 // Single source of truth for resolving a GroupDefinition to its member userIds.
 // Notification fan-out and meeting participant resolution both go through this.
 // Static groups return their explicit member list; Dynamic groups dispatch on
 // dynamicQuery and resolve against the underlying entity (term/project/domain
-// assignments, or current-term Core).
+// assignments, or the current Core cycle).
 export async function resolveGroupMembers(groupId: string): Promise<string[]> {
   const group = await prisma.groupDefinition.findUnique({
     where: { id: groupId },
@@ -73,27 +74,40 @@ async function resolveDomainMembers(domainId: string): Promise<string[]> {
 }
 
 async function resolveCoreMembers(): Promise<string[]> {
-  const termId = await getCurrentTermId();
-  if (!termId) return [];
+  const cycleTermIds = await getActiveCoreCycleTermIds();
+  if (cycleTermIds.length === 0) return [];
   const rows = await prisma.coreAssignment.findMany({
-    where: { termId },
+    where: { termId: { in: cycleTermIds } },
     select: { userId: true },
     distinct: ["userId"],
   });
   return rows.map((r) => r.userId);
 }
 
-// Current term = the Term whose [startDate, endDate] window contains now.
-// If multiple windows overlap (rare seed edge case), prefer the largest
-// sortKey. Returns null if no term covers today.
-export async function getCurrentTermId(): Promise<string | null> {
-  const now = new Date();
-  const term = await prisma.term.findFirst({
-    where: { startDate: { lte: now }, endDate: { gte: now } },
-    orderBy: { sortKey: "desc" },
-    select: { id: true },
+// Whether `userId` belongs to at least one of `groupIds`. Static membership
+// is read straight off the rows (no resolver queries); Dynamic groups resolve
+// one at a time with a short-circuit so a hit on the first never resolves the
+// rest. Archived groups still admit — archiving a group after a form selected
+// it must not silently lock the form; pickers block *selecting* archived
+// groups instead.
+export async function isUserInAnyGroup(
+  userId: string,
+  groupIds: string[],
+): Promise<boolean> {
+  if (groupIds.length === 0) return false;
+  const groups = await prisma.groupDefinition.findMany({
+    where: { id: { in: groupIds } },
+    select: { type: true, dynamicQuery: true, staticMemberIds: true },
   });
-  return term?.id ?? null;
+  for (const g of groups) {
+    if (g.type === "Static" && g.staticMemberIds.includes(userId)) return true;
+  }
+  for (const g of groups) {
+    if (g.type !== "Dynamic" || !g.dynamicQuery) continue;
+    const members = await resolveDynamicQuery(g.dynamicQuery);
+    if (members.includes(userId)) return true;
+  }
+  return false;
 }
 
 // Every current lab member's userId. "Lab member" = a User with a DALIMember

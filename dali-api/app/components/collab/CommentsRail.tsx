@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, Trash2, RotateCcw, MessageSquare } from "lucide-react";
+import { MentionTextInput } from "~/components/editor/MentionTextInput";
 
 export type Comment = {
   id: string;
@@ -14,6 +15,19 @@ export type Comment = {
 
 type Thread = { root: Comment; replies: Comment[] };
 
+// Mutation callbacks for a single thread, handed to the host (via
+// registerRefresh) so an inline popover anchored at the highlighted text can
+// resolve/delete/reply without duplicating this rail's fetch + mutate logic.
+export type ThreadActions = {
+  resolve: (id: string, resolved: boolean) => Promise<void>;
+  remove: (id: string) => Promise<void>;
+  reply: (parentId: string, body: string) => Promise<boolean>;
+};
+
+export function formatCommentDate(iso: string) {
+  return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
 // Comment threads for a document or file. Doc-level (anchor === null) and
 // inline (anchor !== null) comments share this rail; the host passes
 // `onFocusAnchor` for inline ones so clicking a thread scrolls the editor to
@@ -24,22 +38,36 @@ export function CommentsRail({
   targetId,
   currentUserId,
   canComment,
+  canResolve = true,
   // Inline-comment hooks. Provided only by the document editor.
   pendingAnchor,
   onClearPendingAnchor,
   onFocusAnchor,
   registerRefresh,
+  mentionPath,
+  focusCommentId,
 }: {
-  targetType: "doc" | "file";
+  targetType: "doc" | "file" | "pagedoc";
   targetId: string;
   currentUserId: string;
   canComment: boolean;
+  /** Whether this viewer may resolve/reopen threads. Defaults to true for
+   * document/file hosts; page-doc FAQs restrict this to their maintainer. */
+  canResolve?: boolean;
   pendingAnchor?: { from: string; to: string } | null;
+  // For page-doc FAQ comments: the current page path, sent so @-mention
+  // notifications can deep-link back to the guide (with ?doc=1).
+  mentionPath?: string;
+  // Arriving from a comment-mention notification (?comment=<id>): scroll to and
+  // flash this comment once threads load.
+  focusCommentId?: string;
   onClearPendingAnchor?: () => void;
   onFocusAnchor?: (anchor: { from: string; to: string }) => void;
   // Lets the host trigger a refetch (e.g. after creating an inline comment
-  // mark) and receive the live thread list for decoration.
-  registerRefresh?: (refresh: () => void, threads: () => Comment[]) => void;
+  // mark), receive the live thread list for decoration, and reuse this
+  // rail's mutation logic (e.g. for an inline popover anchored at the
+  // highlighted text).
+  registerRefresh?: (refresh: () => void, threads: () => Comment[], actions: ThreadActions) => void;
 }) {
   const [comments, setComments] = useState<Comment[]>([]);
   const [draft, setDraft] = useState("");
@@ -48,6 +76,10 @@ export function CommentsRail({
   const [showResolved, setShowResolved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  // Guards the auto-scroll so it fires once per target comment, not on every
+  // refetch/re-render.
+  const focusedRef = useRef<string | null>(null);
 
   async function refresh() {
     const res = await fetch(
@@ -68,9 +100,37 @@ export function CommentsRail({
     registerRefresh?.(
       () => void refresh(),
       () => comments,
+      {
+        resolve: (id, resolved) => mutate(id, "POST", resolved ? "resolve" : "reopen"),
+        remove: (id) => mutate(id, "DELETE"),
+        reply: (parentId, body) => post(body, parentId, null),
+      },
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [comments]);
+
+  // Scroll to + flash the comment from a mention notification (?comment=<id>),
+  // once. If it lives in a resolved thread, reveal resolved first.
+  useEffect(() => {
+    if (!focusCommentId || comments.length === 0) return;
+    if (focusedRef.current === focusCommentId) return;
+    const target = comments.find((c) => c.id === focusCommentId);
+    if (!target) return; // not on this target's list
+    focusedRef.current = focusCommentId;
+    const rootId = target.parentId ?? target.id;
+    const root = comments.find((c) => c.id === rootId);
+    if (root?.resolved) setShowResolved(true);
+    // Let the (possibly resolved-revealing) re-render commit before scrolling.
+    setTimeout(() => {
+      const el = containerRef.current?.querySelector<HTMLElement>(
+        `[data-comment-id="${focusCommentId}"]`,
+      );
+      if (!el) return;
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add("mention-flash");
+      setTimeout(() => el.classList.remove("mention-flash"), 2600);
+    }, 80);
+  }, [focusCommentId, comments]);
 
   async function post(body: string, parentId: string | null, anchor: { from: string; to: string } | null) {
     setBusy(true);
@@ -80,7 +140,7 @@ export function CommentsRail({
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ targetType, targetId, body, parentId, anchor }),
+        body: JSON.stringify({ targetType, targetId, body, parentId, anchor, path: mentionPath }),
       });
       if (!res.ok) {
         const b = (await res.json().catch(() => ({}))) as { error?: string };
@@ -126,12 +186,8 @@ export function CommentsRail({
   const visible = threads.filter((t) => showResolved || !t.root.resolved);
   const resolvedCount = threads.filter((t) => t.root.resolved).length;
 
-  function fmt(iso: string) {
-    return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-  }
-
   return (
-    <div className="flex flex-col gap-3 text-sm">
+    <div ref={containerRef} className="flex flex-col gap-3 text-sm">
       <div className="flex items-center justify-between">
         <h3 className="font-semibold text-foreground flex items-center gap-1.5">
           <MessageSquare className="w-4 h-4" /> Comments
@@ -154,10 +210,11 @@ export function CommentsRail({
       {canComment && pendingAnchor && (
         <div className="rounded-md border border-accent-coral/40 bg-accent-coral/5 p-2">
           <p className="text-[11px] text-muted-foreground mb-1">Comment on selection</p>
-          <textarea
+          <MentionTextInput
             autoFocus
+            multiline
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={setDraft}
             rows={2}
             className="w-full px-2 py-1 text-sm border border-border rounded bg-background focus:outline-none focus:ring-1 focus:ring-accent-coral/40"
           />
@@ -201,11 +258,12 @@ export function CommentsRail({
           }}
           className="flex flex-col gap-1"
         >
-          <textarea
+          <MentionTextInput
+            multiline
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={setDraft}
             rows={2}
-            placeholder="Add a comment…"
+            placeholder="Add a comment…  (@ to mention)"
             className="w-full px-2 py-1 text-sm border border-border rounded bg-background focus:outline-none focus:ring-1 focus:ring-accent-coral/40"
           />
           <div className="flex justify-end">
@@ -227,6 +285,7 @@ export function CommentsRail({
           {visible.map((t) => (
             <li
               key={t.root.id}
+              data-comment-id={t.root.id}
               className={`rounded-md border p-2 ${
                 t.root.resolved ? "border-border bg-muted/40 opacity-70" : "border-border bg-card"
               }`}
@@ -239,7 +298,7 @@ export function CommentsRail({
               >
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-medium text-foreground">{t.root.author}</span>
-                  <span className="text-[10px] text-muted-foreground">{fmt(t.root.createdAt)}</span>
+                  <span className="text-[10px] text-muted-foreground">{formatCommentDate(t.root.createdAt)}</span>
                 </div>
                 {t.root.anchor && (
                   <span className="text-[10px] text-accent-coral">inline</span>
@@ -248,10 +307,10 @@ export function CommentsRail({
               </button>
 
               {t.replies.map((r) => (
-                <div key={r.id} className="ml-3 mt-1.5 pl-2 border-l border-border">
+                <div key={r.id} data-comment-id={r.id} className="ml-3 mt-1.5 pl-2 border-l border-border">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-medium text-foreground">{r.author}</span>
-                    <span className="text-[10px] text-muted-foreground">{fmt(r.createdAt)}</span>
+                    <span className="text-[10px] text-muted-foreground">{formatCommentDate(r.createdAt)}</span>
                   </div>
                   <p className="text-sm text-foreground whitespace-pre-wrap mt-0.5">{r.body}</p>
                 </div>
@@ -272,12 +331,13 @@ export function CommentsRail({
                       }}
                       className="flex-1 flex items-end gap-1"
                     >
-                      <input
+                      <MentionTextInput
                         autoFocus
                         value={replyDraft}
-                        onChange={(e) => setReplyDraft(e.target.value)}
+                        onChange={setReplyDraft}
                         placeholder="Reply…"
-                        className="flex-1 px-2 py-1 text-xs border border-border rounded bg-background focus:outline-none focus:ring-1 focus:ring-accent-coral/40"
+                        wrapperClassName="relative flex-1"
+                        className="w-full px-2 py-1 text-xs border border-border rounded bg-background focus:outline-none focus:ring-1 focus:ring-accent-coral/40"
                       />
                       <button type="submit" disabled={busy} className="text-xs px-2 py-1 rounded bg-accent-coral text-white disabled:opacity-50">
                         Reply
@@ -291,14 +351,16 @@ export function CommentsRail({
                       <button type="button" onClick={() => setReplyTo(t.root.id)} className="text-[11px] text-muted-foreground hover:text-foreground">
                         Reply
                       </button>
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => mutate(t.root.id, "POST", t.root.resolved ? "reopen" : "resolve")}
-                        className="text-[11px] text-muted-foreground hover:text-foreground flex items-center gap-0.5"
-                      >
-                        {t.root.resolved ? <><RotateCcw className="w-3 h-3" /> Reopen</> : <><Check className="w-3 h-3" /> Resolve</>}
-                      </button>
+                      {canResolve && (
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => mutate(t.root.id, "POST", t.root.resolved ? "reopen" : "resolve")}
+                          className="text-[11px] text-muted-foreground hover:text-foreground flex items-center gap-0.5"
+                        >
+                          {t.root.resolved ? <><RotateCcw className="w-3 h-3" /> Reopen</> : <><Check className="w-3 h-3" /> Resolve</>}
+                        </button>
+                      )}
                       {t.root.authorId === currentUserId && (
                         <button
                           type="button"

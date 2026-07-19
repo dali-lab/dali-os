@@ -17,23 +17,20 @@
 import { prisma } from "~/lib/db";
 import { sendEmail } from "~/lib/gmail";
 import { getApplicationsGmailRefreshToken } from "~/lib/gmail-integration";
+import { APPLICATION_TZ, APPLICATION_TZ_LABEL } from "~/lib/timezone";
 import { renderForSlot, notificationSlot } from "./email-variables";
 import { logAuditEvent } from "~/lib/audit";
 
 function formatCloseInstant(d: Date): string {
   return `${d.toLocaleString("en-US", {
-    timeZone: "America/New_York",
+    timeZone: APPLICATION_TZ,
     weekday: "long",
     month: "long",
     day: "numeric",
     year: "numeric",
     hour: "numeric",
     minute: "2-digit",
-  })} ET`;
-}
-
-async function getGmailRefreshToken(): Promise<string | null> {
-  return getApplicationsGmailRefreshToken();
+  })} ${APPLICATION_TZ_LABEL}`;
 }
 
 interface DraftRecipient {
@@ -189,7 +186,7 @@ async function preflight(cycleId: string): Promise<{
   refreshToken: string;
   binding: { emailTemplateVersion: { subject: string; body: string } };
 } | null> {
-  const refreshToken = await getGmailRefreshToken();
+  const refreshToken = await getApplicationsGmailRefreshToken();
   if (!refreshToken) return null;
   const binding = await prisma.cycleNotificationEmail.findUnique({
     where: {

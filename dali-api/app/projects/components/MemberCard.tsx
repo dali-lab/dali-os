@@ -1,5 +1,8 @@
-import { useDraggable } from "@dnd-kit/core";
-import { initialsFromName } from "~/lib/display";
+import type { ReactNode } from "react";
+import { GraduationCap } from "lucide-react";
+import { fullName as buildFullName } from "~/lib/display";
+import { Avatar } from "~/components/ui/Avatar";
+import { RolePills } from "~/components/ui/RolePills";
 import type { MemberCardModel, Level } from "../lib/staffing-board";
 
 const LEVEL_BADGE: Record<Level, { label: string; cls: string }> = {
@@ -10,38 +13,70 @@ const LEVEL_BADGE: Record<Level, { label: string; cls: string }> = {
 
 type Props = {
   card: MemberCardModel;
-  columnId: string;
   projectNames: Record<string, string>;
+  domainNames: Record<string, string>;
   onOpenBid: () => void;
+  /** Remove a manually-added member from the board. Only passed for managers. */
+  onRemove?: () => void;
   /** When false the card is static (read-only viewers). */
   draggable: boolean;
+  /**
+   * Drag listeners + a11y attributes from the KanbanBoard sortable wrapper.
+   * Spread onto the card root so the whole card initiates a drag. Empty for
+   * read-only viewers.
+   */
+  dragHandleProps: Record<string, unknown>;
+  /** The card is the one being dragged — dim it; the DragOverlay floats a copy. */
+  isDragging: boolean;
+  /**
+   * Optional mentorship control (the "Mentor" dropdown badge) rendered below
+   * the card body. It's interactive, so it lives outside the card's drag/click
+   * surface and stops propagation itself.
+   */
+  mentorSlot?: ReactNode;
+  /**
+   * Tint the card as an external mentor — this member mentors someone on
+   * another team. A distinct teal edge marks the cross-team relationship.
+   */
+  accentExternal?: boolean;
 };
 
-export function MemberCard({ card, columnId, projectNames, onOpenBid, draggable }: Props) {
-  const dragId = `${columnId}::${card.userId}`;
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id: dragId,
-    data: { userId: card.userId, fromColumn: columnId },
-    disabled: !draggable,
-  });
+export function MemberCard({
+  card,
+  projectNames,
+  domainNames,
+  onOpenBid,
+  onRemove,
+  draggable,
+  dragHandleProps,
+  isDragging,
+  mentorSlot,
+  accentExternal,
+}: Props) {
+  const fullName = buildFullName(card);
 
-  const style: React.CSSProperties = transform
-    ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, zIndex: 50 }
-    : {};
-
-  const fullName = `${card.firstName} ${card.lastName}`.trim();
+  // External-mentor cards are a distinct, non-roster placement: their own
+  // rendering (teal edge, no bid, a Remove ×), never draggable, no bid modal.
+  if (card.isExternalMentor) {
+    return (
+      <ExternalMentorCard card={card} fullName={fullName} onRemove={onRemove} />
+    );
+  }
 
   // Only wire dnd listeners + grab cursor when draggable. Read-only viewers
   // still see the card and can click it to open the bid modal.
-  const dragProps = draggable ? { ...attributes, ...listeners } : {};
+  const dragProps = draggable ? dragHandleProps : {};
 
-  // Clicking anywhere on the card opens the member's bid. The DndContext uses
-  // a small activation-distance constraint, so a pointer press that doesn't
-  // move past the threshold lands here as a click rather than starting a drag.
+  // The wrapper (KanbanBoard's SortableCardWrapper) owns setNodeRef + the
+  // sortable transform that animates SIBLINGS shifting to make room. The dragged
+  // card itself is dimmed; its floating copy is rendered by DragOverlay (portaled
+  // above all columns), so it can never clip under an adjacent column.
+  //
+  // Clicking anywhere on the card opens the member's bid. The DndContext uses a
+  // small activation-distance constraint, so a pointer press that doesn't move
+  // past the threshold lands here as a click rather than starting a drag.
   return (
     <div
-      ref={setNodeRef}
-      style={style}
       {...dragProps}
       onClick={onOpenBid}
       role="button"
@@ -54,12 +89,102 @@ export function MemberCard({ card, columnId, projectNames, onOpenBid, draggable 
       }}
       aria-label={`View ${fullName}'s bid`}
       title="View bid"
-      className={`bg-card border border-border rounded-md p-2.5 flex flex-col gap-1.5 select-none ${
+      className={`rounded-md p-2.5 flex flex-col gap-1.5 select-none ${
+        accentExternal
+          ? "bg-accent-teal/[0.06] border border-accent-teal/40"
+          : "bg-card border border-border"
+      } ${
         draggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"
-      } ${isDragging ? "opacity-60 shadow-lg" : "hover:bg-muted/20"}`}
+      } ${isDragging ? "opacity-40" : "hover:bg-muted/20"}`}
     >
+      <MemberCardBody
+        card={card}
+        fullName={fullName}
+        projectNames={projectNames}
+        domainNames={domainNames}
+        onRemove={onRemove}
+      />
+      {mentorSlot && (
+        // Keep drag/click off the mentorship control: a press here must not
+        // start a card drag or open the bid modal.
+        <div
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          className="cursor-default"
+        >
+          {mentorSlot}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// A non-roster external mentor placed on a project column. Distinct teal
+// styling marks it apart from staffed members; it isn't draggable and has no
+// bid to open — just a name, its mentoring domain, and a Remove control.
+function ExternalMentorCard({
+  card,
+  fullName,
+  onRemove,
+}: {
+  card: MemberCardModel;
+  fullName: string;
+  onRemove?: () => void;
+}) {
+  return (
+    <div className="rounded-md p-2.5 flex flex-col gap-1.5 select-none bg-accent-teal/[0.06] border border-accent-teal/40">
       <div className="flex items-start gap-2">
-        <Avatar photoUrl={card.photoUrl} name={fullName} />
+        <Avatar photoUrl={card.photoUrl} name={fullName} size="sm" />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline gap-1.5 flex-wrap">
+            <span className="text-sm font-semibold text-foreground truncate text-left">
+              {fullName}
+            </span>
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded bg-accent-teal/15 text-accent-teal">
+              <GraduationCap className="w-2.5 h-2.5" aria-hidden />
+              External mentor
+            </span>
+          </div>
+        </div>
+        {onRemove && (
+          <button
+            type="button"
+            onClick={onRemove}
+            title="Remove external mentor"
+            aria-label={`Remove external mentor ${fullName}`}
+            className="flex-shrink-0 text-muted-foreground hover:text-destructive text-sm leading-none px-1 rounded hover:bg-muted"
+          >
+            ×
+          </button>
+        )}
+      </div>
+      <DomainLevelStrip card={card} />
+    </div>
+  );
+}
+
+// The card's visual content, shared by the in-column MemberCard and the
+// DragOverlay's floating copy so the dragged card looks identical to its
+// resting state.
+function MemberCardBody({
+  card,
+  fullName,
+  projectNames,
+  domainNames,
+  onRemove,
+}: {
+  card: MemberCardModel;
+  fullName: string;
+  projectNames: Record<string, string>;
+  domainNames: Record<string, string>;
+  onRemove?: () => void;
+}) {
+  return (
+    <>
+      <div className="flex items-start gap-2">
+        <Avatar photoUrl={card.photoUrl} name={fullName} size="sm" />
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-1.5 flex-wrap">
             <span className="text-sm font-semibold text-foreground truncate text-left">
@@ -73,13 +198,66 @@ export function MemberCard({ card, columnId, projectNames, onOpenBid, draggable 
                 Bid unresolved
               </span>
             )}
+            {card.manuallyAdded && (
+              <span
+                className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded bg-muted text-muted-foreground"
+                title="Manually added to the board (no bid submitted)."
+              >
+                Added
+              </span>
+            )}
           </div>
-          <RoleStrip card={card} />
+          <RolePills
+            isAdmin={card.isAdmin}
+            coreTitles={card.coreTitles}
+            size="sm"
+            className="mt-0.5"
+          />
         </div>
+        {onRemove && card.manuallyAdded && (
+          <button
+            type="button"
+            // Stop the press from starting a drag or opening the bid modal.
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemove();
+            }}
+            title="Remove from board"
+            aria-label={`Remove ${fullName} from board`}
+            className="flex-shrink-0 text-muted-foreground hover:text-destructive text-sm leading-none px-1 rounded hover:bg-muted"
+          >
+            ×
+          </button>
+        )}
       </div>
 
       <DomainLevelStrip card={card} />
-      <BidStrip card={card} projectNames={projectNames} />
+      <BidStrip card={card} projectNames={projectNames} domainNames={domainNames} />
+    </>
+  );
+}
+
+// A static, non-draggable copy of the card for DragOverlay to float above the
+// columns. Same body as MemberCard, with the resting card styling.
+export function MemberCardPreview({
+  card,
+  projectNames,
+  domainNames,
+}: {
+  card: MemberCardModel;
+  projectNames: Record<string, string>;
+  domainNames: Record<string, string>;
+}) {
+  const fullName = buildFullName(card);
+  return (
+    <div className="bg-card border border-border rounded-md p-2.5 flex flex-col gap-1.5 select-none shadow-lg cursor-grabbing">
+      <MemberCardBody
+        card={card}
+        fullName={fullName}
+        projectNames={projectNames}
+        domainNames={domainNames}
+      />
     </div>
   );
 }
@@ -106,44 +284,14 @@ function DomainLevelStrip({ card }: { card: MemberCardModel }) {
   );
 }
 
-function Avatar({ photoUrl, name }: { photoUrl: string | null; name: string }) {
-  if (photoUrl) {
-    return <img src={photoUrl} alt="" className="w-8 h-8 rounded-full object-cover flex-shrink-0" />;
-  }
-  return (
-    <div className="w-8 h-8 rounded-full bg-accent-coral/15 text-accent-coral flex items-center justify-center font-bold text-[11px] flex-shrink-0">
-      {initialsFromName(name)}
-    </div>
-  );
-}
-
-function RoleStrip({ card }: { card: MemberCardModel }) {
-  if (!card.isAdmin && card.coreTitles.length === 0) return null;
-  return (
-    <div className="flex flex-wrap gap-1 mt-0.5">
-      {card.isAdmin && (
-        <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded bg-accent-coral/15 text-accent-coral">
-          Admin
-        </span>
-      )}
-      {card.coreTitles.map((t) => (
-        <span
-          key={t}
-          className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded bg-muted text-foreground"
-        >
-          {t}
-        </span>
-      ))}
-    </div>
-  );
-}
-
 function BidStrip({
   card,
   projectNames,
+  domainNames,
 }: {
   card: MemberCardModel;
   projectNames: Record<string, string>;
+  domainNames: Record<string, string>;
 }) {
   // Always show the member's top 3 project preferences in rank order,
   // regardless of which column the card is in.
@@ -160,12 +308,23 @@ function BidStrip({
   }
   return (
     <ol className="text-[11px] text-muted-foreground flex flex-col gap-0.5">
-      {card.topPreferences.map((p) => (
-        <li key={p.projectId} className="truncate">
-          <span className="font-semibold">#{p.rank}</span>{" "}
-          {projectNames[p.projectId] ?? p.projectId}
-        </li>
-      ))}
+      {card.topPreferences.map((p) => {
+        // A project bid at this rank in multiple domains shows the project once
+        // with its domains appended (e.g. "Evergreen — Fullstack, UI/UX"),
+        // rather than repeating the project line per domain.
+        const domains = p.domainIds
+          .map((id) => domainNames[id])
+          .filter((n): n is string => !!n);
+        return (
+          <li key={`${p.projectId}-${p.rank}`} className="truncate">
+            <span className="font-semibold">#{p.rank}</span>{" "}
+            {projectNames[p.projectId] ?? p.projectId}
+            {domains.length > 0 && (
+              <span className="text-muted-foreground/70"> — {domains.join(", ")}</span>
+            )}
+          </li>
+        );
+      })}
     </ol>
   );
 }

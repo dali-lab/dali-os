@@ -1,13 +1,7 @@
-import { useMemo, useState } from "react";
-import { useSearchParams } from "react-router";
-import {
-  DndContext,
-  PointerSensor,
-  useDroppable,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from "@dnd-kit/core";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams, useRevalidator } from "react-router";
+import type { DragEndEvent } from "@dnd-kit/core";
+import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
 import {
   buildBoard,
   resolveAssignmentInputs,
@@ -17,12 +11,25 @@ import {
   type Assignment,
   type Preference,
 } from "../lib/staffing-board";
-import { CheckCircle2 } from "lucide-react";
-import { MemberCard } from "./MemberCard";
+import { CheckCircle2, UserPlus } from "lucide-react";
+import { Button } from "~/components/ui/Button";
+import { MemberCard, MemberCardPreview } from "./MemberCard";
+import { RoleBadge } from "./RoleBadge";
 import { BidModal } from "./BidModal";
 import { FinalizeModal } from "./FinalizeModal";
+import { AddMemberControl } from "./AddMemberControl";
+import { AddExternalMentorModal } from "./AddExternalMentorModal";
+import { DomainFilter } from "./DomainFilter";
+import { sanitizeChannelName } from "~/slack/lib/channel-name";
 
-type ProjectMeta = { id: string; name: string; status: "Active" | "Paused" | "Archived" };
+type ProjectMeta = {
+  id: string;
+  name: string;
+  status: "Active" | "Paused" | "Archived";
+  // Pre-fill the Finalize modal's editable fields (shared with the project page).
+  githubTeamSlug?: string | null;
+  slackChannelName?: string | null;
+};
 
 // Expected headcount per (project, domain) for this term — already summed
 // across levels and sorted by domain name in the loader. Keyed by projectId.
@@ -34,9 +41,18 @@ type Props = {
   cycleId: string;
   termId: string;
   terms: { id: string; code: string }[];
+  // Domain filter: all domains for the dropdown, plus the currently-selected id
+  // ("" = all). Selecting one narrows the board to members eligible in (or
+  // already bid/staffed in) that domain. Driven server-side via ?domain=.
+  domains: { id: string; name: string }[];
+  selectedDomainId: string;
   projects: ProjectMeta[];
   members: MemberInput[];
   initialAssignments: Assignment[];
+  // Manual within-column card order rows from the server (userId, columnKey,
+  // sortKey). buildBoard applies one only when columnKey matches the card's
+  // current column. Cards without a row sort by last name.
+  cardOrder: { userId: string; columnKey: string; sortKey: number }[];
   // Project id → name for label resolution. Covers archived projects a member
   // ranked that aren't board columns, so cards/modal never show a raw id.
   projectNames: Record<string, string>;
@@ -50,26 +66,142 @@ export function StaffingBoard({
   cycleId,
   termId,
   terms,
+  domains,
+  selectedDomainId,
   projects,
   members,
   initialAssignments,
+  cardOrder,
   projectNames,
   domainNames,
   demandByProject,
   canManage,
 }: Props) {
   const [searchParams, setSearchParams] = useSearchParams();
+  const revalidator = useRevalidator();
   const [assignments, setAssignments] = useState<Assignment[]>(initialAssignments);
+  // Optimistic copy of the server card order; drag updates it immediately and
+  // the persist+revalidate reconciles. Same lifecycle as `assignments`.
+  const [order, setOrder] = useState(cardOrder);
   const [error, setError] = useState<string | null>(null);
   const [openBidUserId, setOpenBidUserId] = useState<string | null>(null);
   // Project id whose finalize modal is open, or null.
   const [finalizeProjectId, setFinalizeProjectId] = useState<string | null>(null);
 
+  // Per-card mentor/mentee role overrides for this cycle (userId → isMentor).
+  // A member's role defaults to their level (P3 → mentor); an override flips it.
+  // Refetched whenever the board revalidates. Managers only.
+  const [mentorRoles, setMentorRoles] = useState<Record<string, boolean>>({});
+  const loadMentorRoles = useCallback(() => {
+    if (!canManage) return;
+    fetch(`/api/staffing/mentor-role?cycleId=${encodeURIComponent(cycleId)}`, { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setMentorRoles(d.overrides ?? {}))
+      .catch(() => {});
+  }, [cycleId, canManage]);
+  useEffect(() => loadMentorRoles(), [loadMentorRoles]);
+  // Held in a ref so the once-mounted SSE listener always calls the latest.
+  const loadMentorRolesRef = useRef(loadMentorRoles);
+  loadMentorRolesRef.current = loadMentorRoles;
+
+  // Toggle a card's role. Optimistic, then refetch to reconcile.
+  const toggleMentorRole = useCallback(
+    async (userId: string, next: boolean) => {
+      setMentorRoles((prev) => ({ ...prev, [userId]: next }));
+      try {
+        await fetch(`/api/staffing/mentor-role`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cycleId, userId, isMentor: next }),
+        });
+      } finally {
+        loadMentorRolesRef.current();
+      }
+    },
+    [cycleId],
+  );
+
+  // Non-roster external mentors placed on project columns. Managers only.
+  type ExternalMentorRow = {
+    id: string;
+    projectId: string;
+    domainId: string;
+    userId: string;
+    firstName: string;
+    lastName: string;
+  };
+  const [externalMentors, setExternalMentors] = useState<ExternalMentorRow[]>([]);
+  const loadExternalMentors = useCallback(() => {
+    if (!canManage) return;
+    fetch(`/api/staffing/external-mentor?cycleId=${encodeURIComponent(cycleId)}`, { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setExternalMentors(d.externalMentors ?? []))
+      .catch(() => {});
+  }, [cycleId, canManage]);
+  useEffect(() => loadExternalMentors(), [loadExternalMentors]);
+  const loadExternalMentorsRef = useRef(loadExternalMentors);
+  loadExternalMentorsRef.current = loadExternalMentors;
+
+  const removeExternalMentor = useCallback(async (id: string) => {
+    setExternalMentors((prev) => prev.filter((e) => e.id !== id));
+    try {
+      await fetch(`/api/staffing/external-mentor?id=${encodeURIComponent(id)}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+    } finally {
+      loadExternalMentorsRef.current();
+    }
+  }, []);
+
+  // Project id whose "add external mentor" modal is open, or null.
+  const [externalMentorProjectId, setExternalMentorProjectId] = useState<string | null>(null);
+
+  // Number of drag saves currently in flight. While > 0 we hold off adopting
+  // server data so a live push from someone else can't revert our own unsaved
+  // optimistic move mid-drag. Once our save lands it revalidates and this clears.
+  const pendingSaves = useRef(0);
+
+  // Local `assignments` is the optimistic source of truth during a drag. When a
+  // revalidation lands (our own save, or a live push from another lead), the
+  // loader hands back fresh `initialAssignments` — adopt it so other people's
+  // edits actually appear. Keyed off the prop's identity: React Router gives a
+  // new array each loader run, so this only fires when server data changes.
+  useEffect(() => {
+    if (pendingSaves.current > 0) return;
+    setAssignments(initialAssignments);
+    setOrder(cardOrder);
+  }, [initialAssignments, cardOrder]);
+
+  // Live updates: subscribe to this cycle's SSE stream and revalidate on any
+  // pushed change (assign / finalize / board-member by anyone) or periodic sync.
+  // EventSource auto-reconnects, so a dropped connection self-heals. The bus is
+  // per-instance (see staffing-events.server.ts); the `sync` heartbeat is the
+  // cross-instance backstop.
+  const revalidate = revalidator.revalidate;
+  const revalidateRef = useRef(revalidate);
+  revalidateRef.current = revalidate;
+  useEffect(() => {
+    const es = new EventSource(
+      `/api/staffing/events?cycleId=${encodeURIComponent(cycleId)}`,
+      { withCredentials: true },
+    );
+    const onPush = () => {
+      revalidateRef.current();
+      loadMentorRolesRef.current();
+      loadExternalMentorsRef.current();
+    };
+    es.addEventListener("change", onPush);
+    es.addEventListener("sync", onPush);
+    return () => es.close();
+  }, [cycleId]);
+
   const projectIds = useMemo(() => projects.map((p) => p.id), [projects]);
 
   const board = useMemo(
-    () => buildBoard({ projectIds, members, assignments }),
-    [projectIds, members, assignments],
+    () => buildBoard({ projectIds, members, assignments, cardOrder: order }),
+    [projectIds, members, assignments, order],
   );
 
   const memberById = useMemo(
@@ -77,12 +209,64 @@ export function StaffingBoard({
     [members],
   );
 
-  // The whole member card is both draggable and clickable. A small activation
-  // distance disambiguates the two: a press that moves <6px fires the card's
-  // onClick (open bid); past that it starts a drag, suppressing the click.
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-  );
+  // Flat userId → card lookup so the DragOverlay can render the active card
+  // without knowing which column it came from.
+  const cardByUserId = useMemo(() => {
+    const map = new Map<string, MemberCardModel>();
+    for (const cards of Object.values(board)) {
+      for (const c of cards) map.set(c.userId, c);
+    }
+    return map;
+  }, [board]);
+
+  // userId → its current column key. The card's `data.fromColumn` (which the
+  // drag handler reads to know where a card came from) used to live on each
+  // MemberCard via columnId; now it's derived once from the built board.
+  const columnIdOf = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const [columnKey, cards] of Object.entries(board)) {
+      for (const c of cards) map.set(c.userId, columnKey);
+    }
+    return map;
+  }, [board]);
+
+  // Synthetic cards for external mentors, grouped by project column. They render
+  // like distinct cards but aren't in `board`/`members`, so the drag handler
+  // (keyed off memberById) naturally ignores them.
+  const externalCardsByProject = useMemo(() => {
+    const map = new Map<string, MemberCardModel[]>();
+    for (const e of externalMentors) {
+      const list = map.get(e.projectId) ?? [];
+      list.push({
+        userId: e.userId,
+        firstName: e.firstName,
+        lastName: e.lastName,
+        email: null,
+        photoUrl: null,
+        isAdmin: false,
+        coreTitles: [],
+        domainLevels: [
+          { domainId: e.domainId, domainName: domainNames[e.domainId] ?? "?", level: "P3" },
+        ],
+        level: "P3",
+        topPreferences: [],
+        unresolvedBid: false,
+        manuallyAdded: false,
+        isExternalMentor: true,
+        externalMentorId: e.id,
+      });
+      map.set(e.projectId, list);
+    }
+    return map;
+  }, [externalMentors, domainNames]);
+
+  // userId → project column for external mentors, so a real card dropped onto an
+  // external card resolves to that external's column (drop-at-end).
+  const externalProjectByUser = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const e of externalMentors) map.set(e.userId, e.projectId);
+    return map;
+  }, [externalMentors]);
 
   function handleDragEnd(event: DragEndEvent) {
     if (!canManage) return;
@@ -92,46 +276,124 @@ export function StaffingBoard({
     const userId = data?.userId;
     const fromColumn = data?.fromColumn ?? UNASSIGNED;
     if (!userId) return;
-    if (overId === fromColumn) return;
 
     const member = memberById.get(userId);
     if (!member) return;
 
-    // Optimistic: update local state immediately.
-    const targetProjectId = overId === UNASSIGNED ? null : overId;
-    const prevAssignments = assignments;
+    // Resolve the target column + insertion index. `over` is either a card
+    // (its userId — drop relative to it) or a column droppable (its id — drop
+    // at the end). Column ids are UNASSIGNED or a project id; everything else
+    // is a card userId.
+    const isColumnId = overId === UNASSIGNED || projectIds.includes(overId);
+    // Dropping onto an external-mentor card targets that mentor's column at the
+    // end (external cards render after the roster and aren't reorderable).
+    const overIsExternal = externalProjectByUser.has(overId);
+    const toColumn = isColumnId
+      ? overId
+      : overIsExternal
+        ? externalProjectByUser.get(overId)!
+        : findColumnOf(board, overId) ?? fromColumn;
+    const targetIds = (board[toColumn] ?? []).map((c) => c.userId);
+    const overIndex = isColumnId || overIsExternal ? targetIds.length : targetIds.indexOf(overId);
+    const movedWithinColumn = fromColumn === toColumn;
 
-    let nextAssignments: Assignment[];
+    // No-op: dropped on itself, or back where it already was.
+    if (movedWithinColumn) {
+      const fromIndex = targetIds.indexOf(userId);
+      if (fromIndex === overIndex || (overIndex === -1)) return;
+    }
+
+    // Build the new ordered userId list for the destination column.
+    const withoutMoved = targetIds.filter((id) => id !== userId);
+    const insertAt = overIndex < 0 ? withoutMoved.length : Math.min(overIndex, withoutMoved.length);
+    const nextDestIds = [
+      ...withoutMoved.slice(0, insertAt),
+      userId,
+      ...withoutMoved.slice(insertAt),
+    ];
+
+    // A cross-column move also needs the assignment updated. Resolve domain +
+    // level for a project column; UNASSIGNED clears the assignment.
+    const targetProjectId = toColumn === UNASSIGNED ? null : toColumn;
     let assignmentBody: { domainId: string; level: "P1" | "P2" | "P3" } | null = null;
-    if (targetProjectId === null) {
-      nextAssignments = assignments.filter((a) => a.userId !== userId);
-    } else {
+    if (!movedWithinColumn && targetProjectId !== null) {
       assignmentBody = resolveAssignmentInputs(member, targetProjectId);
       if (!assignmentBody) {
         setError(
-          `${member.firstName} ${member.lastName} has no preferences on file; can't infer a domain + level.`,
+          `Can't infer a domain + level for ${member.firstName} ${member.lastName}: they have no bid and ${
+            member.domainLevels.length === 0
+              ? "no domain eligibility"
+              : "are eligible in multiple domains"
+          }. Add a bid, or set their eligibility to a single domain.`,
         );
         return;
       }
-      const withoutOld = assignments.filter((a) => a.userId !== userId);
-      nextAssignments = [
-        ...withoutOld,
-        { userId, projectId: targetProjectId, domainId: assignmentBody.domainId, level: assignmentBody.level },
-      ];
     }
-    setAssignments(nextAssignments);
+
+    const prevAssignments = assignments;
+    const prevOrder = order;
+
+    // Optimistic assignment update (only when the column changed).
+    if (!movedWithinColumn) {
+      const withoutOld = assignments.filter((a) => a.userId !== userId);
+      setAssignments(
+        targetProjectId === null
+          ? withoutOld
+          : [
+              ...withoutOld,
+              { userId, projectId: targetProjectId, domainId: assignmentBody!.domainId, level: assignmentBody!.level },
+            ],
+      );
+    }
+
+    // Optimistic order update for the destination column. Other users' rows are
+    // preserved; the moved card and its new neighbours get fresh indices.
+    setOrder((prev) => mergeColumnOrder(prev, toColumn, nextDestIds, userId));
     setError(null);
 
-    void persist({
-      cycleId,
-      userId,
-      projectId: targetProjectId,
-      domainId: assignmentBody?.domainId,
-      level: assignmentBody?.level,
-    }).catch((err) => {
-      setAssignments(prevAssignments);
-      setError(err instanceof Error ? err.message : "Failed to save assignment");
-    });
+    pendingSaves.current += 1;
+    const save = async () => {
+      if (!movedWithinColumn) {
+        await persist({
+          cycleId,
+          userId,
+          projectId: targetProjectId,
+          domainId: assignmentBody?.domainId,
+          level: assignmentBody?.level,
+        });
+      }
+      await persistOrder({ cycleId, columnKey: toColumn, userIds: nextDestIds });
+    };
+    void save()
+      .then(() => revalidator.revalidate())
+      .catch((err) => {
+        setAssignments(prevAssignments);
+        setOrder(prevOrder);
+        setError(err instanceof Error ? err.message : "Failed to save");
+      })
+      .finally(() => {
+        pendingSaves.current = Math.max(0, pendingSaves.current - 1);
+      });
+  }
+
+  async function handleRemoveMember(userId: string) {
+    setError(null);
+    try {
+      const res = await fetch("/api/staffing/board-member", {
+        method: "DELETE",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cycleId, userId }),
+      });
+      if (!res.ok) {
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        setError(json.error ?? `Failed to remove member: ${res.status}`);
+        return;
+      }
+      revalidator.revalidate();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to remove member");
+    }
   }
 
   const openBidMember = openBidUserId ? memberById.get(openBidUserId) ?? null : null;
@@ -139,9 +401,122 @@ export function StaffingBoard({
     ? assignments.find((a) => a.userId === openBidUserId)?.projectId ?? null
     : null;
 
+  const termCode = terms.find((t) => t.id === termId)?.code ?? "";
+
+  // Per-column tone (kept from the original): the Unassigned column is muted,
+  // active projects get the teal wash, paused/archived projects read as dim.
+  const toneClasses: Record<"muted" | "active" | "dim", string> = {
+    muted: "border-border bg-muted/20",
+    active: "border-accent-teal/40 bg-accent-teal/[0.04]",
+    dim: "border-border bg-card",
+  };
+  // pt-1/px on the row (the primitive's default row layout) keeps each column's
+  // top + side borders off the scroll-clip edge so they stay visible.
+  const shell = (tone: "muted" | "active" | "dim") =>
+    `flex-shrink-0 w-64 border rounded-lg ${toneClasses[tone]} flex flex-col max-h-[calc(100vh-12rem)]`;
+  // Only the card list scrolls; the header stays pinned. flex-1 + min-h-0 lets
+  // it shrink within the column's max-height so overflow-y kicks in.
+  const listClass = "flex flex-col gap-2 p-2 flex-1 min-h-0 overflow-y-auto";
+  // An empty column keeps a tall drop target so a card can be dropped into it.
+  const emptyDropTarget = () => (
+    <div className="text-xs text-muted-foreground italic text-center py-4 min-h-[12rem]">
+      Empty
+    </div>
+  );
+
+  const columnSubtitle = (countLabel: string, demand?: DomainDemand[]) => (
+    <>
+      <div>{countLabel}</div>
+      {demand && demand.length > 0 && (
+        <div className="mt-1 flex flex-wrap gap-1">
+          {demand.map((d) => (
+            <span
+              key={d.domainId}
+              className="text-[10px] px-1.5 py-0.5 rounded-full border border-border bg-background text-muted-foreground"
+              title={`Expected ${d.slots} ${d.domainName} this term`}
+            >
+              {d.domainName} · {d.slots}
+            </span>
+          ))}
+        </div>
+      )}
+    </>
+  );
+
+  const columns: KanbanColumn<MemberCardModel>[] = [
+    {
+      id: UNASSIGNED,
+      title: "Unassigned",
+      subtitle: columnSubtitle(`${board[UNASSIGNED]?.length ?? 0} bidding`),
+      cards: board[UNASSIGNED] ?? [],
+      className: shell("muted"),
+      listClassName: listClass,
+      headerExtra: <span />,
+      renderEmpty: emptyDropTarget,
+    },
+    ...projects.map<KanbanColumn<MemberCardModel>>((p) => {
+      const tone = p.status === "Active" ? "active" : "dim";
+      // Roster cards first, then external-mentor cards pinned at the end.
+      const cards = [...(board[p.id] ?? []), ...(externalCardsByProject.get(p.id) ?? [])];
+      return {
+        id: p.id,
+        title: p.name,
+        subtitle: columnSubtitle(
+          `${board[p.id]?.length ?? 0} assigned`,
+          demandByProject[p.id],
+        ),
+        cards,
+        className: shell(tone),
+        listClassName: listClass,
+        renderEmpty: emptyDropTarget,
+        headerExtra: canManage ? (
+          <div className="flex-shrink-0 flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setExternalMentorProjectId(p.id)}
+              title={`Add external mentor to ${p.name}`}
+              aria-label={`Add external mentor to ${p.name}`}
+              className="text-muted-foreground hover:text-accent-teal transition-colors"
+            >
+              <UserPlus className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setFinalizeProjectId(p.id)}
+              title={`Finalize ${p.name}`}
+              aria-label={`Finalize ${p.name}`}
+              className="text-muted-foreground hover:text-accent-coral transition-colors"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+            </button>
+          </div>
+        ) : (
+          <span />
+        ),
+      };
+    }),
+  ];
+
   return (
     <div className="flex flex-col gap-3">
+      {canManage && <TermChannelBanner termId={termId} termCode={termCode} />}
+      {canManage && <SyncTeamsBanner termId={termId} termCode={termCode} />}
       <div className="flex items-center justify-end gap-3 flex-wrap">
+        {canManage && <AddMemberControl cycleId={cycleId} />}
+        <DomainFilter
+          domains={domains}
+          value={selectedDomainId}
+          onChange={(id) => {
+            setSearchParams(
+              (prev) => {
+                if (id) prev.set("domain", id);
+                else prev.delete("domain");
+                return prev;
+              },
+              { replace: true },
+            );
+          }}
+        />
         <div className="flex items-center gap-2">
           <label className="sr-only" htmlFor="staffing-term">
             Term
@@ -169,48 +544,71 @@ export function StaffingBoard({
         </div>
       </div>
 
-      {error && (
-        <div className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-md px-3 py-2">
-          {error}
-        </div>
-      )}
-
       {/* Stable id: with multiple DndContexts mounting (tabbed workspace
           iframe + other boards) the default useId differs between SSR and
           client, hydration-mismatches dnd-kit's internal ids, and drag never
-          activates. A fixed id keeps server/client deterministic. */}
-      <DndContext id="staffing-board" sensors={sensors} onDragEnd={handleDragEnd}>
-        {/* pt-1 keeps each column's top border off the scroll-clip edge so it
-            stays visible; px on the row prevents the first/last column border
-            being shaved by overflow-x. */}
-        <div className="flex gap-3 overflow-x-auto pt-1 pb-3 px-0.5">
-          <Column
-            id={UNASSIGNED}
-            title="Unassigned"
-            subtitle={`${board[UNASSIGNED]?.length ?? 0} bidding`}
-            tone="muted"
-            cards={board[UNASSIGNED] ?? []}
+          activates. A fixed id keeps server/client deterministic. The primitive
+          owns the DndContext, the SortableContext per column, the coral isOver
+          ring, and the DragOverlay; the staffing-specific optimistic state +
+          index math + SSE guard stay in this component. */}
+      <KanbanBoard<MemberCardModel>
+        id="staffing-board"
+        columns={columns}
+        getCardId={(c) => c.userId}
+        getCardData={(c) => ({ userId: c.userId, fromColumn: columnIdOf.get(c.userId) ?? UNASSIGNED })}
+        draggable={canManage}
+        sortable
+        onDragEnd={handleDragEnd}
+        error={error}
+        renderCard={(card, { isDragging, dragHandleProps }) => (
+          <MemberCard
+            card={card}
             projectNames={projectNames}
-            onOpenBid={setOpenBidUserId}
+            domainNames={domainNames}
+            onOpenBid={() => setOpenBidUserId(card.userId)}
+            // Remove (×): external-mentor cards remove their placement; roster
+            // cards only on the Unassigned column (the destructive board-member
+            // delete shouldn't surface from project columns).
+            onRemove={
+              card.isExternalMentor
+                ? canManage && card.externalMentorId
+                  ? () => void removeExternalMentor(card.externalMentorId!)
+                  : undefined
+                : canManage && columnIdOf.get(card.userId) === UNASSIGNED
+                  ? () => handleRemoveMember(card.userId)
+                  : undefined
+            }
             draggable={canManage}
+            dragHandleProps={dragHandleProps}
+            isDragging={isDragging}
+            mentorSlot={(() => {
+              // Mentor/mentee role badge, on project-column cards for managers.
+              // Default role follows level (P3 → mentor); the override flips it.
+              // External mentors are inherently mentors — no toggle.
+              if (!canManage || card.isExternalMentor) return undefined;
+              if (columnIdOf.get(card.userId) === UNASSIGNED) return undefined;
+              const defaultMentor = card.domainLevels.some((d) => d.level === "P3");
+              const isMentor = mentorRoles[card.userId] ?? defaultMentor;
+              return (
+                <RoleBadge
+                  isMentor={isMentor}
+                  onToggle={() => void toggleMentorRole(card.userId, !isMentor)}
+                />
+              );
+            })()}
           />
-          {projects.map((p) => (
-            <Column
-              key={p.id}
-              id={p.id}
-              title={p.name}
-              subtitle={`${board[p.id]?.length ?? 0} assigned`}
-              tone={p.status === "Active" ? "active" : "dim"}
-              cards={board[p.id] ?? []}
+        )}
+        renderOverlay={(activeId) => {
+          const card = activeId ? cardByUserId.get(activeId) ?? null : null;
+          return card ? (
+            <MemberCardPreview
+              card={card}
               projectNames={projectNames}
-              demand={demandByProject[p.id]}
-              onOpenBid={setOpenBidUserId}
-              draggable={canManage}
-              onFinalize={canManage ? () => setFinalizeProjectId(p.id) : undefined}
+              domainNames={domainNames}
             />
-          ))}
-        </div>
-      </DndContext>
+          ) : null;
+        }}
+      />
 
       {openBidMember && (
         <BidModal
@@ -232,108 +630,209 @@ export function StaffingBoard({
           cycleId={cycleId}
           projectId={finalizeProjectId}
           projectName={projectNames[finalizeProjectId] ?? "project"}
+          defaultSlackChannel={
+            projects.find((p) => p.id === finalizeProjectId)?.slackChannelName ??
+            sanitizeChannelName(projectNames[finalizeProjectId] ?? "")
+          }
+          defaultGithubSlug={
+            projects.find((p) => p.id === finalizeProjectId)?.githubTeamSlug ?? ""
+          }
+        />
+      )}
+
+      {externalMentorProjectId && (
+        <AddExternalMentorModal
+          open={true}
+          onClose={() => setExternalMentorProjectId(null)}
+          cycleId={cycleId}
+          projectId={externalMentorProjectId}
+          projectName={projectNames[externalMentorProjectId] ?? "project"}
+          domains={domains}
+          onAdded={() => loadExternalMentorsRef.current()}
         />
       )}
     </div>
   );
 }
 
-type ColumnTone = "muted" | "active" | "dim";
+// Full-width banner: get-or-create a term-wide Slack channel (e.g. #26x) and
+// invite all current-term Core + Admin/staff + everyone assigned to a project
+// this term. The channel name is editable, defaulting to the term code.
+function TermChannelBanner({ termId, termCode }: { termId: string; termCode: string }) {
+  const [channel, setChannel] = useState(sanitizeChannelName(termCode));
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
 
-function Column({
-  id,
-  title,
-  subtitle,
-  tone,
-  cards,
-  projectNames,
-  demand,
-  onOpenBid,
-  draggable,
-  onFinalize,
-}: {
-  id: string;
-  title: string;
-  subtitle: string;
-  tone: ColumnTone;
-  cards: MemberCardModel[];
-  projectNames: Record<string, string>;
-  // Per-domain expected headcount for this project this term. Absent for
-  // the Unassigned column and for projects with no ProjectRoleRequest rows;
-  // rendered as small chips under the assigned count.
-  demand?: DomainDemand[];
-  onOpenBid: (userId: string) => void;
-  draggable: boolean;
-  // Only set for project columns the user can manage; renders the finalize
-  // icon button in the header.
-  onFinalize?: () => void;
-}) {
-  const { isOver, setNodeRef } = useDroppable({ id });
-  const toneClasses: Record<ColumnTone, string> = {
-    muted: "border-border bg-muted/20",
-    active: "border-accent-teal/40 bg-accent-teal/[0.04]",
-    dim: "border-border bg-card",
-  };
+  // Keep the field in sync when the selected term changes.
+  useEffect(() => {
+    setChannel(sanitizeChannelName(termCode));
+    setResult(null);
+  }, [termCode]);
+
+  async function run() {
+    if (!channel.trim()) return;
+    setRunning(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/staffing/term-channel", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ termId, channel: channel.trim() }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { message?: string; error?: string };
+      if (!res.ok) {
+        setResult({ ok: false, message: json.error ?? `Failed: ${res.status}` });
+        return;
+      }
+      setResult({ ok: true, message: json.message ?? "Done." });
+    } catch (err) {
+      setResult({ ok: false, message: err instanceof Error ? err.message : "Network error" });
+    } finally {
+      setRunning(false);
+    }
+  }
 
   return (
-    <div
-      ref={setNodeRef}
-      className={`flex-shrink-0 w-64 border rounded-lg ${toneClasses[tone]} ${
-        isOver ? "ring-2 ring-accent-coral/40" : ""
-      } flex flex-col max-h-[calc(100vh-12rem)]`}
-    >
-      <div className="px-3 py-2 border-b border-border flex-shrink-0">
-        <div className="flex items-center gap-1.5">
-          <div className="text-sm font-semibold text-foreground truncate flex-1" title={title}>
-            {title}
-          </div>
-          {onFinalize && (
-            <button
-              type="button"
-              onClick={onFinalize}
-              title={`Finalize ${title}`}
-              aria-label={`Finalize ${title}`}
-              className="flex-shrink-0 text-muted-foreground hover:text-accent-coral transition-colors"
-            >
-              <CheckCircle2 className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-        <div className="text-[11px] text-muted-foreground">{subtitle}</div>
-        {demand && demand.length > 0 && (
-          <div className="mt-1 flex flex-wrap gap-1">
-            {demand.map((d) => (
-              <span
-                key={d.domainId}
-                className="text-[10px] px-1.5 py-0.5 rounded-full border border-border bg-background text-muted-foreground"
-                title={`Expected ${d.slots} ${d.domainName} this term`}
-              >
-                {d.domainName} · {d.slots}
-              </span>
-            ))}
-          </div>
+    <div className="w-full rounded-lg border border-accent-coral/30 bg-accent-coral/10 px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="min-w-0">
+        <p className="text-sm font-heading font-semibold text-foreground">
+          Term Slack channel{termCode ? ` for ${termCode}` : ""}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Get-or-create a channel and invite all Core, staff, and everyone assigned to a project
+          this term.
+        </p>
+        {result && (
+          <p className={`text-xs mt-1 ${result.ok ? "text-accent-teal" : "text-destructive"}`}>
+            {result.ok ? "✓ " : "✗ "}
+            {result.message}
+          </p>
         )}
       </div>
-      {/* Only the card list scrolls; the header above stays pinned. flex-1 +
-          min-h-0 lets it shrink within the column's max-height so overflow-y
-          kicks in instead of stretching the page. */}
-      <div className="flex flex-col gap-2 p-2 flex-1 min-h-0 overflow-y-auto">
-        {cards.length === 0 ? (
-          // min-h keeps an empty column a usable drop target.
-          <div className="text-xs text-muted-foreground italic text-center py-4 min-h-[12rem]">
-            Empty
-          </div>
+      <div className="flex items-center gap-2 flex-shrink-0">
+        <span className="text-sm text-muted-foreground">#</span>
+        <input
+          type="text"
+          value={channel}
+          disabled={running}
+          onChange={(e) => setChannel(e.target.value)}
+          placeholder="26x"
+          aria-label="Term channel name"
+          className="w-32 px-2 py-1 text-sm border border-border rounded-md bg-background text-foreground disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+        />
+        <Button
+          variant="primary"
+          size="sm"
+          disabled={running || !channel.trim()}
+          onClick={run}
+          className="whitespace-nowrap"
+        >
+          {running ? "Creating…" : "Create + invite"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// Full-width banner: add-only GitHub team sync for every project staffed this
+// term. Ensures each project's org team, adds its rostered members, and grants
+// the team push on its repos. Idempotent — safe to re-run. Two-click confirm
+// because it can send org invites in bulk.
+function SyncTeamsBanner({ termId, termCode }: { termId: string; termCode: string }) {
+  const [running, setRunning] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; message: string; warnings?: string[] } | null>(
+    null,
+  );
+
+  // Reset when the selected term changes.
+  useEffect(() => {
+    setResult(null);
+    setConfirming(false);
+  }, [termCode]);
+
+  async function run() {
+    setRunning(true);
+    setResult(null);
+    setConfirming(false);
+    try {
+      const res = await fetch("/api/staffing/sync-teams", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ termId }),
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        message?: string;
+        error?: string;
+        warnings?: string[];
+      };
+      if (!res.ok) {
+        setResult({ ok: false, message: json.error ?? `Failed: ${res.status}` });
+        return;
+      }
+      setResult({ ok: json.ok ?? true, message: json.message ?? "Done.", warnings: json.warnings });
+    } catch (err) {
+      setResult({ ok: false, message: err instanceof Error ? err.message : "Network error" });
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <div className="w-full rounded-lg border border-accent-coral/30 bg-accent-coral/10 px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="min-w-0">
+        <p className="text-sm font-heading font-semibold text-foreground">
+          Sync GitHub teams{termCode ? ` for ${termCode}` : ""}
+        </p>
+        <p className="text-xs text-muted-foreground break-words">
+          For every project staffed this term: ensure its org team, add rostered members, and grant
+          the team push on its repos. Add-only — never removes anyone. Safe to re-run.
+        </p>
+        {result && (
+          <>
+            <p className={`text-xs mt-1 break-words ${result.ok ? "text-accent-teal" : "text-destructive"}`}>
+              {result.ok ? "✓ " : "✗ "}
+              {result.message}
+            </p>
+            {result.warnings?.length ? (
+              <ul className="text-xs text-muted-foreground mt-1 list-disc pl-4 max-h-32 overflow-auto break-words">
+                {result.warnings.map((w, i) => (
+                  <li key={i}>{w}</li>
+                ))}
+              </ul>
+            ) : null}
+          </>
+        )}
+      </div>
+      <div className="flex items-center gap-2 flex-shrink-0">
+        {confirming ? (
+          <>
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={running}
+              onClick={run}
+              className="whitespace-nowrap"
+            >
+              {running ? "Syncing…" : "Confirm sync"}
+            </Button>
+            <Button variant="ghost" size="sm" disabled={running} onClick={() => setConfirming(false)}>
+              Cancel
+            </Button>
+          </>
         ) : (
-          cards.map((card) => (
-            <MemberCard
-              key={card.userId}
-              card={card}
-              columnId={id}
-              projectNames={projectNames}
-              onOpenBid={() => onOpenBid(card.userId)}
-              draggable={draggable}
-            />
-          ))
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={running}
+            onClick={() => setConfirming(true)}
+            className="whitespace-nowrap"
+          >
+            Sync all current-term teams
+          </Button>
         )}
       </div>
     </div>
@@ -357,4 +856,48 @@ async function persist(args: {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
     throw new Error(body.error ?? `Request failed: ${res.status}`);
   }
+}
+
+async function persistOrder(args: {
+  cycleId: string;
+  columnKey: string;
+  userIds: string[];
+}): Promise<void> {
+  const res = await fetch("/api/staffing/reorder", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(args),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `Reorder failed: ${res.status}`);
+  }
+}
+
+// The column a userId currently sits in, per the built board, or null.
+function findColumnOf(
+  board: Record<string, MemberCardModel[]>,
+  userId: string,
+): string | null {
+  for (const [columnKey, cards] of Object.entries(board)) {
+    if (cards.some((c) => c.userId === userId)) return columnKey;
+  }
+  return null;
+}
+
+// Replace the order rows for one column with `userIds` (in their new order),
+// preserving every other column's rows. The moved user's any prior-column row
+// is dropped so a stale entry can't linger.
+function mergeColumnOrder(
+  prev: { userId: string; columnKey: string; sortKey: number }[],
+  columnKey: string,
+  userIds: string[],
+  movedUserId: string,
+): { userId: string; columnKey: string; sortKey: number }[] {
+  const kept = prev.filter(
+    (o) => o.columnKey !== columnKey && o.userId !== movedUserId,
+  );
+  const fresh = userIds.map((userId, sortKey) => ({ userId, columnKey, sortKey }));
+  return [...kept, ...fresh];
 }

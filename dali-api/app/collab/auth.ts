@@ -16,6 +16,6 @@ export async function verifyCollabToken(rawSessionId: string): Promise<{ sub: st
     throw new Error("Session expired");
   }
   // Every successful collab handshake counts as activity for rolling expiry.
-  rollSession(session.id).catch(() => {});
+  rollSession(session).catch(() => {});
   return { sub: session.userId };
 }

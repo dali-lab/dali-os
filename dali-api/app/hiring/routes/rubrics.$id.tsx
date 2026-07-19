@@ -1,8 +1,7 @@
 import { redirect } from 'react-router'
 import type { Route } from './+types/rubrics.$id'
 import { prisma } from '~/lib/db'
-import { requireAuth } from "~/lib/auth";
-import { isCore, isDomainLead, isAdmin } from '~/lib/roles'
+import { requireCoreOrDomainLead } from "~/lib/auth";
 import { RubricDetail } from '~/hiring/components/RubricDetail'
 
 export const meta: Route.MetaFunction = ({ data }) => {
@@ -10,10 +9,24 @@ export const meta: Route.MetaFunction = ({ data }) => {
   return [{ title: `${name || 'Rubric'} · DALI OS` }]
 }
 
+export const handle = {
+  // The Library owns rubrics (list at /hiring/library?tab=rubrics); the bare
+  // /hiring/rubrics prefix has no page, so declare the trail back to it.
+  breadcrumbTrail: (data: unknown) => {
+    const name = (data as { rubric?: { name: string } } | undefined)?.rubric
+      ?.name;
+    if (!name) return null;
+    return [
+      { label: "Hiring", to: "/hiring" },
+      { label: "Rubrics", to: "/hiring/library?tab=rubrics" },
+      { label: name },
+    ];
+  },
+}
+
 export async function loader({ request, params }: Route.LoaderArgs) {
-  const auth = await requireAuth(request)
-  if (!auth.ok) return redirect('/login')
-  if (!(await isCore(auth.user.sub)) && !(await isDomainLead(auth.user.sub)) && !(await isAdmin(auth.user.sub))) return redirect('/')
+  const gate = await requireCoreOrDomainLead(request)
+  if (!gate.ok) return gate.response
 
   const rubric = await prisma.rubric.findUniqueOrThrow({
     where: { id: params.id },
@@ -29,9 +42,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
-  const auth = await requireAuth(request)
-  if (!auth.ok) return redirect('/login')
-  if (!(await isCore(auth.user.sub)) && !(await isDomainLead(auth.user.sub)) && !(await isAdmin(auth.user.sub))) return redirect('/')
+  const gate = await requireCoreOrDomainLead(request)
+  if (!gate.ok) return gate.response
+  const auth = gate.auth
 
   const user = await prisma.user.findUnique({ where: { id: auth.user.sub } })
   if (!user) return redirect('/login')

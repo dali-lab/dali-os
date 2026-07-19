@@ -1,10 +1,15 @@
-// GET /admin/authorize-gmail
-// Initiates the one-time OAuth flow to authorize the applications@ Gmail account.
-// Must be visited while logged in as an admin.
-// After Google redirects back, /admin/authorize-gmail/callback stores the refresh token.
+// GET /admin/authorize-gmail?purpose=Hiring|Education|Partners|General
+// Initiates the one-time OAuth flow to authorize a Gmail send-as identity
+// for the given purpose (default Hiring — the historical applications@
+// integration). Must be visited while logged in as Core.
+// After Google redirects back, /admin/authorize-gmail/callback stores the
+// refresh token on the purpose's GmailIntegration row.
 
 import { requireAuth } from "~/lib/auth";
 import { isCore } from '~/lib/roles'
+import { getApiBaseUrl, APPLICATIONS_FROM_EMAIL } from '~/lib/app-env'
+import { buildGoogleAuthUrl } from '~/lib/google-oauth'
+import { isEmailPurpose, type EmailPurposeKey } from '~/lib/email-identities'
 import { randomBytes } from 'node:crypto'
 
 const GMAIL_STATE_COOKIE = '__dali_gmail_oauth_state'
@@ -14,7 +19,7 @@ const SCOPES = [
   'https://www.googleapis.com/auth/calendar',
   'openid',
   'email',
-].join(' ')
+]
 
 export async function loader({ request }: { request: Request }) {
   const auth = await requireAuth(request)
@@ -26,19 +31,26 @@ export async function loader({ request }: { request: Request }) {
     return new Response(null, { status: 302, headers: { Location: '/' } })
   }
 
-  const apiBase = process.env.API_BASE_URL ?? 'http://localhost:3001'
+  const url = new URL(request.url)
+  const purposeParam = url.searchParams.get('purpose') ?? 'Hiring'
+  const purpose: EmailPurposeKey = isEmailPurpose(purposeParam) ? purposeParam : 'Hiring'
+
+  const apiBase = getApiBaseUrl()
   const clientId = process.env.GMAIL_CLIENT_ID ?? process.env.GOOGLE_CLIENT_ID!
 
-  const state = randomBytes(16).toString('hex')
-  const params = new URLSearchParams({
-    client_id: clientId,
-    redirect_uri: `${apiBase}/admin/authorize-gmail/callback`,
-    response_type: 'code',
-    scope: SCOPES,
-    access_type: 'offline',
-    prompt: 'consent',
+  // The purpose rides the state (nonce.purpose) so the callback knows which
+  // integration row to write; the cookie pins the whole value for CSRF.
+  const state = `${randomBytes(16).toString('hex')}.${purpose}`
+  const authUrl = buildGoogleAuthUrl({
+    clientId,
+    redirectUri: `${apiBase}/admin/authorize-gmail/callback`,
+    scopes: SCOPES,
     state,
-    login_hint: 'applications@dali.dartmouth.edu',
+    accessType: 'offline',
+    prompt: 'consent',
+    // Only the Hiring identity has a fixed, known mailbox. Other purposes
+    // land on Google's account chooser.
+    loginHint: purpose === 'Hiring' ? APPLICATIONS_FROM_EMAIL : undefined,
   })
 
   const stateCookie = `${GMAIL_STATE_COOKIE}=${state}; Path=/admin/authorize-gmail; Max-Age=600; HttpOnly; SameSite=Lax`
@@ -47,7 +59,7 @@ export async function loader({ request }: { request: Request }) {
       status: 302,
       headers: {
         'Set-Cookie': stateCookie,
-        Location: `https://accounts.google.com/o/oauth2/v2/auth?${params}`,
+        Location: authUrl,
       },
     })
 }

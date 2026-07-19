@@ -3,9 +3,10 @@
 import { useState } from "react";
 import { Check, Copy } from "lucide-react";
 import type { Route } from "./+types/help.mcp";
+import { getApiBaseUrl } from "~/lib/app-env";
 
 export async function loader() {
-  const base = process.env.API_BASE_URL ?? "https://os.dali.dartmouth.edu";
+  const base = getApiBaseUrl();
   return { mcpUrl: `${base}/mcp` };
 }
 
@@ -40,9 +41,9 @@ function CopyBlock({ content }: { content: string }) {
 export default function McpHelpPage({ loaderData }: Route.ComponentProps) {
   const { mcpUrl } = loaderData;
   return (
-    <main className="mx-auto max-w-3xl p-8">
+    <main className="max-w-3xl">
       <h1 className="text-2xl font-semibold">Connect AI to DALI OS</h1>
-      <p className="mt-2 text-sm text-zinc-600">
+      <p className="mt-2 text-sm text-muted-foreground">
         DALI OS exposes an MCP server so AI assistants can read your DALI data
         on your behalf.
       </p>
@@ -50,7 +51,7 @@ export default function McpHelpPage({ loaderData }: Route.ComponentProps) {
       <section className="mt-6">
         <h2 className="text-lg font-semibold">Claude Code</h2>
         <CopyBlock content={`claude mcp add --transport http dalios ${mcpUrl}`} />
-        <p className="mt-2 text-sm text-zinc-600">
+        <p className="mt-2 text-sm text-muted-foreground">
           Claude Code will open a browser to authorize you and then keep the
           bearer in its credential store.
         </p>
@@ -63,7 +64,7 @@ export default function McpHelpPage({ loaderData }: Route.ComponentProps) {
 
       <section className="mt-6">
         <h2 className="text-lg font-semibold">Claude Desktop</h2>
-        <p className="mt-2 text-sm text-zinc-600">
+        <p className="mt-2 text-sm text-muted-foreground">
           Add this entry to your Claude Desktop config (<code>claude_desktop_config.json</code>)
           and restart the app:
         </p>
@@ -80,7 +81,7 @@ export default function McpHelpPage({ loaderData }: Route.ComponentProps) {
 
       <section className="mt-6">
         <h2 className="text-lg font-semibold">Other clients</h2>
-        <p className="mt-2 text-sm text-zinc-600">
+        <p className="mt-2 text-sm text-muted-foreground">
           Any MCP-compatible client that speaks Streamable HTTP can use{" "}
           <code className="font-mono">{mcpUrl}</code> as the endpoint. The
           OAuth metadata document is at{" "}
@@ -90,12 +91,12 @@ export default function McpHelpPage({ loaderData }: Route.ComponentProps) {
 
       <section className="mt-6">
         <h2 className="text-lg font-semibold">What can an assistant do?</h2>
-        <p className="mt-2 text-sm text-zinc-600">
+        <p className="mt-2 text-sm text-muted-foreground">
           DALI OS currently exposes these tools over MCP. Read tools need only{" "}
           <code className="font-mono">mcp:read</code>; write tools need{" "}
           <code className="font-mono">mcp:write</code>.
         </p>
-        <ul className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-sm text-zinc-700 list-disc pl-5">
+        <ul className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-sm text-foreground list-disc pl-5">
           <li><code className="font-mono">whoami</code> — identity + role tier</li>
           <li><code className="font-mono">search_directory</code> — find a member</li>
           <li><code className="font-mono">get_member_profile</code> — single member</li>
@@ -103,6 +104,8 @@ export default function McpHelpPage({ loaderData }: Route.ComponentProps) {
           <li><code className="font-mono">list_my_notifications</code> — inbox</li>
           <li><code className="font-mono">mark_notification_read</code> — clear one</li>
           <li><code className="font-mono">rsvp_to_notification</code> — accept/decline an invite</li>
+          <li><code className="font-mono">list_notification_preferences</code> — your channel settings</li>
+          <li><code className="font-mono">set_notification_preference</code> — change one event's channels</li>
           <li><code className="font-mono">list_my_upcoming_meetings</code> — next N days</li>
           <li><code className="font-mono">list_my_calendar_links</code> — Google calendars</li>
           <li><code className="font-mono">find_mutual_freebusy</code> — group availability</li>
@@ -112,40 +115,59 @@ export default function McpHelpPage({ loaderData }: Route.ComponentProps) {
           <li><code className="font-mono">get_project_overview</code> — project detail</li>
           <li><code className="font-mono">list_my_tasks</code> — your project tasks</li>
           <li><code className="font-mono">update_task_status</code> — move a task</li>
+          <li><code className="font-mono">create_task</code> / <code className="font-mono">update_task</code> / <code className="font-mono">delete_task</code> — Core-only</li>
+          <li><code className="font-mono">add_task_comment</code> — comment on a task (assignees + Core)</li>
+          <li><code className="font-mono">set_task_checklist</code> — subtasks (assignees + Core)</li>
+          <li><code className="font-mono">list_sprints</code> — sprints on a project</li>
+          <li><code className="font-mono">create_sprint</code> / <code className="font-mono">update_sprint</code> / <code className="font-mono">delete_sprint</code> — Core-only</li>
+          <li><code className="font-mono">set_sprint_status</code> — Planned / Active / Closed</li>
+          <li><code className="font-mono">list_epics</code> — epics + their user stories</li>
+          <li><code className="font-mono">create_epic</code> / <code className="font-mono">update_epic</code> / <code className="font-mono">delete_epic</code> — Core-only</li>
+          <li><code className="font-mono">create_story</code> / <code className="font-mono">update_story</code> / <code className="font-mono">delete_story</code> — Core-only</li>
+          <li><code className="font-mono">list_project_pages</code> — workspace page tree</li>
+          <li><code className="font-mono">read_page</code> — page body as Markdown</li>
+          <li><code className="font-mono">create_page</code> — new free-form page (Core-only)</li>
+          <li><code className="font-mono">list_project_files</code> — uploaded files (current version)</li>
+          <li><code className="font-mono">link_task_to_github</code> / <code className="font-mono">unlink_task_from_github</code> — Core-only</li>
         </ul>
       </section>
 
       <section className="mt-6">
         <h2 className="text-lg font-semibold">Resources (auto-attachable context)</h2>
-        <p className="mt-2 text-sm text-zinc-600">
+        <p className="mt-2 text-sm text-muted-foreground">
           Clients can attach these as <em>resources</em>, separate from tool calls.
           Some clients (Claude Desktop) let you pin them so they ride along on every message.
         </p>
-        <ul className="mt-3 text-sm text-zinc-700 list-disc pl-5">
+        <ul className="mt-3 text-sm text-foreground list-disc pl-5">
           <li><code className="font-mono">dali://me</code> — your profile, roles, domain eligibilities</li>
           <li><code className="font-mono">dali://announcements/active</code> — your unread lab announcements (markdown)</li>
           <li><code className="font-mono">dali://forms/pending</code> — published forms you've been asked to fill</li>
+          <li><code className="font-mono">dali://projects/{"{projectId}"}/board</code> — full sprint board for a project</li>
+          <li><code className="font-mono">dali://projects/{"{projectId}"}/backlog</code> — unscheduled tasks for a project</li>
         </ul>
       </section>
 
       <section className="mt-6">
         <h2 className="text-lg font-semibold">Prompts (templated workflows)</h2>
-        <p className="mt-2 text-sm text-zinc-600">
+        <p className="mt-2 text-sm text-muted-foreground">
           These appear as commands in the client (e.g. <code className="font-mono">/dali:weekly-digest</code> in
           Claude Code). The model carries them out by calling the MCP tools above.
         </p>
-        <ul className="mt-3 text-sm text-zinc-700 list-disc pl-5">
+        <ul className="mt-3 text-sm text-foreground list-disc pl-5">
           <li><code className="font-mono">weekly-digest</code> — focus, meetings, inbox, suggested next action</li>
           <li><code className="font-mono">meeting-prep</code> — agenda + talking points for an upcoming meeting</li>
           <li><code className="font-mono">project-status</code> — status report draft for a project you're on</li>
+          <li><code className="font-mono">sprint-planning</code> — draft a candidate next sprint for a project</li>
+          <li><code className="font-mono">standup</code> — short standup summary from the current board</li>
+          <li><code className="font-mono">retro</code> — retrospective notes for a recent sprint</li>
         </ul>
       </section>
 
       <section className="mt-6">
         <h2 className="text-lg font-semibold">Managing connections</h2>
-        <p className="mt-2 text-sm text-zinc-600">
+        <p className="mt-2 text-sm text-muted-foreground">
           Visit{" "}
-          <a className="text-blue-700 underline" href="/settings/connected-apps">
+          <a className="text-accent-teal hover:underline" href="/settings/connected-apps">
             Settings → Connected apps
           </a>{" "}
           to review or revoke an authorization at any time.

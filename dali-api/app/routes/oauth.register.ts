@@ -4,8 +4,10 @@
 // so the spec requires a registration endpoint they can POST to. We accept
 // the minimal request shape, but the resulting OAuthClient row is locked to
 // the MCP-only policy: google-only IDP, member-only accountType, membership
-// required, mcp:read/mcp:write scopes, loopback redirects only. None of the
-// client-supplied policy fields are honored — only redirect_uris + client_name.
+// required, mcp:read/mcp:write scopes. Redirect URIs are limited to http
+// loopback (Claude Code / Desktop-local) or an https callback on an allowed
+// Claude host (claude.ai web / mobile). None of the client-supplied policy
+// fields are honored — only redirect_uris + client_name.
 
 import type { Route } from "./+types/oauth.register";
 import { prisma } from "~/lib/db";
@@ -49,6 +51,38 @@ function isLoopbackRedirect(uri: string): boolean {
   return true;
 }
 
+// Claude's hosted MCP surfaces (claude.ai web, mobile, desktop connectors)
+// register a fixed https callback rather than a loopback URI — the loopback
+// model only fits locally-run clients (Claude Code / Desktop-local). Accept an
+// https redirect whose host is an Anthropic-controlled registrable domain, or a
+// subdomain of one. Overridable via MCP_ALLOWED_REDIRECT_HOSTS (comma-separated)
+// so a new Claude surface host can be allowed without a redeploy.
+const DEFAULT_TRUSTED_REDIRECT_HOSTS = ["claude.ai", "claude.com"];
+
+function trustedRedirectHosts(): string[] {
+  const raw = process.env.MCP_ALLOWED_REDIRECT_HOSTS;
+  if (!raw) return DEFAULT_TRUSTED_REDIRECT_HOSTS;
+  const hosts = raw
+    .split(",")
+    .map((h) => h.trim().toLowerCase())
+    .filter(Boolean);
+  return hosts.length ? hosts : DEFAULT_TRUSTED_REDIRECT_HOSTS;
+}
+
+function isTrustedHttpsRedirect(uri: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(uri);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "https:") return false;
+  const host = parsed.hostname.toLowerCase();
+  return trustedRedirectHosts().some(
+    (allowed) => host === allowed || host.endsWith(`.${allowed}`),
+  );
+}
+
 export async function action({ request }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
   if (preflight) return preflight;
@@ -76,17 +110,24 @@ export async function action({ request }: Route.ActionArgs) {
   }
   const redirectUris: string[] = [];
   for (const uri of body.redirect_uris) {
-    if (typeof uri !== "string" || !isLoopbackRedirect(uri)) {
+    if (
+      typeof uri !== "string" ||
+      !(isLoopbackRedirect(uri) || isTrustedHttpsRedirect(uri))
+    ) {
       return withCors(
         request,
         badRequest(
           "invalid_redirect_uri",
-          "redirect_uris must be http loopback (127.0.0.1 or localhost)",
+          "redirect_uris must be http loopback (127.0.0.1 or localhost) or an https callback on an allowed Claude host",
         ),
       );
     }
     redirectUris.push(uri);
   }
+
+  // Loopback clients get RFC 8252 port-agnostic matching at authorize time;
+  // hosted-https clients (Claude's web/mobile surfaces) get exact-match only.
+  const isLoopback = redirectUris.every(isLoopbackRedirect);
 
   // token_endpoint_auth_method: only "none" (public client) is supported.
   const authMethod = body.token_endpoint_auth_method ?? "none";
@@ -150,7 +191,7 @@ export async function action({ request }: Route.ActionArgs) {
       clientId: "pending",
       name: clientName,
       redirectUris,
-      isLoopback: true,
+      isLoopback,
       isFirstParty: false,
       allowedScopes: ALLOWED_SCOPES,
       allowedProviders: ["google"],

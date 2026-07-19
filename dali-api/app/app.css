@@ -1,6 +1,10 @@
-@import url("https://fonts.googleapis.com/css2?family=Dosis:wght@600;700&family=Open+Sans:wght@300;400;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
-
+/* Fonts load via a <link> in root.tsx — an @import here would be discovered
+   only after the bundled CSS downloads, serializing the font fetch behind it. */
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+/* Class-based dark mode (html.dark) so settings can override system preference. */
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
   /* ── DALI brand colors (exact hex, per official style guide §3.1) ── */
@@ -103,9 +107,8 @@
   --font-mono: "JetBrains Mono", "Fira Code", "Monaco", monospace;
 }
 
-/* Dark mode overrides */
-@media (prefers-color-scheme: dark) {
-  :root {
+/* Dark mode overrides — toggled via html.dark (see lib/theme.ts + settings Appearance). */
+html.dark {
     --color-background: hsl(215 35% 10%);
     --color-foreground: hsl(210 20% 95%);
     --color-card: hsl(215 32% 15%);
@@ -155,7 +158,6 @@
     --color-sidebar-accent-foreground: hsl(210 15% 85%);
     --color-sidebar-border: hsl(215 25% 20%);
     --color-sidebar-ring: #00ADAB;
-  }
 
   /* Remap light status colors to dark-friendly equivalents */
 
@@ -334,6 +336,19 @@ h1, h2, h3, h4, h5, h6 {
   letter-spacing: -0.005em;
 }
 
+/* Tailwind v4's preflight no longer sets a pointer cursor on buttons. Restore
+   it for every clickable control (native buttons, role=button, custom
+   selects/summaries) so the affordance reads as clickable — an accessibility
+   expectation (guide §12). Disabled controls keep the default arrow. */
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+[role="tab"]:not([aria-disabled="true"]),
+label[for],
+summary,
+select:not(:disabled) {
+  cursor: pointer;
+}
+
 .font-heading {
   font-family: var(--font-heading);
 }
@@ -348,6 +363,18 @@ h1, h2, h3, h4, h5, h6 {
 
 .text-balance {
   text-wrap: balance;
+}
+
+/* Brief pulse on a mention node when you arrive from a "you were mentioned"
+   notification (see CollaborativeEditor's focusMentionUserId). */
+@keyframes mention-flash {
+  0%   { box-shadow: 0 0 0 0 rgba(255, 139, 129, 0); }
+  25%  { box-shadow: 0 0 0 3px rgba(255, 139, 129, 0.55); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 139, 129, 0); }
+}
+.mention-flash {
+  border-radius: 4px;
+  animation: mention-flash 1.6s ease-out 2;
 }
 
 /* Brand elevation utilities (paired with neutral surfaces, guide §3.2/§6) */

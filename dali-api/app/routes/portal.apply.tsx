@@ -8,20 +8,18 @@ import { getApplicationsGmailRefreshToken } from "~/lib/gmail-integration";
 import { renderForSlot, notificationSlot } from "~/hiring/lib/email-variables";
 import { getActiveCycle } from "~/hiring/lib/cycles";
 import { reconcileDomainApplications } from "~/hiring/lib/domain-application";
-import { checkGitHubUrl, checkFigmaUrl, checkDriveUrl } from "~/hiring/lib/submission-check";
-import type { SubmissionCheckResult } from "~/hiring/lib/submission-check";
+import { checkGitHubUrl, checkFigmaUrl, checkDriveUrl } from "~/lib/submission-check";
+import type { SubmissionCheckResult } from "~/lib/submission-check";
 import { validateWordLimits } from "~/lib/word-count";
 import type { WordCountViolation } from "~/lib/word-count";
-import { isSkillsRatingComplete } from "~/hiring/lib/skills-rating";
+import { isAnswered } from "~/lib/form-answers";
 import type { Question } from "~/types";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 import { Modal } from "~/components/Modal";
 import { QuestionList } from "~/hiring/components/ApplicationAnswers";
 import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
-import {
-  ChallengeQuestionField,
-  type UrlCheckState,
-} from "~/hiring/components/ChallengeQuestionField";
+import { type UrlCheckState } from "~/components/form-builder/QuestionField";
+import { FormField } from "~/forms/components/FormField";
 
 export const meta: Route.MetaFunction = () => [{ title: "Apply · DALI OS" }];
 
@@ -477,9 +475,9 @@ export async function action({ request }: Route.ActionArgs) {
       }
     }
 
-    // Signal first-time submission so the portal can play a one-shot confetti.
+    // Signal first-time submission so the tracker can play a one-shot confetti.
     // Subsequent edit-saves keep the plain redirect so the animation does not replay.
-    return redirect(existingSubmitted ? "/portal" : "/portal?just-submitted=1");
+    return redirect(existingSubmitted ? "/portal/hiring" : "/portal/hiring?just-submitted=1");
   }
 
   return { error: "Unknown intent" };
@@ -510,13 +508,6 @@ type Section = {
   requiredCount: number;
   answeredRequiredCount: number;
 };
-
-function isAnswered(value: string | undefined, question?: Question) {
-  if (question?.type === "skills_rating") {
-    return isSkillsRatingComplete(value, question.data.options ?? []);
-  }
-  return typeof value === "string" && value.trim() !== "";
-}
 
 type DomainShape = {
   id: string;
@@ -1365,30 +1356,28 @@ export default function PortalApply() {
                 </div>
               )}
               {beforeQuestions.map(q => (
-                <div key={q.key} id={`question-${q.key}`}>
-                  <label className="block text-sm font-semibold text-dark-blue mb-1">
-                    {q.data.label}
-                    {q.required && <span className="text-accent-coral ml-0.5">*</span>}
-                  </label>
-                  {q.data.description && (
-                    <p className="text-xs text-muted-foreground mb-1">{q.data.description}</p>
-                  )}
-                  <ChallengeQuestionField
-                    question={q}
-                    value={answers[q.key] ?? ""}
-                    onChange={v => setAnswer(q.key, v)}
-                    urlCheckState={urlChecks[q.key]}
-                    onUrlBlur={() => checkUrlField(q.key, answers[q.key] ?? "", q.type as "github_url" | "figma_url" | "drive_url")}
-                  />
-                  {urlWarnings[q.key] && (
-                    <p className="text-xs text-amber-600 mt-1">{urlWarnings[q.key]}</p>
-                  )}
-                  {wordCountErrors[q.key] && (
-                    <p className="text-xs text-red-500 mt-1">
-                      Over the {wordCountErrors[q.key].maxWords}-word limit ({wordCountErrors[q.key].wordCount} words).
-                    </p>
-                  )}
-                </div>
+                <FormField
+                  key={q.key}
+                  id={`question-${q.key}`}
+                  question={q}
+                  labelClassName="font-semibold"
+                  value={answers[q.key] ?? ""}
+                  onChange={v => setAnswer(q.key, v)}
+                  urlCheckState={urlChecks[q.key]}
+                  onUrlBlur={() => checkUrlField(q.key, answers[q.key] ?? "", q.type as "github_url" | "figma_url" | "drive_url")}
+                  belowField={
+                    <>
+                      {urlWarnings[q.key] && (
+                        <p className="text-xs text-amber-600 mt-1">{urlWarnings[q.key]}</p>
+                      )}
+                      {wordCountErrors[q.key] && (
+                        <p className="text-xs text-red-500 mt-1">
+                          Over the {wordCountErrors[q.key].maxWords}-word limit ({wordCountErrors[q.key].wordCount} words).
+                        </p>
+                      )}
+                    </>
+                  }
+                />
               ))}
             </div>
           ) : null;
@@ -1460,30 +1449,28 @@ export default function PortalApply() {
                     ) : null;
                   })()}
                   {pickedQuestions.map((q: Question) => (
-                    <div key={q.key} id={`question-${q.key}`}>
-                      <label className="block text-sm font-semibold text-dark-blue mb-1">
-                        {q.data.label}
-                        {q.required && <span className="text-accent-coral ml-0.5">*</span>}
-                      </label>
-                      {q.data.description && (
-                        <p className="text-xs text-muted-foreground mb-1">{q.data.description}</p>
-                      )}
-                      <ChallengeQuestionField
-                        question={q}
-                        value={domainAnswers[domainId]?.[q.key] ?? ""}
-                        onChange={v => setDomainAnswer(domainId, q.key, v)}
-                        urlCheckState={urlChecks[q.key]}
-                        onUrlBlur={() => checkUrlField(q.key, domainAnswers[domainId]?.[q.key] ?? "", q.type as "github_url" | "figma_url" | "drive_url")}
-                      />
-                      {urlWarnings[q.key] && (
-                        <p className="text-xs text-amber-600 mt-1">{urlWarnings[q.key]}</p>
-                      )}
-                      {wordCountErrors[q.key] && (
-                        <p className="text-xs text-red-500 mt-1">
-                          Over the {wordCountErrors[q.key].maxWords}-word limit ({wordCountErrors[q.key].wordCount} words).
-                        </p>
-                      )}
-                    </div>
+                    <FormField
+                      key={q.key}
+                      id={`question-${q.key}`}
+                      question={q}
+                      labelClassName="font-semibold"
+                      value={domainAnswers[domainId]?.[q.key] ?? ""}
+                      onChange={v => setDomainAnswer(domainId, q.key, v)}
+                      urlCheckState={urlChecks[q.key]}
+                      onUrlBlur={() => checkUrlField(q.key, domainAnswers[domainId]?.[q.key] ?? "", q.type as "github_url" | "figma_url" | "drive_url")}
+                      belowField={
+                        <>
+                          {urlWarnings[q.key] && (
+                            <p className="text-xs text-amber-600 mt-1">{urlWarnings[q.key]}</p>
+                          )}
+                          {wordCountErrors[q.key] && (
+                            <p className="text-xs text-red-500 mt-1">
+                              Over the {wordCountErrors[q.key].maxWords}-word limit ({wordCountErrors[q.key].wordCount} words).
+                            </p>
+                          )}
+                        </>
+                      }
+                    />
                   ))}
                 </>
               ) : (
@@ -1502,25 +1489,21 @@ export default function PortalApply() {
             <div id="section-general-after" className="rounded-2xl bg-brand-tint px-6 py-5 space-y-6 scroll-mt-24">
               <h3 className="font-heading text-sm font-bold text-dark-blue uppercase tracking-wider">Anything Else</h3>
               {afterQuestions.map(q => (
-                <div key={q.key} id={`question-${q.key}`}>
-                  <label className="block text-sm font-semibold text-dark-blue mb-1">
-                    {q.data.label}
-                    {q.required && <span className="text-accent-coral ml-0.5">*</span>}
-                  </label>
-                  {q.data.description && (
-                    <p className="text-xs text-muted-foreground mb-1">{q.data.description}</p>
-                  )}
-                  <ChallengeQuestionField
-                    question={q}
-                    value={answers[q.key] ?? ""}
-                    onChange={v => setAnswer(q.key, v)}
-                  />
-                  {wordCountErrors[q.key] && (
-                    <p className="text-xs text-red-500 mt-1">
-                      Over the {wordCountErrors[q.key].maxWords}-word limit ({wordCountErrors[q.key].wordCount} words).
-                    </p>
-                  )}
-                </div>
+                <FormField
+                  key={q.key}
+                  id={`question-${q.key}`}
+                  question={q}
+                  labelClassName="font-semibold"
+                  value={answers[q.key] ?? ""}
+                  onChange={v => setAnswer(q.key, v)}
+                  belowField={
+                    wordCountErrors[q.key] ? (
+                      <p className="text-xs text-red-500 mt-1">
+                        Over the {wordCountErrors[q.key].maxWords}-word limit ({wordCountErrors[q.key].wordCount} words).
+                      </p>
+                    ) : null
+                  }
+                />
               ))}
             </div>
           ) : null;

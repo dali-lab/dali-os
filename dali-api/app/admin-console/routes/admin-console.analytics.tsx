@@ -1,12 +1,16 @@
 import { Link, redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/admin-console.analytics";
+import { adminPills } from "~/admin-console/adminPills";
+import { AreaPillNav } from "~/components/AreaPillNav";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
 import { BarChart3, AlertTriangle } from "lucide-react";
 
+export const handle = { areaPills: true };
+
 export const meta: Route.MetaFunction = () => [
-  { title: "Analytics · Operations · DALI OS" },
+  { title: "Analytics · Admin · DALI OS" },
 ];
 
 // Slim usage + crash dashboard for a mandated internal tool. We don't track
@@ -224,6 +228,7 @@ export default function AdminConsoleAnalytics() {
 
   return (
     <div className="space-y-6">
+      <AreaPillNav items={adminPills({ isAdmin: true, active: "analytics" })} />
       <div className="flex items-center gap-3">
         <BarChart3 className="w-6 h-6 text-foreground/80" />
         <h1 className="text-2xl font-bold text-foreground">Site analytics</h1>

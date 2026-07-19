@@ -1,5 +1,7 @@
 import { prisma } from "~/lib/db";
 import { linkCasToGoogleUser } from "~/lib/linking";
+import { DARTMOUTH_EMAIL_DOMAIN } from "~/lib/app-env";
+import { assignHandleIfMissing } from "~/lib/handle";
 
 // Shared user-provisioning helpers used by /auth/callback/{google,cas} and
 // /oauth/callback/{google,cas}.
@@ -63,6 +65,8 @@ export async function upsertUserFromGoogle(
     create: { userId: user.id },
   });
 
+  await assignHandleIfMissing(user.id);
+
   return { user, authType: "member" };
 }
 
@@ -88,7 +92,7 @@ export async function upsertUserFromCas(
     return { user };
   }
 
-  const dartmouthEmail = `${cas.netId}@dartmouth.edu`;
+  const dartmouthEmail = `${cas.netId}@${DARTMOUTH_EMAIL_DOMAIN}`;
   const user = await prisma.user.upsert({
     where: { netId: cas.netId },
     update: {
@@ -103,5 +107,6 @@ export async function upsertUserFromCas(
       dartmouthEmail,
     },
   });
+  await assignHandleIfMissing(user.id);
   return { user };
 }

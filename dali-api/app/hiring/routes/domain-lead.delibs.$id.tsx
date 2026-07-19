@@ -1,12 +1,14 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { redirect, useLoaderData, useNavigate, useRevalidator } from "react-router";
 import type { Route } from "./+types/domain-lead.delibs.$id";
+import type { DragEndEvent } from "@dnd-kit/core";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { parseSessionCookie } from "~/lib/cookies";
 import { isDomainLead } from "~/lib/roles";
 import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
-import { GripVertical, X, Check } from "lucide-react";
+import { GripVertical } from "lucide-react";
+import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
 import { INITIAL_COLUMNS, FINAL_COLUMNS, buildColumnOrder } from "~/hiring/lib/delibs";
 import { inReviewPipelineFilter } from "~/hiring/lib/application-pipeline-filter";
 import { ApplicantContextModal } from "~/hiring/components/delibs/ApplicantContextModal";
@@ -24,6 +26,12 @@ const RECOMMENDATION_COLORS: Record<string, string> = {
 export const meta: Route.MetaFunction = ({ data }) => {
   const domain = (data as any)?.session?.domain?.name;
   return [{ title: `${domain ? `${domain} ` : ""}delibs · DALI OS` }];
+};
+
+export const handle = {
+  breadcrumb: (data: unknown) =>
+    (data as { session?: { domain?: { name?: string } } } | undefined)?.session
+      ?.domain?.name,
 };
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -171,16 +179,16 @@ export default function DelibsKanban() {
 
   const [columnOrder, setColumnOrder] =
     useState<Record<string, string[]>>(initialOrder);
+  // The card currently being dragged, or null. Drives the
+  // revalidate/poll-adoption guard below. Set on @dnd-kit drag start, cleared on
+  // end/cancel. (@dnd-kit's activation-distance sensor also removes the stray
+  // post-drag click the old native-HTML5 `wasDragging` ref had to suppress.)
   const [dragItem, setDragItem] = useState<string | null>(null);
-  const [dragOverCol, setDragOverCol] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [closing, setClosing] = useState(false);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const [selectedDomainApplicationId, setSelectedDomainApplicationId] =
     useState<string | null>(null);
-  // HTML5 drag-and-drop fires a stray `click` after `dragend` on some browsers;
-  // suppress the modal-open click that immediately follows a drag.
-  const wasDragging = useRef(false);
 
   // Resync local columnOrder from the loader after a revalidation, so concurrent
   // moves by other leads (or newly qualifying apps) show up without a reload.
@@ -199,6 +207,17 @@ export default function DelibsKanban() {
     // depending on its JSON form keeps the effect tied to actual data changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(initialOrder)]);
+
+  // cardId → its current column, so each draggable card can carry its origin
+  // column in `data.fromColumn` (the drag handler reads it to skip same-column
+  // drops).
+  const columnIdOf = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const [col, ids] of Object.entries(columnOrder)) {
+      for (const id of ids) map.set(id, col);
+    }
+    return map;
+  }, [columnOrder]);
 
   // Poll the loader every 5s while the session is active so other leads' moves
   // and newly qualifying applications surface without a manual refresh.
@@ -236,36 +255,31 @@ export default function DelibsKanban() {
     [session.id, columns, defaultColumn]
   );
 
-  function handleDragStart(id: string) {
-    setDragItem(id);
-    wasDragging.current = true;
-  }
+  function handleDragEnd(event: DragEndEvent) {
+    setDragItem(null);
+    if (isClosed) return;
+    const overId = event.over?.id;
+    if (!overId || typeof overId !== "string") return;
+    const data = event.active.data.current as
+      | { cardId?: string; fromColumn?: string }
+      | undefined;
+    const cardId = data?.cardId;
+    const fromColumn = data?.fromColumn;
+    if (!cardId) return;
+    const targetCol = overId;
+    if (targetCol === fromColumn) return;
 
-  function handleDragOver(e: React.DragEvent, col: string) {
-    e.preventDefault();
-    setDragOverCol(col);
-  }
-
-  function handleDrop(targetCol: string) {
-    if (!dragItem) return;
-
-    const cardId = dragItem;
     const newOrder = { ...columnOrder };
-    // Optimistic local update
+    // Optimistic local update: drop the card from every column, append to the
+    // target. (Cross-column only — no within-column reorder, matching the old
+    // native-drag behavior.)
     for (const col of columns) {
-      newOrder[col] = newOrder[col].filter((id) => id !== cardId);
+      newOrder[col] = (newOrder[col] ?? []).filter((id) => id !== cardId);
     }
     newOrder[targetCol] = [...(newOrder[targetCol] ?? []), cardId];
 
     setColumnOrder(newOrder);
-    setDragItem(null);
-    setDragOverCol(null);
     sendMove(cardId, targetCol);
-  }
-
-  function handleDragEnd() {
-    setDragItem(null);
-    setDragOverCol(null);
   }
 
   async function handleClose() {
@@ -284,6 +298,9 @@ export default function DelibsKanban() {
 
   const isClosed = session.status === "Closed";
 
+  // Per-column color theming is real product intent — kept verbatim. (The drop
+  // ring itself is now the shared coral ring from KanbanBoard, not the old
+  // blue-400 ring; flagged for QA.)
   const COLUMN_STYLES: Record<string, { bg: string; border: string; header: string; badge: string }> = {
     "No Decision": { bg: "bg-muted/50", border: "border-border", header: "text-foreground/80", badge: "bg-card text-muted-foreground border-border" },
     Interview: { bg: "bg-blue-50/50", border: "border-blue-200", header: "text-blue-800", badge: "bg-card text-blue-700 border-blue-200" },
@@ -291,6 +308,40 @@ export default function DelibsKanban() {
     Waitlist: { bg: "bg-yellow-50/50", border: "border-yellow-200", header: "text-yellow-800", badge: "bg-card text-yellow-700 border-yellow-200" },
     Reject: { bg: "bg-red-50/50", border: "border-red-200", header: "text-red-800", badge: "bg-card text-red-700 border-red-200" },
   };
+
+  const kanbanColumns: KanbanColumn<DomainApp>[] = useMemo(
+    () =>
+      columns.map((col) => {
+        const style = COLUMN_STYLES[col] ?? COLUMN_STYLES["No Decision"];
+        const items = (columnOrder[col] ?? [])
+          .map((id) => appMap.get(id))
+          .filter((da): da is DomainApp => !!da);
+        return {
+          id: col,
+          title: <span className={`font-bold ${style.header}`}>{col}</span>,
+          cards: items,
+          className: `rounded-xl border ${style.border} ${style.bg} p-4 min-h-[400px] transition-all flex flex-col`,
+          headerClassName: "flex items-center justify-between border-b border-current/20 pb-2 mb-3",
+          listClassName: "space-y-2",
+          headerExtra: (
+            <span
+              className={`px-2 py-0.5 rounded-full text-xs font-bold border shadow-sm ${style.badge}`}
+            >
+              {items.length}
+            </span>
+          ),
+          renderEmpty: () => (
+            <div className="py-8 text-center border-2 border-dashed border-gray-300 rounded-lg bg-card/50">
+              <p className="text-sm text-muted-foreground/70 italic">Empty</p>
+            </div>
+          ),
+        };
+      }),
+    // appMap + COLUMN_STYLES are rebuilt every render; columnOrder/columns drive
+    // the actual content.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [columns, columnOrder, domainApplications],
+  );
 
   return (
     <div className="space-y-6">
@@ -369,185 +420,214 @@ export default function DelibsKanban() {
         />
       )}
 
-      {/* Kanban Board */}
-      <div className={`grid gap-4`} style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))` }}>
-        {columns.map((col) => {
-          const style = COLUMN_STYLES[col] ?? COLUMN_STYLES["No Decision"];
-          const items = columnOrder[col] ?? [];
+      {/* Kanban Board. Migrated from native HTML5 drag to @dnd-kit via the
+          shared KanbanBoard primitive: keyboard drag now works, the stray
+          post-drag click is gone (activation-distance sensor), and the drop
+          ring is the shared coral instead of the old blue-400. Per-column
+          color theming is preserved through each column's className. */}
+      <KanbanBoard<DomainApp>
+        id={`delibs-board-${session.id}`}
+        layout="grid"
+        columns={kanbanColumns}
+        getCardId={(da) => da.id}
+        getCardData={(da) => ({ cardId: da.id, fromColumn: columnIdOf.get(da.id) ?? defaultColumn })}
+        draggable={!isClosed}
+        onDragStart={(event) => setDragItem(String(event.active.id))}
+        onDragEnd={handleDragEnd}
+        onDragCancel={() => setDragItem(null)}
+        renderCard={(da, { isDragging, dragHandleProps }) => (
+          <DelibsCard
+            da={da}
+            isClosed={isClosed}
+            isDragging={isDragging}
+            dragHandleProps={dragHandleProps}
+            onOpen={() => setSelectedDomainApplicationId(da.id)}
+          />
+        )}
+        // A floating copy of the dragged card, portaled above the grid. Without
+        // this, the in-flow card can clip under an adjacent grid column (the OS
+        // drag image the old native-HTML5 drag used floated above everything).
+        renderOverlay={(activeId) => {
+          const da = activeId ? appMap.get(activeId) ?? null : null;
+          return da ? (
+            <DelibsCard
+              da={da}
+              isClosed={false}
+              isDragging={false}
+              dragHandleProps={{}}
+              onOpen={() => {}}
+              overlay
+            />
+          ) : null;
+        }}
+      />
+    </div>
+  );
+}
 
+// One applicant card on the delibs board. The whole card is the drag handle
+// (the @dnd-kit activation-distance sensor lets a press that doesn't move land
+// as a click that opens the applicant modal).
+function DelibsCard({
+  da,
+  isClosed,
+  isDragging,
+  dragHandleProps,
+  onOpen,
+  overlay = false,
+}: {
+  da: DomainApp;
+  isClosed: boolean;
+  isDragging: boolean;
+  dragHandleProps: Record<string, unknown>;
+  onOpen: () => void;
+  /** Rendered inside the DragOverlay — a static floating copy with a shadow. */
+  overlay?: boolean;
+}) {
+  const reviewCount = da.reviews.length;
+  const submittedCount = da.reviews.filter((r: any) => r.submittedAt).length;
+  const avgScore =
+    da.reviews.length > 0
+      ? da.reviews.reduce((sum: number, r: any) => {
+          const scores = r.scores as Record<string, number>;
+          const vals = Object.values(scores);
           return (
-            <div
-              key={col}
-              className={`rounded-xl border ${style.border} ${style.bg} p-4 min-h-[400px] transition-all ${
-                dragOverCol === col ? "ring-2 ring-blue-400" : ""
-              }`}
-              onDragOver={(e) => handleDragOver(e, col)}
-              onDrop={() => handleDrop(col)}
-              onDragLeave={() => setDragOverCol(null)}
-            >
-              <div className="flex items-center justify-between border-b pb-2 mb-3" style={{ borderColor: "inherit" }}>
-                <h3 className={`font-bold ${style.header}`}>{col}</h3>
-                <span
-                  className={`px-2 py-0.5 rounded-full text-xs font-bold border shadow-sm ${style.badge}`}
-                >
-                  {items.length}
-                </span>
-              </div>
-
-              <div className="space-y-2">
-                {items.map((id) => {
-                  const da = appMap.get(id);
-                  if (!da) return null;
-
-                  const reviewCount = da.reviews.length;
-                  const submittedCount = da.reviews.filter(
-                    (r: any) => r.submittedAt
-                  ).length;
-                  const avgScore = da.reviews.length > 0
-                    ? da.reviews.reduce((sum: number, r: any) => {
-                        const scores = r.scores as Record<string, number>;
-                        const vals = Object.values(scores);
-                        return sum + (vals.length > 0 ? vals.reduce((a: number, b: number) => a + b, 0) / vals.length : 0);
-                      }, 0) / da.reviews.length
-                    : null;
-
-                  return (
-                    <div
-                      key={id}
-                      draggable={!isClosed}
-                      onDragStart={() => handleDragStart(id)}
-                      onDragEnd={handleDragEnd}
-                      onClick={() => {
-                        if (wasDragging.current) {
-                          wasDragging.current = false;
-                          return;
-                        }
-                        setSelectedDomainApplicationId(id);
-                      }}
-                      className={`bg-card p-3 rounded-lg border border-border shadow-sm transition-all ${
-                        isClosed
-                          ? "cursor-pointer"
-                          : "cursor-grab hover:shadow-md active:cursor-grabbing"
-                      } ${dragItem === id ? "opacity-50" : ""}`}
-                    >
-                      <div className="flex items-start gap-2">
-                        {!isClosed && (
-                          <GripVertical className="w-4 h-4 text-muted-foreground/50 mt-0.5 flex-shrink-0" />
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <h4 className="font-bold text-foreground text-sm truncate">
-                            {da.application.user.firstName}{" "}
-                            {da.application.user.lastName}
-                          </h4>
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className="text-xs text-muted-foreground">
-                              {submittedCount}/{reviewCount} reviews
-                            </span>
-                            {avgScore !== null && (
-                              <span className="text-xs font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">
-                                avg {avgScore.toFixed(1)}
-                              </span>
-                            )}
-                          </div>
-                          {(() => {
-                            const fmt = (u: any) =>
-                              u ? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() : "";
-                            const recPill = (rec: string, key: string) => (
-                              <span
-                                key={key}
-                                className={`inline-block text-[10px] font-medium px-1.5 py-0.5 rounded border ${
-                                  RECOMMENDATION_COLORS[rec] ?? "border-border bg-muted/50 text-muted-foreground"
-                                }`}
-                              >
-                                {rec}
-                              </span>
-                            );
-                            // Reviewer recommendations: one per submitted review.
-                            const reviewerNames = Array.from(
-                              new Set(
-                                (da.reviews ?? [])
-                                  .map((r: any) => fmt(r.cycleReviewer?.user))
-                                  .filter(Boolean),
-                              ),
-                            );
-                            const reviewerRecs = (da.reviews ?? [])
-                              .filter((r: any) => r.overallRecommendation)
-                              .map((r: any) => ({ id: r.id, rec: r.overallRecommendation as string }));
-                            // Interviewer recommendation: the joint interview rec.
-                            const interviewerNames = Array.from(
-                              new Set(
-                                (da.interviews ?? [])
-                                  .flatMap((iv: any) => iv.assignments ?? [])
-                                  .map((a: any) => fmt(a.cycleInterviewer?.user))
-                                  .filter(Boolean),
-                              ),
-                            );
-                            const interviewRecs = (da.interviews ?? [])
-                              .filter((iv: any) => iv.recommendation)
-                              .map((iv: any) => ({ id: iv.id, rec: iv.recommendation as string }));
-
-                            const hasReviewers = reviewerNames.length > 0 || reviewerRecs.length > 0;
-                            const hasInterviewers = interviewerNames.length > 0 || interviewRecs.length > 0;
-                            if (!hasReviewers && !hasInterviewers) return null;
-
-                            return (
-                              <div className="mt-2 pt-2 border-t border-border space-y-2">
-                                {hasReviewers && (
-                                  <div>
-                                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-                                      Reviewers
-                                    </p>
-                                    {reviewerNames.length > 0 && (
-                                      <p className="text-[10px] text-muted-foreground">
-                                        {reviewerNames.join(", ")}
-                                      </p>
-                                    )}
-                                    {reviewerRecs.length > 0 && (
-                                      <div className="flex flex-wrap gap-1 mt-1">
-                                        {reviewerRecs.map((r: { id: string; rec: string }) => recPill(r.rec, r.id))}
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-                                {hasInterviewers && (
-                                  <div>
-                                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
-                                      Interviewers
-                                    </p>
-                                    {interviewerNames.length > 0 && (
-                                      <p className="text-[10px] text-muted-foreground">
-                                        {interviewerNames.join(", ")}
-                                      </p>
-                                    )}
-                                    {interviewRecs.length > 0 ? (
-                                      <div className="flex flex-wrap gap-1 mt-1">
-                                        {interviewRecs.map((r: { id: string; rec: string }) => recPill(r.rec, r.id))}
-                                      </div>
-                                    ) : (
-                                      <p className="text-[10px] text-muted-foreground/60 italic mt-0.5">
-                                        No interview recommendation yet.
-                                      </p>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })()}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-
-                {items.length === 0 && (
-                  <div className="py-8 text-center border-2 border-dashed border-gray-300 rounded-lg bg-card/50">
-                    <p className="text-sm text-muted-foreground/70 italic">Empty</p>
-                  </div>
-                )}
-              </div>
-            </div>
+            sum +
+            (vals.length > 0
+              ? vals.reduce((a: number, b: number) => a + b, 0) / vals.length
+              : 0)
           );
-        })}
+        }, 0) / da.reviews.length
+      : null;
+
+  const fmt = (u: any) =>
+    u ? `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() : "";
+  const recPill = (rec: string, key: string) => (
+    <span
+      key={key}
+      className={`inline-block text-[10px] font-medium px-1.5 py-0.5 rounded border ${
+        RECOMMENDATION_COLORS[rec] ?? "border-border bg-muted/50 text-muted-foreground"
+      }`}
+    >
+      {rec}
+    </span>
+  );
+  // Reviewer recommendations: one per submitted review.
+  const reviewerNames = Array.from(
+    new Set(
+      (da.reviews ?? [])
+        .map((r: any) => fmt(r.cycleReviewer?.user))
+        .filter(Boolean),
+    ),
+  );
+  const reviewerRecs = (da.reviews ?? [])
+    .filter((r: any) => r.overallRecommendation)
+    .map((r: any) => ({ id: r.id, rec: r.overallRecommendation as string }));
+  // Interviewer recommendation: the joint interview rec.
+  const interviewerNames = Array.from(
+    new Set(
+      (da.interviews ?? [])
+        .flatMap((iv: any) => iv.assignments ?? [])
+        .map((a: any) => fmt(a.cycleInterviewer?.user))
+        .filter(Boolean),
+    ),
+  );
+  const interviewRecs = (da.interviews ?? [])
+    .filter((iv: any) => iv.recommendation)
+    .map((iv: any) => ({ id: iv.id, rec: iv.recommendation as string }));
+
+  const hasReviewers = reviewerNames.length > 0 || reviewerRecs.length > 0;
+  const hasInterviewers = interviewerNames.length > 0 || interviewRecs.length > 0;
+
+  return (
+    <div
+      {...(overlay || isClosed ? {} : dragHandleProps)}
+      onClick={overlay ? undefined : onOpen}
+      role={overlay ? undefined : "button"}
+      tabIndex={overlay ? undefined : 0}
+      onKeyDown={
+        overlay
+          ? undefined
+          : (e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                onOpen();
+              }
+            }
+      }
+      className={`bg-card p-3 rounded-lg border border-border transition-all ${
+        overlay
+          ? "shadow-lg cursor-grabbing"
+          : isClosed
+            ? "shadow-sm cursor-pointer"
+            : "shadow-sm cursor-grab hover:shadow-md active:cursor-grabbing"
+      } ${isDragging ? "opacity-50" : ""}`}
+    >
+      <div className="flex items-start gap-2">
+        {!isClosed && (
+          <GripVertical className="w-4 h-4 text-muted-foreground/50 mt-0.5 flex-shrink-0" />
+        )}
+        <div className="flex-1 min-w-0">
+          <h4 className="font-bold text-foreground text-sm truncate">
+            {da.application.user.firstName} {da.application.user.lastName}
+          </h4>
+          <div className="flex items-center gap-2 mt-1">
+            <span className="text-xs text-muted-foreground">
+              {submittedCount}/{reviewCount} reviews
+            </span>
+            {avgScore !== null && (
+              <span className="text-xs font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">
+                avg {avgScore.toFixed(1)}
+              </span>
+            )}
+          </div>
+          {(hasReviewers || hasInterviewers) && (
+            <div className="mt-2 pt-2 border-t border-border space-y-2">
+              {hasReviewers && (
+                <div>
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                    Reviewers
+                  </p>
+                  {reviewerNames.length > 0 && (
+                    <p className="text-[10px] text-muted-foreground">
+                      {reviewerNames.join(", ")}
+                    </p>
+                  )}
+                  {reviewerRecs.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {reviewerRecs.map((r: { id: string; rec: string }) =>
+                        recPill(r.rec, r.id),
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+              {hasInterviewers && (
+                <div>
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                    Interviewers
+                  </p>
+                  {interviewerNames.length > 0 && (
+                    <p className="text-[10px] text-muted-foreground">
+                      {interviewerNames.join(", ")}
+                    </p>
+                  )}
+                  {interviewRecs.length > 0 ? (
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {interviewRecs.map((r: { id: string; rec: string }) =>
+                        recPill(r.rec, r.id),
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-[10px] text-muted-foreground/60 italic mt-0.5">
+                      No interview recommendation yet.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

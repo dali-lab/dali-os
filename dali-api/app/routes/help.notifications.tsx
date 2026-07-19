@@ -7,25 +7,25 @@ export const meta: Route.MetaFunction = () => [
 
 export default function HelpNotificationsPage() {
   return (
-    <main className="mx-auto max-w-3xl p-8">
+    <main className="max-w-3xl">
       <h1 className="text-2xl font-semibold">Notifications</h1>
-      <p className="mt-2 text-sm text-zinc-600">
+      <p className="mt-2 text-sm text-muted-foreground">
         DALI OS tells you about things that need your attention in two
         places: the Tasks group in the sidebar and your Home inbox.
       </p>
 
       <section className="mt-6">
         <h2 className="text-lg font-semibold">Tasks vs. notifications</h2>
-        <p className="mt-2 text-sm text-zinc-700">
+        <p className="mt-2 text-sm text-foreground">
           A <em>task</em> is something we want you to act on: an interview
           to confirm, a form to fill, a meeting invite to RSVP to. Tasks show
           up in the sidebar with a count badge and stay there until they're
           resolved.
         </p>
-        <p className="mt-2 text-sm text-zinc-700">
+        <p className="mt-2 text-sm text-foreground">
           A regular notification is just a heads-up — a project update, a
           system announcement, a meeting reminder. These collect on{" "}
-          <Link to="/" className="text-blue-700 underline">
+          <Link to="/" className="text-accent-teal hover:underline">
             Home
           </Link>{" "}
           and mark themselves read when you've seen them.
@@ -34,7 +34,7 @@ export default function HelpNotificationsPage() {
 
       <section className="mt-6">
         <h2 className="text-lg font-semibold">Meeting invites</h2>
-        <p className="mt-2 text-sm text-zinc-700">
+        <p className="mt-2 text-sm text-foreground">
           When someone schedules a meeting with you (directly or through an
           AI assistant via MCP) you get an invite notification with{" "}
           <em>Accept</em>, <em>Decline</em>, and <em>Tentative</em> buttons.
@@ -46,7 +46,7 @@ export default function HelpNotificationsPage() {
 
       <section className="mt-6">
         <h2 className="text-lg font-semibold">Reminders</h2>
-        <p className="mt-2 text-sm text-zinc-700">
+        <p className="mt-2 text-sm text-foreground">
           For meetings and time-sensitive tasks, DALI OS sends a reminder
           ahead of the deadline. Reminders disappear from the Tasks group
           automatically once the underlying assignment is no longer active
@@ -56,13 +56,23 @@ export default function HelpNotificationsPage() {
       </section>
 
       <section className="mt-6">
-        <h2 className="text-lg font-semibold">Email</h2>
-        <p className="mt-2 text-sm text-zinc-700">
-          Important notifications — interview invites, meeting invites,
-          application decisions — also email you at your DALI address.
-          Per-event email opt-outs are coming with the notifications
-          preferences settings; until then, everything is in-app first
-          and email when it's something you might miss otherwise.
+        <h2 className="text-lg font-semibold">Channels &amp; preferences</h2>
+        <p className="mt-2 text-sm text-foreground">
+          Every notification can reach you three ways: in-app (the bell and
+          Home inbox), email, and a Slack DM from the DALI OS bot. Email can
+          arrive instantly per notification, or batched into a daily or
+          weekly digest of what you haven&apos;t read (send times are shown
+          on the settings page).
+        </p>
+        <p className="mt-2 text-sm text-foreground">
+          Tune all of this per event type in{" "}
+          <Link to="/settings/notifications" className="text-blue-700 underline">
+            Settings → Notifications
+          </Link>
+          . Action items (meeting invites, assigned interviews, forms to
+          fill) always stay in-app; a few flows — like education application
+          decisions — send their own dedicated emails regardless of these
+          settings.
         </p>
       </section>
     </main>

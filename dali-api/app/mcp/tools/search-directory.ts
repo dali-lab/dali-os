@@ -3,7 +3,7 @@
 // names, and current-term role titles. Requires the `mcp:read` scope.
 
 import { prisma } from "~/lib/db";
-import { currentTerm } from "~/lib/roles";
+import { currentTerm, isAdminViaEnv } from "~/lib/roles";
 
 export const SEARCH_DIRECTORY_TOOL = {
   name: "search_directory",
@@ -104,8 +104,8 @@ export async function runSearchDirectory(input: Input): Promise<{ results: Direc
   });
 
   const results: DirectoryRow[] = users.map((u) => {
-    const isAdminUser = u.adminMembership !== null;
-    const isCoreUser = u.coreAssignments.length > 0;
+    const isAdminUser = u.adminMembership !== null || isAdminViaEnv(u.id);
+    const isCoreUser = isAdminUser || u.coreAssignments.length > 0;
     const isDomainLeadUser = u.domainLeadAssignmentsAsUser.length > 0;
     const tier: DirectoryRow["tier"] = isAdminUser
       ? "admin"

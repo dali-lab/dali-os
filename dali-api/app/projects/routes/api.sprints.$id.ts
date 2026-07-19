@@ -1,7 +1,6 @@
 import type { Route } from "./+types/api.sprints.$id";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
-import { isCore } from "~/lib/roles";
+import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 
 // POST   /api/sprints/:id — edit. Body: { name?, startsAt?, endsAt?, status?, epicId? }
@@ -40,24 +39,19 @@ export async function action({ request, params }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
   if (preflight) return preflight;
 
-  const auth = await requireAuth(request);
-  if (!auth.ok) return withCors(request, auth.response);
-
   if (request.method !== "POST" && request.method !== "DELETE") {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
-  if (!(await isCore(auth.user.sub))) {
-    return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
-  }
-
   const sprintId = params.id!;
   const sprint = await prisma.sprint.findUnique({
     where: { id: sprintId },
-    select: { id: true, startsAt: true, endsAt: true },
+    select: { id: true, startsAt: true, endsAt: true, projectId: true },
   });
   if (!sprint) {
     return withCors(request, Response.json({ error: "Sprint not found" }, { status: 404 }));
   }
+  const gate = await requireProjectEditAccess(request, sprint.projectId);
+  if (!gate.ok) return gate.response;
 
   if (request.method === "DELETE") {
     await prisma.$transaction([

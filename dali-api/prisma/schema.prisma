@@ -45,30 +45,32 @@ model User {
   // ─── Profile fields (Phase 1 additions; all nullable) ─────────────────────
   // Dartmouth class year (e.g., 2026). Solves the "took a term off"
   // ambiguity. Used for alumni derivation + display.
-  classYear    Int?
+  classYear      Int?
   // Optional explicit graduation override for off-cycle graduations.
-  graduatedAt  DateTime?
-  pronouns     String?
-  photoUrl     String?
+  graduatedAt    DateTime?
+  pronouns       String?
+  photoUrl       String?
   // Bio stored as a collab doc reference for rich formatting + @mentions.
-  bioDocId     String?
-  major        String?
-  hometown     String?
-  linkedinUrl  String?
-  githubUrl    String?
-  // Bare GitHub login (e.g. "octocat"), distinct from githubUrl (a display
-  // link). Used to add the member to their project's GitHub team during
-  // staffing finalize. Editable in member details; nullable — a member with no
+  bioDocId       String?
+  major          String?
+  hometown       String?
+  linkedinUrl    String?
+  // Bare GitHub login (e.g. "octocat"). Used to add the member to their
+  // project's GitHub team during staffing finalize, and to derive a profile
+  // link in the UI. Editable in member details; nullable — a member with no
   // username is silently skipped (and reported) by that automation.
   githubUsername String?
-  personalSite String?
+  personalSite   String?
+  // Short public handle for @-mentions (e.g. "spark" for Sophie Park). Seeded
+  // from first-initial + last-name (lowercased), auto-suffixed on collision,
+  // and editable in profile. Nullable + unique like the other identity handles;
+  // a user with no handle simply can't be @-mentioned until they set one.
+  handle         String?   @unique
 
   // ─── Onboarding profile fields (collected on the New Member Profile form) ──
   // Name as it appears on file with the College, when different from the
   // first/last above (e.g. a legal name). Optional — blank means "same".
   nameOnFile          String?
-  // The student's college ID number (the number on their ID card), not a FK.
-  collegeId           String?
   phoneNumber         String?
   birthday            DateTime?
   // Free-text demographic; collected optionally (includes a "Prefer not to
@@ -99,6 +101,8 @@ model User {
   availabilitySettings UserAvailabilitySettings?
   workingHoursDays     WorkingHoursDay[]
   manualBlocks         ManualBlock[]
+  meetingAttendances   MeetingAttendance[]
+  timeEntries          TimeEntry[]
 
   // ─── Phase 1: foundational role-model back-relations ──────────────────────
   domainEligibilities     DomainEligibility[]
@@ -108,6 +112,8 @@ model User {
   adminMembership         AdminMembership?
   mentorshipPairsAsMentee MentorshipPair[]       @relation("MenteePairs")
   mentorshipPairsAsMentor MentorshipPair[]       @relation("MentorPairs")
+  staffingMentorRoles     StaffingMentorRole[]
+  externalMentorPlacements ExternalMentor[]
 
   // ─── Phase 1: project workspace back-relations ────────────────────────────
   createdTasks               Task[]               @relation("TaskCreatedBy")
@@ -120,6 +126,8 @@ model User {
   essentialityFormsAsPm EssentialityForm[]         @relation("EssentialityFormPm")
   essentialityRatings   EssentialityRating[]
   staffingAssignments   StaffingAssignment[]
+  staffingBoardMembers  StaffingBoardMember[]
+  staffingCardOrders    StaffingCardOrder[]
   intentToWork          IntentToWork[]
   formsCreated          Form[]
   formFolders           FormFolder[]
@@ -132,6 +140,16 @@ model User {
   educationSubmissions   EducationSubmission[]   @relation("EducationSubmissionStudent")
   educationAnnouncements EducationAnnouncement[] @relation("EducationAnnouncementAuthor")
 
+  // ─── Education LMS expansion back-relations ───────────────────────────────
+  educationDiscussionPosts    EducationDiscussionPost[] @relation("EducationDiscussionAuthor")
+  educationNoteFeedbackAuthor EducationStudentNote[]    @relation("EduNoteFeedbackAuthor")
+  educationNoteInternalAuthor EducationStudentNote[]    @relation("EduNoteInternalAuthor")
+  ceCredits                   CECredit[]                @relation("CECreditUser")
+  ceCreditsGranted            CECredit[]                @relation("CECreditGrantor")
+  educationCertificatesIssued EducationCertificate[]    @relation("EducationCertificateIssuer")
+  educationFormBindingsSet    EducationFormBinding[]    @relation("EducationFormBindingUpdater")
+  educationOfferingsClosedOut EducationOffering[]       @relation("EducationOfferingClosedOutBy")
+
   // ─── Phase 1: mentorship back-relations ───────────────────────────────────
   mentorNotesAsMentor MentorNote[] @relation("MentorNoteMentor")
   mentorNotesAsMentee MentorNote[] @relation("MentorNoteMentee")
@@ -141,18 +159,20 @@ model User {
   lastEditedPages Page[] @relation("PageLastEditedBy")
 
   // ─── Phase 1: notification back-relations ─────────────────────────────────
-  notificationEvents      NotificationEvent[]
   notificationPreferences NotificationPreference[]
+  taskReminders           TaskReminder[]
+  scheduledAnnouncements  ScheduledAnnouncement[]
 
   // ─── Phase 1: partner back-relation (single per User) ─────────────────────
   partnerUser PartnerUser?
 
   // ─── Phase 1: OAuth / magic-link back-relations ───────────────────────────
-  oauthGrants   OAuthGrant[]
-  oneTimeTokens OneTimeToken[]
+  oauthGrants    OAuthGrant[]
+  oneTimeTokens  OneTimeToken[]
+  devicePairings DevicePairing[]
 
   // ─── Phase 1: Gmail integration (single per User) ─────────────────────────
-  gmailIntegration      GmailIntegration?
+  gmailIntegrations     GmailIntegration[]
   // ─── Notification relations ────────────────────────────────────────────────
   receivedNotifications Notification[]    @relation("NotificationRecipient")
   authoredNotifications Notification[]    @relation("NotificationAuthor")
@@ -171,6 +191,14 @@ model User {
   // ─── Documents & files ───────────────────────────────────────────────────
   projectFileVersionsUploaded ProjectFileVersion[] @relation("ProjectFileVersionUploader")
   docComments                 DocComment[]         @relation("DocCommentAuthor")
+
+  // ─── Page documentation (per-page guides) ─────────────────────────────────
+  pageDocsMaintained  PageDoc[] @relation("PageDocMaintainer")
+  pageDocsCreated     PageDoc[] @relation("PageDocCreatedBy")
+  pageDocsLastEdited  PageDoc[] @relation("PageDocLastEditedBy")
+
+  // ─── Payroll: Reconcile back-relation ─────────────────────────────────────
+  timesheetImports TimesheetImport[]
 }
 
 // A DALI lab member. userId is optional because a member may be known (e.g. via daliEmail)
@@ -282,6 +310,9 @@ model ApplicationStatusUpdate {
   application   Application       @relation(fields: [applicationId], references: [id])
   userId        String
   user          User              @relation(fields: [userId], references: [id])
+
+  // Status resolution fetches the latest update per application.
+  @@index([applicationId, createdAt])
 }
 
 model Application {
@@ -319,6 +350,8 @@ model Application {
   notificationSends  CycleNotificationSend[]
 
   @@unique([userId, applicationCycleId])
+  // By-cycle listings can't use the unique above (wrong leading column).
+  @@index([applicationCycleId])
 }
 
 enum ApplicationType {
@@ -394,6 +427,10 @@ model DomainApplication {
   interviews Interview[]
   reviews    ApplicationReview[]
   decisions  Decision[]
+
+  @@index([applicationId])
+  @@index([domainId])
+  @@index([challengeVersionId])
 }
 
 model Challenge {
@@ -441,6 +478,7 @@ model Domain {
   eligibilities             DomainEligibility[]
   projectAssignments        ProjectAssignment[]
   mentorshipPairs           MentorshipPair[]
+  externalMentors           ExternalMentor[]
   tasks                     Task[]
   projectRoleRequests       ProjectRoleRequest[]
   partnerApplicationDomains PartnerApplicationDomain[]
@@ -491,6 +529,11 @@ model ApplicationCycleStatusUpdate {
   applicationCycle   ApplicationCycle       @relation(fields: [applicationCycleId], references: [id])
   userId             String? // null = system-generated (e.g. auto-close at closeDate)
   user               User?                  @relation(fields: [userId], references: [id])
+
+  // getActiveCycle runs on every shell navigation: latest update with an
+  // active status, plus the latest update per cycle.
+  @@index([newStatus, createdAt])
+  @@index([applicationCycleId, createdAt])
 }
 
 // Indicates that a domain is hiring during a given application cycle
@@ -646,10 +689,29 @@ model Interview {
   // new ICS as a duplicate of the previous publish.
   icsSequence Int @default(0)
 
-  assignments InterviewAssignment[]
+  assignments  InterviewAssignment[]
+  reminderLogs InterviewReminderLog[]
 
   @@index([applicationCycleId, startTime])
   @@index([domainApplicationId, status])
+}
+
+// Dedup ledger for the interview-reminders job: one row per (interview, lead
+// tier), claimed before sending — same pattern as MeetingReminderLog.
+model InterviewReminderLog {
+  id          String                @id @default(cuid())
+  interviewId String
+  kind        InterviewReminderKind
+  sentAt      DateTime              @default(now())
+
+  interview Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+
+  @@unique([interviewId, kind])
+}
+
+enum InterviewReminderKind {
+  DayBefore
+  HourBefore
 }
 
 enum AssignmentRole {
@@ -779,6 +841,8 @@ model ApplicationReview {
   submittedBy   User?     @relation("ApplicationReviewSubmittedBy", fields: [submittedById], references: [id])
 
   @@unique([cycleReviewerId, domainApplicationId])
+  // Per-DA review lookups can't use the unique above (wrong leading column).
+  @@index([domainApplicationId])
 }
 
 // ─── Delibs ──────────────────────────────────────────────────────────────────
@@ -868,6 +932,13 @@ model CollabDocument {
   name      String   @unique
   state     Bytes
   updatedAt DateTime @updatedAt
+
+  // User ids already notified of an @-mention in this document's body. The
+  // store hook (onStoreDocument) notifies only ids that appear as mention nodes
+  // and aren't in here yet, then unions the current mention set in — so each
+  // @-mention notifies its target at most once per document, despite throttled
+  // saves re-running the hook.
+  notifiedMentionUserIds String[] @default([])
 
   versions CollabDocumentVersion[]
 }
@@ -1024,6 +1095,40 @@ model DocComment {
 enum DocCommentTarget {
   doc
   file
+  // A per-page documentation guide (PageDoc.id). FAQ threads on a page's docs
+  // modal are DocComments with this target — reuses the doc-comment pipeline
+  // rather than a second comment table.
+  pagedoc
+}
+
+// Per-page documentation / guide surfaced in a "Docs" modal on hard-to-navigate
+// pages. Keyed by a stable `pageKey` a route declares via `handle.docKey`, so
+// the doc is independent of any DB entity. Body is ProseMirror JSON (the shared
+// RichTextEditor); the walkthrough video is an uploaded S3 object (videoKey).
+// A maintainer (assignable by Core/Admin) plus Core/Admin can edit; any lab
+// member can read it and post FAQ comments (see DocCommentTarget.pagedoc).
+model PageDoc {
+  id       String  @id @default(cuid())
+  pageKey  String  @unique
+  title    String
+  // ProseMirror JSON. Null until the maintainer writes the guide.
+  body     Json?
+  // S3 key of the uploaded walkthrough video (read via presigned URL). Null =
+  // no video yet.
+  videoKey String?
+
+  maintainerId   String?
+  createdById    String?
+  lastEditedById String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  maintainer User? @relation("PageDocMaintainer", fields: [maintainerId], references: [id], onDelete: SetNull)
+  createdBy  User? @relation("PageDocCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  lastEditedBy User? @relation("PageDocLastEditedBy", fields: [lastEditedById], references: [id], onDelete: SetNull)
+
+  @@index([maintainerId])
 }
 
 // ─── OAuth & Sessions ────────────────────────────────────────────────────────
@@ -1179,6 +1284,7 @@ model EmailTemplateVersion {
 
   cycleDecisionEmails     CycleDecisionEmail[]
   cycleNotificationEmails CycleNotificationEmail[]
+  educationDecisionEmails EducationDecisionEmail[]
 
   @@index([templateId, versionNumber])
 }
@@ -1210,6 +1316,9 @@ enum NotificationType {
   InterviewCancelledApplicant
   InterviewCancelledInterviewer
   InterviewLocationChanged
+  // Scheduled 24h/1h reminders fired by the interview-reminders job.
+  InterviewReminderApplicant
+  InterviewReminderInterviewer
 }
 
 model CycleNotificationEmail {
@@ -1446,8 +1555,32 @@ model ScheduledMeeting {
   organizerCalendarLinkId String?
   organizerCalendarLink   UserCalendarLink? @relation(fields: [organizerCalendarLinkId], references: [id])
 
+  // Set when the sender picks a meeting type at invite time. Drives auto-
+  // creation of a meeting-note Page under `project`'s shared documents
+  // (see notePage) plus a MeetingAttendance row per participant.
+  // meetingTypeLabel is required (app-level) when meetingType == Other and
+  // supplies the note's display label ("<label> meeting note (<date>)").
+  meetingType      MeetingType?
+  meetingTypeLabel String?
+  projectId        String?
+  project          Project?     @relation(fields: [projectId], references: [id])
+  notePage         Page?
+
+  // Roster (default): organizer/Core check people off by hand via
+  // AttendanceChecklist. SelfCheckIn: attendees mark themselves present via
+  // the check-in route, scoped to a time window around selectedAt — meant for
+  // events too large to check off manually (e.g. an all-lab Group event).
+  // checkInToken is a routing convenience embedded in the QR/link, not a
+  // bearer credential — the check-in route always authenticates the caller's
+  // own session, never the token, to prevent checking in on someone's behalf.
+  attendanceMode AttendanceMode @default(Roster)
+  checkInToken   String?        @unique
+
   exceptions    MeetingException[]
   notifications Notification[]
+  reminderLogs  MeetingReminderLog[]
+  attendance    MeetingAttendance[]
+  timeEntries   TimeEntry[]
 
   createdAt DateTime @default(now())
 }
@@ -1458,6 +1591,91 @@ enum ScopeType {
   UserList
   Series
   None
+}
+
+enum MeetingType {
+  Team
+  Partner
+  Other
+}
+
+enum AttendanceMode {
+  Roster
+  SelfCheckIn
+}
+
+// One row per invited participant (including the organizer) on a
+// ScheduledMeeting that has a meetingType/project. Checked off from the
+// AttendanceChecklist on the meeting's notePage; drives TimeEntry creation
+// (see the attendance-toggle route in app/calendar/routes).
+model MeetingAttendance {
+  id                 String    @id @default(cuid())
+  scheduledMeetingId String
+  userId             String
+  present            Boolean   @default(false)
+  markedByUserId     String?
+  markedAt           DateTime?
+
+  meeting ScheduledMeeting @relation(fields: [scheduledMeetingId], references: [id])
+  user    User             @relation(fields: [userId], references: [id])
+
+  @@unique([scheduledMeetingId, userId])
+  @@index([userId])
+}
+
+// A user's personal timesheet row, shown on the Calendar "Timesheet" tab.
+// Meeting-sourced rows are managed automatically by the attendance-toggle
+// route (one row per present participant, kept in sync as attendance is
+// checked/unchecked); Block-sourced rows are managed automatically by the
+// manual-block action handlers in the same way (see ManualBlock.isWork);
+// neither is directly editable here — only plain Manual rows are
+// user-authored CRUD entries for work not captured by a block or meeting.
+model TimeEntry {
+  id                 String          @id @default(cuid())
+  userId             String
+  source             TimeEntrySource
+  scheduledMeetingId String?
+  manualBlockId      String?
+  // Which concrete paid role (ProjectAssignment / CoreAssignment /
+  // InstructorAssignment / DomainLeadAssignment / AdminMembership) this entry
+  // is attributed to. Untyped at DB layer — dispatched in app code by
+  // assignmentType, same pattern as ScheduledMeeting.scopeType/scopeId. Null
+  // for legacy/unattributed rows (the export route's "unassigned" bucket).
+  assignmentType AssignmentType?
+  roleRefId      String?
+  // Denormalized from the resolved role when assignmentType == Project, so
+  // existing project-grouped readers (export, project hour totals) keep
+  // working without joining through ProjectAssignment.
+  projectId          String?
+  date               DateTime
+  hours              Float
+  note               String?
+  // Optional precise time range, used to render this entry as a block on the
+  // Timesheet tab's week grid (alongside external/manual calendar blocks).
+  // Null for entries added via the plain date+hours form (no time-of-day
+  // picked) — those still show in the ledger list, just not on the grid.
+  // Set automatically for Meeting-sourced rows from the meeting's start time
+  // + duration, and for grid drag-created Manual rows from the dragged range.
+  startTime          DateTime?
+  endTime            DateTime?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  user        User              @relation(fields: [userId], references: [id])
+  meeting     ScheduledMeeting? @relation(fields: [scheduledMeetingId], references: [id])
+  manualBlock ManualBlock?      @relation(fields: [manualBlockId], references: [id])
+  project     Project?          @relation(fields: [projectId], references: [id])
+
+  @@unique([scheduledMeetingId, userId])
+  @@unique([manualBlockId, userId])
+  @@index([userId, date])
+  @@index([userId, assignmentType])
+}
+
+enum TimeEntrySource {
+  Meeting
+  Manual
+  Block
 }
 
 enum MeetingStatus {
@@ -1482,6 +1700,17 @@ model Notification {
   sourceGroupId   String?
   readAt          DateTime?
   createdAt       DateTime         @default(now())
+
+  // Typed event identifier ("meeting.invite", "task.due_reminder", …) used
+  // for preference matching and digest grouping. The registry of valid values
+  // and their per-channel defaults lives in app/lib/notification-events.ts;
+  // `kind` stays the UI/render discriminator. Pre-registry rows carry the
+  // hidden fallback value "general".
+  eventType String @default("general")
+  // Delivery tracking, set by notify()/the digest job on actual delivery.
+  // The digest scan is `emailedAt IS NULL` within its cadence window.
+  emailedAt DateTime?
+  slackDmAt DateTime?
 
   // Announcement extras (kind == SystemAnnouncement). `dueAt` makes the
   // announcement a "todo" with a deadline; `isTodo` marks it as action-needed
@@ -1517,6 +1746,7 @@ enum NotificationKind {
   MeetingInvite
   MeetingReminder
   SystemAnnouncement
+  Education
 }
 
 enum MeetingRsvp {
@@ -1577,6 +1807,24 @@ model MeetingException {
   @@unique([scheduledMeetingId, originalStart])
 }
 
+// Send log for meeting reminders (meeting-reminders job) — the idempotency
+// key. occurrenceStart is the occurrence's ORIGINAL start (pre-exception-
+// override) so a moved occurrence doesn't double-remind; consequence: an
+// exception created after the reminder already fired gets no second one.
+// A dedicated log (rather than deduping on Notification) because per-user
+// preferences can deliver a reminder by email/DM with no in-app row at all.
+model MeetingReminderLog {
+  id                 String   @id @default(cuid())
+  scheduledMeetingId String
+  occurrenceStart    DateTime
+  userId             String
+  sentAt             DateTime @default(now())
+
+  meeting ScheduledMeeting @relation(fields: [scheduledMeetingId], references: [id], onDelete: Cascade)
+
+  @@unique([scheduledMeetingId, occurrenceStart, userId])
+}
+
 // Per-user calendar preferences. Lazily upserted on first write.
 model UserAvailabilitySettings {
   id                    String   @id @default(cuid())
@@ -1626,9 +1874,17 @@ model ManualBlock {
   recurrenceRule  String?
   // Optional cached UNTIL for query bounds; not authoritative.
   recurrenceUntil DateTime?
+  // When true (app-level restricted to non-recurring blocks — recurrence
+  // expansion isn't implemented for TimeEntry), this block mirrors itself
+  // into a Block-sourced TimeEntry for the chosen role, kept in sync by the
+  // manual-block action handlers (see syncManualBlockTimeEntry).
+  isWork          Boolean   @default(false)
+  assignmentType  AssignmentType?
+  roleRefId       String?
   createdAt       DateTime  @default(now())
 
-  user User @relation(fields: [userId], references: [id])
+  user       User        @relation(fields: [userId], references: [id])
+  timeEntries TimeEntry[]
 
   @@index([userId, startTime])
 }
@@ -1670,6 +1926,10 @@ model Term {
   partnerApplications   PartnerApplicationTargetTerm[]
   intentToWork          IntentToWork[]
   projectDomainScopes   ProjectDomainScope[]
+  ceCredits             CECredit[]
+  payPeriods            PayPeriod[]
+  budgetEntries         BudgetEntry[]
+  budgetNotes           BudgetNote[]
 
   @@index([sortKey])
 }
@@ -1762,6 +2022,57 @@ model MentorshipPair {
   @@index([mentorUserId, termId])
 }
 
+// Per-cycle override of a member's mentor/mentee role on the staffing board.
+// Default role is derived from level (P3 → mentor, P1/P2 → mentee); a row here
+// exists only when a staffing manager clicked the card's role badge to flip it.
+// `isMentor` is the explicit choice. Consumed at finalize: an effective mentor
+// who isn't P3 in a mentee's domain is promoted (see api.staffing.finalize),
+// and derivePairings pairs each domain's effective mentors to its mentees.
+model StaffingMentorRole {
+  id              String @id @default(cuid())
+  staffingCycleId String
+  userId          String
+  isMentor        Boolean
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdById String?
+
+  staffingCycle StaffingCycle @relation(fields: [staffingCycleId], references: [id])
+  user          User          @relation(fields: [userId], references: [id])
+
+  // One override per (cycle, user) — retoggling updates it in place.
+  @@unique([staffingCycleId, userId])
+  @@index([staffingCycleId])
+}
+
+// An external mentor placed on a project's staffing column — an existing DALI
+// member (usually staffed on another project) who mentors this project's mentees
+// in one domain. `user` points at that member, so they're a real MentorshipPair
+// mentor and can write mentor notes. Rendered as a distinct card on the board.
+// At finalize, derivePairings pairs them to the project's same-domain mentees;
+// they're excluded from this project's roster automation (no ProjectAssignment,
+// GitHub/Slack), since they aren't staffed here.
+model ExternalMentor {
+  id              String @id @default(cuid())
+  staffingCycleId String
+  projectId       String
+  domainId        String
+  userId          String
+
+  createdAt   DateTime @default(now())
+  createdById String?
+
+  staffingCycle StaffingCycle @relation(fields: [staffingCycleId], references: [id])
+  project       Project       @relation(fields: [projectId], references: [id])
+  domain        Domain        @relation(fields: [domainId], references: [id])
+  user          User          @relation(fields: [userId], references: [id])
+
+  // One row per (cycle, project, mentor, domain) — re-adding is a no-op.
+  @@unique([staffingCycleId, projectId, userId, domainId])
+  @@index([staffingCycleId, projectId])
+}
+
 // Year-long elected lead position. `leadTitle` is display-only — Core has
 // broad access to everything; the title affords UI surfacing but does not
 // gate permissions.
@@ -1835,22 +2146,30 @@ enum AssignmentType {
 // ─── Project workspace ───────────────────────────────────────────────────────
 
 model Project {
-  id            String        @id @default(cuid())
+  id            String  @id @default(cuid())
   name          String
   // Short plain-text blurb shown at the top of the project detail page.
   // Rich/long-form content lives in the collab overview page instead.
   description   String?
   // Project-owned Google Workspace identity (e.g.,
   // "projectalpha@dali.dartmouth.edu"). Calendar events for this project
-  // are owned by this identity, not the organizer's personal calendar.
+  // are owned by this identity, not the organizer's personal calendar. Also
+  // the user account provisioned by the staffing "Create Gmail accounts"
+  // finalize automation (backfilled there if unset).
   calendarEmail String?
+
+  // Project-team Google Workspace GROUP address (e.g.,
+  // "projectalpha-team@dali.dartmouth.edu"). Get-or-created by the staffing
+  // "Create Gmail accounts" finalize automation, which also adds the confirmed
+  // roster as group members. Null until that automation first runs.
+  teamGroupEmail String?
   // Expected span length: how many terms the project is *planned* to run, as
   // a target. Independent of the actual ProjectTerm set — a project may have
   // fewer terms added than expected (still being scheduled) or more. Drives
   // the "N of M terms added" projection. The start term is derived as the
   // earliest term in `projectTerms` (by Term.sortKey), not stored.
-  termCount     Int           @default(1)
-  status        ProjectStatus @default(Active)
+  termCount      Int           @default(1)
+  status         ProjectStatus @default(Active)
 
   // Auto-created on Project creation: a top-level FreeForm Page in the
   // Project workspace, seeded from the "Project Brief" PageTemplate. The
@@ -1869,6 +2188,11 @@ model Project {
   // Git repositories for this project (URLs). Empty by default.
   repoUrls String[] @default([])
 
+  // Live deployment / hosted URL for the project (e.g. a Fly/Vercel app).
+  // Single link, shown on the project detail page next to the repos. Null
+  // until a lead sets it.
+  deploymentUrl String?
+
   // GitHub team slug for this project's org team, persistent across terms.
   // Set on the project detail page. When present, the staffing "Set up GitHub
   // teams" finalize automation get-or-creates a team with this slug under
@@ -1876,33 +2200,49 @@ model Project {
   githubTeamSlug String?
 
   // The project's Slack channel id (e.g. "C0123ABC"), used to invite members +
-  // post the team announcement on staffing finalize. The channel NAME is always
-  // derived from the project name (slugified); finalize get-or-creates that
-  // channel and backfills this id so it's reused on later runs. Null until the
-  // first finalize that runs the Slack channel step.
-  slackChannelId String?
+  // post the team announcement on staffing finalize. Backfilled by finalize/modal
+  // Save when the channel (named by slackChannelName) is get-or-created. Null
+  // until the first sync runs the Slack channel step.
+  slackChannelId   String?
+  // Human channel name (e.g. "project-alpha") — the SHARED source of truth edited
+  // on the project details page AND the staffing Finalize modal. Defaults to the
+  // slugified project name until set. Finalize/modal-Save get-or-creates this
+  // channel and backfills slackChannelId.
+  slackChannelName String?
+
+  // Dartmouth payroll chart string for this project. `chartStringType` is the
+  // GL account category (e.g. "Grant", "Department"); `chartString` is the
+  // full concatenated GL string. Both are admin-edited and surfaced in the
+  // payroll export. Null until an admin sets them.
+  chartStringType String?
+  chartString     String?
 
   overviewPage Page? @relation("ProjectOverview", fields: [overviewPageId], references: [id])
   prdPage      Page? @relation("ProjectPRD", fields: [prdPageId], references: [id])
 
-  partners        ProjectPartner[]
+  partners          ProjectPartner[]
   // The project's planned term set — the source of truth for which terms the
   // project runs. The start term is the earliest of these (by Term.sortKey).
-  projectTerms    ProjectTerm[]
-  termStatuses    ProjectTermStatus[]
-  assignments     ProjectAssignment[]
-  roleRequests    ProjectRoleRequest[]
-  mentorshipPairs MentorshipPair[]
-  sprints         Sprint[]
-  epics           Epic[]
-  tasks           Task[]
+  projectTerms      ProjectTerm[]
+  termStatuses      ProjectTermStatus[]
+  assignments       ProjectAssignment[]
+  roleRequests      ProjectRoleRequest[]
+  mentorshipPairs   MentorshipPair[]
+  externalMentors   ExternalMentor[]
+  sprints           Sprint[]
+  epics             Epic[]
+  tasks             Task[]
   // Declared domains for the project — surfaced on the project detail page
   // and editable by Admin/Core/Hiring Lead. Display-only today; staffing
   // gating off this set is a follow-up.
-  domains         ProjectDomain[]
-  domainScopes    ProjectDomainScope[]
+  domains           ProjectDomain[]
+  domainScopes      ProjectDomainScope[]
   // Standalone uploaded files in the project's Files section.
-  files           ProjectFile[]
+  files             ProjectFile[]
+  budgetEntries     BudgetEntry[]
+  budgetNotes       BudgetNote[]
+  scheduledMeetings ScheduledMeeting[]
+  timeEntries       TimeEntry[]
 
   createdAt DateTime @default(now())
 }
@@ -2050,9 +2390,12 @@ model Epic {
   stories UserStory[]
 
   createdAt DateTime @default(now())
+
+  @@index([projectId])
 }
 
 enum EpicStatus {
+  Backlog
   Open
   InProgress
   Done
@@ -2119,13 +2462,16 @@ model Task {
   epicId    String?
 
   title            String
+  // Plain-text task description, edited in the task modal.
+  description      String?
   descriptionDocId String?
   status           TaskStatus @default(Todo)
   priority         Priority   @default(Normal)
   position         Int        @default(0)
   // Optional deadline. UTC instant; UI formats in local time. When set,
-  // assignees get a Slack DM 24h before and at the moment (see
-  // TaskReminder, added in a follow-up). Null = no reminders fire.
+  // the task-due-reminders job notifies assignees 24h before and at the
+  // moment (channels per their preferences; TaskReminder is the idempotency
+  // ledger). Null = no reminders fire.
   dueAt            DateTime?
 
   // Optional domain label (Design, Dev, etc.) — shown as a chip on the card
@@ -2138,18 +2484,28 @@ model Task {
   // JSON shape: [{ "text": "...", "done": false }]
   checklist Json?
 
+  // Optional mirror to a GitHub issue. All three populated together when the
+  // task was created with the "Create GitHub issue" toggle on; null when not
+  // mirrored. The (githubRepo, githubIssueNumber) pair is the lookup key for
+  // inbound webhook events.
+  githubRepo        String?
+  githubIssueNumber Int?
+  githubIssueUrl    String?
+
   project   Project        @relation(fields: [projectId], references: [id])
   sprint    Sprint?        @relation(fields: [sprintId], references: [id])
   epic      Epic?          @relation(fields: [epicId], references: [id])
   domain    Domain?        @relation(fields: [domainId], references: [id])
   assignees TaskAssignee[]
   comments  TaskComment[]
+  reminders TaskReminder[]
 
   createdById String
   createdBy   User     @relation("TaskCreatedBy", fields: [createdById], references: [id])
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  @@unique([githubRepo, githubIssueNumber], name: "task_github_issue_unique")
   @@index([projectId, sprintId])
 }
 
@@ -2166,6 +2522,32 @@ enum Priority {
   Normal
   High
   Urgent
+}
+
+// Idempotency ledger for task deadline reminders (task-due-reminders job).
+// The unique key includes dueAtSnapshot: re-enqueueing while the deadline is
+// unchanged is a no-op (createMany skipDuplicates), and a moved deadline
+// creates a fresh row while old unsent rows go inert — the send phase
+// re-checks snapshot === Task.dueAt.
+model TaskReminder {
+  id            String       @id @default(cuid())
+  taskId        String
+  userId        String // the assignee being reminded
+  kind          ReminderKind
+  dueAtSnapshot DateTime
+  sentAt        DateTime? // null until notify() succeeded
+  createdAt     DateTime     @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([taskId, userId, kind, dueAtSnapshot])
+  @@index([sentAt, dueAtSnapshot])
+}
+
+enum ReminderKind {
+  DayBefore
+  AtDeadline
 }
 
 // Multi-assignee per task (solo or multi both supported).
@@ -2214,12 +2596,30 @@ model EducationOffering {
   // education identity if not set.
   calendarEmail        String?
 
+  // The application/RSVP form for this offering, built with the shared Forms
+  // system. Cloned from an education template at offering creation; fillers
+  // always see the latest FormVersion. Null only transiently (offering
+  // created before its form) — apply routes treat null as "not open".
+  applicationFormId String?
+  applicationForm   Form?   @relation("EducationOfferingApplicationForm", fields: [applicationFormId], references: [id], onDelete: SetNull)
+
+  // Close-out: explicit instructor/Core action that issues certificates and
+  // fires instructor exit surveys. Idempotent — re-running only issues
+  // missing certificates. Independent of Archived status.
+  closedOutAt   DateTime?
+  closedOutById String?
+  closedOutBy   User?     @relation("EducationOfferingClosedOutBy", fields: [closedOutById], references: [id])
+
   instructors          InstructorAssignment[]
   sessions             EducationSession[]
   applications         EducationApplication[]
   applicationQuestions EducationApplicationQuestion[]
   assignments          EducationAssignment[]
   announcements        EducationAnnouncement[]
+  decisionEmails       EducationDecisionEmail[]
+  discussionPosts      EducationDiscussionPost[]
+  formBindings         EducationFormBinding[]
+  formSubmissions      FormSubmission[]
 
   createdAt DateTime @default(now())
 }
@@ -2241,13 +2641,20 @@ model EducationSession {
   sequence       Int
   datetime       DateTime
   location       String?
-  // Materials as collab doc — slides, notes, pre-reads.
+  // DORMANT in v1 — per-session materials live as pages in the offering's
+  // page workspace instead. Kept for a possible per-session doc link later.
   materialsDocId String?
   recordingUrl   String?
 
-  offering    EducationOffering     @relation(fields: [offeringId], references: [id])
-  attendances EducationAttendance[]
-  assignments EducationAssignment[]
+  // Stamped when session-feedback todos/emails have been fanned out for this
+  // session (first attendance save). Guards against duplicate fan-out.
+  feedbackRequestedAt DateTime?
+
+  offering        EducationOffering     @relation(fields: [offeringId], references: [id])
+  attendances     EducationAttendance[]
+  assignments     EducationAssignment[]
+  ceCredits       CECredit[]
+  formSubmissions FormSubmission[]
 
   @@index([offeringId, sequence])
 }
@@ -2264,15 +2671,28 @@ model EducationApplication {
   // Free-form: the userId of the reviewer who approved/rejected.
   reviewedBy      String?
 
+  // The Forms-system submission holding this application's answers.
+  // SetNull so deleting a form doesn't cascade away the application record.
+  formSubmissionId String?         @unique
+  formSubmission   FormSubmission? @relation(fields: [formSubmissionId], references: [id], onDelete: SetNull)
+
+  // FIFO position while status=Waitlisted (1 = next up). Mutable in place —
+  // ranks shift down when someone is promoted or removed. Null otherwise.
+  waitlistRank Int?
+
   applicant   User                         @relation("EducationApplicant", fields: [applicantUserId], references: [id])
   offering    EducationOffering            @relation(fields: [offeringId], references: [id])
   answers     EducationApplicationAnswer[]
   attendances EducationAttendance[]
   submissions EducationSubmission[]
+  note        EducationStudentNote?
+  certificate EducationCertificate?
 
   // One application per (applicant, offering). Withdrawal transitions
   // status, doesn't insert a second row.
   @@unique([applicantUserId, offeringId])
+  // Roster views list by offering; the unique above leads with applicant.
+  @@index([offeringId])
 }
 
 enum EduApplicationStatus {
@@ -2283,6 +2703,10 @@ enum EduApplicationStatus {
   Withdrawn
 }
 
+// DORMANT — never written or read. Applications use the shared Forms system
+// (EducationOffering.applicationFormId → Form/FormVersion/FormSubmission)
+// instead of these bespoke question tables. Kept because the migration that
+// created them is applied; do not build on them.
 model EducationApplicationQuestion {
   id         String  @id @default(cuid())
   offeringId String
@@ -2296,6 +2720,7 @@ model EducationApplicationQuestion {
   @@index([offeringId, position])
 }
 
+// DORMANT — see EducationApplicationQuestion.
 model EducationApplicationAnswer {
   id            String @id @default(cuid())
   applicationId String
@@ -2351,13 +2776,21 @@ model EducationSubmission {
   id            String    @id @default(cuid())
   assignmentId  String
   studentId     String
-  // Submission body as collab doc + optional file attachments (S3 URLs JSON).
+  // DORMANT in v1 — students (incl. portal users) don't get collab editing;
+  // the plain-text columns below hold the body and feedback instead.
   contentDocId  String?
   files         Json?
   submittedAt   DateTime?
   gradedAt      DateTime?
-  // Feedback as collab doc — instructor can leave rich feedback.
+  // DORMANT in v1 — see contentDocId.
   feedbackDocId String?
+
+  // Plain-text submission body (Text/Mixed submission types).
+  textContent  String?
+  // Free-form grade label (e.g. "Complete", "95"). No rubric in v1.
+  grade        String?
+  // Instructor feedback on this submission, shown to the student.
+  feedbackText String?
 
   assignment             EducationAssignment   @relation(fields: [assignmentId], references: [id])
   student                User                  @relation("EducationSubmissionStudent", fields: [studentId], references: [id])
@@ -2367,9 +2800,9 @@ model EducationSubmission {
   @@unique([assignmentId, studentId])
 }
 
-// Broadcast from instructor to all approved enrollees. On create, emits a
-// NotificationEvent (type="education.announcement_posted") for each
-// recipient via lib/notifications.ts:emitEvent.
+// Broadcast from instructor to all approved enrollees. On create, fans out
+// via notify() (eventType "education.announcement") — in-app rows plus email
+// per each recipient's preference.
 model EducationAnnouncement {
   id         String   @id @default(cuid())
   offeringId String
@@ -2381,6 +2814,129 @@ model EducationAnnouncement {
   author   User              @relation("EducationAnnouncementAuthor", fields: [authorId], references: [id])
 
   @@index([offeringId, sentAt])
+}
+
+// Per-offering binding: which EmailTemplateVersion fires when an application
+// reaches the given status. One row per (offering, status). No row = in-app
+// notification only, no email. Mirrors hiring's CycleDecisionEmail.
+model EducationDecisionEmail {
+  offeringId String
+  offering   EducationOffering @relation(fields: [offeringId], references: [id], onDelete: Cascade)
+
+  status EduApplicationStatus
+
+  emailTemplateVersionId String
+  emailTemplateVersion   EmailTemplateVersion @relation(fields: [emailTemplateVersionId], references: [id])
+
+  @@id([offeringId, status])
+}
+
+// Course discussion board: top-level posts + one reply level (replies to
+// replies are rejected at the lib layer). Plain text bodies in v1.
+model EducationDiscussionPost {
+  id         String   @id @default(cuid())
+  offeringId String
+  authorId   String
+  // Null = top-level post; set = reply to that (top-level) post.
+  parentId   String?
+  body       String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  offering EducationOffering         @relation(fields: [offeringId], references: [id], onDelete: Cascade)
+  author   User                      @relation("EducationDiscussionAuthor", fields: [authorId], references: [id])
+  parent   EducationDiscussionPost?  @relation("EducationDiscussionReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies  EducationDiscussionPost[] @relation("EducationDiscussionReplies")
+
+  @@index([offeringId, createdAt])
+  @@index([parentId])
+}
+
+// One consolidated instructor note per enrolled student per offering, with
+// two lanes as two named columns. `feedback` is student-visible (shown with
+// their certificate); `internalNote` is HIRING-ONLY and must never be
+// selected by any student/portal-facing loader — the only sanctioned readers
+// are the instructor roster view and the hiring application views (both
+// behind reviewer access + confidentiality gates). Two columns (not an enum
+// lane table) so the safe path is the default: leaking requires explicitly
+// selecting the column, not merely forgetting a `where`.
+model EducationStudentNote {
+  id            String @id @default(cuid())
+  applicationId String @unique
+
+  feedback          String?
+  feedbackUpdatedAt DateTime?
+  feedbackAuthorId  String?
+
+  internalNote          String?
+  internalNoteUpdatedAt DateTime?
+  internalNoteAuthorId  String?
+
+  application        EducationApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  feedbackAuthor     User?                @relation("EduNoteFeedbackAuthor", fields: [feedbackAuthorId], references: [id])
+  internalNoteAuthor User?                @relation("EduNoteInternalAuthor", fields: [internalNoteAuthorId], references: [id])
+}
+
+// Continuing-education credit ledger. Every lab member must earn ≥1 credit
+// per term; compliance views are display-only (nothing hard-blocks on this).
+// Two row shapes:
+//   - Attendance-derived: sessionId set, grantedById null. Written when an
+//     instructor marks Present; deleted if the mark moves off Present.
+//   - Manual grant: sessionId null, grantedById + reason set (covers the
+//     async CEC check-in path and special cases; Core-only).
+model CECredit {
+  id     String @id @default(cuid())
+  userId String
+  termId String
+
+  sessionId   String?
+  grantedById String?
+  reason      String?
+  grantedAt   DateTime @default(now())
+
+  user      User              @relation("CECreditUser", fields: [userId], references: [id])
+  term      Term              @relation(fields: [termId], references: [id])
+  session   EducationSession? @relation(fields: [sessionId], references: [id])
+  grantedBy User?             @relation("CECreditGrantor", fields: [grantedById], references: [id])
+
+  // Idempotent attendance-derived grants. Postgres treats NULL sessionId as
+  // distinct, so manual grants are unconstrained by this.
+  @@unique([userId, sessionId])
+  @@index([termId])
+  @@index([userId, termId])
+}
+
+// Completion certificate. Pure derived data (name, offering, term, dates) —
+// the HTML page and PDF are generated on demand from this row; no stored
+// artifact. Issued by the offering close-out action when the attendance
+// threshold is met.
+model EducationCertificate {
+  id            String   @id @default(cuid())
+  applicationId String   @unique
+  issuedAt      DateTime @default(now())
+  issuedById    String
+
+  application EducationApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  issuedBy    User                 @relation("EducationCertificateIssuer", fields: [issuedById], references: [id])
+}
+
+// Binds a Form to a named slot on one offering, mirroring
+// StaffingCycleFormBinding. Slots: "session-feedback" | "instructor-exit"
+// (free string — new slots need no migration).
+model EducationFormBinding {
+  id          String   @id @default(cuid())
+  offeringId  String
+  slot        String
+  formId      String
+  updatedAt   DateTime @updatedAt
+  updatedById String
+
+  offering  EducationOffering @relation(fields: [offeringId], references: [id], onDelete: Cascade)
+  form      Form              @relation("EducationFormBindings", fields: [formId], references: [id], onDelete: Cascade)
+  updatedBy User              @relation("EducationFormBindingUpdater", fields: [updatedById], references: [id])
+
+  @@unique([offeringId, slot])
+  @@index([formId])
 }
 
 // ─── Staffing ────────────────────────────────────────────────────────────────
@@ -2402,6 +2958,30 @@ model StaffingCycle {
   intentToWork      IntentToWork[]
   formBindings      StaffingCycleFormBinding[]
   formSubmissions   FormSubmission[]
+  boardMembers      StaffingBoardMember[]
+  cardOrders        StaffingCardOrder[]
+  mentorRoles       StaffingMentorRole[]
+  externalMentors   ExternalMentor[]
+}
+
+// A member a staffing lead manually placed on the board for a cycle WITHOUT a
+// bid. The board pool is otherwise derived from StaffingPreference / bid
+// submissions, so a non-bidder would never appear; this row makes them show up
+// as an ordinary Unassigned card the lead can then drag into a project. It is
+// not a preference and not an assignment — purely "present on the board".
+// Removed when the lead removes the card. A member who later bids still has
+// their preferences take over the card; this row is harmless either way.
+model StaffingBoardMember {
+  id              String   @id @default(cuid())
+  userId          String
+  staffingCycleId String
+  addedById       String? // actor; free-form userId, nullable for safety
+  createdAt       DateTime @default(now())
+
+  user          User          @relation(fields: [userId], references: [id])
+  staffingCycle StaffingCycle @relation(fields: [staffingCycleId], references: [id])
+
+  @@unique([userId, staffingCycleId])
 }
 
 model StaffingPreference {
@@ -2483,6 +3063,17 @@ model FormFolder {
   @@index([createdById])
 }
 
+// Who may fill a published form via its link. Members = signed-in lab
+// members (the historical behavior and default); SignedIn = any account
+// (member, Dartmouth student, partner); Groups = signed-in users in at least
+// one of the form's audienceGroupIds; Public = no account required.
+enum FormAudience {
+  Members
+  SignedIn
+  Groups
+  Public
+}
+
 model Form {
   id        String   @id @default(cuid())
   name      String
@@ -2503,6 +3094,31 @@ model Form {
   published   Boolean @default(false)
   publicToken String? @unique
 
+  // Scheduled publish window. The form-windows job flips `published` when a
+  // boundary passes (opensAt → publish, closesAt → unpublish), acting on each
+  // boundary exactly once so a later manual publish/unpublish sticks.
+  opensAt  DateTime?
+  closesAt DateTime?
+
+  // Per-form response settings (Forms editor "Settings" card).
+  // oneResponsePerMember: an authenticated member's ORDINARY fill (not
+  // staffing-slot-bound, not education-scoped) is accepted at most once.
+  // notifyOnSubmission: each submission creates an in-app Notification for
+  // createdById (best-effort, after the submission transaction commits).
+  oneResponsePerMember Boolean @default(false)
+  notifyOnSubmission   Boolean @default(false)
+
+  // Who may fill the form via its public link. `audienceGroupIds` is only
+  // meaningful when audience == Groups (GroupDefinition ids; array rather
+  // than a join table, matching GroupDefinition.staticMemberIds, so groups
+  // stay independently deletable — a dangling id simply admits nobody).
+  audience         FormAudience @default(Members)
+  audienceGroupIds String[]     @default([])
+
+  // Opt-in discovery: listed forms appear in "Forms for you" (Home) for
+  // people the audience admits. Unlisted forms stay reachable by link only.
+  listed Boolean @default(false)
+
   // Editable working copy. "Save" writes here; the draft is mutable and is
   // NEVER served to fillers. "Save as version" freezes the draft into an
   // immutable FormVersion and clears these back to null. Published fills
@@ -2516,6 +3132,10 @@ model Form {
   submissions   FormSubmission[]
   notifications Notification[]
   cycleBindings StaffingCycleFormBinding[]
+
+  partnerApplicationBindings          PartnerApplicationFormBinding[]
+  educationOfferingsAsApplicationForm EducationOffering[]             @relation("EducationOfferingApplicationForm")
+  educationBindings                   EducationFormBinding[]          @relation("EducationFormBindings")
 
   @@index([folderId])
   @@index([createdById])
@@ -2569,6 +3189,9 @@ model FormSubmission {
   // Captured only for public submissions; null for internal ones.
   submitterName  String?
   submitterEmail String?
+  // Client IP of an anonymous (userId-less) fill, for abuse tracing. Never
+  // set on authenticated submissions.
+  submitterIp    String?
 
   // Staffing context, set only when this submission was filled through a
   // staffing-cycle slot binding (e.g. the "project-bids" slot). Null for
@@ -2578,15 +3201,29 @@ model FormSubmission {
   staffingCycleId String?
   staffingCycle   StaffingCycle? @relation(fields: [staffingCycleId], references: [id], onDelete: SetNull)
   // Which slot it was filled for (mirrors StaffingCycleFormBinding.slot, e.g.
-  // "project-bids"). Null unless staffingCycleId is set.
+  // "project-bids"). Null unless staffingCycleId is set. Education feedback
+  // submissions reuse this column with EducationFormBinding slots (e.g.
+  // "session-feedback") alongside educationOfferingId.
   slot            String?
 
+  // Education context, set only when this submission was filled through an
+  // education slot binding (session feedback / instructor exit survey) or as
+  // an offering application. Nullable + SetNull mirrors staffingCycleId.
+  educationOfferingId String?
+  educationOffering   EducationOffering? @relation(fields: [educationOfferingId], references: [id], onDelete: SetNull)
+  educationSessionId  String?
+  educationSession    EducationSession?  @relation(fields: [educationSessionId], references: [id], onDelete: SetNull)
+
   answers Json
+
+  partnerApplication   PartnerApplication?
+  educationApplication EducationApplication?
 
   @@index([userId, formVersionId])
   @@index([formId])
   @@index([formVersionId])
   @@index([staffingCycleId, slot])
+  @@index([educationOfferingId, slot])
 }
 
 // Binds a generic Form to a named "slot" within one staffing cycle, so an
@@ -2679,6 +3316,30 @@ model StaffingAssignment {
   @@index([projectId, termId])
 }
 
+// Manual position of a member's card within its staffing-board column. The
+// column itself is DERIVED (from the member's assignment, or its absence =
+// Unassigned); this row records only where the card sits in that column's
+// order. One row per (cycle, user); cards with no row fall back to last-name
+// sort. Decoupled from StaffingAssignment so Unassigned bidders — who have no
+// assignment — can still be ordered. `columnKey` is the project id, or
+// "__unassigned__", recorded so a stale order from a previous column is ignored
+// once a card moves.
+model StaffingCardOrder {
+  id              String @id @default(cuid())
+  staffingCycleId String
+  userId          String
+  columnKey       String
+  // Sparse fractional/spread integer key: cards sort ascending by this. Saved
+  // as the card's index in the column on each reorder, so it stays dense.
+  sortKey         Int
+
+  staffingCycle StaffingCycle @relation(fields: [staffingCycleId], references: [id], onDelete: Cascade)
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([staffingCycleId, userId])
+  @@index([staffingCycleId, columnKey])
+}
+
 // Distinct from the existing AssignmentStatus enum (which scopes
 // InterviewAssignment with Active/Declined/Replaced).
 enum StaffingAssignmentStatus {
@@ -2719,6 +3380,26 @@ model Page {
   // and surface only in the workspace's Archive view.
   archivedAt DateTime?
 
+  // Partner sharing: when true and workspaceType == Project, users of any
+  // PartnerOrg with an active ProjectPartner link to workspaceId may open
+  // (and collaboratively edit) this page from the partner portal. Meaningless
+  // for Lab/EducationOffering workspaces (stays false). Distinct from a
+  // future public flag — the audiences are orthogonal.
+  partnerVisible Boolean @default(false)
+
+  // Set when this page was auto-created as a meeting's attendance-tracking
+  // note (see ScheduledMeeting.notePage / meetingType). Lets the document
+  // route know to render the AttendanceChecklist above the editor.
+  meetingNoteId String?           @unique
+  meetingNote   ScheduledMeeting? @relation(fields: [meetingNoteId], references: [id])
+
+  // Marks a page as system-managed and undeletable (mirrors
+  // GroupDefinition.systemKey) — e.g. the default "Team meeting notes" /
+  // "Partner meeting notes" folders auto-created per project (see
+  // ensureProjectFolder in app/lib/pages.ts). Null for ordinary user-created
+  // pages. The unique constraint makes ensure-create idempotent.
+  systemKey String? @unique
+
   parent   Page?  @relation("PageTree", fields: [parentPageId], references: [id])
   children Page[] @relation("PageTree")
 
@@ -2754,6 +3435,9 @@ enum WorkspaceType {
 enum PageKind {
   FreeForm
   Structured
+  // A container page with no content of its own — only children. Always
+  // top-level (a folder never has a parentPageId, matching the 2-level cap).
+  Folder
 }
 
 model PageTemplate {
@@ -2782,11 +3466,15 @@ model MentorNote {
   projectId    String
   termId       String
   domainId     String
-  // Start-of-week date (Monday) the note covers. App enforces one row
+  // Start-of-week date (Monday, UTC) the note covers. App enforces one row
   // per (mentor, mentee, project, term, domain, week).
   weekOf       DateTime
-  // Note body as collab doc — template seeded on create.
-  contentDocId String
+  // Tiptap/ProseMirror JSON document. Seeded from the current default
+  // MentorNoteTemplate on create. Single-author — no Yjs/Hocuspocus.
+  contentJson  Json     @default("{}")
+  // Mentor's at-a-glance read on how the mentee is doing this week. Null until
+  // the mentor picks one — the browse grid renders it as a colored cell.
+  vibe         MentorNoteVibe?
 
   mentor User @relation("MentorNoteMentor", fields: [mentorId], references: [id])
   mentee User @relation("MentorNoteMentee", fields: [menteeId], references: [id])
@@ -2799,57 +3487,47 @@ model MentorNote {
   @@index([mentorId, termId])
 }
 
+// Mentor's weekly vibe read on a mentee: Good (green), Ok (yellow), Bad (red).
+enum MentorNoteVibe {
+  Good
+  Ok
+  Bad
+}
+
 model MentorNoteTemplate {
   id            String   @id @default(cuid())
   name          String
-  // Template body as collab doc; new MentorNote contentDocs are seeded
-  // from this on create.
-  contentDocId  String
+  // Tiptap/ProseMirror JSON document; new MentorNotes seed contentJson
+  // from the current isDefault template on create.
+  contentJson   Json     @default("{}")
   isDefault     Boolean  @default(false)
   // Free-form last-updated userId.
   lastUpdatedBy String?
   updatedAt     DateTime @updatedAt
 }
 
-// ─── Notifications ───────────────────────────────────────────────────────────
+// ─── Notification preferences ────────────────────────────────────────────────
 //
-// Phase 1 ships `NotificationEvent` (event-log shape from the expansion plan)
-// plus `NotificationPreference`. PR #517 (`sp/notifications`) is currently
-// open with a separate `Notification` model (interactive in-app inbox with
-// rsvp affordances). The two coexist temporarily; a reconciliation PR after
-// PR #517 merges either folds NotificationEvent into Notification or keeps
-// them as distinct concerns (event log vs in-app inbox).
-
-model NotificationEvent {
-  id             String    @id @default(cuid())
-  // Typed event identifier, e.g., "interview_scheduled", "sprint_due",
-  // "miniseries_session_reminder", "mentor_eval_requested",
-  // "staffing_assignment_published".
-  type           String
-  recipientId    String
-  // Event-specific payload (links, names, IDs). Structured per type.
-  payload        Json
-  readAt         DateTime?
-  inAppDelivered Boolean   @default(false)
-  emailDelivered Boolean   @default(false)
-  createdAt      DateTime  @default(now())
-
-  recipient User @relation(fields: [recipientId], references: [id])
-
-  @@index([recipientId, readAt])
-  @@index([recipientId, createdAt])
-}
+// The dormant NotificationEvent event-log model was dropped when notify()
+// (app/lib/notify.server.ts) unified delivery on the Notification model —
+// eventType/emailedAt/slackDmAt now live there.
 
 model NotificationPreference {
-  id              String     @id @default(cuid())
-  userId          String
-  // Matches NotificationEvent.type, or "*" for the user's global default.
-  eventType       String
-  inApp           Boolean    @default(true)
-  email           Boolean    @default(true)
-  digestFrequency DigestFreq @default(Instant)
+  id     String @id @default(cuid())
+  userId String
+  // Matches Notification.eventType (registry: app/lib/notification-events.ts).
+  // No wildcard rows — an absent row means the registry default applies, so
+  // evolving a default never requires a backfill.
+  eventType String
+  inApp     Boolean @default(true)
+  // Slack DM requires a resolved User.slackUserId; without one the channel
+  // silently skips regardless of this toggle.
+  slackDm Boolean @default(false)
+  // Email cadence: Instant = per-notification email at notify() time,
+  // Daily/Weekly = batched digest, Off = in-app only.
+  digestFrequency DigestFreq @default(Off)
 
-  user User @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, eventType])
 }
@@ -2859,6 +3537,78 @@ enum DigestFreq {
   Daily
   Weekly
   Off
+}
+
+// ─── Background jobs ─────────────────────────────────────────────────────────
+//
+// Bookkeeping row per registered background job (registry: app/jobs/registry.ts).
+// Rows self-heal from the registry on every tick — the dev DB is wiped and
+// staging is restored from prod on each deploy, so nothing here can be assumed
+// to survive. Cross-machine dedup is a lease: a tick claims a job with an
+// atomic CAS UPDATE setting lockedUntil; expiry (not explicit release) is the
+// crash recovery.
+
+model ScheduledJob {
+  name            String        @id // registry key, e.g. "task-due-reminders"
+  enabled         Boolean       @default(true)
+  // DB-authoritative once the row exists (editable from Admin → Jobs); the
+  // registry value only seeds it at creation.
+  intervalMinutes Int
+  // Per-job numeric knobs declared by the registry entry (JobSettingDef[]),
+  // e.g. { "leadMinutes": 30 }. Unknown/out-of-range values are ignored in
+  // favor of the declared default at resolution time.
+  settings        Json          @default("{}")
+  nextRunAt       DateTime      @default(now())
+  lockedUntil     DateTime?
+  lastRunAt       DateTime?
+  // Set only on successful runs; handlers receive it as their incremental
+  // cursor (the digest jobs gate on it).
+  lastSuccessAt   DateTime?
+  lastStatus      JobRunStatus?
+  lastError       String?
+  lastDurationMs  Int?
+  updatedAt       DateTime      @updatedAt
+  createdAt       DateTime      @default(now())
+}
+
+enum JobRunStatus {
+  Success
+  Error
+}
+
+// A composed announcement waiting for its send time. Payload + audience
+// mirror the /api/notifications/send schema; the scheduled-announcements job
+// fires due rows through the same shared fan-out (app/lib/announcements.server).
+// sentAt doubles as the CAS claim column — set BEFORE fan-out so a failure
+// can never double-send a lab-wide blast (drops beat dupes here); errors land
+// in lastError for the composer's scheduled list.
+model ScheduledAnnouncement {
+  id              String @id @default(cuid())
+  createdByUserId String
+  createdBy       User   @relation(fields: [createdByUserId], references: [id])
+
+  title  String
+  body   String?
+  link   String?
+  kind   NotificationKind @default(General)
+  isTodo Boolean          @default(false)
+  dueAt  DateTime?
+  // Deliberately not an FK: the payload is a deferred request, re-validated
+  // at fire time — deleting a form must not cascade the pending announcement.
+  formId String?
+
+  allMembers Boolean  @default(false)
+  groupIds   String[] @default([])
+  userIds    String[] @default([])
+
+  sendAt     DateTime
+  sentAt     DateTime?
+  sentCount  Int?
+  lastError  String?
+  canceledAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([sentAt, sendAt])
 }
 
 // ─── Partner portal ──────────────────────────────────────────────────────────
@@ -2880,8 +3630,36 @@ model PartnerOrg {
   users        PartnerUser[]
   projects     ProjectPartner[]
   applications PartnerApplication[]
+  invites      PartnerInvite[]
 
   createdAt DateTime @default(now())
+}
+
+// Teammate invites into an existing PartnerOrg, sent by a partner (from
+// portal settings) or by Core (from the internal org page). Deliberately not
+// an OneTimeToken: invites are listed per-org with revoke/re-send, and the
+// invitee's User row is only created on acceptance. The raw token is
+// SHA-256 hashed at rest (same convention as OneTimeToken/Session).
+model PartnerInvite {
+  id              String    @id @default(cuid())
+  partnerOrgId    String
+  // Normalized lowercase.
+  email           String
+  displayRole     String?
+  // sha256(raw token), base64url. Looked up by hash.
+  tokenHash       String    @unique
+  // User.id of the partner teammate or Core member who sent it. Loose ref,
+  // no relation — display-only.
+  invitedByUserId String?
+  expiresAt       DateTime
+  acceptedAt      DateTime?
+  revokedAt       DateTime?
+  createdAt       DateTime  @default(now())
+
+  partnerOrg PartnerOrg @relation(fields: [partnerOrgId], references: [id])
+
+  @@index([partnerOrgId])
+  @@index([email])
 }
 
 // Per Cl-3: PartnerUser.userId @unique → User. Single Session model and
@@ -3014,6 +3792,75 @@ enum TokenPurpose {
   EmailVerification
 }
 
+// ─── Desktop device pairing (GitHub-CLI style) ───────────────────────────────
+//
+// Backs the Tauri desktop app's sign-in. The app POSTs /auth/pair/start to
+// create a Pending row, opens the system browser to /link?code=<userCode>, the
+// signed-in user approves (binding userId), and the app polls /auth/pair/poll.
+// On the consuming poll the server mints (a) a long-lived desktop Session for
+// the background notification poller — returned for the OS keychain — and (b) a
+// one-time handoff code that /auth/handoff redeems into a fresh webview cookie
+// session. All codes are SHA-256 hashed at rest (same scheme as Session.id and
+// OneTimeToken.tokenHash); raw values exist only in transit. See
+// TAURI_DESKTOP_PLAN.md.
+model DevicePairing {
+  id String @id @default(cuid())
+
+  // sha256(raw deviceCode), base64url. The raw deviceCode is the high-entropy
+  // bearer secret the app polls with; we never store it.
+  deviceCodeHash String @unique
+  // Short, human-eyeballed code (8 chars from an unambiguous alphabet, no
+  // 0/O/1/I/L). Stored canonical uppercase. NOT a bearer secret — approval
+  // still requires an authenticated web session — so low entropy is fine.
+  userCode       String @unique
+
+  status DevicePairingStatus @default(Pending)
+
+  // Human label the shell sends (hostname / OS), rendered on /link so the user
+  // confirms which device they're approving.
+  deviceLabel String
+
+  // Bound at approval; null while pending.
+  userId String?
+
+  // Hashed id of the long-lived desktop Session minted on the consuming poll.
+  // Doubles as the single-mint guard (claim requires this null) and an audit
+  // link from the pairing to its revocable Session row.
+  desktopSessionId String?
+
+  // One-time handoff code minted on the consuming poll, ~60s TTL, single-use.
+  // sha256(raw), base64url. Redeemed by /auth/handoff to plant the webview
+  // cookie session.
+  handoffCodeHash  String?
+  handoffExpiresAt DateTime?
+  handoffUsedAt    DateTime?
+
+  // Pairing-request expiry (~10 min). Independent of handoff expiry.
+  expiresAt  DateTime
+  approvedAt DateTime?
+
+  // Audit / abuse review of the start request.
+  startIp        String?
+  startUserAgent String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status, expiresAt])
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+enum DevicePairingStatus {
+  Pending
+  Approved
+  Consumed
+  Cancelled
+  Expired
+}
+
 // ─── Gmail integration (send-as) ─────────────────────────────────────────────
 //
 // New home for the Gmail send-as credential that today lives on the
@@ -3022,8 +3869,14 @@ enum TokenPurpose {
 // accounts that use Gmail send-as, then drops the User columns.
 
 model GmailIntegration {
-  id             String    @id @default(cuid())
-  userId         String    @unique
+  id     String @id @default(cuid())
+  userId String
+  // Which area's outbound mail this identity serves. Rows that predate
+  // purposes are the applications@ integration and default to Hiring.
+  // Resolution (lib/gmail-integration.ts) falls back to Hiring for purposes
+  // with no connected row, so mail keeps flowing until ops links the
+  // dedicated account.
+  purpose        EmailSendPurpose @default(Hiring)
   // The Gmail account email being sent-as.
   sendAsEmail    String
   // Encrypted at rest (same AES-256-GCM helper used by UserCalendarLink).
@@ -3040,6 +3893,15 @@ model GmailIntegration {
   linkedAt       DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, purpose])
+}
+
+enum EmailSendPurpose {
+  Hiring
+  Education
+  Partners
+  General
 }
 
 // Slack bug-report bot. A draft is created when a teammate @-mentions the bot
@@ -3104,19 +3966,41 @@ model PartnerApplication {
   // Set when status moves to Accepted and a Project is spun up. Loose ref to
   // Project.id; no relation to avoid a Project→PartnerApplication cycle.
   resultingProjectId String?
+  // The partner's answers to the lab-configured application form (see
+  // PartnerApplicationFormBinding), captured at submit time. Null when no
+  // form was bound when they applied. SetNull because deleting the Form
+  // cascades its submissions away — the application must survive that.
+  formSubmissionId   String?                  @unique
 
-  partnerOrg  PartnerOrg                     @relation(fields: [partnerOrgId], references: [id])
+  partnerOrg     PartnerOrg                     @relation(fields: [partnerOrgId], references: [id])
+  formSubmission FormSubmission?                @relation(fields: [formSubmissionId], references: [id], onDelete: SetNull)
   // The terms the partner wants the project to run / be staffed in. Drives
   // the "expected lab members per term" projection on the list page — an
   // application's expected headcount counts toward every target term.
-  targetTerms PartnerApplicationTargetTerm[]
-  domains     PartnerApplicationDomain[]
+  targetTerms    PartnerApplicationTargetTerm[]
+  domains        PartnerApplicationDomain[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([partnerOrgId])
   @@index([status])
+}
+
+// Binds the generic Form whose questions partners answer when pitching a
+// project (/partner/apply). At most one row, app-enforced — absence means the
+// apply page shows only its built-in structured fields. Mirrors
+// StaffingCycleFormBinding but is lab-global rather than per-cycle.
+model PartnerApplicationFormBinding {
+  id          String   @id @default(cuid())
+  formId      String
+  // Loose ref to User.id (same convention as PartnerInvite.invitedByUserId).
+  updatedById String?
+  updatedAt   DateTime @updatedAt
+
+  form Form @relation(fields: [formId], references: [id], onDelete: Cascade)
+
+  @@index([formId])
 }
 
 // Join table: an application can target multiple terms (e.g. a 3-term
@@ -3141,13 +4025,13 @@ model PartnerApplicationTargetTerm {
 // domain; `expectedMembers` is the headcount used to project expected lab
 // numbers per term.
 model PartnerApplicationDomain {
-  id                 String  @id @default(cuid())
+  id                 String @id @default(cuid())
   applicationId      String
   domainId           String
   // Rich-text ProseMirror JSON doc (Tiptap StarterKit + Link). Pre-migration
   // rows were free text and have been wrapped into a single-paragraph doc.
   expectedChallenges Json?
-  expectedMembers    Int     @default(0)
+  expectedMembers    Int    @default(0)
 
   application PartnerApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   domain      Domain             @relation(fields: [domainId], references: [id])
@@ -3164,4 +4048,173 @@ enum PartnerApplicationStatus {
   OnHold
   Accepted
   Rejected
+}
+
+// ─── Payroll: Reconcile ──────────────────────────────────────────────────────
+// Staff-only reconciliation of Dartmouth TimesheetX actuals against dali-os's
+// authoritative assignments/wages, plus a per-project/chartstring/term Budget.
+// All tables here are additive (no columns on existing tables).
+
+// Which CSV kind a TimesheetImport audit row records.
+enum TimesheetImportKind {
+  Timesheet
+  Notes
+}
+
+// A biweekly (2-week Sun–Sat) Dartmouth pay period. `name` is the canonical
+// "MM/DD/YYYY - MM/DD/YYYY" label used as the natural key; dates are stored at
+// UTC midnight to align with Term.startDate/endDate. `termId` is derived at
+// ingest but admin-overridable, and null when no Term fits the period.
+model PayPeriod {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  startDate DateTime
+  endDate   DateTime
+  termId    String?
+
+  createdAt DateTime @default(now())
+
+  term    Term?             @relation(fields: [termId], references: [id])
+  entries TimesheetEntry[]
+  notes   TimesheetNote[]
+  imports TimesheetImport[]
+
+  @@index([termId])
+}
+
+// One approved shift from a TimesheetX export. Money/hours are Decimal (never
+// float). `jobId` is the Dartmouth Job ID (category-level classifier, joined
+// to JobCodeLookup.jobCode). Every dedupe-key column is NOT NULL — blank CSV
+// fields are stored as "" so the unique actually dedupes (Postgres treats
+// NULLs as distinct). Chart string is the charged line (authoritative for
+// expense); shift times are raw strings for identity/display only.
+model TimesheetEntry {
+  id               String   @id @default(cuid())
+  payPeriodId      String
+  employeeNetId    String
+  employeeName     String
+  jobId            String
+  jobTitle         String
+  chartString      String
+  shiftStartTime   String
+  shiftEndTime     String
+  totalShiftTime   Decimal
+  hourlyPayRate    Decimal
+  totalEarnings    Decimal
+  overtimeHours    Decimal?
+  overtimeEarnings Decimal?
+  payCode          String
+  department       String
+  supervisorName   String
+  timesheetStatus  String
+
+  createdAt DateTime @default(now())
+
+  payPeriod PayPeriod @relation(fields: [payPeriodId], references: [id], onDelete: Cascade)
+
+  @@unique([payPeriodId, employeeNetId, jobId, shiftStartTime, shiftEndTime, chartString, payCode])
+  @@index([payPeriodId, employeeNetId])
+  @@index([employeeNetId, jobId])
+  @@index([chartString])
+}
+
+// A per-timesheet note row from the Notes CSV. `noteHash` is the sha-256 hex
+// of the note text — used in the unique because a raw long note would blow
+// Postgres's ~2.7KB btree index-row cap.
+model TimesheetNote {
+  id                   String  @id @default(cuid())
+  payPeriodId          String
+  netId                String
+  jobId                String
+  note                 String
+  noteHash             String
+  validatedChartstring String?
+  linkToTimesheet      String?
+
+  createdAt DateTime @default(now())
+
+  payPeriod PayPeriod @relation(fields: [payPeriodId], references: [id], onDelete: Cascade)
+
+  @@unique([payPeriodId, netId, jobId, noteHash])
+  @@index([payPeriodId, netId])
+}
+
+// Audit row per CSV import. Ingestion uses replace semantics (delete prior +
+// re-create), so counts are recorded rather than updated in place.
+model TimesheetImport {
+  id                    String              @id @default(cuid())
+  fileName              String
+  kind                  TimesheetImportKind
+  payPeriodId           String?
+  rowsCreated           Int
+  rowsSkippedDuplicates Int
+  rowsDeletedPrior      Int
+  uploadedById          String
+  uploadedAt            DateTime            @default(now())
+
+  payPeriod  PayPeriod? @relation(fields: [payPeriodId], references: [id], onDelete: Cascade)
+  uploadedBy User       @relation(fields: [uploadedById], references: [id])
+
+  @@index([payPeriodId])
+  @@index([uploadedById])
+}
+
+// Admin-entered revenue for a project/chartstring/term line in the Budget
+// view. `projectId` is null for Core/Instructor/External/unmatched lines;
+// because Postgres treats NULLs as distinct, the null-project upsert path does
+// a findFirst before create.
+model BudgetEntry {
+  id          String  @id @default(cuid())
+  projectId   String?
+  chartString String
+  termId      String
+  revenue     Decimal @default(0)
+  projectType String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project Project? @relation(fields: [projectId], references: [id])
+  term    Term     @relation(fields: [termId], references: [id])
+
+  @@unique([projectId, chartString, termId])
+  @@index([termId])
+}
+
+// Free-text note attached to a Budget line, keyed the same as BudgetEntry.
+model BudgetNote {
+  id          String  @id @default(cuid())
+  projectId   String?
+  chartString String
+  termId      String
+  note        String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project Project? @relation(fields: [projectId], references: [id])
+  term    Term     @relation(fields: [termId], references: [id])
+
+  @@unique([projectId, chartString, termId])
+  @@index([termId])
+}
+
+// ─── Internal Processes ──────────────────────────────────────────────────────
+
+// Admin-editable override for a term-roadmap week's content on the Lab
+// Processes hub (app/internal-processes/routes/internal-processes.hub.tsx).
+// The road geometry and week count are fixed in code (WEEK_META); this only
+// overrides the human-editable text for a given week (0-10). A week with no
+// row here falls back to WEEK_META's hardcoded default. updatedByUserId is a
+// loose reference (not an FK) so it survives the editor's account being
+// removed, matching the convention used elsewhere for audit-style fields.
+model LabProcessWeekContent {
+  id              String   @id @default(cuid())
+  week            Int      @unique
+  title           String
+  summary         String
+  highlights      String[]
+  updatedByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }

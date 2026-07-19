@@ -1,6 +1,6 @@
 import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/forms";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, forbidden, redirectApplicantToPortal } from "~/lib/auth";
 import { canViewForms } from "~/lib/roles";
 import { loadFormsLevel, runFormsAction } from "~/forms/lib/forms-data";
 import { FormsBrowser } from "~/forms/components/FormsBrowser";
@@ -10,7 +10,8 @@ export const meta: Route.MetaFunction = () => [{ title: "Forms · DALI OS" }];
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  if (auth.user.type === "applicant") return redirect("/portal");
+  const portalRedirect = redirectApplicantToPortal(auth);
+  if (portalRedirect) return portalRedirect;
   if (!(await canViewForms(auth.user.sub))) return redirect("/");
 
   const level = await loadFormsLevel(null);
@@ -21,7 +22,7 @@ export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
   if (!(await canViewForms(auth.user.sub)))
-    return Response.json({ error: "Forbidden" }, { status: 403 });
+    return forbidden(request);
 
   const result = await runFormsAction(
     await request.formData(),
@@ -33,7 +34,7 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function FormsPage() {
-  const { folders, forms } = useLoaderData<typeof loader>();
+  const { folders, forms, allFolders, allForms } = useLoaderData<typeof loader>();
 
   return (
     <div className="flex flex-col gap-4">
@@ -48,7 +49,14 @@ export default function FormsPage() {
         </p>
       </header>
 
-      <FormsBrowser folderId={null} folders={folders} forms={forms} />
+      <FormsBrowser
+        folderId={null}
+        parentId={null}
+        folders={folders}
+        forms={forms}
+        allFolders={allFolders}
+        allForms={allForms}
+      />
     </div>
   );
 }

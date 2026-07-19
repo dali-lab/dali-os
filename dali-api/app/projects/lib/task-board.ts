@@ -25,6 +25,8 @@ export type Priority = "Low" | "Normal" | "High" | "Urgent";
 export type TaskCardModel = {
   id: string;
   title: string;
+  // Plain-text task description, edited in the task modal. Null when unset.
+  description: string | null;
   status: TaskStatus;
   priority: Priority;
   position: number;
@@ -40,6 +42,14 @@ export type TaskCardModel = {
   // Optional domain label on the task itself (Domain.code/displayName).
   // Independent of who's assigned.
   domain: { id: string; name: string } | null;
+  // GitHub mirror link, populated when the task was created with the
+  // "Create GitHub issue" toggle on. Both fields are present together; both
+  // null means the task is not mirrored.
+  githubIssueUrl: string | null;
+  githubIssueNumber: number | null;
+  createdBy: { id: string; name: string };
+  // ISO timestamp (UTC).
+  createdAt: string;
 };
 
 // Choices the TaskModal needs to populate its assignee + domain dropdowns.
@@ -47,6 +57,9 @@ export type TaskCardModel = {
 export type TaskBoardOptions = {
   members: { id: string; name: string }[];
   domains: { id: string; name: string }[];
+  // Project.repoUrls — surfaced in the TaskModal's "Create GitHub issue"
+  // picker. Empty array hides the picker entirely.
+  repoUrls: string[];
 };
 
 export type TaskBoard = Record<TaskStatus, TaskCardModel[]>;

@@ -1,6 +1,6 @@
 # DALI OS
 
-Internal operations platform for the DALI Lab. Single React Router 7 app (`dali-api/`) that serves the UI, the JSON API, and the Hocuspocus realtime collab server. Originally a hiring tool, now expanding to projects, members, partners, calendar, and education.
+Internal operations platform for DALI Lab. Single React Router 7 app (`dali-api/`) that serves the UI, the JSON API, and the Hocuspocus realtime collab server. Currently supports hiring, projects, members, partners, calendar, and education. 
 
 ## Stack
 
@@ -13,32 +13,39 @@ Internal operations platform for the DALI Lab. Single React Router 7 app (`dali-
 | Styling | Tailwind CSS 4 |
 | Runtime | Node 22, npm |
 | Tests | Vitest (unit), Playwright (e2e) |
-| Deploy | Fly.io, branches `dev` → `staging` → `prod` |
+| Deploy | Fly.io, branches `staging` → `prod` |
 
 ## Repo layout
 
 ```
 dali-api/
   app/
-    hiring/          cycles, reviewers, interviews, delibs, decisions
-    admin-console/   members, domains, role assignment
-    projects/        project list, staffing
-    members/         directory, user profiles
-    partners/        partner portal
-    calendar/        scheduling
-    collab/          Hocuspocus server + Yjs persistence
-    routes/          shared routes (auth, portal, oauth, uploads)
-    components/      shared UI
-    lib/             db client, auth, server utilities
-  prisma/            schema.prisma, migrations/, seed.ts
-  e2e/               Playwright specs
-.github/workflows/   CI/CD
-docker-compose.yml   local Postgres + API + Prisma Studio
+    hiring/             cycles, reviewers, interviews, delibs, decisions
+    admin-console/      members, domains, role assignment
+    projects/           project workspaces, epics, sprints, tasks
+    members/            directory, user profiles
+    partners/           partner portal
+    calendar/           scheduling, meetings
+    education/          miniseries, workshops, enrollment
+    internal-processes/ lab-wide processes and documentation
+    slack/              Slack integration
+    mcp/                MCP (model context protocol) integration
+    collab/             Hocuspocus server + Yjs persistence
+    routes/             shared routes (auth, portal, oauth, uploads)
+    components/         shared UI
+    hooks/              shared React hooks
+    forms/              shared form primitives
+    lib/                db client, auth, server utilities
+  prisma/               schema.prisma, migrations/, seed.ts
+  e2e/                  Playwright specs
+desktop/                Tauri v2 macOS desktop shell
+.github/workflows/      CI/CD
+docker-compose.yml      local Postgres + API + Prisma Studio
 ```
 
 ## Local dev
 
-Prereqs: Docker, Node 22, a repo-root `.env` containing `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
+Prereqs: Docker, Node 22, and `dali-api/.env` populated from `dali-api/.env.example`.
 
 ```bash
 docker compose up
@@ -76,11 +83,10 @@ No ESLint/Prettier is wired up.
 
 | Env | Branch | Fly app | Neon branch | DB on deploy |
 |---|---|---|---|---|
-| Dev | `dev` | `dali-api-dev` | `development` | wipe → migrate → seed |
 | Staging | `staging` | `dali-api-staging` | `staging` | restore from prod → migrate |
 | Prod | `prod` | `dali-api-prod` | `production` | migrate only |
 
-Promotion is staged: PRs merge to `dev`, then `promote-to-staging.yml` and `promote-to-prod.yml` move code forward. Per-PR previews spin up their own Neon branch + Fly app via `preview-deploy.yml` and tear down on close.
+Promotion is staged: PRs merge to `staging`, then `promote-to-prod.yml` moves code to `prod` (a `/push` comment from a write-access user on a staging → prod PR). Per-PR previews spin up their own Neon branch + Fly app via `preview-deploy.yml` and tear down on close.
 
 ## Database & migrations
 
@@ -114,10 +120,16 @@ Failures on these block merge:
 
 Tiptap documents are CRDT-synced through the Hocuspocus server (`app/collab/server.ts`) using Yjs, with Redis for multi-instance fan-out and Postgres for persistence. Schema changes to collaboratively edited documents can pass tests locally and still break document sync in prod — flag any such change in the PR description.
 
+## Desktop app
+
+`desktop/` is a Tauri v2 cross platform shell that wraps the live hosted web app. It adds native notifications, auto-update, a tray icon, device-pairing sign-in (Google blocks embedded webviews), and deep-link click-through. The web server is unchanged except for additive `/auth/pair/*`, `/auth/handoff`, and `/link` routes.
+
+Releases are tagged `desktop-v*` and built by `desktop-release.yml` — the CI signs with Apple Developer ID and a Tauri updater minisign keypair. See `desktop/README.md` for the full security model and provisioning checklist.
+
 ## Pointers
 
 - `CLAUDE.md` — conventions for Claude-driven PRs.
+- `CONTRIBUTING.md` — setup and workflow guide for contributors.
 - `dali-api/prisma/MIGRATIONS.md` — full migration/Neon URL detail.
 - `dali-api/README.md` — deploy detail + per-endpoint rate limits.
-- `expansion_plan.md`, `CYCLE_REDESIGN_SPEC.md`, `SCHEDULING.md` — design docs.
-- `dali-os-mcp.md` — MCP integration.
+- `desktop/README.md` — Tauri shell: security model, signing, release process.

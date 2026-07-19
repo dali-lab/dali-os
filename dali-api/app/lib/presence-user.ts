@@ -1,5 +1,6 @@
 import { prisma } from "./db";
 import { resolvePhotoUrl } from "./photo";
+import { primaryEmail } from "~/lib/display";
 
 export interface PresenceUser {
   userId: string;
@@ -17,7 +18,7 @@ function buildSubtitle(args: {
   personalEmail: string | null;
   classYear: number | null;
 }): string | null {
-  const email = args.daliEmail ?? args.dartmouthEmail ?? args.personalEmail ?? null;
+  const email = primaryEmail(args) ?? null;
   const yearTail = args.classYear ? `'${String(args.classYear).slice(-2)}` : null;
   if (email && yearTail) return `${email} · ${yearTail}`;
   return email ?? yearTail ?? null;

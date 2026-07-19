@@ -1,4 +1,4 @@
-import { getDownloadUrl } from "./s3";
+import { getDownloadUrl, isS3Configured } from "./s3";
 
 // A stored User.photoUrl is one of:
 //   - an S3 object key under `uploads/` (avatars uploaded through this app), or
@@ -11,6 +11,12 @@ export async function resolvePhotoUrl(
   value: string | null | undefined,
 ): Promise<string | null> {
   if (!value) return null;
-  if (value.startsWith("uploads/")) return getDownloadUrl(value);
+  // Local development can legitimately run without S3. Stored upload keys
+  // then have no usable browser URL, so omit the image rather than failing
+  // the entire route loader while trying to presign it.
+  if (value.startsWith("uploads/")) {
+    if (!isS3Configured()) return null;
+    return getDownloadUrl(value);
+  }
   return value;
 }

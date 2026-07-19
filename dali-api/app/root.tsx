@@ -15,6 +15,8 @@ import {
   reportBoundaryError,
 } from "~/components/AnalyticsErrorReporter";
 import { NavigationProgress } from "~/components/NavigationProgress";
+import { ThemeSync } from "~/components/ThemeSync";
+import { THEME_BOOT_SRC } from "~/lib/theme";
 
 export const links: Route.LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -25,7 +27,7 @@ export const links: Route.LinksFunction = () => [
   },
   {
     rel: "stylesheet",
-    href: "https://fonts.googleapis.com/css2?family=Dosis:wght@600;700&family=Open+Sans:wght@300;400;600;700&display=swap",
+    href: "https://fonts.googleapis.com/css2?family=Dosis:wght@600;700&family=Open+Sans:wght@300;400;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap",
   },
   { rel: "icon", href: "/icon-blue.svg", type: "image/svg+xml" },
   { rel: "alternate icon", href: "/favicon.ico" },
@@ -58,7 +60,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           ?.getAttribute("content") ?? "";
 
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -67,10 +69,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
           content="s4kefSeLQR8Y2pXHEif-nQKDZXN5ZZ8GcD2r8X1ixC4"
         />
         <meta name="collab-url" content={collabUrl} suppressHydrationWarning />
+        {/* Blocking boot so theme applies before first paint (CSP-safe static file). */}
+        <script src={THEME_BOOT_SRC} />
         <Meta />
         <Links />
       </head>
       <body>
+        <ThemeSync />
         <NavigationProgress />
         {children}
         <AnalyticsErrorReporter />

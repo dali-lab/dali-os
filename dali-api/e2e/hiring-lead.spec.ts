@@ -1,10 +1,10 @@
 import { test, expect } from './fixtures';
 
-// Section content lives inside the workspace iframe; for /hiring/lead the
-// iframe title is "Cycles". Internal navigations within the section keep
-// the same iframe (and therefore the same title).
+// Section content lives inside the workspace iframe. The Hiring sidebar area
+// is childless, so a direct navigation seeds the tab with the area label
+// ("Hiring"); internal navigations within the section keep the same iframe.
 const cyclesFrame = (page: import('@playwright/test').Page) =>
-  page.frameLocator('iframe[title="Cycles"]');
+  page.frameLocator('iframe[title="Hiring"]');
 
 test.describe('hiring lead workflow', () => {
   test.beforeEach(async ({ loginAs }) => {

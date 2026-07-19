@@ -3,17 +3,18 @@ import { redirect, useLoaderData, useRevalidator } from "react-router";
 import {
   ListTodo,
   Check,
-  X as XIcon,
   CalendarDays,
   ExternalLink,
-  HelpCircle,
+  FileText,
   CalendarClock,
 } from "lucide-react";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { listOpenTasks, type Task } from "~/lib/tasks";
+import { listedFormsFor, type ListedForm } from "~/forms/lib/public-form";
 import { fetchGeneralCalendarEvents } from "~/lib/general-calendar";
 import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
+import { RsvpButtons, notifyTasksChanged } from "~/components/RsvpButtons";
 import type { Route } from "./+types/home";
 
 // The home week calendar is rendered in this fixed lab timezone, matching the
@@ -22,7 +23,7 @@ const HOME_TZ = "America/New_York";
 
 type HomeNotification = {
   id: string;
-  kind: "General" | "MeetingInvite" | "MeetingReminder" | "SystemAnnouncement";
+  kind: "General" | "MeetingInvite" | "MeetingReminder" | "SystemAnnouncement" | "Education";
   title: string;
   body: string | null;
   link: string | null;
@@ -36,52 +37,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
   if (auth.user.type === "applicant") return redirect("/portal");
-
-  const items = await prisma.notification.findMany({
-    // Hide invites whose meeting was Cancelled — they shouldn't appear in the
-    // banner, just as they're dropped from tasks and the bell. Also hide
-    // already-answered invites (Accepted/Declined/Tentative): once the user has
-    // RSVP'd, the card has served its purpose and shouldn't linger.
-    where: {
-      recipientUserId: auth.user.sub,
-      AND: [
-        {
-          OR: [
-            { scheduledMeetingId: null },
-            { scheduledMeeting: { status: { not: "Cancelled" } } },
-          ],
-        },
-        {
-          OR: [{ scheduledMeetingId: null }, { rsvp: null }],
-        },
-      ],
-    },
-    orderBy: { createdAt: "desc" },
-    take: 50,
-    select: {
-      id: true,
-      kind: true,
-      title: true,
-      body: true,
-      link: true,
-      readAt: true,
-      createdAt: true,
-      scheduledMeetingId: true,
-      rsvp: true,
-    },
-  });
-  const notifications: HomeNotification[] = items.map((n) => ({
-    id: n.id,
-    kind: n.kind,
-    title: n.title,
-    body: n.body,
-    link: n.link,
-    readAt: n.readAt ? n.readAt.toISOString() : null,
-    createdAt: n.createdAt.toISOString(),
-    scheduledMeetingId: n.scheduledMeetingId,
-    rsvp: n.rsvp,
-  }));
-  const tasks = await listOpenTasks(auth.user.sub);
+  const partnerRedirect = await redirectPartnerToPortal(auth);
+  if (partnerRedirect) return partnerRedirect;
 
   // Current week (Sunday→following Sunday) in the lab timezone, used both to
   // build the day columns and to window the calendar fetch.
@@ -104,6 +61,59 @@ export async function loader({ request }: Route.LoaderArgs) {
     HOME_TZ,
   );
 
+  const [items, tasks, rawEvents, formsForYou] = await Promise.all([
+    prisma.notification.findMany({
+      // Hide invites whose meeting was Cancelled — they shouldn't appear in the
+      // banner, just as they're dropped from tasks and the bell. Also hide
+      // already-answered invites (Accepted/Declined/Tentative): once the user has
+      // RSVP'd, the card has served its purpose and shouldn't linger.
+      where: {
+        recipientUserId: auth.user.sub,
+        AND: [
+          {
+            OR: [
+              { scheduledMeetingId: null },
+              { scheduledMeeting: { status: { not: "Cancelled" } } },
+            ],
+          },
+          {
+            OR: [{ scheduledMeetingId: null }, { rsvp: null }],
+          },
+        ],
+      },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+      select: {
+        id: true,
+        kind: true,
+        title: true,
+        body: true,
+        link: true,
+        readAt: true,
+        createdAt: true,
+        scheduledMeetingId: true,
+        rsvp: true,
+      },
+    }),
+    listOpenTasks(auth.user.sub),
+    // Real events from the public DALI General Calendar (empty when unconfigured
+    // or on fetch failure — the panel then shows an empty grid + hint).
+    fetchGeneralCalendarEvents(weekStart, weekEnd),
+    listedFormsFor(auth.user.sub),
+  ]);
+
+  const notifications: HomeNotification[] = items.map((n) => ({
+    id: n.id,
+    kind: n.kind,
+    title: n.title,
+    body: n.body,
+    link: n.link,
+    readAt: n.readAt ? n.readAt.toISOString() : null,
+    createdAt: n.createdAt.toISOString(),
+    scheduledMeetingId: n.scheduledMeetingId,
+    rsvp: n.rsvp,
+  }));
+
   // Day columns (Sun..Sat) with the calendar date number shown in each header.
   const weekDays: WeekDayDTO[] = Array.from({ length: 7 }).map((_, i) => {
     const dayUtc = new Date(weekStart.getTime() + i * 86_400_000);
@@ -111,9 +121,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     return { num: dy.day };
   });
 
-  // Real events from the public DALI General Calendar (empty when unconfigured
-  // or on fetch failure — the panel then shows an empty grid + hint).
-  const rawEvents = await fetchGeneralCalendarEvents(weekStart, weekEnd);
   const weekEvents: HomeWeekEvent[] = [];
   for (const ev of rawEvents) {
     if (ev.allDay) continue; // all-day events don't map onto the hour grid
@@ -126,7 +133,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     weekEvents.push({ colIdx, startHour, duration, label: ev.summary });
   }
 
-  return { user: auth.user, notifications, tasks, weekDays, weekEvents };
+  return { user: auth.user, notifications, tasks, weekDays, weekEvents, formsForYou };
 }
 
 type WeekDayDTO = { num: number };
@@ -138,7 +145,8 @@ type HomeWeekEvent = {
 };
 
 export default function Home() {
-  const { user, notifications, tasks, weekDays, weekEvents } = useLoaderData<typeof loader>();
+  const { user, notifications, tasks, weekDays, weekEvents, formsForYou } =
+    useLoaderData<typeof loader>();
   const firstName = user.firstName || user.email.split("@")[0];
 
   return (
@@ -154,8 +162,42 @@ export default function Home() {
 
       <AttentionBanner tasks={tasks} notifications={notifications} />
 
+      <FormsForYouPanel forms={formsForYou} />
+
       <div className="flex flex-col gap-6">
         <WeekCalendarPanel days={weekDays} events={weekEvents} />
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Forms for you — published forms that opted into listing (Form.listed) */
+/* and whose audience admits this member. Collapses to nothing when      */
+/* there's nothing to show, like the attention banner.                   */
+/* ------------------------------------------------------------------ */
+
+function FormsForYouPanel({ forms }: { forms: ListedForm[] }) {
+  if (forms.length === 0) return null;
+  return (
+    <div className="bg-card border border-border shadow-brand-1 rounded-lg p-3">
+      <div className="flex items-center gap-2 mb-2">
+        <FileText className="w-4 h-4 text-accent-coral" />
+        <span className="font-heading font-semibold text-sm text-foreground">
+          Forms for you
+        </span>
+      </div>
+      <div className="flex flex-col gap-1">
+        {forms.map((f) => (
+          <a
+            key={f.id}
+            href={f.fillUrl}
+            className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-md text-sm text-foreground hover:bg-muted/50 transition-colors"
+          >
+            <span className="truncate">{f.name}</span>
+            <ExternalLink className="w-3.5 h-3.5 text-muted-foreground/70 shrink-0" />
+          </a>
+        ))}
       </div>
     </div>
   );
@@ -260,7 +302,7 @@ function TaskCard({ task: t }: { task: Task }) {
   const revalidator = useRevalidator();
   const [confirming, setConfirming] = useState(false);
   const cls =
-    "flex-shrink-0 w-56 bg-card border border-border rounded-md px-3 py-2";
+    "flex-shrink-0 w-56 bg-card border border-border shadow-brand-1 rounded-md px-3 py-2";
 
   const meta = t.dueAt ? (
     <span className="inline-flex items-center gap-1 text-[11px] font-medium text-accent-coral mt-1">
@@ -369,22 +411,6 @@ function openTaskLink(
   }
 }
 
-// Tell the shell's sidebar task poller that the task list changed, so its
-// count + list update immediately instead of on the next poll. Inside the
-// TabWorkspace iframe the poller lives in the parent, so relay via postMessage;
-// the shell re-dispatches it as a same-window event (see Layout.tsx). On a
-// standalone Home page (no iframe) dispatch the event directly.
-function notifyTasksChanged() {
-  if (window.self !== window.top) {
-    window.parent.postMessage(
-      { type: "dali:tasksChanged" },
-      window.location.origin,
-    );
-  } else {
-    window.dispatchEvent(new Event("dali:tasksChanged"));
-  }
-}
-
 /* ------------------------------------------------------------------ */
 /* Notification card (rendered inside the attention banner)             */
 /* ------------------------------------------------------------------ */
@@ -403,99 +429,6 @@ function relativeTime(iso: string): string {
   return new Date(iso).toLocaleDateString();
 }
 
-
-/* ------------------------------------------------------------------ */
-/* RSVP buttons — shared by the meeting-invite task card and the         */
-/* notification card. On a response, POSTs to the rsvp endpoint (which   */
-/* records the RSVP and marks the notification read), then revalidates   */
-/* so the now-answered invite drops out of tasks.                        */
-/* ------------------------------------------------------------------ */
-
-function RsvpButtons({
-  notificationId,
-  onResponded,
-}: {
-  notificationId: string;
-  onResponded?: (rsvp: "Accepted" | "Declined" | "Tentative") => void;
-}) {
-  const revalidator = useRevalidator();
-  const [submitting, setSubmitting] = useState<
-    null | "accepted" | "declined" | "tentative"
-  >(null);
-  const [error, setError] = useState<string | null>(null);
-
-  async function sendRsvp(response: "accepted" | "declined" | "tentative") {
-    setSubmitting(response);
-    setError(null);
-    try {
-      const res = await fetch(`/api/notifications/${notificationId}/rsvp`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ response }),
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        setError(json.error ?? "Failed to RSVP");
-        return;
-      }
-      const enumVal =
-        response === "accepted"
-          ? "Accepted"
-          : response === "declined"
-            ? "Declined"
-            : "Tentative";
-      onResponded?.(enumVal);
-      if (json.gcalError) {
-        setError(`Recorded in-app, but Google sync failed: ${json.gcalError}`);
-      } else {
-        // Drop the answered invite from tasks/banner on the next loader pass,
-        // and refresh the shell's sidebar task count right away.
-        revalidator.revalidate();
-        notifyTasksChanged();
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Network error");
-    } finally {
-      setSubmitting(null);
-    }
-  }
-
-  return (
-    <>
-      <div className="flex items-center gap-1.5 mt-2">
-        <button
-          type="button"
-          onClick={() => sendRsvp("accepted")}
-          disabled={!!submitting}
-          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
-        >
-          <Check className="w-3 h-3" />
-          {submitting === "accepted" ? "Accepting…" : "Accept"}
-        </button>
-        <button
-          type="button"
-          onClick={() => sendRsvp("tentative")}
-          disabled={!!submitting}
-          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md border border-border text-foreground hover:bg-muted disabled:opacity-50"
-        >
-          <HelpCircle className="w-3 h-3" />
-          {submitting === "tentative" ? "…" : "Maybe"}
-        </button>
-        <button
-          type="button"
-          onClick={() => sendRsvp("declined")}
-          disabled={!!submitting}
-          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md border border-border text-foreground hover:bg-muted disabled:opacity-50"
-        >
-          <XIcon className="w-3 h-3" />
-          {submitting === "declined" ? "…" : "Decline"}
-        </button>
-      </div>
-      {error && <p className="text-[10px] text-red-700 mt-1">{error}</p>}
-    </>
-  );
-}
 
 function NotificationCard({ notification }: { notification: HomeNotification }) {
   const revalidator = useRevalidator();
@@ -524,7 +457,7 @@ function NotificationCard({ notification }: { notification: HomeNotification }) 
 
   return (
     <div
-      className={`group bg-card border border-border border-l-4 ${accent} rounded-md px-3 py-2.5 flex items-start gap-3`}
+      className={`group bg-card border border-border shadow-brand-1 border-l-4 ${accent} rounded-md px-3 py-2.5 flex items-start gap-3`}
     >
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
@@ -534,9 +467,10 @@ function NotificationCard({ notification }: { notification: HomeNotification }) 
               <a
                 href={notification.link}
                 onClick={(e) => {
-                  if (!notification.readAt) {
+                  if (!notification.readAt && !isInvite) {
                     // keepalive: true so the POST survives the navigation
                     // that the anchor's default action is about to start.
+                    // Meeting invites clear only via RSVP — never via link.
                     fetch(`/api/notifications/${notification.id}/read`, {
                       method: "POST",
                       credentials: "include",
@@ -636,7 +570,7 @@ function WeekCalendarPanel({
 }) {
   const hasEvents = events.length > 0;
   return (
-    <section className="bg-card border border-border rounded-lg p-4 flex flex-col">
+    <section className="bg-card border border-border shadow-brand-1 rounded-lg p-4 flex flex-col">
       <div className="flex items-center justify-between mb-3">
         <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
           <CalendarDays className="w-4 h-4 text-accent-coral" />

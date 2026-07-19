@@ -1,7 +1,6 @@
 import type { Route } from "./+types/api.documents.$id";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
-import { isCore } from "~/lib/roles";
+import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent } from "~/lib/audit";
 
@@ -23,26 +22,39 @@ export async function action({ request, params }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
   if (preflight) return preflight;
 
-  const auth = await requireAuth(request);
-  if (!auth.ok) return withCors(request, auth.response);
-
   if (request.method !== "POST" && request.method !== "DELETE") {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
-  if (!(await isCore(auth.user.sub))) {
-    return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
-  }
-
   const pageId = params.id!;
   const page = await prisma.page.findUnique({
     where: { id: pageId },
-    select: { id: true, workspaceType: true },
+    select: { id: true, workspaceType: true, workspaceId: true, systemKey: true, kind: true },
   });
-  if (!page || page.workspaceType !== "Project") {
+  if (!page || page.workspaceType !== "Project" || !page.workspaceId) {
     return withCors(request, Response.json({ error: "Document not found" }, { status: 404 }));
   }
+  const gate = await requireProjectEditAccess(request, page.workspaceId);
+  if (!gate.ok) return gate.response;
+  const auth = gate.auth;
 
   if (request.method === "DELETE") {
+    if (page.systemKey) {
+      return withCors(
+        request,
+        Response.json({ error: "This default folder can't be deleted" }, { status: 400 }),
+      );
+    }
+    if (page.kind === "Folder") {
+      const childCount = await prisma.page.count({
+        where: { parentPageId: pageId, archivedAt: null },
+      });
+      if (childCount > 0) {
+        return withCors(
+          request,
+          Response.json({ error: "Move or delete the documents inside this folder first" }, { status: 400 }),
+        );
+      }
+    }
     await prisma.page.update({
       where: { id: pageId },
       data: { archivedAt: new Date() },

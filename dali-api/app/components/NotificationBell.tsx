@@ -15,6 +15,7 @@ export type OpenTask = {
   id: string;
   title: string;
   link: string | null;
+  source?: "meeting" | "reminder" | "announcement" | "general";
 };
 
 type Polled = {

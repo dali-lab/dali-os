@@ -18,6 +18,9 @@ function mockFetchIcs(body: string) {
 const WINDOW_START = new Date("2026-05-24T00:00:00Z");
 const WINDOW_END = new Date("2026-05-31T00:00:00Z");
 
+// The parsed feed is cached at module level, keyed by URL — each test uses its
+// own URL so cached results from one test can't leak into another.
+
 describe("generalCalendarConfigured", () => {
   it("is false without the env var", () => {
     delete process.env.DALI_GENERAL_CALENDAR_ICS;
@@ -40,7 +43,7 @@ describe("fetchGeneralCalendarEvents", () => {
   });
 
   it("parses a UTC timed event inside the window", async () => {
-    process.env.DALI_GENERAL_CALENDAR_ICS = "https://example.com/cal.ics";
+    process.env.DALI_GENERAL_CALENDAR_ICS = "https://example.com/utc.ics";
     mockFetchIcs(
       [
         "BEGIN:VCALENDAR",
@@ -60,7 +63,7 @@ describe("fetchGeneralCalendarEvents", () => {
   });
 
   it("unfolds folded lines and unescapes the summary", async () => {
-    process.env.DALI_GENERAL_CALENDAR_ICS = "https://example.com/cal.ics";
+    process.env.DALI_GENERAL_CALENDAR_ICS = "https://example.com/folded.ics";
     mockFetchIcs(
       // RFC 5545 folding: a continuation line begins with one space/tab which
       // is the fold marker and is dropped on unfold. So "...room 2 " + fold +
@@ -80,7 +83,7 @@ describe("fetchGeneralCalendarEvents", () => {
   });
 
   it("flags an all-day (date-only) event", async () => {
-    process.env.DALI_GENERAL_CALENDAR_ICS = "https://example.com/cal.ics";
+    process.env.DALI_GENERAL_CALENDAR_ICS = "https://example.com/all-day.ics";
     mockFetchIcs(
       ["BEGIN:VEVENT", "SUMMARY:Holiday", "DTSTART;VALUE=DATE:20260525", "END:VEVENT"].join("\r\n"),
     );
@@ -90,7 +93,7 @@ describe("fetchGeneralCalendarEvents", () => {
   });
 
   it("excludes events outside the window", async () => {
-    process.env.DALI_GENERAL_CALENDAR_ICS = "https://example.com/cal.ics";
+    process.env.DALI_GENERAL_CALENDAR_ICS = "https://example.com/windowed.ics";
     mockFetchIcs(
       [
         "BEGIN:VEVENT",
@@ -104,14 +107,14 @@ describe("fetchGeneralCalendarEvents", () => {
     expect(events).toEqual([]);
   });
 
-  it("returns [] (doesn't throw) on a non-ok response", async () => {
-    process.env.DALI_GENERAL_CALENDAR_ICS = "https://example.com/cal.ics";
+  it("returns [] (doesn't throw) on a non-ok response with no cached feed", async () => {
+    process.env.DALI_GENERAL_CALENDAR_ICS = "https://example.com/non-ok.ics";
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false } as Response));
     await expect(fetchGeneralCalendarEvents(WINDOW_START, WINDOW_END)).resolves.toEqual([]);
   });
 
   it("expands a weekly RRULE into the current-week occurrence", async () => {
-    process.env.DALI_GENERAL_CALENDAR_ICS = "https://example.com/cal.ics";
+    process.env.DALI_GENERAL_CALENDAR_ICS = "https://example.com/rrule.ics";
     // Weekly Monday standup anchored well before the window. The window is
     // 2026-05-24 (Sun) .. 2026-05-31 (Sun), so the Monday occurrence is 05-25.
     mockFetchIcs(
@@ -133,7 +136,7 @@ describe("fetchGeneralCalendarEvents", () => {
   });
 
   it("resolves a TZID local time to the right UTC instant", async () => {
-    process.env.DALI_GENERAL_CALENDAR_ICS = "https://example.com/cal.ics";
+    process.env.DALI_GENERAL_CALENDAR_ICS = "https://example.com/tzid.ics";
     // 14:00 America/New_York on 2026-05-26 is EDT (UTC-4) → 18:00Z.
     mockFetchIcs(
       [
@@ -147,5 +150,33 @@ describe("fetchGeneralCalendarEvents", () => {
     const events = await fetchGeneralCalendarEvents(WINDOW_START, WINDOW_END);
     expect(events).toHaveLength(1);
     expect(events[0].start.toISOString()).toBe("2026-05-26T18:00:00.000Z");
+  });
+
+  it("caches the feed within the TTL and serves it stale when a refresh fails", async () => {
+    process.env.DALI_GENERAL_CALENDAR_ICS = "https://example.com/cached.ics";
+    const fetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () =>
+        [
+          "BEGIN:VEVENT",
+          "SUMMARY:Lab Meeting",
+          "DTSTART:20260526T180000Z",
+          "DTEND:20260526T190000Z",
+          "END:VEVENT",
+        ].join("\r\n"),
+    } as Response);
+    vi.stubGlobal("fetch", fetchFn);
+
+    await expect(fetchGeneralCalendarEvents(WINDOW_START, WINDOW_END)).resolves.toHaveLength(1);
+    // Second call inside the TTL: served from cache, no refetch.
+    await expect(fetchGeneralCalendarEvents(WINDOW_START, WINDOW_END)).resolves.toHaveLength(1);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+
+    // Past the TTL a refresh is attempted; when it fails, the stale feed is
+    // served instead of an empty result.
+    vi.spyOn(Date, "now").mockReturnValue(Date.now() + 6 * 60_000);
+    fetchFn.mockResolvedValue({ ok: false } as Response);
+    await expect(fetchGeneralCalendarEvents(WINDOW_START, WINDOW_END)).resolves.toHaveLength(1);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
   });
 });

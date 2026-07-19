@@ -1,7 +1,9 @@
 import { useMemo, useState, useEffect } from "react";
 import { redirect, useLoaderData, useFetcher } from "react-router";
 import type { Route } from "./+types/projects.level-up";
-import { requireAuth } from "~/lib/auth";
+import { useFilteredList } from "~/hooks/useFilteredList";
+import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
+import { parseFormDataJson } from "~/lib/safe-json";
 import { canManageStaffing, canViewStaffing, currentTerm } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { ensureStaffingCycle } from "../lib/staffing-cycle";
@@ -15,6 +17,7 @@ import { SubmissionFilters } from "../components/SubmissionFilters";
 import { SlotAdvancedSettingsModal } from "../components/SlotAdvancedSettingsModal";
 import { DomainFilter } from "../components/DomainFilter";
 import { TermFilter } from "~/components/TermFilter";
+import { Modal, ModalHeader } from "~/components/Modal";
 import { resolveTermFilter } from "~/lib/terms";
 import {
   parseColumnMapping,
@@ -22,10 +25,16 @@ import {
   type ColumnMapping,
 } from "../lib/slot-roles";
 import { buildSubmissionView } from "../lib/submission-view.server";
+import { deriveSlotStatus, type SlotStatus } from "../lib/slot-status.server";
+import { SlotStatusStrip } from "../components/SlotStatusStrip";
+import { projectsPills } from "../components/projectsPills";
+import { AreaPillNav } from "~/components/AreaPillNav";
 import type { Question } from "~/types";
-import type { Level } from "~/generated/prisma/enums";
+import { isLevel, type Level } from "~/lib/level";
 
 const SLOT = "level-up" as const;
+
+export const handle = { areaPills: true };
 
 export const meta: Route.MetaFunction = () => [
   { title: "Level Up · DALI OS" },
@@ -44,7 +53,8 @@ function parseLevel(raw: string): Level | null {
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  if (auth.user.type === "applicant") return redirect("/portal");
+  const portalRedirect = redirectApplicantToPortal(auth);
+  if (portalRedirect) return portalRedirect;
   if (!(await canViewStaffing(auth.user.sub))) return redirect("/");
 
   const {
@@ -140,6 +150,13 @@ export async function loader({ request }: Route.LoaderArgs) {
     select: { id: true, displayName: true },
   });
 
+  // Per-slot guardrail status (bound / mapped / sent-to). Single-cycle view
+  // only — the all-terms aggregate has no one slot to bind, mirroring binding.
+  const slotStatus: SlotStatus | null = singleCycleId
+    ? (await deriveSlotStatus(singleCycleId)).find((s) => s.slot === SLOT) ??
+      null
+    : null;
+
   return {
     gate: "ok" as const,
     cycle: { name: cycleName, id: singleCycleId },
@@ -155,6 +172,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     mappingWarning,
     noFormConnected,
     domainOptions,
+    slotStatus,
   };
 }
 
@@ -322,7 +340,7 @@ export async function action({ request }: Route.ActionArgs) {
           { error: "Bind a form before mapping its columns." },
           { status: 400 },
         );
-      const mapping = parseColumnMapping(safeJsonParse(form.get("mapping")));
+      const mapping = parseColumnMapping(parseFormDataJson(form.get("mapping")));
       if (!mapping)
         return Response.json({ error: "Invalid mapping." }, { status: 400 });
       const latest = await prisma.formVersion.findFirst({
@@ -353,8 +371,8 @@ export async function action({ request }: Route.ActionArgs) {
       return Response.json({ error: "Forbidden" }, { status: 403 });
     const targetUserId = String(form.get("userId") ?? "");
     const domainId = String(form.get("domainId") ?? "");
-    const targetLevel = String(form.get("targetLevel") ?? "") as Level;
-    if (!targetUserId || !domainId || !["P1", "P2", "P3"].includes(targetLevel))
+    const targetLevel = String(form.get("targetLevel") ?? "");
+    if (!targetUserId || !domainId || !isLevel(targetLevel))
       return Response.json({ error: "Invalid parameters." }, { status: 400 });
 
     await prisma.domainEligibility.upsert({
@@ -376,15 +394,6 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   return Response.json({ error: "Unknown intent" }, { status: 400 });
-}
-
-function safeJsonParse(v: FormDataEntryValue | null): unknown {
-  if (typeof v !== "string") return null;
-  try {
-    return JSON.parse(v);
-  } catch {
-    return null;
-  }
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -409,7 +418,6 @@ export default function LevelUpDatabase() {
 type LoadedData = Extract<Awaited<ReturnType<typeof loader>>, { gate: "ok" }>;
 
 function Loaded({ data }: { data: LoadedData }) {
-  const [query, setQuery] = useState("");
   const [domainId, setDomainId] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [confirmRow, setConfirmRow] = useState<{
@@ -420,15 +428,11 @@ function Loaded({ data }: { data: LoadedData }) {
     targetLevel: Level;
   } | null>(null);
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return data.submissions.filter((s) => {
-      if (q && !`${s.name} ${s.email ?? ""}`.toLowerCase().includes(q))
-        return false;
-      if (domainId && !s.domainIds.includes(domainId)) return false;
-      return true;
-    });
-  }, [data.submissions, query, domainId]);
+  const { search, setSearch, filtered } = useFilteredList(data.submissions, {
+    searchFields: (s) => [s.name, s.email],
+    predicates: [(s) => !domainId || s.domainIds.includes(domainId)],
+    deps: [domainId],
+  });
 
   const domains = useMemo(
     () => data.domainOptions.map((d) => ({ id: d.id, name: d.displayName })),
@@ -469,9 +473,11 @@ function Loaded({ data }: { data: LoadedData }) {
         </div>
       )}
 
+      {data.slotStatus && <SlotStatusStrip status={data.slotStatus} />}
+
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="flex-1">
-          <SubmissionFilters query={query} onQueryChange={setQuery} />
+          <SubmissionFilters query={search} onQueryChange={setSearch} />
         </div>
         <DomainFilter domains={domains} value={domainId} onChange={setDomainId} />
         <TermFilter terms={data.termOptions} selected={data.selectedTerm} />
@@ -687,16 +693,20 @@ function LevelUpConfirmDialog({
   }, [fetcher.data, onClose]);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+    <Modal
+      open
+      onClose={onClose}
+      labelledBy="level-up-confirm-title"
+      disableEscape={pending}
+      containerClassName="bg-card border border-border rounded-lg shadow-lg w-full max-w-sm p-6 flex flex-col gap-4 my-auto"
     >
-      <div className="bg-card border border-border rounded-lg shadow-lg w-full max-w-sm mx-4 p-6 flex flex-col gap-4">
-        <h2 className="font-heading text-lg font-bold text-foreground">
-          Confirm Level Up
-        </h2>
+      <>
+        <ModalHeader
+          titleId="level-up-confirm-title"
+          title="Confirm Level Up"
+          onClose={onClose}
+          className="mb-0"
+        />
         <p className="text-sm text-foreground">
           Promote{" "}
           <span className="font-semibold">{row.name}</span> to{" "}
@@ -734,8 +744,8 @@ function LevelUpConfirmDialog({
             </button>
           </fetcher.Form>
         </div>
-      </div>
-    </div>
+      </>
+    </Modal>
   );
 }
 
@@ -751,6 +761,8 @@ function Header({
   settingsLabel?: string;
 }) {
   return (
+    <>
+    <AreaPillNav items={projectsPills({ canViewStaffing: true, active: "level-up" })} />
     <header className="flex items-start justify-between gap-3">
       <div>
         <h1 className="font-heading text-2xl font-bold text-foreground">
@@ -770,5 +782,6 @@ function Header({
         </button>
       )}
     </header>
+    </>
   );
 }

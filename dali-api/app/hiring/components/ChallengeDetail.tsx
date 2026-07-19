@@ -1,20 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
 import { useLoaderData, useSubmit, useSearchParams, useNavigation, Form } from 'react-router'
 import { Plus, FileText, Clock, UserIcon, Eye } from 'lucide-react'
-import { FormBuilderTab } from '~/hiring/components/ChallengeBuilder'
+import { FormBuilderTab } from '~/components/form-builder/FormBuilder'
 import { RichTextViewer, isEmptyDoc } from '~/components/RichTextViewer'
 import { ChallengePreviewModal } from '~/hiring/components/ChallengePreviewModal'
+import { Tooltip } from '~/components/ui/IconButton'
 import type { Question } from '~/types'
 import type { loader } from '~/hiring/routes/challenges.$id'
-
-function formatDateTime(iso: string | Date) {
-  const d = new Date(iso)
-  return (
-    d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) +
-    ' at ' +
-    d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
-  )
-}
+import { formatDateTime } from '~/lib/display'
 
 export function resolveDuplicateDomainId(version: { domainId: string | null }): string {
   // A general version's domainId is null; coerce to '' so the form's selected
@@ -222,13 +215,15 @@ export function ChallengeDetail() {
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => setShowPreviewModal(true)}
-                    className="inline-flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-700 font-medium"
-                  >
-                    <Eye className="w-4 h-4" />
-                    Preview
-                  </button>
+                  <Tooltip label="Preview">
+                    <button
+                      onClick={() => setShowPreviewModal(true)}
+                      aria-label="Preview"
+                      className="inline-flex items-center justify-center p-1.5 rounded-md text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </button>
+                  </Tooltip>
                   <button
                     onClick={() => {
                       setSelectedDomainId(resolveDuplicateDomainId(selectedVersion))

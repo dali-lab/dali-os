@@ -46,7 +46,7 @@ jobs:
       github.event_name == 'issues' &&
       github.event.action == 'labeled' &&
       github.event.label.name == 'claude'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v6
         with:
@@ -92,7 +92,7 @@ jobs:
       contains(github.event.comment.body, '@claude') &&
       !startsWith(github.event.comment.body, '/implement') &&
       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v6
         with:
@@ -137,12 +137,12 @@ jobs:
       !github.event.issue.pull_request &&
       startsWith(github.event.comment.body, '/implement') &&
       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          ref: dev
+          ref: staging
       - name: Configure git
         run: |
           git config --global user.email "claude[bot]@users.noreply.github.com"
@@ -163,7 +163,7 @@ jobs:
             A collaborator has approved with `/implement`.
 
             You are checked out on branch `claude/issue-${{ github.event.issue.number }}`
-            based on `dev`. Your job is to implement, commit, push, and open a PR.
+            based on `staging`. Your job is to implement, commit, push, and open a PR.
 
             Step 1 — read the approved plan:
               - Read `CLAUDE.md`.
@@ -178,7 +178,7 @@ jobs:
               - Push the branch: `git push -u origin claude/issue-${{ github.event.issue.number }}`.
 
             Step 3 — open the PR:
-              - Target base branch: `dev`.
+              - Target base branch: `staging`.
               - Title: `Fix #${{ github.event.issue.number }}: <short description>`.
               - Body must include `Closes #${{ github.event.issue.number }}` and a link back to your plan comment.
               - Do NOT add labels to the PR. Issue-level state labels are managed by the workflow.
@@ -186,7 +186,7 @@ jobs:
             Rules:
               - Do NOT modify `.github/workflows/*`.
               - Do NOT use `--no-verify` or any hook-bypass flag.
-              - Do NOT force-push `dev`, `prod`, `staging`, or `main`.
+              - Do NOT force-push `staging`, `prod`, or `main`.
               - If the plan is genuinely ambiguous or mid-implementation you hit
                 a real tradeoff, STOP. Do NOT open a PR. Instead comment on
                 issue #${{ github.event.issue.number }} explaining what's
@@ -233,7 +233,7 @@ jobs:
       github.event.review.state == 'changes_requested' &&
       startsWith(github.event.pull_request.head.ref, 'claude/issue-') &&
       github.event.sender.type != 'Bot'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - name: Mint App token (so pushes trigger downstream workflows)
         id: app-token
@@ -337,7 +337,7 @@ jobs:
 
             Rules:
               - Do NOT mark conversations resolved.
-              - Do NOT force-push unless rebasing on `dev` is genuinely necessary; if so, explain in the summary.
+              - Do NOT force-push unless rebasing on `staging` is genuinely necessary; if so, explain in the summary.
               - Do NOT modify `.github/workflows/*`.
               - Do NOT use `--no-verify`.
               - Do NOT mark the PR ready for review yourself; the workflow does that after you finish.

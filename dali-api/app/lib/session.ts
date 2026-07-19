@@ -1,11 +1,18 @@
 import { createHash, randomBytes } from "node:crypto";
 import { prisma } from "~/lib/db";
+import { SESSION_TTL_SECONDS } from "./cookies";
 
 // 30 days rolling expiry; same value as the absolute cap so a session
 // can be extended for up to 30 days from creation. Matches the prior
 // `RefreshToken.familyCreatedAt + SESSION_MAX_AGE_MS` behavior.
-export const ROLLING_TTL_MS = 30 * 24 * 60 * 60 * 1000;
-export const ABSOLUTE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+export const ROLLING_TTL_MS = SESSION_TTL_SECONDS * 1000;
+export const ABSOLUTE_TTL_MS = SESSION_TTL_SECONDS * 1000;
+
+// Minimum gap between session-roll writes. The rolling TTL is 30 days, so
+// per-request precision on expiresAt/lastUsedAt is meaningless — an hourly
+// bump keeps the same practical expiry behavior without turning every
+// authed loader call into a DB write.
+export const ROLL_MIN_INTERVAL_MS = 60 * 60 * 1000;
 
 export function hashSessionId(raw: string): string {
   return createHash("sha256").update(raw).digest("base64url");
@@ -57,6 +64,7 @@ export interface LookupSessionResult {
   id: string; // hashed id (PK)
   userId: string;
   grantId: string | null;
+  lastUsedAt: Date;
   expiresAt: Date;
   absoluteExpiresAt: Date;
   revokedAt: Date | null;
@@ -64,6 +72,7 @@ export interface LookupSessionResult {
     id: string;
     daliEmail: string | null;
     dartmouthEmail: string | null;
+    personalEmail: string | null;
     netId: string | null;
     firstName: string;
     lastName: string;
@@ -81,6 +90,7 @@ export async function lookupSession(raw: string): Promise<LookupSessionResult | 
           id: true,
           daliEmail: true,
           dartmouthEmail: true,
+          personalEmail: true,
           netId: true,
           firstName: true,
           lastName: true,
@@ -93,22 +103,27 @@ export async function lookupSession(raw: string): Promise<LookupSessionResult | 
 }
 
 // Extends the rolling expiry. Never advances past absoluteExpiresAt.
+// Throttled: skips the write while lastUsedAt is under ROLL_MIN_INTERVAL_MS
+// old — a 30-day TTL doesn't need per-request precision. Callers already
+// hold the row from lookupSession, so this is a single UPDATE with no read.
 // Fire-and-forget from request handlers — a failed roll doesn't break
 // the request that's already authenticated.
-export async function rollSession(hashedId: string, ttlMs = ROLLING_TTL_MS): Promise<void> {
-  const session = await prisma.session.findUnique({
-    where: { id: hashedId },
-    select: { absoluteExpiresAt: true },
-  });
-  if (!session) return;
+export async function rollSession(
+  session: { id: string; absoluteExpiresAt: Date; lastUsedAt: Date | null },
+  ttlMs = ROLLING_TTL_MS,
+): Promise<void> {
+  const now = Date.now();
+  if (session.lastUsedAt && now - session.lastUsedAt.getTime() < ROLL_MIN_INTERVAL_MS) {
+    return;
+  }
 
-  const nextExpiry = new Date(Date.now() + ttlMs);
+  const nextExpiry = new Date(now + ttlMs);
   const capped =
     nextExpiry > session.absoluteExpiresAt ? session.absoluteExpiresAt : nextExpiry;
 
   await prisma.session.update({
-    where: { id: hashedId },
-    data: { lastUsedAt: new Date(), expiresAt: capped },
+    where: { id: session.id },
+    data: { lastUsedAt: new Date(now), expiresAt: capped },
   });
 }
 

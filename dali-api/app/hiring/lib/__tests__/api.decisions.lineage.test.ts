@@ -3,12 +3,26 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db");
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
+  requireCore: vi.fn(),
+  requireCoreOrDomainLead: vi.fn(),
+  requireMemberSession: vi.fn(),
+  forbidden: vi.fn((_req: Request) =>
+    Response.json({ error: "Forbidden" }, { status: 403 }),
+  ),
+  unauthorized: vi.fn((_req: Request) =>
+    Response.json({ error: "Unauthorized" }, { status: 401 }),
+  ),
+  redirectApplicantToPortal: vi.fn(() => null),
 }));
 vi.mock("~/lib/roles");
 vi.mock("~/lib/gmail");
 
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import {
+  requireAuth,
+  requireCoreOrDomainLead,
+  requireMemberSession,
+} from "~/lib/auth";
 import { isCore, isDomainLead, hasCycleAccess } from "~/lib/roles";
 import { sendEmail } from "~/lib/gmail";
 import { action as finalizeAction } from "~/hiring/routes/api.decisions.$id.finalize";
@@ -21,6 +35,7 @@ const mockPrisma = prisma as unknown as {
   gmailIntegration: { findFirst: ReturnType<typeof vi.fn> };
   decision: {
     findUnique: ReturnType<typeof vi.fn>;
+    findFirst: ReturnType<typeof vi.fn>;
     create: ReturnType<typeof vi.fn>;
     findMany: ReturnType<typeof vi.fn>;
   };
@@ -43,7 +58,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   (mockPrisma as any).dALIMember = { findUnique: vi.fn() };
   (mockPrisma as any).gmailIntegration = { findFirst: vi.fn() };
-  (mockPrisma as any).decision = { findUnique: vi.fn(), create: vi.fn(), findMany: vi.fn() };
+  (mockPrisma as any).decision = { findUnique: vi.fn(), findFirst: vi.fn(), create: vi.fn(), findMany: vi.fn() };
   (mockPrisma as any).domainApplication = { findUnique: vi.fn() };
   (mockPrisma as any).cycleDecisionEmail = { findUnique: vi.fn() };
   (mockPrisma as any).user = { findUnique: vi.fn() };
@@ -51,6 +66,16 @@ beforeEach(() => {
   (mockPrisma as any).$transaction = vi.fn(async (fn: any) => fn(mockPrisma));
   vi.mocked(sendEmail).mockResolvedValue(undefined as any);
   vi.mocked(requireAuth).mockResolvedValue({ ok: true, user: { sub: USER_ID } } as any);
+  const okGate = {
+    ok: true as const,
+    auth: {
+      ok: true as const,
+      user: { sub: USER_ID, email: "u@x.com", type: "member" },
+      sessionId: "sid",
+    },
+  };
+  vi.mocked(requireCoreOrDomainLead).mockResolvedValue(okGate as any);
+  vi.mocked(requireMemberSession).mockResolvedValue(okGate as any);
   mockPrisma.dALIMember.findUnique.mockResolvedValue({ id: MEMBER_ID, userId: USER_ID });
 });
 
@@ -67,6 +92,7 @@ describe("Decision lineage (parentDecisionId)", () => {
       waitlistRank: null,
       domainApplication: { application: { applicationCycleId: "cycle-1" } },
     });
+    mockPrisma.decision.findFirst.mockResolvedValue(null); // no existing Final
     mockPrisma.decision.create.mockResolvedValue({ id: FINAL_ID });
 
     const req = new Request("http://localhost/api/decisions/dec-draft/finalize", { method: "POST" });
@@ -80,6 +106,28 @@ describe("Decision lineage (parentDecisionId)", () => {
     // DALIMember.id. The test mock's `member` is the DALIMember row; the
     // actual stored value is the authenticated user.
     expect(arg.data.madeById).toBe(USER_ID);
+  });
+
+  it("finalize: 409s without creating a duplicate when a Final already exists", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    vi.mocked(isDomainLead).mockResolvedValue(false);
+    mockPrisma.decision.findUnique.mockResolvedValue({
+      id: DRAFT_ID,
+      stage: "Draft",
+      type: "Accepted",
+      domainApplicationId: "da-1",
+      notes: null,
+      waitlistRank: null,
+      domainApplication: { application: { applicationCycleId: "cycle-1" } },
+    });
+    // A Final of this type already exists (e.g. a double-click after the first
+    // finalize landed) → the guard short-circuits before creating a second.
+    mockPrisma.decision.findFirst.mockResolvedValue({ id: FINAL_ID });
+
+    const req = new Request("http://localhost/api/decisions/dec-draft/finalize", { method: "POST" });
+    const res = await finalizeAction({ request: req, params: { id: DRAFT_ID }, context: {} } as any);
+    expect(res.status).toBe(409);
+    expect(mockPrisma.decision.create).not.toHaveBeenCalled();
   });
 
   it("release: links the new Released record to its Final predecessor", async () => {

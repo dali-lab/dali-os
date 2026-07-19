@@ -1,5 +1,5 @@
 import { prisma } from "~/lib/db";
-import { ensureTeam, addTeamMember } from "~/slack/lib/github-app";
+import { ensureTeam, addTeamMember } from "~/lib/github";
 import { inviteToWorkspace } from "~/slack/lib/slack-client";
 import { provisionWorkspaceAccount, type WorkspaceResult } from "~/lib/google-workspace";
 import { syncSlackUserId } from "~/members/lib/slack-sync.server";

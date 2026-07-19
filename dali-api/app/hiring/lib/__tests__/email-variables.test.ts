@@ -95,6 +95,8 @@ describe("TEMPLATE_VARIABLES registry shape", () => {
         "notification:InterviewInviteMentor",
         "notification:InterviewInviteReminder",
         "notification:InterviewLocationChanged",
+        "notification:InterviewReminderApplicant",
+        "notification:InterviewReminderInterviewer",
       ].sort(),
     );
   });
@@ -143,6 +145,9 @@ describe("registry/call-site drift guard", () => {
     "notification:InterviewCancelledApplicant": ["firstName", "domain", "time", "location"],
     "notification:InterviewCancelledInterviewer": ["firstName", "domain", "time", "location"],
     "notification:InterviewLocationChanged": ["firstName", "domain", "time", "location", "meetingUrl"],
+    // interview-emails.ts — sendInterviewReminderEmails passes full vars
+    "notification:InterviewReminderApplicant": ["firstName", "domain", "time", "location", "meetingUrl"],
+    "notification:InterviewReminderInterviewer": ["firstName", "domain", "time", "location", "meetingUrl"],
   };
 
   it.each(Object.entries(CALL_SITE_VARS))(

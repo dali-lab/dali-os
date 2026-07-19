@@ -1,23 +1,10 @@
 import { useNavigate, useSearchParams } from "react-router";
+import { STATUS_COLORS, STATUS_LABELS } from "~/hiring/lib/labels";
 
 interface CycleSelectorProps {
   cycles: Array<{ id: string; name: string; status: string }>;
   selectedCycleId: string;
 }
-
-const STATUS_COLORS: Record<string, string> = {
-  Draft: "bg-muted text-foreground/80",
-  Open: "bg-green-100 text-green-700",
-  UnderReview: "bg-yellow-100 text-yellow-700",
-  Completed: "bg-blue-100 text-blue-700",
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  Draft: "Draft",
-  Open: "Open",
-  UnderReview: "Under Review",
-  Completed: "Completed",
-};
 
 export function CycleSelector({ cycles, selectedCycleId }: CycleSelectorProps) {
   const navigate = useNavigate();
@@ -27,7 +14,7 @@ export function CycleSelector({ cycles, selectedCycleId }: CycleSelectorProps) {
   function handleChange(e: React.ChangeEvent<HTMLSelectElement>) {
     const params = new URLSearchParams(searchParams);
     params.set("cycleId", e.target.value);
-    navigate(`/hiring/analytics?${params.toString()}`);
+    navigate({ search: `?${params.toString()}` });
   }
 
   return (

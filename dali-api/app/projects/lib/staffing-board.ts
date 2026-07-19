@@ -2,7 +2,8 @@
 // means the route loader/action stay thin and we can iterate on board shape
 // without dragging Prisma + React in.
 
-export type Level = "P1" | "P2" | "P3";
+import type { Level } from "~/lib/level";
+export type { Level };
 
 export type Preference = {
   projectId: string;
@@ -13,8 +14,10 @@ export type Preference = {
 };
 
 // A domain the member is eligible in, with their level there. Sourced from
-// DomainEligibility (one row per user+domain). Shown on every card.
+// DomainEligibility (one row per user+domain). Shown on every card; domainId
+// also lets the board infer a non-bidding member's assignment domain.
 export type DomainLevel = {
+  domainId: string;
   domainName: string;
   level: Level;
 };
@@ -45,6 +48,10 @@ export type MemberInput = {
   // staffing lead notices, rather than vanishing. Derived in the loader; never
   // set for members whose preferences resolved normally.
   unresolvedBid?: boolean;
+  // True when a staffing lead manually placed this member on the board (no bid)
+  // via StaffingBoardMember. Drives the card's remove (×) affordance. A member
+  // who also bid is sourced from their preferences instead, so this stays false.
+  manuallyAdded?: boolean;
 };
 
 export type Assignment = {
@@ -69,13 +76,47 @@ export type MemberCardModel = {
   // For an assigned column, the level recorded on the assignment row.
   level: Level | null;
   // Member's top 3 project preferences in rank order. Always shown on the card.
-  topPreferences: { projectId: string; rank: number }[];
+  // Deduped by (projectId, rank): a member can bid the same project at one rank
+  // in multiple domains (e.g. Evergreen #1 as both Fullstack and UI/UX) — those
+  // collapse to one entry whose `domainIds` lists each bid domain, so the card
+  // shows the project once with its domains rather than repeating the line.
+  topPreferences: { projectId: string; rank: number; domainIds: string[] }[];
   // Mirrors MemberInput.unresolvedBid — the card renders a badge so the member
   // is visibly distinguished from one who simply hasn't been placed yet.
   unresolvedBid: boolean;
+  // Mirrors MemberInput.manuallyAdded — drives the card's remove (×) button.
+  manuallyAdded: boolean;
+  // Set for synthetic external-mentor cards (see ExternalMentor): a non-roster
+  // mentor placed on a project column. Rendered distinctly, not draggable, and
+  // removed via its placement id rather than board-member APIs.
+  isExternalMentor?: boolean;
+  externalMentorId?: string;
 };
 
 export const UNASSIGNED = "__unassigned__";
+
+/**
+ * A member can hold both a Proposed and a Confirmed StaffingAssignment in the
+ * same cycle: dragging after finalize writes a fresh Proposed row without
+ * touching the audit-trail Confirmed one. The board (and finalize) treat a
+ * member's LIVE assignment as their Proposed row if present, else Confirmed —
+ * so an in-progress re-edit wins over the already-finalized position. Declined
+ * rows are audit only and must be filtered out before calling this.
+ *
+ * Returns one row per userId. Input order is otherwise preserved.
+ */
+export function dedupeLiveAssignments<T extends { userId: string; status: string }>(
+  rows: T[],
+): T[] {
+  const byUser = new Map<string, T>();
+  for (const r of rows) {
+    const existing = byUser.get(r.userId);
+    if (!existing || (existing.status === "Confirmed" && r.status === "Proposed")) {
+      byUser.set(r.userId, r);
+    }
+  }
+  return Array.from(byUser.values());
+}
 
 /**
  * Build the board's column→cards index from raw data. The output is stable
@@ -87,8 +128,24 @@ export function buildBoard(args: {
   projectIds: string[];
   members: MemberInput[];
   assignments: Assignment[];
+  // Manual card-order rows. A row applies only when its columnKey matches the
+  // card's resolved column, so a stale order from before a move is ignored.
+  // Cards with an applicable row sort first (ascending sortKey); the rest fall
+  // back to last-name.
+  cardOrder?: { userId: string; columnKey: string; sortKey: number }[];
 }): Record<string, MemberCardModel[]> {
-  const { projectIds, members, assignments } = args;
+  const { projectIds, members, assignments, cardOrder = [] } = args;
+
+  // (columnKey → (userId → sortKey)) for column-scoped lookup.
+  const orderByColumn = new Map<string, Map<string, number>>();
+  for (const o of cardOrder) {
+    let m = orderByColumn.get(o.columnKey);
+    if (!m) {
+      m = new Map();
+      orderByColumn.set(o.columnKey, m);
+    }
+    m.set(o.userId, o.sortKey);
+  }
 
   const byUser = new Map<string, Assignment>();
   for (const a of assignments) {
@@ -101,13 +158,7 @@ export function buildBoard(args: {
   const columns: Record<string, MemberCardModel[]> = { [UNASSIGNED]: [] };
   for (const pid of projectIds) columns[pid] = [];
 
-  const sortedMembers = [...members].sort((a, b) => {
-    const ln = a.lastName.localeCompare(b.lastName);
-    if (ln !== 0) return ln;
-    return a.firstName.localeCompare(b.firstName);
-  });
-
-  for (const m of sortedMembers) {
+  for (const m of members) {
     const assignment = byUser.get(m.userId) ?? null;
     const columnKey = assignment?.projectId && columns[assignment.projectId]
       ? assignment.projectId
@@ -115,6 +166,25 @@ export function buildBoard(args: {
 
     const card = toCard(m, columnKey, assignment);
     columns[columnKey].push(card);
+  }
+
+  // Order within each column: cards with a manual sortKey lead (ascending),
+  // then the rest alphabetically by last, first name. A card whose order was
+  // saved in a different column has no entry here (the loader keys order by
+  // user, not column), so it just falls into the alphabetical tail — correct,
+  // since its old position no longer applies.
+  const byName = (a: MemberCardModel, b: MemberCardModel) =>
+    a.lastName.localeCompare(b.lastName) || a.firstName.localeCompare(b.firstName);
+  for (const key of Object.keys(columns)) {
+    const order = orderByColumn.get(key);
+    columns[key].sort((a, b) => {
+      const oa = order?.get(a.userId);
+      const ob = order?.get(b.userId);
+      if (oa != null && ob != null) return oa - ob;
+      if (oa != null) return -1;
+      if (ob != null) return 1;
+      return byName(a, b);
+    });
   }
 
   return columns;
@@ -144,12 +214,34 @@ function toCard(
     coreTitles: member.coreTitles,
     domainLevels: member.domainLevels,
     level,
-    topPreferences: [...member.preferences]
-      .sort((a, b) => a.preferenceRank - b.preferenceRank)
-      .slice(0, 3)
-      .map((p) => ({ projectId: p.projectId, rank: p.preferenceRank })),
+    topPreferences: topPreferences(member.preferences),
     unresolvedBid: member.unresolvedBid ?? false,
+    manuallyAdded: member.manuallyAdded ?? false,
   };
+}
+
+// Top 3 project picks in rank order, deduped by (projectId, rank). When a member
+// bids the same project at the same rank in several domains, the entry's
+// `domainIds` lists each (in first-seen order). The 3-item cap counts distinct
+// (project, rank) entries, not raw preference rows.
+function topPreferences(
+  prefs: Preference[],
+): { projectId: string; rank: number; domainIds: string[] }[] {
+  const byKey = new Map<string, { projectId: string; rank: number; domainIds: string[] }>();
+  for (const p of [...prefs].sort((a, b) => a.preferenceRank - b.preferenceRank)) {
+    const key = `${p.projectId}::${p.preferenceRank}`;
+    const entry = byKey.get(key);
+    if (entry) {
+      if (!entry.domainIds.includes(p.domainId)) entry.domainIds.push(p.domainId);
+    } else {
+      byKey.set(key, {
+        projectId: p.projectId,
+        rank: p.preferenceRank,
+        domainIds: [p.domainId],
+      });
+    }
+  }
+  return Array.from(byKey.values()).slice(0, 3);
 }
 
 function topPreference(prefs: Preference[]): Preference | null {
@@ -165,7 +257,11 @@ function topPreference(prefs: Preference[]): Preference | null {
  *   1. The member's existing preference for that project (the bid).
  *   2. The member's top-ranked preference overall (fallback when they didn't
  *      bid on this project but a lead is staffing them anyway).
- *   3. null → caller must reject (no preferences at all).
+ *   3. The member's DomainEligibility when they have exactly one — lets a lead
+ *      place a manually-added, non-bidding member (their eligibility is the
+ *      only domain+level they could be staffed at).
+ *   4. null → caller must reject (no bid and no single eligibility to infer
+ *      from; a member eligible in multiple domains is ambiguous here).
  */
 export function resolveAssignmentInputs(
   member: MemberInput,
@@ -175,5 +271,9 @@ export function resolveAssignmentInputs(
   if (matching) return { domainId: matching.domainId, level: matching.level };
   const top = topPreference(member.preferences);
   if (top) return { domainId: top.domainId, level: top.level };
+  if (member.domainLevels.length === 1) {
+    const only = member.domainLevels[0];
+    return { domainId: only.domainId, level: only.level };
+  }
   return null;
 }

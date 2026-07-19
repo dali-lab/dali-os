@@ -1,43 +1,32 @@
-import React, { useState, useEffect, useRef } from 'react'
-import { Link, useLocation, useRevalidator } from 'react-router'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
+import { Link, useLocation, useNavigate, useRevalidator } from 'react-router'
 import {
   LogOut,
-  Users,
   Calendar,
-  Shield,
-  Mail,
-  FileText,
-  MessageSquare,
   Menu,
   X,
-  BarChart3,
-  ChevronLeft,
-  ChevronRight,
-  ChevronDown,
+  PanelLeftClose,
+  PanelLeftOpen,
   Briefcase,
   Settings,
   FolderKanban,
   UsersRound,
   Handshake,
+  Heart,
   Home,
-  List,
-  UserPlus,
-  Building2,
   Workflow,
-  ArrowRightLeft,
-  TrendingUp,
-  Rocket,
   ClipboardList,
   GraduationCap,
   ListTodo,
-  Megaphone,
-  SplitSquareHorizontal,
-  ExternalLink,
   HelpCircle,
+  Search,
 } from 'lucide-react'
 import { userInitials } from '~/lib/display'
 import { TabWorkspace, type TabWorkspaceHandle, type OpenTabRequest } from '~/components/TabWorkspace'
 import { useOpenTasks, TASKS_CHANGED_EVENT } from '~/components/NotificationBell'
+import { DesktopBanner } from '~/components/DesktopBanner'
+import { CommandPalette } from '~/components/CommandPalette'
+import { setFocusPreference } from '~/lib/focus-mode'
 
 interface LayoutProps {
   user: { email: string; firstName?: string; lastName?: string }
@@ -49,118 +38,144 @@ interface LayoutProps {
   canViewStaffing?: boolean
   isInterviewer?: boolean
   hasHiringAccess?: boolean
+  isLabMentor?: boolean
+  /** Focus mode: hide the sidebar entirely; navigate via ⌘K + breadcrumbs.
+   *  A floating launcher keeps search + "show sidebar" reachable. */
+  focusMode?: boolean
+  // Tabless mode: the routed page content, rendered directly in the main
+  // column instead of the tabbed workspace. When provided, the sidebar
+  // navigates the top window instead of opening workspace tabs.
+  children?: React.ReactNode
 }
 
 const SIDEBAR_COLLAPSED_KEY = 'dali:sidebar:collapsed'
-const EXPANDED_AREAS_KEY = 'dali:sidebar:expanded-areas'
 
-type AreaKey = 'hiring' | 'projects' | 'members' | 'partners' | 'education' | 'internal-processes' | 'admin-console'
+// One sidebar behavior everywhere: every entry is a childless button that
+// opens its surface's hub. Lateral navigation inside an area is the in-page
+// AreaPillNav row; the sidebar never nests and never remembers deep links.
+type NavEntry = {
+  key: string
+  label: string
+  to: string
+  icon: typeof Home
+  show: boolean
+}
 
-export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDomainLead = false, canViewForms = false, canViewStaffing = false, isInterviewer = false, hasHiringAccess = false }: LayoutProps) {
+export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDomainLead = false, canViewForms = false, canViewStaffing = false, isInterviewer = false, hasHiringAccess = false, isLabMentor = false, focusMode = false, children }: LayoutProps) {
   const location = useLocation()
+  const navigate = useNavigate()
   const { revalidate } = useRevalidator()
-  // Held in a ref so the message listener (mounted once) always calls the
-  // latest revalidate without needing to re-subscribe.
+  const tabless = children !== undefined
+  // Held in refs so the message listener (mounted once) always calls the
+  // latest values without needing to re-subscribe.
   const revalidateRef = useRef(revalidate)
   revalidateRef.current = revalidate
+  const navigateRef = useRef(navigate)
+  navigateRef.current = navigate
+  const tablessRef = useRef(tabless)
+  tablessRef.current = tabless
   const [focusedTabUrl, setFocusedTabUrl] = useState<string | null>(null)
   // Sidebar highlight follows the focused workspace tab when one is open;
   // otherwise it falls back to the parent route.
   const path = focusedTabUrl ?? location.pathname
   const [collapsed, setCollapsed] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
-  const [userExpanded, setUserExpanded] = useState<Record<AreaKey, boolean | undefined>>({
-    hiring: undefined,
-    projects: undefined,
-    members: undefined,
-    partners: undefined,
-    education: undefined,
-    'internal-processes': undefined,
-    'admin-console': undefined,
-  })
-  // Last subtab URL the user was on within each area. Updated whenever the
-  // focused workspace tab points into an area. Used so re-clicking the parent
-  // after closing/leaving the area reopens the subtab you were last on,
-  // instead of jumping to the first subtab.
-  const [lastSubtabUrl, setLastSubtabUrl] = useState<Record<AreaKey, string | undefined>>({
-    hiring: undefined,
-    projects: undefined,
-    members: undefined,
-    partners: undefined,
-    education: undefined,
-    'internal-processes': undefined,
-    'admin-console': undefined,
-  })
   const workspaceRef = useRef<TabWorkspaceHandle | null>(null)
 
-  // Right-click context menu for a sidebar subtab. `x`/`y` are viewport
-  // coordinates; `req` is the tab to act on.
-  const [subtabMenu, setSubtabMenu] = useState<
-    null | { x: number; y: number; req: OpenTabRequest }
-  >(null)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const togglePalette = useCallback(() => setPaletteOpen((v) => !v), [])
+  // ⌘/Ctrl+K opens the command palette. In tab mode TabWorkspace owns the
+  // listener (its handler is attached to the shell window AND every iframe's
+  // document, so it fires wherever focus is) and calls togglePalette via
+  // onOpenPalette. In tabless mode there's no TabWorkspace, so listen here.
+  // Gating on `tabless` avoids both handlers firing for one keypress.
+  useEffect(() => {
+    if (!tabless) return
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault()
+        togglePalette()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [tabless, togglePalette])
 
   const openInWorkspace = (req: OpenTabRequest) => {
+    if (tabless) {
+      navigate(req.url)
+      return
+    }
     workspaceRef.current?.openTab(req)
   }
-  const openToSide = (req: OpenTabRequest) => {
-    workspaceRef.current?.openTabToSide(req)
+
+  // Open a palette result. Mirrors sidebar navigation: tabless → navigate the
+  // top window (⌘Enter → real browser tab); tab mode → a kept workspace tab
+  // (⌘Enter → split-pane). The user picked this explicitly, so no ephemeral tab.
+  const openFromPalette = (url: string, label: string, toSide: boolean) => {
+    if (tabless) {
+      if (toSide) window.open(url, '_blank', 'noopener')
+      else navigate(url)
+      return
+    }
+    if (toSide) workspaceRef.current?.openTabToSide({ url, label })
+    else workspaceRef.current?.openTab({ url, label })
   }
 
-  // Props bundle for any sidebar button that opens a tab. Adds two browser-
-  // style shortcuts on top of the plain "open & focus" left-click:
-  //   - Cmd/Ctrl + click  → open to the side (split-pane)
-  //   - middle-click       → open in background (don't switch tabs)
+  // Props bundle for any sidebar button that opens a surface. In tab mode it
+  // opens a workspace tab; in tabless mode it navigates the top window like a
+  // normal site. Both preserve the browser-style modifier shortcuts:
+  //   - Cmd/Ctrl + click  → tab mode: open to the side (split-pane);
+  //                         tabless: open a real browser tab
+  //   - middle-click       → tab mode: open in background;
+  //                         tabless: open a real browser tab
   // `auxClick` fires for middle/right-click; we filter to button 1 (middle)
   // and preventDefault so the browser doesn't autoscroll.
-  const tabClickProps = (req: OpenTabRequest) => ({
-    onClick: (e: React.MouseEvent) => {
-      if (e.metaKey || e.ctrlKey) {
-        workspaceRef.current?.openTabToSide(req)
-        return
+  const tabClickProps = (req: OpenTabRequest) => {
+    if (tabless) {
+      return {
+        onClick: (e: React.MouseEvent) => {
+          // These are <button>s (no href), so a new browser tab needs an
+          // explicit window.open — the browser won't synthesize one.
+          if (e.metaKey || e.ctrlKey) {
+            window.open(req.url, '_blank', 'noopener')
+            return
+          }
+          navigate(req.url)
+        },
+        onAuxClick: (e: React.MouseEvent) => {
+          if (e.button !== 1) return
+          e.preventDefault()
+          window.open(req.url, '_blank', 'noopener')
+        },
       }
-      workspaceRef.current?.openTab(req)
-    },
-    onAuxClick: (e: React.MouseEvent) => {
-      if (e.button !== 1) return
-      e.preventDefault()
-      workspaceRef.current?.openTabInBackground(req)
-    },
-  })
+    }
+    return {
+      onClick: (e: React.MouseEvent) => {
+        if (e.metaKey || e.ctrlKey) {
+          workspaceRef.current?.openTabToSide(req)
+          return
+        }
+        // Single-click from the sidebar opens a preview (ephemeral) tab: it reuses
+        // the pane's preview slot instead of stacking, so skimming sections never
+        // piles up tabs. Promoted to a kept tab on double-click / navigating in it.
+        workspaceRef.current?.openTab(req, { ephemeral: true })
+      },
+      onAuxClick: (e: React.MouseEvent) => {
+        if (e.button !== 1) return
+        e.preventDefault()
+        workspaceRef.current?.openTabInBackground(req)
+      },
+    }
+  }
 
   useEffect(() => {
     if (typeof window === 'undefined') return
     setCollapsed(window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1')
-    try {
-      const raw = window.localStorage.getItem(EXPANDED_AREAS_KEY)
-      if (raw) setUserExpanded(JSON.parse(raw))
-    } catch {
-      // ignore — bad JSON just means we use defaults
-    }
   }, [])
 
   useEffect(() => {
     setMobileNavOpen(false)
-  }, [path])
-
-  // Remember the last subtab URL inside each area. The area key is derived
-  // from the path prefix so this stays in lockstep with activeAreaKey below.
-  useEffect(() => {
-    const areaKey: AreaKey | null =
-      path.startsWith('/admin-console') ? 'admin-console'
-      : path.startsWith('/hiring') ? 'hiring'
-      // Level Up lives at /projects/level-up but is surfaced under Internal
-      // Processes — resolve it there before the generic /projects branch.
-      : path.startsWith('/projects/level-up') ? 'internal-processes'
-      : path.startsWith('/projects') ? 'projects'
-      : path.startsWith('/members') ? 'members'
-      : path.startsWith('/partners') ? 'partners'
-      : path.startsWith('/education') ? 'education'
-      : path.startsWith('/internal-processes') ? 'internal-processes'
-      : null
-    if (!areaKey) return
-    setLastSubtabUrl((prev) =>
-      prev[areaKey] === path ? prev : { ...prev, [areaKey]: path },
-    )
   }, [path])
 
   // Listen for "open in new tab" requests from embedded iframes (e.g. a
@@ -172,12 +187,17 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
       const data = e.data
       if (!data) return
       if (data.type === 'dali:openTab' && typeof data.url === 'string') {
-        workspaceRef.current?.openTab({ url: data.url, label: data.label || data.url })
+        // Tabless has no workspace; navigate the top window instead. (Reaches
+        // here e.g. from the launch tour's "finish" posting to this window.)
+        if (tablessRef.current) navigateRef.current(data.url)
+        else workspaceRef.current?.openTab({ url: data.url, label: data.label || data.url })
       } else if (data.type === 'dali:openTabToSide' && typeof data.url === 'string') {
         // Open in a second pane to the side (splitting if needed) — used by an
         // embedded page that wants its target as a split-screen tab, e.g. a
-        // project document opening beside the project page.
-        workspaceRef.current?.openTabToSide({ url: data.url, label: data.label || data.url })
+        // project document opening beside the project page. No side pane in
+        // tabless mode, so fall back to a plain navigation.
+        if (tablessRef.current) navigateRef.current(data.url)
+        else workspaceRef.current?.openTabToSide({ url: data.url, label: data.label || data.url })
       } else if (
         data.type === 'dali:setTabLabel' &&
         typeof data.url === 'string' &&
@@ -188,6 +208,12 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
         // A profile edit inside a workspace iframe doesn't re-run the shell
         // loader, so re-fetch it to refresh the footer avatar.
         revalidateRef.current()
+      } else if (data.type === 'dali:documentTitleChanged') {
+        // A doc title edit in one tab (e.g. a split-screen document) doesn't
+        // touch a sibling tab's own loader (e.g. the project hub's Documents
+        // list). Relay to every open iframe; each one ignores it unless its
+        // own listener cares about this pageId.
+        workspaceRef.current?.broadcast(data)
       } else if (data.type === TASKS_CHANGED_EVENT) {
         // Confirming/acting on a task inside an iframe (e.g. Home) doesn't
         // touch the shell's task poller. Relay it to a same-window event so
@@ -210,349 +236,34 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
     })
   }
 
-  const toggleAreaExpanded = (key: AreaKey, defaultExpanded: boolean) => {
-    setUserExpanded((prev) => {
-      const current = prev[key] ?? defaultExpanded
-      const next = { ...prev, [key]: !current }
-      if (typeof window !== 'undefined') {
-        window.localStorage.setItem(EXPANDED_AREAS_KEY, JSON.stringify(next))
-      }
-      return next
-    })
-  }
+  // Every entry navigates to its surface's hub — the area root. Order here is
+  // the sidebar order (Calendar/Forms above the areas, matching the old nav).
+  const navEntries: NavEntry[] = [
+    { key: 'calendar', label: 'Calendar', to: '/calendar', icon: Calendar, show: true },
+    { key: 'forms', label: 'Forms', to: '/forms', icon: ClipboardList, show: canViewForms },
+    { key: 'hiring', label: 'Hiring', to: '/hiring', icon: Briefcase, show: hasHiringAccess },
+    { key: 'projects', label: 'Projects', to: '/projects', icon: FolderKanban, show: true },
+    // Hidden from mentees entirely; the routes are gated server-side by
+    // canViewMentorship. Mentors only see own-domain notes; Core/Admin see all.
+    { key: 'mentorship', label: 'Mentorship', to: '/mentorship', icon: Heart, show: isLabMentor || isCore },
+    { key: 'members', label: 'People', to: '/members', icon: UsersRound, show: true },
+    { key: 'partners', label: 'Partners', to: '/partners', icon: Handshake, show: true },
+    { key: 'education', label: 'Education', to: '/education', icon: GraduationCap, show: true },
+    { key: 'internal-processes', label: 'Lab Processes', to: '/internal-processes', icon: Workflow, show: true },
+    { key: 'admin-console', label: 'Admin', to: '/admin-console', icon: Settings, show: isCore },
+  ].filter((e) => e.show)
 
-  // Force-expand without toggling. Used when clicking a parent label so the
-  // sidebar reveals the parent's subtabs alongside the navigation, rather
-  // than collapsing them off-screen if the user had previously closed the
-  // group.
-  const setAreaExpanded = (key: AreaKey) => {
-    setUserExpanded((prev) => {
-      if (prev[key] === true) return prev
-      const next = { ...prev, [key]: true }
-      if (typeof window !== 'undefined') {
-        window.localStorage.setItem(EXPANDED_AREAS_KEY, JSON.stringify(next))
-      }
-      return next
-    })
-  }
-
-  const activeAreaKey: AreaKey | null =
-    path.startsWith('/admin-console') ? 'admin-console'
-    : path.startsWith('/hiring') ? 'hiring'
-    // Level Up lives at /projects/level-up but is surfaced under Internal
-    // Processes — resolve it there before the generic /projects branch.
-    : path.startsWith('/projects/level-up') ? 'internal-processes'
-    : path.startsWith('/projects') ? 'projects'
-    : path.startsWith('/members') ? 'members'
-    : path.startsWith('/partners') ? 'partners'
-    : path.startsWith('/education') ? 'education'
-    : path.startsWith('/internal-processes') ? 'internal-processes'
-    : null
-
-  const hiringSections = [
-    {
-      label: 'Domain',
-      to: '/hiring/domain-lead',
-      icon: Shield,
-      show: isDomainLead,
-      active: path.startsWith('/hiring/domain-lead'),
-      sub: null as { label: string; to: string; active: boolean }[] | null,
-    },
-    {
-      label: 'Reviews',
-      to: '/hiring/reviewer',
-      icon: MessageSquare,
-      show: hasHiringAccess,
-      active: path.startsWith('/hiring/reviewer') || path.startsWith('/hiring/interviewer/interview'),
-      sub: null,
-    },
-    {
-      // Database view of all submissions for a cycle. Core sees every domain;
-      // reviewers see only their assigned domains. Gated with the rest of
-      // Hiring so non-hiring members never see it (or its empty reviewer state).
-      label: 'Applications',
-      to: '/hiring/applications',
-      icon: FileText,
-      show: hasHiringAccess,
-      active: path.startsWith('/hiring/applications'),
-      sub: null,
-    },
-    {
-      label: 'Cycles',
-      to: '/hiring/lead',
-      icon: Calendar,
-      show: isCore,
-      active: path.startsWith('/hiring/lead'),
-      sub: null,
-    },
-    {
-      label: 'Analytics',
-      to: '/hiring/analytics',
-      icon: BarChart3,
-      show: isCore || isDomainLead,
-      active: path.startsWith('/hiring/analytics'),
-      sub: null,
-    },
-    {
-      label: 'Library',
-      to: '/hiring/library',
-      icon: FileText,
-      show: isCore || isDomainLead || isAdmin,
-      // Highlight Library on its list page and on the challenge / rubric /
-      // agreement detail pages it links into.
-      active:
-        path.startsWith('/hiring/library') ||
-        path.startsWith('/hiring/challenges') ||
-        path.startsWith('/hiring/rubrics') ||
-        path.startsWith('/hiring/confidentiality-agreements'),
-      sub: null,
-    },
-    {
-      label: 'Emails',
-      to: '/hiring/emails',
-      icon: Mail,
-      show: isCore,
-      active: path.startsWith('/hiring/emails'),
-      sub: null,
-    },
-  ].filter((s) => s.show)
-
-  const adminSections = [
-    {
-      label: 'Roles',
-      to: '/admin-console/members',
-      icon: Users,
-      show: true,
-      active: path.startsWith('/admin-console/members'),
-      sub: null as { label: string; to: string; active: boolean }[] | null,
-    },
-    {
-      label: 'Domains',
-      to: '/admin-console/domains',
-      icon: Shield,
-      // Core or Admin can manage domain leads + eligibilities; only Admin
-      // sees the Create/Delete controls (gated inside the page).
-      show: isCore,
-      active: path.startsWith('/admin-console/domains'),
-      sub: null,
-    },
-    {
-      label: 'Announcements',
-      to: '/admin-console/announcements',
-      icon: Megaphone,
-      show: isCore,
-      active: path.startsWith('/admin-console/announcements'),
-      sub: null,
-    },
-    {
-      label: 'Activity',
-      to: '/admin-console/activity',
-      icon: ListTodo,
-      show: isAdmin,
-      active: path.startsWith('/admin-console/activity'),
-      sub: null,
-    },
-    {
-      label: 'Analytics',
-      to: '/admin-console/analytics',
-      icon: BarChart3,
-      show: isAdmin,
-      active: path.startsWith('/admin-console/analytics'),
-      sub: null,
-    },
-  ].filter((s) => s.show)
-
-  const projectsSections = [
-    {
-      label: 'Hub',
-      to: '/projects/list',
-      icon: List,
-      show: true,
-      active: path.startsWith('/projects/list'),
-      sub: null as { label: string; to: string; active: boolean }[] | null,
-    },
-    {
-      label: 'Staffing',
-      to: '/projects/staffing',
-      icon: UserPlus,
-      show: canViewStaffing,
-      active: path.startsWith('/projects/staffing'),
-      sub: null,
-    },
-    {
-      label: 'Intent to Work',
-      to: '/projects/intent-to-work',
-      icon: FileText,
-      show: canViewStaffing,
-      active: path.startsWith('/projects/intent-to-work'),
-      sub: null,
-    },
-    {
-      label: 'Project Bids',
-      to: '/projects/project-bids',
-      icon: ClipboardList,
-      show: canViewStaffing,
-      active: path.startsWith('/projects/project-bids'),
-      sub: null,
-    },
-  ].filter((s) => s.show)
-
-  const membersSections = [
-    {
-      label: 'Database',
-      to: '/members',
-      icon: UsersRound,
-      show: true,
-      active: path === '/members',
-      sub: null as { label: string; to: string; active: boolean }[] | null,
-    },
-    {
-      label: 'Groups',
-      to: '/members/groups',
-      icon: Users,
-      show: canViewForms,
-      active: path.startsWith('/members/groups'),
-      sub: null,
-    },
-  ].filter((s) => s.show)
-
-  const partnersSections = [
-    {
-      label: 'Organizations',
-      to: '/partners',
-      icon: Building2,
-      show: true,
-      active: path === '/partners',
-      sub: null as { label: string; to: string; active: boolean }[] | null,
-    },
-    {
-      label: 'Applications',
-      to: '/partners/applications',
-      icon: ClipboardList,
-      show: canViewStaffing,
-      active: path.startsWith('/partners/applications'),
-      sub: null,
-    },
-  ].filter((s) => s.show)
-
-  const educationSections = [
-    {
-      label: 'Overview',
-      to: '/education',
-      icon: GraduationCap,
-      show: true,
-      active: path === '/education' || path.startsWith('/education/'),
-      sub: null as { label: string; to: string; active: boolean }[] | null,
-    },
-  ].filter((s) => s.show)
-
-  const internalProcessesSections = [
-    {
-      label: 'Onboarding',
-      to: '/internal-processes/onboarding',
-      icon: UserPlus,
-      show: isCore,
-      active: path.startsWith('/internal-processes/onboarding'),
-      sub: null as { label: string; to: string; active: boolean }[] | null,
-    },
-    {
-      label: 'Transfer',
-      to: '/internal-processes/transfer',
-      icon: ArrowRightLeft,
-      show: true,
-      active: path.startsWith('/internal-processes/transfer'),
-      sub: null as { label: string; to: string; active: boolean }[] | null,
-    },
-    {
-      label: 'Level Up',
-      // Page lives under /projects/level-up; surfaced here under Internal
-      // Processes. Match both so the entry highlights on either path.
-      to: '/projects/level-up',
-      icon: TrendingUp,
-      show: canViewStaffing,
-      active:
-        path.startsWith('/projects/level-up') ||
-        path.startsWith('/internal-processes/level-up'),
-      sub: null,
-    },
-    {
-      label: 'JobX',
-      to: '/internal-processes/jobx',
-      icon: Rocket,
-      show: true,
-      active: path.startsWith('/internal-processes/jobx'),
-      sub: null,
-    },
-  ].filter((s) => s.show)
-
-  const areas = [
-    {
-      key: 'hiring' as AreaKey,
-      label: 'Hiring',
-      to: '/hiring/reviewer',
-      icon: Briefcase,
-      show: hasHiringAccess,
-      active: activeAreaKey === 'hiring',
-      sections: hiringSections,
-    },
-    {
-      key: 'projects' as AreaKey,
-      label: 'Projects',
-      to: '/projects/list',
-      icon: FolderKanban,
-      show: true,
-      active: activeAreaKey === 'projects',
-      sections: projectsSections,
-    },
-    {
-      key: 'members' as AreaKey,
-      label: 'Members',
-      to: '/members',
-      icon: UsersRound,
-      show: true,
-      active: activeAreaKey === 'members',
-      sections: membersSections,
-    },
-    {
-      key: 'partners' as AreaKey,
-      label: 'Partners',
-      to: '/partners',
-      icon: Handshake,
-      show: true,
-      active: activeAreaKey === 'partners',
-      sections: partnersSections,
-    },
-    {
-      key: 'education' as AreaKey,
-      label: 'Education',
-      to: '/education',
-      icon: GraduationCap,
-      show: true,
-      active: activeAreaKey === 'education',
-      sections: educationSections,
-    },
-    {
-      key: 'internal-processes' as AreaKey,
-      label: 'Internal Processes',
-      to: '/internal-processes/transfer',
-      icon: Workflow,
-      show: true,
-      active: activeAreaKey === 'internal-processes',
-      sections: internalProcessesSections,
-    },
-    {
-      key: 'admin-console' as AreaKey,
-      label: 'Operations',
-      to: '/admin-console',
-      icon: Settings,
-      show: isCore,
-      active: activeAreaKey === 'admin-console',
-      sections: adminSections,
-    },
-  ].filter((a) => a.show)
-
-  const activeArea = areas.find((a) => a.active)
-  const activeSection = activeArea?.sections.find((s) => s.active)
+  const isEntryActive = (entry: NavEntry) => path.startsWith(entry.to)
+  // Label for a workspace tab seeded by direct navigation (deep link) — the
+  // entry whose prefix owns the current path, or the footer surfaces
+  // (My Tasks / Settings / Help) that have no nav entry.
+  const initialTabLabel = path.startsWith('/notifications')
+    ? 'My Tasks'
+    : path.startsWith('/settings')
+      ? 'Settings'
+      : path.startsWith('/help')
+        ? 'Help'
+        : navEntries.find(isEntryActive)?.label
 
   const initials = userInitials(user)
   const openTasks = useOpenTasks()
@@ -586,10 +297,10 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
           <div className="flex items-center gap-1 flex-shrink-0">
             <button
               type="button"
-              onClick={() => window.dispatchEvent(new Event('dali:start-tour'))}
+              {...tabClickProps({ url: '/help', label: 'Help' })}
               className="hidden md:flex p-1.5 text-white/40 hover:text-white/80 hover:bg-white/5 rounded-md transition"
-              aria-label="Start tour"
-              title="Take the tour"
+              aria-label="Help"
+              title="Help"
             >
               <HelpCircle className="w-4 h-4" />
             </button>
@@ -600,7 +311,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
               aria-label="Collapse sidebar"
               title="Collapse sidebar"
             >
-              <ChevronLeft className="w-4 h-4" />
+              <PanelLeftClose className="w-4 h-4" />
             </button>
           </div>
         )}
@@ -613,18 +324,43 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
           aria-label="Expand sidebar"
           title="Expand sidebar"
         >
-          <ChevronRight className="w-4 h-4" />
+          <PanelLeftOpen className="w-4 h-4" />
         </button>
       )}
 
       {/* Areas + nested sections */}
       <nav className="sidebar-scroll flex-1 overflow-y-auto py-3 px-2 flex flex-col gap-0.5">
+        {/* Global search launcher. The palette is otherwise keyboard-only (⌘K);
+            this is the visible affordance that makes it discoverable and teaches
+            the shortcut — styled like a search field rather than a nav button. */}
+        <button
+          type="button"
+          onClick={() => setPaletteOpen(true)}
+          title="Search (⌘K)"
+          aria-label="Search"
+          className={`flex items-center rounded-md mb-1 text-sm transition-colors ${
+            collapsed
+              ? 'px-3 py-2 justify-center text-white/50 hover:text-white hover:bg-white/5'
+              : 'gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 text-white/55 hover:text-white/90'
+          }`}
+        >
+          <Search className="w-4 h-4 flex-shrink-0" />
+          {!collapsed && (
+            <>
+              <span className="truncate">Search</span>
+              <kbd className="ml-auto text-[10px] font-mono text-white/40 bg-white/10 rounded px-1.5 py-0.5">
+                ⌘K
+              </kbd>
+            </>
+          )}
+        </button>
         {(() => {
           const hasTasks = taskCount > 0
           const homeActive = path === '/'
-          // Tasks has no page of its own. With no todos it's an inert label.
-          // With todos the header navigates to Home (the task overview) and
-          // sits above one subtab per todo, each linking to its own target.
+          const tasksActive = path.startsWith('/notifications')
+          // "My Tasks" opens the dedicated surface (Open + History tabs). With
+          // todos it also sits above one subtab per open todo, each linking to
+          // that todo's own target; the header itself goes to /notifications.
           const headerInner = (
             <>
               <span className="relative flex-shrink-0">
@@ -636,7 +372,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
               </span>
               {!collapsed && (
                 <>
-                  <span className="truncate">Tasks</span>
+                  <span className="truncate">My Tasks</span>
                   <span
                     className={`ml-auto inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[11px] font-bold ${
                       hasTasks
@@ -668,29 +404,37 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
                 {!collapsed && <span className="truncate">Home</span>}
               </button>
               <div className="flex flex-col">
-                {hasTasks ? (
-                  <button
-                    type="button"
-                    title={collapsed ? `Tasks (${taskCount})` : undefined}
-                    {...tabClickProps({ url: '/', label: 'Home' })}
-                    className={`relative flex items-center gap-3 rounded-md ${collapsed ? 'px-3 py-2 justify-center' : 'px-3 py-2'} text-sm font-heading font-semibold text-left text-white transition-colors hover:bg-white/5`}
-                  >
-                    {headerInner}
-                  </button>
-                ) : (
-                  <div
-                    title={collapsed ? 'Tasks (0)' : undefined}
-                    className={`relative flex items-center gap-3 rounded-md ${collapsed ? 'px-3 py-2 justify-center' : 'px-3 py-2'} text-sm font-heading font-semibold text-white/40`}
-                  >
-                    {headerInner}
-                  </div>
-                )}
+                <button
+                  type="button"
+                  title={collapsed ? `My Tasks (${taskCount})` : undefined}
+                  {...tabClickProps({ url: '/notifications', label: 'My Tasks' })}
+                  className={`relative flex items-center gap-3 rounded-md ${collapsed ? 'px-3 py-2 justify-center' : 'px-3 py-2'} text-sm font-heading font-semibold text-left transition-colors hover:bg-white/5 ${
+                    tasksActive || hasTasks ? 'text-white' : 'text-white/40 hover:text-white'
+                  }`}
+                >
+                  {headerInner}
+                </button>
 
                 {!collapsed && hasTasks && (
                   <div className="mt-1 mb-1 ml-4 pl-2 border-l border-white/10 flex flex-col gap-0.5">
                     {openTasks.map((t) => {
                       const cls =
                         'flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] font-medium text-left transition-colors'
+                      // Meeting invites clear only via RSVP — open My Tasks so
+                      // Accept/Maybe/Decline are available (same as Home).
+                      if (t.source === 'meeting') {
+                        return (
+                          <button
+                            key={t.id}
+                            type="button"
+                            title={t.title}
+                            {...tabClickProps({ url: '/notifications', label: 'My Tasks' })}
+                            className={`${cls} text-white/55 hover:text-white hover:bg-white/5`}
+                          >
+                            <span className="truncate">{t.title}</span>
+                          </button>
+                        )
+                      }
                       return t.link ? (
                         <button
                           key={t.id}
@@ -722,161 +466,36 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
                         </div>
                       )
                     })}
+                    {/* Entry point into the full My Tasks surface — Open list
+                        plus the browsable cleared/history view. */}
+                    <button
+                      type="button"
+                      {...tabClickProps({ url: '/notifications?tab=history', label: 'My Tasks' })}
+                      className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[12px] font-medium text-left text-white/40 hover:text-white hover:bg-white/5 transition-colors"
+                    >
+                      <span className="truncate">See all →</span>
+                    </button>
                   </div>
                 )}
               </div>
             </>
           )
         })()}
-        {(() => {
-          const calendarActive = path.startsWith('/calendar')
+        {navEntries.map((entry) => {
+          const active = isEntryActive(entry)
           return (
             <button
+              key={entry.key}
               type="button"
-              title={collapsed ? 'Calendar' : undefined}
-              {...tabClickProps({ url: '/calendar', label: 'Calendar' })}
+              title={collapsed ? entry.label : undefined}
+              {...tabClickProps({ url: entry.to, label: entry.label })}
               className={`flex items-center gap-3 rounded-md ${collapsed ? 'px-3 py-2 justify-center' : 'px-3 py-2'} text-sm font-heading font-semibold text-left transition-colors hover:bg-white/5 ${
-                calendarActive ? 'text-white' : 'text-white/65 hover:text-white'
+                active ? 'text-white' : 'text-white/65 hover:text-white'
               }`}
             >
-              <Calendar className="w-4 h-4 flex-shrink-0" />
-              {!collapsed && <span className="truncate">Calendar</span>}
+              <entry.icon className="w-4 h-4 flex-shrink-0" />
+              {!collapsed && <span className="truncate">{entry.label}</span>}
             </button>
-          )
-        })()}
-        {canViewForms && (() => {
-          const formsActive = path.startsWith('/forms')
-          return (
-            <button
-              type="button"
-              title={collapsed ? 'Forms' : undefined}
-              {...tabClickProps({ url: '/forms', label: 'Forms' })}
-              className={`flex items-center gap-3 rounded-md ${collapsed ? 'px-3 py-2 justify-center' : 'px-3 py-2'} text-sm font-heading font-semibold text-left transition-colors hover:bg-white/5 ${
-                formsActive ? 'text-white' : 'text-white/65 hover:text-white'
-              }`}
-            >
-              <ClipboardList className="w-4 h-4 flex-shrink-0" />
-              {!collapsed && <span className="truncate">Forms</span>}
-            </button>
-          )
-        })()}
-        {areas.map((area) => {
-          // Default: active area is expanded, inactive is collapsed. User toggle overrides.
-          const expanded = userExpanded[area.key] ?? area.active
-          const showSections = !collapsed && expanded && area.sections.length > 0
-          return (
-            <div key={area.key} className="flex flex-col">
-              {/* Area row — chevron toggles expand; label/icon navigates */}
-              <div
-                className={`flex items-stretch rounded-md hover:bg-white/5 ${collapsed ? 'justify-center' : ''}`}
-              >
-                <button
-                  type="button"
-                  title={collapsed ? area.label : undefined}
-                  aria-expanded={expanded}
-                  onClick={(e) => {
-                    // Clicking the parent label:
-                    //   - if you're already on this area AND its subtabs are
-                    //     open, collapse them (re-click to close);
-                    //   - otherwise, expand the group and navigate. Prefer
-                    //     (1) the currently-active subtab, then (2) the last
-                    //     subtab the user visited inside this area (so
-                    //     reopening after closing the tab returns you there),
-                    //     and fall back to the first subtab / area.to.
-                    // Modifier+click and middle-click follow the same
-                    // browser-style rules as the leaf items (tabClickProps).
-                    // The chevron beside this button is still a pure toggle.
-                    if (area.active && expanded && area.sections.length > 0 && !e.metaKey && !e.ctrlKey) {
-                      toggleAreaExpanded(area.key, area.active)
-                      return
-                    }
-                    setAreaExpanded(area.key)
-                    const activeSection = area.sections.find((s) => s.active)
-                    const remembered = lastSubtabUrl[area.key]
-                    const rememberedSection = remembered
-                      ? area.sections.find((s) => s.to === remembered)
-                      : undefined
-                    const target =
-                      activeSection?.to ?? remembered ?? area.sections[0]?.to ?? area.to
-                    const label =
-                      activeSection?.label ??
-                      rememberedSection?.label ??
-                      area.sections[0]?.label ??
-                      area.label
-                    if (e.metaKey || e.ctrlKey) {
-                      workspaceRef.current?.openTabToSide({ url: target, label })
-                    } else {
-                      openInWorkspace({ url: target, label })
-                    }
-                  }}
-                  onAuxClick={(e) => {
-                    if (e.button !== 1) return
-                    e.preventDefault()
-                    const activeSection = area.sections.find((s) => s.active)
-                    const remembered = lastSubtabUrl[area.key]
-                    const rememberedSection = remembered
-                      ? area.sections.find((s) => s.to === remembered)
-                      : undefined
-                    const target =
-                      activeSection?.to ?? remembered ?? area.sections[0]?.to ?? area.to
-                    const label =
-                      activeSection?.label ??
-                      rememberedSection?.label ??
-                      area.sections[0]?.label ??
-                      area.label
-                    workspaceRef.current?.openTabInBackground({ url: target, label })
-                  }}
-                  className={`flex-1 flex items-center gap-3 ${collapsed ? 'px-3 py-2 justify-center' : 'pl-3 pr-1 py-2'} text-sm font-heading font-semibold text-left transition-colors ${
-                    area.active ? 'text-white' : 'text-white/65 hover:text-white'
-                  }`}
-                >
-                  <area.icon className="w-4 h-4 flex-shrink-0" />
-                  {!collapsed && <span className="truncate">{area.label}</span>}
-                </button>
-                {!collapsed && (
-                  <button
-                    type="button"
-                    onClick={() => toggleAreaExpanded(area.key, area.active)}
-                    aria-label={expanded ? `Collapse ${area.label}` : `Expand ${area.label}`}
-                    aria-expanded={expanded}
-                    className="flex items-center justify-center w-7 text-white/40 hover:text-white/80 transition flex-shrink-0"
-                  >
-                    <ChevronDown
-                      className={`w-3.5 h-3.5 transition-transform ${expanded ? '' : '-rotate-90'}`}
-                    />
-                  </button>
-                )}
-              </div>
-
-              {/* Nested sections */}
-              {showSections && (
-                <div className="mt-1 mb-1 ml-4 pl-2 border-l border-white/10 flex flex-col gap-0.5">
-                  {area.sections.map((section) => (
-                    <button
-                      key={section.to}
-                      type="button"
-                      {...tabClickProps({ url: section.to, label: section.label })}
-                      onContextMenu={(e) => {
-                        e.preventDefault()
-                        setSubtabMenu({
-                          x: e.clientX,
-                          y: e.clientY,
-                          req: { url: section.to, label: section.label },
-                        })
-                      }}
-                      className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] font-medium text-left transition-colors ${
-                        section.active
-                          ? 'bg-accent-coral/20 text-white'
-                          : 'text-white/55 hover:text-white hover:bg-white/5'
-                      }`}
-                    >
-                      <section.icon className="w-3.5 h-3.5 flex-shrink-0" />
-                      <span className="truncate">{section.label}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
           )
         })}
       </nav>
@@ -923,15 +542,6 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
               >
                 <Settings className="w-4 h-4" />
               </button>
-              <button
-                type="button"
-                {...tabClickProps({ url: '/help', label: 'Help' })}
-                className="p-1.5 text-white/40 hover:text-white/70 hover:bg-white/5 rounded-md transition flex-shrink-0"
-                title="Help"
-                aria-label="Help"
-              >
-                <HelpCircle className="w-4 h-4" />
-              </button>
               <a
                 href="/logout"
                 className="p-1.5 text-white/40 hover:text-white/70 hover:bg-white/5 rounded-md transition flex-shrink-0"
@@ -949,12 +559,14 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
 
   return (
     <div className="min-h-screen min-h-dvh bg-page flex flex-col md:flex-row pt-14 md:pt-0">
-      {/* Desktop sidebar */}
-      <aside
-        className={`hidden md:flex flex-col fixed inset-y-0 left-0 z-20 ${sidebarWidth} bg-sidebar-bg transition-[width] duration-200`}
-      >
-        {sidebarContent}
-      </aside>
+      {/* Desktop sidebar — omitted entirely in focus mode. */}
+      {!focusMode && (
+        <aside
+          className={`hidden md:flex flex-col fixed inset-y-0 left-0 z-20 ${sidebarWidth} bg-sidebar-bg transition-[width] duration-200`}
+        >
+          {sidebarContent}
+        </aside>
+      )}
 
       {/* Mobile top bar */}
       <div className="md:hidden fixed inset-x-0 top-0 z-20 h-14 bg-sidebar-bg flex items-center justify-between px-3">
@@ -988,6 +600,15 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
           </button>
         </div>
         <div className="flex items-center gap-3">
+          <button
+            type="button"
+            {...tabClickProps({ url: '/help', label: 'Help' })}
+            className="p-1.5 text-white/40 hover:text-white/70"
+            aria-label="Help"
+            title="Help"
+          >
+            <HelpCircle className="w-5 h-5" />
+          </button>
           <Link
             to="/profile"
             aria-label="Profile"
@@ -1011,33 +632,6 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
         </div>
       </div>
 
-      {/* Mobile section breadcrumb — visible below header on small screens */}
-      {activeSection && (
-        <div className="md:hidden bg-card border-b border-border">
-          <div className="px-4 h-11 flex items-center gap-2 text-sm font-heading font-semibold text-foreground">
-            <activeSection.icon className="w-4 h-4 text-accent-coral" />
-            <span>{activeSection.label}</span>
-            {activeSection.sub && (
-              <nav className="flex items-center gap-0.5 ml-auto overflow-x-auto">
-                {activeSection.sub.map((item) => (
-                  <Link
-                    key={item.to}
-                    to={item.to}
-                    className={`px-2 py-1 text-xs font-medium rounded-full transition-colors whitespace-nowrap ${
-                      item.active
-                        ? 'bg-accent-coral/10 text-accent-coral'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                    }`}
-                  >
-                    {item.label}
-                  </Link>
-                ))}
-              </nav>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* Mobile drawer */}
       {mobileNavOpen && (
         <>
@@ -1055,66 +649,69 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
         </>
       )}
 
-      <main className={`flex-1 min-w-0 flex flex-col ${collapsed ? 'md:pl-16' : 'md:pl-64'} transition-[padding] duration-200`}>
-        {/* Always render the tabbed workspace. The Home tab is the default
-            landing surface and stays available alongside section tabs.
-            Use the actual current URL (not activeSection.to) for the section
-            tab so deep links like /hiring/domain-lead/application/:id open in
-            the iframe instead of the section root. */}
-        <TabWorkspace
-          apiRef={workspaceRef}
-          initialTabs={[
-            { url: '/', label: 'Home' },
-            ...(activeSection && location.pathname !== '/'
-              ? [{ url: location.pathname + location.search, label: activeSection.label }]
-              : []),
-          ]}
-          onActiveUrlChange={setFocusedTabUrl}
-        />
+      <main className={`flex-1 min-w-0 flex flex-col ${focusMode ? '' : collapsed ? 'md:pl-16' : 'md:pl-64'} transition-[padding] duration-200`}>
+        <DesktopBanner />
+        {/* Tabless mode renders the routed page directly here; otherwise the
+            tabbed workspace. The Home tab is the workspace's default landing
+            surface and stays available alongside section tabs. Use the actual
+            current URL (not activeSection.to) for the section tab so deep links
+            like /hiring/domain-lead/application/:id open in the iframe instead
+            of the section root. */}
+        {tabless ? (
+          children
+        ) : (
+          <TabWorkspace
+            apiRef={workspaceRef}
+            onOpenPalette={togglePalette}
+            initialTabs={[
+              { url: '/', label: 'Home' },
+              ...(initialTabLabel && location.pathname !== '/'
+                ? [{ url: location.pathname + location.search, label: initialTabLabel }]
+                : []),
+            ]}
+            onActiveUrlChange={setFocusedTabUrl}
+          />
+        )}
       </main>
 
-      {/* Right-click context menu for a sidebar subtab. Rendered at the layout
-          root so it isn't clipped by the sidebar. */}
-      {subtabMenu && (
-        <>
-          <div
-            className="fixed inset-0 z-50"
-            onClick={() => setSubtabMenu(null)}
-            onContextMenu={(e) => {
-              e.preventDefault()
-              setSubtabMenu(null)
-            }}
-            aria-hidden="true"
-          />
-          <div
-            className="fixed z-50 bg-card border border-border rounded-md shadow-lg py-1 min-w-[180px] text-sm"
-            style={{ left: subtabMenu.x, top: subtabMenu.y }}
+      {/* Focus-mode launcher: with the sidebar hidden, keep a persistent way to
+          search (⌘K) and to bring the sidebar back. Desktop only — mobile keeps
+          its top bar + drawer. */}
+      {focusMode && (
+        <div className="hidden md:flex fixed bottom-4 left-4 z-30 items-center gap-1 rounded-xl bg-sidebar-bg shadow-brand-2 p-1">
+          <button
+            type="button"
+            onClick={() => setPaletteOpen(true)}
+            title="Search (⌘K)"
+            aria-label="Search"
+            className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-white/60 hover:text-white hover:bg-white/10 text-sm transition-colors"
           >
-            <button
-              type="button"
-              onClick={() => {
-                openInWorkspace(subtabMenu.req)
-                setSubtabMenu(null)
-              }}
-              className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-muted text-left text-foreground"
-            >
-              <ExternalLink className="w-3.5 h-3.5" />
-              Open
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                openToSide(subtabMenu.req)
-                setSubtabMenu(null)
-              }}
-              className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-muted text-left text-foreground"
-            >
-              <SplitSquareHorizontal className="w-3.5 h-3.5" />
-              Open to the side
-            </button>
-          </div>
-        </>
+            <Search className="w-4 h-4" />
+            <kbd className="text-[10px] font-mono text-white/40 bg-white/10 rounded px-1 py-0.5">⌘K</kbd>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setFocusPreference(false)
+              window.location.reload()
+            }}
+            title="Show sidebar"
+            aria-label="Show sidebar"
+            className="p-2 rounded-lg text-white/40 hover:text-white/80 hover:bg-white/10 transition-colors"
+          >
+            <PanelLeftOpen className="w-4 h-4" />
+          </button>
+        </div>
       )}
+
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        tabless={tabless}
+        focusMode={focusMode}
+        roles={{ isCore, canViewForms, canViewStaffing, hasHiringAccess, isLabMentor }}
+        onOpen={openFromPalette}
+      />
     </div>
   )
 }

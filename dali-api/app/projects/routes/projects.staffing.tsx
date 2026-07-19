@@ -1,6 +1,8 @@
 import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/projects.staffing";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
+import { STAFFING_MEMBER_SELECT } from "~/lib/prisma-shapes";
+import { primaryEmail } from "~/lib/display";
 import { canManageStaffing, canViewStaffing } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { resolvePhotoUrl } from "~/lib/photo";
@@ -12,6 +14,9 @@ import { ensureStaffingCycle } from "../lib/staffing-cycle";
 import { getSlotBinding } from "../lib/form-slots";
 import { buildSubmissionView } from "../lib/submission-view.server";
 import { StaffingBoard } from "../components/StaffingBoard";
+import { dedupeLiveAssignments } from "../lib/staffing-board";
+import { projectsPills } from "../components/projectsPills";
+import { AreaPillNav } from "~/components/AreaPillNav";
 import type {
   Assignment,
   BidField,
@@ -20,15 +25,22 @@ import type {
   Preference,
 } from "../lib/staffing-board";
 
+export const handle = {
+  areaPills: true,
+  docKey: "projects.staffing",
+  docTitle: "Staffing",
+};
+
 export const meta: Route.MetaFunction = () => [{ title: "Staffing · DALI OS" }];
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
-  if (auth.user.type === "applicant") return redirect("/portal");
-  // Viewing the board is now Core/Admin only. Mutations are further gated
-  // by canManageStaffing (staffing leads); the UI hides drag affordances
-  // when canManage is false.
+  const portalRedirect = redirectApplicantToPortal(auth);
+  if (portalRedirect) return portalRedirect;
+  // Viewing and managing the board are both Core/Admin (canViewStaffing and
+  // canManageStaffing are the same membership set); the UI still hides drag
+  // affordances when canManage is false (e.g. a future read-only tier).
   if (!(await canViewStaffing(auth.user.sub))) return redirect("/");
 
   const canManage = await canManageStaffing(auth.user.sub);
@@ -90,6 +102,16 @@ export async function loader({ request }: Route.LoaderArgs) {
   );
   const selectedTermId = selectedTerm.id;
 
+  // Optional domain filter (?domain=<id>). Narrows the member pool to people
+  // eligible in that domain. Validated against real domains so a stale id falls
+  // back to "all". Empty/absent = all domains. The filter is applied to the
+  // assembled `members` list below, after all pools are built.
+  const requestedDomainId = new URL(request.url).searchParams.get("domain");
+  const selectedDomainId =
+    requestedDomainId && requestedDomainId !== ""
+      ? requestedDomainId
+      : null;
+
   // The pool of members on the board is everyone who submitted at least one
   // StaffingPreference for this cycle. Members who didn't bid don't show up.
   const preferences = await prisma.staffingPreference.findMany({
@@ -106,29 +128,18 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const memberUserIds = Array.from(new Set(preferences.map((p) => p.userId)));
 
-  const [users, assignmentRows, projects, domains, roleRequests] = await Promise.all([
+  const [users, rawAssignmentRows, projects, domains, roleRequests, cardOrders] =
+    await Promise.all([
     prisma.user.findMany({
       where: { id: { in: memberUserIds } },
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        daliEmail: true,
-        dartmouthEmail: true,
-        photoUrl: true,
-        adminMembership: { select: { id: true } },
-        coreAssignments: { select: { leadTitle: true } },
-        domainEligibilities: {
-          select: {
-            level: true,
-            domain: { select: { displayName: true } },
-          },
-        },
-      },
+      select: STAFFING_MEMBER_SELECT,
     }),
+    // Both in-progress (Proposed) and finalized (Confirmed) assignments — a
+    // confirmed roster must stay on the board after finalize, not vanish.
+    // Declined rows are audit only. Deduped to one card per (user, cycle) below.
     prisma.staffingAssignment.findMany({
-      where: { staffingCycleId: cycle.id, status: "Proposed" },
-      select: { userId: true, projectId: true, domainId: true, level: true },
+      where: { staffingCycleId: cycle.id, status: { in: ["Proposed", "Confirmed"] } },
+      select: { userId: true, projectId: true, domainId: true, level: true, status: true },
     }),
     // Columns are the projects that actually RUN in the selected term
     // (ProjectTerm), not every non-archived project — otherwise the board lists
@@ -141,7 +152,8 @@ export async function loader({ request }: Route.LoaderArgs) {
         projectTerms: { some: { termId: selectedTerm.id } },
       },
       orderBy: [{ status: "asc" }, { name: "asc" }],
-      select: { id: true, name: true, status: true },
+      // githubTeamSlug pre-fills the Finalize modal's editable GitHub field.
+      select: { id: true, name: true, status: true, githubTeamSlug: true, slackChannelName: true },
     }),
     prisma.domain.findMany({ select: { id: true, displayName: true } }),
     // Expected headcount per (project, domain) for THIS term. ProjectRoleRequest
@@ -152,7 +164,17 @@ export async function loader({ request }: Route.LoaderArgs) {
       where: { termId: selectedTerm.id },
       select: { projectId: true, domainId: true, slots: true },
     }),
+    // Manual within-column card order. columnKey is carried so a stale order
+    // from a card's previous column is ignored once it moves (see below).
+    prisma.staffingCardOrder.findMany({
+      where: { staffingCycleId: cycle.id },
+      select: { userId: true, sortKey: true, columnKey: true },
+    }),
   ]);
+
+  // Collapse a member's Proposed + Confirmed rows to one live card (see
+  // dedupeLiveAssignments) so a finalized roster stays on the board.
+  const assignmentRows = dedupeLiveAssignments(rawAssignmentRows);
 
   // Union in any non-archived project that's actually being staffed this cycle
   // (a bid, assignment, or role request) but lacks a ProjectTerm row for the
@@ -170,7 +192,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (stagedProjectIds.length > 0) {
     const strays = await prisma.project.findMany({
       where: { id: { in: stagedProjectIds }, status: { not: "Archived" } },
-      select: { id: true, name: true, status: true },
+      select: { id: true, name: true, status: true, githubTeamSlug: true, slackChannelName: true },
     });
     projects.push(...strays);
     projects.sort(
@@ -226,14 +248,18 @@ export async function loader({ request }: Route.LoaderArgs) {
     userId: u.id,
     firstName: u.firstName,
     lastName: u.lastName,
-    email: u.daliEmail ?? u.dartmouthEmail,
+    email: primaryEmail(u) ?? null,
     photoUrl: await resolvePhotoUrl(u.photoUrl),
     isAdmin: u.adminMembership !== null,
     coreTitles: Array.from(
       new Set(u.coreAssignments.map((a) => a.leadTitle).filter((t): t is string => !!t)),
     ),
     domainLevels: u.domainEligibilities
-      .map((e) => ({ domainName: e.domain.displayName, level: e.level as Level }))
+      .map((e) => ({
+        domainId: e.domain.id,
+        domainName: e.domain.displayName,
+        level: e.level as Level,
+      }))
       .sort((a, b) => a.domainName.localeCompare(b.domainName)),
     preferences,
     bidFields: bidFieldsByUser.get(u.id) ?? [],
@@ -262,24 +288,62 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (bidSubmitterIds.length > 0) {
     const flaggedUsers = await prisma.user.findMany({
       where: { id: { in: bidSubmitterIds } },
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        daliEmail: true,
-        dartmouthEmail: true,
-        photoUrl: true,
-        adminMembership: { select: { id: true } },
-        coreAssignments: { select: { leadTitle: true } },
-        domainEligibilities: {
-          select: { level: true, domain: { select: { displayName: true } } },
-        },
-      },
+      select: STAFFING_MEMBER_SELECT,
     });
     const flagged = await Promise.all(
       flaggedUsers.map((u) => toMemberInput(u, [], true)),
     );
     members.push(...flagged);
+  }
+
+  // Members a staffing lead manually placed on the board (no bid) — surfaced as
+  // ordinary Unassigned cards (no unresolved-bid flag). Skip anyone already in
+  // the pool above (they bid, or were flagged), so their real bid takes over.
+  const placedUserIds = new Set(members.map((m) => m.userId));
+  const boardMemberIds = (
+    await prisma.staffingBoardMember.findMany({
+      where: { staffingCycleId: cycle.id },
+      select: { userId: true },
+    })
+  )
+    .map((b) => b.userId)
+    .filter((id) => !placedUserIds.has(id));
+
+  if (boardMemberIds.length > 0) {
+    const manualUsers = await prisma.user.findMany({
+      where: { id: { in: boardMemberIds } },
+      select: STAFFING_MEMBER_SELECT,
+    });
+    const manual = await Promise.all(
+      manualUsers.map(async (u) => ({
+        ...(await toMemberInput(u, [], false)),
+        manuallyAdded: true,
+      })),
+    );
+    members.push(...manual);
+  }
+
+  // Apply the domain filter to the member pool. A member stays if they're
+  // eligible in the domain, OR already have a bid/assignment in it — filtering
+  // out a member who's proposed-staffed in that domain would make a real
+  // assignment silently vanish from the board. Ignore an unknown domain id
+  // (treat as "all") so a stale ?domain= link doesn't empty the board.
+  const domainFilterActive =
+    selectedDomainId !== null && domains.some((d) => d.id === selectedDomainId);
+  if (domainFilterActive) {
+    const assignedUserIds = new Set(
+      assignmentRows
+        .filter((a) => a.domainId === selectedDomainId)
+        .map((a) => a.userId),
+    );
+    const filtered = members.filter(
+      (m) =>
+        m.domainLevels.some((d) => d.domainId === selectedDomainId) ||
+        m.preferences.some((p) => p.domainId === selectedDomainId) ||
+        assignedUserIds.has(m.userId),
+    );
+    members.length = 0;
+    members.push(...filtered);
   }
 
   const initialAssignments: Assignment[] = assignmentRows.map((a) => ({
@@ -348,10 +412,18 @@ export async function loader({ request }: Route.LoaderArgs) {
       termId: selectedTermId,
     },
     terms: terms.map((t) => ({ id: t.id, code: t.code })),
+    domains: [...domains]
+      .sort((a, b) => a.displayName.localeCompare(b.displayName))
+      .map((d) => ({ id: d.id, name: d.displayName })),
+    selectedDomainId: domainFilterActive ? selectedDomainId : "",
     canManage,
     projects,
     members,
     initialAssignments,
+    // Manual card order rows (userId, columnKey, sortKey). buildBoard applies a
+    // row only when its columnKey matches the card's current column, so a stale
+    // order from before a move is ignored. Sparse; unordered cards sort by name.
+    cardOrder: cardOrders,
     projectNames,
     domainNames,
     demandByProject,
@@ -378,6 +450,7 @@ export default function StaffingPage() {
 
   const page = (
     <div className="flex flex-col gap-4">
+      <AreaPillNav items={projectsPills({ canViewStaffing: true, active: "board" })} />
       <header className="flex items-start justify-between gap-3">
         <div>
           <h1 className="font-heading text-2xl font-bold text-foreground">Staffing</h1>
@@ -402,9 +475,12 @@ export default function StaffingPage() {
         cycleId={data.cycle.id}
         termId={data.cycle.termId}
         terms={data.terms}
+        domains={data.domains}
+        selectedDomainId={data.selectedDomainId}
         projects={data.projects}
         members={data.members}
         initialAssignments={data.initialAssignments}
+        cardOrder={data.cardOrder}
         projectNames={data.projectNames}
         domainNames={data.domainNames}
         demandByProject={data.demandByProject}

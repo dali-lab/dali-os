@@ -1,6 +1,6 @@
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
 import { useNavigate, useSearchParams } from "react-router";
-import { useChartColors } from "./useChartColors";
+import { useChartColors } from "~/components/analytics/useChartColors";
 
 export interface StatusSlice {
   status: string;
@@ -76,7 +76,7 @@ export function StatusPie({ data, selectedStatus }: Props) {
     const params = new URLSearchParams(searchParams);
     if (selectedStatus === slice.status) params.delete("status");
     else params.set("status", slice.status);
-    navigate(`/hiring/analytics?${params.toString()}`);
+    navigate({ search: `?${params.toString()}` });
   }
 
   return (

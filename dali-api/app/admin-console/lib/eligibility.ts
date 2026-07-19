@@ -3,11 +3,11 @@
 // client bundle; pure values stay here so route components can render the
 // level picker without pulling a "*.server" file into the browser.
 
-export type Level = "P1" | "P2" | "P3";
+import { ALL_LEVELS, isLevel, type Level } from "~/lib/level";
 
-export const ALLOWED_LEVELS: Level[] = ["P1", "P2", "P3"];
+export { type Level };
+export const ALLOWED_LEVELS = ALL_LEVELS;
 
 export function parseLevel(raw: unknown): Level | null {
-  if (typeof raw !== "string") return null;
-  return (ALLOWED_LEVELS as string[]).includes(raw) ? (raw as Level) : null;
+  return isLevel(raw) ? raw : null;
 }

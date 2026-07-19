@@ -1,6 +1,6 @@
 import type { Route } from "./+types/documents.$pageId.export";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, isPartnerAccount } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import {
   collabDocToProseMirror,
@@ -24,6 +24,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return new Response("Unauthorized", { status: 401 });
   if (auth.user.type === "applicant") return new Response("Forbidden", { status: 403 });
+  if (await isPartnerAccount(auth)) return new Response("Forbidden", { status: 403 });
 
   const url = new URL(request.url);
   const format = url.searchParams.get("format") === "docx" ? "docx" : "pdf";

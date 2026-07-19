@@ -3,7 +3,7 @@ name: PR Preview Teardown
 on:
   pull_request:
     types: [closed]
-    branches: [dev]
+    branches: [staging]
 
 concurrency:
   group: preview-pr-${{ github.event.pull_request.number }}
@@ -16,7 +16,7 @@ jobs:
   teardown:
     name: Destroy preview for PR #${{ github.event.pull_request.number }}
     if: github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - uses: superfly/flyctl-actions/setup-flyctl@master
 

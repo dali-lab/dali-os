@@ -12,10 +12,10 @@
 // (ProjectRoleRequest is headcount display only; it never gates bids.)
 
 import { prisma } from "~/lib/db";
+import type { Level } from "~/lib/level";
 
-// Level is the Prisma enum; kept as a string union to avoid importing the
-// generated enum into pure call sites.
-export type BidLevel = "P1" | "P2" | "P3";
+// Re-export under the legacy name for callers that still import `BidLevel`.
+export type BidLevel = Level;
 
 export type RawBid = {
   projectId: string;

@@ -1,14 +1,10 @@
 import type { Route } from "./+types/api.interview-assignments.$id.notes";
-import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { hasCycleAccess } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
-
-const NoteVersionSchema = z.object({
-  content: z.string().max(100_000),
-});
+import { NoteVersionSchema } from "~/hiring/lib/note-schemas";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);

@@ -1,22 +1,20 @@
 import { useMemo, useState } from "react";
 import {
   Form,
+  Link,
   redirect,
   useActionData,
   useLoaderData,
   useNavigate,
 } from "react-router";
-import {
-  DndContext,
-  useDraggable,
-  useDroppable,
-  type DragEndEvent,
-} from "@dnd-kit/core";
+import type { DragEndEvent } from "@dnd-kit/core";
+import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
 import type { Route } from "./+types/partners.applications";
 import { requireAuth } from "~/lib/auth";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { prisma } from "~/lib/db";
 import { canViewStaffing, isCore } from "~/lib/roles";
+import { resolvePhotoUrl } from "~/lib/photo";
 import {
   PARTNER_APPLICATION_STATUSES as STATUSES,
   PARTNER_APPLICATION_STATUS_LABELS as STATUS_LABEL,
@@ -24,7 +22,19 @@ import {
   PROJECTING_STATUSES,
   type PartnerApplicationStatus as Status,
 } from "../lib/partner-application";
-import { useChartColors } from "~/hiring/components/analytics/useChartColors";
+import { useChartColors } from "~/components/analytics/useChartColors";
+import {
+  clearApplicationFormBinding,
+  getApplicationFormBinding,
+  pitchExcerpt,
+  setApplicationFormBinding,
+} from "../lib/application-form.server";
+import type { Question } from "~/types";
+import { listSelectableForms } from "~/projects/lib/form-slots";
+import { AreaPillNav } from "~/components/AreaPillNav";
+import { FileText, LayoutGrid } from "lucide-react";
+
+export const handle = { areaPills: true };
 
 export const meta: Route.MetaFunction = () => [
   { title: "Partner Applications · DALI OS" },
@@ -43,6 +53,9 @@ type ApplicationRow = {
   status: Status;
   partnerName: string;
   partnerLogoUrl: string | null;
+  // The partner's pitch prose: first textarea answer from their form
+  // submission, falling back to the (Core-written) internal summary.
+  excerpt: string | null;
   targetTerms: { code: string; sortKey: number }[];
   domains: DomainScopeOut[];
   totalExpectedMembers: number;
@@ -71,8 +84,15 @@ export async function loader({ request }: Route.LoaderArgs) {
       select: {
         id: true,
         title: true,
+        summary: true,
         status: true,
         partnerOrg: { select: { name: true, logoUrl: true } },
+        formSubmission: {
+          select: {
+            answers: true,
+            formVersion: { select: { questions: true } },
+          },
+        },
         targetTerms: {
           orderBy: { term: { sortKey: "asc" } },
           select: { term: { select: { code: true, sortKey: true } } },
@@ -103,18 +123,26 @@ export async function loader({ request }: Route.LoaderArgs) {
     }),
   ]);
 
-  const rows: ApplicationRow[] = applications.map((a) => {
+  const rows: ApplicationRow[] = await Promise.all(applications.map(async (a) => {
     const domains = a.domains.map((d) => ({
       domainId: d.domainId,
       domainName: d.domain.displayName,
       expectedMembers: d.expectedMembers,
     }));
+    const answerExcerpt = a.formSubmission
+      ? pitchExcerpt(
+          (a.formSubmission.formVersion.questions as unknown as Question[]) ?? [],
+          (a.formSubmission.answers as Record<string, unknown>) ?? {},
+        )
+      : null;
     return {
       id: a.id,
       title: a.title,
       status: a.status,
       partnerName: a.partnerOrg.name,
-      partnerLogoUrl: a.partnerOrg.logoUrl,
+      excerpt: answerExcerpt ?? a.summary,
+      // Uploaded logos are stored as S3 keys; presign for display.
+      partnerLogoUrl: await resolvePhotoUrl(a.partnerOrg.logoUrl),
       targetTerms: a.targetTerms.map((t) => ({
         code: t.term.code,
         sortKey: t.term.sortKey,
@@ -122,7 +150,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       domains,
       totalExpectedMembers: domains.reduce((s, d) => s + d.expectedMembers, 0),
     };
-  });
+  }));
 
   // Collapse role requests to one cell per (term, domain), summing slots
   // across projects and across P1/P2/P3 levels.
@@ -144,7 +172,13 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
   const requiredCells = [...requiredMap.values()];
 
-  return { rows, partnerOrgs, canEdit, requiredCells };
+  // Which generic Form partners answer on /partner/apply, plus the pickable
+  // forms — Core-only config, so skip both queries for everyone else.
+  const [formBinding, selectableForms] = canEdit
+    ? await Promise.all([getApplicationFormBinding(), listSelectableForms()])
+    : [null, []];
+
+  return { rows, partnerOrgs, canEdit, requiredCells, formBinding, selectableForms };
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -156,6 +190,19 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   const form = await request.formData();
+  const intent = (form.get("intent") as string | null) ?? "create";
+
+  if (intent === "bind-form") {
+    const formId = (form.get("formId") as string | null) ?? "";
+    if (!formId) return { error: "Choose a form to bind." };
+    const result = await setApplicationFormBinding(formId, auth.user.sub);
+    return result.ok ? { ok: true } : { error: result.error };
+  }
+  if (intent === "clear-form") {
+    await clearApplicationFormBinding();
+    return { ok: true };
+  }
+
   const title = (form.get("title") as string | null)?.trim() ?? "";
   const partnerOrgId = (form.get("partnerOrgId") as string | null) ?? "";
 
@@ -176,7 +223,7 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function PartnersApplications() {
-  const { rows, partnerOrgs, canEdit, requiredCells } =
+  const { rows, partnerOrgs, canEdit, requiredCells, formBinding, selectableForms } =
     useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const [query, setQuery] = useState("");
@@ -225,6 +272,12 @@ export default function PartnersApplications() {
 
   return (
     <div className="flex flex-col gap-4">
+      <AreaPillNav
+        items={[
+          { label: "Hub", to: "/partners", icon: LayoutGrid },
+          { label: "Applications", to: "/partners/applications", active: true, icon: FileText },
+        ]}
+      />
       <header className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="font-heading text-2xl font-bold text-foreground">
@@ -307,6 +360,77 @@ export default function PartnersApplications() {
             </button>
           </div>
         </Form>
+      )}
+
+      {canEdit && (
+        <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-2">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <h2 className="text-sm font-semibold text-foreground">
+                Application form
+              </h2>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Extra questions partners answer when pitching a project.
+                {formBinding && (
+                  <>
+                    {" "}
+                    <Link
+                      to={`/forms/edit/${formBinding.formId}`}
+                      className="underline hover:text-foreground"
+                    >
+                      Edit “{formBinding.formName}” in Forms
+                    </Link>
+                  </>
+                )}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Form method="post" className="flex items-center gap-2">
+                <input type="hidden" name="intent" value="bind-form" />
+                <select
+                  name="formId"
+                  defaultValue={formBinding?.formId ?? ""}
+                  className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                >
+                  <option value="" disabled>
+                    Choose a form…
+                  </option>
+                  {selectableForms.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.name}
+                      {f.published ? "" : " (unpublished)"}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="submit"
+                  className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors"
+                >
+                  {formBinding ? "Change" : "Bind"}
+                </button>
+              </Form>
+              {formBinding && (
+                <Form method="post">
+                  <input type="hidden" name="intent" value="clear-form" />
+                  <button
+                    type="submit"
+                    className="px-3 py-1.5 text-xs font-medium rounded-md border border-border text-muted-foreground hover:text-destructive hover:border-destructive/40 transition-colors"
+                  >
+                    Remove
+                  </button>
+                </Form>
+              )}
+            </div>
+          </div>
+          {formBinding && (!formBinding.published || !formBinding.hasVersion) && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5">
+              {formBinding.hasVersion
+                ? "This form isn't published yet"
+                : "This form has no saved version yet"}
+              {" "}— partners currently see only the built-in pitch fields.
+            </p>
+          )}
+        </section>
       )}
 
       <TermProjection rows={effectiveRows} requiredCells={requiredCells} />
@@ -734,7 +858,14 @@ function ApplicationsTable({ rows }: { rows: ApplicationRow[] }) {
               }}
               className="border-t border-border hover:bg-muted/20 cursor-pointer"
             >
-              <td className="px-4 py-2 text-foreground">{a.title}</td>
+              <td className="px-4 py-2">
+                <span className="text-foreground block">{a.title}</span>
+                {a.excerpt && (
+                  <span className="text-xs text-muted-foreground block truncate max-w-md">
+                    {a.excerpt}
+                  </span>
+                )}
+              </td>
               <td className="px-4 py-2 text-muted-foreground">{a.partnerName}</td>
               <td className="px-4 py-2">
                 <StatusPill status={a.status} />
@@ -762,7 +893,9 @@ function ApplicationsTable({ rows }: { rows: ApplicationRow[] }) {
 
 // `rows` already reflects pending moves (the parent merges the optimistic
 // status so the projection chart stays in sync), so a drop just calls onMove
-// then POSTs, and onRevert on failure — no loader refetch.
+// then POSTs, and onRevert on failure — no loader refetch. The optimistic state
+// lives in the parent, so the board uses only the POST/rollback half of the
+// shared flow rather than `useOptimisticBoardMove`'s local state.
 function ApplicationsBoard({
   rows,
   canEdit,
@@ -823,97 +956,55 @@ function ApplicationsBoard({
     })();
   }
 
-  return (
-    <div className="flex flex-col gap-3">
-      {error && (
-        <div className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-md px-3 py-2">
-          {error}
-        </div>
-      )}
-      {/* Stable id so SSR/client agree when multiple DndContexts mount (see
-          StaffingBoard for the hydration-mismatch rationale). */}
-      <DndContext id="partner-applications-board" onDragEnd={handleDragEnd}>
-        <div className="flex gap-3 overflow-x-auto pb-3">
-          {STATUSES.map((status) => (
-            <BoardColumn
-              key={status}
-              status={status}
-              cards={byStatus[status]}
-              canEdit={canEdit}
-            />
-          ))}
-        </div>
-      </DndContext>
-    </div>
-  );
-}
+  const columns: KanbanColumn<ApplicationRow>[] = STATUSES.map((status) => ({
+    id: status,
+    title: <StatusPill status={status} />,
+    cards: byStatus[status],
+    className: "flex-shrink-0 w-72 border rounded-lg border-border bg-card flex flex-col",
+  }));
 
-function BoardColumn({
-  status,
-  cards,
-  canEdit,
-}: {
-  status: Status;
-  cards: ApplicationRow[];
-  canEdit: boolean;
-}) {
-  const { isOver, setNodeRef } = useDroppable({ id: status });
   return (
-    <div
-      ref={setNodeRef}
-      className={`flex-shrink-0 w-72 border rounded-lg border-border bg-card flex flex-col ${
-        isOver ? "ring-2 ring-accent-coral/40" : ""
-      }`}
-    >
-      <div className="px-3 py-2 border-b border-border flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <StatusPill status={status} />
-        </div>
-        <div className="text-[11px] text-muted-foreground">{cards.length}</div>
-      </div>
-      <div className="flex flex-col gap-2 p-2 min-h-[120px]">
-        {cards.length === 0 ? (
-          <div className="text-xs text-muted-foreground italic text-center py-4">
-            Empty
-          </div>
-        ) : (
-          cards.map((a) => (
-            <ApplicationCard key={a.id} app={a} draggable={canEdit} />
-          ))
-        )}
-      </div>
-    </div>
+    <KanbanBoard<ApplicationRow>
+      // Stable id so SSR/client agree when multiple DndContexts mount (see
+      // StaffingBoard for the hydration-mismatch rationale).
+      id="partner-applications-board"
+      columns={columns}
+      getCardId={(a) => a.id}
+      getCardData={(a) => ({ applicationId: a.id, fromStatus: a.status })}
+      draggable={canEdit}
+      onDragEnd={handleDragEnd}
+      error={error}
+      renderCard={(app, { isDragging, dragHandleProps }) => (
+        <ApplicationCard
+          app={app}
+          draggable={canEdit}
+          dragHandleProps={dragHandleProps}
+          isDragging={isDragging}
+        />
+      )}
+    />
   );
 }
 
 function ApplicationCard({
   app,
   draggable,
+  dragHandleProps,
+  isDragging,
 }: {
   app: ApplicationRow;
   draggable: boolean;
+  dragHandleProps: Record<string, unknown>;
+  isDragging: boolean;
 }) {
   const navigate = useNavigate();
-  const { attributes, listeners, setNodeRef, transform, isDragging } =
-    useDraggable({
-      id: app.id,
-      data: { applicationId: app.id, fromStatus: app.status },
-      disabled: !draggable,
-    });
 
-  const style: React.CSSProperties = transform
-    ? {
-        transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
-        zIndex: 50,
-      }
-    : {};
-
-  const dragProps = draggable ? { ...attributes, ...listeners } : {};
+  // The whole card is the drag handle (matching the original behavior); the
+  // activation-distance sensor lets a press that doesn't move land as a click.
+  const dragProps = draggable ? dragHandleProps : {};
 
   return (
     <div
-      ref={setNodeRef}
-      style={style}
       {...dragProps}
       onClick={() => {
         const url = `/partners/applications/${app.id}`;
@@ -924,6 +1015,11 @@ function ApplicationCard({
       } ${isDragging ? "opacity-60 shadow-lg" : "hover:bg-muted/20"}`}
     >
       <span className="font-semibold text-foreground">{app.title}</span>
+      {app.excerpt && (
+        <span className="text-xs text-muted-foreground line-clamp-2">
+          {app.excerpt}
+        </span>
+      )}
       <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
         {app.partnerLogoUrl && (
           <img

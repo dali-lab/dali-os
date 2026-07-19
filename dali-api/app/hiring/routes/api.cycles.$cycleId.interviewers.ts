@@ -1,17 +1,17 @@
 import type { Route } from "./+types/api.cycles.$cycleId.interviewers";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireAuth } from "~/lib/auth";
-import { isCore, isDomainLead, hasCycleAccess } from "~/lib/roles";
-import { parseJson } from "~/lib/validate";
+import { requireAuth, requireCoreOrDomainLead, forbidden } from "~/lib/auth";
+import { hasCycleAccess } from "~/lib/roles";
+import { idSchema, parseJson } from "~/lib/validate";
 
 const CreateInterviewerSchema = z.object({
-  userId: z.string().min(1).max(100),
-  domainId: z.string().min(1).max(100),
+  userId: idSchema,
+  domainId: idSchema,
 });
 
 const DeleteInterviewerSchema = z.object({
-  interviewerId: z.string().min(1).max(100),
+  interviewerId: idSchema,
 });
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -19,7 +19,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!auth.ok) return auth.response;
 
   if (!(await hasCycleAccess(auth.user.sub, params.cycleId!)))
-    return Response.json({ error: "Forbidden" }, { status: 403 });
+    return forbidden(request);
 
   const interviewers = await prisma.cycleInterviewer.findMany({
     where: { applicationCycleId: params.cycleId },
@@ -51,14 +51,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
-  const auth = await requireAuth(request);
-  if (!auth.ok) return auth.response;
-
-  const hiringLead = await isCore(auth.user.sub);
-  const domainLead = await isDomainLead(auth.user.sub);
-  if (!hiringLead && !domainLead) {
-    return Response.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const gate = await requireCoreOrDomainLead(request);
+  if (!gate.ok) return gate.response;
 
   if (request.method === "POST") {
     const body = await parseJson(request, CreateInterviewerSchema);

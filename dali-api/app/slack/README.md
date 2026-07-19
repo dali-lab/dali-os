@@ -10,7 +10,7 @@ Webhook receiver embedded in `dali-api`. A teammate `@dali-os-bot` with the word
 - `lib/slack-client.ts` — Thin `@slack/web-api` wrapper.
 - `lib/handle-mention.ts` — Reacts to `@bot … bug …`; files an issue immediately and posts the URL in-thread.
 - `lib/format-issue.ts` — Pure function: Slack thread → GitHub issue title/body. Attachments are noted by name and linked back to the Slack thread (no upload to GitHub).
-- `lib/github-app.ts` — Octokit + `@octokit/auth-app` wrapper for issue creation.
+- GitHub primitives live in `~/lib/github.ts` (shared with the projects/tasks integration).
 
 ## How the trigger works
 

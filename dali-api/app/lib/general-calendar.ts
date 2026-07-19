@@ -11,6 +11,7 @@
 
 import rrulePkg from "rrule";
 import type { RRule as RRuleType } from "rrule";
+import { zonedWallTimeUtc } from "~/lib/timezone";
 
 const { RRule, rrulestr } = rrulePkg as unknown as {
   RRule: typeof import("rrule").RRule;
@@ -35,8 +36,55 @@ type RawEvent = {
 
 const FETCH_TIMEOUT_MS = 5_000;
 
+// TTL cache for the fetched+parsed feed (pre-windowing, so every week window
+// shares one fetch) — the external HTTP fetch was on the critical path of every
+// home load. A failed refresh serves the stale feed; concurrent callers share
+// one in-flight fetch.
+const CACHE_TTL_MS = 5 * 60_000;
+let feedCache: { url: string; events: RawEvent[]; fetchedAt: number } | null = null;
+let feedInflight: { url: string; promise: Promise<RawEvent[] | null> } | null = null;
+
 export function generalCalendarConfigured(): boolean {
   return !!process.env.DALI_GENERAL_CALENDAR_ICS;
+}
+
+// Fetch the raw .ics text, returning parsed events or null on any fetch error.
+async function fetchAndParseFeed(url: string): Promise<RawEvent[] | null> {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    return parseIcs(await res.text());
+  } catch {
+    return null;
+  }
+}
+
+// Cached feed lookup: fresh cache wins; otherwise refetch (joining any fetch
+// already in flight), falling back to the stale cache — any age — on failure.
+// Null only when the fetch fails and there's nothing cached.
+async function getFeed(url: string): Promise<RawEvent[] | null> {
+  if (feedCache?.url === url && Date.now() - feedCache.fetchedAt < CACHE_TTL_MS) {
+    return feedCache.events;
+  }
+  let inflight = feedInflight;
+  if (!inflight || inflight.url !== url) {
+    const promise = fetchAndParseFeed(url)
+      .then((events) => {
+        if (events) feedCache = { url, events, fetchedAt: Date.now() };
+        return events;
+      })
+      .finally(() => {
+        if (feedInflight?.promise === promise) feedInflight = null;
+      });
+    inflight = { url, promise };
+    feedInflight = inflight;
+  }
+  const fresh = await inflight.promise;
+  if (fresh) return fresh;
+  return feedCache?.url === url ? feedCache.events : null;
 }
 
 // Fetch + parse the feed, returning events that overlap [windowStart, windowEnd].
@@ -49,19 +97,9 @@ export async function fetchGeneralCalendarEvents(
   const url = process.env.DALI_GENERAL_CALENDAR_ICS;
   if (!url) return [];
 
-  let body: string;
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-    const res = await fetch(url, { signal: controller.signal });
-    clearTimeout(timer);
-    if (!res.ok) return [];
-    body = await res.text();
-  } catch {
-    return [];
-  }
+  const raw = await getFeed(url);
+  if (!raw) return [];
 
-  const raw = parseIcs(body);
   const out: GeneralCalendarEvent[] = [];
   for (const ev of raw) {
     if (!ev.rrule) {
@@ -221,37 +259,15 @@ function parseIcsDate(namePart: string, value: string): { date: Date; allDay: bo
   // Floating or TZID local time. Resolve the named zone's UTC offset at that
   // wall-clock instant; fall back to UTC if the tz is missing/invalid.
   const tzid = /TZID=([^;:]+)/.exec(namePart)?.[1];
-  const utcGuess = Date.UTC(y, mon - 1, day, hour, min, sec);
-  if (!tzid) return { date: new Date(utcGuess), allDay: false };
-  const offsetMs = tzOffsetMs(tzid, new Date(utcGuess));
-  return { date: new Date(utcGuess - offsetMs), allDay: false };
-}
-
-// How far the named timezone is ahead of UTC at `instant`, in ms.
-function tzOffsetMs(timeZone: string, instant: Date): number {
+  if (!tzid) {
+    return { date: new Date(Date.UTC(y, mon - 1, day, hour, min, sec)), allDay: false };
+  }
   try {
-    const dtf = new Intl.DateTimeFormat("en-US", {
-      timeZone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-    });
-    const parts = dtf.formatToParts(instant);
-    const get = (t: string) => +(parts.find((p) => p.type === t)?.value ?? "0");
-    const asUtc = Date.UTC(
-      get("year"),
-      get("month") - 1,
-      get("day"),
-      get("hour") % 24,
-      get("minute"),
-      get("second"),
-    );
-    return asUtc - instant.getTime();
+    // zonedWallTimeUtc handles minute-precision wall clocks; carry seconds
+    // separately since DST offsets never change mid-minute.
+    const minuteUtc = zonedWallTimeUtc(y, mon, day, hour, min, tzid);
+    return { date: new Date(minuteUtc.getTime() + sec * 1000), allDay: false };
   } catch {
-    return 0;
+    return { date: new Date(Date.UTC(y, mon - 1, day, hour, min, sec)), allDay: false };
   }
 }

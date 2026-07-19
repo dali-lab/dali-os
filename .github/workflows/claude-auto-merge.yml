@@ -1,8 +1,8 @@
-name: Claude Auto-Merge Dev
+name: Claude Auto-Merge
 
-# When dev gets new commits, fast-forward / 3-way merge dev into every open
-# Claude PR (head ref `claude/issue-*`) whose linked issue is in
-# `claude-pr-needs-review` state and whose branch is behind dev.
+# When staging gets new commits, fast-forward / 3-way merge staging into every
+# open Claude PR (head ref `claude/issue-*`) whose linked issue is in
+# `claude-pr-needs-review` state and whose branch is behind staging.
 #
 # - ff-only merge: silent, no comment, no Claude turn used.
 # - clean 3-way merge: silent, just push the merge commit.
@@ -13,7 +13,7 @@ name: Claude Auto-Merge Dev
 
 on:
   push:
-    branches: [dev]
+    branches: [staging]
 
 permissions:
   contents: write
@@ -26,7 +26,7 @@ concurrency:
 
 jobs:
   scan:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     outputs:
       conflicts: ${{ steps.scan.outputs.conflicts }}
     steps:
@@ -54,10 +54,10 @@ jobs:
           set -euo pipefail
           git fetch --all --prune
 
-          # Pull all open Claude PRs targeting dev.
+          # Pull all open Claude PRs targeting staging.
           PRS=$(gh pr list \
             --repo "$GITHUB_REPOSITORY" \
-            --base dev --state open \
+            --base staging --state open \
             --json number,headRefName \
             --jq '[.[] | select(.headRefName | startswith("claude/issue-")) | "\(.number) \(.headRefName)"]')
 
@@ -85,9 +85,9 @@ jobs:
               continue
             fi
 
-            # Already up-to-date with dev?
-            if git merge-base --is-ancestor origin/dev "$REMOTE_REF" 2>/dev/null; then
-              echo "PR #$NUMBER: already up-to-date with dev."
+            # Already up-to-date with staging?
+            if git merge-base --is-ancestor origin/staging "$REMOTE_REF" 2>/dev/null; then
+              echo "PR #$NUMBER: already up-to-date with staging."
               continue
             fi
 
@@ -95,9 +95,9 @@ jobs:
             git checkout -B "$HEAD_REF" "$REMOTE_REF" >/dev/null 2>&1
 
             # 1) Fast-forward (silent, no Claude, no merge commit, no comment).
-            if git merge --ff-only origin/dev >/dev/null 2>&1; then
+            if git merge --ff-only origin/staging >/dev/null 2>&1; then
               git push origin "$HEAD_REF"
-              echo "PR #$NUMBER: fast-forwarded to dev."
+              echo "PR #$NUMBER: fast-forwarded to staging."
               continue
             fi
 
@@ -105,7 +105,7 @@ jobs:
             git reset --hard "$REMOTE_REF" >/dev/null
 
             # 2) Clean 3-way merge with merge commit (silent, no Claude).
-            if git merge --no-edit origin/dev >/dev/null 2>&1; then
+            if git merge --no-edit origin/staging >/dev/null 2>&1; then
               git push origin "$HEAD_REF"
               echo "PR #$NUMBER: clean 3-way merge pushed."
               continue
@@ -128,7 +128,7 @@ jobs:
   resolve:
     needs: scan
     if: needs.scan.outputs.conflicts != '[]' && needs.scan.outputs.conflicts != ''
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     strategy:
       fail-fast: false
       matrix:
@@ -159,9 +159,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          git fetch origin dev
+          git fetch origin staging
           # Intentionally proceed past non-zero exit — we expect conflicts.
-          git merge --no-commit --no-ff origin/dev || true
+          git merge --no-commit --no-ff origin/staging || true
           # Confirm there are conflicts; if not, the scan job's signal is stale —
           # commit and push the clean merge then exit cleanly.
           if [ -z "$(git diff --name-only --diff-filter=U)" ]; then
@@ -178,15 +178,15 @@ jobs:
             You are resolving merge conflicts on Claude PR #${{ matrix.pr.number }}
             in ${{ github.repository }} (branch `${{ matrix.pr.headRefName }}`).
 
-            The current worktree is mid-merge: `git merge --no-commit --no-ff origin/dev`
+            The current worktree is mid-merge: `git merge --no-commit --no-ff origin/staging`
             has run and conflict markers are present. List the unmerged paths with
             `git diff --name-only --diff-filter=U`.
 
             Step 1 — read context:
               - Read CLAUDE.md.
               - For each conflicting file, look at the conflict markers, the surrounding code,
-                and (if helpful) `git log --oneline origin/dev..HEAD -- <file>` plus
-                `git log --oneline HEAD..origin/dev -- <file>` to understand the two intents.
+                and (if helpful) `git log --oneline origin/staging..HEAD -- <file>` plus
+                `git log --oneline HEAD..origin/staging -- <file>` to understand the two intents.
 
             Step 2 — resolve. The constraint is RESOLVE MECHANICALLY + LIGHT REFACTOR ONLY:
               - Allowed: pick a side, splice both sides, rename a symbol the other side renamed,
