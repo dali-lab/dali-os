@@ -481,10 +481,10 @@ export async function canManageStaffing(userId: string): Promise<boolean> {
 
 /**
  * Lab-mentor gate: true if the user is an active mentor anywhere in the lab
- * for the given term. Used to gate mentor-collective surfaces — `/mentorship`
- * hub, MentorNote visibility, notes browser. The check is broad on purpose
- * (not scoped to "mentor of this specific mentee"); the lab's mentors are
- * treated as a collective.
+ * for the given term. Used as the area gate for `/mentorship` (hub, browse,
+ * notes) — mentees are excluded. Per-note / per-pair reads are further scoped
+ * by domain in `mentorship/lib/visibility` (own notes + own-domain mentee
+ * notes; Core/Admin see everything).
  *
  * Returns true if the user has, for the given term, ANY of:
  *   - a P3-level ProjectAssignment

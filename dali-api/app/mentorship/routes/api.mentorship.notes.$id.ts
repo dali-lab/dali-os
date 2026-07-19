@@ -3,17 +3,26 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { canViewMentorship } from "../lib/visibility";
+import { canViewMentorship, canViewMentorNote } from "../lib/visibility";
 
-// GET    /api/mentorship/notes/:id  — read one (any lab mentor or Core)
+// GET    /api/mentorship/notes/:id  — read one (author, same-domain mentor, or Core/Admin)
 // PATCH  /api/mentorship/notes/:id  — update contentJson. Author or Core only.
 // DELETE /api/mentorship/notes/:id  — delete. Author or Core only.
 
-type PatchBody = { contentJson: unknown };
+// A patch may carry a content edit, a vibe change, or both. At least one must
+// be present.
+type PatchBody = { contentJson?: unknown; vibe?: "Good" | "Ok" | "Bad" | null };
+
+const VIBES = ["Good", "Ok", "Bad"] as const;
 
 function isPatchBody(x: unknown): x is PatchBody {
   if (!x || typeof x !== "object") return false;
-  return Object.prototype.hasOwnProperty.call(x, "contentJson");
+  const o = x as Record<string, unknown>;
+  const hasContent = Object.prototype.hasOwnProperty.call(o, "contentJson");
+  const hasVibe = Object.prototype.hasOwnProperty.call(o, "vibe");
+  if (!hasContent && !hasVibe) return false;
+  if (hasVibe && o.vibe !== null && !VIBES.includes(o.vibe as never)) return false;
+  return true;
 }
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -33,6 +42,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       domainId: true,
       weekOf: true,
       contentJson: true,
+      vibe: true,
       updatedAt: true,
       mentor: { select: { id: true, firstName: true, lastName: true } },
       mentee: { select: { id: true, firstName: true, lastName: true } },
@@ -40,6 +50,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
   if (!note) {
     return withCors(request, Response.json({ error: "Not found" }, { status: 404 }));
+  }
+  if (!(await canViewMentorNote(auth.user.sub, note))) {
+    return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
   }
   const [project, term, domain] = await Promise.all([
     prisma.project.findUnique({
@@ -104,9 +117,13 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!isPatchBody(body)) {
     return withCors(request, Response.json({ error: "Invalid body" }, { status: 400 }));
   }
-  await prisma.mentorNote.update({
-    where: { id: note.id },
-    data: { contentJson: (body.contentJson ?? {}) as object },
-  });
+  const data: Record<string, unknown> = {};
+  if (Object.prototype.hasOwnProperty.call(body, "contentJson")) {
+    data.contentJson = (body.contentJson ?? {}) as object;
+  }
+  if (Object.prototype.hasOwnProperty.call(body, "vibe")) {
+    data.vibe = body.vibe ?? null;
+  }
+  await prisma.mentorNote.update({ where: { id: note.id }, data });
   return withCors(request, Response.json({ ok: true }));
 }

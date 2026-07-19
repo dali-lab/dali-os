@@ -275,76 +275,70 @@ export async function action({ request }: Route.ActionArgs) {
           droppedCount++;
         }
 
-        // Auto-pair mentees to mentors based on the confirmed roster. Additive
-        // only — preserves any Core overrides made via /mentorship/pairs.
-        pairsCreated = await derivePairings(tx, project.id, cycle.termId);
-
-        // Materialize the manually-staged pairs for this project (built via the
-        // per-card Mentor badge). Each becomes a real MentorshipPair; if the
-        // mentor isn't P3 in the mentee's domain and promotion was requested,
-        // bump their eligibility + any assignment in that domain to P3 so the
-        // pairing is valid. Staged rows are consumed (deleted) either way.
-        const staged = await tx.stagedMentorshipPair.findMany({
-          where: { staffingCycleId: cycle.id, projectId: project.id },
-          select: { id: true, menteeUserId: true, mentorUserId: true, domainId: true },
+        // Mentor/mentee roles: default by level (P3 → mentor), overridden per
+        // card on the staffing board (StaffingMentorRole).
+        const overrideRows = await tx.staffingMentorRole.findMany({
+          where: { staffingCycleId: cycle.id },
+          select: { userId: true, isMentor: true },
         });
-        for (const sp of staged) {
-          if (promoteMentors) {
-            const elig = await tx.domainEligibility.findUnique({
-              where: { userId_domainId: { userId: sp.mentorUserId, domainId: sp.domainId } },
-              select: { level: true },
+        const roleOverride = new Map(overrideRows.map((r) => [r.userId, r.isMentor]));
+
+        // A mentor must be P3 in the domain they mentor. Any override-driven
+        // mentor still below P3 on this project is promoted (eligibility + live
+        // rows) so the derived pairing is valid — default mentors are P3 already.
+        if (promoteMentors) {
+          const overrideMentorIds = overrideRows.filter((r) => r.isMentor).map((r) => r.userId);
+          if (overrideMentorIds.length > 0) {
+            const belowP3 = await tx.projectAssignment.findMany({
+              where: {
+                projectId: project.id,
+                termId: cycle.termId,
+                userId: { in: overrideMentorIds },
+                level: { not: "P3" },
+              },
+              select: { userId: true, domainId: true },
             });
-            if (elig?.level !== "P3") {
+            const promoted = new Set<string>();
+            for (const r of belowP3) {
               await tx.domainEligibility.upsert({
-                where: { userId_domainId: { userId: sp.mentorUserId, domainId: sp.domainId } },
+                where: { userId_domainId: { userId: r.userId, domainId: r.domainId } },
                 update: { level: "P3", promotedBy: auth.user.sub },
-                create: { userId: sp.mentorUserId, domainId: sp.domainId, level: "P3", promotedBy: auth.user.sub },
+                create: { userId: r.userId, domainId: r.domainId, level: "P3", promotedBy: auth.user.sub },
               });
-              // Reflect the promotion on the mentor's live rows in that domain so
-              // the board + finalized roster show P3, not a stale lower level.
               await tx.projectAssignment.updateMany({
-                where: { userId: sp.mentorUserId, termId: cycle.termId, domainId: sp.domainId },
+                where: { userId: r.userId, termId: cycle.termId, domainId: r.domainId },
                 data: { level: "P3" },
               });
               await tx.staffingAssignment.updateMany({
                 where: {
-                  userId: sp.mentorUserId,
+                  userId: r.userId,
                   staffingCycleId: cycle.id,
-                  domainId: sp.domainId,
+                  domainId: r.domainId,
                   status: { not: "Declined" },
                 },
                 data: { level: "P3" },
               });
-              mentorsPromoted++;
+              promoted.add(r.userId);
             }
-          }
-          // Materialize the pair (idempotent — MentorshipPair has no unique key).
-          const exists = await tx.mentorshipPair.findFirst({
-            where: {
-              menteeUserId: sp.menteeUserId,
-              mentorUserId: sp.mentorUserId,
-              projectId: project.id,
-              termId: cycle.termId,
-              domainId: sp.domainId,
-            },
-            select: { id: true },
-          });
-          if (!exists) {
-            await tx.mentorshipPair.create({
-              data: {
-                menteeUserId: sp.menteeUserId,
-                mentorUserId: sp.mentorUserId,
-                projectId: project.id,
-                termId: cycle.termId,
-                domainId: sp.domainId,
-              },
-            });
-            pairsCreated++;
+            mentorsPromoted += promoted.size;
           }
         }
-        if (staged.length > 0) {
-          await tx.stagedMentorshipPair.deleteMany({ where: { id: { in: staged.map((s) => s.id) } } });
-        }
+
+        // Non-roster external mentors placed on this project — they mentor the
+        // project's same-domain mentees but aren't staffed (no ProjectAssignment,
+        // no GitHub/Slack automation).
+        const externalMentors = await tx.externalMentor.findMany({
+          where: { staffingCycleId: cycle.id, projectId: project.id },
+          select: { userId: true, domainId: true },
+        });
+
+        // Auto-pair mentees to mentors from the confirmed roster, honouring the
+        // role overrides and external mentors. Additive only — preserves Core
+        // overrides made via /mentorship/pairs.
+        pairsCreated = await derivePairings(tx, project.id, cycle.termId, {
+          roleOverride,
+          externalMentors,
+        });
       });
 
       // Tell each newly-confirmed member (rows that were still Proposed when
@@ -423,10 +417,32 @@ export async function action({ request }: Route.ActionArgs) {
             },
           },
         });
+        // Effective mentors (role override ?? P3) + external mentors, so the
+        // announcement marks who's a mentor and groups everyone by domain.
+        const [overrideRows, externalRows] = await Promise.all([
+          prisma.staffingMentorRole.findMany({
+            where: { staffingCycleId: cycle.id },
+            select: { userId: true, isMentor: true },
+          }),
+          prisma.externalMentor.findMany({
+            where: { staffingCycleId: cycle.id, projectId: project.id },
+            select: {
+              domainId: true,
+              user: { select: { firstName: true, lastName: true } },
+            },
+          }),
+        ]);
+        const overrideByUser = new Map(overrideRows.map((r) => [r.userId, r.isMentor]));
+        const domainIds = [
+          ...new Set([
+            ...roster.map((r) => r.domainId),
+            ...externalRows.map((e) => e.domainId),
+          ]),
+        ];
         const domainNames = new Map(
           (
             await prisma.domain.findMany({
-              where: { id: { in: [...new Set(roster.map((r) => r.domainId))] } },
+              where: { id: { in: domainIds } },
               select: { id: true, displayName: true },
             })
           ).map((d) => [d.id, d.displayName]),
@@ -474,18 +490,53 @@ export async function action({ request }: Route.ActionArgs) {
         const missingMembers = unresolvedUserIds.length;
         const inv = await inviteUsersToChannel(channelId, slackIds);
 
-        // 3. Announce the team: name — domain (level), plus repos.
-        // Only call out mentors (P3); P1/P2 just show their role/domain without
-        // a level label.
-        const lines = roster.map((r) => {
-          const role = domainNames.get(r.domainId) ?? "?";
-          const suffix = r.level === "P3" ? " (Mentor)" : "";
-          return `• ${r.user.firstName} ${r.user.lastName} — ${role}${suffix}`;
-        });
+        // 3. Announce the team, grouped by domain. Each name is tagged "(mentor)"
+        // when they're an effective mentor (role override, else P3) or an
+        // external mentor. Domains and names sort alphabetically, mentors first.
+        type Line = { name: string; isMentor: boolean };
+        const byDomain = new Map<string, Line[]>();
+        const pushLine = (domainId: string, line: Line) => {
+          const list = byDomain.get(domainId) ?? [];
+          list.push(line);
+          byDomain.set(domainId, list);
+        };
+        for (const r of roster) {
+          pushLine(r.domainId, {
+            name: `${r.user.firstName} ${r.user.lastName}`.trim(),
+            isMentor: overrideByUser.get(r.user.id) ?? r.level === "P3",
+          });
+        }
+        for (const e of externalRows) {
+          pushLine(e.domainId, {
+            name: `${e.user.firstName} ${e.user.lastName}`.trim(),
+            isMentor: true,
+          });
+        }
+        const domainSections = [...byDomain.entries()]
+          .map(([domainId, members]) => ({
+            domain: domainNames.get(domainId) ?? "Unassigned domain",
+            members: members.sort(
+              (a, b) =>
+                Number(b.isMentor) - Number(a.isMentor) || a.name.localeCompare(b.name),
+            ),
+          }))
+          .sort((a, b) => a.domain.localeCompare(b.domain));
+        const teamBlock =
+          domainSections.length > 0
+            ? domainSections
+                .map(
+                  (s) =>
+                    `*${s.domain}*\n` +
+                    s.members
+                      .map((m) => `• ${m.name}${m.isMentor ? " (mentor)" : ""}`)
+                      .join("\n"),
+                )
+                .join("\n\n")
+            : "_No confirmed members yet._";
         const repoLines = (project.repoUrls ?? []).map((u) => `• ${u}`);
         const text =
           `*${project.name}* is staffed for ${cycle.name}! :tada:\n\n` +
-          `*Team*\n${lines.length > 0 ? lines.join("\n") : "_No confirmed members yet._"}` +
+          `*Team*\n${teamBlock}` +
           (repoLines.length > 0 ? `\n\n*Repos*\n${repoLines.join("\n")}` : "");
         await postMessage(channelId, text);
 

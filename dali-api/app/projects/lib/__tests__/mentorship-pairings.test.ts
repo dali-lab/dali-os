@@ -101,4 +101,38 @@ describe("derivePairings", () => {
     expect(n).toBe(0);
     expect(created).toEqual([]);
   });
+
+  it("role override promotes a non-P3 to mentor", async () => {
+    const { tx, created } = mkTx(
+      [
+        { userId: "mentee-a", domainId: "d1", level: "P1" },
+        { userId: "mentor-p2", domainId: "d1", level: "P2" },
+      ],
+      [],
+    );
+    const n = await derivePairings(tx as any, "proj1", "term1", {
+      roleOverride: new Map([["mentor-p2", true]]),
+    });
+    expect(n).toBe(1);
+    expect(created).toEqual([
+      { menteeUserId: "mentee-a", mentorUserId: "mentor-p2", domainId: "d1" },
+    ]);
+  });
+
+  it("role override demotes a P3 to mentee", async () => {
+    const { tx, created } = mkTx(
+      [
+        { userId: "p3-demoted", domainId: "d1", level: "P3" },
+        { userId: "mentor-x", domainId: "d1", level: "P3" },
+      ],
+      [],
+    );
+    const n = await derivePairings(tx as any, "proj1", "term1", {
+      roleOverride: new Map([["p3-demoted", false]]),
+    });
+    expect(n).toBe(1);
+    expect(created).toEqual([
+      { menteeUserId: "p3-demoted", mentorUserId: "mentor-x", domainId: "d1" },
+    ]);
+  });
 });

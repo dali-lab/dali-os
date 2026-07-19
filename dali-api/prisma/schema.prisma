@@ -107,8 +107,8 @@ model User {
   adminMembership         AdminMembership?
   mentorshipPairsAsMentee MentorshipPair[]       @relation("MenteePairs")
   mentorshipPairsAsMentor MentorshipPair[]       @relation("MentorPairs")
-  stagedPairsAsMentee     StagedMentorshipPair[] @relation("StagedMenteePairs")
-  stagedPairsAsMentor     StagedMentorshipPair[] @relation("StagedMentorPairs")
+  staffingMentorRoles     StaffingMentorRole[]
+  externalMentorPlacements ExternalMentor[]
 
   // ─── Phase 1: project workspace back-relations ────────────────────────────
   createdTasks               Task[]               @relation("TaskCreatedBy")
@@ -459,7 +459,7 @@ model Domain {
   eligibilities             DomainEligibility[]
   projectAssignments        ProjectAssignment[]
   mentorshipPairs           MentorshipPair[]
-  stagedMentorshipPairs     StagedMentorshipPair[]
+  externalMentors           ExternalMentor[]
   tasks                     Task[]
   projectRoleRequests       ProjectRoleRequest[]
   partnerApplicationDomains PartnerApplicationDomain[]
@@ -1955,34 +1955,54 @@ model MentorshipPair {
   @@index([mentorUserId, termId])
 }
 
-// A mentor/mentee pairing STAGED during staffing, before finalize. Core builds
-// these in the staffing board's per-column side panel; they only become real
-// MentorshipPair rows when the mentee's project is finalized (which also
-// promotes any non-P3 mentors to P3 — see api.staffing.finalize). Keeping them
-// separate from MentorshipPair means an in-progress plan never looks live, and
-// a mentor may be picked here even before they're eligible.
-//   - projectId  = the MENTEE's project (an external mentor lives elsewhere).
-//   - domainId   = the mentee's domain on that project.
-//   - mentor may be any lab member; P3-ness is resolved/forced at finalize.
-model StagedMentorshipPair {
+// Per-cycle override of a member's mentor/mentee role on the staffing board.
+// Default role is derived from level (P3 → mentor, P1/P2 → mentee); a row here
+// exists only when a staffing manager clicked the card's role badge to flip it.
+// `isMentor` is the explicit choice. Consumed at finalize: an effective mentor
+// who isn't P3 in a mentee's domain is promoted (see api.staffing.finalize),
+// and derivePairings pairs each domain's effective mentors to its mentees.
+model StaffingMentorRole {
+  id              String @id @default(cuid())
+  staffingCycleId String
+  userId          String
+  isMentor        Boolean
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdById String?
+
+  staffingCycle StaffingCycle @relation(fields: [staffingCycleId], references: [id])
+  user          User          @relation(fields: [userId], references: [id])
+
+  // One override per (cycle, user) — retoggling updates it in place.
+  @@unique([staffingCycleId, userId])
+  @@index([staffingCycleId])
+}
+
+// An external mentor placed on a project's staffing column — an existing DALI
+// member (usually staffed on another project) who mentors this project's mentees
+// in one domain. `user` points at that member, so they're a real MentorshipPair
+// mentor and can write mentor notes. Rendered as a distinct card on the board.
+// At finalize, derivePairings pairs them to the project's same-domain mentees;
+// they're excluded from this project's roster automation (no ProjectAssignment,
+// GitHub/Slack), since they aren't staffed here.
+model ExternalMentor {
   id              String @id @default(cuid())
   staffingCycleId String
   projectId       String
-  menteeUserId    String
-  mentorUserId    String
   domainId        String
+  userId          String
 
   createdAt   DateTime @default(now())
   createdById String?
 
   staffingCycle StaffingCycle @relation(fields: [staffingCycleId], references: [id])
   project       Project       @relation(fields: [projectId], references: [id])
-  mentee        User          @relation("StagedMenteePairs", fields: [menteeUserId], references: [id])
-  mentor        User          @relation("StagedMentorPairs", fields: [mentorUserId], references: [id])
   domain        Domain        @relation(fields: [domainId], references: [id])
+  user          User          @relation(fields: [userId], references: [id])
 
-  // One staged pairing per (cycle, mentee, mentor, domain) — re-adding is a no-op.
-  @@unique([staffingCycleId, menteeUserId, mentorUserId, domainId])
+  // One row per (cycle, project, mentor, domain) — re-adding is a no-op.
+  @@unique([staffingCycleId, projectId, userId, domainId])
   @@index([staffingCycleId, projectId])
 }
 
@@ -2141,7 +2161,7 @@ model Project {
   assignments       ProjectAssignment[]
   roleRequests      ProjectRoleRequest[]
   mentorshipPairs   MentorshipPair[]
-  stagedMentorshipPairs StagedMentorshipPair[]
+  externalMentors   ExternalMentor[]
   sprints           Sprint[]
   epics             Epic[]
   tasks             Task[]
@@ -2869,7 +2889,8 @@ model StaffingCycle {
   formSubmissions   FormSubmission[]
   boardMembers      StaffingBoardMember[]
   cardOrders        StaffingCardOrder[]
-  stagedMentorshipPairs StagedMentorshipPair[]
+  mentorRoles       StaffingMentorRole[]
+  externalMentors   ExternalMentor[]
 }
 
 // A member a staffing lead manually placed on the board for a cycle WITHOUT a
@@ -3380,6 +3401,9 @@ model MentorNote {
   // Tiptap/ProseMirror JSON document. Seeded from the current default
   // MentorNoteTemplate on create. Single-author — no Yjs/Hocuspocus.
   contentJson  Json     @default("{}")
+  // Mentor's at-a-glance read on how the mentee is doing this week. Null until
+  // the mentor picks one — the browse grid renders it as a colored cell.
+  vibe         MentorNoteVibe?
 
   mentor User @relation("MentorNoteMentor", fields: [mentorId], references: [id])
   mentee User @relation("MentorNoteMentee", fields: [menteeId], references: [id])
@@ -3390,6 +3414,13 @@ model MentorNote {
   @@unique([mentorId, menteeId, projectId, termId, domainId, weekOf])
   @@index([menteeId, termId])
   @@index([mentorId, termId])
+}
+
+// Mentor's weekly vibe read on a mentee: Good (green), Ok (yellow), Bad (red).
+enum MentorNoteVibe {
+  Good
+  Ok
+  Bad
 }
 
 model MentorNoteTemplate {
