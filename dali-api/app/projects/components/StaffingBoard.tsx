@@ -11,13 +11,14 @@ import {
   type Assignment,
   type Preference,
 } from "../lib/staffing-board";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, UserPlus } from "lucide-react";
 import { Button } from "~/components/ui/Button";
 import { MemberCard, MemberCardPreview } from "./MemberCard";
-import { MentorBadge, type MenteeCandidate, type MentorPair } from "./MentorBadge";
+import { RoleBadge } from "./RoleBadge";
 import { BidModal } from "./BidModal";
 import { FinalizeModal } from "./FinalizeModal";
 import { AddMemberControl } from "./AddMemberControl";
+import { AddExternalMentorModal } from "./AddExternalMentorModal";
 import { DomainFilter } from "./DomainFilter";
 import { sanitizeChannelName } from "~/slack/lib/channel-name";
 
@@ -87,26 +88,75 @@ export function StaffingBoard({
   // Project id whose finalize modal is open, or null.
   const [finalizeProjectId, setFinalizeProjectId] = useState<string | null>(null);
 
-  // Cycle-wide mentorship staging data (mentor pool + staged pairs + each
-  // member's live project/domain), fetched once and distributed to the mentor
-  // badge on each card. Refetched whenever the board revalidates.
-  type Mentorship = {
-    mentees: MenteeCandidate[];
-    mentors: { userId: string; levelByDomain: Record<string, "P1" | "P2" | "P3"> }[];
-    pairs: (MentorPair & { projectId: string; mentorUserId: string; domainId: string })[];
-  };
-  const [mentorship, setMentorship] = useState<Mentorship | null>(null);
-  const loadMentorship = useCallback(() => {
+  // Per-card mentor/mentee role overrides for this cycle (userId → isMentor).
+  // A member's role defaults to their level (P3 → mentor); an override flips it.
+  // Refetched whenever the board revalidates. Managers only.
+  const [mentorRoles, setMentorRoles] = useState<Record<string, boolean>>({});
+  const loadMentorRoles = useCallback(() => {
     if (!canManage) return;
-    fetch(`/api/staffing/mentorship?cycleId=${encodeURIComponent(cycleId)}`, { credentials: "include" })
+    fetch(`/api/staffing/mentor-role?cycleId=${encodeURIComponent(cycleId)}`, { credentials: "include" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => d && setMentorship(d))
+      .then((d) => d && setMentorRoles(d.overrides ?? {}))
       .catch(() => {});
   }, [cycleId, canManage]);
-  useEffect(() => loadMentorship(), [loadMentorship]);
+  useEffect(() => loadMentorRoles(), [loadMentorRoles]);
   // Held in a ref so the once-mounted SSE listener always calls the latest.
-  const loadMentorshipRef = useRef(loadMentorship);
-  loadMentorshipRef.current = loadMentorship;
+  const loadMentorRolesRef = useRef(loadMentorRoles);
+  loadMentorRolesRef.current = loadMentorRoles;
+
+  // Toggle a card's role. Optimistic, then refetch to reconcile.
+  const toggleMentorRole = useCallback(
+    async (userId: string, next: boolean) => {
+      setMentorRoles((prev) => ({ ...prev, [userId]: next }));
+      try {
+        await fetch(`/api/staffing/mentor-role`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cycleId, userId, isMentor: next }),
+        });
+      } finally {
+        loadMentorRolesRef.current();
+      }
+    },
+    [cycleId],
+  );
+
+  // Non-roster external mentors placed on project columns. Managers only.
+  type ExternalMentorRow = {
+    id: string;
+    projectId: string;
+    domainId: string;
+    userId: string;
+    firstName: string;
+    lastName: string;
+  };
+  const [externalMentors, setExternalMentors] = useState<ExternalMentorRow[]>([]);
+  const loadExternalMentors = useCallback(() => {
+    if (!canManage) return;
+    fetch(`/api/staffing/external-mentor?cycleId=${encodeURIComponent(cycleId)}`, { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setExternalMentors(d.externalMentors ?? []))
+      .catch(() => {});
+  }, [cycleId, canManage]);
+  useEffect(() => loadExternalMentors(), [loadExternalMentors]);
+  const loadExternalMentorsRef = useRef(loadExternalMentors);
+  loadExternalMentorsRef.current = loadExternalMentors;
+
+  const removeExternalMentor = useCallback(async (id: string) => {
+    setExternalMentors((prev) => prev.filter((e) => e.id !== id));
+    try {
+      await fetch(`/api/staffing/external-mentor?id=${encodeURIComponent(id)}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+    } finally {
+      loadExternalMentorsRef.current();
+    }
+  }, []);
+
+  // Project id whose "add external mentor" modal is open, or null.
+  const [externalMentorProjectId, setExternalMentorProjectId] = useState<string | null>(null);
 
   // Number of drag saves currently in flight. While > 0 we hold off adopting
   // server data so a live push from someone else can't revert our own unsaved
@@ -139,7 +189,8 @@ export function StaffingBoard({
     );
     const onPush = () => {
       revalidateRef.current();
-      loadMentorshipRef.current();
+      loadMentorRolesRef.current();
+      loadExternalMentorsRef.current();
     };
     es.addEventListener("change", onPush);
     es.addEventListener("sync", onPush);
@@ -179,28 +230,43 @@ export function StaffingBoard({
     return map;
   }, [board]);
 
-  // Mentorship lookups for the per-card badge (badge lives on the MENTOR card):
-  // a member's live (project,domain), the staged pairs keyed by mentor, and each
-  // member's per-domain level (to flag "→P3 at finalize").
-  const menteeInfoByUser = useMemo(() => {
-    const map = new Map<string, { projectId: string; domainId: string }>();
-    for (const m of mentorship?.mentees ?? []) map.set(m.userId, { projectId: m.projectId, domainId: m.domainId });
-    return map;
-  }, [mentorship]);
-  const pairsByMentor = useMemo(() => {
-    const map = new Map<string, (MentorPair & { domainId: string })[]>();
-    for (const p of mentorship?.pairs ?? []) {
-      const list = map.get(p.mentorUserId) ?? [];
-      list.push({ id: p.id, menteeUserId: p.menteeUserId, mentee: p.mentee, domainId: p.domainId });
-      map.set(p.mentorUserId, list);
+  // Synthetic cards for external mentors, grouped by project column. They render
+  // like distinct cards but aren't in `board`/`members`, so the drag handler
+  // (keyed off memberById) naturally ignores them.
+  const externalCardsByProject = useMemo(() => {
+    const map = new Map<string, MemberCardModel[]>();
+    for (const e of externalMentors) {
+      const list = map.get(e.projectId) ?? [];
+      list.push({
+        userId: e.userId,
+        firstName: e.firstName,
+        lastName: e.lastName,
+        email: null,
+        photoUrl: null,
+        isAdmin: false,
+        coreTitles: [],
+        domainLevels: [
+          { domainId: e.domainId, domainName: domainNames[e.domainId] ?? "?", level: "P3" },
+        ],
+        level: "P3",
+        topPreferences: [],
+        unresolvedBid: false,
+        manuallyAdded: false,
+        isExternalMentor: true,
+        externalMentorId: e.id,
+      });
+      map.set(e.projectId, list);
     }
     return map;
-  }, [mentorship]);
-  const levelByUserDomain = useMemo(() => {
-    const map = new Map<string, Record<string, "P1" | "P2" | "P3">>();
-    for (const m of mentorship?.mentors ?? []) map.set(m.userId, m.levelByDomain);
+  }, [externalMentors, domainNames]);
+
+  // userId → project column for external mentors, so a real card dropped onto an
+  // external card resolves to that external's column (drop-at-end).
+  const externalProjectByUser = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const e of externalMentors) map.set(e.userId, e.projectId);
     return map;
-  }, [mentorship]);
+  }, [externalMentors]);
 
   function handleDragEnd(event: DragEndEvent) {
     if (!canManage) return;
@@ -219,11 +285,16 @@ export function StaffingBoard({
     // at the end). Column ids are UNASSIGNED or a project id; everything else
     // is a card userId.
     const isColumnId = overId === UNASSIGNED || projectIds.includes(overId);
+    // Dropping onto an external-mentor card targets that mentor's column at the
+    // end (external cards render after the roster and aren't reorderable).
+    const overIsExternal = externalProjectByUser.has(overId);
     const toColumn = isColumnId
       ? overId
-      : findColumnOf(board, overId) ?? fromColumn;
+      : overIsExternal
+        ? externalProjectByUser.get(overId)!
+        : findColumnOf(board, overId) ?? fromColumn;
     const targetIds = (board[toColumn] ?? []).map((c) => c.userId);
-    const overIndex = isColumnId ? targetIds.length : targetIds.indexOf(overId);
+    const overIndex = isColumnId || overIsExternal ? targetIds.length : targetIds.indexOf(overId);
     const movedWithinColumn = fromColumn === toColumn;
 
     // No-op: dropped on itself, or back where it already was.
@@ -385,6 +456,8 @@ export function StaffingBoard({
     },
     ...projects.map<KanbanColumn<MemberCardModel>>((p) => {
       const tone = p.status === "Active" ? "active" : "dim";
+      // Roster cards first, then external-mentor cards pinned at the end.
+      const cards = [...(board[p.id] ?? []), ...(externalCardsByProject.get(p.id) ?? [])];
       return {
         id: p.id,
         title: p.name,
@@ -392,20 +465,31 @@ export function StaffingBoard({
           `${board[p.id]?.length ?? 0} assigned`,
           demandByProject[p.id],
         ),
-        cards: board[p.id] ?? [],
+        cards,
         className: shell(tone),
         listClassName: listClass,
         renderEmpty: emptyDropTarget,
         headerExtra: canManage ? (
-          <button
-            type="button"
-            onClick={() => setFinalizeProjectId(p.id)}
-            title={`Finalize ${p.name}`}
-            aria-label={`Finalize ${p.name}`}
-            className="flex-shrink-0 text-muted-foreground hover:text-accent-coral transition-colors"
-          >
-            <CheckCircle2 className="w-4 h-4" />
-          </button>
+          <div className="flex-shrink-0 flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setExternalMentorProjectId(p.id)}
+              title={`Add external mentor to ${p.name}`}
+              aria-label={`Add external mentor to ${p.name}`}
+              className="text-muted-foreground hover:text-accent-teal transition-colors"
+            >
+              <UserPlus className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setFinalizeProjectId(p.id)}
+              title={`Finalize ${p.name}`}
+              aria-label={`Finalize ${p.name}`}
+              className="text-muted-foreground hover:text-accent-coral transition-colors"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+            </button>
+          </div>
         ) : (
           <span />
         ),
@@ -482,48 +566,33 @@ export function StaffingBoard({
             projectNames={projectNames}
             domainNames={domainNames}
             onOpenBid={() => setOpenBidUserId(card.userId)}
-            // Remove (×) only on the Unassigned column, matching the original:
-            // the destructive board-member delete shouldn't surface from project
-            // columns. (MemberCardBody additionally gates it on manuallyAdded.)
+            // Remove (×): external-mentor cards remove their placement; roster
+            // cards only on the Unassigned column (the destructive board-member
+            // delete shouldn't surface from project columns).
             onRemove={
-              canManage && columnIdOf.get(card.userId) === UNASSIGNED
-                ? () => handleRemoveMember(card.userId)
-                : undefined
+              card.isExternalMentor
+                ? canManage && card.externalMentorId
+                  ? () => void removeExternalMentor(card.externalMentorId!)
+                  : undefined
+                : canManage && columnIdOf.get(card.userId) === UNASSIGNED
+                  ? () => handleRemoveMember(card.userId)
+                  : undefined
             }
             draggable={canManage}
             dragHandleProps={dragHandleProps}
             isDragging={isDragging}
-            accentExternal={(() => {
-              // External mentor = mentors at least one mentee on another team.
-              if (!mentorship) return false;
-              const myProject = menteeInfoByUser.get(card.userId)?.projectId;
-              if (!myProject) return false;
-              return (pairsByMentor.get(card.userId) ?? []).some(
-                (p) => menteeInfoByUser.get(p.menteeUserId)?.projectId !== myProject,
-              );
-            })()}
             mentorSlot={(() => {
-              // The badge lives on the MENTOR card: any project-column member
-              // can be made a mentor and have mentees assigned to them. Only for
-              // managers, on project columns, once the member has a live
-              // assignment (its project → to flag cross-team mentees).
-              if (!canManage || !mentorship) return undefined;
+              // Mentor/mentee role badge, on project-column cards for managers.
+              // Default role follows level (P3 → mentor); the override flips it.
+              // External mentors are inherently mentors — no toggle.
+              if (!canManage || card.isExternalMentor) return undefined;
               if (columnIdOf.get(card.userId) === UNASSIGNED) return undefined;
-              const info = menteeInfoByUser.get(card.userId);
-              if (!info) return undefined;
-              const myPairs = pairsByMentor.get(card.userId) ?? [];
-              const levels = levelByUserDomain.get(card.userId) ?? {};
-              // P3 across every domain they mentor in → no promotion needed.
-              const mentorIsP3 = myPairs.every((p) => levels[p.domainId] === "P3");
+              const defaultMentor = card.domainLevels.some((d) => d.level === "P3");
+              const isMentor = mentorRoles[card.userId] ?? defaultMentor;
               return (
-                <MentorBadge
-                  cycleId={cycleId}
-                  mentorUserId={card.userId}
-                  mentorProjectId={info.projectId}
-                  mentorIsP3={mentorIsP3}
-                  pairs={myPairs}
-                  candidates={mentorship.mentees}
-                  onChanged={loadMentorship}
+                <RoleBadge
+                  isMentor={isMentor}
+                  onToggle={() => void toggleMentorRole(card.userId, !isMentor)}
                 />
               );
             })()}
@@ -571,6 +640,17 @@ export function StaffingBoard({
         />
       )}
 
+      {externalMentorProjectId && (
+        <AddExternalMentorModal
+          open={true}
+          onClose={() => setExternalMentorProjectId(null)}
+          cycleId={cycleId}
+          projectId={externalMentorProjectId}
+          projectName={projectNames[externalMentorProjectId] ?? "project"}
+          domains={domains}
+          onAdded={() => loadExternalMentorsRef.current()}
+        />
+      )}
     </div>
   );
 }

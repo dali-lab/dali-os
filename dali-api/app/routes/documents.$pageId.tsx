@@ -1,4 +1,4 @@
-import { redirect, useLoaderData } from "react-router";
+import { redirect, useLoaderData, useSearchParams } from "react-router";
 import QRCode from "qrcode";
 import type { Route } from "./+types/documents.$pageId";
 import { prisma } from "~/lib/db";
@@ -23,13 +23,29 @@ export const meta: Route.MetaFunction = ({ data }) => {
 // Falls back to a plain (unlinked) title for Lab-workspace pages, which have
 // no dedicated hub to link to.
 export const handle = {
-  breadcrumb: (data: unknown) => {
+  // Project/Education pages share the /documents/:pageId viewer, so their URL
+  // root reads "Documents" while their real home is Projects/Education — those
+  // declare the whole trail here. Lab pages (no workspace) genuinely live under
+  // Documents and fall through to the leaf `breadcrumb` below.
+  breadcrumbTrail: (data: unknown) => {
     const d = data as
-      | { title?: string; hubName?: string; hubHref?: string }
+      | {
+          title?: string
+          hubName?: string
+          hubHref?: string
+          workspaceType?: string
+        }
       | undefined;
-    if (!d?.title) return null;
-    if (!d.hubName || !d.hubHref) return d.title;
-    return [{ label: d.hubName, to: d.hubHref }, { label: d.title }];
+    if (!d?.title || !d.hubName || !d.hubHref) return null;
+    const root =
+      d.workspaceType === "EducationOffering"
+        ? { label: "Education", to: "/education" }
+        : { label: "Projects", to: "/projects" };
+    return [root, { label: d.hubName, to: d.hubHref }, { label: d.title }];
+  },
+  breadcrumb: (data: unknown) => {
+    const d = data as { title?: string } | undefined;
+    return d?.title ?? null;
   },
 };
 
@@ -180,6 +196,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   return {
     pageId: page.id,
     title: page.title,
+    workspaceType: page.workspaceType,
     hubName,
     hubHref,
     tags: page.tags.map((t) => t.tag).sort((a, b) => a.label.localeCompare(b.label)),
@@ -208,6 +225,13 @@ export default function DocumentPage() {
     subtitle,
     attendance,
   } = useLoaderData() as Exclude<Awaited<ReturnType<typeof loader>>, Response>;
+
+  // Arriving from a mention notification (?mention=1): scroll to this reader's
+  // own mention in the body once collab syncs.
+  const [searchParams] = useSearchParams();
+  const focusMentionUserId =
+    searchParams.get("mention") === "1" ? currentUserId : undefined;
+  const focusCommentId = searchParams.get("comment") ?? undefined;
 
   return (
     <div className="flex flex-col gap-4">
@@ -240,6 +264,8 @@ export default function DocumentPage() {
         canEdit={canEdit}
         tags={tags}
         allTags={allTags}
+        focusMentionUserId={focusMentionUserId}
+        focusCommentId={focusCommentId}
       />
     </div>
   );

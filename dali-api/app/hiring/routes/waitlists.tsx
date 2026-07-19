@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link, redirect, useFetcher, useLoaderData } from "react-router";
 import { Check, X } from "lucide-react";
+import { Tooltip } from "~/components/ui/IconButton";
 import type { Route } from "./+types/waitlists";
 import { requireAuth } from "~/lib/auth";
 import { getUserRoles } from "~/lib/roles";
@@ -282,14 +283,16 @@ function WaitlistRow({ entry }: { entry: WaitlistEntry }) {
             <Check className="w-3.5 h-3.5" />
             Accept
           </button>
-          <button
-            onClick={onRemove}
-            disabled={busy}
-            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-foreground/80 bg-card border border-border rounded-md hover:bg-muted disabled:opacity-50"
-          >
-            <X className="w-3.5 h-3.5" />
-            Remove
-          </button>
+          <Tooltip label="Remove">
+            <button
+              onClick={onRemove}
+              disabled={busy}
+              aria-label="Remove"
+              className="inline-flex items-center justify-center p-1.5 text-xs font-medium text-foreground/80 bg-card border border-border rounded-md hover:bg-muted disabled:opacity-50"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </Tooltip>
         </div>
       </td>
     </tr>

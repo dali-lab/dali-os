@@ -3552,13 +3552,15 @@ async function main() {
         const epic = await prisma.epic.create({
           data: { projectId: dali.id, title: "Staffing board v1", position: 0 },
         });
+        // Relative dates: an Active demo sprint must genuinely span "now" or
+        // the sprint-lifecycle job auto-closes it on the first tick.
         const sprint = await prisma.sprint.create({
           data: {
             projectId: dali.id,
             epicId: epic.id,
             name: "Sprint 1",
-            startsAt: new Date("2026-03-30"),
-            endsAt: new Date("2026-04-13"),
+            startsAt: new Date(Date.now() - 7 * 86_400_000),
+            endsAt: new Date(Date.now() + 7 * 86_400_000),
             status: "Active",
           },
         });
@@ -3718,12 +3720,15 @@ async function main() {
       if (tuckProject) {
         await prisma.task.deleteMany({ where: { projectId: tuckProject.id } });
         await prisma.sprint.deleteMany({ where: { projectId: tuckProject.id } });
+        // Relative dates, same reason as Sprint 1 above: Active must span
+        // "now" or the sprint-lifecycle job closes it out from under the
+        // partner-portal e2e expectations.
         const tuckSprint = await prisma.sprint.create({
           data: {
             projectId: tuckProject.id,
             name: "Sprint 3 — Matching flow",
-            startsAt: new Date("2026-04-06"),
-            endsAt: new Date("2026-04-20"),
+            startsAt: new Date(Date.now() - 7 * 86_400_000),
+            endsAt: new Date(Date.now() + 7 * 86_400_000),
             status: "Active",
           },
         });
@@ -3731,8 +3736,8 @@ async function main() {
           data: {
             projectId: tuckProject.id,
             name: "Sprint 4 — Notifications",
-            startsAt: new Date("2026-04-20"),
-            endsAt: new Date("2026-05-04"),
+            startsAt: new Date(Date.now() + 7 * 86_400_000),
+            endsAt: new Date(Date.now() + 21 * 86_400_000),
             status: "Planned",
           },
         });
@@ -3935,7 +3940,7 @@ async function main() {
       await createOfferingApplicationForm(offering.id, admin.id);
       await createOfferingApplicationForm(workshop.id, admin.id);
 
-      // Lab-workspace Page + NotificationEvent/Preference for the admin.
+      // Lab-workspace Page + a NotificationPreference row for the admin.
       await prisma.page.deleteMany({
         where: { workspaceType: "Lab", title: "Lab Handbook" },
       });
@@ -3948,20 +3953,23 @@ async function main() {
           createdById: admin.id,
         },
       });
-      await prisma.notificationEvent.create({
-        data: {
-          type: "staffing_assignment_published",
-          recipientId: admin.id,
-          payload: { cycleId: cycle.id, note: "Seed event" },
-        },
-      });
+      // Exercises the preference shape (eventType from the registry in
+      // app/lib/notification-events.ts): admin gets course announcements as
+      // a daily digest instead of the Instant default.
       await prisma.notificationPreference.upsert({
-        where: { id: "notifpref-admin-global-seed" },
-        update: {},
+        where: {
+          userId_eventType: {
+            userId: admin.id,
+            eventType: "education.announcement",
+          },
+        },
+        update: { digestFrequency: "Daily" },
         create: {
-          id: "notifpref-admin-global-seed",
           userId: admin.id,
-          eventType: "*",
+          eventType: "education.announcement",
+          inApp: true,
+          slackDm: false,
+          digestFrequency: "Daily",
         },
       });
 

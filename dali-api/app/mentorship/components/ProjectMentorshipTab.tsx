@@ -43,7 +43,8 @@ interface Props {
 // Mentorship view on a project page. Lists confirmed pairings for the current
 // term (derived from ProjectAssignment by staffing finalize) and the project's
 // recent notes. Visible to lab mentors + Core only — gated server-side via
-// the project loader's canViewMentorshipTab.
+// the project loader's canViewMentorshipTab. Note/pair APIs further scope
+// non-Core mentors to their own domains.
 export function ProjectMentorshipTab({ projectId, currentTermId }: Props) {
   const pairsFetcher = useFetcher<PairsResponse>();
   const notesFetcher = useFetcher<NotesResponse>();

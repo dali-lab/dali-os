@@ -1,9 +1,12 @@
 import {
   Activity,
   BarChart3,
+  Clock,
+  FileText,
   ClipboardCheck,
   Globe,
   LayoutGrid,
+  Mail,
   Megaphone,
   Receipt,
   Shield,
@@ -24,6 +27,9 @@ export function adminPills(args: {
     | "attendance"
     | "activity"
     | "analytics"
+    | "jobs"
+    | "email-senders"
+    | "email-templates"
     | "payroll"
     | "payroll-reconcile";
 }): AreaPill[] {
@@ -47,6 +53,14 @@ export function adminPills(args: {
       active: args.active === "announcements",
       icon: Megaphone,
     },
+    // Core-visible: hiring leads and other Core members author the shared
+    // email templates; only sender accounts are Admin-only.
+    {
+      label: "Email Templates",
+      to: "/admin-console/email-templates",
+      active: args.active === "email-templates",
+      icon: FileText,
+    },
     {
       label: "Attendance",
       to: "/admin-console/attendance",
@@ -66,6 +80,18 @@ export function adminPills(args: {
             to: "/admin-console/analytics",
             active: args.active === "analytics",
             icon: BarChart3,
+          },
+          {
+            label: "Jobs",
+            to: "/admin-console/jobs",
+            active: args.active === "jobs",
+            icon: Clock,
+          },
+          {
+            label: "Email Senders",
+            to: "/admin-console/email-senders",
+            active: args.active === "email-senders",
+            icon: Mail,
           },
           {
             label: "Payroll: Hire Setup",

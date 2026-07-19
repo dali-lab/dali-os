@@ -54,6 +54,10 @@ export default [
     route("admin-console/attendance", "admin-console/routes/admin-console.attendance.tsx"),
     route("admin-console/activity", "admin-console/routes/admin-console.activity.tsx"),
     route("admin-console/analytics", "admin-console/routes/admin-console.analytics.tsx"),
+    route("admin-console/jobs", "admin-console/routes/admin-console.jobs.tsx"),
+    route("admin-console/email-senders", "admin-console/routes/admin-console.email-senders.tsx"),
+    route("admin-console/email-templates", "admin-console/routes/admin-console.email-templates.tsx"),
+    route("admin-console/email-templates/:id", "admin-console/routes/admin-console.email-templates.$id.tsx"),
     route("admin-console/payroll-export", "admin-console/routes/admin-console.payroll-export.tsx"),
     route("admin-console/payroll", "admin-console/routes/admin-console.payroll.tsx"),
 
@@ -122,7 +126,6 @@ export default [
     // Hidden from mentees entirely; gated server-side by canViewMentorship.
     route("mentorship", "mentorship/routes/mentorship.tsx"),
     route("mentorship/browse", "mentorship/routes/mentorship.browse.tsx"),
-    route("mentorship/templates", "mentorship/routes/mentorship.templates.tsx"),
     route("mentorship/notes/:id", "mentorship/routes/mentorship.notes.$id.tsx"),
 
     // Internal processes. The bare route is the area hub.
@@ -151,6 +154,7 @@ export default [
     // drifted tab instead of reopening the hub).
     route("settings", "routes/settings._index.tsx"),
     route("settings/calendar", "routes/settings.calendar.tsx"),
+    route("settings/notifications", "routes/settings.notifications.tsx"),
     route("settings/sessions", "routes/settings.sessions.tsx"),
     route("settings/slack", "routes/settings.slack.tsx"),
     route("settings/connected-apps", "routes/settings.connected-apps.tsx"),
@@ -266,6 +270,9 @@ export default [
   // Authenticated API endpoints (no layout)
   route("users/:id", "members/routes/users.$id.ts"),
 
+  // Global command-palette search (⌘K) — permission-scoped in the loader.
+  route("api/search", "routes/api.search.ts"),
+
   // Domain & member management API
   route("api/domains", "admin-console/routes/api.domains.ts"),
   route("api/domains/:domainId", "admin-console/routes/api.domains.$domainId.ts"),
@@ -281,6 +288,11 @@ export default [
   route("api/notifications/send", "admin-console/routes/api.notifications.send.ts"),
   route("api/notifications/:id/read", "routes/api.notifications.$id.read.ts"),
   route("api/notifications/:id/rsvp", "routes/api.notifications.$id.rsvp.ts"),
+
+  // Background jobs: admin controls + the manual tick trigger (secret header
+  // or admin session; the in-process 60s interval is the primary driver).
+  route("api/jobs/:name", "admin-console/routes/api.jobs.$name.ts"),
+  route("internal/jobs/tick", "jobs/routes/internal.jobs.tick.ts"),
 
   // Scheduled meetings
   route("api/scheduled-meetings", "calendar/routes/api.scheduled-meetings.ts"),
@@ -310,7 +322,8 @@ export default [
   route("api/staffing/board-member", "projects/routes/api.staffing.board-member.ts"),
   route("api/staffing/events", "projects/routes/api.staffing.events.ts"),
   route("api/staffing/reorder", "projects/routes/api.staffing.reorder.ts"),
-  route("api/staffing/mentorship", "projects/routes/api.staffing.mentorship.ts"),
+  route("api/staffing/mentor-role", "projects/routes/api.staffing.mentor-role.ts"),
+  route("api/staffing/external-mentor", "projects/routes/api.staffing.external-mentor.ts"),
 
   // Core-only level correction for an already-finalized ProjectAssignment.
   route(
@@ -352,6 +365,10 @@ export default [
   // Comments + inline annotations on documents and files
   route("api/comments", "routes/api.comments.ts"),
   route("api/comments/:id", "routes/api.comments.$id.ts"),
+
+  // Per-page documentation guides + the member search that backs @-mentions
+  route("api/page-docs/:key", "routes/api.page-docs.$key.ts"),
+  route("api/mentions/search", "routes/api.mentions.search.ts"),
 
   // Document export (server-rendered PDF / Word)
   route("documents/:pageId/export", "routes/documents.$pageId.export.ts"),

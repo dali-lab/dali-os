@@ -77,6 +77,15 @@ export async function postMessage(
   return { ts: res.ts };
 }
 
+// Direct message from the bot to a user. chat.postMessage accepts a Slack
+// user id as `channel` and opens (or reuses) the bot's DM conversation —
+// requires the `im:write` bot scope.
+export async function sendDm(slackUserId: string, text: string): Promise<{ ts: string }> {
+  const res = await client().chat.postMessage({ channel: slackUserId, text });
+  if (!res.ts) throw new Error("chat.postMessage returned no ts");
+  return { ts: res.ts };
+}
+
 export async function editMessage(channel: string, ts: string, text: string): Promise<void> {
   await client().chat.update({ channel, ts, text });
 }

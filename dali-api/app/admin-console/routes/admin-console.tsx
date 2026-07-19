@@ -38,6 +38,12 @@ export default function AdminHub() {
         "Send an announcement to the lab, with an optional due date and attached form.",
     },
     {
+      to: "/admin-console/email-templates",
+      title: "Email Templates",
+      description:
+        "Shared library of email templates, bound per hiring cycle or education offering.",
+    },
+    {
       to: "/admin-console/attendance",
       title: "Attendance",
       description:
@@ -54,6 +60,16 @@ export default function AdminHub() {
             to: "/admin-console/analytics",
             title: "Analytics",
             description: "Site usage and error analytics.",
+          },
+          {
+            to: "/admin-console/jobs",
+            title: "Jobs",
+            description: "Background job status — reminders, digests, scheduled sends.",
+          },
+          {
+            to: "/admin-console/email-senders",
+            title: "Email Senders",
+            description: "Which Google account each area's outbound email sends from.",
           },
           {
             to: "/admin-console/payroll-export",

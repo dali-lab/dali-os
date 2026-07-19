@@ -1,14 +1,6 @@
 import { prisma } from "~/lib/db";
+import { notify } from "~/lib/notify.server";
 import { logAuditEvent } from "~/lib/audit";
-import { sendEmail } from "~/lib/gmail";
-import { getApplicationsGmailRefreshToken } from "~/lib/gmail-integration";
-import {
-  resolveCandidateEmail,
-  redirectBannerHtml,
-} from "~/lib/candidate-email";
-import { bodyToHtml } from "~/lib/email";
-import { getFrontendUrl } from "~/lib/app-env";
-import { recipientEmail } from "./notifications.server";
 import { requestInstructorExitSurveys } from "./feedback.server";
 import { currentTerm } from "~/lib/roles";
 
@@ -82,7 +74,7 @@ export async function closeOutOffering(args: {
   let issued = 0;
   let alreadyIssued = 0;
   let ineligible = 0;
-  const notify: {
+  const toNotify: {
     applicantId: string;
     certificateId: string;
     applicant: (typeof offering.applications)[number]["applicant"];
@@ -104,7 +96,7 @@ export async function closeOutOffering(args: {
       select: { id: true },
     });
     issued += 1;
-    notify.push({
+    toNotify.push({
       applicantId: application.applicant.id,
       certificateId: certificate.id,
       applicant: application.applicant,
@@ -136,45 +128,25 @@ export async function closeOutOffering(args: {
       : {},
   });
 
-  // Notifications + emails after the writes; best-effort per recipient.
-  for (const n of notify) {
-    const certificateUrl = `${getFrontendUrl()}/education/certificates/${n.certificateId}`;
+  // Notifications + emails after the writes; best-effort. education.certificate
+  // defaults to Instant email, matching the old everyone-gets-email behavior.
+  if (toNotify.length > 0) {
     try {
-      await prisma.notification.create({
-        data: {
-          recipientUserId: n.applicantId,
-          kind: "Education",
+      await notify({
+        eventType: "education.certificate",
+        createdByUserId: args.actorId,
+        message: {
           title: `Certificate: ${offering.title}`,
-          body: "You completed the course — your certificate is ready.",
-          link: `/education/certificates/${n.certificateId}`,
+          body: "Congratulations on completing the course — your certificate is ready.",
         },
+        recipients: toNotify.map((n) => ({
+          userId: n.applicantId,
+          link: `/education/certificates/${n.certificateId}`,
+        })),
       });
     } catch (err) {
-      console.error("certificate notification failed", {
-        certificateId: n.certificateId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-    try {
-      const refreshToken = await getApplicationsGmailRefreshToken();
-      if (refreshToken) {
-        const { to, redirectedFrom } = resolveCandidateEmail(recipientEmail(n.applicant));
-        if (to) {
-          await sendEmail({
-            refreshToken,
-            to,
-            subject: `Your certificate for ${offering.title}`,
-            html:
-              redirectBannerHtml(redirectedFrom) +
-              bodyToHtml(
-                `Hi ${n.applicant.firstName},\n\nCongratulations on completing ${offering.title}! Your certificate is ready:\n\n${certificateUrl}\n\n— DALI Education`,
-              ),
-          });
-        }
-      }
-    } catch (err) {
-      console.error("certificate email failed", {
-        certificateId: n.certificateId,
+      console.error("certificate notifications failed", {
+        offeringId: args.offeringId,
         error: err instanceof Error ? err.message : String(err),
       });
     }

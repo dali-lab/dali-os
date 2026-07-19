@@ -14,6 +14,7 @@ import { isCore, canViewForms } from "~/lib/roles";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { prisma } from "~/lib/db";
 import { promoteToMember } from "~/members/lib/membership.server";
+import { assignHandleIfMissing } from "~/lib/handle";
 import { fullName, primaryEmail } from "~/lib/display";
 import { Avatar } from "~/components/ui/Avatar";
 import { RolePills } from "~/components/ui/RolePills";
@@ -237,6 +238,7 @@ export async function action({ request }: Route.ActionArgs) {
     },
     select: { id: true },
   });
+  await assignHandleIfMissing(created.id);
   return redirect(`/members/${created.id}`);
 }
 
@@ -276,7 +278,7 @@ export default function MembersList() {
           <button
             type="button"
             onClick={() => setCreating(true)}
-            className={buttonClasses("primary", "sm", "rounded-md")}
+            className={buttonClasses("primary", "sm")}
           >
             + New member
           </button>
@@ -322,14 +324,11 @@ export default function MembersList() {
             <button
               type="button"
               onClick={() => setCreating(false)}
-              className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors"
+              className={buttonClasses("ghost", "sm")}
             >
               Cancel
             </button>
-            <button
-              type="submit"
-              className="px-3 py-1.5 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
-            >
+            <button type="submit" className={buttonClasses("primary", "sm")}>
               Create
             </button>
           </div>

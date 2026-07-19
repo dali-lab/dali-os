@@ -12,9 +12,10 @@ import {
   Check,
   Inbox,
 } from "lucide-react";
-import { FormBuilderTab } from "~/hiring/components/ChallengeBuilder";
+import { FormBuilderTab } from "~/components/form-builder/FormBuilder";
 import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
 import { Button, buttonClasses } from "~/components/ui/Button";
+import { Tooltip } from "~/components/ui/IconButton";
 import type { Question } from "~/types";
 import type { loader } from "~/forms/routes/forms.edit.$formId";
 
@@ -244,6 +245,8 @@ export function FormDetail() {
           audience={form.audience}
           audienceGroupIds={form.audienceGroupIds}
           groups={groups}
+          opensAt={form.opensAt}
+          closesAt={form.closesAt}
         />
       </div>
 
@@ -550,6 +553,14 @@ const AUDIENCE_OPTIONS: {
 // "Specific groups", which waits until at least one group is checked (the
 // server enforces the same rule). Pending fetcher FormData drives optimistic
 // state so changes feel instant and settle to the loader's truth.
+// ISO timestamp → the local wall-time string a datetime-local input expects.
+function toLocalInputValue(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function FormSettingsCard({
   formId,
   oneResponsePerMember,
@@ -558,6 +569,8 @@ function FormSettingsCard({
   audience,
   audienceGroupIds,
   groups,
+  opensAt,
+  closesAt,
 }: {
   formId: string;
   oneResponsePerMember: boolean;
@@ -566,6 +579,8 @@ function FormSettingsCard({
   audience: AudienceValue;
   audienceGroupIds: string[];
   groups: GroupOption[];
+  opensAt: string | null;
+  closesAt: string | null;
 }) {
   const fetcher = useFetcher();
   const err =
@@ -584,6 +599,26 @@ function FormSettingsCard({
   const isListed = pendingSettings
     ? pending!.get("listed") === "true"
     : listed;
+
+  // Window edits stage locally and save on the button — datetime inputs fire
+  // change per keystroke in some browsers, so instant-save would spam.
+  const [draftOpensAt, setDraftOpensAt] = useState(() => toLocalInputValue(opensAt));
+  const [draftClosesAt, setDraftClosesAt] = useState(() => toLocalInputValue(closesAt));
+  const windowDirty =
+    draftOpensAt !== toLocalInputValue(opensAt) ||
+    draftClosesAt !== toLocalInputValue(closesAt);
+
+  function saveWindow() {
+    fetcher.submit(
+      {
+        intent: "update-form-window",
+        id: formId,
+        opensAt: draftOpensAt ? new Date(draftOpensAt).toISOString() : "",
+        closesAt: draftClosesAt ? new Date(draftClosesAt).toISOString() : "",
+      },
+      { method: "post" },
+    );
+  }
 
   // Audience edits stage locally: picking "Specific groups" with nothing
   // checked must not submit (the saved audience stays live until a valid
@@ -691,6 +726,42 @@ function FormSettingsCard({
           </span>
         </span>
       </label>
+
+      <div className="border-t border-border pt-3 flex flex-col gap-2">
+        <span className="text-sm font-medium text-foreground">Schedule</span>
+        <span className="text-xs text-muted-foreground">
+          Publishes at open and unpublishes at close, automatically. Leave
+          blank to keep manual control.
+        </span>
+        <label className="flex items-center gap-2 text-sm">
+          <span className="w-14 text-muted-foreground">Opens</span>
+          <input
+            type="datetime-local"
+            value={draftOpensAt}
+            onChange={(e) => setDraftOpensAt(e.target.value)}
+            className="rounded-md border border-border bg-card px-2 py-1 text-sm"
+          />
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <span className="w-14 text-muted-foreground">Closes</span>
+          <input
+            type="datetime-local"
+            value={draftClosesAt}
+            onChange={(e) => setDraftClosesAt(e.target.value)}
+            className="rounded-md border border-border bg-card px-2 py-1 text-sm"
+          />
+        </label>
+        {windowDirty && (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={saveWindow}
+            className="self-start"
+          >
+            Save schedule
+          </Button>
+        )}
+      </div>
 
       <div className="border-t border-border pt-3 flex flex-col gap-2">
         <span className="text-sm font-medium text-foreground">
@@ -870,21 +941,20 @@ function PublishControl({
             onFocus={(e) => e.currentTarget.select()}
             className="flex-1 min-w-0 px-2 py-1.5 text-xs border border-border rounded-md bg-background text-foreground font-mono"
           />
-          <button
-            type="button"
-            onClick={copy}
-            className="inline-flex items-center gap-1 px-2 py-1.5 text-xs border border-border rounded-md text-foreground hover:bg-muted/50 transition-colors"
-          >
-            {copied ? (
-              <>
-                <Check className="w-3.5 h-3.5" /> Copied
-              </>
-            ) : (
-              <>
-                <Copy className="w-3.5 h-3.5" /> Copy
-              </>
-            )}
-          </button>
+          <Tooltip label="Copy link">
+            <button
+              type="button"
+              onClick={copy}
+              aria-label="Copy link"
+              className="inline-flex items-center justify-center p-1.5 text-xs border border-border rounded-md text-foreground hover:bg-muted/50 transition-colors"
+            >
+              {copied ? (
+                <Check className="w-3.5 h-3.5" />
+              ) : (
+                <Copy className="w-3.5 h-3.5" />
+              )}
+            </button>
+          </Tooltip>
         </div>
       )}
     </div>

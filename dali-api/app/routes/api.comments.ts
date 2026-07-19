@@ -2,10 +2,12 @@ import type { Route } from "./+types/api.comments";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth, forbidden } from "~/lib/auth";
-import { isCore } from "~/lib/roles";
+import { isCore, isLabMember } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import { hydrateAuthors } from "~/lib/collabAuth";
+import { notify } from "~/lib/notify.server";
+import { extractHandlesFromText, resolveHandles, notifyMentions, pageDocLink } from "~/lib/mentions";
 
 // Comments + inline annotations on documents (Pages) and files (ProjectFile).
 //   GET  /api/comments?targetType=doc|file&targetId=...   → threads (roots + replies)
@@ -22,21 +24,33 @@ const AnchorSchema = z
   .optional();
 
 const CreateSchema = z.object({
-  targetType: z.enum(["doc", "file"]),
+  targetType: z.enum(["doc", "file", "pagedoc"]),
   targetId: z.string().min(1),
   body: z.string().trim().min(1).max(5000),
   parentId: z.string().nullable().optional(),
   anchor: AnchorSchema,
+  // Page-doc FAQ comments only: the page path, so @-mention notifications can
+  // deep-link back to the guide (with ?doc=1).
+  path: z.string().max(1000).optional(),
 });
 
+type CommentTarget = "doc" | "file" | "pagedoc";
+
 // Confirm the target exists and is live, matching authorizeCollabDoc's doc gate.
-async function targetExists(targetType: "doc" | "file", targetId: string): Promise<boolean> {
+async function targetExists(targetType: CommentTarget, targetId: string): Promise<boolean> {
   if (targetType === "doc") {
     const page = await prisma.page.findUnique({
       where: { id: targetId },
       select: { workspaceType: true, archivedAt: true },
     });
     return !!page && page.workspaceType === "Project" && page.archivedAt === null;
+  }
+  if (targetType === "pagedoc") {
+    const doc = await prisma.pageDoc.findUnique({
+      where: { id: targetId },
+      select: { id: true },
+    });
+    return doc !== null;
   }
   const file = await prisma.projectFile.findUnique({
     where: { id: targetId },
@@ -45,21 +59,31 @@ async function targetExists(targetType: "doc" | "file", targetId: string): Promi
   return !!file && file.archivedAt === null;
 }
 
+// Auth split by target: page-doc FAQ threads are open to any lab member (so
+// anyone can ask a question); doc/file comments stay on the project-edit gate
+// (Core/Admin — the same surface that can open the doc/file).
+async function canAccessTarget(targetType: CommentTarget, userId: string): Promise<boolean> {
+  return targetType === "pagedoc" ? isLabMember(userId) : isCore(userId);
+}
+
 export async function loader({ request }: Route.LoaderArgs) {
   const preflight = handlePreflight(request);
   if (preflight) return preflight;
 
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
-  if (!(await isCore(auth.user.sub))) {
-    return forbidden(request);
-  }
 
   const url = new URL(request.url);
   const targetType = url.searchParams.get("targetType");
   const targetId = url.searchParams.get("targetId");
-  if ((targetType !== "doc" && targetType !== "file") || !targetId) {
+  if (
+    (targetType !== "doc" && targetType !== "file" && targetType !== "pagedoc") ||
+    !targetId
+  ) {
     return withCors(request, Response.json({ error: "Invalid target" }, { status: 400 }));
+  }
+  if (!(await canAccessTarget(targetType, auth.user.sub))) {
+    return forbidden(request);
   }
 
   const rows = await prisma.docComment.findMany({
@@ -102,12 +126,13 @@ export async function action({ request }: Route.ActionArgs) {
   if (request.method !== "POST") {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
-  if (!(await isCore(auth.user.sub))) {
-    return forbidden(request);
-  }
 
   const body = await parseJson(request, CreateSchema);
   if (body instanceof Response) return withCors(request, body);
+
+  if (!(await canAccessTarget(body.targetType, auth.user.sub))) {
+    return forbidden(request);
+  }
 
   if (!(await targetExists(body.targetType, body.targetId))) {
     return withCors(request, Response.json({ error: "Target not found" }, { status: 404 }));
@@ -145,5 +170,105 @@ export async function action({ request }: Route.ActionArgs) {
     select: { id: true },
   });
 
+  if (body.parentId) {
+    void notifyThreadReply({
+      targetType: body.targetType,
+      targetId: body.targetId,
+      rootId: body.parentId,
+      authorId: auth.user.sub,
+      body: body.body,
+      path: body.path,
+    }).catch((err) =>
+      console.error(`comment ${created.id}: reply notify failed`, err),
+    );
+  }
+
+  // @-mentions in any comment (document, file, or page-doc FAQ) notify the
+  // tagged members. Root or reply.
+  void (async () => {
+    const userIds = await resolveHandles(extractHandlesFromText(body.body));
+    if (userIds.length === 0) return;
+    const base =
+      body.targetType === "pagedoc"
+        ? pageDocLink(body.path)
+        : body.targetType === "doc"
+          ? `/documents/${body.targetId}`
+          : `/documents/file/${body.targetId}`;
+    // ?comment=<id> tells the comments rail on that surface to scroll to and
+    // flash the exact comment.
+    const link = `${base}${base.includes("?") ? "&" : "?"}comment=${created.id}`;
+    await notifyMentions({
+      recipientUserIds: userIds,
+      actorId: auth.user.sub,
+      link,
+      title: "You were mentioned in a comment",
+      preview: body.body,
+    });
+  })().catch((err) =>
+    console.error(`comment ${created.id}: mention notify failed`, err),
+  );
+
   return withCors(request, Response.json({ id: created.id }, { status: 201 }));
+}
+
+// A reply notifies everyone already in the thread (root author + prior
+// repliers), except the reply's own author. True @-mentions need mention
+// capture in the composer first — this covers the "nobody hears about
+// replies" gap the comment pipeline has today.
+async function notifyThreadReply(args: {
+  targetType: CommentTarget;
+  targetId: string;
+  rootId: string;
+  authorId: string;
+  body: string;
+  path?: string;
+}): Promise<void> {
+  const thread = await prisma.docComment.findMany({
+    where: { OR: [{ id: args.rootId }, { parentId: args.rootId }] },
+    select: { authorId: true },
+  });
+  const recipients = [...new Set(thread.map((c) => c.authorId))].filter(
+    (id) => id !== args.authorId,
+  );
+  if (recipients.length === 0) return;
+
+  let title: string | null | undefined;
+  let link: string;
+  if (args.targetType === "doc") {
+    title = (
+      await prisma.page.findUnique({
+        where: { id: args.targetId },
+        select: { title: true },
+      })
+    )?.title;
+    link = `/documents/${args.targetId}`;
+  } else if (args.targetType === "pagedoc") {
+    title = (
+      await prisma.pageDoc.findUnique({
+        where: { id: args.targetId },
+        select: { title: true },
+      })
+    )?.title;
+    link = pageDocLink(args.path);
+  } else {
+    title = (
+      await prisma.projectFile.findUnique({
+        where: { id: args.targetId },
+        select: { title: true },
+      })
+    )?.title;
+    link = `/documents/file/${args.targetId}`;
+  }
+  const preview = args.body.length > 200 ? `${args.body.slice(0, 200)}…` : args.body;
+
+  await notify({
+    eventType: "collab.comment_reply",
+    createdByUserId: args.authorId,
+    message: {
+      title: `New reply on: ${title ?? "a document"}`,
+      body: preview,
+      link,
+    },
+    recipients: recipients.map((userId) => ({ userId })),
+  });
 }

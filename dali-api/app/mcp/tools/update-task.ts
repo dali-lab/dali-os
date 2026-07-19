@@ -6,6 +6,7 @@
 import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
 import { syncIssueForTask } from "~/projects/lib/github-task-sync";
+import { notifyTaskAssigned } from "~/projects/lib/task-notifications.server";
 
 const PRIORITIES = ["Low", "Normal", "High", "Urgent"] as const;
 type Priority = (typeof PRIORITIES)[number];
@@ -73,7 +74,11 @@ export async function runUpdateTask(callerId: string, input: Input) {
 
   const task = await prisma.task.findUnique({
     where: { id: input.taskId },
-    select: { id: true, githubIssueNumber: true },
+    select: {
+      id: true,
+      githubIssueNumber: true,
+      assignees: { select: { userId: true } },
+    },
   });
   if (!task) throw new UpdateTaskError("Task not found", 404);
 
@@ -139,6 +144,20 @@ export async function runUpdateTask(callerId: string, input: Input) {
     void syncIssueForTask(input.taskId).catch((err) =>
       console.error(`mcp update_task: github sync failed for ${input.taskId}`, err),
     );
+  }
+
+  if (wantsAssignees) {
+    const priorIds = new Set(task.assignees.map((a) => a.userId));
+    const added = (input.assigneeUserIds ?? []).filter((id) => !priorIds.has(id));
+    if (added.length > 0) {
+      void notifyTaskAssigned({
+        taskId: input.taskId,
+        addedUserIds: added,
+        actorUserId: callerId,
+      }).catch((err) =>
+        console.error(`mcp update_task: assignment notify failed for ${input.taskId}`, err),
+      );
+    }
   }
 
   return { ok: true, taskId: input.taskId };

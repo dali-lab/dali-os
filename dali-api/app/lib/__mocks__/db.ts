@@ -43,6 +43,9 @@ export const prisma = {
     update: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
   },
+  interviewReminderLog: {
+    create: vi.fn(),
+  },
   application: {
     findUnique: vi.fn(),
   },
@@ -96,8 +99,31 @@ export const prisma = {
     count: vi.fn().mockResolvedValue(0),
     create: vi.fn(),
     createMany: vi.fn(),
+    createManyAndReturn: vi.fn().mockResolvedValue([]),
     update: vi.fn(),
     updateMany: vi.fn(),
+    deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+  },
+  notificationPreference: {
+    findMany: vi.fn().mockResolvedValue([]),
+    findUnique: vi.fn(),
+    upsert: vi.fn(),
+  },
+  scheduledAnnouncement: {
+    findMany: vi.fn().mockResolvedValue([]),
+    create: vi.fn(),
+    update: vi.fn(),
+    updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+  },
+  scheduledJob: {
+    findMany: vi.fn().mockResolvedValue([]),
+    findUnique: vi.fn(),
+    create: vi.fn(),
+    createMany: vi.fn().mockResolvedValue({ count: 0 }),
+    update: vi.fn(),
+    updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+    upsert: vi.fn(),
+    deleteMany: vi.fn(),
   },
   projectAssignment: {
     findMany: vi.fn().mockResolvedValue([]),
@@ -146,8 +172,15 @@ export const prisma = {
     count: vi.fn().mockResolvedValue(0),
   },
   taskAssignee: {
+    findMany: vi.fn().mockResolvedValue([]),
     createMany: vi.fn(),
     deleteMany: vi.fn(),
+  },
+  taskReminder: {
+    findMany: vi.fn().mockResolvedValue([]),
+    createMany: vi.fn().mockResolvedValue({ count: 0 }),
+    update: vi.fn(),
+    deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
   },
   taskComment: {
     create: vi.fn(),
@@ -168,11 +201,22 @@ export const prisma = {
     create: vi.fn(),
     update: vi.fn(),
   },
+  meetingReminderLog: {
+    create: vi.fn(),
+    deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+  },
+  gmailIntegration: {
+    findFirst: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+    update: vi.fn(),
+    upsert: vi.fn(),
+  },
   form: {
     findUnique: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
     create: vi.fn(),
     update: vi.fn(),
+    updateMany: vi.fn().mockResolvedValue({ count: 0 }),
     delete: vi.fn(),
   },
   formVersion: {

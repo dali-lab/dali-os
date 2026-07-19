@@ -20,6 +20,11 @@ export const meta: Route.MetaFunction = ({ data }) => [
   },
 ];
 
+export const handle = {
+  breadcrumb: (data: unknown) =>
+    (data as { record?: { name?: string } } | undefined)?.record?.name,
+};
+
 // One member's full Project Bids submission for the cycle — every column,
 // including ones hidden from the board table. Read-only; same access gate as
 // the board (Core/Admin).

@@ -264,6 +264,10 @@ export interface TabWorkspaceProps {
   apiRef?: React.MutableRefObject<TabWorkspaceHandle | null>
   /** Notified when the focused pane's active tab URL changes (null when no tab). */
   onActiveUrlChange?: (url: string | null) => void
+  /** ⌘/Ctrl+K — open the command palette. Called for keypresses in the shell
+   *  window and inside any workspace iframe (the shortcut handler is attached
+   *  to both), so the palette opens wherever focus is. */
+  onOpenPalette?: () => void
 }
 
 interface DragSource {
@@ -287,7 +291,7 @@ interface PaneDrop {
   zone: PaneDropZone
 }
 
-export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWorkspaceProps) {
+export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onOpenPalette }: TabWorkspaceProps) {
   const [state, setState] = useState<WorkspaceState>(emptyState)
   const [contextMenu, setContextMenu] = useState<
     | { paneId: string; tabId: string; x: number; y: number }
@@ -820,6 +824,11 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
     stateRef.current = state
   }, [state])
 
+  // onShortcut is created once (below) and never re-created, so read the latest
+  // palette callback through a ref rather than closing over the prop.
+  const onOpenPaletteRef = useRef(onOpenPalette)
+  onOpenPaletteRef.current = onOpenPalette
+
   if (!handlersRef.current) {
     handlersRef.current = {
       onShortcut: (e: KeyboardEvent) => {
@@ -847,6 +856,13 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
         }
 
         if (!mod) return
+
+        // mod + k — open the command palette. (mod+shift+k closes a tab, below.)
+        if (!e.altKey && !e.shiftKey && (e.key === 'k' || e.key === 'K')) {
+          e.preventDefault()
+          onOpenPaletteRef.current?.()
+          return
+        }
 
         // mod + [ / mod + ] — in-tab back/forward.
         if (!e.altKey && !e.shiftKey && (e.key === '[' || e.key === ']')) {
@@ -978,41 +994,12 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
     doc.addEventListener('keydown', onInteract)
   }
 
-  // Close context menu on click-anywhere.
-  useEffect(() => {
-    if (!contextMenu) return
-    const onDocClick = () => setContextMenu(null)
-    window.addEventListener('click', onDocClick)
-    window.addEventListener('contextmenu', onDocClick)
-    return () => {
-      window.removeEventListener('click', onDocClick)
-      window.removeEventListener('contextmenu', onDocClick)
-    }
-  }, [contextMenu])
-
-  // Same for the history dropdown.
-  useEffect(() => {
-    if (!historyMenu) return
-    const onDocClick = () => setHistoryMenu(null)
-    window.addEventListener('click', onDocClick)
-    window.addEventListener('contextmenu', onDocClick)
-    return () => {
-      window.removeEventListener('click', onDocClick)
-      window.removeEventListener('contextmenu', onDocClick)
-    }
-  }, [historyMenu])
-
-  // Same for the overflow dropdown.
-  useEffect(() => {
-    if (!overflowMenu) return
-    const onDocClick = () => setOverflowMenu(null)
-    window.addEventListener('click', onDocClick)
-    window.addEventListener('contextmenu', onDocClick)
-    return () => {
-      window.removeEventListener('click', onDocClick)
-      window.removeEventListener('contextmenu', onDocClick)
-    }
-  }, [overflowMenu])
+  const dismissFloatingMenus = () => {
+    setContextMenu(null)
+    setHistoryMenu(null)
+    setOverflowMenu(null)
+  }
+  const anyFloatingMenu = !!(contextMenu || historyMenu || overflowMenu)
 
   // Browser-style back/forward for the pane's active tab. The iframe's own
   // `window.history` would work mid-session but is wiped on a parent reload
@@ -1620,6 +1607,7 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
               }}
               onClick={(e) => {
                 e.stopPropagation()
+                dismissFloatingMenus()
                 setActiveTab(pane.id, tab.id)
               }}
               onDoubleClick={(e) => {
@@ -1630,12 +1618,22 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
                 if (e.button !== 1) return
                 e.preventDefault()
                 e.stopPropagation()
+                dismissFloatingMenus()
                 closeTab(pane.id, tab.id)
               }}
               onContextMenu={(e) => {
                 e.preventDefault()
                 e.stopPropagation()
-                setContextMenu({ paneId: pane.id, tabId: tab.id, x: e.clientX, y: e.clientY })
+                // Toggle closed when right-clicking the same tab again — the
+                // open handler's stopPropagation would otherwise leave the
+                // menu stuck (window never sees the event to dismiss it).
+                setContextMenu((prev) =>
+                  prev?.paneId === pane.id && prev.tabId === tab.id
+                    ? null
+                    : { paneId: pane.id, tabId: tab.id, x: e.clientX, y: e.clientY },
+                )
+                setHistoryMenu(null)
+                setOverflowMenu(null)
               }}
               title={tab.label}
               style={{ width: tab.pinned ? PINNED_TAB_W : TAB_W }}
@@ -1659,6 +1657,7 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
                   aria-label={`Close ${tab.label}`}
                   onClick={(e) => {
                     e.stopPropagation()
+                    dismissFloatingMenus()
                     closeTab(pane.id, tab.id)
                   }}
                   className="p-0.5 rounded-sm text-muted-foreground/60 hover:text-foreground hover:bg-muted opacity-60 group-hover:opacity-100"
@@ -1679,53 +1678,74 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
           >
             {/* Tab bar */}
             <div className="flex items-stretch h-10 bg-section-bg border-b border-border">
-              {(() => {
-                const canBack = !!activeTab && activeTab.backStack.length > 0
-                const canFwd = !!activeTab && activeTab.forwardStack.length > 0
-                if (!canBack && !canFwd) return null
-                return (
-                  <div className="flex items-stretch border-r border-border">
-                    {canBack && (
+              <div className="flex items-stretch border-r border-border">
+                {(() => {
+                  const canBack = !!activeTab && activeTab.backStack.length > 0
+                  const canFwd = !!activeTab && activeTab.forwardStack.length > 0
+                  const navBtn = (enabled: boolean) =>
+                    `px-2.5 ${
+                      enabled
+                        ? 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                        : 'text-muted-foreground/30 cursor-default'
+                    }`
+                  return (
+                    <>
                       <button
                         type="button"
+                        disabled={!canBack}
                         onClick={(e) => {
                           e.stopPropagation()
+                          if (!canBack) return
                           goBack(pane.id)
                         }}
                         onContextMenu={(e) => {
                           e.preventDefault()
                           e.stopPropagation()
-                          setHistoryMenu({ paneId: pane.id, side: 'back', x: e.clientX, y: e.clientY })
+                          if (!canBack) return
+                          setHistoryMenu((prev) =>
+                            prev?.paneId === pane.id && prev.side === 'back'
+                              ? null
+                              : { paneId: pane.id, side: 'back', x: e.clientX, y: e.clientY },
+                          )
+                          setContextMenu(null)
+                          setOverflowMenu(null)
                         }}
-                        title="Back (right-click for history)"
+                        title={canBack ? 'Back (right-click for history)' : 'Back'}
                         aria-label="Back"
-                        className="px-2.5 text-muted-foreground hover:text-foreground hover:bg-muted"
+                        className={navBtn(canBack)}
                       >
                         <ChevronLeft className="w-[18px] h-[18px]" />
                       </button>
-                    )}
-                    {canFwd && (
                       <button
                         type="button"
+                        disabled={!canFwd}
                         onClick={(e) => {
                           e.stopPropagation()
+                          if (!canFwd) return
                           goForward(pane.id)
                         }}
                         onContextMenu={(e) => {
                           e.preventDefault()
                           e.stopPropagation()
-                          setHistoryMenu({ paneId: pane.id, side: 'forward', x: e.clientX, y: e.clientY })
+                          if (!canFwd) return
+                          setHistoryMenu((prev) =>
+                            prev?.paneId === pane.id && prev.side === 'forward'
+                              ? null
+                              : { paneId: pane.id, side: 'forward', x: e.clientX, y: e.clientY },
+                          )
+                          setContextMenu(null)
+                          setOverflowMenu(null)
                         }}
-                        title="Forward (right-click for history)"
+                        title={canFwd ? 'Forward (right-click for history)' : 'Forward'}
                         aria-label="Forward"
-                        className="px-2.5 text-muted-foreground hover:text-foreground hover:bg-muted"
+                        className={navBtn(canFwd)}
                       >
                         <ChevronRight className="w-[18px] h-[18px]" />
                       </button>
-                    )}
-                  </div>
-                )
-              })()}
+                    </>
+                  )
+                })()}
+              </div>
               <div
                 ref={stripRefCb(pane.id)}
                 className="flex flex-1 min-w-0 items-stretch"
@@ -1769,8 +1789,16 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation()
+                      // Toggle: stopPropagation blocks the shell dismiss
+                      // listener, so a second click on +N must close itself.
+                      if (overflowMenu?.paneId === pane.id) {
+                        setOverflowMenu(null)
+                        return
+                      }
                       const rect = e.currentTarget.getBoundingClientRect()
                       setOverflowMenu({ paneId: pane.id, x: rect.right, y: rect.bottom })
+                      setContextMenu(null)
+                      setHistoryMenu(null)
                     }}
                     title={`${overflowUnpinned.length} more tab${overflowUnpinned.length === 1 ? '' : 's'}`}
                     aria-label={`Show ${overflowUnpinned.length} more tabs`}
@@ -1888,6 +1916,20 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
         )
       })}
 
+      {/* Invisible backdrop so a click anywhere — including over an iframe —
+          dismisses floating tab menus. Menus sit above it at z-50. */}
+      {anyFloatingMenu && (
+        <div
+          className="fixed inset-0 z-40"
+          aria-hidden
+          onMouseDown={dismissFloatingMenus}
+          onContextMenu={(e) => {
+            e.preventDefault()
+            dismissFloatingMenus()
+          }}
+        />
+      )}
+
       {/* Right-click context menu */}
       {contextMenu && (() => {
         const cmPane = state.panes.find((p) => p.id === contextMenu.paneId)
@@ -1902,6 +1944,7 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
         const item = 'w-full flex items-center gap-2 px-3 py-1.5 hover:bg-muted text-left'
         return (
         <div
+          data-floating-menu
           className="fixed z-50 bg-card border border-border rounded-md shadow-lg py-1 min-w-[200px] text-sm"
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onClick={(e) => e.stopPropagation()}
@@ -2023,6 +2066,7 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
         const entries = stack.slice(-15).reverse()
         return (
           <div
+            data-floating-menu
             className="fixed z-50 bg-card border border-border rounded-md shadow-lg py-1 min-w-[260px] max-w-[440px] text-xs"
             style={{ left: historyMenu.x, top: historyMenu.y }}
             onClick={(e) => e.stopPropagation()}
@@ -2059,6 +2103,7 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
         const ordered = [...overflow].sort((a, b) => b.lastActivatedAt - a.lastActivatedAt)
         return (
           <div
+            data-floating-menu
             className="fixed z-50 bg-card border border-border rounded-md shadow-lg py-1 min-w-[200px] max-w-[320px] text-sm -translate-x-full"
             style={{ left: overflowMenu.x, top: overflowMenu.y }}
             onClick={(e) => e.stopPropagation()}

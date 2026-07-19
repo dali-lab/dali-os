@@ -41,6 +41,7 @@
     "@tiptap/extension-collaboration": "^3.22.3",
     "@tiptap/extension-collaboration-cursor": "^3.0.0",
     "@tiptap/extension-link": "^3.22.3",
+    "@tiptap/extension-mention": "^3.23.6",
     "@tiptap/extension-placeholder": "^3.22.3",
     "@tiptap/pm": "^3.22.3",
     "@tiptap/react": "^3.22.3",
@@ -89,7 +90,7 @@
     "tailwindcss": "^4.2.2",
     "tsx": "^4.19.4",
     "typescript": "^5.9.3",
-    "vite": "^8.0.16",
+    "vite": "^8.1.0",
     "vitest": "^4.1.3"
   }
 }

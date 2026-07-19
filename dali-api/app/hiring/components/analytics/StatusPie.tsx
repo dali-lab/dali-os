@@ -1,6 +1,6 @@
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
 import { useNavigate, useSearchParams } from "react-router";
-import { useChartColors } from "./useChartColors";
+import { useChartColors } from "~/components/analytics/useChartColors";
 
 export interface StatusSlice {
   status: string;

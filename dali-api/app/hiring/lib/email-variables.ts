@@ -82,6 +82,11 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlot, readonly TemplateVariableN
 
   // Location change — sendLocationChangeEmails passes full vars.
   "notification:InterviewLocationChanged": ["firstName", "domain", "time", "location", "meetingUrl"],
+
+  // Scheduled 24h/1h reminders — sendInterviewReminderEmails passes full vars
+  // to both audiences.
+  "notification:InterviewReminderApplicant": ["firstName", "domain", "time", "location", "meetingUrl"],
+  "notification:InterviewReminderInterviewer": ["firstName", "domain", "time", "location", "meetingUrl"],
 };
 
 // Matches the strict shape the interpolator in app/lib/email.ts handles:

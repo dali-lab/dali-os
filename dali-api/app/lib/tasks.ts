@@ -13,10 +13,10 @@ import { fullName } from "~/lib/display";
 // recipient RSVPs (Accept/Maybe/Decline), and they drop off automatically once
 // the meeting is Cancelled — see TASK_WHERE.
 //
-//   kind === MeetingInvite      → "meeting"      (carries RSVP target)
-//   kind === MeetingReminder    → "reminder"     (calendar fan-out)
-//   kind === SystemAnnouncement → "announcement" (admin-sent; may have form)
-//   kind === General            → "general"      (everything else)
+//   MeetingInvite + scheduledMeetingId → "meeting"  (carries RSVP target)
+//   kind === MeetingReminder           → "reminder" (calendar fan-out)
+//   kind === SystemAnnouncement        → "announcement" (admin-sent; may have form)
+//   everything else                    → "general"
 //
 // `dueAt` is the deadline chip on the Home banner. Sources, in order:
 //   - MeetingInvite / MeetingReminder: the meeting's selectedAt
@@ -220,8 +220,10 @@ export async function listOpenTasks(userId: string): Promise<Task[]> {
         }) !== "Cancelled",
     )
     .map((n) => {
+    // Only invites backed by a ScheduledMeeting get RSVP UI. A MeetingInvite
+    // without scheduledMeetingId (e.g. a mis-tagged admin blast) is general.
     const source: Task["source"] =
-      n.kind === "MeetingInvite"
+      n.kind === "MeetingInvite" && n.scheduledMeetingId
         ? "meeting"
         : n.kind === "MeetingReminder"
           ? "reminder"
@@ -282,6 +284,9 @@ export type NotificationHistoryItem = {
   sentAt: string;
   clearedAt: string | null;
   link: string | null;
+  // Present when this row is a MeetingInvite that still needs Accept/Decline.
+  // History Open filter surfaces these with the same RSVP UI as Home / My Tasks.
+  canRsvp: boolean;
 };
 
 export interface NotificationHistoryResult {
@@ -391,6 +396,11 @@ export async function listNotificationHistory(
       n.formId && n.form?.published && n.form.publicToken
         ? `/forms/fill/${n.form.publicToken}`
         : n.link,
+    canRsvp:
+      n.kind === "MeetingInvite" &&
+      !!n.scheduledMeetingId &&
+      !n.readAt &&
+      n.scheduledMeeting?.status !== "Cancelled",
   }));
 
   const last = page.at(-1);

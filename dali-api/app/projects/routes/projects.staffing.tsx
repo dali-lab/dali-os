@@ -25,7 +25,11 @@ import type {
   Preference,
 } from "../lib/staffing-board";
 
-export const handle = { areaPills: true };
+export const handle = {
+  areaPills: true,
+  docKey: "projects.staffing",
+  docTitle: "Staffing",
+};
 
 export const meta: Route.MetaFunction = () => [{ title: "Staffing · DALI OS" }];
 

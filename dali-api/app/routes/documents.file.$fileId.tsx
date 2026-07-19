@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
-import { redirect, useLoaderData, useRevalidator } from "react-router";
+import { redirect, useLoaderData, useRevalidator, useSearchParams } from "react-router";
 import { Download, Upload } from "lucide-react";
+import { Tooltip } from "~/components/ui/IconButton";
 import type { Route } from "./+types/documents.file.$fileId";
 import { prisma } from "~/lib/db";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
@@ -22,12 +23,15 @@ export const meta: Route.MetaFunction = ({ data }) => {
 // Breadcrumbs' DROPPED_SEGMENTS) and this expands the leaf into the real
 // trail back to the project hub instead.
 export const handle = {
-  breadcrumb: (data: unknown) => {
+  // Project files live under the shared /documents/file/* viewer, so the URL
+  // prefix says "Documents" but their home is Projects — declare the full trail.
+  breadcrumbTrail: (data: unknown) => {
     const d = data as
       | { projectId?: string; projectName?: string; title?: string }
       | undefined;
     if (!d?.projectId || !d.projectName) return null;
     return [
+      { label: "Projects", to: "/projects" },
       { label: d.projectName, to: `/projects/${d.projectId}` },
       { label: d.title ?? "File" },
     ];
@@ -109,6 +113,8 @@ export default function FilePage() {
     useLoaderData() as Exclude<Awaited<ReturnType<typeof loader>>, Response>;
 
   const revalidator = useRevalidator();
+  const [fileSearchParams] = useSearchParams();
+  const focusCommentId = fileSearchParams.get("comment") ?? undefined;
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -204,12 +210,15 @@ export default function FilePage() {
                     })}
                   </div>
                 </div>
-                <a
-                  href={v.downloadUrl}
-                  className="inline-flex items-center gap-1 px-2 py-1 rounded border border-border hover:bg-muted text-muted-foreground hover:text-foreground flex-shrink-0"
-                >
-                  <Download className="w-3.5 h-3.5" /> Download
-                </a>
+                <Tooltip label="Download">
+                  <a
+                    href={v.downloadUrl}
+                    aria-label="Download"
+                    className="inline-flex items-center justify-center p-1.5 rounded border border-border hover:bg-muted text-muted-foreground hover:text-foreground flex-shrink-0"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                  </a>
+                </Tooltip>
               </li>
             ))}
           </ul>
@@ -221,6 +230,7 @@ export default function FilePage() {
             targetId={fileId}
             currentUserId={currentUserId}
             canComment={canEdit}
+            focusCommentId={focusCommentId}
           />
         </aside>
       </div>

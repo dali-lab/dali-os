@@ -21,6 +21,7 @@ import {
 import { Modal, ModalHeader } from "~/components/Modal";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { ChallengePreviewModal } from "~/hiring/components/ChallengePreviewModal";
+import { Tooltip } from "~/components/ui/IconButton";
 import { Settings, Users, Calendar, AlertTriangle, Trash2, Plus, CheckCircle, ArrowRight, Circle, ChevronRight, X, LayoutDashboard, Eye, Mail } from 'lucide-react'
 import { formatVersionLabel, buildVersionNumberMap } from "~/lib/formatVersion";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
@@ -690,7 +691,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (intent === "set-notification-email") {
     const notificationType = formData.get("notificationType") as string;
     const emailTemplateVersionId = (formData.get("emailTemplateVersionId") as string) || null;
-    const validTypes = ["ApplicationReceived", "ApplicationExtensionNotice", "InterviewInviteMentor", "InterviewInviteReminder", "InterviewConfirmedApplicant", "InterviewCancelledApplicant", "InterviewCancelledInterviewer", "InterviewLocationChanged"] as const;
+    const validTypes = ["ApplicationReceived", "ApplicationExtensionNotice", "InterviewInviteMentor", "InterviewInviteReminder", "InterviewConfirmedApplicant", "InterviewCancelledApplicant", "InterviewCancelledInterviewer", "InterviewLocationChanged", "InterviewReminderApplicant", "InterviewReminderInterviewer"] as const;
     if (!validTypes.includes(notificationType as (typeof validTypes)[number])) {
       return new Response(JSON.stringify({ error: "Invalid notification type" }), { status: 400, headers: { "Content-Type": "application/json" } });
     }
@@ -3111,15 +3112,16 @@ export default function HiringLeadCycleDetails() {
                     <td className="px-4 py-3 text-muted-foreground">{d.madeBy.firstName} {d.madeBy.lastName}</td>
                     <td className="px-4 py-3 text-right">
                       <div className="inline-flex flex-wrap items-center justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setPreviewDecisionId(d.id)}
-                          className="inline-flex items-center gap-1 px-3 py-1 text-sm font-medium rounded-lg border border-border bg-card hover:bg-muted/40 text-foreground transition"
-                          aria-label={`Preview email for ${d.domainApplication.application.user.firstName}`}
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                          Preview
-                        </button>
+                        <Tooltip label="Preview">
+                          <button
+                            type="button"
+                            onClick={() => setPreviewDecisionId(d.id)}
+                            className="inline-flex items-center justify-center p-1.5 text-sm font-medium rounded-lg border border-border bg-card hover:bg-muted/40 text-foreground transition"
+                            aria-label="Preview"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                          </button>
+                        </Tooltip>
                         <button
                           onClick={async () => {
                             setReleasing(d.id)
@@ -3176,15 +3178,16 @@ export default function HiringLeadCycleDetails() {
                       Made by {d.madeBy.firstName} {d.madeBy.lastName}
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setPreviewDecisionId(d.id)}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium rounded-lg border border-border bg-card hover:bg-muted/40 text-foreground transition"
-                        aria-label={`Preview email for ${d.domainApplication.application.user.firstName}`}
-                      >
-                        <Eye className="w-3.5 h-3.5" />
-                        Preview
-                      </button>
+                      <Tooltip label="Preview">
+                        <button
+                          type="button"
+                          onClick={() => setPreviewDecisionId(d.id)}
+                          className="inline-flex items-center justify-center p-1.5 text-sm font-medium rounded-lg border border-border bg-card hover:bg-muted/40 text-foreground transition"
+                          aria-label="Preview"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
+                      </Tooltip>
                       <button
                         onClick={async () => {
                           setReleasing(d.id)
@@ -4133,13 +4136,16 @@ function DomainOverridePanel({
                     })}
                   </span>
                   <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => setPreviewCvId(cv.id)}
-                      className="flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-lg border border-border hover:bg-muted/50 text-foreground/70 transition"
-                    >
-                      <Eye className="w-3 h-3" /> Preview
-                    </button>
+                    <Tooltip label="Preview">
+                      <button
+                        type="button"
+                        onClick={() => setPreviewCvId(cv.id)}
+                        aria-label="Preview"
+                        className="flex items-center justify-center p-1.5 text-xs font-medium rounded-lg border border-border hover:bg-muted/50 text-foreground/70 transition"
+                      >
+                        <Eye className="w-3 h-3" />
+                      </button>
+                    </Tooltip>
                     {!challengeLocked && (
                       <Form method="post" preventScrollReset>
                         <input type="hidden" name="intent" value="hl-remove-domain-challenge" />
@@ -4196,13 +4202,16 @@ function DomainOverridePanel({
                 </select>
               </div>
               {pickerCvId && (
-                <button
-                  type="button"
-                  onClick={() => setPreviewCvId(pickerCvId)}
-                  className="flex items-center gap-1 px-2 py-2 text-xs font-medium rounded-lg border border-border hover:bg-muted/50 text-foreground/70 transition"
-                >
-                  <Eye className="w-3 h-3" /> Preview
-                </button>
+                <Tooltip label="Preview">
+                  <button
+                    type="button"
+                    onClick={() => setPreviewCvId(pickerCvId)}
+                    aria-label="Preview"
+                    className="flex items-center justify-center p-1.5 text-xs font-medium rounded-lg border border-border hover:bg-muted/50 text-foreground/70 transition"
+                  >
+                    <Eye className="w-3 h-3" />
+                  </button>
+                </Tooltip>
               )}
               <button
                 type="submit"
@@ -4225,13 +4234,16 @@ function DomainOverridePanel({
                 {currentRubricLabel ?? 'No rubric set'}
               </div>
               {currentRubric && (
-                <button
-                  type="button"
-                  onClick={() => setShowRubricPreview(true)}
-                  className="flex items-center gap-1 px-2 py-1.5 text-xs font-medium rounded-lg border border-border hover:bg-muted/50 text-foreground/70 transition"
-                >
-                  <Eye className="w-3 h-3" /> Preview
-                </button>
+                <Tooltip label="Preview">
+                  <button
+                    type="button"
+                    onClick={() => setShowRubricPreview(true)}
+                    aria-label="Preview"
+                    className="flex items-center justify-center p-1.5 text-xs font-medium rounded-lg border border-border hover:bg-muted/50 text-foreground/70 transition"
+                  >
+                    <Eye className="w-3 h-3" />
+                  </button>
+                </Tooltip>
               )}
             </div>
           ) : rubricOptions.length === 0 ? (
@@ -4264,13 +4276,16 @@ function DomainOverridePanel({
                 </select>
               </div>
               {selectedRubricId && (
-                <button
-                  type="button"
-                  onClick={() => setShowRubricPreview(true)}
-                  className="flex items-center gap-1 px-2 py-2 text-xs font-medium rounded-lg border border-border hover:bg-muted/50 text-foreground/70 transition"
-                >
-                  <Eye className="w-3 h-3" /> Preview
-                </button>
+                <Tooltip label="Preview">
+                  <button
+                    type="button"
+                    onClick={() => setShowRubricPreview(true)}
+                    aria-label="Preview"
+                    className="flex items-center justify-center p-1.5 text-xs font-medium rounded-lg border border-border hover:bg-muted/50 text-foreground/70 transition"
+                  >
+                    <Eye className="w-3 h-3" />
+                  </button>
+                </Tooltip>
               )}
               <button
                 type="submit"
@@ -4703,6 +4718,8 @@ const NOTIFICATION_EMAIL_SLOTS: ReadonlyArray<{ type: NotificationSlotType; labe
   { type: "InterviewCancelledApplicant", label: "Interview Cancelled (Applicant)", description: "Sent to the applicant when their interview is cancelled." },
   { type: "InterviewCancelledInterviewer", label: "Interview Cancelled (Interviewer)", description: "Sent to the interviewer when an interview is cancelled or they are unassigned." },
   { type: "InterviewLocationChanged", label: "Interview Location Changed", description: "Sent to both the applicant and interviewer(s) when the interview location is updated." },
+  { type: "InterviewReminderApplicant", label: "Interview Reminder (Applicant)", description: "Sent automatically 24 hours and 1 hour before a scheduled interview. No binding = no reminder email." },
+  { type: "InterviewReminderInterviewer", label: "Interview Reminder (Interviewer)", description: "Sent automatically to the interviewer(s) 24 hours and 1 hour before a scheduled interview. No binding = no reminder email." },
 ];
 
 function NotificationEmailsSection({ emailTemplates, currentNotificationEmails }: {

@@ -1,5 +1,6 @@
 import { Link } from "react-router";
 import { termCodeLabel } from "~/lib/display";
+import { PartnerBackLink } from "~/partners/components/PartnerBackLink";
 import type {
   PartnerProjectEpic,
   PartnerProjectSprint,
@@ -133,9 +134,7 @@ export function PartnerProjectHubView({
     <div className="flex flex-col gap-8">
       <div>
         {backLink && (
-          <Link to={backLink.to} className="text-xs text-muted-foreground hover:text-foreground">
-            ← {backLink.label}
-          </Link>
+          <PartnerBackLink to={backLink.to} label={backLink.label} />
         )}
         <div
           className={`bg-card border border-border rounded-2xl overflow-hidden ${backLink ? "mt-2" : ""}`}

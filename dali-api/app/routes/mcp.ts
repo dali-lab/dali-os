@@ -52,6 +52,13 @@ import {
   RsvpError,
 } from "~/mcp/tools/rsvp-to-notification";
 import {
+  LIST_NOTIFICATION_PREFERENCES_TOOL,
+  runListNotificationPreferences,
+  SET_NOTIFICATION_PREFERENCE_TOOL,
+  runSetNotificationPreference,
+  PreferenceValidationError,
+} from "~/mcp/tools/notification-preferences";
+import {
   CANCEL_MEETING_TOOL,
   runCancelMeeting,
   CancelMeetingError,
@@ -261,6 +268,8 @@ const TOOLS = [
   LIST_MY_CALENDAR_LINKS_TOOL,
   MARK_NOTIFICATION_READ_TOOL,
   RSVP_TO_NOTIFICATION_TOOL,
+  LIST_NOTIFICATION_PREFERENCES_TOOL,
+  SET_NOTIFICATION_PREFERENCE_TOOL,
   CANCEL_MEETING_TOOL,
   LIST_GROUPS_TOOL,
   LIST_MY_PROJECTS_TOOL,
@@ -336,6 +345,7 @@ function rpcErrorFromTool(id: unknown, err: unknown): Response | null {
     return rpcError(id, code, err.message);
   }
   if (err instanceof ScheduleMeetingError) return rpcError(id, -32602, err.message);
+  if (err instanceof PreferenceValidationError) return rpcError(id, -32602, err.message);
 
   // Project-hub error classes share the same `.status` → JSON-RPC code mapping.
   const hubErrors = [
@@ -496,6 +506,15 @@ export async function action({ request }: Route.ActionArgs) {
             payload = await runRsvpToNotification(
               auth.user,
               args as Parameters<typeof runRsvpToNotification>[1],
+            );
+            break;
+          case "list_notification_preferences":
+            payload = await runListNotificationPreferences(auth.user.id);
+            break;
+          case "set_notification_preference":
+            payload = await runSetNotificationPreference(
+              auth.user.id,
+              args as Parameters<typeof runSetNotificationPreference>[1],
             );
             break;
           case "cancel_meeting":

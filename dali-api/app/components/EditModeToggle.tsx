@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Check, Pencil } from "lucide-react";
+import { Tooltip } from "~/components/ui/IconButton";
 
 /**
  * Page-level view/edit gate. `canEdit` is the loader-determined permission;
@@ -37,27 +38,20 @@ export function EditModeToggle({
   }
 
   return (
-    <button
-      type="button"
-      onClick={() => setEditMode(!editMode)}
-      aria-pressed={editMode}
-      className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-md border transition-colors ${
-        editMode
-          ? "bg-accent-coral text-white border-transparent hover:bg-accent-coral/90"
-          : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
-      }`}
-    >
-      {editMode ? (
-        <>
-          <Check className="w-3.5 h-3.5" />
-          Done
-        </>
-      ) : (
-        <>
-          <Pencil className="w-3.5 h-3.5" />
-          Edit
-        </>
-      )}
-    </button>
+    <Tooltip label={editMode ? "Done editing" : "Edit"}>
+      <button
+        type="button"
+        onClick={() => setEditMode(!editMode)}
+        aria-pressed={editMode}
+        aria-label={editMode ? "Done editing" : "Edit"}
+        className={`inline-flex items-center justify-center p-1.5 rounded-md border transition-colors ${
+          editMode
+            ? "bg-accent-coral text-white border-transparent hover:bg-accent-coral/90"
+            : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+        }`}
+      >
+        {editMode ? <Check className="w-3.5 h-3.5" /> : <Pencil className="w-3.5 h-3.5" />}
+      </button>
+    </Tooltip>
   );
 }

@@ -7,8 +7,9 @@ import { withCors, handlePreflight } from "~/lib/cors";
 // POST   /api/comments/:id  { intent: "resolve" | "reopen" }  — toggle resolved
 // DELETE /api/comments/:id                                    — delete (cascades replies)
 //
-// Same gate as creating comments (isCore). Authors may delete their own;
-// Core may delete any. Resolve/reopen is open to any Core editor.
+// Auth is target- and action-dependent: doc/file threads stay on the Core gate.
+// Page-doc FAQ authors may delete their own comments, but only that PageDoc's
+// maintainer may resolve or reopen a thread.
 
 export async function action({ request, params }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
@@ -19,21 +20,37 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (request.method !== "POST" && request.method !== "DELETE") {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
-  if (!(await isCore(auth.user.sub))) {
-    return forbidden(request);
-  }
 
   const comment = await prisma.docComment.findUnique({
     where: { id: params.id },
-    select: { id: true, authorId: true },
+    select: { id: true, authorId: true, targetType: true, targetId: true },
   });
   if (!comment) {
     return withCors(request, Response.json({ error: "Comment not found" }, { status: 404 }));
   }
 
   if (request.method === "DELETE") {
+    const core = await isCore(auth.user.sub);
+    const canDelete =
+      comment.targetType === "pagedoc"
+        ? core || comment.authorId === auth.user.sub
+        : core;
+    if (!canDelete) return forbidden(request);
+
     await prisma.docComment.delete({ where: { id: comment.id } });
     return withCors(request, Response.json({ ok: true }));
+  }
+
+  if (comment.targetType === "pagedoc") {
+    const pageDoc = await prisma.pageDoc.findUnique({
+      where: { id: comment.targetId },
+      select: { maintainerId: true },
+    });
+    if (!pageDoc || pageDoc.maintainerId !== auth.user.sub) {
+      return forbidden(request);
+    }
+  } else if (!(await isCore(auth.user.sub))) {
+    return forbidden(request);
   }
 
   let raw: unknown;

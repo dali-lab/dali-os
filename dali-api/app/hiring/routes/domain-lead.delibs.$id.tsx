@@ -28,6 +28,12 @@ export const meta: Route.MetaFunction = ({ data }) => {
   return [{ title: `${domain ? `${domain} ` : ""}delibs · DALI OS` }];
 };
 
+export const handle = {
+  breadcrumb: (data: unknown) =>
+    (data as { session?: { domain?: { name?: string } } } | undefined)?.session
+      ?.domain?.name,
+};
+
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");

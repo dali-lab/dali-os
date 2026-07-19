@@ -1,26 +1,50 @@
 import { prisma } from "~/lib/db";
-import { APPLICATIONS_FROM_EMAIL as GMAIL_USER } from "~/lib/app-env";
+import type { EmailSendPurpose } from "~/generated/prisma/client";
 
-// Phase 2: Gmail send-as credentials moved from User.google* to the
-// GmailIntegration model. This helper is the single read path for callers
-// that previously looked up `User.googleRefreshToken` by daliEmail.
+// Purpose-keyed Gmail send-as identities (GmailIntegration rows, connected
+// via /admin/authorize-gmail?purpose=…). Every outbound-email call site
+// resolves its sender here by purpose — Hiring, Education, Partners, or
+// General (notify()/digests).
 
 /**
- * Returns the refresh token for the Gmail send-as integration tied to the
- * configured GMAIL_USER (`applications@dali.dartmouth.edu`), or null when
- * the integration isn't linked or has been disabled.
- *
- * Phase 2 note: the migration backfills GmailIntegration rows from any
- * legacy User.google* values during deploy. The encrypted-at-rest token
- * format will eventually replace plaintext; for now the column stores the
- * raw refresh_token as historically used by `lib/gmail.ts:sendEmail`.
+ * Returns the refresh token for the purpose's connected integration. A
+ * purpose with no row of its own falls back to Hiring — the applications@
+ * integration predates purposes and is the only one guaranteed connected —
+ * so an area's mail keeps flowing until ops links its dedicated account.
  */
-export async function getApplicationsGmailRefreshToken(): Promise<string | null> {
-  const integration = await prisma.gmailIntegration.findFirst({
-    where: { sendAsEmail: GMAIL_USER, enabled: true },
+export async function getSenderRefreshToken(
+  purpose: EmailSendPurpose,
+): Promise<string | null> {
+  const row = await prisma.gmailIntegration.findFirst({
+    where: { purpose, enabled: true },
+    orderBy: { linkedAt: "desc" },
     select: { oauthTokens: true },
   });
-  return integration?.oauthTokens ?? null;
+  if (row) return row.oauthTokens;
+  if (purpose === "Hiring") return null;
+  const fallback = await prisma.gmailIntegration.findFirst({
+    where: { purpose: "Hiring", enabled: true },
+    orderBy: { linkedAt: "desc" },
+    select: { oauthTokens: true },
+  });
+  return fallback?.oauthTokens ?? null;
+}
+
+/**
+ * The Hiring identity (applications@dali.dartmouth.edu). Kept under its
+ * historical name — hiring call sites read as "the applications sender".
+ */
+export async function getApplicationsGmailRefreshToken(): Promise<string | null> {
+  return getSenderRefreshToken("Hiring");
+}
+
+/** Whether a purpose has its own connected, enabled integration (no fallback). */
+export async function isSenderConnected(purpose: EmailSendPurpose): Promise<boolean> {
+  const row = await prisma.gmailIntegration.findFirst({
+    where: { purpose, enabled: true },
+    select: { id: true },
+  });
+  return row !== null;
 }
 
 /**
@@ -28,9 +52,21 @@ export async function getApplicationsGmailRefreshToken(): Promise<string | null>
  * enabled. Used by the email-templates UI's "Gmail connected" indicator.
  */
 export async function isApplicationsGmailConnected(): Promise<boolean> {
-  const row = await prisma.gmailIntegration.findFirst({
-    where: { sendAsEmail: GMAIL_USER, enabled: true },
-    select: { id: true },
+  return isSenderConnected("Hiring");
+}
+
+/** All integrations for the admin Email Senders page, newest first. */
+export async function listSenderIntegrations() {
+  return prisma.gmailIntegration.findMany({
+    orderBy: { linkedAt: "desc" },
+    select: {
+      id: true,
+      purpose: true,
+      sendAsEmail: true,
+      enabled: true,
+      linkedAt: true,
+      lastUsedAt: true,
+      syncError: true,
+    },
   });
-  return row !== null;
 }

@@ -8,14 +8,33 @@ import {
 import { collabDocToProseMirror } from "~/collab/export";
 import { AssignmentWorkArea } from "~/education/components/AssignmentWorkArea";
 import { formatDateTime } from "~/lib/display";
+import { prisma } from "~/lib/db";
 
 export const meta: Route.MetaFunction = ({ data }) => [
   { title: `${data?.assignment.title ?? "Assignment"} · DALI OS` },
 ];
 
 export const handle = {
-  breadcrumb: (data: { assignment: { title: string } } | undefined) =>
-    data?.assignment.title ?? "Assignment",
+  // Flat routes drop the opaque middle :offeringId, so the course would vanish
+  // from the trail — declare the full trail back to the offering's assignments.
+  breadcrumbTrail: (
+    data:
+      | {
+          offeringId: string
+          offeringTitle: string
+          assignment: { title: string }
+        }
+      | undefined,
+  ) => {
+    if (!data) return null;
+    const hub = `/education/${data.offeringId}/hub`;
+    return [
+      { label: "Education", to: "/education" },
+      { label: data.offeringTitle, to: hub },
+      { label: "Assignments", to: `${hub}?tab=assignments` },
+      { label: data.assignment.title },
+    ];
+  },
 };
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -35,8 +54,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     ? await collabDocToProseMirror(result.assignment.instructionsDocId)
     : null;
 
+  const offering = await prisma.educationOffering.findUnique({
+    where: { id: params.offeringId! },
+    select: { title: true },
+  });
+
   return {
     offeringId: params.offeringId!,
+    offeringTitle: offering?.title ?? "Offering",
     assignment: { ...result.assignment, instructionsContent },
     submission: result.submission
       ? {
