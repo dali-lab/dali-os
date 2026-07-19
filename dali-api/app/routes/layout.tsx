@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Outlet, redirect, useLoaderData, useLocation, useMatches, useNavigate, useSearchParams } from 'react-router'
+import { Outlet, redirect, useLoaderData, useLocation, useMatches, useNavigate, useSearchParams, type ShouldRevalidateFunctionArgs } from 'react-router'
 import { cn } from '~/lib/cn'
 import { Layout } from '~/components/Layout'
 import { Breadcrumbs } from '~/components/Breadcrumbs'
@@ -11,18 +11,40 @@ import { getActiveCycle } from '~/hiring/lib/cycles'
 import { prisma } from '~/lib/db'
 import { resolvePhotoUrl } from '~/lib/photo'
 import { recordPageView } from '~/lib/analytics'
+import { isTablessRequest } from '~/lib/tabless'
+import { isFocusRequest } from '~/lib/focus-mode'
 import type { Route } from './+types/layout'
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request)
   if (!auth.ok) return redirect('/login')
   if (auth.user.type === 'applicant') return redirect('/portal')
-  const partnerRedirect = await redirectPartnerToPortal(auth)
-  if (partnerRedirect) return partnerRedirect
 
   // Onboarding is NOT a hard gate: a new member can use the whole app freely.
   // Their onboarding lives as a persistent task (the welcome notification) that
   // links to /onboarding and only clears once they finish. See welcome.server.
+
+  // Drives the sidebar footer avatar. The loader runs on every shell
+  // load/revalidation, so this stays in sync after a profile edit. Also tells
+  // the launch tour whether to offer the "connect your calendar" step.
+  const [partnerRedirect, roles, activeCycle, me] = await Promise.all([
+    redirectPartnerToPortal(auth),
+    getUserRoles(auth.user.sub),
+    getActiveCycle(),
+    prisma.user.findUnique({
+      where: { id: auth.user.sub },
+      select: {
+        photoUrl: true,
+        calendarLinks: {
+          where: { provider: "Google", enabled: true },
+          select: { id: true },
+          take: 1,
+        },
+        daliMember: { select: { onboardedAt: true, tourCompletedAt: true } },
+      },
+    }),
+  ])
+  if (partnerRedirect) return partnerRedirect
 
   const {
     isLabMember,
@@ -30,55 +52,37 @@ export async function loader({ request }: Route.LoaderArgs) {
     isAdmin: admin,
     isDomainLead: domainLead,
     isInstructor,
+    isInterviewer: isInterviewerAnyCycle,
     canViewForms,
     canViewStaffing,
-  } = await getUserRoles(auth.user.sub)
-
-  let isInterviewer = false
-  if (isLabMember) {
-    const active = await getActiveCycle()
-    if (active) {
-      const interviewer = await prisma.cycleInterviewer.findFirst({
-        where: { userId: auth.user.sub, applicationCycleId: active.id },
-      })
-      isInterviewer = !!interviewer
-    }
-  }
+  } = roles
 
   // Whether to show the Hiring tab at all. Core/Admin/DomainLead always; other
   // lab members only if they're a reviewer or interviewer on ANY cycle (not
   // just the active one — a reviewer on a past/future cycle still needs in).
-  let hasHiringAccess = core || admin || domainLead
-  if (!hasHiringAccess && isLabMember) {
-    const [reviewer, interviewer] = await Promise.all([
-      prisma.cycleReviewer.findFirst({ where: { userId: auth.user.sub }, select: { id: true } }),
-      prisma.cycleInterviewer.findFirst({ where: { userId: auth.user.sub }, select: { id: true } }),
-    ])
-    hasHiringAccess = reviewer !== null || interviewer !== null
-  }
+  // getUserRoles already ran the any-cycle interviewer lookup, so only the
+  // reviewer half needs its own query here.
+  let hasHiringAccess =
+    core || admin || domainLead || (isLabMember && isInterviewerAnyCycle)
 
-  // Mentorship area gate: Core (with admin) + any active lab mentor. Hidden
-  // from mentees and non-mentor members entirely.
-  const isLabMentorFlag = isLabMember
-    ? core || (await isLabMentor(auth.user.sub))
-    : false
+  const [activeInterviewer, anyCycleReviewer, labMentor, photoUrl] = await Promise.all([
+    isLabMember && activeCycle
+      ? prisma.cycleInterviewer.findFirst({
+          where: { userId: auth.user.sub, applicationCycleId: activeCycle.id },
+        })
+      : null,
+    !hasHiringAccess && isLabMember
+      ? prisma.cycleReviewer.findFirst({ where: { userId: auth.user.sub }, select: { id: true } })
+      : null,
+    // Mentorship area gate: Core (with admin) + any active lab mentor. Hidden
+    // from mentees and non-mentor members entirely.
+    isLabMember && !core ? isLabMentor(auth.user.sub) : false,
+    resolvePhotoUrl(me?.photoUrl),
+  ])
 
-  // Drives the sidebar footer avatar. The loader runs on every shell
-  // load/revalidation, so this stays in sync after a profile edit. Also tells
-  // the launch tour whether to offer the "connect your calendar" step.
-  const me = await prisma.user.findUnique({
-    where: { id: auth.user.sub },
-    select: {
-      photoUrl: true,
-      calendarLinks: {
-        where: { provider: "Google", enabled: true },
-        select: { id: true },
-        take: 1,
-      },
-      daliMember: { select: { onboardedAt: true, tourCompletedAt: true } },
-    },
-  })
-  const photoUrl = await resolvePhotoUrl(me?.photoUrl)
+  const isInterviewer = !!activeInterviewer
+  if (!hasHiringAccess && isLabMember) hasHiringAccess = anyCycleReviewer !== null
+  const isLabMentorFlag = isLabMember ? core || labMentor : false
   const hasCalendarLink = (me?.calendarLinks.length ?? 0) > 0
 
   // Auto-show the launch tour once per USER (server-driven, not browser
@@ -95,6 +99,14 @@ export async function loader({ request }: Route.LoaderArgs) {
   const fetchDest = request.headers.get('sec-fetch-dest')
   const isEmbedded = fetchDest === 'iframe' || fetchDest === 'frame'
 
+  // Tabless mode: render pages directly in the shell instead of the tabbed
+  // workspace. Cookie-backed so this SSR branch is decided per-request.
+  const tabless = isTablessRequest(request)
+
+  // Focus mode: hide the sidebar (navigate via ⌘K + breadcrumbs). Independent
+  // of tabless; also cookie-backed so there's no flash of the sidebar.
+  const focus = isFocusRequest(request)
+
   // Pageview is fire-and-forget — never blocks the response.
   recordPageView({
     request,
@@ -102,11 +114,33 @@ export async function loader({ request }: Route.LoaderArgs) {
     sessionId: auth.sessionId,
   })
 
-  return { user: auth.user, photoUrl, hasCalendarLink, shouldShowTour, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, isEmbedded }
+  return { user: auth.user, photoUrl, hasCalendarLink, shouldShowTour, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, isEmbedded, tabless, focus }
+}
+
+// Layout data (roles, avatar, hiring access) changes rarely, but default
+// revalidation re-ran this loader's ~15 queries after every fetcher action and
+// search-param change. Only actions that can alter what it returns count.
+const LAYOUT_MUTATING_ACTION_PREFIXES = [
+  '/settings',
+  '/api/tour',
+  '/onboarding',
+  '/api/hiring/cycles',
+  '/logout',
+  '/members',
+]
+
+export function shouldRevalidate({ formAction, currentUrl, nextUrl, defaultShouldRevalidate }: ShouldRevalidateFunctionArgs) {
+  if (formAction) {
+    return LAYOUT_MUTATING_ACTION_PREFIXES.some((p) => formAction.startsWith(p))
+      ? defaultShouldRevalidate
+      : false
+  }
+  if (currentUrl.pathname === nextUrl.pathname) return false
+  return defaultShouldRevalidate
 }
 
 export default function AppLayoutRoute() {
-  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, isLabMentor: isLabMentorFlag, isEmbedded } = useLoaderData<typeof loader>()
+  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, isLabMentor: isLabMentorFlag, isEmbedded, tabless, focus } = useLoaderData<typeof loader>()
   const [searchParams] = useSearchParams()
   const location = useLocation()
   const matches = useMatches()
@@ -237,33 +271,36 @@ export default function AppLayoutRoute() {
     };
   }, [location.key]);
 
-  // Skip the sidebar shell when rendered inside a TabWorkspace iframe. This is
-  // where every routed page actually renders, so the breadcrumb trail (derived
-  // from the iframe document's matched routes) lives here — it picks up each
-  // detail route's `handle.breadcrumb` for the dynamic leaf crumb.
-  if (embedded) {
-    return (
-      <div className="min-h-dvh bg-page overflow-x-hidden">
-        <div
-          className={cn(
-            'w-full px-3 sm:px-6 lg:px-10 pb-6 sm:pb-8',
-            hasAreaSubnav ? 'pt-0' : 'pt-4 sm:pt-8 md:pt-12',
-          )}
-        >
-          <div className="mb-2 flex items-start justify-between gap-3 empty:mb-0">
-            <Breadcrumbs />
-            <PageDocButton suppressWhenPills />
-          </div>
-          <Outlet />
-        </div>
+  // Where every routed page actually renders — inside a TabWorkspace iframe
+  // (tab mode) or directly in the shell's main column (tabless mode). The
+  // breadcrumb trail lives here either way: it picks up each detail route's
+  // `handle.breadcrumb` for the dynamic leaf crumb.
+  const pageContent = (
+    <div
+      className={cn(
+        'w-full px-3 sm:px-6 lg:px-10 pb-6 sm:pb-8',
+        hasAreaSubnav ? 'pt-0' : 'pt-4 sm:pt-8 md:pt-12',
+      )}
+    >
+      <div className="mb-2 flex items-start justify-between gap-3 empty:mb-0">
+        <Breadcrumbs />
+        <PageDocButton suppressWhenPills />
       </div>
-    )
+      <Outlet />
+    </div>
+  )
+
+  // Skip the sidebar shell when rendered inside a TabWorkspace iframe.
+  if (embedded) {
+    return <div className="min-h-dvh bg-page overflow-x-hidden">{pageContent}</div>
   }
 
   return (
     <>
-      <Layout user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} hasHiringAccess={hasHiringAccess} isLabMentor={isLabMentorFlag} />
-      <LaunchWelcome firstName={user.firstName || user.email.split('@')[0]} hasCalendarLink={hasCalendarLink} shouldShowTour={shouldShowTour} />
+      <Layout user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} hasHiringAccess={hasHiringAccess} isLabMentor={isLabMentorFlag} focusMode={focus}>
+        {tabless ? <div className="flex-1 overflow-x-hidden">{pageContent}</div> : undefined}
+      </Layout>
+      <LaunchWelcome firstName={user.firstName || user.email.split('@')[0]} hasCalendarLink={hasCalendarLink} shouldShowTour={shouldShowTour} tabless={tabless} />
     </>
   )
 }

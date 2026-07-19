@@ -1,5 +1,5 @@
-@import url("https://fonts.googleapis.com/css2?family=Dosis:wght@600;700&family=Open+Sans:wght@300;400;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
-
+/* Fonts load via a <link> in root.tsx — an @import here would be discovered
+   only after the bundled CSS downloads, serializing the font fetch behind it. */
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 

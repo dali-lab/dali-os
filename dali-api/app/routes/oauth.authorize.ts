@@ -4,7 +4,6 @@ import {
   generateAuthorizationCode,
   getOAuthClient,
   isAllowedRedirectUri,
-  OAuthError,
 } from "~/lib/oauth";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { parseSessionId } from "~/lib/cookies";

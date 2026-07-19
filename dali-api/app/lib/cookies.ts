@@ -1,11 +1,11 @@
 // Cookie helpers for the single session credential. See SESSION_AUTH_PLAN.md.
 
+import { getAppEnv } from "./app-env";
+
 export const COOKIE_SID = "__dali_sid";
 
 export const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
 export const SESSION_COOKIE_MAX_AGE_SECONDS = SESSION_TTL_SECONDS;
-
-const isProduction = process.env.NODE_ENV === "production";
 
 export function setSessionCookie(headers: Headers, rawSessionId: string) {
   const parts = [
@@ -15,7 +15,7 @@ export function setSessionCookie(headers: Headers, rawSessionId: string) {
     "HttpOnly",
     "SameSite=Lax",
   ];
-  if (isProduction) parts.push("Secure");
+  if (getAppEnv() !== "dev") parts.push("Secure");
   headers.append("Set-Cookie", parts.join("; "));
 }
 

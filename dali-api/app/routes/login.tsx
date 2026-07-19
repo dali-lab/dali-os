@@ -4,15 +4,13 @@ import type { Route } from "./+types/login";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { checkRateLimit } from "~/lib/rate-limit";
-import { getApiBaseUrl, getCasBaseUrl } from "~/lib/app-env";
+import { getApiBaseUrl, getAppEnv, getCasBaseUrl } from "~/lib/app-env";
 import { buildGoogleAuthUrl } from "~/lib/google-oauth";
 
 const OAUTH_STATE_COOKIE = "__dali_oauth_state";
 
 const RATE_LIMIT_MAX = 5;
 const RATE_LIMIT_WINDOW_MS = 60_000;
-
-const isProduction = process.env.NODE_ENV === "production";
 
 export const meta: Route.MetaFunction = () => [{ title: "DALI OS · Sign in" }];
 
@@ -60,6 +58,7 @@ export async function action({ request }: Route.ActionArgs) {
   const state = randomBytes(32).toString("base64url");
   const apiBase = getApiBaseUrl();
   const casBase = getCasBaseUrl();
+  const secure = getAppEnv() !== "dev";
 
   const headers = new Headers();
 
@@ -72,7 +71,7 @@ export async function action({ request }: Route.ActionArgs) {
       "Max-Age=600",
       "HttpOnly",
       "SameSite=Lax",
-      ...(isProduction ? ["Secure"] : []),
+      ...(secure ? ["Secure"] : []),
     ].join("; ");
     headers.append("Set-Cookie", stateCookie);
     headers.set(
@@ -89,7 +88,7 @@ export async function action({ request }: Route.ActionArgs) {
     "Max-Age=600",
     "HttpOnly",
     "SameSite=Lax",
-    ...(isProduction ? ["Secure"] : []),
+    ...(secure ? ["Secure"] : []),
   ].join("; ");
   headers.append("Set-Cookie", stateCookie);
 

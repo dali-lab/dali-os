@@ -40,52 +40,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) return partnerRedirect;
 
-  const items = await prisma.notification.findMany({
-    // Hide invites whose meeting was Cancelled — they shouldn't appear in the
-    // banner, just as they're dropped from tasks and the bell. Also hide
-    // already-answered invites (Accepted/Declined/Tentative): once the user has
-    // RSVP'd, the card has served its purpose and shouldn't linger.
-    where: {
-      recipientUserId: auth.user.sub,
-      AND: [
-        {
-          OR: [
-            { scheduledMeetingId: null },
-            { scheduledMeeting: { status: { not: "Cancelled" } } },
-          ],
-        },
-        {
-          OR: [{ scheduledMeetingId: null }, { rsvp: null }],
-        },
-      ],
-    },
-    orderBy: { createdAt: "desc" },
-    take: 50,
-    select: {
-      id: true,
-      kind: true,
-      title: true,
-      body: true,
-      link: true,
-      readAt: true,
-      createdAt: true,
-      scheduledMeetingId: true,
-      rsvp: true,
-    },
-  });
-  const notifications: HomeNotification[] = items.map((n) => ({
-    id: n.id,
-    kind: n.kind,
-    title: n.title,
-    body: n.body,
-    link: n.link,
-    readAt: n.readAt ? n.readAt.toISOString() : null,
-    createdAt: n.createdAt.toISOString(),
-    scheduledMeetingId: n.scheduledMeetingId,
-    rsvp: n.rsvp,
-  }));
-  const tasks = await listOpenTasks(auth.user.sub);
-
   // Current week (Sunday→following Sunday) in the lab timezone, used both to
   // build the day columns and to window the calendar fetch.
   const now = new Date();
@@ -107,6 +61,59 @@ export async function loader({ request }: Route.LoaderArgs) {
     HOME_TZ,
   );
 
+  const [items, tasks, rawEvents, formsForYou] = await Promise.all([
+    prisma.notification.findMany({
+      // Hide invites whose meeting was Cancelled — they shouldn't appear in the
+      // banner, just as they're dropped from tasks and the bell. Also hide
+      // already-answered invites (Accepted/Declined/Tentative): once the user has
+      // RSVP'd, the card has served its purpose and shouldn't linger.
+      where: {
+        recipientUserId: auth.user.sub,
+        AND: [
+          {
+            OR: [
+              { scheduledMeetingId: null },
+              { scheduledMeeting: { status: { not: "Cancelled" } } },
+            ],
+          },
+          {
+            OR: [{ scheduledMeetingId: null }, { rsvp: null }],
+          },
+        ],
+      },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+      select: {
+        id: true,
+        kind: true,
+        title: true,
+        body: true,
+        link: true,
+        readAt: true,
+        createdAt: true,
+        scheduledMeetingId: true,
+        rsvp: true,
+      },
+    }),
+    listOpenTasks(auth.user.sub),
+    // Real events from the public DALI General Calendar (empty when unconfigured
+    // or on fetch failure — the panel then shows an empty grid + hint).
+    fetchGeneralCalendarEvents(weekStart, weekEnd),
+    listedFormsFor(auth.user.sub),
+  ]);
+
+  const notifications: HomeNotification[] = items.map((n) => ({
+    id: n.id,
+    kind: n.kind,
+    title: n.title,
+    body: n.body,
+    link: n.link,
+    readAt: n.readAt ? n.readAt.toISOString() : null,
+    createdAt: n.createdAt.toISOString(),
+    scheduledMeetingId: n.scheduledMeetingId,
+    rsvp: n.rsvp,
+  }));
+
   // Day columns (Sun..Sat) with the calendar date number shown in each header.
   const weekDays: WeekDayDTO[] = Array.from({ length: 7 }).map((_, i) => {
     const dayUtc = new Date(weekStart.getTime() + i * 86_400_000);
@@ -114,9 +121,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     return { num: dy.day };
   });
 
-  // Real events from the public DALI General Calendar (empty when unconfigured
-  // or on fetch failure — the panel then shows an empty grid + hint).
-  const rawEvents = await fetchGeneralCalendarEvents(weekStart, weekEnd);
   const weekEvents: HomeWeekEvent[] = [];
   for (const ev of rawEvents) {
     if (ev.allDay) continue; // all-day events don't map onto the hour grid
@@ -128,8 +132,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     const duration = Math.max(0.5, (ev.end.getTime() - ev.start.getTime()) / 3_600_000);
     weekEvents.push({ colIdx, startHour, duration, label: ev.summary });
   }
-
-  const formsForYou = await listedFormsFor(auth.user.sub);
 
   return { user: auth.user, notifications, tasks, weekDays, weekEvents, formsForYou };
 }

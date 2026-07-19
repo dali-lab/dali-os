@@ -270,6 +270,9 @@ export default [
   // Authenticated API endpoints (no layout)
   route("users/:id", "members/routes/users.$id.ts"),
 
+  // Global command-palette search (⌘K) — permission-scoped in the loader.
+  route("api/search", "routes/api.search.ts"),
+
   // Domain & member management API
   route("api/domains", "admin-console/routes/api.domains.ts"),
   route("api/domains/:domainId", "admin-console/routes/api.domains.$domainId.ts"),

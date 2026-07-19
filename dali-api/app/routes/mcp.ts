@@ -394,10 +394,6 @@ export async function loader() {
   );
 }
 
-// Exported so tests / introspection can list resource + prompt catalogs
-// without spinning up the full action handler.
-export { RESOURCES, RESOURCE_TEMPLATES, PROMPTS };
-
 export async function action({ request }: Route.ActionArgs) {
   const auth = await authenticateMcpRequest(request);
   if (!auth.ok) return auth.response;

@@ -124,7 +124,7 @@ export async function requireAuth(request: Request): Promise<AuthResult> {
   }
 
   // Fire-and-forget — a failed roll doesn't break the request.
-  rollSession(session.id).catch(() => {});
+  rollSession(session).catch(() => {});
 
   return {
     ok: true,
