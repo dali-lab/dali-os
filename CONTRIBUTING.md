@@ -10,16 +10,14 @@ See the [README](README.md) for the full local dev setup, commands, and environm
 
 ## Branching & PRs
 
-- All PRs target `dev`, not `staging` or `prod`.
+- All PRs target `staging`, not `prod`.
 - Branch names: `feature/<short-description>` or `fix/<short-description>`.
 - Write a clear PR description. If the PR touches the DB schema, call out any data-losing operations (drops, non-null columns without a default) explicitly.
 
-**Promotion to staging/prod**
+**Promotion to prod**
 
-- Once a PR is merged to `dev` it's promoted to `staging` via a workflow.
-  - Once the `dev` → `staging` PR has an approval, comment `/push` to trigger it.
-  - This is the only way to promote code to `staging`.
-- An identical workflow exists for `staging` → `prod`.
+- Code reaches `prod` via a `staging` → `prod` PR: comment `/push` (write access required) to fast-forward `prod`.
+- This is the only way to promote code to `prod`.
 
 ## Database migrations
 

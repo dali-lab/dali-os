@@ -3,7 +3,7 @@ name: PR Preview Deploy
 on:
   pull_request:
     types: [opened, synchronize, reopened]
-    branches: [dev]
+    branches: [staging]
 
 concurrency:
   group: preview-pr-${{ github.event.pull_request.number }}
@@ -13,7 +13,7 @@ env:
   PROJECT_ID: falling-morning-15858013
   PARENT_BRANCH_NAME: development
   FLY_ORG_OVERRIDE: ${{ vars.FLY_ORG }}
-  FLY_ORG_REFERENCE_APP: dali-api-dev
+  FLY_ORG_REFERENCE_APP: dali-api-staging
 
 jobs:
   prep-neon-db:

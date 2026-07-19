@@ -10,6 +10,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: superfly/flyctl-actions/setup-flyctl@master
-      - run: cd dali-api && flyctl deploy --build-only --config fly.dev.toml -a dali-api-dev
+      - run: cd dali-api && flyctl deploy --build-only --config fly.staging.toml -a dali-api-staging
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

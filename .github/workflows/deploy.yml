@@ -3,7 +3,6 @@ name: Fly Deploy
 on:
   push:
     branches:
-      - dev
       - staging
       - prod
 
@@ -21,18 +20,9 @@ jobs:
   prep-neon-db:
     name: Prepare Neon database (${{ github.ref_name }})
     runs-on: blacksmith-2vcpu-ubuntu-2404
-    if: github.ref_name == 'dev' || github.ref_name == 'staging'
+    if: github.ref_name == 'staging'
     steps:
-      - name: Wipe dev database
-        if: github.ref_name == 'dev'
-        env:
-          DEV_DATABASE_URL: ${{ secrets.DEV_DATABASE_URL }}
-        run: |
-          psql "$DEV_DATABASE_URL" -v ON_ERROR_STOP=1 \
-            -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
-
       - name: Restore staging database from prod
-        if: github.ref_name == 'staging'
         env:
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
           PROJECT_ID: falling-morning-15858013
