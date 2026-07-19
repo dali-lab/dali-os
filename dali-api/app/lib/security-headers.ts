@@ -1,4 +1,6 @@
-const isProduction = process.env.NODE_ENV === "production";
+import { getAppEnv } from "./app-env";
+
+const isDeployed = getAppEnv() !== "dev";
 
 type Directives = Record<string, string[] | true>;
 
@@ -39,7 +41,7 @@ function cspDirectives(): Directives {
 
   const collabOrigin = collabConnectSource();
   const s3Origin = s3ConnectSource();
-  const connectSrc = isProduction
+  const connectSrc = isDeployed
     ? [
         "'self'",
         ...(collabOrigin ? [collabOrigin] : []),
@@ -63,7 +65,7 @@ function cspDirectives(): Directives {
     "frame-ancestors": ["'self'"],
   };
 
-  if (isProduction) {
+  if (isDeployed) {
     directives["upgrade-insecure-requests"] = true;
   }
 
@@ -86,7 +88,7 @@ export function contentSecurityPolicy(): string {
  * which would prevent client hydration and break interactive behaviour.
  */
 function cspHeaderName(): string {
-  if (isProduction && process.env.CSP_ENFORCE === "1") {
+  if (isDeployed && process.env.CSP_ENFORCE === "1") {
     return "Content-Security-Policy";
   }
   return "Content-Security-Policy-Report-Only";
@@ -102,7 +104,7 @@ export function securityHeaders(): Record<string, string> {
     [cspHeaderName()]: contentSecurityPolicy(),
   };
 
-  if (isProduction) {
+  if (isDeployed) {
     headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains";
   }
 

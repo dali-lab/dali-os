@@ -88,7 +88,7 @@ export async function authenticateMcpRequest(
   }
 
   // Fire-and-forget. A roll/lastUsedAt failure doesn't break this request.
-  rollSession(session.id).catch(() => {});
+  rollSession(session).catch(() => {});
   prisma.oAuthGrant
     .update({ where: { id: grant.id }, data: { lastUsedAt: new Date() } })
     .catch(() => {});

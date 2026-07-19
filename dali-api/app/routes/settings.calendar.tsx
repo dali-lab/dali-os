@@ -2,7 +2,7 @@
 // settings page. Forms from /settings post back to this route.
 
 import { redirect } from "react-router";
-import { requireAuth, forbidden, unauthorized, redirectPartnerToPortal, isPartnerAccount } from "~/lib/auth";
+import { requireAuth, forbidden, unauthorized, isPartnerAccount } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { CalendarActionSchema } from "~/lib/calendar-schemas";
 import type { Route } from "./+types/settings.calendar";
