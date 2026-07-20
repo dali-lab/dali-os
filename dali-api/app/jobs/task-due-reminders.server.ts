@@ -127,13 +127,13 @@ export async function runTaskDueReminders({ now }: JobContext): Promise<JobResul
             ? {
                 title: `Task due tomorrow: ${task.title}`,
                 body: `Due ${when}.`,
-                link: `/projects/${task.projectId}?tab=work&task=${reminder.taskId}`,
+                link: `/projects/${task.projectId}?tab=board&task=${reminder.taskId}`,
                 dueAt: task.dueAt,
               }
             : {
                 title: `Task due now: ${task.title}`,
                 body: `Due ${when}.`,
-                link: `/projects/${task.projectId}?tab=work&task=${reminder.taskId}`,
+                link: `/projects/${task.projectId}?tab=board&task=${reminder.taskId}`,
                 dueAt: task.dueAt,
               },
         recipients: [{ userId: reminder.userId }],

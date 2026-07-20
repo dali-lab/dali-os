@@ -41,7 +41,7 @@ describe("notifyTaskAssigned", () => {
     expect(call.eventType).toBe("task.assigned");
     expect(call.createdByUserId).toBe("u1");
     expect(call.message.title).toBe("Task assigned: Ship it");
-    expect(call.message.link).toBe("/projects/p1?tab=work&task=t1");
+    expect(call.message.link).toBe("/projects/p1?tab=board&task=t1");
     expect(call.recipients).toEqual([{ userId: "u2" }]);
   });
 

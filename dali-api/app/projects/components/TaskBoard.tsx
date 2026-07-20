@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router";
+import { useRevalidator, useSearchParams } from "react-router";
 import { Button } from "~/components/ui/Button";
 import type { DragEndEvent } from "@dnd-kit/core";
-import { Archive, GripVertical, X } from "lucide-react";
+import { Archive, Github, X } from "lucide-react";
+import { Confetti } from "~/components/Confetti";
 import { Modal } from "~/components/Modal";
 import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
 import { useOptimisticBoardMove } from "~/components/board/useOptimisticBoardMove";
 import {
   buildTaskBoard,
+  moveTaskInBoard,
   nextPositionInColumn,
+  isTaskStatus,
   TASK_STATUSES,
   TASK_STATUS_LABELS,
   type TaskBoardOptions,
@@ -22,7 +25,7 @@ type Props = {
   projectId: string;
   initialTasks: TaskCardModel[];
   options: TaskBoardOptions;
-  /** Admin/Core can drag + create. Others get a read-only board. */
+  /** Core/Admin or anyone staffed on the project can drag + create. Others get a read-only board. */
   canManage: boolean;
   // The acting user — stamped onto optimistically-created cards as
   // createdBy so the "Created by" line in the modal is correct before the
@@ -39,9 +42,13 @@ const PRIORITY_TONE: Record<Priority, string> = {
   Urgent: "text-accent-coral font-semibold",
 };
 
-// New tasks always land in the first column ("To do"); they can be dragged
-// onward from there. One add affordance for the whole board, not per column.
+// New tasks land in the first column ("To do") unless the modal picked a
+// status-affecting sprint; they can be dragged onward from there. One add
+// affordance for the whole board, not per column.
 const CREATE_STATUS: TaskStatus = TASK_STATUSES[0];
+
+// The `?sprint=` filter value for backlog (tasks with no sprint).
+const BACKLOG = "backlog";
 
 export function TaskBoard({
   projectId,
@@ -51,26 +58,41 @@ export function TaskBoard({
   currentUserId,
   currentUserName,
 }: Props) {
-  // Optimistic board state + rollback live in the shared hook. This board solely
-  // owns its task state; the parent project route revalidates on unrelated edits
-  // (sprint changes, project rename, fetcher submits), which would otherwise
-  // clobber an optimistic create/move/edit — so opt out of server adoption.
+  // Optimistic board state + rollback live in the shared hook. Server data is
+  // adopted whenever it changes and no save is in flight, so teammate edits,
+  // GitHub webhook updates, and sprint rollovers appear without a manual
+  // reload; our own mutations trigger a revalidation below to close the loop.
   const { items: tasks, move, error, setError, setItems } =
-    useOptimisticBoardMove<TaskCardModel>(initialTasks, { adoptServerItems: false });
+    useOptimisticBoardMove<TaskCardModel>(initialTasks);
   const [isCreating, setIsCreating] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
+  const [celebrate, setCelebrate] = useState(false);
+  const revalidator = useRevalidator();
+
+  // Pull fresh board state after each successful mutation (so GitHub issue
+  // links etc. surface) and when the window regains focus (so someone else's
+  // edits appear when you come back to the tab).
+  const refresh = useCallback(() => {
+    if (revalidator.state === "idle") void revalidator.revalidate();
+  }, [revalidator]);
+  useEffect(() => {
+    window.addEventListener("focus", refresh);
+    return () => window.removeEventListener("focus", refresh);
+  }, [refresh]);
 
   // The open task is tracked in the URL (`?task=<id>`) so GitHub issue mirrors
-  // and other external links can deep-link straight to a task.
+  // and other external links can deep-link straight to a task. The sprint
+  // filter lives in `?sprint=` for the same reason (shareable board slices).
   const [searchParams, setSearchParams] = useSearchParams();
   const openTaskId = searchParams.get("task");
-  const setOpenTaskId = useCallback(
-    (id: string | null) => {
+  const sprintFilter = searchParams.get("sprint");
+  const setParam = useCallback(
+    (key: string, value: string | null) => {
       setSearchParams(
         (prev) => {
           const next = new URLSearchParams(prev);
-          if (id) next.set("task", id);
-          else next.delete("task");
+          if (value) next.set(key, value);
+          else next.delete(key);
           return next;
         },
         { replace: true, preventScrollReset: true },
@@ -78,47 +100,77 @@ export function TaskBoard({
     },
     [setSearchParams],
   );
+  const setOpenTaskId = useCallback(
+    (id: string | null) => setParam("task", id),
+    [setParam],
+  );
 
-  const board = useMemo(() => buildTaskBoard(tasks), [tasks]);
+  const filteredTasks = useMemo(() => {
+    if (!sprintFilter) return tasks;
+    if (sprintFilter === BACKLOG) return tasks.filter((t) => t.sprintId === null);
+    return tasks.filter((t) => t.sprintId === sprintFilter);
+  }, [tasks, sprintFilter]);
+
+  const board = useMemo(() => buildTaskBoard(filteredTasks), [filteredTasks]);
   const openTask = openTaskId ? tasks.find((t) => t.id === openTaskId) ?? null : null;
 
   // Apply an optimistic local patch, then PATCH the row. On failure the hook
   // restores the snapshot and surfaces the error. Used by both inline (card)
-  // edits and the modal.
-  async function patchTask(taskId: string, patch: Partial<TaskCardModel>) {
+  // edits and the modal; the returned result lets the modal stay open and
+  // show the error inline instead of closing over a failed save.
+  function patchTask(
+    taskId: string,
+    patch: Partial<TaskCardModel>,
+  ): Promise<{ ok: boolean; error?: string }> {
+    return new Promise((resolve) => {
+      move(
+        (cur) => cur.map((t) => (t.id === taskId ? { ...t, ...patch } : t)),
+        async () => {
+          const body: Record<string, unknown> = {};
+          if ("dueAt" in patch) body.dueAt = patch.dueAt;
+          if ("domain" in patch) body.domainId = patch.domain?.id ?? null;
+          if ("assignees" in patch)
+            body.assigneeIds = (patch.assignees ?? []).map((a) => a.id);
+          if ("title" in patch) body.title = patch.title;
+          if ("description" in patch) body.description = patch.description;
+          if ("priority" in patch) body.priority = patch.priority;
+          if ("sprintId" in patch) body.sprintId = patch.sprintId ?? null;
+          if ("epicId" in patch) body.epicId = patch.epicId ?? null;
+          if ("checklist" in patch) body.checklist = patch.checklist ?? null;
+          const res = await fetch(`/api/tasks/${taskId}`, {
+            method: "PATCH",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          if (!res.ok) {
+            const j = (await res.json().catch(() => ({}))) as { error?: string };
+            const message = j.error ?? `Request failed: ${res.status}`;
+            resolve({ ok: false, error: message });
+            throw new Error(message);
+          }
+          refresh();
+          resolve({ ok: true });
+        },
+      );
+    });
+  }
+
+  async function deleteTask(taskId: string) {
+    setOpenTaskId(null);
     move(
-      (cur) => cur.map((t) => (t.id === taskId ? { ...t, ...patch } : t)),
+      (cur) => cur.filter((t) => t.id !== taskId),
       async () => {
-        const body: Record<string, unknown> = {};
-        if ("dueAt" in patch) body.dueAt = patch.dueAt;
-        if ("domain" in patch) body.domainId = patch.domain?.id ?? null;
-        if ("assignees" in patch)
-          body.assigneeIds = (patch.assignees ?? []).map((a) => a.id);
-        if ("title" in patch) body.title = patch.title;
-        if ("description" in patch) body.description = patch.description;
-        if ("priority" in patch) body.priority = patch.priority;
         const res = await fetch(`/api/tasks/${taskId}`, {
-          method: "PATCH",
+          method: "DELETE",
           credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
         });
         if (!res.ok) {
           const j = (await res.json().catch(() => ({}))) as { error?: string };
           throw new Error(j.error ?? `Request failed: ${res.status}`);
         }
+        refresh();
       },
-    );
-  }
-
-  // Optimistically drop the card, then DELETE the row. The hook restores it
-  // on failure and surfaces the error. Close the modal first so the deleted
-  // task doesn't briefly render behind a rollback.
-  function deleteTask(taskId: string) {
-    setOpenTaskId(null);
-    move(
-      (cur) => cur.filter((t) => t.id !== taskId),
-      () => persistDelete(taskId),
     );
   }
 
@@ -132,20 +184,45 @@ export function TaskBoard({
     const taskId = data?.taskId;
     const fromStatus = data?.fromStatus;
     if (!taskId || !fromStatus) return;
-    const toStatus = overId as TaskStatus;
-    if (toStatus === fromStatus) return;
 
-    const position = nextPositionInColumn(board, toStatus);
+    let toStatus: TaskStatus;
+    let targetIndex: number;
+    if (isTaskStatus(overId)) {
+      toStatus = overId;
+      targetIndex = -1; // dropped on the column shell: append
+      if (toStatus === fromStatus && !sprintFilter) {
+        // Same column, no card target — nothing to reorder.
+        return;
+      }
+    } else {
+      const overTask = tasks.find((t) => t.id === overId);
+      if (!overTask || overTask.id === taskId) return;
+      toStatus = overTask.status;
+      if (sprintFilter) {
+        // With a sprint slice active the visible order isn't the full column
+        // order, so card-relative indexes would scramble hidden tasks. Allow
+        // status moves (append) but not reordering.
+        if (toStatus === fromStatus) return;
+        targetIndex = -1;
+      } else {
+        targetIndex = buildTaskBoard(tasks)[toStatus].findIndex(
+          (t) => t.id === overId,
+        );
+      }
+    }
+    if (toStatus === fromStatus && targetIndex === -1 && sprintFilter) return;
+
+    const orderedIds = moveTaskInBoard(tasks, taskId, toStatus, targetIndex).orderedIds;
     move(
-      (cur) =>
-        cur.map((t) => (t.id === taskId ? { ...t, status: toStatus, position } : t)),
-      () => persistMove(taskId, toStatus, position),
+      (cur) => moveTaskInBoard(cur, taskId, toStatus, targetIndex).tasks,
+      () => persistMove(taskId, toStatus, orderedIds).then(refresh),
     );
+    if (toStatus === "Done" && fromStatus !== "Done") setCelebrate(true);
   }
 
-  // Create from the modal. The POST endpoint only takes title/status/dueAt, so
-  // priority/domain/assignees are applied with a follow-up PATCH via the same
-  // optimistic path the card edits use.
+  // Create from the modal. The POST endpoint applies title/status/dueAt/
+  // sprint/epic; priority/domain/assignees are applied with a follow-up PATCH
+  // via the same optimistic path the card edits use.
   async function handleCreate(values: NewTaskValues) {
     setError(null);
     const res = await fetch(`/api/projects/${projectId}/tasks`, {
@@ -157,6 +234,8 @@ export function TaskBoard({
         description: values.description,
         status: CREATE_STATUS,
         dueAt: values.dueAt,
+        sprintId: values.sprintId,
+        epicId: values.epicId,
         ...(values.github ? { github: values.github } : {}),
       }),
     });
@@ -184,14 +263,15 @@ export function TaskBoard({
         description: values.description,
         status: CREATE_STATUS,
         priority: values.priority,
-        position: nextPositionInColumn(board, CREATE_STATUS),
+        position: nextPositionInColumn(buildTaskBoard(cur), CREATE_STATUS),
         dueAt: values.dueAt,
-        epicId: null,
-        sprintId: null,
+        epicId: values.epicId,
+        sprintId: values.sprintId,
+        checklist: values.checklist ?? null,
         assignees,
         domain,
         // The GH issue is filed async after we ack; the link surfaces on the
-        // next loader refresh. Null here means no badge in the meantime.
+        // next revalidation. Null here means no badge in the meantime.
         githubIssueUrl: null,
         githubIssueNumber: null,
         createdBy: { id: currentUserId, name: currentUserName },
@@ -208,6 +288,8 @@ export function TaskBoard({
     if (assignees.length > 0) patch.assignees = assignees;
     if (Object.keys(patch).length > 0) {
       await patchTask(id, patch);
+    } else {
+      refresh();
     }
   }
 
@@ -219,23 +301,49 @@ export function TaskBoard({
     listClassName: "flex flex-col gap-2 p-2 min-h-[360px]",
   }));
 
+  // Sprint pills: Active first, then Planned, then Closed (options.sprints
+  // arrive in that order from the loader), plus Backlog for sprint-less tasks.
+  const showSprintFilter = options.sprints.length > 0;
+
   return (
     <div className="flex flex-col gap-3">
-      {canManage && (
-        <div className="flex items-center gap-2">
-          <Button variant="primary" size="sm" onClick={() => setIsCreating(true)}>
-            + Add task
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => setShowArchived(true)}
-          >
-            <Archive className="w-3.5 h-3.5" />
-            Archived
-          </Button>
-        </div>
-      )}
+      <Confetti trigger={celebrate} onFire={() => setCelebrate(false)} />
+      <div className="flex flex-wrap items-center gap-2">
+        {canManage && (
+          <>
+            <Button variant="primary" size="sm" onClick={() => setIsCreating(true)}>
+              + Add task
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => setShowArchived(true)}>
+              <Archive className="w-3.5 h-3.5" />
+              Archived
+            </Button>
+          </>
+        )}
+        {showSprintFilter && (
+          <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filter by sprint">
+            <SprintPill
+              label="All"
+              active={sprintFilter === null}
+              onClick={() => setParam("sprint", null)}
+            />
+            {options.sprints.map((s) => (
+              <SprintPill
+                key={s.id}
+                label={s.name}
+                activeSprint={s.status === "Active"}
+                active={sprintFilter === s.id}
+                onClick={() => setParam("sprint", sprintFilter === s.id ? null : s.id)}
+              />
+            ))}
+            <SprintPill
+              label="Backlog"
+              active={sprintFilter === BACKLOG}
+              onClick={() => setParam("sprint", sprintFilter === BACKLOG ? null : BACKLOG)}
+            />
+          </div>
+        )}
+      </div>
 
       <KanbanBoard<TaskCardModel>
         id="task-board"
@@ -243,12 +351,20 @@ export function TaskBoard({
         getCardId={(t) => t.id}
         getCardData={(t) => ({ taskId: t.id, fromStatus: t.status })}
         draggable={canManage}
+        sortable
         onDragEnd={handleDragEnd}
         error={error}
+        renderOverlay={(activeId) => {
+          const t = activeId ? tasks.find((x) => x.id === activeId) : null;
+          return t ? (
+            <div className="w-60 rotate-1 shadow-xl">
+              <TaskCard card={t} isDragging={false} onOpen={() => {}} />
+            </div>
+          ) : null;
+        }}
         renderCard={(card, { isDragging, dragHandleProps }) => (
           <TaskCard
             card={card}
-            draggable={canManage}
             dragHandleProps={dragHandleProps}
             isDragging={isDragging}
             onOpen={() => setOpenTaskId(card.id)}
@@ -271,6 +387,9 @@ export function TaskBoard({
         <TaskModal
           options={options}
           canManage={canManage}
+          defaultSprintId={
+            sprintFilter && sprintFilter !== BACKLOG ? sprintFilter : null
+          }
           onClose={() => setIsCreating(false)}
           onCreate={handleCreate}
         />
@@ -394,23 +513,52 @@ function ArchivedTasksModal({
   );
 }
 
-// The drag handle and the card body are split so the body's click can open
-// the modal without dnd-kit's pointer listeners swallowing it. Listeners go
-// only on the GripVertical handle; the rest of the card is a role="button"
-// div (not a real <button>, whose contents browsers refuse to let you
-// select) so the title text can be drag-selected/copied. A drag that leaves
-// a text selection inside the card is treated as a select, not an open.
-// Keyboard activation (Enter/Space) still opens the modal.
+function SprintPill({
+  label,
+  active,
+  activeSprint = false,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  activeSprint?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition-colors ${
+        active
+          ? "border-accent-coral bg-accent-coral/10 text-accent-coral"
+          : "border-border text-muted-foreground hover:bg-muted/30"
+      }`}
+    >
+      {activeSprint && (
+        <span aria-hidden className="w-1.5 h-1.5 rounded-full bg-accent-teal" />
+      )}
+      {label}
+    </button>
+  );
+}
+
+// The whole card is the drag source: the KanbanBoard pointer sensor's
+// activation distance disambiguates click from drag, so a press-and-release
+// still opens the modal while a press-and-move starts a drag. The one
+// exception is the title, which swallows pointerdown so its text can be
+// drag-selected/copied (a real <button> body would refuse selection
+// entirely); a click that ended a selection inside the card is treated as a
+// select, not an open. Keyboard activation (Enter/Space) also opens the
+// modal so the card stays operable without a pointer.
 function TaskCard({
   card,
-  draggable,
-  dragHandleProps,
+  dragHandleProps = {},
   isDragging,
   onOpen,
 }: {
   card: TaskCardModel;
-  draggable: boolean;
-  dragHandleProps: Record<string, unknown>;
+  dragHandleProps?: Record<string, unknown>;
   isDragging: boolean;
   onOpen: () => void;
 }) {
@@ -420,6 +568,9 @@ function TaskCard({
     card.status !== "Done" &&
     card.status !== "Cancelled" &&
     new Date(card.dueAt).getTime() < Date.now();
+
+  const checklist = Array.isArray(card.checklist) ? card.checklist : null;
+  const checklistDone = checklist?.filter((i) => i.done).length ?? 0;
 
   // Don't open the task if the click ended a text selection inside this card
   // (e.g. the user drag-selected the title to copy it).
@@ -439,19 +590,11 @@ function TaskCard({
 
   return (
     <div
+      {...dragHandleProps}
       className={`border border-border rounded-md bg-background text-sm flex focus-within:ring-2 focus-within:ring-accent-coral/30 ${
-        isDragging ? "opacity-60 shadow-lg" : "hover:bg-muted/20"
+        isDragging ? "opacity-40" : "hover:bg-muted/20"
       }`}
     >
-      {draggable && (
-        <div
-          {...dragHandleProps}
-          aria-label="Drag task"
-          className="flex-shrink-0 px-1 py-2.5 cursor-grab active:cursor-grabbing text-muted-foreground/60 hover:text-muted-foreground"
-        >
-          <GripVertical className="w-4 h-4" />
-        </div>
-      )}
       <div
         ref={bodyRef}
         role="button"
@@ -463,9 +606,14 @@ function TaskCard({
             onOpen();
           }
         }}
-        className="flex-1 min-w-0 text-left p-2.5 pl-1.5 cursor-pointer select-text focus:outline-none"
+        className="flex-1 min-w-0 text-left p-2.5 cursor-pointer focus:outline-none"
       >
-        <div className="text-foreground">{card.title}</div>
+        <div
+          className="text-foreground select-text"
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          {card.title}
+        </div>
         <div className="mt-1.5 flex items-center justify-between gap-2">
           <span className={`text-[11px] ${PRIORITY_TONE[card.priority]}`}>
             {card.priority}
@@ -493,6 +641,16 @@ function TaskCard({
               {card.domain.name}
             </span>
           )}
+          {checklist && checklist.length > 0 && (
+            <span className="text-[11px] px-1.5 py-0.5 rounded-md border border-border text-muted-foreground">
+              {checklistDone}/{checklist.length}
+            </span>
+          )}
+          {card.githubIssueNumber !== null && (
+            <span className="inline-flex items-center gap-0.5 text-[11px] text-muted-foreground">
+              <Github aria-hidden className="w-3 h-3" />#{card.githubIssueNumber}
+            </span>
+          )}
         </div>
       </div>
     </div>
@@ -513,24 +671,13 @@ function formatDuePill(iso: string): string {
 async function persistMove(
   taskId: string,
   status: TaskStatus,
-  position: number,
+  orderedIds: string[],
 ): Promise<void> {
   const res = await fetch(`/api/tasks/${taskId}/move`, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ status, position }),
-  });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? `Request failed: ${res.status}`);
-  }
-}
-
-async function persistDelete(taskId: string): Promise<void> {
-  const res = await fetch(`/api/tasks/${taskId}`, {
-    method: "DELETE",
-    credentials: "include",
+    body: JSON.stringify({ status, orderedIds }),
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };

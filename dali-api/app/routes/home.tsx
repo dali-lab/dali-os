@@ -2,6 +2,7 @@ import { useState, type MouseEvent } from "react";
 import { redirect, useLoaderData, useRevalidator } from "react-router";
 import {
   ListTodo,
+  ListChecks,
   Check,
   CalendarDays,
   ExternalLink,
@@ -61,7 +62,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     HOME_TZ,
   );
 
-  const [items, tasks, rawEvents, formsForYou] = await Promise.all([
+  const [items, tasks, rawEvents, formsForYou, assignedTasks] = await Promise.all([
     prisma.notification.findMany({
       // Hide invites whose meeting was Cancelled — they shouldn't appear in the
       // banner, just as they're dropped from tasks and the bell. Also hide
@@ -100,7 +101,36 @@ export async function loader({ request }: Route.LoaderArgs) {
     // or on fetch failure — the panel then shows an empty grid + hint).
     fetchGeneralCalendarEvents(weekStart, weekEnd),
     listedFormsFor(auth.user.sub),
+    // Open board tasks assigned to the viewer, across all their projects
+    // (Archived projects are retired — their tasks are noise here). One
+    // bounded query: soonest deadline first (undated last), then priority.
+    prisma.task.findMany({
+      where: {
+        status: { in: ["Todo", "InProgress", "InReview"] },
+        assignees: { some: { userId: auth.user.sub } },
+        project: { status: { not: "Archived" } },
+      },
+      orderBy: [{ dueAt: { sort: "asc", nulls: "last" } }, { priority: "desc" }],
+      take: 8,
+      select: {
+        id: true,
+        title: true,
+        dueAt: true,
+        priority: true,
+        projectId: true,
+        project: { select: { name: true } },
+      },
+    }),
   ]);
+
+  const myProjectTasks: MyProjectTask[] = assignedTasks.map((t) => ({
+    id: t.id,
+    title: t.title,
+    projectId: t.projectId,
+    projectName: t.project.name,
+    dueAt: t.dueAt ? t.dueAt.toISOString() : null,
+    priority: t.priority,
+  }));
 
   const notifications: HomeNotification[] = items.map((n) => ({
     id: n.id,
@@ -133,8 +163,17 @@ export async function loader({ request }: Route.LoaderArgs) {
     weekEvents.push({ colIdx, startHour, duration, label: ev.summary });
   }
 
-  return { user: auth.user, notifications, tasks, weekDays, weekEvents, formsForYou };
+  return { user: auth.user, notifications, tasks, myProjectTasks, weekDays, weekEvents, formsForYou };
 }
+
+type MyProjectTask = {
+  id: string;
+  title: string;
+  projectId: string;
+  projectName: string;
+  dueAt: string | null;
+  priority: "Low" | "Normal" | "High" | "Urgent";
+};
 
 type WeekDayDTO = { num: number };
 type HomeWeekEvent = {
@@ -145,7 +184,7 @@ type HomeWeekEvent = {
 };
 
 export default function Home() {
-  const { user, notifications, tasks, weekDays, weekEvents, formsForYou } =
+  const { user, notifications, tasks, myProjectTasks, weekDays, weekEvents, formsForYou } =
     useLoaderData<typeof loader>();
   const firstName = user.firstName || user.email.split("@")[0];
 
@@ -161,6 +200,8 @@ export default function Home() {
       </header>
 
       <AttentionBanner tasks={tasks} notifications={notifications} />
+
+      <MyTasksPanel tasks={myProjectTasks} />
 
       <FormsForYouPanel forms={formsForYou} />
 
@@ -201,6 +242,84 @@ function FormsForYouPanel({ forms }: { forms: ListedForm[] }) {
       </div>
     </div>
   );
+}
+
+/* ------------------------------------------------------------------ */
+/* My tasks — open project-board tasks assigned to the viewer, soonest  */
+/* deadline first. Each row deep-links to the task modal on its          */
+/* project board. Collapses to nothing when the viewer has none.         */
+/* ------------------------------------------------------------------ */
+
+function MyTasksPanel({ tasks }: { tasks: MyProjectTask[] }) {
+  if (tasks.length === 0) return null;
+  return (
+    <div className="bg-card border border-border shadow-brand-1 rounded-lg p-3">
+      <div className="flex items-center gap-2 mb-2">
+        <ListChecks className="w-4 h-4 text-accent-coral" />
+        <span className="font-heading font-semibold text-sm text-foreground">
+          My tasks
+        </span>
+      </div>
+      <div className="flex flex-col gap-1">
+        {tasks.map((t) => {
+          const url = `/projects/${t.projectId}?tab=board&task=${t.id}`;
+          const overdue =
+            t.dueAt != null && new Date(t.dueAt).getTime() < Date.now();
+          return (
+            <a
+              key={t.id}
+              href={url}
+              onClick={(e) => openTaskLink(e, url, t.title)}
+              className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm hover:bg-muted/50 transition-colors"
+            >
+              <span className="truncate text-foreground">{t.title}</span>
+              <span className="truncate text-xs text-muted-foreground flex-shrink-0 max-w-[30%]">
+                {t.projectName}
+              </span>
+              <span className="ml-auto flex items-center gap-1.5 flex-shrink-0">
+                {/* Low/Normal are the unremarkable default — only flag work
+                    that's High or Urgent, in the board's priority tones. */}
+                {(t.priority === "High" || t.priority === "Urgent") && (
+                  <span
+                    className={`text-[11px] ${
+                      t.priority === "Urgent"
+                        ? "text-accent-coral font-semibold"
+                        : "text-accent-coral"
+                    }`}
+                  >
+                    {t.priority}
+                  </span>
+                )}
+                {t.dueAt && (
+                  <span
+                    className={`text-[11px] px-1.5 py-0.5 rounded-md border ${
+                      overdue
+                        ? "border-accent-coral/40 text-accent-coral bg-accent-coral/10"
+                        : "border-border text-muted-foreground"
+                    }`}
+                  >
+                    Due {formatDuePill(t.dueAt)}
+                  </span>
+                )}
+              </span>
+            </a>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// Short label for the due pill: "Mar 12" if it's this year, otherwise
+// "Mar 12, 2027" — mirrors the TaskBoard card pill.
+function formatDuePill(iso: string): string {
+  const d = new Date(iso);
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    ...(sameYear ? {} : { year: "numeric" }),
+  });
 }
 
 /* ------------------------------------------------------------------ */

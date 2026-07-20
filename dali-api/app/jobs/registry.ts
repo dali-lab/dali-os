@@ -194,7 +194,7 @@ export const JOBS: JobDefinition[] = [
   {
     name: "sprint-lifecycle",
     description:
-      "Closes Active sprints past their end date, rolls unfinished tasks to the next Planned sprint (else the backlog), and posts a summary to the project's Slack channel.",
+      "Activates Planned sprints at their start date. Closes Active sprints past their end date, rolls unfinished tasks to the next Planned sprint (else the backlog), and posts a summary to the project's Slack channel.",
     intervalMinutes: 60,
     handler: runSprintLifecycle,
   },
