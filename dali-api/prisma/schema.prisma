@@ -2520,6 +2520,7 @@ model Task {
 }
 
 enum TaskStatus {
+  Backlog
   Todo
   InProgress
   InReview
