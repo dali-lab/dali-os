@@ -96,11 +96,13 @@ describe("runSearch — tasks", () => {
 
     const results = await runSearch({ userId: "u1", roles: MEMBER, q: "query" });
 
-    // Tasks of Archived projects are excluded, like project search itself.
+    // Tasks of Archived projects are excluded, like project search itself;
+    // auto-archived tasks are off the board so they're out here too.
     expect(mockPrisma.task.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
           title: like("query"),
+          archivedAt: null,
           project: { status: { not: "Archived" } },
         },
       }),

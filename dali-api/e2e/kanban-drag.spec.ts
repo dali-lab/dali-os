@@ -47,7 +47,9 @@ async function dragHandleTo(page: Page, handle: Locator, target: Locator) {
   }
 
   const startX = handleBox.x + handleBox.width / 2;
-  const startY = handleBox.y + handleBox.height / 2;
+  // Grab the lower portion of the card: the title line swallows pointerdown
+  // so its text stays drag-selectable, so a drag must start below it.
+  const startY = handleBox.y + handleBox.height * 0.75;
   // Drop at the destination column's horizontal centre, on the same row band as
   // the (now visible) handle. The columns share a row, so the handle's y is
   // inside the destination column's visible area too — no risk of aiming

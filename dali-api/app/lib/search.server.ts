@@ -133,7 +133,9 @@ async function searchTasks(q: string, like: Like): Promise<SearchResult[]> {
   // Reuses the "project" result type so the palette needs no new icon/section;
   // the url deep-links to the task modal on the project's Work tab.
   const rows = await prisma.task.findMany({
-    where: { title: like, project: { status: { not: "Archived" } } },
+    // archivedAt: auto-archived Done/Cancelled tasks are off the board, so
+    // they shouldn't surface here either.
+    where: { title: like, archivedAt: null, project: { status: { not: "Archived" } } },
     select: {
       id: true,
       title: true,

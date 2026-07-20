@@ -76,6 +76,7 @@ import { runSprintLifecycle } from "~/jobs/sprint-lifecycle.server";
 import { runFormWindows } from "~/jobs/form-windows.server";
 import { runInterviewReminders } from "~/jobs/interview-reminders.server";
 import { runStandupPrompts } from "~/jobs/standup-prompts.server";
+import { runTaskAutoArchive } from "~/jobs/task-auto-archive.server";
 
 export const JOBS: JobDefinition[] = [
   {
@@ -230,6 +231,23 @@ export const JOBS: JobDefinition[] = [
       },
     ],
     handler: runRetentionJanitor,
+  },
+  {
+    name: "task-auto-archive",
+    description:
+      "Archives Done/Cancelled tasks left untouched past the threshold so they drop off the project board.",
+    intervalMinutes: 1440,
+    settings: [
+      {
+        key: "archiveAfterDays",
+        label: "Archive after (idle)",
+        unit: "days",
+        min: 1,
+        max: 365,
+        default: 30,
+      },
+    ],
+    handler: runTaskAutoArchive,
   },
 ];
 

@@ -252,6 +252,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         },
       },
       tasks: {
+        // Archived tasks (auto-archived Done/Cancelled) drop off the board.
+        where: { archivedAt: null },
         orderBy: { createdAt: "asc" },
         select: {
           id: true,

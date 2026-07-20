@@ -94,6 +94,9 @@ export function TaskModal({
   const [newItemText, setNewItemText] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // Inline delete confirm (edit mode) — no browser dialog; the parent
+  // removes the card optimistically and closes the modal.
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   // Auto-grow the title textarea so long titles wrap into view instead of
   // scrolling horizontally inside a single-line input.
@@ -284,16 +287,6 @@ export function TaskModal({
     } finally {
       setSaving(false);
     }
-  }
-
-  function handleDelete() {
-    if (!task || !onDelete) return;
-    const mirrored = github.url !== null;
-    const message = mirrored
-      ? `Delete "${task.title}"? Its checklist and comments are deleted too. The linked GitHub issue is left as-is on GitHub.`
-      : `Delete "${task.title}"? Its checklist and comments are deleted too.`;
-    if (!window.confirm(message)) return;
-    onDelete();
   }
 
   // Toggling a checkbox saves immediately (highest-frequency action); text
@@ -778,15 +771,37 @@ export function TaskModal({
         {saveError && <p className="text-xs text-accent-coral">{saveError}</p>}
 
         <div className="flex items-center gap-2 pt-2 border-t border-border">
-          {!isCreate && canManage && onDelete && (
-            <button
-              type="button"
-              onClick={handleDelete}
-              className="mr-auto text-xs text-destructive hover:underline"
-            >
-              Delete task…
-            </button>
-          )}
+          {!isCreate && canManage && onDelete &&
+            (confirmingDelete ? (
+              <div className="mr-auto flex items-center gap-2 text-sm">
+                <span className="text-muted-foreground">
+                  Delete this task?
+                  {task?.githubIssueNumber != null && " Its GitHub issue stays open."}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onDelete()}
+                  className="font-medium text-destructive hover:underline"
+                >
+                  Delete
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmingDelete(false)}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  Keep
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmingDelete(true)}
+                className="mr-auto text-sm font-medium text-destructive hover:underline"
+              >
+                Delete
+              </button>
+            ))}
           <div className="ml-auto flex gap-2">
             <button
               type="button"

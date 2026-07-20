@@ -2488,6 +2488,12 @@ model Task {
   // JSON shape: [{ "text": "...", "done": false }]
   checklist Json?
 
+  // Soft archive. Done/Cancelled tasks left untouched past the
+  // task-auto-archive job's threshold get stamped here and drop off the
+  // board (the loader filters archivedAt: null). The row is preserved, not
+  // deleted, so it stays reportable/restorable.
+  archivedAt DateTime?
+
   // Optional mirror to a GitHub issue. All three populated together when the
   // task was created with the "Create GitHub issue" toggle on; null when not
   // mirrored. The (githubRepo, githubIssueNumber) pair is the lookup key for
