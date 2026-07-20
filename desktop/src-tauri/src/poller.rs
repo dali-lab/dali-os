@@ -16,7 +16,8 @@ use serde::Deserialize;
 use tauri::{AppHandle, Manager};
 
 use crate::{
-    config, keychain, notify,
+    config, keychain,
+    notify::{self, Banner},
     state::{AppState, AuthState, RecentNotif},
     tray, window,
 };
@@ -51,6 +52,12 @@ struct NotifItem {
     urgent: bool,
     #[serde(rename = "readAt", default)]
     read_at: Option<String>,
+    // Meeting-invite fields: an invite awaiting an RSVP gets RSVP action
+    // buttons on its banner.
+    #[serde(rename = "scheduledMeetingId", default)]
+    scheduled_meeting_id: Option<String>,
+    #[serde(default)]
+    rsvp: Option<String>,
 }
 
 enum SyncOutcome {
@@ -101,13 +108,7 @@ pub fn spawn(app: AppHandle) {
 // Keychain Session expired/revoked → stop; surface re-pair.
 fn expire(app: &AppHandle) {
     app.state::<AppState>().set_auth(AuthState::TokenExpired);
-    notify::raise(
-        app,
-        "Sign-in expired",
-        "Open DALI OS to sign in again.",
-        None,
-        false,
-    );
+    notify::raise_simple(app, "Sign-in expired", "Open DALI OS to sign in again.");
 }
 
 async fn sync_once(app: &AppHandle, http: &reqwest::Client, token: &str) -> SyncOutcome {
@@ -133,7 +134,7 @@ async fn sync_once(app: &AppHandle, http: &reqwest::Client, token: &str) -> Sync
 
     // Collect new items under the lock, raise after releasing it (never hold
     // a MutexGuard across the badge call/await).
-    let mut to_raise: Vec<(String, String, Option<String>, bool)> = Vec::new();
+    let mut to_raise: Vec<Banner> = Vec::new();
     {
         let st = app.state::<AppState>();
         // Bind the lock Result to a named local so its temporary doesn't
@@ -148,19 +149,31 @@ async fn sync_once(app: &AppHandle, http: &reqwest::Client, token: &str) -> Sync
                     && item.desktop
                     && (!item.title.is_empty() || item.link.is_some())
                 {
-                    to_raise.push((
-                        item.title.clone(),
-                        item.body.clone().unwrap_or_default(),
-                        item.link.clone(),
-                        item.urgent,
-                    ));
+                    to_raise.push(Banner {
+                        id: item.id.clone(),
+                        title: item.title.clone(),
+                        body: item.body.clone().unwrap_or_default(),
+                        link: item.link.clone(),
+                        urgent: item.urgent,
+                        rsvp: item.scheduled_meeting_id.is_some() && item.rsvp.is_none(),
+                    });
                 }
             }
         }
     }
-    for (title, body_text, link, urgent) in to_raise {
-        notify::raise(app, &title, &body_text, link, urgent);
+    for banner in to_raise {
+        notify::raise(app, banner);
     }
+
+    // Rows read elsewhere (web, another device, a banner action) come back
+    // with readAt set — drop their delivered banners from Notification Center.
+    let read_ids: Vec<String> = body
+        .items
+        .iter()
+        .filter(|i| i.read_at.is_some())
+        .map(|i| i.id.clone())
+        .collect();
+    notify::clear_delivered(&read_ids);
 
     // Tray menu: latest unread, urgent bumped to the top (stable sort keeps
     // feed order within each group).

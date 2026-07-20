@@ -33,15 +33,26 @@ futures-util = "0.3"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3", features = ["apple-native"] }
-# Already in the tree under tauri-plugin-notification; used directly on macOS
-# because its send() surfaces the banner-click response the plugin discards.
+# UNUserNotificationCenter (bundled builds): relaunch-surviving clicks, action
+# buttons, Notification Center cleanup. objc2/block2 versions match what tauri
+# already pulls in.
+objc2 = "0.6"
+objc2-foundation = "0.3"
+objc2-user-notifications = "0.3"
+block2 = "0.6"
+# Unbundled-dev fallback (`tauri dev` can't use the UN framework). Already in
+# the tree under tauri-plugin-notification.
 mac-notification-sys = "0.6"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { version = "3", features = ["linux-native"] }
+# XDG notifications with actions; already in the tree under the plugin.
+notify-rust = "4"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { version = "3", features = ["windows-native"] }
+# WinRT toasts with activation callbacks; already in the tree under the plugin.
+tauri-winrt-notification = "0.7"
 
 [profile.release]
 codegen-units = 1

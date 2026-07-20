@@ -688,9 +688,14 @@ checksum = "52560adf09603e58c9a7ee1fe1dcb95a16927b17c127f0ac02d6e768a0e25bc1"
 name = "dali-os-desktop"
 version = "0.1.2"
 dependencies = [
+ "block2",
  "futures-util",
  "keyring",
  "mac-notification-sys",
+ "notify-rust",
+ "objc2",
+ "objc2-foundation",
+ "objc2-user-notifications",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
@@ -703,6 +708,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tauri-plugin-updater",
  "tauri-plugin-window-state",
+ "tauri-winrt-notification",
  "thiserror 2.0.18",
  "tokio",
  "url",
@@ -2540,7 +2546,10 @@ version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9df9128cbbfef73cda168416ccf7f837b62737d748333bfe9ab71c245d76613e"
 dependencies = [
+ "bitflags 2.13.0",
+ "block2",
  "objc2",
+ "objc2-core-location",
  "objc2-foundation",
 ]
 

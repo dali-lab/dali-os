@@ -3,7 +3,10 @@
 Native desktop app for DALI OS. A thin Tauri v2 shell that wraps the live hosted web app (`https://os.dali.dartmouth.edu`) in a native webview and adds several features:
 
 - **Device-pairing sign-in** — Google blocks OAuth in embedded webviews, so sign-in happens in a local bundled page that hands off a session to the main window.
-- **Native notifications** — a background Rust task holds the server's SSE stream (falling back to 45s polling) and surfaces new items through the OS notification center. On macOS, clicking a banner navigates to the notification's link. Per-event opt-out via Settings → Notifications → Desktop; time-sensitive events (registry `timeSensitive`) add sound and pin to the top of the tray menu.
+- **Native notifications** — a background Rust task holds the server's SSE stream (falling back to 45s polling) and surfaces new items through the OS notification center on all three platforms, with click-through to the notification's link. Meeting invites carry **Accept / Maybe / Decline** buttons that RSVP straight from the banner; other notifications get **Mark read**. Per-event opt-out via Settings → Notifications → Desktop; time-sensitive events (registry `timeSensitive`) add sound and pin to the top of the tray menu.
+  - macOS uses UNUserNotificationCenter in bundled builds: clicks survive app relaunch, and banners clear from Notification Center once their row is read elsewhere. First launch prompts for notification permission; denying it silences banners until re-enabled in System Settings. `tauri dev` (unbundled) falls back to a click-only path.
+  - Linux uses XDG/D-Bus actions (button support depends on the notification daemon; GNOME/KDE work).
+  - Windows uses WinRT toasts; clicks and buttons are handled while the app runs (it's tray-resident, so effectively always).
 - **Auto-update** — checks for new releases on launch and prompts the user to install.
 - **Tray + dock presence** — persistent menubar/tray icon showing the unread count (macOS) and the latest unread notifications with click-through, plus quick actions.
 

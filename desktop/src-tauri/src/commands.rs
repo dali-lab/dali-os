@@ -5,7 +5,7 @@
 use tauri::{AppHandle, Manager, State};
 
 use crate::{
-    config, keychain, pairing,
+    config, keychain, notify, pairing,
     state::{AppState, AuthState},
     tray, window,
 };
@@ -79,6 +79,7 @@ pub async fn do_sign_out(app: AppHandle) {
         }
     }
     tray::refresh(&app, 0);
+    notify::clear_all_delivered();
 
     // Revoke the webview cookie Session too: /logout reads the cookie, revokes
     // it, and clears it. Its redirect to /login is ignored by nav.rs because the

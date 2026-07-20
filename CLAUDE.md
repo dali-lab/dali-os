@@ -83,7 +83,7 @@ The `desktop/` directory is a Tauri v2 macOS shell — a thin native wrapper aro
 - **Separate build pipeline.** Desktop is built and released by `desktop-release.yml` on `desktop-v*` tags, not by the main `deploy.yml`. Don't conflate them.
 - **Two signing layers.** Apple Developer ID (Gatekeeper) + a Tauri updater minisign keypair. The private minisign key lives in CI secrets (`TAURI_SIGNING_PRIVATE_KEY`). Never hardcode or log it.
 - **IPC security boundary.** The main WKWebView window loads a remote origin and has zero IPC access (no capability grants it). All native escalation happens in Rust directly or from the local bundled pairing windows. Don't add `remote.urls` entries to any capability file for the prod origin.
-- **Additive server routes only.** The desktop shell depends on `/auth/pair/*`, `/auth/handoff`, `/link`, `/api/notifications`, and `/api/notifications/stream` in `dali-api`. Changes to those routes affect the native app — note that in the PR description.
+- **Additive server routes only.** The desktop shell depends on `/auth/pair/*`, `/auth/handoff`, `/link`, `/api/notifications`, `/api/notifications/stream`, and the `/api/notifications/:id/read` + `/:id/rsvp` actions (banner buttons post to them) in `dali-api`. Changes to those routes affect the native app — note that in the PR description.
 - **Don't touch signing config** (`src-tauri/tauri.conf.json` `plugins.updater.pubkey`, or `src-tauri/capabilities/`) without flagging it. Signing mismatches break auto-update for all installed clients.
 - Desktop dev: `npm install && npm run tauri:dev` from `desktop/`. Requires Rust (stable) + Xcode Command Line Tools.
 
