@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRevalidator, useSearchParams } from "react-router";
 import { Button } from "~/components/ui/Button";
 import type { DragEndEvent } from "@dnd-kit/core";
-import { Archive, Github, X } from "lucide-react";
+import { Archive, Github, Paperclip, X } from "lucide-react";
 import { Confetti } from "~/components/Confetti";
 import { Modal } from "~/components/Modal";
 import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
@@ -292,6 +292,7 @@ export function TaskBoard({
         // next revalidation. Null here means no badge in the meantime.
         githubIssueUrl: null,
         githubIssueNumber: null,
+        files: [],
         createdBy: { id: currentUserId, name: currentUserName },
         createdAt: new Date().toISOString(),
       },
@@ -413,16 +414,19 @@ export function TaskBoard({
       {openTask && (
         <TaskModal
           task={openTask}
+          projectId={projectId}
           options={options}
           canManage={canManage}
           onClose={() => setOpenTaskId(null)}
           onPatch={(patch) => patchTask(openTask.id, patch)}
           onDelete={() => deleteTask(openTask.id)}
+          onArtifactsChanged={refresh}
         />
       )}
 
       {isCreating && (
         <TaskModal
+          projectId={projectId}
           options={options}
           canManage={canManage}
           defaultEpicId={
@@ -658,6 +662,12 @@ function TaskCard({
           {card.githubIssueNumber !== null && (
             <span className="inline-flex items-center gap-0.5 text-[11px] text-muted-foreground">
               <Github aria-hidden className="w-3 h-3" />#{card.githubIssueNumber}
+            </span>
+          )}
+          {card.files.length > 0 && (
+            <span className="inline-flex items-center gap-0.5 text-[11px] text-muted-foreground">
+              <Paperclip aria-hidden className="w-3 h-3" />
+              {card.files.length}
             </span>
           )}
         </div>

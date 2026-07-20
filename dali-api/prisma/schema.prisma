@@ -1034,10 +1034,26 @@ model ProjectFile {
   versions       ProjectFileVersion[] @relation("FileVersions")
   currentVersion ProjectFileVersion?  @relation("FileCurrentVersion", fields: [currentVersionId], references: [id])
 
-  tags     ProjectFileTag[]
-  comments DocComment[]
+  tags      ProjectFileTag[]
+  comments  DocComment[]
+  taskLinks TaskFileLink[]
 
   @@index([projectId, archivedAt])
+}
+
+// m2m: Task ↔ ProjectFile. Links work artifacts (graphics, animation, design
+// exports) to board tasks so the upload → feedback → re-upload loop is
+// reachable from the card. A file may serve several tasks and vice versa.
+model TaskFileLink {
+  taskId    String
+  fileId    String
+  createdAt DateTime @default(now())
+
+  task Task        @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  file ProjectFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, fileId])
+  @@index([fileId])
 }
 
 model ProjectFileVersion {
@@ -1058,6 +1074,9 @@ model ProjectFileVersion {
   // Back-relation for ProjectFile.currentVersion (a file points at one of its
   // own versions). Optional + named to disambiguate from FileVersions.
   fileAsCurrent ProjectFile? @relation("FileCurrentVersion")
+
+  // File comments pinned to this version (DocComment.versionId).
+  comments DocComment[]
 
   @@index([fileId, createdAt(sort: Desc)])
 }
@@ -1091,6 +1110,12 @@ model DocComment {
   // a second FK on the polymorphic column).
   file   ProjectFile? @relation(fields: [fileId], references: [id], onDelete: Cascade)
   fileId String?
+
+  // File comments only: the version that was current when the comment was
+  // written, so feedback reads against the right iteration ("on V2"). Null for
+  // doc/pagedoc comments and file comments predating version pinning.
+  version   ProjectFileVersion? @relation(fields: [versionId], references: [id], onDelete: SetNull)
+  versionId String?
 
   @@index([targetType, targetId, createdAt])
   @@index([parentId])
@@ -2509,6 +2534,7 @@ model Task {
   assignees TaskAssignee[]
   comments  TaskComment[]
   reminders TaskReminder[]
+  files     TaskFileLink[]
 
   createdById String
   createdBy   User     @relation("TaskCreatedBy", fields: [createdById], references: [id])

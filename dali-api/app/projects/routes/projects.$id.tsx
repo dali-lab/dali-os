@@ -54,6 +54,7 @@ import type {
   TaskStatus,
   Priority,
 } from "../lib/task-board";
+import { groupFilesByEpic } from "../lib/file-groups";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const p = (data as { project?: { name: string } } | undefined)?.project;
@@ -279,6 +280,18 @@ export async function loader({ request, params }: Route.LoaderArgs) {
               user: { select: USER_NAME_SELECT },
             },
           },
+          files: {
+            where: { file: { archivedAt: null } },
+            select: {
+              file: {
+                select: {
+                  id: true,
+                  title: true,
+                  _count: { select: { versions: true } },
+                },
+              },
+            },
+          },
         },
       },
       // Declared domains for this project — editable from the Overview tab.
@@ -364,6 +377,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       partnerVisible: true,
       currentVersion: { select: { fileName: true, sizeBytes: true } },
       _count: { select: { versions: true } },
+      // Which epics this file's linked tasks belong to — the Files block
+      // groups work files by epic (derived, not managed; see file-groups.ts).
+      taskLinks: { select: { task: { select: { epicId: true } } } },
     },
   });
   const files = fileRows.map((f) => ({
@@ -373,6 +389,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     sizeBytes: f.currentVersion?.sizeBytes ?? null,
     versionCount: f._count.versions,
     partnerVisible: f.partnerVisible,
+    taskLinked: f.taskLinks.length > 0,
+    epicIds: [
+      ...new Set(
+        f.taskLinks
+          .map((l) => l.task.epicId)
+          .filter((id): id is string => id !== null),
+      ),
+    ],
   }));
 
   // Content edits (name/status, description, details, docs/files, epics/
@@ -477,6 +501,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       : null,
     githubIssueUrl: t.githubIssueUrl,
     githubIssueNumber: t.githubIssueNumber,
+    files: t.files.map((l) => ({
+      id: l.file.id,
+      title: l.file.title,
+      versionCount: l.file._count.versions,
+    })),
     createdBy: { id: t.createdBy.id, name: fullName(t.createdBy) },
     createdAt: t.createdAt.toISOString(),
   }));
@@ -512,6 +541,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       )
       .map((s) => ({ id: s.id, name: s.name, status: s.status, epicId: s.epicId })),
     epics: project.epics.map((e) => ({ id: e.id, title: e.title })),
+    projectFiles: files.map((f) => ({ id: f.id, title: f.title })),
   };
 
   // Per-epic task progress for the epic list rows + timeline tooltips.
@@ -1271,6 +1301,7 @@ export default function ProjectDetail() {
           documents={documents}
           pinnedDocuments={pinnedDocuments}
           files={files}
+          fileEpics={boardOptions.epics}
           upcomingMeetings={upcomingMeetings}
           recentActivity={recentActivity}
           canEdit={canEdit}
@@ -2314,6 +2345,7 @@ function OverviewTab({
   documents,
   pinnedDocuments,
   files,
+  fileEpics,
   upcomingMeetings,
   recentActivity,
   canEdit,
@@ -2331,6 +2363,7 @@ function OverviewTab({
   documents: LoaderData["documents"];
   pinnedDocuments: LoaderData["pinnedDocuments"];
   files: LoaderData["files"];
+  fileEpics: LoaderData["boardOptions"]["epics"];
   upcomingMeetings: LoaderData["upcomingMeetings"];
   recentActivity: LoaderData["recentActivity"];
   canEdit: boolean;
@@ -2501,10 +2534,12 @@ function OverviewTab({
         hasActivePartner={hasActivePartner}
       />
 
-      {/* Files — standalone uploads with versions. Tags are edited in the file editor. */}
+      {/* Files — standalone uploads with versions, work files grouped under
+          their linked tasks' epics. Tags are edited in the file editor. */}
       <FilesBlock
         projectId={project.id}
         files={files}
+        epics={fileEpics}
         canEdit={canEdit}
         hasActivePartner={hasActivePartner}
       />
@@ -3134,11 +3169,13 @@ function DocumentsBlock({
 function FilesBlock({
   projectId,
   files,
+  epics,
   canEdit,
   hasActivePartner,
 }: {
   projectId: string;
   files: LoaderData["files"];
+  epics: LoaderData["boardOptions"]["epics"];
   canEdit: boolean;
   hasActivePartner: boolean;
 }) {
@@ -3235,6 +3272,11 @@ function FilesBlock({
     }
   }
 
+  // Work files cluster under the epic of their linked task(s); the flat list
+  // survives untouched when nothing is task-linked yet.
+  const { epicGroups, otherWorkFiles, generalFiles } = groupFilesByEpic(files, epics);
+  const grouped = epicGroups.length > 0 || otherWorkFiles.length > 0;
+
   return (
     <section className="bg-card border border-border rounded-lg p-4">
       <input ref={fileInputRef} type="file" className="hidden" onChange={onPick} />
@@ -3268,10 +3310,42 @@ function FilesBlock({
 
       {files.length === 0 ? (
         <p className="text-sm text-muted-foreground italic">No files yet.</p>
-      ) : (
+      ) : !grouped ? (
         <div className="flex flex-col divide-y divide-border">
-          {files.map((f) => (
-            <div key={f.id} className="py-2.5 flex items-center justify-between gap-3 text-sm">
+          {files.map(renderRow)}
+        </div>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {epicGroups.map((g) => fileGroup(g.title, g.files, g.id))}
+          {otherWorkFiles.length > 0 && fileGroup("Other work files", otherWorkFiles)}
+          {generalFiles.length > 0 && fileGroup("Other files", generalFiles)}
+        </div>
+      )}
+    </section>
+  );
+
+  // One group: epic title (or bucket label) over the standard row list.
+  function fileGroup(
+    label: string,
+    groupFiles: LoaderData["files"],
+    key: string = label,
+  ) {
+    return (
+      <div key={key}>
+        <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-0.5">
+          {label}
+          <span className="ml-1.5 normal-case tracking-normal">({groupFiles.length})</span>
+        </h3>
+        <div className="flex flex-col divide-y divide-border">
+          {groupFiles.map(renderRow)}
+        </div>
+      </div>
+    );
+  }
+
+  function renderRow(f: LoaderData["files"][number]) {
+    return (
+      <div key={f.id} className="py-2.5 flex items-center justify-between gap-3 text-sm">
               <Link to={`/documents/file/${f.id}`} className="min-w-0 truncate hover:text-accent-coral">
                 <span className="text-foreground font-medium">{f.title}</span>
                 <span className="text-muted-foreground ml-2 text-xs">
@@ -3342,11 +3416,8 @@ function FilesBlock({
                 )}
               </div>
             </div>
-          ))}
-        </div>
-      )}
-    </section>
-  );
+    );
+  }
 }
 
 // Planning holds the epics & sprints manager with the timeline as a display

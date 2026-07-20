@@ -7,6 +7,7 @@ import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent } from "~/lib/audit";
 import { getDownloadUrl } from "~/lib/s3";
 import { hydrateAuthors } from "~/lib/collabAuth";
+import { notifyFileNewVersion } from "../lib/file-notifications.server";
 
 // GET    /api/files/:id           — version list (newest first) + signed download URLs
 // POST   /api/files/:id           — rename: { intent: "rename", title }
@@ -164,5 +165,10 @@ export async function action({ request, params }: Route.ActionArgs) {
     metadata: { versionId: version.id },
     request,
   });
+  // Close the feedback loop: whoever commented on the previous iteration
+  // hears that a new one landed.
+  void notifyFileNewVersion({ fileId: file.id, uploadedById: auth.user.sub }).catch(
+    (err) => console.error(`file ${file.id}: new version notify failed`, err),
+  );
   return withCors(request, Response.json({ ok: true, versionId: version.id }));
 }
