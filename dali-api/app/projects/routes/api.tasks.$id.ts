@@ -70,7 +70,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
   if (preflight) return preflight;
 
-  if (request.method !== "PATCH") {
+  if (request.method !== "PATCH" && request.method !== "DELETE") {
     return withCors(
       request,
       Response.json({ error: "Method not allowed" }, { status: 405 }),
@@ -85,6 +85,19 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
   const gate = await requireProjectEditAccess(request, task.projectId);
   if (!gate.ok) return gate.response;
+
+  // DELETE /api/tasks/:id — remove the task and its owned rows. TaskAssignee
+  // and TaskComment have no onDelete: Cascade, so drop them first; TaskReminder
+  // cascades at the DB. Mirrors the MCP delete_task tool. The mirrored GitHub
+  // issue (if any) is intentionally left in place.
+  if (request.method === "DELETE") {
+    await prisma.$transaction([
+      prisma.taskAssignee.deleteMany({ where: { taskId: params.id } }),
+      prisma.taskComment.deleteMany({ where: { taskId: params.id } }),
+      prisma.task.delete({ where: { id: params.id } }),
+    ]);
+    return withCors(request, Response.json({ ok: true }));
+  }
 
   let body: unknown;
   try {
