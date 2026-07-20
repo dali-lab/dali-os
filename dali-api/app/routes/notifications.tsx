@@ -335,17 +335,17 @@ function HistoryTab({
                       {n.canRsvp ? <RsvpButtons notificationId={n.id} /> : null}
                     </div>
                     <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-                      {n.link && (
+                      {/* RSVP-able notifications (meeting invites) already
+                          have inline RSVP buttons, so the extra "Open calendar"
+                          link is redundant — it just dumps you on the calendar.
+                          Keep the link only for non-RSVP notifications. */}
+                      {n.link && !n.canRsvp && (
                         <button
                           type="button"
                           onClick={() => openLink(n.link!, n.title)}
                           className="flex items-center gap-1 text-xs font-medium text-accent-coral hover:underline"
                         >
-                          {n.canRsvp
-                            ? "Open calendar"
-                            : n.state === "Submitted"
-                              ? "View"
-                              : "Open"}{" "}
+                          {n.state === "Submitted" ? "View" : "Open"}{" "}
                           <ExternalLink className="w-3 h-3" />
                         </button>
                       )}

@@ -4,6 +4,8 @@ import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { isTaskStatus } from "../lib/task-board";
 import { createIssueForTask, normalizeRepo } from "../lib/github-task-sync";
+import { USER_NAME_SELECT } from "~/lib/prisma-shapes";
+import { fullName } from "~/lib/display";
 
 // POST /api/projects/:id/tasks
 //
@@ -47,6 +49,46 @@ function parseDueAt(raw: string | null | undefined): Date | null | "invalid" {
   const d = new Date(raw);
   if (Number.isNaN(d.getTime())) return "invalid";
   return d;
+}
+
+// GET /api/projects/:id/tasks — list a project's archived tasks
+// (auto-archived Done/Cancelled), newest-archived first. Backs the board's
+// "Archived" modal, so it stays a lazy fetch rather than bloating the project
+// loader (which only ever loads the live, non-archived board).
+export async function loader({ request, params }: Route.LoaderArgs) {
+  const preflight = handlePreflight(request);
+  if (preflight) return preflight;
+
+  const gate = await requireProjectEditAccess(request, params.id!);
+  if (!gate.ok) return gate.response;
+
+  const rows = await prisma.task.findMany({
+    where: { projectId: params.id, archivedAt: { not: null } },
+    orderBy: { archivedAt: "desc" },
+    select: {
+      id: true,
+      title: true,
+      status: true,
+      priority: true,
+      dueAt: true,
+      archivedAt: true,
+      domain: { select: { id: true, displayName: true } },
+      assignees: { select: { user: { select: USER_NAME_SELECT } } },
+    },
+  });
+
+  const tasks = rows.map((t) => ({
+    id: t.id,
+    title: t.title,
+    status: t.status,
+    priority: t.priority,
+    dueAt: t.dueAt ? t.dueAt.toISOString() : null,
+    archivedAt: t.archivedAt!.toISOString(),
+    domain: t.domain ? { id: t.domain.id, name: t.domain.displayName } : null,
+    assignees: t.assignees.map((a) => ({ id: a.user.id, name: fullName(a.user) })),
+  }));
+
+  return withCors(request, Response.json({ tasks }));
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
