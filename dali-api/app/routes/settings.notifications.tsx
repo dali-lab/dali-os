@@ -38,6 +38,7 @@ export async function action({ request }: Route.ActionArgs) {
   const rows: {
     eventType: EventType;
     inApp: boolean;
+    desktop: boolean;
     slackDm: boolean;
     digestFrequency: DigestValue;
   }[] = [];
@@ -60,6 +61,7 @@ export async function action({ request }: Route.ActionArgs) {
       eventType,
       inApp:
         def.lockedInApp || digestSelected ? true : form.get(`${eventType}:inApp`) === "on",
+      desktop: form.get(`${eventType}:desktop`) === "on",
       slackDm: form.get(`${eventType}:slackDm`) === "on",
       digestFrequency,
     });
@@ -72,11 +74,17 @@ export async function action({ request }: Route.ActionArgs) {
         where: {
           userId_eventType: { userId: auth.user.sub, eventType: r.eventType },
         },
-        update: { inApp: r.inApp, slackDm: r.slackDm, digestFrequency: r.digestFrequency },
+        update: {
+          inApp: r.inApp,
+          desktop: r.desktop,
+          slackDm: r.slackDm,
+          digestFrequency: r.digestFrequency,
+        },
         create: {
           userId: auth.user.sub,
           eventType: r.eventType,
           inApp: r.inApp,
+          desktop: r.desktop,
           slackDm: r.slackDm,
           digestFrequency: r.digestFrequency,
         },

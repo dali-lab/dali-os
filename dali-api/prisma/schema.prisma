@@ -3520,6 +3520,9 @@ model NotificationPreference {
   // evolving a default never requires a backfill.
   eventType String
   inApp     Boolean @default(true)
+  // Native banner raised by the desktop app for an in-app row. Sub-preference
+  // of inApp: without the in-app row there is nothing to banner.
+  desktop Boolean @default(true)
   // Slack DM requires a resolved User.slackUserId; without one the channel
   // silently skips regardless of this toggle.
   slackDm Boolean @default(false)

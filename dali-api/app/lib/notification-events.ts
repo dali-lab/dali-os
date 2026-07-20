@@ -39,7 +39,13 @@ export type EventDef = {
   // (e.g. education decision emails); notify() never emails these and the
   // settings page shows no email control.
   externalEmail?: boolean;
-  defaults: { inApp: boolean; slackDm: boolean; email: EmailDefault };
+  // Loses its value if seen late (meeting starting, spontaneous lab event).
+  // The desktop app surfaces these with sound and pins them in its tray.
+  timeSensitive?: boolean;
+  // `desktop` gates the native banner the desktop app raises for an in-app
+  // row — it is a sub-preference of inApp (no row, no banner), resolved at
+  // feed-read time so a preference change applies to unseen rows too.
+  defaults: { inApp: boolean; desktop: boolean; slackDm: boolean; email: EmailDefault };
 };
 
 export const EVENT_TYPES = {
@@ -49,77 +55,78 @@ export const EVENT_TYPES = {
     label: "Meeting invites",
     description: "When someone schedules a meeting with you.",
     lockedInApp: true,
-    defaults: { inApp: true, slackDm: false, email: "Off" },
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
   "meeting.reminder": {
     kind: "MeetingReminder",
     area: "Meetings",
     label: "Meeting reminders",
     description: "15 minutes before a meeting you're in starts.",
-    defaults: { inApp: true, slackDm: false, email: "Off" },
+    timeSensitive: true,
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
   "meeting.cancelled": {
     kind: "General",
     area: "Meetings",
     label: "Meeting cancellations",
     description: "When a meeting you were invited to is cancelled.",
-    defaults: { inApp: true, slackDm: false, email: "Off" },
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
   "task.due_reminder": {
     kind: "General",
     area: "Tasks",
     label: "Task deadline reminders",
     description: "A day before and at the moment a task you're assigned is due.",
-    defaults: { inApp: true, slackDm: true, email: "Off" },
+    defaults: { inApp: true, desktop: true, slackDm: true, email: "Off" },
   },
   "task.assigned": {
     kind: "General",
     area: "Tasks",
     label: "Task assignments",
     description: "When someone assigns you to a task.",
-    defaults: { inApp: true, slackDm: true, email: "Off" },
+    defaults: { inApp: true, desktop: true, slackDm: true, email: "Off" },
   },
   "task.comment": {
     kind: "General",
     area: "Tasks",
     label: "Task comments",
     description: "New comments on tasks you're assigned.",
-    defaults: { inApp: true, slackDm: false, email: "Off" },
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
   "task.github_update": {
     kind: "General",
     area: "Tasks",
     label: "GitHub task updates",
     description: "When a linked GitHub issue closes or reopens one of your tasks.",
-    defaults: { inApp: true, slackDm: false, email: "Off" },
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
   "collab.comment_reply": {
     kind: "General",
     area: "Documents",
     label: "Comment replies",
     description: "Replies in document and file comment threads you're part of.",
-    defaults: { inApp: true, slackDm: false, email: "Off" },
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
   "pagedoc.mention": {
     kind: "General",
     area: "Documents",
     label: "Mentions",
     description: "When someone @mentions you in a document, guide, or comment.",
-    defaults: { inApp: true, slackDm: true, email: "Off" },
+    defaults: { inApp: true, desktop: true, slackDm: true, email: "Off" },
   },
   "pagedoc.maintainer_assigned": {
     kind: "General",
     area: "Documents",
     label: "Guide maintainer role",
     description: "When you're made the maintainer of a page's guide.",
-    defaults: { inApp: true, slackDm: true, email: "Off" },
+    defaults: { inApp: true, desktop: true, slackDm: true, email: "Off" },
   },
   "staffing.assigned": {
     kind: "General",
     area: "Staffing",
     label: "Staffing assignments",
     description: "When your project assignment for a term is confirmed.",
-    defaults: { inApp: true, slackDm: false, email: "Off" },
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
   "hiring.interview_assigned": {
     kind: "General",
@@ -127,14 +134,14 @@ export const EVENT_TYPES = {
     label: "Interview assignments",
     description: "When you're assigned to conduct an interview.",
     lockedInApp: true,
-    defaults: { inApp: true, slackDm: false, email: "Off" },
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
   "hiring.fellowship_invite": {
     kind: "General",
     area: "Hiring",
     label: "Fellowship invitations",
     description: "When an intern-to-full application window opens for you.",
-    defaults: { inApp: true, slackDm: false, email: "Off" },
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
   announcement: {
     kind: "SystemAnnouncement",
@@ -142,7 +149,7 @@ export const EVENT_TYPES = {
     label: "Lab announcements",
     description: "Announcements and action items sent by Core.",
     lockedInApp: true,
-    defaults: { inApp: true, slackDm: false, email: "Off" },
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
   "member.onboarding": {
     kind: "SystemAnnouncement",
@@ -150,21 +157,21 @@ export const EVENT_TYPES = {
     label: "Onboarding steps",
     description: "Your onboarding checklist when you join the lab.",
     lockedInApp: true,
-    defaults: { inApp: true, slackDm: false, email: "Off" },
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
   "form.submission": {
     kind: "General",
     area: "Forms",
     label: "Form responses",
     description: "When someone submits a form you created (per-form toggle).",
-    defaults: { inApp: true, slackDm: false, email: "Off" },
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
   "education.announcement": {
     kind: "Education",
     area: "Education",
     label: "Course announcements",
     description: "Announcements from instructors of your offerings.",
-    defaults: { inApp: true, slackDm: false, email: "Instant" },
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
   },
   "education.decision": {
     kind: "Education",
@@ -172,21 +179,21 @@ export const EVENT_TYPES = {
     label: "Application decisions",
     description: "Decisions on your education applications.",
     externalEmail: true,
-    defaults: { inApp: true, slackDm: false, email: "Off" },
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
   "education.assignment": {
     kind: "Education",
     area: "Education",
     label: "New assignments",
     description: "When an instructor posts an assignment.",
-    defaults: { inApp: true, slackDm: false, email: "Off" },
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
   "education.discussion": {
     kind: "Education",
     area: "Education",
     label: "Discussion replies",
     description: "Replies in discussion threads you're part of.",
-    defaults: { inApp: true, slackDm: false, email: "Off" },
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
   "education.feedback_request": {
     kind: "SystemAnnouncement",
@@ -194,14 +201,14 @@ export const EVENT_TYPES = {
     label: "Feedback requests",
     description: "Session feedback and exit-survey forms to fill.",
     lockedInApp: true,
-    defaults: { inApp: true, slackDm: false, email: "Off" },
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
   "education.certificate": {
     kind: "Education",
     area: "Education",
     label: "Certificates",
     description: "When you're issued a certificate of completion.",
-    defaults: { inApp: true, slackDm: false, email: "Instant" },
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
   },
   // Fallback stamped on rows that predate the registry (schema column
   // default). Never emitted by code; hidden from the settings page.
@@ -210,7 +217,7 @@ export const EVENT_TYPES = {
     area: "Announcements",
     label: "Other",
     description: "Everything else.",
-    defaults: { inApp: true, slackDm: false, email: "Off" },
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
 } as const satisfies Record<string, EventDef>;
 

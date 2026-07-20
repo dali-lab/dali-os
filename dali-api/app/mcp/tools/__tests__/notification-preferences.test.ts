@@ -81,11 +81,12 @@ describe("set_notification_preference", () => {
 
     expect(mockPrisma.notificationPreference.upsert).toHaveBeenCalledWith({
       where: { userId_eventType: { userId: "u1", eventType: "task.assigned" } },
-      update: { inApp: true, slackDm: true, digestFrequency: "Weekly" },
+      update: { inApp: true, desktop: true, slackDm: true, digestFrequency: "Weekly" },
       create: {
         userId: "u1",
         eventType: "task.assigned",
         inApp: true, // registry default
+        desktop: true, // registry default
         slackDm: true, // registry default
         digestFrequency: "Weekly",
       },
@@ -96,6 +97,7 @@ describe("set_notification_preference", () => {
   it("prefers an existing row over registry defaults when merging", async () => {
     mockPrisma.notificationPreference.findUnique.mockResolvedValue({
       inApp: false,
+      desktop: false,
       slackDm: false,
       digestFrequency: "Daily",
     });
@@ -108,6 +110,7 @@ describe("set_notification_preference", () => {
     const call = mockPrisma.notificationPreference.upsert.mock.calls[0][0];
     expect(call.update).toEqual({
       inApp: false,
+      desktop: false,
       slackDm: true,
       digestFrequency: "Daily",
     });
