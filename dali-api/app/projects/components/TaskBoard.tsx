@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { Button } from "~/components/ui/Button";
 import type { DragEndEvent } from "@dnd-kit/core";
@@ -106,6 +106,17 @@ export function TaskBoard({
           throw new Error(j.error ?? `Request failed: ${res.status}`);
         }
       },
+    );
+  }
+
+  // Optimistically drop the card, then DELETE the row. The hook restores it
+  // on failure and surfaces the error. Close the modal first so the deleted
+  // task doesn't briefly render behind a rollback.
+  function deleteTask(taskId: string) {
+    setOpenTaskId(null);
+    move(
+      (cur) => cur.filter((t) => t.id !== taskId),
+      () => persistDelete(taskId),
     );
   }
 
@@ -242,6 +253,7 @@ export function TaskBoard({
           canManage={canManage}
           onClose={() => setOpenTaskId(null)}
           onPatch={(patch) => patchTask(openTask.id, patch)}
+          onDelete={() => deleteTask(openTask.id)}
         />
       )}
 
@@ -259,9 +271,11 @@ export function TaskBoard({
 
 // The drag handle and the card body are split so the body's click can open
 // the modal without dnd-kit's pointer listeners swallowing it. Listeners go
-// only on the GripVertical handle; the rest of the card has a regular
-// onClick. Keyboard activation (Enter/Space) also opens the modal so the
-// card stays operable without a pointer.
+// only on the GripVertical handle; the rest of the card is a role="button"
+// div (not a real <button>, whose contents browsers refuse to let you
+// select) so the title text can be drag-selected/copied. A drag that leaves
+// a text selection inside the card is treated as a select, not an open.
+// Keyboard activation (Enter/Space) still opens the modal.
 function TaskCard({
   card,
   draggable,
@@ -275,11 +289,28 @@ function TaskCard({
   isDragging: boolean;
   onOpen: () => void;
 }) {
+  const bodyRef = useRef<HTMLDivElement>(null);
   const overdue =
     card.dueAt != null &&
     card.status !== "Done" &&
     card.status !== "Cancelled" &&
     new Date(card.dueAt).getTime() < Date.now();
+
+  // Don't open the task if the click ended a text selection inside this card
+  // (e.g. the user drag-selected the title to copy it).
+  function handleActivate() {
+    const sel = typeof window !== "undefined" ? window.getSelection() : null;
+    if (
+      sel &&
+      !sel.isCollapsed &&
+      sel.toString().trim() !== "" &&
+      sel.anchorNode &&
+      bodyRef.current?.contains(sel.anchorNode)
+    ) {
+      return;
+    }
+    onOpen();
+  }
 
   return (
     <div
@@ -296,10 +327,18 @@ function TaskCard({
           <GripVertical className="w-4 h-4" />
         </div>
       )}
-      <button
-        type="button"
-        onClick={onOpen}
-        className="flex-1 min-w-0 text-left p-2.5 pl-1.5 focus:outline-none"
+      <div
+        ref={bodyRef}
+        role="button"
+        tabIndex={0}
+        onClick={handleActivate}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onOpen();
+          }
+        }}
+        className="flex-1 min-w-0 text-left p-2.5 pl-1.5 cursor-pointer select-text focus:outline-none"
       >
         <div className="text-foreground">{card.title}</div>
         <div className="mt-1.5 flex items-center justify-between gap-2">
@@ -330,7 +369,7 @@ function TaskCard({
             </span>
           )}
         </div>
-      </button>
+      </div>
     </div>
   );
 }
@@ -356,6 +395,17 @@ async function persistMove(
     credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ status, position }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `Request failed: ${res.status}`);
+  }
+}
+
+async function persistDelete(taskId: string): Promise<void> {
+  const res = await fetch(`/api/tasks/${taskId}`, {
+    method: "DELETE",
+    credentials: "include",
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
