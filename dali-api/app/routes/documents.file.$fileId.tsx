@@ -5,7 +5,7 @@ import { Tooltip } from "~/components/ui/IconButton";
 import type { Route } from "./+types/documents.file.$fileId";
 import { prisma } from "~/lib/db";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
-import { isCore } from "~/lib/roles";
+import { isCore, isProjectMember } from "~/lib/roles";
 import { getDownloadUrl } from "~/lib/s3";
 import { hydrateAuthors } from "~/lib/collabAuth";
 import { formatBytes, uploadFileToS3 } from "~/lib/upload-client";
@@ -73,14 +73,21 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     throw new Response("Not found", { status: 404 });
   }
 
-  const canEdit = await isCore(auth.user.sub);
+  // Upload + comment are open to Core and members of the owning project (the
+  // artifact feedback loop runs on project members); the curated tag list
+  // stays Core-managed, matching /api/doctags.
+  const core = await isCore(auth.user.sub);
+  const canEdit = core || (await isProjectMember(auth.user.sub, file.projectId));
+  const canManageTags = core;
 
   const uploaderNames = await hydrateAuthors(file.versions.map((v) => v.uploadedById));
   const nameById = new Map(uploaderNames.map((u) => [u.id, u.name]));
 
   const versions = await Promise.all(
-    file.versions.map(async (v) => ({
+    // Newest first, so the oldest upload is V1.
+    file.versions.map(async (v, i) => ({
       id: v.id,
+      label: `V${file.versions.length - i}`,
       fileName: v.fileName,
       sizeBytes: v.sizeBytes,
       uploadedBy: nameById.get(v.uploadedById) ?? "Unknown",
@@ -106,13 +113,23 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     allTags,
     versions,
     canEdit,
+    canManageTags,
     currentUserId: auth.user.sub,
   };
 }
 
 export default function FilePage() {
-  const { fileId, projectId, title, tags, allTags, versions, canEdit, currentUserId } =
-    useLoaderData() as Exclude<Awaited<ReturnType<typeof loader>>, Response>;
+  const {
+    fileId,
+    projectId,
+    title,
+    tags,
+    allTags,
+    versions,
+    canEdit,
+    canManageTags,
+    currentUserId,
+  } = useLoaderData() as Exclude<Awaited<ReturnType<typeof loader>>, Response>;
 
   const revalidator = useRevalidator();
   const [fileSearchParams] = useSearchParams();
@@ -166,8 +183,8 @@ export default function FilePage() {
               targetId={fileId}
               applied={tags}
               allTags={allTags}
-              canEdit={canEdit}
-              canCreate={canEdit}
+              canEdit={canManageTags}
+              canCreate={canManageTags}
             />
           </div>
 
@@ -225,6 +242,9 @@ export default function FilePage() {
                 }`}
               >
                 <div className="min-w-0">
+                  <span className="mr-2 text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-medium">
+                    {v.label}
+                  </span>
                   <span className="text-foreground truncate">{v.fileName}</span>
                   {v.isCurrent && (
                     <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-accent-teal/15 text-accent-teal">
@@ -263,6 +283,7 @@ export default function FilePage() {
             currentUserId={currentUserId}
             canComment={canEdit}
             focusCommentId={focusCommentId}
+            versionLabels={Object.fromEntries(versions.map((v) => [v.id, v.label]))}
           />
         </aside>
       </div>
@@ -275,14 +296,34 @@ type FileVersionView = Exclude<
   Response
 >["versions"][number];
 
-// Inline preview of a file version. Images and PDFs render directly from the
-// presigned S3 URL; anything else falls back to a download prompt.
+// Inline preview of a file version. Images, video, audio, and PDFs render
+// directly from the presigned S3 URL; anything else (e.g. .psd/.ae source
+// files) falls back to a download prompt.
 function FilePreview({ version }: { version: FileVersionView }) {
   const ct = version.contentType ?? "";
   const isImage = ct.startsWith("image/");
+  const isVideo = ct.startsWith("video/");
+  const isAudio = ct.startsWith("audio/");
   const isPdf = ct === "application/pdf";
   const isText = ct.startsWith("text/") || ct === "application/json";
 
+  if (isVideo) {
+    return (
+      // `key` forces a reload when the previewed version changes — <video>
+      // doesn't re-fetch on a src prop change alone.
+      <video
+        key={version.id}
+        src={version.downloadUrl}
+        controls
+        className="max-w-full max-h-[70vh] rounded-lg border border-border bg-black"
+      />
+    );
+  }
+  if (isAudio) {
+    return (
+      <audio key={version.id} src={version.downloadUrl} controls className="w-full" />
+    );
+  }
   if (isImage) {
     return (
       <img

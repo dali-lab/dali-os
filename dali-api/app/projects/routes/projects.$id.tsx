@@ -279,6 +279,18 @@ export async function loader({ request, params }: Route.LoaderArgs) {
               user: { select: USER_NAME_SELECT },
             },
           },
+          files: {
+            where: { file: { archivedAt: null } },
+            select: {
+              file: {
+                select: {
+                  id: true,
+                  title: true,
+                  _count: { select: { versions: true } },
+                },
+              },
+            },
+          },
         },
       },
       // Declared domains for this project — editable from the Overview tab.
@@ -474,6 +486,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       : null,
     githubIssueUrl: t.githubIssueUrl,
     githubIssueNumber: t.githubIssueNumber,
+    files: t.files.map((l) => ({
+      id: l.file.id,
+      title: l.file.title,
+      versionCount: l.file._count.versions,
+    })),
     createdBy: { id: t.createdBy.id, name: fullName(t.createdBy) },
     createdAt: t.createdAt.toISOString(),
   }));
@@ -509,6 +526,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       )
       .map((s) => ({ id: s.id, name: s.name, status: s.status })),
     epics: project.epics.map((e) => ({ id: e.id, title: e.title })),
+    projectFiles: files.map((f) => ({ id: f.id, title: f.title })),
   };
 
   // Per-epic task progress for the epic list rows + timeline tooltips.
