@@ -348,7 +348,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const pinnedDocuments = pageRows
     .filter((p) => p.pinnedAt !== null && p.parentPageId === null)
     .sort((a, b) => (b.pinnedAt?.getTime() ?? 0) - (a.pinnedAt?.getTime() ?? 0))
-    .map((p) => ({ id: p.id, label: p.title }));
+    .map((p) => ({
+      ...toDocumentDto(p),
+      children: (childrenByParent.get(p.id) ?? []).map(toDocumentDto),
+    }));
 
   // Project files — standalone uploads with their current version.
   // Tags are edited in the file/document editor, not on this list.
@@ -3048,31 +3051,10 @@ function DocumentsBlock({
         <p className="text-sm text-muted-foreground italic">No documents yet.</p>
       ) : (
         <div className="flex flex-col divide-y divide-border">
-          {/* Pinned docs on top — same open-as-tab flow as the rows below. */}
+          {/* Pinned docs on top — full document rows (share/pin/delete), just
+              lifted above the rest. The filled coral pin marks them pinned. */}
           {pinnedDocuments.map((d) => (
-            <div key={d.id} className="py-2.5 flex items-center gap-1.5 text-sm">
-              <Pin className="w-3.5 h-3.5 flex-shrink-0 text-accent-coral fill-current" />
-              <button
-                type="button"
-                onClick={() => openDocumentTab(d.id, d.label)}
-                className="flex-1 min-w-0 truncate text-left font-medium text-foreground hover:text-accent-coral"
-              >
-                {d.label}
-              </button>
-              {canEdit && (
-                <Tooltip label="Unpin">
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => void togglePin(d.id, false)}
-                    aria-label="Unpin document"
-                    className="text-muted-foreground hover:text-foreground disabled:opacity-60 flex-shrink-0"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </Tooltip>
-              )}
-            </div>
+            <DocRow key={d.id} doc={d} indent={false} />
           ))}
           {documents.map((doc) =>
             doc.kind === "Folder" ? (

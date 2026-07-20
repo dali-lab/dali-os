@@ -1356,7 +1356,9 @@ function EpicForm({
           size="sm"
           disabled={busy}
         >
-          Save
+          {/* Creating a new epic hands off to the detail modal to add
+              sprints/stories, so "Next" signals there's more after this. */}
+          {initial ? "Save" : "Next"}
         </Button>
         <button
           type="button"
