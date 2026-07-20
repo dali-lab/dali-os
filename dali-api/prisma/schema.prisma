@@ -3397,6 +3397,11 @@ model Page {
   // future public flag — the audiences are orthogonal.
   partnerVisible Boolean @default(false)
 
+  // Pinned to the top of the project's Documents block. Timestamp so pins can
+  // be ordered most-recent-first. Null = not pinned. (Distinct from the
+  // system Overview/PRD docs, which are always shown pinned.)
+  pinnedAt DateTime?
+
   // Set when this page was auto-created as a meeting's attendance-tracking
   // note (see ScheduledMeeting.notePage / meetingType). Lets the document
   // route know to render the AttendanceChecklist above the editor.

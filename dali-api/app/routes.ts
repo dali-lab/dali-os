@@ -358,6 +358,7 @@ export default [
   route("api/projects/:id/documents", "projects/routes/api.projects.$id.documents.ts"),
   route("api/documents/:id", "projects/routes/api.documents.$id.ts"),
   route("api/pages/:id/partner-visible", "projects/routes/api.pages.$id.partner-visible.ts"),
+  route("api/pages/:id/pin", "projects/routes/api.pages.$id.pin.ts"),
 
   // Project files (standalone uploads with versions)
   route("api/projects/:id/files", "projects/routes/api.projects.$id.files.ts"),

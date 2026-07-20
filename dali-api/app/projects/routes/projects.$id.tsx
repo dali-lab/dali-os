@@ -316,6 +316,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       parentPageId: true,
       systemKey: true,
       partnerVisible: true,
+      pinnedAt: true,
     },
   });
   const childrenByParent = new Map<string, typeof pageRows>();
@@ -331,6 +332,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     kind: d.kind,
     isSystem: d.systemKey !== null,
     partnerVisible: d.partnerVisible,
+    pinned: d.pinnedAt !== null,
   });
   const documents = pageRows
     .filter((p) => p.parentPageId === null)
@@ -339,16 +341,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       children: (childrenByParent.get(p.id) ?? []).map(toDocumentDto),
     }));
 
-  // Pinned Overview/PRD docs — rendered at the top of the Documents block.
-  // Only shown while the referenced page still exists non-archived in this
-  // project's workspace (pageRows is exactly that set).
-  const workspacePageIds = new Set(pageRows.map((p) => p.id));
-  const pinnedDocuments = [
-    { id: project.overviewPageId, label: "Overview" },
-    { id: project.prdPageId, label: "PRD" },
-  ].flatMap((d) =>
-    d.id && workspacePageIds.has(d.id) ? [{ id: d.id, label: d.label }] : [],
-  );
+  // Pinned docs — any page a teammate pinned, most-recent pin first, rendered
+  // at the top of the Documents block.
+  const pinnedDocuments = pageRows
+    .filter((p) => p.pinnedAt !== null)
+    .sort((a, b) => (b.pinnedAt?.getTime() ?? 0) - (a.pinnedAt?.getTime() ?? 0))
+    .map((p) => ({ id: p.id, label: p.title }));
 
   // Project files — standalone uploads with their current version.
   // Tags are edited in the file/document editor, not on this list.
@@ -2801,6 +2799,30 @@ function DocumentsBlock({
     }
   }
 
+  // Pin/unpin a doc to the top of the Documents block. Same persist-then-
+  // revalidate shape as sharing.
+  async function togglePin(id: string, next: boolean) {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/pages/${id}/pin`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pinned: next }),
+      });
+      if (!res.ok) {
+        const b = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(b.error ?? "Failed to update pin");
+      }
+      revalidator.revalidate();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   // Add document: create an "Untitled" page immediately, then open it as a
   // split-screen tab beside the project. The title is renamed inline in the
   // editor (auto-saves), so there's no separate title prompt first. When
@@ -2914,6 +2936,24 @@ function DocumentsBlock({
             </Tooltip>
           )}
           {canEdit && (
+            <Tooltip label={doc.pinned ? "Pinned — click to unpin" : "Pin to top"}>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void togglePin(doc.id, !doc.pinned)}
+                aria-label={doc.pinned ? "Unpin document" : "Pin document"}
+                aria-pressed={doc.pinned}
+                className={`flex items-center disabled:opacity-60 ${
+                  doc.pinned
+                    ? "text-accent-coral"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Pin className={`w-3.5 h-3.5 ${doc.pinned ? "fill-current" : ""}`} />
+              </button>
+            </Tooltip>
+          )}
+          {canEdit && (
             <Tooltip label="Delete document">
               <button
                 type="button"
@@ -2975,21 +3015,30 @@ function DocumentsBlock({
         <p className="text-sm text-muted-foreground italic">No documents yet.</p>
       ) : (
         <div className="flex flex-col divide-y divide-border">
-          {/* Pinned Overview/PRD pages on top — same open-as-tab flow as the
-              rows below, marked like the DEFAULT-folder chip. */}
+          {/* Pinned docs on top — same open-as-tab flow as the rows below. */}
           {pinnedDocuments.map((d) => (
             <div key={d.id} className="py-2.5 flex items-center gap-1.5 text-sm">
-              <Pin className="w-3.5 h-3.5 flex-shrink-0 text-muted-foreground" />
+              <Pin className="w-3.5 h-3.5 flex-shrink-0 text-accent-coral fill-current" />
               <button
                 type="button"
                 onClick={() => openDocumentTab(d.id, d.label)}
-                className="truncate text-left font-medium text-foreground hover:text-accent-coral"
+                className="flex-1 min-w-0 truncate text-left font-medium text-foreground hover:text-accent-coral"
               >
                 {d.label}
               </button>
-              <span className="text-[10px] uppercase tracking-wide text-muted-foreground/70 flex-shrink-0">
-                Pinned
-              </span>
+              {canEdit && (
+                <Tooltip label="Unpin">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void togglePin(d.id, false)}
+                    aria-label="Unpin document"
+                    className="text-muted-foreground hover:text-foreground disabled:opacity-60 flex-shrink-0"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </Tooltip>
+              )}
             </div>
           ))}
           {documents.map((doc) =>
