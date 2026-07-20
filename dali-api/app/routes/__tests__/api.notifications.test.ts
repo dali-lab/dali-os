@@ -8,7 +8,10 @@ vi.mock("~/lib/tasks", () => ({
   listOpenTasks: vi.fn(),
   listNotificationHistory: vi.fn(),
 }));
-vi.mock("~/lib/notifications", () => ({
+vi.mock("~/lib/notifications", async (importOriginal) => ({
+  // annotateDesktopFeed stays real — the legacy-payload test covers the
+  // desktop/urgent derivation it adds.
+  ...(await importOriginal<typeof import("~/lib/notifications")>()),
   listMyNotifications: vi.fn(),
 }));
 
@@ -26,7 +29,10 @@ beforeEach(() => {
     user: { sub: USER_ID, email: "u@x.com", type: "user" },
   } as any);
   vi.mocked(listMyNotifications).mockResolvedValue({
-    items: [{ id: "i1" }],
+    items: [
+      { id: "i1", eventType: "meeting.reminder" },
+      { id: "i2", eventType: "task.comment" },
+    ],
     unreadCount: 2,
   } as any);
   vi.mocked(listOpenTasks).mockResolvedValue([
@@ -48,7 +54,12 @@ describe("GET /api/notifications", () => {
     const res = await loader({ request: req() } as any);
     const json = await res.json();
     expect(json).toEqual({
-      items: [{ id: "i1" }],
+      // meeting.reminder is timeSensitive in the registry; both banner by
+      // default (no preference rows in the mock).
+      items: [
+        { id: "i1", eventType: "meeting.reminder", desktop: true, urgent: true },
+        { id: "i2", eventType: "task.comment", desktop: true, urgent: false },
+      ],
       unreadCount: 2,
       taskCount: 1,
       tasks: [{ id: "t1", title: "Do it", link: "/x" }],

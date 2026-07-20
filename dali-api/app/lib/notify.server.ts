@@ -16,6 +16,7 @@ import { getSenderRefreshToken } from "~/lib/gmail-integration";
 import { bodyToHtml } from "~/lib/email";
 import { getAppEnv, getFrontendUrl } from "~/lib/app-env";
 import { slackConfigured, sendDm } from "~/slack/lib/slack-client";
+import { publishNotificationChange } from "~/lib/notify-stream.server";
 import { EVENT_TYPES, type EventDef, type EventType } from "~/lib/notification-events";
 import type { NotificationKind } from "~/generated/prisma/client";
 
@@ -179,6 +180,12 @@ export async function notify(args: {
       })
     : [];
   const rowIdByUser = new Map(rows.map((row) => [row.recipientUserId, row.id]));
+
+  // Ping open notification streams (desktop app) so new rows surface without
+  // waiting for the stream's sync backstop. In-memory, never throws.
+  if (rows.length > 0) {
+    publishNotificationChange(rows.map((row) => row.recipientUserId));
+  }
 
   // Instant email — best-effort per recipient.
   let emailed = 0;
