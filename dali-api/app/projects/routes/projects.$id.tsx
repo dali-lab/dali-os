@@ -40,7 +40,6 @@ import { getPresenceUser } from "~/lib/presence-user";
 import { TaskBoard } from "../components/TaskBoard";
 import { ProjectMentorshipTab } from "~/mentorship/components/ProjectMentorshipTab";
 import {
-  EpicsTimeline,
   type TimelineEpic,
   type EpicStatus,
 } from "../components/EpicsTimeline";
@@ -3377,12 +3376,13 @@ function PlanningTab({
   userName: string;
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
-  const timeline = searchParams.get("view") === "timeline";
+  // Timeline is the default view; the list view is opt-in via ?view=list.
+  const timeline = searchParams.get("view") !== "list";
   const setTimeline = (next: boolean) => {
     setSearchParams(
       (prev) => {
-        if (next) prev.set("view", "timeline");
-        else prev.delete("view");
+        if (next) prev.delete("view");
+        else prev.set("view", "list");
         return prev;
       },
       { replace: true, preventScrollReset: true },
@@ -3414,19 +3414,17 @@ function PlanningTab({
         </div>
       </div>
 
-      {timeline ? (
-        <EpicsTimeline epics={epics} taskCounts={taskCountsByEpic} />
-      ) : (
-        <EpicSprintManager
-          projectId={projectId}
-          epics={editableEpics}
-          sprints={sprints}
-          taskCounts={taskCountsByEpic}
-          canManage={canEdit}
-          collabToken={collabToken}
-          userName={userName}
-        />
-      )}
+      <EpicSprintManager
+        projectId={projectId}
+        epics={editableEpics}
+        sprints={sprints}
+        taskCounts={taskCountsByEpic}
+        canManage={canEdit}
+        collabToken={collabToken}
+        userName={userName}
+        view={timeline ? "timeline" : "list"}
+        timelineEpics={epics}
+      />
     </div>
   );
 }

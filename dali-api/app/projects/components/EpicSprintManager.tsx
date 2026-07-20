@@ -15,6 +15,7 @@ import { Modal } from "~/components/Modal";
 import { Button } from "~/components/ui/Button";
 import { CollaborativeEditor } from "~/components/CollaborativeEditor";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
+import { EpicsTimeline, type TimelineEpic } from "./EpicsTimeline";
 
 export type EditableStory = {
   id: string;
@@ -67,6 +68,12 @@ type Props = {
   // the editor's read-only fallback handles it.
   collabToken: string | null;
   userName: string;
+  // Which body to render. "timeline" (the default planning view) swaps the
+  // epic/sprint list for the clickable timeline; the New-epic + detail modals
+  // stay shared across both. "list" keeps the original manager.
+  view?: "list" | "timeline";
+  // TimelineEpic shape for the timeline body (only read when view=timeline).
+  timelineEpics?: TimelineEpic[];
 };
 
 function dateInputValue(iso: string): string {
@@ -102,6 +109,8 @@ export function EpicSprintManager({
   canManage,
   collabToken,
   userName,
+  view = "list",
+  timelineEpics = [],
 }: Props) {
   const revalidator = useRevalidator();
   const [error, setError] = useState<string | null>(null);
@@ -297,6 +306,34 @@ export function EpicSprintManager({
         )}
       </Modal>
 
+      {view === "timeline" ? (
+        <div className="flex flex-col gap-3">
+          {canManage && (
+            <div className="flex justify-end">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setNewEpicOpen(true)}
+              >
+                + Add epic
+              </Button>
+            </div>
+          )}
+          {/* Clicking an epic or sprint bar opens the same detail/edit modal
+              the list view uses (openEpic). */}
+          <EpicsTimeline
+            epics={timelineEpics}
+            taskCounts={taskCounts}
+            onEpicClick={canManage ? (id) => openEpic(id) : undefined}
+            onSprintClick={
+              canManage
+                ? (epicId, sprintId) => openEpic(epicId, { sprintId })
+                : undefined
+            }
+          />
+        </div>
+      ) : (
+        <>
       {/* Epics */}
       <section className="bg-card border border-border rounded-lg p-4">
         <div className={`flex items-center justify-between gap-2 ${epicsOpen ? "mb-3" : ""}`}>
@@ -651,6 +688,8 @@ export function EpicSprintManager({
           </>
         )}
       </section>
+        </>
+      )}
     </div>
   );
 }

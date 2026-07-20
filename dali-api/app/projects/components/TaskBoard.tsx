@@ -81,6 +81,7 @@ export function TaskBoard({
   const [searchParams, setSearchParams] = useSearchParams();
   const openTaskId = searchParams.get("task");
   const epicFilter = searchParams.get("epic");
+  const sprintFilter = searchParams.get("sprint");
   const setParam = useCallback(
     (key: string, value: string | null) => {
       setSearchParams(
@@ -95,16 +96,44 @@ export function TaskBoard({
     },
     [setSearchParams],
   );
+  // Picking an epic resets the sprint sub-filter (its sprints are epic-scoped).
+  const setEpicFilter = useCallback(
+    (value: string | null) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          if (value) next.set("epic", value);
+          else next.delete("epic");
+          next.delete("sprint");
+          return next;
+        },
+        { replace: true, preventScrollReset: true },
+      );
+    },
+    [setSearchParams],
+  );
   const setOpenTaskId = useCallback(
     (id: string | null) => setParam("task", id),
     [setParam],
   );
 
+  // Sprint sub-filter only applies within a concrete epic; its options are that
+  // epic's sprints.
+  const epicSprints = useMemo(
+    () =>
+      epicFilter && epicFilter !== NO_EPIC
+        ? options.sprints.filter((s) => s.epicId === epicFilter)
+        : [],
+    [options.sprints, epicFilter],
+  );
+
   const filteredTasks = useMemo(() => {
-    if (!epicFilter) return tasks;
-    if (epicFilter === NO_EPIC) return tasks.filter((t) => t.epicId === null);
-    return tasks.filter((t) => t.epicId === epicFilter);
-  }, [tasks, epicFilter]);
+    let ts = tasks;
+    if (epicFilter === NO_EPIC) ts = ts.filter((t) => t.epicId === null);
+    else if (epicFilter) ts = ts.filter((t) => t.epicId === epicFilter);
+    if (sprintFilter) ts = ts.filter((t) => t.sprintId === sprintFilter);
+    return ts;
+  }, [tasks, epicFilter, sprintFilter]);
 
   const board = useMemo(() => buildTaskBoard(filteredTasks), [filteredTasks]);
   const openTask = openTaskId ? tasks.find((t) => t.id === openTaskId) ?? null : null;
@@ -298,8 +327,51 @@ export function TaskBoard({
     <div className="flex flex-col gap-3">
       <Confetti trigger={celebrate} onFire={() => setCelebrate(false)} />
       <div className="flex flex-wrap items-center gap-2">
+        {showEpicFilter && (
+          <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filter by epic">
+            <FilterPill
+              label="All"
+              active={epicFilter === null}
+              onClick={() => setEpicFilter(null)}
+            />
+            {options.epics.map((e) => (
+              <FilterPill
+                key={e.id}
+                label={e.title}
+                active={epicFilter === e.id}
+                onClick={() => setEpicFilter(epicFilter === e.id ? null : e.id)}
+              />
+            ))}
+            <FilterPill
+              label="No epic"
+              active={epicFilter === NO_EPIC}
+              onClick={() => setEpicFilter(epicFilter === NO_EPIC ? null : NO_EPIC)}
+            />
+          </div>
+        )}
+        {epicSprints.length > 0 && (
+          <div
+            className="flex flex-wrap items-center gap-1.5 pl-2 border-l border-border"
+            role="group"
+            aria-label="Filter by sprint"
+          >
+            <FilterPill
+              label="All sprints"
+              active={sprintFilter === null}
+              onClick={() => setParam("sprint", null)}
+            />
+            {epicSprints.map((s) => (
+              <FilterPill
+                key={s.id}
+                label={s.name}
+                active={sprintFilter === s.id}
+                onClick={() => setParam("sprint", sprintFilter === s.id ? null : s.id)}
+              />
+            ))}
+          </div>
+        )}
         {canManage && (
-          <>
+          <div className="flex items-center gap-2 ml-auto">
             <Button variant="primary" size="sm" onClick={() => setIsCreating(true)}>
               + Add task
             </Button>
@@ -307,28 +379,6 @@ export function TaskBoard({
               <Archive className="w-3.5 h-3.5" />
               Archived
             </Button>
-          </>
-        )}
-        {showEpicFilter && (
-          <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filter by epic">
-            <FilterPill
-              label="All"
-              active={epicFilter === null}
-              onClick={() => setParam("epic", null)}
-            />
-            {options.epics.map((e) => (
-              <FilterPill
-                key={e.id}
-                label={e.title}
-                active={epicFilter === e.id}
-                onClick={() => setParam("epic", epicFilter === e.id ? null : e.id)}
-              />
-            ))}
-            <FilterPill
-              label="No epic"
-              active={epicFilter === NO_EPIC}
-              onClick={() => setParam("epic", epicFilter === NO_EPIC ? null : NO_EPIC)}
-            />
           </div>
         )}
       </div>
