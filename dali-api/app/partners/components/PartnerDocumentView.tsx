@@ -40,6 +40,7 @@ export function PartnerDocumentView({
                 token={collabToken}
                 userName={userName}
                 disabled
+                enableImages
                 placeholder="No content yet."
                 className="border border-border rounded-md bg-card"
               />

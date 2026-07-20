@@ -1,25 +1,40 @@
-// MCP `create_page` — creates a FreeForm Page shell in a project workspace.
-// Mirrors api.projects.$id.documents — title only; the rich-text body is
-// initialized when first opened in the collab editor. (Pre-populating
-// content would require synthesizing a Yjs binary update, which is out of
-// scope for v1.) Core-only. Optionally nests under a parent page (1-level cap).
+// MCP `create_page` — creates a Page in a project workspace: a FreeForm
+// document (optionally seeded with Markdown content via the collab write
+// pipeline) or a Folder container. Mirrors api.projects.$id.documents — same
+// nesting rules (documents nest only inside top-level Folders; folders never
+// nest). Core-only.
 
 import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
+import { markdownToProseMirror } from "~/collab/import-markdown";
+import { replaceCollabDocContent } from "~/collab/write";
+import { pageDocName } from "~/collab/roomName";
+
+const MAX_MARKDOWN_LENGTH = 300_000;
 
 export const CREATE_PAGE_TOOL = {
   name: "create_page",
   description:
-    "Create a new free-form page in a project's workspace. Core-only. Title only; content is filled in via the collab editor.",
+    "Create a page in a project's workspace: a FreeForm document (optionally with Markdown content) or a Folder. Documents can nest under a top-level Folder; folders can't nest. Core-only.",
   inputSchema: {
     type: "object" as const,
     properties: {
       projectId: { type: "string", minLength: 1 },
       title: { type: "string", minLength: 1, maxLength: 200 },
+      kind: {
+        type: "string",
+        enum: ["FreeForm", "Folder"],
+        description: "Default 'FreeForm' (a document). 'Folder' creates a container page.",
+      },
       parentPageId: {
         type: "string",
+        description: "Optional. Nest under this top-level Folder page (FreeForm only).",
+      },
+      content: {
+        type: "string",
+        maxLength: MAX_MARKDOWN_LENGTH,
         description:
-          "Optional. Nest under this top-level page (2-level cap — the parent must be top-level).",
+          "Optional initial body as Markdown (FreeForm only) — same dialect as set_page_content.",
       },
       iconEmoji: { type: "string", maxLength: 8 },
     },
@@ -32,7 +47,9 @@ export const CREATE_PAGE_TOOL = {
 type Input = {
   projectId: string;
   title: string;
+  kind?: "FreeForm" | "Folder";
   parentPageId?: string;
+  content?: string;
   iconEmoji?: string;
 };
 
@@ -51,6 +68,14 @@ export async function runCreatePage(callerId: string, input: Input) {
   const title = input.title.trim();
   if (!title) throw new CreatePageError("Title is required", 400);
 
+  const kind = input.kind ?? "FreeForm";
+  if (kind === "Folder" && input.parentPageId) {
+    throw new CreatePageError("Folders can't be nested inside another folder", 400);
+  }
+  if (kind === "Folder" && input.content !== undefined) {
+    throw new CreatePageError("Folders have no body — omit content", 400);
+  }
+
   const project = await prisma.project.findUnique({
     where: { id: input.projectId },
     select: { id: true },
@@ -61,19 +86,41 @@ export async function runCreatePage(callerId: string, input: Input) {
   if (input.parentPageId && input.parentPageId !== "") {
     const parent = await prisma.page.findUnique({
       where: { id: input.parentPageId },
-      select: { id: true, parentPageId: true, workspaceType: true, workspaceId: true },
+      select: {
+        id: true,
+        parentPageId: true,
+        workspaceType: true,
+        workspaceId: true,
+        kind: true,
+        archivedAt: true,
+      },
     });
-    if (!parent) throw new CreatePageError("Parent page not found", 404);
+    if (!parent || parent.archivedAt !== null) {
+      throw new CreatePageError("Parent page not found", 404);
+    }
     if (parent.workspaceType !== "Project" || parent.workspaceId !== input.projectId) {
       throw new CreatePageError(
         "Parent page is not in this project's workspace",
         400,
       );
     }
+    if (parent.kind !== "Folder") {
+      throw new CreatePageError("Documents can only nest inside a folder", 400);
+    }
     if (parent.parentPageId !== null) {
       throw new CreatePageError("Parent page must itself be top-level (2-level cap)", 400);
     }
     parentPageId = parent.id;
+  }
+
+  // Parse before creating so bad markdown doesn't leave an empty page behind.
+  let doc = null;
+  if (input.content !== undefined && input.content !== "") {
+    try {
+      doc = markdownToProseMirror(input.content);
+    } catch {
+      throw new CreatePageError("content markdown could not be parsed", 400);
+    }
   }
 
   const last = await prisma.page.findFirst({
@@ -93,13 +140,18 @@ export async function runCreatePage(callerId: string, input: Input) {
       workspaceId: input.projectId,
       parentPageId,
       title,
-      kind: "FreeForm",
+      kind,
       position,
       iconEmoji: input.iconEmoji && input.iconEmoji !== "" ? input.iconEmoji : null,
       createdById: callerId,
+      lastEditedById: doc ? callerId : null,
     },
     select: { id: true },
   });
 
-  return { id: page.id, parentPageId, position };
+  if (doc) {
+    await replaceCollabDocContent(pageDocName(page.id), doc, callerId);
+  }
+
+  return { id: page.id, kind, parentPageId, position };
 }

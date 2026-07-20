@@ -1,4 +1,4 @@
-import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3'
+import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { createPresignedPost, type PresignedPost } from '@aws-sdk/s3-presigned-post'
 import { MAX_UPLOAD_BYTES } from './file-validation'
@@ -50,6 +50,22 @@ export async function getUploadPost(
     Fields: { 'Content-Type': contentType },
     Expires: expiresIn,
   })
+}
+
+// Server-side direct upload (MCP tool path — no browser to hand a presigned
+// POST to). Same uploads/ scoping contract as the presign route; callers
+// enforce size/type limits before invoking.
+export async function putObject(
+  key: string,
+  body: Uint8Array,
+  contentType: string,
+): Promise<void> {
+  if (!isS3Configured()) {
+    throw new Error("AWS S3 is not configured")
+  }
+  await s3.send(
+    new PutObjectCommand({ Bucket: BUCKET, Key: key, Body: body, ContentType: contentType }),
+  )
 }
 
 // Generate a presigned URL for reading a private file.

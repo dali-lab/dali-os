@@ -13,44 +13,12 @@ import {
   MAX_UPLOAD_BYTES,
   MAX_UPLOAD_LABEL,
   fileMatchesAccept,
+  isBlockedUpload,
 } from '~/lib/file-validation'
 import { checkRateLimit } from '~/lib/rate-limit'
 
-// Defense-in-depth: block known-dangerous types regardless of what the
-// caller's `accept` config says. Runs unconditionally so a misconfigured
-// challenge accept string can't accidentally permit executables.
-const BLOCKED_TYPES = new Set([
-  'application/x-msdownload',
-  'application/x-msdos-program',
-  'application/x-sh',
-  'application/x-bat',
-  'application/x-csh',
-  'application/x-executable',
-  'application/x-mach-binary',
-])
-
-const BLOCKED_EXTENSIONS = new Set([
-  '.exe',
-  '.bat',
-  '.cmd',
-  '.com',
-  '.sh',
-  '.ps1',
-  '.msi',
-  '.dll',
-  '.app',
-  '.dmg',
-  '.scr',
-])
-
 const RATE_LIMIT_MAX = 20
 const RATE_LIMIT_WINDOW_MS = 60_000
-
-function getExtension(name: string): string {
-  const idx = name.lastIndexOf('.')
-  if (idx < 0) return ''
-  return name.slice(idx).toLowerCase()
-}
 
 function filenameFromKey(key: string): string {
   const idx = key.lastIndexOf('/')
@@ -82,10 +50,11 @@ export async function action({ request }: { request: Request }) {
     }
 
     const fileName = filenameFromKey(key)
-    const ext = getExtension(fileName)
-    const lowerType = contentType.toLowerCase()
 
-    if (BLOCKED_TYPES.has(lowerType) || (ext && BLOCKED_EXTENSIONS.has(ext))) {
+    // Defense-in-depth: block known-dangerous types regardless of what the
+    // caller's `accept` config says. Runs unconditionally so a misconfigured
+    // challenge accept string can't accidentally permit executables.
+    if (isBlockedUpload(fileName, contentType)) {
       return Response.json({ error: 'File type not allowed' }, { status: 400 })
     }
 

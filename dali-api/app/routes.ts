@@ -451,6 +451,7 @@ export default [
   // S3 file upload
   route("api/upload/presign", "routes/api.upload.presign.ts"),
   route("api/upload/url", "routes/api.upload.url.ts"),
+  route("api/upload/raw", "routes/api.upload.raw.ts"),
 
   // Gmail OAuth one-time authorization
   route("admin/authorize-gmail", "routes/admin.authorize-gmail.ts"),
