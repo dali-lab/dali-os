@@ -42,13 +42,8 @@ const PRIORITY_TONE: Record<Priority, string> = {
   Urgent: "text-accent-coral font-semibold",
 };
 
-// New tasks land in the first column ("To do") unless the modal picked a
-// status-affecting sprint; they can be dragged onward from there. One add
-// affordance for the whole board, not per column.
-const CREATE_STATUS: TaskStatus = TASK_STATUSES[0];
-
-// The `?sprint=` filter value for backlog (tasks with no sprint).
-const BACKLOG = "backlog";
+// The `?epic=` filter value for tasks with no epic.
+const NO_EPIC = "none";
 
 export function TaskBoard({
   projectId,
@@ -85,6 +80,7 @@ export function TaskBoard({
   // filter lives in `?sprint=` for the same reason (shareable board slices).
   const [searchParams, setSearchParams] = useSearchParams();
   const openTaskId = searchParams.get("task");
+  const epicFilter = searchParams.get("epic");
   const sprintFilter = searchParams.get("sprint");
   const setParam = useCallback(
     (key: string, value: string | null) => {
@@ -100,16 +96,44 @@ export function TaskBoard({
     },
     [setSearchParams],
   );
+  // Picking an epic resets the sprint sub-filter (its sprints are epic-scoped).
+  const setEpicFilter = useCallback(
+    (value: string | null) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          if (value) next.set("epic", value);
+          else next.delete("epic");
+          next.delete("sprint");
+          return next;
+        },
+        { replace: true, preventScrollReset: true },
+      );
+    },
+    [setSearchParams],
+  );
   const setOpenTaskId = useCallback(
     (id: string | null) => setParam("task", id),
     [setParam],
   );
 
+  // Sprint sub-filter only applies within a concrete epic; its options are that
+  // epic's sprints.
+  const epicSprints = useMemo(
+    () =>
+      epicFilter && epicFilter !== NO_EPIC
+        ? options.sprints.filter((s) => s.epicId === epicFilter)
+        : [],
+    [options.sprints, epicFilter],
+  );
+
   const filteredTasks = useMemo(() => {
-    if (!sprintFilter) return tasks;
-    if (sprintFilter === BACKLOG) return tasks.filter((t) => t.sprintId === null);
-    return tasks.filter((t) => t.sprintId === sprintFilter);
-  }, [tasks, sprintFilter]);
+    let ts = tasks;
+    if (epicFilter === NO_EPIC) ts = ts.filter((t) => t.epicId === null);
+    else if (epicFilter) ts = ts.filter((t) => t.epicId === epicFilter);
+    if (sprintFilter) ts = ts.filter((t) => t.sprintId === sprintFilter);
+    return ts;
+  }, [tasks, epicFilter, sprintFilter]);
 
   const board = useMemo(() => buildTaskBoard(filteredTasks), [filteredTasks]);
   const openTask = openTaskId ? tasks.find((t) => t.id === openTaskId) ?? null : null;
@@ -134,6 +158,7 @@ export function TaskBoard({
           if ("title" in patch) body.title = patch.title;
           if ("description" in patch) body.description = patch.description;
           if ("priority" in patch) body.priority = patch.priority;
+          if ("status" in patch) body.status = patch.status;
           if ("sprintId" in patch) body.sprintId = patch.sprintId ?? null;
           if ("epicId" in patch) body.epicId = patch.epicId ?? null;
           if ("checklist" in patch) body.checklist = patch.checklist ?? null;
@@ -225,7 +250,7 @@ export function TaskBoard({
       body: JSON.stringify({
         title: values.title,
         description: values.description,
-        status: CREATE_STATUS,
+        status: values.status,
         dueAt: values.dueAt,
         sprintId: values.sprintId,
         epicId: values.epicId,
@@ -254,9 +279,9 @@ export function TaskBoard({
         id,
         title: values.title,
         description: values.description,
-        status: CREATE_STATUS,
+        status: values.status,
         priority: values.priority,
-        position: nextPositionInColumn(buildTaskBoard(cur), CREATE_STATUS),
+        position: nextPositionInColumn(buildTaskBoard(cur), values.status),
         dueAt: values.dueAt,
         epicId: values.epicId,
         sprintId: values.sprintId,
@@ -295,16 +320,59 @@ export function TaskBoard({
     listClassName: "flex flex-col gap-2 p-2 min-h-[360px]",
   }));
 
-  // Sprint pills: Active first, then Planned, then Closed (options.sprints
-  // arrive in that order from the loader), plus Backlog for sprint-less tasks.
-  const showSprintFilter = options.sprints.length > 0;
+  // Epic pills slice the board to one epic's tasks, plus "No epic" for tasks
+  // that aren't in any epic.
+  const showEpicFilter = options.epics.length > 0;
 
   return (
     <div className="flex flex-col gap-3">
       <Confetti trigger={celebrate} onFire={() => setCelebrate(false)} />
       <div className="flex flex-wrap items-center gap-2">
+        {showEpicFilter && (
+          <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filter by epic">
+            <FilterPill
+              label="All"
+              active={epicFilter === null}
+              onClick={() => setEpicFilter(null)}
+            />
+            {options.epics.map((e) => (
+              <FilterPill
+                key={e.id}
+                label={e.title}
+                active={epicFilter === e.id}
+                onClick={() => setEpicFilter(epicFilter === e.id ? null : e.id)}
+              />
+            ))}
+            <FilterPill
+              label="No epic"
+              active={epicFilter === NO_EPIC}
+              onClick={() => setEpicFilter(epicFilter === NO_EPIC ? null : NO_EPIC)}
+            />
+          </div>
+        )}
+        {epicSprints.length > 0 && (
+          <div
+            className="flex flex-wrap items-center gap-1.5 pl-2 border-l border-border"
+            role="group"
+            aria-label="Filter by sprint"
+          >
+            <FilterPill
+              label="All sprints"
+              active={sprintFilter === null}
+              onClick={() => setParam("sprint", null)}
+            />
+            {epicSprints.map((s) => (
+              <FilterPill
+                key={s.id}
+                label={s.name}
+                active={sprintFilter === s.id}
+                onClick={() => setParam("sprint", sprintFilter === s.id ? null : s.id)}
+              />
+            ))}
+          </div>
+        )}
         {canManage && (
-          <>
+          <div className="flex items-center gap-2 ml-auto">
             <Button variant="primary" size="sm" onClick={() => setIsCreating(true)}>
               + Add task
             </Button>
@@ -312,29 +380,6 @@ export function TaskBoard({
               <Archive className="w-3.5 h-3.5" />
               Archived
             </Button>
-          </>
-        )}
-        {showSprintFilter && (
-          <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filter by sprint">
-            <SprintPill
-              label="All"
-              active={sprintFilter === null}
-              onClick={() => setParam("sprint", null)}
-            />
-            {options.sprints.map((s) => (
-              <SprintPill
-                key={s.id}
-                label={s.name}
-                activeSprint={s.status === "Active"}
-                active={sprintFilter === s.id}
-                onClick={() => setParam("sprint", sprintFilter === s.id ? null : s.id)}
-              />
-            ))}
-            <SprintPill
-              label="Backlog"
-              active={sprintFilter === BACKLOG}
-              onClick={() => setParam("sprint", sprintFilter === BACKLOG ? null : BACKLOG)}
-            />
           </div>
         )}
       </div>
@@ -384,8 +429,8 @@ export function TaskBoard({
           projectId={projectId}
           options={options}
           canManage={canManage}
-          defaultSprintId={
-            sprintFilter && sprintFilter !== BACKLOG ? sprintFilter : null
+          defaultEpicId={
+            epicFilter && epicFilter !== NO_EPIC ? epicFilter : null
           }
           onClose={() => setIsCreating(false)}
           onCreate={handleCreate}
@@ -510,15 +555,13 @@ function ArchivedTasksModal({
   );
 }
 
-function SprintPill({
+function FilterPill({
   label,
   active,
-  activeSprint = false,
   onClick,
 }: {
   label: string;
   active: boolean;
-  activeSprint?: boolean;
   onClick: () => void;
 }) {
   return (
@@ -532,9 +575,6 @@ function SprintPill({
           : "border-border text-muted-foreground hover:bg-muted/30"
       }`}
     >
-      {activeSprint && (
-        <span aria-hidden className="w-1.5 h-1.5 rounded-full bg-accent-teal" />
-      )}
       {label}
     </button>
   );

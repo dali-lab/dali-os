@@ -17,9 +17,15 @@ import {
   CHECKLIST_MAX_TEXT,
   type ChecklistItem,
 } from "../lib/task-checklist";
-import type { TaskBoardOptions, TaskCardModel, Priority } from "../lib/task-board";
+import type { TaskBoardOptions, TaskCardModel, Priority, TaskStatus } from "../lib/task-board";
+import { TASK_STATUSES, TASK_STATUS_LABELS } from "../lib/task-board";
 
 const PRIORITIES: Priority[] = ["Low", "Normal", "High", "Urgent"];
+
+// Borderless control for the Details property panel — the row supplies the
+// structure, so the control itself stays quiet.
+const PROP_CONTROL =
+  "w-full bg-transparent text-sm text-foreground py-1 focus:outline-none disabled:opacity-60";
 
 const COMMENT_MAX = 10_000;
 
@@ -38,6 +44,7 @@ type CommentModel = {
 export type NewTaskValues = {
   title: string;
   description: string | null;
+  status: TaskStatus;
   priority: Priority;
   dueAt: string | null;
   domainId: string | null;
@@ -64,7 +71,7 @@ export function TaskModal({
   onPatch,
   onCreate,
   onDelete,
-  defaultSprintId,
+  defaultEpicId,
   onArtifactsChanged,
 }: {
   // Present in edit mode; omitted (create mode) opens an empty form.
@@ -79,8 +86,8 @@ export function TaskModal({
   onCreate?: (values: NewTaskValues) => Promise<void> | void;
   // Edit mode: the parent removes the task (and closes the modal).
   onDelete?: () => void;
-  // Create mode: seeds the sprint picker (e.g. from the board's sprint filter).
-  defaultSprintId?: string | null;
+  // Create mode: seeds the epic picker (e.g. from the board's epic filter).
+  defaultEpicId?: string | null;
   // Edit mode: lets the board revalidate so the card's artifact chip catches
   // up after a link/unlink/upload (artifacts bypass the onPatch path).
   onArtifactsChanged?: () => void;
@@ -89,6 +96,7 @@ export function TaskModal({
   const [title, setTitle] = useState(task?.title ?? "");
   const [description, setDescription] = useState(task?.description ?? "");
   const [priority, setPriority] = useState<Priority>(task?.priority ?? "Normal");
+  const [status, setStatus] = useState<TaskStatus>(task?.status ?? "Todo");
   const [assigneeIds, setAssigneeIds] = useState<string[]>(
     task?.assignees.map((a) => a.id) ?? [],
   );
@@ -96,10 +104,24 @@ export function TaskModal({
     task?.dueAt ? dateInputValue(task.dueAt) : "",
   );
   const [domainId, setDomainId] = useState<string>(task?.domain?.id ?? "");
-  const [sprintId, setSprintId] = useState<string>(
-    task ? task.sprintId ?? "" : defaultSprintId ?? "",
+  const [sprintId, setSprintId] = useState<string>(task?.sprintId ?? "");
+  const [epicId, setEpicId] = useState<string>(
+    task ? task.epicId ?? "" : defaultEpicId ?? "",
   );
-  const [epicId, setEpicId] = useState<string>(task?.epicId ?? "");
+
+  // Cascading Epic → Sprint: only the chosen epic's sprints are selectable
+  // (or, with no epic, the standalone sprints). Changing epic drops a sprint
+  // that no longer belongs.
+  const epicSprints = options.sprints.filter((s) =>
+    epicId ? s.epicId === epicId : s.epicId === null,
+  );
+  function changeEpic(next: string) {
+    setEpicId(next);
+    const stillValid = options.sprints.some(
+      (s) => s.id === sprintId && (next ? s.epicId === next : s.epicId === null),
+    );
+    if (!stillValid) setSprintId("");
+  }
   const [checklist, setChecklist] = useState<ChecklistItem[]>(task?.checklist ?? []);
   const [newItemText, setNewItemText] = useState("");
   const [saving, setSaving] = useState(false);
@@ -162,6 +184,7 @@ export function TaskModal({
     setTitle(task.title);
     setDescription(task.description ?? "");
     setPriority(task.priority);
+    setStatus(task.status);
     setAssigneeIds(task.assignees.map((a) => a.id));
     setDueDate(task.dueAt ? dateInputValue(task.dueAt) : "");
     setDomainId(task.domain?.id ?? "");
@@ -210,6 +233,7 @@ export function TaskModal({
     const nextDescription = description.trim() ? description.trim() : null;
     if (nextDescription !== current.description) patch.description = nextDescription;
     if (priority !== current.priority) patch.priority = priority;
+    if (status !== current.status) patch.status = status;
     const nextDueIso = dueDate ? endOfDayIso(dueDate) : null;
     if (nextDueIso !== current.dueAt) patch.dueAt = nextDueIso;
     const nextDomain =
@@ -250,11 +274,12 @@ export function TaskModal({
       title.trim() !== "" ||
       description.trim() !== "" ||
       priority !== "Normal" ||
+      status !== "Todo" ||
       dueDate !== "" ||
       domainId !== "" ||
       assigneeIds.length > 0 ||
-      sprintId !== (defaultSprintId ?? "") ||
-      epicId !== "" ||
+      sprintId !== "" ||
+      epicId !== (defaultEpicId ?? "") ||
       githubEnabled
     );
   }
@@ -295,6 +320,7 @@ export function TaskModal({
       await onCreate({
         title: trimmed,
         description: description.trim() ? description.trim() : null,
+        status,
         priority,
         dueAt: dueDate ? endOfDayIso(dueDate) : null,
         domainId: domainId === "" ? null : domainId,
@@ -522,7 +548,7 @@ export function TaskModal({
       open
       onClose={guardedClose}
       labelledBy="task-modal-title"
-      containerClassName="bg-card rounded-2xl shadow-brand-2 max-w-lg w-full p-5 sm:p-6 my-auto"
+      containerClassName="bg-card rounded-2xl shadow-brand-2 max-w-2xl w-full p-5 sm:p-6 my-auto"
     >
       <div className="flex flex-col gap-4">
         <div className="flex items-start justify-between gap-3">
@@ -563,13 +589,31 @@ export function TaskModal({
           />
         </Field>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Field label="Priority">
+        {/* Details — one tidy property panel (label · control rows) instead of
+            a grid of boxed inputs, so the metadata reads as scannable
+            properties rather than a wall of fields. */}
+        <div className="rounded-lg border border-border divide-y divide-border">
+          <PropRow label="Status">
+            <select
+              value={status}
+              disabled={!canManage}
+              onChange={(e) => setStatus(e.target.value as TaskStatus)}
+              className={PROP_CONTROL}
+            >
+              {TASK_STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {TASK_STATUS_LABELS[s]}
+                </option>
+              ))}
+            </select>
+          </PropRow>
+
+          <PropRow label="Priority">
             <select
               value={priority}
               disabled={!canManage}
               onChange={(e) => setPriority(e.target.value as Priority)}
-              className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
+              className={PROP_CONTROL}
             >
               {PRIORITIES.map((p) => (
                 <option key={p} value={p}>
@@ -577,41 +621,14 @@ export function TaskModal({
                 </option>
               ))}
             </select>
-          </Field>
+          </PropRow>
 
-          <Field label="Deadline">
-            <input
-              type="date"
-              value={dueDate}
-              disabled={!canManage}
-              onChange={(e) => setDueDate(e.target.value)}
-              className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
-            />
-          </Field>
-
-          <Field label="Sprint">
-            <select
-              value={sprintId}
-              disabled={!canManage}
-              onChange={(e) => setSprintId(e.target.value)}
-              className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
-            >
-              <option value="">None (backlog)</option>
-              {options.sprints.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                  {s.status === "Closed" ? " (closed)" : ""}
-                </option>
-              ))}
-            </select>
-          </Field>
-
-          <Field label="Epic">
+          <PropRow label="Epic">
             <select
               value={epicId}
               disabled={!canManage}
-              onChange={(e) => setEpicId(e.target.value)}
-              className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
+              onChange={(e) => changeEpic(e.target.value)}
+              className={PROP_CONTROL}
             >
               <option value="">No epic</option>
               {options.epics.map((e) => (
@@ -620,14 +637,37 @@ export function TaskModal({
                 </option>
               ))}
             </select>
-          </Field>
+          </PropRow>
 
-          <Field label="Domain">
+          <PropRow label="Sprint">
+            <select
+              value={sprintId}
+              disabled={!canManage || epicSprints.length === 0}
+              onChange={(e) => setSprintId(e.target.value)}
+              className={PROP_CONTROL}
+            >
+              <option value="">
+                {epicSprints.length === 0
+                  ? epicId
+                    ? "No sprints in this epic"
+                    : "Pick an epic first"
+                  : "None"}
+              </option>
+              {epicSprints.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                  {s.status === "Closed" ? " (closed)" : ""}
+                </option>
+              ))}
+            </select>
+          </PropRow>
+
+          <PropRow label="Domain">
             <select
               value={domainId}
               disabled={!canManage}
               onChange={(e) => setDomainId(e.target.value)}
-              className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
+              className={PROP_CONTROL}
             >
               <option value="">—</option>
               {options.domains.map((d) => (
@@ -636,16 +676,26 @@ export function TaskModal({
                 </option>
               ))}
             </select>
-          </Field>
+          </PropRow>
 
-          <Field label="Assignees">
+          <PropRow label="Deadline">
+            <input
+              type="date"
+              value={dueDate}
+              disabled={!canManage}
+              onChange={(e) => setDueDate(e.target.value)}
+              className={PROP_CONTROL}
+            />
+          </PropRow>
+
+          <PropRow label="Assignees" align="start">
             <AssigneePicker
               all={options.members}
               selected={assigneeIds}
               disabled={!canManage}
               onChange={setAssigneeIds}
             />
-          </Field>
+          </PropRow>
         </div>
 
         {!isCreate && (
@@ -967,12 +1017,6 @@ export function TaskModal({
           </div>
         )}
 
-        {!isCreate && task && (
-          <div className="pt-2 border-t border-border text-[11px] text-muted-foreground">
-            Created by {task.createdBy.name} on {formatCreatedAt(task.createdAt)}
-          </div>
-        )}
-
         {saveError && <p className="text-xs text-accent-coral">{saveError}</p>}
 
         <div className="flex items-center gap-2 pt-2 border-t border-border">
@@ -1037,6 +1081,12 @@ export function TaskModal({
               ))}
           </div>
         </div>
+
+        {!isCreate && task && (
+          <div className="text-[11px] text-muted-foreground text-right">
+            Created by {task.createdBy.name} on {formatCreatedAt(task.createdAt)}
+          </div>
+        )}
       </div>
     </Modal>
   );
@@ -1056,6 +1106,34 @@ function Field({
       </span>
       {children}
     </label>
+  );
+}
+
+// One row in the Details property panel: a fixed-width label and its control.
+function PropRow({
+  label,
+  children,
+  align = "center",
+}: {
+  label: string;
+  children: React.ReactNode;
+  align?: "center" | "start";
+}) {
+  return (
+    <div
+      className={`flex gap-3 px-3 py-2 ${
+        align === "start" ? "items-start" : "items-center"
+      }`}
+    >
+      <span
+        className={`w-24 shrink-0 text-[11px] font-medium uppercase tracking-wide text-muted-foreground ${
+          align === "start" ? "pt-1.5" : ""
+        }`}
+      >
+        {label}
+      </span>
+      <div className="flex-1 min-w-0">{children}</div>
+    </div>
   );
 }
 

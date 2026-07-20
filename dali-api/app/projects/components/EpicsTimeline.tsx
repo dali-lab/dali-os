@@ -206,12 +206,15 @@ function HoverBar({
   title,
   rows,
   children,
+  onClick,
 }: {
   className: string;
   style: CSSProperties;
   title: string;
   rows: { label: string; value: string }[];
   children?: ReactNode;
+  // When set, the bar becomes a button that opens the epic/sprint detail.
+  onClick?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
@@ -219,10 +222,23 @@ function HoverBar({
     <>
       <div
         ref={setAnchorEl}
-        className={className}
+        className={`${className}${onClick ? " cursor-pointer" : ""}`}
         style={style}
         onMouseEnter={() => setOpen(true)}
         onMouseLeave={() => setOpen(false)}
+        {...(onClick
+          ? {
+              role: "button" as const,
+              tabIndex: 0,
+              onClick,
+              onKeyDown: (e: { key: string; preventDefault: () => void }) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onClick();
+                }
+              },
+            }
+          : {})}
       >
         {children}
       </div>
@@ -234,11 +250,16 @@ function HoverBar({
 export function EpicsTimeline({
   epics,
   taskCounts,
+  onEpicClick,
+  onSprintClick,
 }: {
   epics: TimelineEpic[];
   // Optional per-epic task progress keyed by epic id (Cancelled tasks
   // excluded), shown in the epic hover card.
   taskCounts?: Record<string, { done: number; total: number }>;
+  // When set, epic/sprint bars become clickable (open the detail modal).
+  onEpicClick?: (epicId: string) => void;
+  onSprintClick?: (epicId: string, sprintId: string) => void;
 }) {
   const bounds = useMemo(() => {
     // All day math is in UTC days (see ../lib/timeline-days): dates arrive
@@ -466,13 +487,14 @@ export function EpicsTimeline({
                         {/* Parent epic bar — solid coral so it stays visible
                             above the thinner sprint stack. */}
                         <HoverBar
-                          className={`absolute rounded-md shadow-sm ${EPIC_BAR[e.status]} flex items-center gap-1.5 px-1.5 cursor-default min-w-[22px]`}
+                          className={`absolute rounded-md shadow-sm ${EPIC_BAR[e.status]} flex items-center gap-1.5 px-1.5 min-w-[22px]`}
                           style={{
                             left: x(e.startsAt!),
                             width: w(e.startsAt!, e.endsAt!),
                             top: ROW_PAD_Y,
                             height: EPIC_BAR_H,
                           }}
+                          onClick={onEpicClick ? () => onEpicClick(e.id) : undefined}
                           title={e.title}
                           rows={[
                             { label: "Status", value: EPIC_LABEL[e.status] },
@@ -505,13 +527,18 @@ export function EpicsTimeline({
                           return (
                             <HoverBar
                               key={s.id}
-                              className={`absolute rounded-sm shadow-sm ${SPRINT_BAR[s.status]} cursor-default`}
+                              className={`absolute rounded-sm shadow-sm ${SPRINT_BAR[s.status]}`}
                               style={{
                                 left: x(s.startsAt),
                                 width: w(s.startsAt, s.endsAt),
                                 top,
                                 height: SPRINT_BAR_H,
                               }}
+                              onClick={
+                                onSprintClick
+                                  ? () => onSprintClick(e.id, s.id)
+                                  : undefined
+                              }
                               title={s.name}
                               rows={[
                                 { label: "Status", value: SPRINT_LABEL[s.status] },

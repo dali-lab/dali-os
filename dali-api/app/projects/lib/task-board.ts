@@ -3,6 +3,7 @@
 // the board the helper builds, and persistence goes through an /api route.
 
 export const TASK_STATUSES = [
+  "Backlog",
   "Todo",
   "InProgress",
   "InReview",
@@ -13,6 +14,7 @@ export const TASK_STATUSES = [
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 
 export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
+  Backlog: "Backlog",
   Todo: "To do",
   InProgress: "In progress",
   InReview: "In review",
@@ -63,6 +65,9 @@ export type BoardSprint = {
   id: string;
   name: string;
   status: "Planned" | "Active" | "Closed";
+  // The epic this sprint belongs to (null = standalone). Powers the modal's
+  // cascading Epic → Sprint picker: pick an epic, then only its sprints show.
+  epicId: string | null;
 };
 
 export type BoardEpic = { id: string; title: string };
