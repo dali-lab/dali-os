@@ -60,24 +60,31 @@ export function TaskBoard({
   const [isCreating, setIsCreating] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
 
-  // The open task is tracked in the URL (`?task=<id>`) so GitHub issue mirrors
-  // and other external links can deep-link straight to a task.
-  const [searchParams, setSearchParams] = useSearchParams();
-  const openTaskId = searchParams.get("task");
-  const setOpenTaskId = useCallback(
-    (id: string | null) => {
-      setSearchParams(
-        (prev) => {
-          const next = new URLSearchParams(prev);
-          if (id) next.set("task", id);
-          else next.delete("task");
-          return next;
-        },
-        { replace: true, preventScrollReset: true },
-      );
-    },
-    [setSearchParams],
+  // The open task is mirrored in the URL (`?task=<id>`) so GitHub issue mirrors
+  // and other external links can deep-link straight to a task. We seed local
+  // state from the URL once (so deep-links open the modal) and thereafter sync
+  // the URL via the raw History API rather than react-router's setSearchParams.
+  // RR's <ScrollRestoration> snaps this (very tall) board back to the top on
+  // every navigation it drives — including "replace" ones, even with
+  // preventScrollReset — so opening a card would jump the background to the top.
+  // replaceState fires no navigation event, so scroll never moves. (Same
+  // workaround as internal-processes.hub.tsx.)
+  const [searchParams] = useSearchParams();
+  const [openTaskId, setOpenTaskIdState] = useState<string | null>(() =>
+    searchParams.get("task"),
   );
+  const setOpenTaskId = useCallback((id: string | null) => {
+    setOpenTaskIdState(id);
+    const next = new URLSearchParams(window.location.search);
+    if (id) next.set("task", id);
+    else next.delete("task");
+    const qs = next.toString();
+    window.history.replaceState(
+      window.history.state,
+      "",
+      qs ? `?${qs}` : window.location.pathname,
+    );
+  }, []);
 
   const board = useMemo(() => buildTaskBoard(tasks), [tasks]);
   const openTask = openTaskId ? tasks.find((t) => t.id === openTaskId) ?? null : null;
