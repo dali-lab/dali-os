@@ -869,7 +869,19 @@ export function shouldRevalidate({
   formMethod,
   defaultShouldRevalidate,
 }: ShouldRevalidateFunctionArgs) {
-  if (!formMethod && currentUrl.pathname === nextUrl.pathname) {
+  // Skip revalidation only for a pure search-param *navigation* — opening/
+  // closing the task modal (?task=), switching the board filter (?epic=/
+  // ?sprint=) or the planning view (?view=). Those don't change loader data,
+  // and re-running the loader would bounce the board's scroll to the top.
+  //
+  // Crucially, this must NOT swallow an explicit revalidator.revalidate()
+  // (same URL, search unchanged), which the page relies on to refresh after a
+  // mutation — pinning a doc, partner-sharing, file uploads, epic/task edits.
+  if (
+    !formMethod &&
+    currentUrl.pathname === nextUrl.pathname &&
+    currentUrl.search !== nextUrl.search
+  ) {
     return false;
   }
   return defaultShouldRevalidate;
@@ -2952,7 +2964,9 @@ function DocumentsBlock({
               </button>
             </Tooltip>
           )}
-          {canEdit && (
+          {/* Pin is top-level only — nested docs (e.g. under Partner/Team
+              meeting-notes folders) can't be pinned to the top. */}
+          {canEdit && !indent && (
             <Tooltip label={doc.pinned ? "Pinned — click to unpin" : "Pin to top"}>
               <button
                 type="button"
