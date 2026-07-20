@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
-import { Download } from "lucide-react";
+import { Download, Eye, X } from "lucide-react";
 import { termCodeLabel } from "~/lib/display";
 import { formatBytes } from "~/lib/upload-client";
 import { Avatar } from "~/components/ui/Avatar";
+import { Modal } from "~/components/Modal";
 import { PartnerBackLink } from "~/partners/components/PartnerBackLink";
 import type {
   PartnerProjectEpic,
@@ -12,6 +13,8 @@ import type {
   PartnerProjectViewData,
   PartnerWorkState,
 } from "~/partners/lib/partner-project-view.server";
+
+type SharedFile = PartnerProjectViewData["sharedFiles"][number];
 
 const fmtDate = (iso: string) =>
   new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
@@ -324,6 +327,10 @@ export function PartnerProjectHubView({
 
   const hasWork = epics.length > 0 || ungroupedSprints.length > 0;
 
+  // Shared-file inline preview (mirrors the internal file view): clicking a
+  // file opens it in a modal — image/PDF inline, everything else a download.
+  const [previewFile, setPreviewFile] = useState<SharedFile | null>(null);
+
   // The roadmap opens on live work — epics that are Open or In progress. The
   // rest (Backlog, Done) sit behind a toggle so a partner isn't wading through
   // finished or not-yet-started epics to see what's happening now.
@@ -522,17 +529,17 @@ export function PartnerProjectHubView({
           <ul className="bg-card border border-border rounded-2xl divide-y divide-border">
             {sharedFiles.map((f) => (
               <li key={f.id}>
-                <a
-                  href={f.downloadUrl ?? undefined}
-                  download={f.fileName ?? undefined}
-                  aria-disabled={!f.downloadUrl}
-                  className={`px-4 py-3 flex items-center gap-3 text-sm transition ${
+                <button
+                  type="button"
+                  onClick={() => setPreviewFile(f)}
+                  disabled={!f.downloadUrl}
+                  className={`w-full text-left px-4 py-3 flex items-center gap-3 text-sm transition ${
                     f.downloadUrl
-                      ? "hover:bg-muted/20"
-                      : "pointer-events-none opacity-60"
+                      ? "hover:bg-muted/20 cursor-pointer"
+                      : "opacity-60 cursor-not-allowed"
                   }`}
                 >
-                  <Download className="w-4 h-4 text-accent-teal flex-shrink-0" />
+                  <Eye className="w-4 h-4 text-accent-teal flex-shrink-0" />
                   <span className="flex-1 min-w-0">
                     <span className="block truncate font-medium text-foreground">
                       {f.title}
@@ -546,9 +553,9 @@ export function PartnerProjectHubView({
                     )}
                   </span>
                   <span className="text-xs text-muted-foreground flex-shrink-0">
-                    {f.downloadUrl ? "Download" : "Unavailable"}
+                    {f.downloadUrl ? "Preview" : "Unavailable"}
                   </span>
-                </a>
+                </button>
               </li>
             ))}
           </ul>
@@ -578,8 +585,103 @@ export function PartnerProjectHubView({
           </div>
         </section>
       )}
+
+      {previewFile && (
+        <SharedFilePreviewModal
+          file={previewFile}
+          onClose={() => setPreviewFile(null)}
+        />
+      )}
         </div>
       </div>
     </div>
+  );
+}
+
+// Inline preview of a shared file (parity with the internal file view).
+// Images and PDFs render from the short-lived signed URL; anything else falls
+// back to a download prompt. Download stays one click away in the header.
+function SharedFilePreviewModal({
+  file,
+  onClose,
+}: {
+  file: SharedFile;
+  onClose: () => void;
+}) {
+  const ct = file.contentType ?? "";
+  const url = file.downloadUrl ?? undefined;
+  const isImage = ct.startsWith("image/");
+  const isPdf = ct === "application/pdf";
+  const isText = ct.startsWith("text/") || ct === "application/json";
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      labelledBy="shared-file-preview-title"
+      containerClassName="bg-card rounded-2xl shadow-brand-2 max-w-3xl w-full p-5 sm:p-6 my-auto max-h-[85vh] flex flex-col"
+    >
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <h2
+          id="shared-file-preview-title"
+          className="text-lg font-semibold text-foreground min-w-0 truncate"
+        >
+          {file.title}
+        </h2>
+        <div className="flex items-center gap-3 flex-shrink-0">
+          {url && (
+            <a
+              href={url}
+              download={file.fileName ?? undefined}
+              className="inline-flex items-center gap-1 text-sm font-medium text-accent-teal hover:underline"
+            >
+              <Download className="w-4 h-4" />
+              Download
+            </a>
+          )}
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="text-muted-foreground/70 hover:text-foreground rounded p-1 hover:bg-muted"
+          >
+            <X className="w-5 h-5" aria-hidden />
+          </button>
+        </div>
+      </div>
+
+      <div className="min-h-0 overflow-auto">
+        {isImage ? (
+          <img
+            src={url}
+            alt={file.title}
+            className="max-w-full max-h-[70vh] mx-auto rounded-lg border border-border object-contain bg-muted/20"
+          />
+        ) : isPdf || isText ? (
+          <iframe
+            src={url}
+            title={file.title}
+            className="w-full h-[70vh] rounded-lg border border-border bg-white"
+          />
+        ) : (
+          <div className="rounded-lg border border-border bg-muted/20 px-4 py-10 text-center text-sm text-muted-foreground">
+            <p>
+              No inline preview for this file type
+              {file.contentType ? ` (${file.contentType})` : ""}.
+            </p>
+            {url && (
+              <a
+                href={url}
+                download={file.fileName ?? undefined}
+                className="mt-3 inline-flex items-center gap-1 text-accent-teal hover:underline"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Download to view
+              </a>
+            )}
+          </div>
+        )}
+      </div>
+    </Modal>
   );
 }
