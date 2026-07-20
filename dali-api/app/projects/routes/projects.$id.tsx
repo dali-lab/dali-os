@@ -334,17 +334,19 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     partnerVisible: d.partnerVisible,
     pinned: d.pinnedAt !== null,
   });
+  // Top-level docs for the main list. Pinned ones are lifted into
+  // `pinnedDocuments` (rendered above), so they don't appear twice.
   const documents = pageRows
-    .filter((p) => p.parentPageId === null)
+    .filter((p) => p.parentPageId === null && p.pinnedAt === null)
     .map((p) => ({
       ...toDocumentDto(p),
       children: (childrenByParent.get(p.id) ?? []).map(toDocumentDto),
     }));
 
   // Pinned docs — any page a teammate pinned, most-recent pin first, rendered
-  // at the top of the Documents block.
+  // at the top of the Documents block (and lifted out of the list above).
   const pinnedDocuments = pageRows
-    .filter((p) => p.pinnedAt !== null)
+    .filter((p) => p.pinnedAt !== null && p.parentPageId === null)
     .sort((a, b) => (b.pinnedAt?.getTime() ?? 0) - (a.pinnedAt?.getTime() ?? 0))
     .map((p) => ({ id: p.id, label: p.title }));
 
