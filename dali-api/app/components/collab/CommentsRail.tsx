@@ -67,6 +67,7 @@ export function CommentsRail({
   mentionPath,
   focusCommentId,
   versionLabels,
+  versionId,
 }: {
   targetType: "doc" | "file" | "pagedoc";
   targetId: string;
@@ -85,6 +86,9 @@ export function CommentsRail({
   // File hosts: versionId → display label ("V2"), so feedback reads against
   // the iteration it was written on.
   versionLabels?: Record<string, string>;
+  // File hosts: the version currently being previewed — new comments are
+  // stamped with it rather than whatever version happens to be current.
+  versionId?: string | null;
   onClearPendingAnchor?: () => void;
   onFocusAnchor?: (anchor: { from: string; to: string }) => void;
   // Lets the host trigger a refetch (e.g. after creating an inline comment
@@ -164,7 +168,7 @@ export function CommentsRail({
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ targetType, targetId, body, parentId, anchor, path: mentionPath }),
+        body: JSON.stringify({ targetType, targetId, body, parentId, anchor, path: mentionPath, versionId }),
       });
       if (!res.ok) {
         const b = (await res.json().catch(() => ({}))) as { error?: string };

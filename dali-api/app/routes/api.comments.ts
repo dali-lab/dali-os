@@ -34,6 +34,9 @@ const CreateSchema = z.object({
   // Page-doc FAQ comments only: the page path, so @-mention notifications can
   // deep-link back to the guide (with ?doc=1).
   path: z.string().max(1000).optional(),
+  // File comments only: the version the commenter was viewing, so feedback
+  // is pinned to the iteration it was written against.
+  versionId: z.string().min(1).nullable().optional(),
 });
 
 type CommentTarget = "doc" | "file" | "pagedoc";
@@ -195,17 +198,30 @@ export async function action({ request }: Route.ActionArgs) {
   // Anchors only make sense on documents.
   const anchor = body.targetType === "doc" ? (body.anchor ?? null) : null;
 
-  // File comments are pinned to the version that's current as they're
-  // written, so feedback reads against the right iteration.
-  const versionId =
-    body.targetType === "file"
-      ? ((
+  // File comments are pinned to a version so feedback reads against the
+  // right iteration: the one the commenter was viewing (sent by the file
+  // page), falling back to the current version for callers that don't say.
+  let versionId: string | null = null;
+  if (body.targetType === "file") {
+    if (body.versionId) {
+      const version = await prisma.projectFileVersion.findFirst({
+        where: { id: body.versionId, fileId: body.targetId },
+        select: { id: true },
+      });
+      if (!version) {
+        return withCors(request, Response.json({ error: "Invalid version" }, { status: 400 }));
+      }
+      versionId = version.id;
+    } else {
+      versionId =
+        (
           await prisma.projectFile.findUnique({
             where: { id: body.targetId },
             select: { currentVersionId: true },
           })
-        )?.currentVersionId ?? null)
-      : null;
+        )?.currentVersionId ?? null;
+    }
+  }
 
   const created = await prisma.docComment.create({
     data: {

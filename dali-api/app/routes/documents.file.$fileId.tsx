@@ -284,6 +284,7 @@ export default function FilePage() {
             canComment={canEdit}
             focusCommentId={focusCommentId}
             versionLabels={Object.fromEntries(versions.map((v) => [v.id, v.label]))}
+            versionId={selected?.id ?? null}
           />
         </aside>
       </div>
