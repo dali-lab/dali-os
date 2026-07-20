@@ -35,6 +35,7 @@ export function TaskModal({
   onClose,
   onPatch,
   onCreate,
+  onDelete,
 }: {
   // Present in edit mode; omitted (create mode) opens an empty form.
   task?: TaskCardModel;
@@ -43,6 +44,9 @@ export function TaskModal({
   onClose: () => void;
   onPatch?: (patch: Patch) => Promise<void> | void;
   onCreate?: (values: NewTaskValues) => Promise<void> | void;
+  // Edit mode only. Removes the task (parent handles optimistic removal +
+  // closing the modal).
+  onDelete?: () => Promise<void> | void;
 }) {
   const isCreate = !task;
   const [title, setTitle] = useState(task?.title ?? "");
@@ -56,6 +60,8 @@ export function TaskModal({
   );
   const [domainId, setDomainId] = useState<string>(task?.domain?.id ?? "");
   const [saving, setSaving] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // Auto-grow the title textarea so long titles wrap into view instead of
   // scrolling horizontally inside a single-line input.
@@ -288,7 +294,45 @@ export function TaskModal({
           </div>
         )}
 
-        <div className="flex justify-end gap-2 pt-2 border-t border-border">
+        <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
+          {!isCreate && canManage && onDelete && (
+            confirmingDelete ? (
+              <div className="mr-auto flex items-center gap-2 text-sm">
+                <span className="text-muted-foreground">Delete this task?</span>
+                <button
+                  type="button"
+                  disabled={deleting}
+                  onClick={async () => {
+                    setDeleting(true);
+                    try {
+                      await onDelete();
+                    } finally {
+                      setDeleting(false);
+                    }
+                  }}
+                  className="font-medium text-destructive hover:underline disabled:opacity-60"
+                >
+                  {deleting ? "Deleting…" : "Delete"}
+                </button>
+                <button
+                  type="button"
+                  disabled={deleting}
+                  onClick={() => setConfirmingDelete(false)}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  Keep
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmingDelete(true)}
+                className="mr-auto text-sm font-medium text-destructive hover:underline"
+              >
+                Delete
+              </button>
+            )
+          )}
           <button
             type="button"
             onClick={onClose}

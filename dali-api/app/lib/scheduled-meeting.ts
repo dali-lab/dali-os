@@ -109,12 +109,6 @@ export type CreateScheduledMeetingResult =
     }
   | { ok: false; error: string };
 
-const MEETING_TYPE_LABELS: Record<MeetingType, string> = {
-  Team: "Team",
-  Partner: "Partner",
-  Other: "", // overridden by meetingTypeLabel
-};
-
 export async function createScheduledMeeting(
   input: CreateScheduledMeetingInput,
 ): Promise<CreateScheduledMeetingResult> {
@@ -223,12 +217,12 @@ export async function createScheduledMeeting(
   // instead, so there's still somewhere to host the QR / AttendanceChecklist.
   let notePageId: string | null = null;
   if (input.meetingType) {
-    const label =
-      input.meetingType === "Other"
-        ? (input.meetingTypeLabel ?? "").trim() || "Other"
-        : MEETING_TYPE_LABELS[input.meetingType];
+    // Auto-generated note pages are titled with just the meeting date — the
+    // note already lives under its Team/Partner folder (or carries its custom
+    // "Other" label via the meeting itself), so repeating "… meeting note" in
+    // the title is redundant.
     const noteDate = startDate ?? new Date();
-    const title = `${label} meeting note (${formatDateShort(noteDate)})`;
+    const title = formatDateShort(noteDate);
 
     if (input.projectId) {
       // Team/Partner notes nest under their default, undeletable folder;
