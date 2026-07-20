@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useFetcher } from "react-router";
-import { Camera } from "lucide-react";
+import { Camera, Trash2 } from "lucide-react";
 import {
   MAX_UPLOAD_BYTES,
   MAX_UPLOAD_LABEL,
@@ -144,6 +144,20 @@ export function ProjectImageBanner({
     }
   }
 
+  function handleRemove() {
+    if (!window.confirm("Remove the project image? The default banner will show instead.")) {
+      return;
+    }
+    setError(null);
+    if (previewBlobUrl.current) {
+      URL.revokeObjectURL(previewBlobUrl.current);
+      previewBlobUrl.current = null;
+    }
+    setPreviewUrl(null);
+    // The page action treats an empty imageUrl as "clear to null".
+    fetcher.submit({ intent: "update-image", imageUrl: "" }, { method: "post" });
+  }
+
   const busy = uploading || fetcher.state !== "idle";
   const initial = projectName.trim().charAt(0).toUpperCase() || "?";
 
@@ -151,43 +165,65 @@ export function ProjectImageBanner({
 
   return (
     <div className="flex flex-col gap-1">
-      <button
-        type="button"
-        disabled={!clickable}
-        onClick={() => fileRef.current?.click()}
-        aria-label={previewUrl ? "Replace project image" : "Upload project image"}
-        className={`group relative block w-full h-48 rounded-lg overflow-hidden border border-border ${
-          clickable ? "cursor-pointer" : "cursor-default"
-        }`}
-      >
-        {previewUrl ? (
-          <img src={previewUrl} alt="" className="w-full h-full object-cover" />
-        ) : (
-          // Default banner: deterministic gradient + project initial.
-          <div className="w-full h-full bg-gradient-to-br from-accent-coral/30 via-accent-coral/15 to-accent-green/20 flex items-center justify-center">
-            <span className="font-heading font-bold text-5xl text-accent-coral/70">
-              {initial}
-            </span>
-          </div>
-        )}
+      {/* The action pills are siblings of the banner button (a button can't
+          nest a button), overlaid via this relative wrapper. */}
+      <div className="relative group">
+        <button
+          type="button"
+          disabled={!clickable}
+          onClick={() => fileRef.current?.click()}
+          aria-label={previewUrl ? "Replace project image" : "Upload project image"}
+          className={`relative block w-full h-48 rounded-lg overflow-hidden border border-border ${
+            clickable ? "cursor-pointer" : "cursor-default"
+          }`}
+        >
+          {previewUrl ? (
+            <img src={previewUrl} alt="" className="w-full h-full object-cover" />
+          ) : (
+            // Default banner: deterministic gradient + project initial.
+            <div className="w-full h-full bg-gradient-to-br from-accent-coral/30 via-accent-coral/15 to-accent-green/20 flex items-center justify-center">
+              <span className="font-heading font-bold text-5xl text-accent-coral/70">
+                {initial}
+              </span>
+            </div>
+          )}
 
-        {busy && (
-          <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-            <span className="inline-block w-7 h-7 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-          </div>
-        )}
+          {busy && (
+            <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+              <span className="inline-block w-7 h-7 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+            </div>
+          )}
+
+          {canEdit && !busy && (
+            /* Hover hint over the whole banner. */
+            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors" />
+          )}
+        </button>
 
         {canEdit && !busy && (
-          <>
-            {/* Hover hint over the whole banner. */}
-            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors" />
-            <span className="absolute bottom-2 right-2 inline-flex items-center gap-1.5 rounded-md bg-black/55 text-white text-xs font-medium px-2.5 py-1.5 opacity-90">
+          <div className="absolute bottom-2 right-2 flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              className="inline-flex items-center gap-1.5 rounded-md bg-black/55 hover:bg-black/70 text-white text-xs font-medium px-2.5 py-1.5 opacity-90 transition-colors"
+            >
               <Camera className="w-4 h-4" />
               {previewUrl ? "Replace image" : "Upload image"}
-            </span>
-          </>
+            </button>
+            {previewUrl && (
+              <button
+                type="button"
+                onClick={handleRemove}
+                aria-label="Remove project image"
+                className="inline-flex items-center gap-1.5 rounded-md bg-black/55 hover:bg-black/70 text-white text-xs font-medium px-2.5 py-1.5 opacity-90 transition-colors"
+              >
+                <Trash2 className="w-4 h-4" />
+                Remove
+              </button>
+            )}
+          </div>
         )}
-      </button>
+      </div>
 
       <input
         ref={fileRef}
