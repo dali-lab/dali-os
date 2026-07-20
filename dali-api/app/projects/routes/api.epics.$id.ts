@@ -6,7 +6,9 @@ import { withCors, handlePreflight } from "~/lib/cors";
 // POST   /api/epics/:id  — edit. Body: { title?, status?, targetTermId? }
 // DELETE /api/epics/:id  — delete. Sprints/tasks pointing at this epic have
 //                          their epicId nulled (both are nullable links) so
-//                          nothing is orphaned or cascade-deleted.
+//                          nothing is orphaned or cascade-deleted. User
+//                          stories are deleted with the epic (RESTRICT FK,
+//                          they have no life outside it).
 //
 // Same permission model as project edit (isCore === Admin || Core).
 
@@ -63,6 +65,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     await prisma.$transaction([
       prisma.sprint.updateMany({ where: { epicId }, data: { epicId: null } }),
       prisma.task.updateMany({ where: { epicId }, data: { epicId: null } }),
+      prisma.userStory.deleteMany({ where: { epicId } }),
       prisma.epic.delete({ where: { id: epicId } }),
     ]);
     return withCors(request, Response.json({ ok: true }));
