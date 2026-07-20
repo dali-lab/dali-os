@@ -65,6 +65,19 @@ pub fn navigate_main(app: &AppHandle, url: &str) {
     }
 }
 
+/// Focus the main window and navigate it to a link — absolute, or app-relative
+/// against the prod origin. Shared by notification click-through and the tray
+/// menu; same routing a `dalios://notify?link=` deep link gets.
+pub fn open_link(app: &AppHandle, link: &str) {
+    show_main(app);
+    let full = if link.starts_with("http") {
+        link.to_string()
+    } else {
+        format!("{PROD_ORIGIN}{link}")
+    };
+    navigate_main(app, &full);
+}
+
 pub fn show_pairing(app: &AppHandle) {
     if let Ok(w) = build_pairing(app) {
         let _ = w.show();

@@ -7,7 +7,7 @@ use tauri::{AppHandle, Manager, State};
 use crate::{
     config, keychain, pairing,
     state::{AppState, AuthState},
-    window,
+    tray, window,
 };
 
 #[tauri::command]
@@ -63,6 +63,22 @@ pub async fn do_sign_out(app: AppHandle) {
     }
     keychain::delete_token();
     window::set_badge(&app, 0);
+    // Reset per-user delivery state so the next pairing starts clean: an empty
+    // seen set re-arms first-run banner suppression for the new account.
+    {
+        let st = app.state::<AppState>();
+        // Named locals for the lock Results so their temporaries don't outlive
+        // `st` (same E0597 dance as the poller).
+        let seen_lock = st.seen_notifs.lock();
+        if let Ok(mut seen) = seen_lock {
+            seen.clear();
+        }
+        let recent_lock = st.recent_notifs.lock();
+        if let Ok(mut recent) = recent_lock {
+            recent.clear();
+        }
+    }
+    tray::refresh(&app, 0);
 
     // Revoke the webview cookie Session too: /logout reads the cookie, revokes
     // it, and clears it. Its redirect to /login is ignored by nav.rs because the

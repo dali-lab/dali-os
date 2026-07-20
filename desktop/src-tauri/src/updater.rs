@@ -11,7 +11,7 @@ pub async fn check_now(app: AppHandle) {
     let updater = match app.updater() {
         Ok(u) => u,
         Err(e) => {
-            notify::raise(&app, "Update check failed", &e.to_string(), None);
+            notify::raise(&app, "Update check failed", &e.to_string(), None, false);
             return;
         }
     };
@@ -23,15 +23,16 @@ pub async fn check_now(app: AppHandle) {
                 "Updating DALI OS",
                 "Downloading the latest version…",
                 None,
+                false,
             );
             match update.download_and_install(|_chunk, _total| {}, || {}).await {
                 // Relaunch into the new version (diverges).
                 Ok(_) => app.restart(),
-                Err(e) => notify::raise(&app, "Update failed", &e.to_string(), None),
+                Err(e) => notify::raise(&app, "Update failed", &e.to_string(), None, false),
             }
         }
-        Ok(None) => notify::raise(&app, "DALI OS", "You're up to date.", None),
-        Err(e) => notify::raise(&app, "Update check failed", &e.to_string(), None),
+        Ok(None) => notify::raise(&app, "DALI OS", "You're up to date.", None, false),
+        Err(e) => notify::raise(&app, "Update check failed", &e.to_string(), None, false),
     }
 }
 
@@ -53,6 +54,7 @@ pub async fn check_on_launch(app: AppHandle) {
                 "DALI OS updated",
                 "Reopen DALI OS to finish updating.",
                 None,
+                false,
             );
         }
     }
