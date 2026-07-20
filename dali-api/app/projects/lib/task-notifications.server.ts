@@ -8,7 +8,7 @@ import { notify } from "~/lib/notify.server";
 import { TASK_STATUS_LABELS } from "./task-board";
 
 function taskLink(projectId: string, taskId: string): string {
-  return `/projects/${projectId}?tab=work&task=${taskId}`;
+  return `/projects/${projectId}?tab=board&task=${taskId}`;
 }
 
 const COMMENT_PREVIEW_MAX = 200;

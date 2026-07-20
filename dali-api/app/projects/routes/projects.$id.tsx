@@ -10,7 +10,7 @@ import {
   useSearchParams,
   useSubmit,
 } from "react-router";
-import { CalendarDays, CalendarX, Check, Handshake, History, Pencil, Pin, X, Settings, Folder, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink } from "lucide-react";
+import { CalendarDays, CalendarX, ChartNoAxesGantt, Check, Handshake, History, List, Pencil, Pin, X, Settings, Folder, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink } from "lucide-react";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { Tooltip } from "~/components/ui/IconButton";
 import { EditableSection } from "~/components/EditableSection";
@@ -99,16 +99,19 @@ type ProjectStatus = (typeof STATUSES)[number];
 
 // "Scope" is no longer a public tab — its domain/term/challenge config moved
 // into a settings popup (gated to Core/Admin/Staff). Public tabs are just the
-// content views.
-const TABS = ["overview", "work", "mentorship"] as const;
+// content views. Board and Planning are separate tabs (Linear-style: different
+// data gets real navigation); the only sub-controls are display toggles and
+// filters, never a second tab level.
+const TABS = ["overview", "board", "planning", "mentorship"] as const;
 type Tab = (typeof TABS)[number];
 function isTab(x: string | null): x is Tab {
-  return x === "overview" || x === "work" || x === "mentorship";
+  return (TABS as readonly string[]).includes(x ?? "");
 }
 
 const TAB_LABELS: Record<Tab, string> = {
   overview: "Overview",
-  work: "Work",
+  board: "Board",
+  planning: "Planning",
   mentorship: "Mentorship",
 };
 
@@ -1277,22 +1280,30 @@ export default function ProjectDetail() {
         </Modal>
       )}
 
-      {tab === "work" && (
-        // Work tab keys off the raw edit permission, not the page-level
-        // Edit-mode toggle: epics/sprints/tasks each gate their own inline
-        // edit affordances, so there's nothing to "turn on" first.
-        <WorkTab
+      {/* Board and Planning key off the raw edit permission, not the
+          page-level Edit-mode toggle: epics/sprints/tasks each gate their own
+          inline edit affordances, so there's nothing to "turn on" first. */}
+      {tab === "board" && (
+        <TaskBoard
+          projectId={project.id}
+          initialTasks={tasks}
+          options={boardOptions}
+          canManage={canEdit}
+          currentUserId={currentUserId}
+          currentUserName={userName}
+        />
+      )}
+
+      {tab === "planning" && (
+        <PlanningTab
           projectId={project.id}
           epics={epics}
           editableEpics={editableEpics}
           sprints={sprints}
-          tasks={tasks}
-          boardOptions={boardOptions}
           taskCountsByEpic={taskCountsByEpic}
           canEdit={canEdit}
           collabToken={collabToken}
           userName={userName}
-          currentUserId={currentUserId}
         />
       )}
 
@@ -3274,56 +3285,37 @@ function FilesBlock({
   );
 }
 
-// The Work tab's sub-views. Board first — it's the daily-driver surface;
-// planning (epics & sprints) and the timeline are their own views so a long
-// epic list can't push the board below the fold.
-const WORK_VIEWS = ["board", "epics", "timeline"] as const;
-type WorkView = (typeof WORK_VIEWS)[number];
-const WORK_VIEW_LABELS: Record<WorkView, string> = {
-  board: "Board",
-  epics: "Epics & sprints",
-  timeline: "Timeline",
-};
-
-function WorkTab({
+// Planning holds the epics & sprints manager with the timeline as a display
+// toggle (Linear-style: the list and the Gantt are two renderings of the same
+// epics-and-sprints data, so they get a ViewToggle-pattern switch, not
+// navigation). The toggle lives in `?view=` like the rest of this page's UI
+// state so a timeline link is shareable.
+function PlanningTab({
   projectId,
   epics,
   editableEpics,
   sprints,
-  tasks,
-  boardOptions,
   taskCountsByEpic,
   canEdit,
   collabToken,
   userName,
-  currentUserId,
 }: {
   projectId: string;
   epics: TimelineEpic[];
   editableEpics: EditableEpic[];
   sprints: EditableSprint[];
-  tasks: TaskCardModel[];
-  boardOptions: TaskBoardOptions;
   taskCountsByEpic: Record<string, { done: number; total: number }>;
   canEdit: boolean;
   collabToken: string | null;
   userName: string;
-  currentUserId: string;
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
-  const viewParam = searchParams.get("view");
-  // A `?task=` deep link always lands on the board — that's where the task
-  // modal lives.
-  const view: WorkView = searchParams.get("task")
-    ? "board"
-    : WORK_VIEWS.includes(viewParam as WorkView)
-      ? (viewParam as WorkView)
-      : "board";
-  const setView = (next: WorkView) => {
+  const timeline = searchParams.get("view") === "timeline";
+  const setTimeline = (next: boolean) => {
     setSearchParams(
       (prev) => {
-        if (next === "board") prev.delete("view");
-        else prev.set("view", next);
+        if (next) prev.set("view", "timeline");
+        else prev.delete("view");
         return prev;
       },
       { replace: true, preventScrollReset: true },
@@ -3331,41 +3323,33 @@ function WorkTab({
   };
 
   return (
-    <div className="flex flex-col gap-4">
-      <div
-        role="group"
-        aria-label="Work view"
-        className="inline-flex self-start rounded-lg border border-border bg-muted/30 p-0.5"
-      >
-        {WORK_VIEWS.map((v) => (
-          <button
-            key={v}
-            type="button"
-            onClick={() => setView(v)}
-            aria-pressed={view === v}
-            className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-              view === v
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
+    <div className="flex flex-col gap-3">
+      <div className="flex justify-end">
+        <div
+          className="inline-flex items-center border border-border rounded-md overflow-hidden"
+          role="group"
+          aria-label="Planning view"
+        >
+          <PlanningToggleButton
+            active={!timeline}
+            onClick={() => setTimeline(false)}
+            label="List view"
           >
-            {WORK_VIEW_LABELS[v]}
-          </button>
-        ))}
+            <List className="w-3.5 h-3.5" />
+          </PlanningToggleButton>
+          <PlanningToggleButton
+            active={timeline}
+            onClick={() => setTimeline(true)}
+            label="Timeline view"
+          >
+            <ChartNoAxesGantt className="w-3.5 h-3.5" />
+          </PlanningToggleButton>
+        </div>
       </div>
 
-      {view === "board" && (
-        <TaskBoard
-          projectId={projectId}
-          initialTasks={tasks}
-          options={boardOptions}
-          canManage={canEdit}
-          currentUserId={currentUserId}
-          currentUserName={userName}
-        />
-      )}
-
-      {view === "epics" && (
+      {timeline ? (
+        <EpicsTimeline epics={epics} taskCounts={taskCountsByEpic} />
+      ) : (
         <EpicSprintManager
           projectId={projectId}
           epics={editableEpics}
@@ -3376,11 +3360,39 @@ function WorkTab({
           userName={userName}
         />
       )}
-
-      {view === "timeline" && (
-        <EpicsTimeline epics={epics} taskCounts={taskCountsByEpic} />
-      )}
     </div>
+  );
+}
+
+// Same look as ViewToggle's buttons (the hub's list/cards switch) — that
+// component is hardwired to list/card values, so the planning toggle borrows
+// its styling rather than its state.
+function PlanningToggleButton({
+  active,
+  onClick,
+  label,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      aria-label={label}
+      title={label}
+      className={`px-2 py-1.5 transition-colors ${
+        active
+          ? "bg-accent-coral/15 text-accent-coral"
+          : "text-muted-foreground hover:bg-muted"
+      }`}
+    >
+      {children}
+    </button>
   );
 }
 

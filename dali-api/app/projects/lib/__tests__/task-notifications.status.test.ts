@@ -34,7 +34,7 @@ describe("notifyTaskStatusChanged", () => {
     expect(call.createdByUserId).toBe("u1");
     expect(call.message.title).toBe("Task moved to In progress: Ship it");
     expect(call.message.body).toBe("In DALI OS.");
-    expect(call.message.link).toBe("/projects/p1?tab=work&task=t1");
+    expect(call.message.link).toBe("/projects/p1?tab=board&task=t1");
     expect(call.recipients).toEqual([{ userId: "u2" }]);
   });
 

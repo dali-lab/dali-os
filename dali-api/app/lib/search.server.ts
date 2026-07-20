@@ -131,7 +131,7 @@ async function searchTasks(q: string, like: Like): Promise<SearchResult[]> {
   // Every member can open every project's board, so tasks get the same
   // scoping as projects: members-only auth, Archived projects excluded.
   // Reuses the "project" result type so the palette needs no new icon/section;
-  // the url deep-links to the task modal on the project's Work tab.
+  // the url deep-links to the task modal on the project board.
   const rows = await prisma.task.findMany({
     // archivedAt: auto-archived Done/Cancelled tasks are off the board, so
     // they shouldn't surface here either.
@@ -152,7 +152,7 @@ async function searchTasks(q: string, like: Like): Promise<SearchResult[]> {
         id: t.id,
         title: t.title,
         subtitle: `${t.project.name} · ${TASK_STATUS_LABELS[t.status]}`,
-        url: `/projects/${t.projectId}?tab=work&task=${t.id}`,
+        url: `/projects/${t.projectId}?tab=board&task=${t.id}`,
       },
       text: [t.title],
     })),

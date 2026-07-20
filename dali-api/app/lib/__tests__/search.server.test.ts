@@ -83,7 +83,7 @@ describe("runSearch — projects", () => {
 });
 
 describe("runSearch — tasks", () => {
-  it("returns board tasks deep-linked to the task modal on the Work tab", async () => {
+  it("returns board tasks deep-linked to the task modal on the project board", async () => {
     mockPrisma.task.findMany.mockResolvedValue([
       {
         id: "t1",
@@ -112,7 +112,7 @@ describe("runSearch — tasks", () => {
       id: "t1",
       title: "Query builder",
       subtitle: "DALI OS · In progress",
-      url: "/projects/p1?tab=work&task=t1",
+      url: "/projects/p1?tab=board&task=t1",
     });
   });
 });

@@ -247,7 +247,7 @@ function FormsForYouPanel({ forms }: { forms: ListedForm[] }) {
 /* ------------------------------------------------------------------ */
 /* My tasks — open project-board tasks assigned to the viewer, soonest  */
 /* deadline first. Each row deep-links to the task modal on its          */
-/* project's Work tab. Collapses to nothing when the viewer has none.    */
+/* project board. Collapses to nothing when the viewer has none.         */
 /* ------------------------------------------------------------------ */
 
 function MyTasksPanel({ tasks }: { tasks: MyProjectTask[] }) {
@@ -262,7 +262,7 @@ function MyTasksPanel({ tasks }: { tasks: MyProjectTask[] }) {
       </div>
       <div className="flex flex-col gap-1">
         {tasks.map((t) => {
-          const url = `/projects/${t.projectId}?tab=work&task=${t.id}`;
+          const url = `/projects/${t.projectId}?tab=board&task=${t.id}`;
           const overdue =
             t.dueAt != null && new Date(t.dueAt).getTime() < Date.now();
           return (

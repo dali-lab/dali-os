@@ -94,7 +94,7 @@ test.describe('KanbanBoard drag (TaskBoard)', () => {
     expect(created.ok()).toBe(true);
 
     // ?embed=1 renders the project route standalone (no workspace iframe shell).
-    await page.goto(`/projects/${PROJECT_ID}?tab=work&embed=1`);
+    await page.goto(`/projects/${PROJECT_ID}?tab=board&embed=1`);
     await page.waitForLoadState('networkidle');
 
     const todoColumn = column(page, 'To do');
