@@ -348,9 +348,7 @@ export function PartnerProjectHubView({
       ? [{ id: "recently-completed", label: "Recently completed" }]
       : []),
     { id: "shared-documents", label: "Shared documents" },
-    ...(sharedFiles.length > 0
-      ? [{ id: "shared-files", label: "Shared files" }]
-      : []),
+    { id: "shared-files", label: "Shared files" },
     ...(team.length > 0 ? [{ id: "team", label: "Team" }] : []),
   ];
   const activeSection = useActiveSection(sections.map((s) => s.id));
@@ -521,11 +519,15 @@ export function PartnerProjectHubView({
 
       {/* Shared files — uploads the team has shared, downloaded via a
           short-lived signed URL resolved in the loader. */}
-      {sharedFiles.length > 0 && (
-        <section id="shared-files" className="scroll-mt-24">
-          <h2 className="font-heading text-lg font-semibold text-dark-blue mb-3">
-            Shared files
-          </h2>
+      <section id="shared-files" className="scroll-mt-24">
+        <h2 className="font-heading text-lg font-semibold text-dark-blue mb-3">
+          Shared files
+        </h2>
+        {sharedFiles.length === 0 ? (
+          <div className="bg-card border border-border rounded-2xl p-6 text-sm text-muted-foreground">
+            The team hasn't shared any files yet.
+          </div>
+        ) : (
           <ul className="bg-card border border-border rounded-2xl divide-y divide-border">
             {sharedFiles.map((f) => (
               <li key={f.id}>
@@ -559,8 +561,8 @@ export function PartnerProjectHubView({
               </li>
             ))}
           </ul>
-        </section>
-      )}
+        )}
+      </section>
 
       {/* Team */}
       {team.length > 0 && (
