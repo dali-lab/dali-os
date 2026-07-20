@@ -307,6 +307,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           domainApplication: {
             include: {
               application: { include: { user: { select: { firstName: true, lastName: true, dartmouthEmail: true, netId: true } } } },
+              // domain is the always-present source of truth; challengeVersion is
+              // null on rows without a per-domain challenge (e.g. Standard-cycle
+              // DomainApplications), so don't rely on it for the domain name.
+              domain: { select: { name: true } },
               challengeVersion: { include: { domain: { select: { name: true } } } },
             },
           },
@@ -2989,15 +2993,17 @@ export default function HiringLeadCycleDetails() {
         const boundTypes = new Set(
           (loaderData?.currentDecisionEmails ?? []).map((b: any) => b.decisionType)
         )
+        const domainNameOf = (d: any) =>
+          d.domainApplication.domain?.name ?? d.domainApplication.challengeVersion?.domain?.name ?? ''
         const availableDomains = Array.from(
-          new Set(pendingDecisions.map((d: any) => d.domainApplication.challengeVersion.domain.name))
+          new Set(pendingDecisions.map(domainNameOf))
         ).sort()
         const availableTypes = Array.from(
           new Set(pendingDecisions.map((d: any) => d.type as string))
         ).sort()
         const filtersActive = decisionDomainFilter !== 'all' || decisionTypeFilter !== 'all'
         const filteredDecisions = pendingDecisions.filter((d: any) => {
-          if (decisionDomainFilter !== 'all' && d.domainApplication.challengeVersion.domain.name !== decisionDomainFilter) return false
+          if (decisionDomainFilter !== 'all' && domainNameOf(d) !== decisionDomainFilter) return false
           if (decisionTypeFilter !== 'all' && d.type !== decisionTypeFilter) return false
           return true
         })
@@ -3098,7 +3104,7 @@ export default function HiringLeadCycleDetails() {
                     <td className="px-4 py-3 font-medium text-foreground">
                       {d.domainApplication.application.user.firstName} {d.domainApplication.application.user.lastName}
                     </td>
-                    <td className="px-4 py-3 text-muted-foreground">{d.domainApplication.challengeVersion.domain.name}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{domainNameOf(d)}</td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${
                         d.type === 'Accepted' ? 'bg-green-100 text-green-700' :
@@ -3162,7 +3168,7 @@ export default function HiringLeadCycleDetails() {
                           {d.domainApplication.application.user.firstName} {d.domainApplication.application.user.lastName}
                         </div>
                         <div className="text-xs text-muted-foreground mt-0.5">
-                          {d.domainApplication.challengeVersion.domain.name}
+                          {domainNameOf(d)}
                         </div>
                       </div>
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold flex-shrink-0 ${
@@ -3295,7 +3301,10 @@ function DecisionEmailPreviewModal({ decision, binding, onClose }: {
   onClose: () => void;
 }) {
   const firstName = decision.domainApplication.application.user.firstName ?? ''
-  const domain = decision.domainApplication.challengeVersion.domain.name ?? ''
+  const domain =
+    decision.domainApplication.domain?.name ??
+    decision.domainApplication.challengeVersion?.domain?.name ??
+    ''
   const tmpl = binding?.emailTemplateVersion ?? null
   const rendered = tmpl ? renderEmail(tmpl, { firstName, domain }) : null
   const slot: TemplateSlot | undefined = decision.type ? decisionSlot(decision.type as DecisionSlotType) : undefined
@@ -3325,7 +3334,7 @@ function DecisionEmailPreviewModal({ decision, binding, onClose }: {
             <>
               {decision.domainApplication.application.user.firstName} {decision.domainApplication.application.user.lastName}
               {' · '}
-              {decision.domainApplication.challengeVersion.domain.name}
+              {domain}
               {' · '}
               <span className="font-medium">{decision.type}</span>
             </>

@@ -7,7 +7,6 @@ export default [
     route("profile", "routes/profile.tsx"),
     route("onboarding", "routes/onboarding.tsx"),
     route("calendar", "calendar/routes/calendar.tsx"),
-    route("calendar/check-in/:id", "calendar/routes/calendar.check-in.$id.tsx"),
     // My Tasks surface: Open tasks + browsable notification history.
     route("notifications", "routes/notifications.tsx"),
 
@@ -270,6 +269,9 @@ export default [
 
   // Authenticated API endpoints (no layout)
   route("users/:id", "members/routes/users.$id.ts"),
+
+  // Global command-palette search (⌘K) — permission-scoped in the loader.
+  route("api/search", "routes/api.search.ts"),
 
   // Domain & member management API
   route("api/domains", "admin-console/routes/api.domains.ts"),

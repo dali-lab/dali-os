@@ -264,6 +264,10 @@ export interface TabWorkspaceProps {
   apiRef?: React.MutableRefObject<TabWorkspaceHandle | null>
   /** Notified when the focused pane's active tab URL changes (null when no tab). */
   onActiveUrlChange?: (url: string | null) => void
+  /** ⌘/Ctrl+K — open the command palette. Called for keypresses in the shell
+   *  window and inside any workspace iframe (the shortcut handler is attached
+   *  to both), so the palette opens wherever focus is. */
+  onOpenPalette?: () => void
 }
 
 interface DragSource {
@@ -287,7 +291,7 @@ interface PaneDrop {
   zone: PaneDropZone
 }
 
-export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWorkspaceProps) {
+export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onOpenPalette }: TabWorkspaceProps) {
   const [state, setState] = useState<WorkspaceState>(emptyState)
   const [contextMenu, setContextMenu] = useState<
     | { paneId: string; tabId: string; x: number; y: number }
@@ -820,6 +824,11 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
     stateRef.current = state
   }, [state])
 
+  // onShortcut is created once (below) and never re-created, so read the latest
+  // palette callback through a ref rather than closing over the prop.
+  const onOpenPaletteRef = useRef(onOpenPalette)
+  onOpenPaletteRef.current = onOpenPalette
+
   if (!handlersRef.current) {
     handlersRef.current = {
       onShortcut: (e: KeyboardEvent) => {
@@ -847,6 +856,13 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange }: TabWork
         }
 
         if (!mod) return
+
+        // mod + k — open the command palette. (mod+shift+k closes a tab, below.)
+        if (!e.altKey && !e.shiftKey && (e.key === 'k' || e.key === 'K')) {
+          e.preventDefault()
+          onOpenPaletteRef.current?.()
+          return
+        }
 
         // mod + [ / mod + ] — in-tab back/forward.
         if (!e.altKey && !e.shiftKey && (e.key === '[' || e.key === ']')) {

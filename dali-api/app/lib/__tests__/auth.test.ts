@@ -7,7 +7,12 @@ vi.mock("~/lib/db");
 
 import { prisma } from "~/lib/db";
 import { requireAuth, validateCasTicket } from "~/lib/auth";
-import { hashSessionId, ROLLING_TTL_MS, ABSOLUTE_TTL_MS } from "~/lib/session";
+import {
+  hashSessionId,
+  ROLLING_TTL_MS,
+  ABSOLUTE_TTL_MS,
+  ROLL_MIN_INTERVAL_MS,
+} from "~/lib/session";
 
 const mockPrisma = prisma as unknown as {
   session: {
@@ -22,6 +27,7 @@ function makeSessionRow(overrides: Partial<{
   id: string;
   userId: string;
   grantId: string | null;
+  lastUsedAt: Date;
   expiresAt: Date;
   absoluteExpiresAt: Date;
   revokedAt: Date | null;
@@ -40,7 +46,7 @@ function makeSessionRow(overrides: Partial<{
     userId,
     grantId: overrides.grantId ?? null,
     createdAt: new Date(),
-    lastUsedAt: new Date(),
+    lastUsedAt: overrides.lastUsedAt ?? new Date(),
     expiresAt: overrides.expiresAt ?? new Date(Date.now() + ROLLING_TTL_MS),
     absoluteExpiresAt:
       overrides.absoluteExpiresAt ?? new Date(Date.now() + ABSOLUTE_TTL_MS),
@@ -183,6 +189,34 @@ describe("requireAuth", () => {
         where: { id: hashSessionId("raw-1") },
       }),
     );
+  });
+
+  it("rolls the session when lastUsedAt is older than ROLL_MIN_INTERVAL_MS", async () => {
+    mockPrisma.session.findUnique.mockResolvedValue(
+      makeSessionRow({
+        lastUsedAt: new Date(Date.now() - ROLL_MIN_INTERVAL_MS - 1000),
+      }),
+    );
+    const req = new Request("http://localhost", {
+      headers: { Cookie: "__dali_sid=raw-1" },
+    });
+    const result = await requireAuth(req);
+    expect(result.ok).toBe(true);
+    expect(mockPrisma.session.update).toHaveBeenCalledTimes(1);
+    const args = mockPrisma.session.update.mock.calls[0][0];
+    expect(args.where.id).toBe(hashSessionId("raw-1"));
+  });
+
+  it("skips the session-roll write when lastUsedAt is recent", async () => {
+    mockPrisma.session.findUnique.mockResolvedValue(
+      makeSessionRow({ lastUsedAt: new Date() }),
+    );
+    const req = new Request("http://localhost", {
+      headers: { Cookie: "__dali_sid=raw-1" },
+    });
+    const result = await requireAuth(req);
+    expect(result.ok).toBe(true);
+    expect(mockPrisma.session.update).not.toHaveBeenCalled();
   });
 
   it("derives auth.user.type as member, dartmouth, or partner based on user columns", async () => {

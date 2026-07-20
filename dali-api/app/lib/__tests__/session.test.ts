@@ -13,6 +13,7 @@ import {
   hashSessionId,
   ROLLING_TTL_MS,
   ABSOLUTE_TTL_MS,
+  ROLL_MIN_INTERVAL_MS,
 } from "~/lib/session";
 
 const mockPrisma = prisma as unknown as {
@@ -113,11 +114,18 @@ describe("lookupSession", () => {
 });
 
 describe("rollSession", () => {
+  const staleLastUsedAt = () =>
+    new Date(Date.now() - ROLL_MIN_INTERVAL_MS - 1000);
+
   it("extends expiresAt up to the absolute cap", async () => {
     const absoluteExpiresAt = new Date(Date.now() + ROLLING_TTL_MS * 2);
-    mockPrisma.session.findUnique.mockResolvedValue({ absoluteExpiresAt });
-    await rollSession(hashSessionId("x"));
+    await rollSession({
+      id: hashSessionId("x"),
+      absoluteExpiresAt,
+      lastUsedAt: staleLastUsedAt(),
+    });
     const args = mockPrisma.session.update.mock.calls[0][0];
+    expect(args.where.id).toBe(hashSessionId("x"));
     expect(args.data.expiresAt).toBeInstanceOf(Date);
     expect((args.data.expiresAt as Date).getTime()).toBeLessThanOrEqual(
       absoluteExpiresAt.getTime(),
@@ -126,18 +134,45 @@ describe("rollSession", () => {
 
   it("never extends past absoluteExpiresAt", async () => {
     const absoluteExpiresAt = new Date(Date.now() + 1000);
-    mockPrisma.session.findUnique.mockResolvedValue({ absoluteExpiresAt });
-    await rollSession(hashSessionId("x"));
+    await rollSession({
+      id: hashSessionId("x"),
+      absoluteExpiresAt,
+      lastUsedAt: staleLastUsedAt(),
+    });
     const args = mockPrisma.session.update.mock.calls[0][0];
     expect((args.data.expiresAt as Date).getTime()).toBe(
       absoluteExpiresAt.getTime(),
     );
   });
 
-  it("is a no-op when the session row doesn't exist", async () => {
-    mockPrisma.session.findUnique.mockResolvedValue(null);
-    await rollSession(hashSessionId("x"));
+  it("issues a single UPDATE with no preliminary read", async () => {
+    await rollSession({
+      id: hashSessionId("x"),
+      absoluteExpiresAt: new Date(Date.now() + ROLLING_TTL_MS),
+      lastUsedAt: staleLastUsedAt(),
+    });
+    expect(mockPrisma.session.findUnique).not.toHaveBeenCalled();
+    expect(mockPrisma.session.update).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips the write when lastUsedAt is fresher than ROLL_MIN_INTERVAL_MS", async () => {
+    await rollSession({
+      id: hashSessionId("x"),
+      absoluteExpiresAt: new Date(Date.now() + ROLLING_TTL_MS),
+      lastUsedAt: new Date(Date.now() - ROLL_MIN_INTERVAL_MS + 60_000),
+    });
     expect(mockPrisma.session.update).not.toHaveBeenCalled();
+  });
+
+  it("rolls when lastUsedAt is null", async () => {
+    await rollSession({
+      id: hashSessionId("x"),
+      absoluteExpiresAt: new Date(Date.now() + ROLLING_TTL_MS),
+      lastUsedAt: null,
+    });
+    expect(mockPrisma.session.update).toHaveBeenCalledTimes(1);
+    const args = mockPrisma.session.update.mock.calls[0][0];
+    expect(args.data.lastUsedAt).toBeInstanceOf(Date);
   });
 });
 

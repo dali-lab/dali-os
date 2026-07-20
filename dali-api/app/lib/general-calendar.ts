@@ -36,8 +36,55 @@ type RawEvent = {
 
 const FETCH_TIMEOUT_MS = 5_000;
 
+// TTL cache for the fetched+parsed feed (pre-windowing, so every week window
+// shares one fetch) — the external HTTP fetch was on the critical path of every
+// home load. A failed refresh serves the stale feed; concurrent callers share
+// one in-flight fetch.
+const CACHE_TTL_MS = 5 * 60_000;
+let feedCache: { url: string; events: RawEvent[]; fetchedAt: number } | null = null;
+let feedInflight: { url: string; promise: Promise<RawEvent[] | null> } | null = null;
+
 export function generalCalendarConfigured(): boolean {
   return !!process.env.DALI_GENERAL_CALENDAR_ICS;
+}
+
+// Fetch the raw .ics text, returning parsed events or null on any fetch error.
+async function fetchAndParseFeed(url: string): Promise<RawEvent[] | null> {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    return parseIcs(await res.text());
+  } catch {
+    return null;
+  }
+}
+
+// Cached feed lookup: fresh cache wins; otherwise refetch (joining any fetch
+// already in flight), falling back to the stale cache — any age — on failure.
+// Null only when the fetch fails and there's nothing cached.
+async function getFeed(url: string): Promise<RawEvent[] | null> {
+  if (feedCache?.url === url && Date.now() - feedCache.fetchedAt < CACHE_TTL_MS) {
+    return feedCache.events;
+  }
+  let inflight = feedInflight;
+  if (!inflight || inflight.url !== url) {
+    const promise = fetchAndParseFeed(url)
+      .then((events) => {
+        if (events) feedCache = { url, events, fetchedAt: Date.now() };
+        return events;
+      })
+      .finally(() => {
+        if (feedInflight?.promise === promise) feedInflight = null;
+      });
+    inflight = { url, promise };
+    feedInflight = inflight;
+  }
+  const fresh = await inflight.promise;
+  if (fresh) return fresh;
+  return feedCache?.url === url ? feedCache.events : null;
 }
 
 // Fetch + parse the feed, returning events that overlap [windowStart, windowEnd].
@@ -50,19 +97,9 @@ export async function fetchGeneralCalendarEvents(
   const url = process.env.DALI_GENERAL_CALENDAR_ICS;
   if (!url) return [];
 
-  let body: string;
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-    const res = await fetch(url, { signal: controller.signal });
-    clearTimeout(timer);
-    if (!res.ok) return [];
-    body = await res.text();
-  } catch {
-    return [];
-  }
+  const raw = await getFeed(url);
+  if (!raw) return [];
 
-  const raw = parseIcs(body);
   const out: GeneralCalendarEvent[] = [];
   for (const ev of raw) {
     if (!ev.rrule) {

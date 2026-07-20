@@ -2,7 +2,7 @@ name: Test dali-api
 
 on:
   push:
-    branches: [dev, prod]
+    branches: [staging, prod]
   pull_request:
 
 jobs:

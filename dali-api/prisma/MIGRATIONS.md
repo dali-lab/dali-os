@@ -6,10 +6,10 @@
 |---|---|---|
 | Local | Docker Compose postgres (`localhost:5432/dali`) | Reset anytime with `npm run db:reset:local` |
 | PR CI | Throwaway postgres:16 container | Spun up and torn down per run |
-| Dev (`dali-api-dev`) | Neon `development` branch | Reset to match `production` on every deploy to `dev` |
+| Staging (`dali-api-staging`) | Neon `staging` branch | Restored from `production` on every deploy to `staging` |
 | Prod (`dali-api-prod`) | Neon `production` branch | Migrations applied in place on every deploy |
 
-Migrations run automatically as a Fly.io release command (`npx prisma migrate deploy`) on every deployment. On dev, the Neon branch is first restored from production, so migrations always run against a clean prod-like state.
+Migrations run automatically as a Fly.io release command (`npx prisma migrate deploy`) on every deployment. On staging, the Neon branch is first restored from production, so migrations always run against a clean prod-like state.
 
 ### Why `prisma migrate` needs a non-pooled URL
 
@@ -50,7 +50,7 @@ The migration file in `prisma/migrations/` is the source of truth for what runs 
 
 ## Rules
 
-**Never delete or edit a migration file.** Once a migration has been applied to any shared environment (dev or prod), it is permanent. CI will fail any PR that deletes a migration file. If you made a mistake, create a new migration that corrects it.
+**Never delete or edit a migration file.** Once a migration has been applied to any shared environment (staging or prod), it is permanent. CI will fail any PR that deletes a migration file. If you made a mistake, create a new migration that corrects it.
 
 **Never edit `schema.prisma` without generating a migration.** CI runs `prisma migrate diff` on every PR to detect drift between the schema and migrations. If they don't match, the check fails.
 
@@ -97,7 +97,7 @@ The local seed (`prisma/seed.ts`) creates test users, cycles, challenges, and ap
 
 ## What not to do
 
-- Do not run `prisma migrate reset` against dev or prod — it drops all data
+- Do not run `prisma migrate reset` against staging or prod — it drops all data
 - Do not manually insert or alter rows in the `_prisma_migrations` table
 - Do not create migrations with past timestamps to reorder history
 - Do not share a `DATABASE_URL` pointing to the production Neon branch locally

@@ -310,6 +310,9 @@ model ApplicationStatusUpdate {
   application   Application       @relation(fields: [applicationId], references: [id])
   userId        String
   user          User              @relation(fields: [userId], references: [id])
+
+  // Status resolution fetches the latest update per application.
+  @@index([applicationId, createdAt])
 }
 
 model Application {
@@ -347,6 +350,8 @@ model Application {
   notificationSends  CycleNotificationSend[]
 
   @@unique([userId, applicationCycleId])
+  // By-cycle listings can't use the unique above (wrong leading column).
+  @@index([applicationCycleId])
 }
 
 enum ApplicationType {
@@ -422,6 +427,10 @@ model DomainApplication {
   interviews Interview[]
   reviews    ApplicationReview[]
   decisions  Decision[]
+
+  @@index([applicationId])
+  @@index([domainId])
+  @@index([challengeVersionId])
 }
 
 model Challenge {
@@ -520,6 +529,11 @@ model ApplicationCycleStatusUpdate {
   applicationCycle   ApplicationCycle       @relation(fields: [applicationCycleId], references: [id])
   userId             String? // null = system-generated (e.g. auto-close at closeDate)
   user               User?                  @relation(fields: [userId], references: [id])
+
+  // getActiveCycle runs on every shell navigation: latest update with an
+  // active status, plus the latest update per cycle.
+  @@index([newStatus, createdAt])
+  @@index([applicationCycleId, createdAt])
 }
 
 // Indicates that a domain is hiring during a given application cycle
@@ -827,6 +841,8 @@ model ApplicationReview {
   submittedBy   User?     @relation("ApplicationReviewSubmittedBy", fields: [submittedById], references: [id])
 
   @@unique([cycleReviewerId, domainApplicationId])
+  // Per-DA review lookups can't use the unique above (wrong leading column).
+  @@index([domainApplicationId])
 }
 
 // ─── Delibs ──────────────────────────────────────────────────────────────────
@@ -2378,6 +2394,8 @@ model Epic {
   stories UserStory[]
 
   createdAt DateTime @default(now())
+
+  @@index([projectId])
 }
 
 enum EpicStatus {
@@ -2677,6 +2695,8 @@ model EducationApplication {
   // One application per (applicant, offering). Withdrawal transitions
   // status, doesn't insert a second row.
   @@unique([applicantUserId, offeringId])
+  // Roster views list by offering; the unique above leads with applicant.
+  @@index([offeringId])
 }
 
 enum EduApplicationStatus {

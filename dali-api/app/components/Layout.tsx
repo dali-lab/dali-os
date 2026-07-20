@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react'
-import { Link, useLocation, useRevalidator } from 'react-router'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
+import { Link, useLocation, useNavigate, useRevalidator } from 'react-router'
 import {
   LogOut,
   Calendar,
@@ -19,11 +19,14 @@ import {
   GraduationCap,
   ListTodo,
   HelpCircle,
+  Search,
 } from 'lucide-react'
 import { userInitials } from '~/lib/display'
 import { TabWorkspace, type TabWorkspaceHandle, type OpenTabRequest } from '~/components/TabWorkspace'
 import { useOpenTasks, TASKS_CHANGED_EVENT } from '~/components/NotificationBell'
 import { DesktopBanner } from '~/components/DesktopBanner'
+import { CommandPalette } from '~/components/CommandPalette'
+import { setFocusPreference } from '~/lib/focus-mode'
 
 interface LayoutProps {
   user: { email: string; firstName?: string; lastName?: string }
@@ -36,6 +39,13 @@ interface LayoutProps {
   isInterviewer?: boolean
   hasHiringAccess?: boolean
   isLabMentor?: boolean
+  /** Focus mode: hide the sidebar entirely; navigate via ⌘K + breadcrumbs.
+   *  A floating launcher keeps search + "show sidebar" reachable. */
+  focusMode?: boolean
+  // Tabless mode: the routed page content, rendered directly in the main
+  // column instead of the tabbed workspace. When provided, the sidebar
+  // navigates the top window instead of opening workspace tabs.
+  children?: React.ReactNode
 }
 
 const SIDEBAR_COLLAPSED_KEY = 'dali:sidebar:collapsed'
@@ -51,13 +61,19 @@ type NavEntry = {
   show: boolean
 }
 
-export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDomainLead = false, canViewForms = false, canViewStaffing = false, isInterviewer = false, hasHiringAccess = false, isLabMentor = false }: LayoutProps) {
+export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDomainLead = false, canViewForms = false, canViewStaffing = false, isInterviewer = false, hasHiringAccess = false, isLabMentor = false, focusMode = false, children }: LayoutProps) {
   const location = useLocation()
+  const navigate = useNavigate()
   const { revalidate } = useRevalidator()
-  // Held in a ref so the message listener (mounted once) always calls the
-  // latest revalidate without needing to re-subscribe.
+  const tabless = children !== undefined
+  // Held in refs so the message listener (mounted once) always calls the
+  // latest values without needing to re-subscribe.
   const revalidateRef = useRef(revalidate)
   revalidateRef.current = revalidate
+  const navigateRef = useRef(navigate)
+  navigateRef.current = navigate
+  const tablessRef = useRef(tabless)
+  tablessRef.current = tabless
   const [focusedTabUrl, setFocusedTabUrl] = useState<string | null>(null)
   // Sidebar highlight follows the focused workspace tab when one is open;
   // otherwise it falls back to the parent route.
@@ -66,33 +82,92 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const workspaceRef = useRef<TabWorkspaceHandle | null>(null)
 
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const togglePalette = useCallback(() => setPaletteOpen((v) => !v), [])
+  // ⌘/Ctrl+K opens the command palette. In tab mode TabWorkspace owns the
+  // listener (its handler is attached to the shell window AND every iframe's
+  // document, so it fires wherever focus is) and calls togglePalette via
+  // onOpenPalette. In tabless mode there's no TabWorkspace, so listen here.
+  // Gating on `tabless` avoids both handlers firing for one keypress.
+  useEffect(() => {
+    if (!tabless) return
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault()
+        togglePalette()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [tabless, togglePalette])
+
   const openInWorkspace = (req: OpenTabRequest) => {
+    if (tabless) {
+      navigate(req.url)
+      return
+    }
     workspaceRef.current?.openTab(req)
   }
 
-  // Props bundle for any sidebar button that opens a tab. Adds two browser-
-  // style shortcuts on top of the plain "open & focus" left-click:
-  //   - Cmd/Ctrl + click  → open to the side (split-pane)
-  //   - middle-click       → open in background (don't switch tabs)
+  // Open a palette result. Mirrors sidebar navigation: tabless → navigate the
+  // top window (⌘Enter → real browser tab); tab mode → a kept workspace tab
+  // (⌘Enter → split-pane). The user picked this explicitly, so no ephemeral tab.
+  const openFromPalette = (url: string, label: string, toSide: boolean) => {
+    if (tabless) {
+      if (toSide) window.open(url, '_blank', 'noopener')
+      else navigate(url)
+      return
+    }
+    if (toSide) workspaceRef.current?.openTabToSide({ url, label })
+    else workspaceRef.current?.openTab({ url, label })
+  }
+
+  // Props bundle for any sidebar button that opens a surface. In tab mode it
+  // opens a workspace tab; in tabless mode it navigates the top window like a
+  // normal site. Both preserve the browser-style modifier shortcuts:
+  //   - Cmd/Ctrl + click  → tab mode: open to the side (split-pane);
+  //                         tabless: open a real browser tab
+  //   - middle-click       → tab mode: open in background;
+  //                         tabless: open a real browser tab
   // `auxClick` fires for middle/right-click; we filter to button 1 (middle)
   // and preventDefault so the browser doesn't autoscroll.
-  const tabClickProps = (req: OpenTabRequest) => ({
-    onClick: (e: React.MouseEvent) => {
-      if (e.metaKey || e.ctrlKey) {
-        workspaceRef.current?.openTabToSide(req)
-        return
+  const tabClickProps = (req: OpenTabRequest) => {
+    if (tabless) {
+      return {
+        onClick: (e: React.MouseEvent) => {
+          // These are <button>s (no href), so a new browser tab needs an
+          // explicit window.open — the browser won't synthesize one.
+          if (e.metaKey || e.ctrlKey) {
+            window.open(req.url, '_blank', 'noopener')
+            return
+          }
+          navigate(req.url)
+        },
+        onAuxClick: (e: React.MouseEvent) => {
+          if (e.button !== 1) return
+          e.preventDefault()
+          window.open(req.url, '_blank', 'noopener')
+        },
       }
-      // Single-click from the sidebar opens a preview (ephemeral) tab: it reuses
-      // the pane's preview slot instead of stacking, so skimming sections never
-      // piles up tabs. Promoted to a kept tab on double-click / navigating in it.
-      workspaceRef.current?.openTab(req, { ephemeral: true })
-    },
-    onAuxClick: (e: React.MouseEvent) => {
-      if (e.button !== 1) return
-      e.preventDefault()
-      workspaceRef.current?.openTabInBackground(req)
-    },
-  })
+    }
+    return {
+      onClick: (e: React.MouseEvent) => {
+        if (e.metaKey || e.ctrlKey) {
+          workspaceRef.current?.openTabToSide(req)
+          return
+        }
+        // Single-click from the sidebar opens a preview (ephemeral) tab: it reuses
+        // the pane's preview slot instead of stacking, so skimming sections never
+        // piles up tabs. Promoted to a kept tab on double-click / navigating in it.
+        workspaceRef.current?.openTab(req, { ephemeral: true })
+      },
+      onAuxClick: (e: React.MouseEvent) => {
+        if (e.button !== 1) return
+        e.preventDefault()
+        workspaceRef.current?.openTabInBackground(req)
+      },
+    }
+  }
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -112,12 +187,17 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
       const data = e.data
       if (!data) return
       if (data.type === 'dali:openTab' && typeof data.url === 'string') {
-        workspaceRef.current?.openTab({ url: data.url, label: data.label || data.url })
+        // Tabless has no workspace; navigate the top window instead. (Reaches
+        // here e.g. from the launch tour's "finish" posting to this window.)
+        if (tablessRef.current) navigateRef.current(data.url)
+        else workspaceRef.current?.openTab({ url: data.url, label: data.label || data.url })
       } else if (data.type === 'dali:openTabToSide' && typeof data.url === 'string') {
         // Open in a second pane to the side (splitting if needed) — used by an
         // embedded page that wants its target as a split-screen tab, e.g. a
-        // project document opening beside the project page.
-        workspaceRef.current?.openTabToSide({ url: data.url, label: data.label || data.url })
+        // project document opening beside the project page. No side pane in
+        // tabless mode, so fall back to a plain navigation.
+        if (tablessRef.current) navigateRef.current(data.url)
+        else workspaceRef.current?.openTabToSide({ url: data.url, label: data.label || data.url })
       } else if (
         data.type === 'dali:setTabLabel' &&
         typeof data.url === 'string' &&
@@ -250,6 +330,30 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
 
       {/* Areas + nested sections */}
       <nav className="sidebar-scroll flex-1 overflow-y-auto py-3 px-2 flex flex-col gap-0.5">
+        {/* Global search launcher. The palette is otherwise keyboard-only (⌘K);
+            this is the visible affordance that makes it discoverable and teaches
+            the shortcut — styled like a search field rather than a nav button. */}
+        <button
+          type="button"
+          onClick={() => setPaletteOpen(true)}
+          title="Search (⌘K)"
+          aria-label="Search"
+          className={`flex items-center rounded-md mb-1 text-sm transition-colors ${
+            collapsed
+              ? 'px-3 py-2 justify-center text-white/50 hover:text-white hover:bg-white/5'
+              : 'gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 text-white/55 hover:text-white/90'
+          }`}
+        >
+          <Search className="w-4 h-4 flex-shrink-0" />
+          {!collapsed && (
+            <>
+              <span className="truncate">Search</span>
+              <kbd className="ml-auto text-[10px] font-mono text-white/40 bg-white/10 rounded px-1.5 py-0.5">
+                ⌘K
+              </kbd>
+            </>
+          )}
+        </button>
         {(() => {
           const hasTasks = taskCount > 0
           const homeActive = path === '/'
@@ -455,12 +559,14 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
 
   return (
     <div className="min-h-screen min-h-dvh bg-page flex flex-col md:flex-row pt-14 md:pt-0">
-      {/* Desktop sidebar */}
-      <aside
-        className={`hidden md:flex flex-col fixed inset-y-0 left-0 z-20 ${sidebarWidth} bg-sidebar-bg transition-[width] duration-200`}
-      >
-        {sidebarContent}
-      </aside>
+      {/* Desktop sidebar — omitted entirely in focus mode. */}
+      {!focusMode && (
+        <aside
+          className={`hidden md:flex flex-col fixed inset-y-0 left-0 z-20 ${sidebarWidth} bg-sidebar-bg transition-[width] duration-200`}
+        >
+          {sidebarContent}
+        </aside>
+      )}
 
       {/* Mobile top bar */}
       <div className="md:hidden fixed inset-x-0 top-0 z-20 h-14 bg-sidebar-bg flex items-center justify-between px-3">
@@ -543,24 +649,69 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
         </>
       )}
 
-      <main className={`flex-1 min-w-0 flex flex-col ${collapsed ? 'md:pl-16' : 'md:pl-64'} transition-[padding] duration-200`}>
+      <main className={`flex-1 min-w-0 flex flex-col ${focusMode ? '' : collapsed ? 'md:pl-16' : 'md:pl-64'} transition-[padding] duration-200`}>
         <DesktopBanner />
-        {/* Always render the tabbed workspace. The Home tab is the default
-            landing surface and stays available alongside section tabs.
-            Use the actual current URL (not activeSection.to) for the section
-            tab so deep links like /hiring/domain-lead/application/:id open in
-            the iframe instead of the section root. */}
-        <TabWorkspace
-          apiRef={workspaceRef}
-          initialTabs={[
-            { url: '/', label: 'Home' },
-            ...(initialTabLabel && location.pathname !== '/'
-              ? [{ url: location.pathname + location.search, label: initialTabLabel }]
-              : []),
-          ]}
-          onActiveUrlChange={setFocusedTabUrl}
-        />
+        {/* Tabless mode renders the routed page directly here; otherwise the
+            tabbed workspace. The Home tab is the workspace's default landing
+            surface and stays available alongside section tabs. Use the actual
+            current URL (not activeSection.to) for the section tab so deep links
+            like /hiring/domain-lead/application/:id open in the iframe instead
+            of the section root. */}
+        {tabless ? (
+          children
+        ) : (
+          <TabWorkspace
+            apiRef={workspaceRef}
+            onOpenPalette={togglePalette}
+            initialTabs={[
+              { url: '/', label: 'Home' },
+              ...(initialTabLabel && location.pathname !== '/'
+                ? [{ url: location.pathname + location.search, label: initialTabLabel }]
+                : []),
+            ]}
+            onActiveUrlChange={setFocusedTabUrl}
+          />
+        )}
       </main>
+
+      {/* Focus-mode launcher: with the sidebar hidden, keep a persistent way to
+          search (⌘K) and to bring the sidebar back. Desktop only — mobile keeps
+          its top bar + drawer. */}
+      {focusMode && (
+        <div className="hidden md:flex fixed bottom-4 left-4 z-30 items-center gap-1 rounded-xl bg-sidebar-bg shadow-brand-2 p-1">
+          <button
+            type="button"
+            onClick={() => setPaletteOpen(true)}
+            title="Search (⌘K)"
+            aria-label="Search"
+            className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-white/60 hover:text-white hover:bg-white/10 text-sm transition-colors"
+          >
+            <Search className="w-4 h-4" />
+            <kbd className="text-[10px] font-mono text-white/40 bg-white/10 rounded px-1 py-0.5">⌘K</kbd>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setFocusPreference(false)
+              window.location.reload()
+            }}
+            title="Show sidebar"
+            aria-label="Show sidebar"
+            className="p-2 rounded-lg text-white/40 hover:text-white/80 hover:bg-white/10 transition-colors"
+          >
+            <PanelLeftOpen className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        tabless={tabless}
+        focusMode={focusMode}
+        roles={{ isCore, canViewForms, canViewStaffing, hasHiringAccess, isLabMentor }}
+        onOpen={openFromPalette}
+      />
     </div>
   )
 }
