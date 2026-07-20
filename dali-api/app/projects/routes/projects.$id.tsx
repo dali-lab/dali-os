@@ -38,7 +38,11 @@ import {
 import { getPresenceUser } from "~/lib/presence-user";
 import { TaskBoard } from "../components/TaskBoard";
 import { ProjectMentorshipTab } from "~/mentorship/components/ProjectMentorshipTab";
-import { type TimelineEpic, type EpicStatus } from "../components/EpicsTimeline";
+import {
+  EpicsTimeline,
+  type TimelineEpic,
+  type EpicStatus,
+} from "../components/EpicsTimeline";
 import {
   EpicSprintManager,
   type EditableEpic,
@@ -219,6 +223,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           dueAt: true,
           epicId: true,
           sprintId: true,
+          checklist: true,
           githubIssueNumber: true,
           githubIssueUrl: true,
           createdAt: true,
@@ -403,6 +408,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     dueAt: t.dueAt ? t.dueAt.toISOString() : null,
     epicId: t.epicId,
     sprintId: t.sprintId,
+    checklist: (t.checklist as TaskCardModel["checklist"]) ?? null,
     assignees: t.assignees.map((a) => ({
       id: a.user.id,
       name: fullName(a.user),
@@ -426,6 +432,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       memberMap.set(id, fullName(a.user));
     }
   }
+  const sprintFilterOrder = { Active: 0, Planned: 1, Closed: 2 } as const;
   const boardOptions: TaskBoardOptions = {
     members: [...memberMap.entries()]
       .map(([id, name]) => ({ id, name }))
@@ -438,7 +445,25 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       })
     ).map((d) => ({ id: d.id, name: d.displayName })),
     repoUrls: project.repoUrls,
+    sprints: [...sprints]
+      .sort(
+        (a, b) =>
+          sprintFilterOrder[a.status] - sprintFilterOrder[b.status] ||
+          a.startsAt.localeCompare(b.startsAt),
+      )
+      .map((s) => ({ id: s.id, name: s.name, status: s.status })),
+    epics: project.epics.map((e) => ({ id: e.id, title: e.title })),
   };
+
+  // Per-epic task progress for the epic list rows + timeline tooltips.
+  // Cancelled tasks don't count toward either side.
+  const taskCountsByEpic: Record<string, { done: number; total: number }> = {};
+  for (const t of project.tasks) {
+    if (!t.epicId || t.status === "Cancelled") continue;
+    const counts = (taskCountsByEpic[t.epicId] ??= { done: 0, total: 0 });
+    counts.total += 1;
+    if (t.status === "Done") counts.done += 1;
+  }
 
   // Team grouped by term, newest term first. Current = highest sortKey.
   //
@@ -688,6 +713,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     sprints,
     tasks,
     boardOptions,
+    taskCountsByEpic,
     canEdit,
     canEditScope,
     canEditAssignmentLevel: core,
@@ -975,6 +1001,7 @@ export default function ProjectDetail() {
     sprints,
     tasks,
     boardOptions,
+    taskCountsByEpic,
     allDomainOptions,
     plannedTerms,
     allTermOptions,
@@ -1113,6 +1140,7 @@ export default function ProjectDetail() {
           sprints={sprints}
           tasks={tasks}
           boardOptions={boardOptions}
+          taskCountsByEpic={taskCountsByEpic}
           canEdit={canEdit}
           collabToken={collabToken}
           userName={userName}
@@ -2904,6 +2932,17 @@ function FilesBlock({
   );
 }
 
+// The Work tab's sub-views. Board first — it's the daily-driver surface;
+// planning (epics & sprints) and the timeline are their own views so a long
+// epic list can't push the board below the fold.
+const WORK_VIEWS = ["board", "epics", "timeline"] as const;
+type WorkView = (typeof WORK_VIEWS)[number];
+const WORK_VIEW_LABELS: Record<WorkView, string> = {
+  board: "Board",
+  epics: "Epics & sprints",
+  timeline: "Timeline",
+};
+
 function WorkTab({
   projectId,
   epics,
@@ -2911,6 +2950,7 @@ function WorkTab({
   sprints,
   tasks,
   boardOptions,
+  taskCountsByEpic,
   canEdit,
   collabToken,
   userName,
@@ -2922,54 +2962,82 @@ function WorkTab({
   sprints: EditableSprint[];
   tasks: TaskCardModel[];
   boardOptions: TaskBoardOptions;
+  taskCountsByEpic: Record<string, { done: number; total: number }>;
   canEdit: boolean;
   collabToken: string | null;
   userName: string;
   currentUserId: string;
 }) {
-  const [taskBoardOpen, setTaskBoardOpen] = useState(true);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const viewParam = searchParams.get("view");
+  // A `?task=` deep link always lands on the board — that's where the task
+  // modal lives.
+  const view: WorkView = searchParams.get("task")
+    ? "board"
+    : WORK_VIEWS.includes(viewParam as WorkView)
+      ? (viewParam as WorkView)
+      : "board";
+  const setView = (next: WorkView) => {
+    setSearchParams(
+      (prev) => {
+        if (next === "board") prev.delete("view");
+        else prev.set("view", next);
+        return prev;
+      },
+      { replace: true, preventScrollReset: true },
+    );
+  };
 
   return (
-    <div className="flex flex-col gap-6">
-      <section>
-        <h2 className="text-sm font-semibold text-foreground mb-3">Epics &amp; sprints</h2>
+    <div className="flex flex-col gap-4">
+      <div
+        role="group"
+        aria-label="Work view"
+        className="inline-flex self-start rounded-lg border border-border bg-muted/30 p-0.5"
+      >
+        {WORK_VIEWS.map((v) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => setView(v)}
+            aria-pressed={view === v}
+            className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+              view === v
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {WORK_VIEW_LABELS[v]}
+          </button>
+        ))}
+      </div>
+
+      {view === "board" && (
+        <TaskBoard
+          projectId={projectId}
+          initialTasks={tasks}
+          options={boardOptions}
+          canManage={canEdit}
+          currentUserId={currentUserId}
+          currentUserName={userName}
+        />
+      )}
+
+      {view === "epics" && (
         <EpicSprintManager
           projectId={projectId}
-          timelineEpics={epics}
           epics={editableEpics}
           sprints={sprints}
+          taskCounts={taskCountsByEpic}
           canManage={canEdit}
           collabToken={collabToken}
           userName={userName}
         />
-      </section>
+      )}
 
-      <section>
-        <button
-          type="button"
-          onClick={() => setTaskBoardOpen((o) => !o)}
-          aria-expanded={taskBoardOpen}
-          className={`flex items-center gap-1.5 ${taskBoardOpen ? "mb-3" : ""}`}
-        >
-          <span
-            aria-hidden
-            className={`inline-block text-muted-foreground transition-transform ${taskBoardOpen ? "rotate-90" : ""}`}
-          >
-            ›
-          </span>
-          <h2 className="text-sm font-semibold text-foreground">Task board</h2>
-        </button>
-        {taskBoardOpen && (
-          <TaskBoard
-            projectId={projectId}
-            initialTasks={tasks}
-            options={boardOptions}
-            canManage={canEdit}
-            currentUserId={currentUserId}
-            currentUserName={userName}
-          />
-        )}
-      </section>
+      {view === "timeline" && (
+        <EpicsTimeline epics={epics} taskCounts={taskCountsByEpic} />
+      )}
     </div>
   );
 }

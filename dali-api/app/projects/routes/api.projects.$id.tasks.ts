@@ -93,6 +93,33 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Project not found" }, { status: 404 }));
   }
 
+  // A sprint/epic id must belong to this project — a foreign id would let a
+  // member of one project file tasks onto another project's board.
+  if (body.sprintId != null) {
+    const sprint = await prisma.sprint.findUnique({
+      where: { id: body.sprintId },
+      select: { projectId: true },
+    });
+    if (!sprint || sprint.projectId !== params.id) {
+      return withCors(
+        request,
+        Response.json({ error: "Sprint is not part of this project" }, { status: 400 }),
+      );
+    }
+  }
+  if (body.epicId != null) {
+    const epic = await prisma.epic.findUnique({
+      where: { id: body.epicId },
+      select: { projectId: true },
+    });
+    if (!epic || epic.projectId !== params.id) {
+      return withCors(
+        request,
+        Response.json({ error: "Epic is not part of this project" }, { status: 400 }),
+      );
+    }
+  }
+
   // Validate the GH repo (if requested) is one of the project's declared
   // repos. Compare in normalized "owner/repo" form so users can paste either
   // the URL or the shortform when configuring the project.

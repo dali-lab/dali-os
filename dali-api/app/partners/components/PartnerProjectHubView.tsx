@@ -4,6 +4,7 @@ import { Download } from "lucide-react";
 import { termCodeLabel } from "~/lib/display";
 import { formatBytes } from "~/lib/upload-client";
 import { Avatar } from "~/components/ui/Avatar";
+import { Markdown } from "~/components/Markdown";
 import { PartnerBackLink } from "~/partners/components/PartnerBackLink";
 import type {
   PartnerProjectEpic,
@@ -376,10 +377,13 @@ export function PartnerProjectHubView({
                     .filter(Boolean)
                     .join(" · ")}
                 </p>
+                {/* Same Markdown renderer as the internal Overview tab, so a
+                    description written with formatting reads the same on both
+                    surfaces. */}
                 {project.description && (
-                  <p className="text-sm text-foreground mt-3 whitespace-pre-wrap">
-                    {project.description}
-                  </p>
+                  <div className="mt-3">
+                    <Markdown>{project.description}</Markdown>
+                  </div>
                 )}
               </div>
               {momentum && (

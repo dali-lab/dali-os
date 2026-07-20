@@ -103,4 +103,47 @@ describe("useOptimisticBoardMove", () => {
     expect(h.box.current.items[0].status).toBe("done");
     h.unmount();
   });
+
+  it("adopts serverItems that arrived mid-save once the save drains", async () => {
+    let server: Item[] = [{ id: "a", status: "todo" }];
+    const h = mountHook(() => useOptimisticBoardMove(server));
+    let resolve!: () => void;
+    act(() => {
+      h.box.current.move(
+        (cur) => cur.map((i) => ({ ...i, status: "done" })),
+        () => new Promise<void>((r) => (resolve = r)),
+      );
+    });
+    // Fresh data (the revalidate-on-success sequence) lands while saving...
+    server = [{ id: "a", status: "review" }];
+    h.rerender();
+    expect(h.box.current.items[0].status).toBe("done");
+    // ...and is adopted when the save settles.
+    await act(async () => {
+      resolve();
+      await Promise.resolve();
+    });
+    expect(h.box.current.items[0].status).toBe("review");
+    h.unmount();
+  });
+
+  it("does not revert the optimistic state on drain when no fresh server data arrived", async () => {
+    const server: Item[] = [{ id: "a", status: "todo" }];
+    const h = mountHook(() => useOptimisticBoardMove(server));
+    let resolve!: () => void;
+    act(() => {
+      h.box.current.move(
+        (cur) => cur.map((i) => ({ ...i, status: "done" })),
+        () => new Promise<void>((r) => (resolve = r)),
+      );
+    });
+    await act(async () => {
+      resolve();
+      await Promise.resolve();
+    });
+    // serverItems is still the stale pre-save snapshot; adopting it here would
+    // visually undo the move the save just persisted.
+    expect(h.box.current.items[0].status).toBe("done");
+    h.unmount();
+  });
 });
