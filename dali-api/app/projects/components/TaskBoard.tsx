@@ -1,8 +1,9 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { Button } from "~/components/ui/Button";
 import type { DragEndEvent } from "@dnd-kit/core";
-import { GripVertical } from "lucide-react";
+import { Archive, GripVertical, X } from "lucide-react";
+import { Modal } from "~/components/Modal";
 import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
 import { useOptimisticBoardMove } from "~/components/board/useOptimisticBoardMove";
 import {
@@ -57,6 +58,7 @@ export function TaskBoard({
   const { items: tasks, move, error, setError, setItems } =
     useOptimisticBoardMove<TaskCardModel>(initialTasks, { adoptServerItems: false });
   const [isCreating, setIsCreating] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
 
   // The open task is tracked in the URL (`?task=<id>`) so GitHub issue mirrors
   // and other external links can deep-link straight to a task.
@@ -220,9 +222,17 @@ export function TaskBoard({
   return (
     <div className="flex flex-col gap-3">
       {canManage && (
-        <div>
+        <div className="flex items-center gap-2">
           <Button variant="primary" size="sm" onClick={() => setIsCreating(true)}>
             + Add task
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setShowArchived(true)}
+          >
+            <Archive className="w-3.5 h-3.5" />
+            Archived
           </Button>
         </div>
       )}
@@ -265,7 +275,122 @@ export function TaskBoard({
           onCreate={handleCreate}
         />
       )}
+
+      {showArchived && (
+        <ArchivedTasksModal
+          projectId={projectId}
+          onClose={() => setShowArchived(false)}
+        />
+      )}
     </div>
+  );
+}
+
+type ArchivedTask = {
+  id: string;
+  title: string;
+  status: TaskStatus;
+  priority: Priority;
+  dueAt: string | null;
+  archivedAt: string;
+  domain: { id: string; name: string } | null;
+  assignees: { id: string; name: string }[];
+};
+
+// Lazily fetches and lists a project's archived tasks. Read-only — archived
+// tasks aren't editable/restorable from here (they live off the board by
+// design); this is a record of what was auto-archived.
+function ArchivedTasksModal({
+  projectId,
+  onClose,
+}: {
+  projectId: string;
+  onClose: () => void;
+}) {
+  const [tasks, setTasks] = useState<ArchivedTask[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/projects/${projectId}/tasks`, {
+          credentials: "include",
+        });
+        if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+        const body = (await res.json()) as { tasks: ArchivedTask[] };
+        if (!cancelled) setTasks(body.tasks);
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      labelledBy="archived-tasks-title"
+      containerClassName="bg-card rounded-2xl shadow-brand-2 max-w-xl w-full p-5 sm:p-6 my-auto max-h-[80vh] flex flex-col"
+    >
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <h2 id="archived-tasks-title" className="text-lg font-semibold text-foreground">
+          Archived tasks
+        </h2>
+        <button
+          type="button"
+          onClick={onClose}
+          className="text-muted-foreground/70 hover:text-foreground rounded p-1 hover:bg-muted"
+          aria-label="Close"
+        >
+          <X className="w-5 h-5" aria-hidden />
+        </button>
+      </div>
+
+      {error && <p className="text-sm text-destructive">{error}</p>}
+      {!error && tasks === null && (
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      )}
+      {tasks !== null && tasks.length === 0 && (
+        <p className="text-sm text-muted-foreground">
+          No archived tasks yet. Done/Cancelled tasks are archived automatically
+          once they've been idle past the threshold.
+        </p>
+      )}
+
+      {tasks !== null && tasks.length > 0 && (
+        <ul className="flex flex-col gap-2 overflow-y-auto -mx-1 px-1">
+          {tasks.map((t) => (
+            <li
+              key={t.id}
+              className="border border-border rounded-md bg-background p-2.5 text-sm"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-foreground min-w-0 truncate">{t.title}</span>
+                <span className="text-[11px] text-muted-foreground flex-shrink-0">
+                  {TASK_STATUS_LABELS[t.status]}
+                </span>
+              </div>
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
+                <span className={PRIORITY_TONE[t.priority]}>{t.priority}</span>
+                {t.domain && <span>· {t.domain.name}</span>}
+                {t.assignees.length > 0 && (
+                  <span className="truncate">
+                    · {t.assignees.map((a) => a.name).join(", ")}
+                  </span>
+                )}
+                <span className="ml-auto">
+                  Archived {new Date(t.archivedAt).toLocaleDateString()}
+                </span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Modal>
   );
 }
 
