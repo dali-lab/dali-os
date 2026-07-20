@@ -6,9 +6,11 @@
 // set of fields and hands them to onCreate on submit.
 
 import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router";
 import { X } from "lucide-react";
 import { Modal } from "~/components/Modal";
 import { Button } from "~/components/ui/Button";
+import { uploadFileToS3 } from "~/lib/upload-client";
 import {
   normalizeChecklist,
   CHECKLIST_MAX_ITEMS,
@@ -51,8 +53,11 @@ export type NewTaskValues = {
   github: { repo: string } | null;
 };
 
+type ArtifactModel = TaskCardModel["files"][number];
+
 export function TaskModal({
   task,
+  projectId,
   options,
   canManage,
   onClose,
@@ -60,9 +65,11 @@ export function TaskModal({
   onCreate,
   onDelete,
   defaultSprintId,
+  onArtifactsChanged,
 }: {
   // Present in edit mode; omitted (create mode) opens an empty form.
   task?: TaskCardModel;
+  projectId: string;
   options: TaskBoardOptions;
   canManage: boolean;
   onClose: () => void;
@@ -74,6 +81,9 @@ export function TaskModal({
   onDelete?: () => void;
   // Create mode: seeds the sprint picker (e.g. from the board's sprint filter).
   defaultSprintId?: string | null;
+  // Edit mode: lets the board revalidate so the card's artifact chip catches
+  // up after a link/unlink/upload (artifacts bypass the onPatch path).
+  onArtifactsChanged?: () => void;
 }) {
   const isCreate = !task;
   const [title, setTitle] = useState(task?.title ?? "");
@@ -129,6 +139,15 @@ export function TaskModal({
   const [linkBusy, setLinkBusy] = useState(false);
   const [linkError, setLinkError] = useState<string | null>(null);
 
+  // Artifacts (edit mode): linked project files. Local so link/unlink/upload
+  // reflect immediately — the parent's task model catches up on revalidation.
+  const [artifacts, setArtifacts] = useState<ArtifactModel[]>(task?.files ?? []);
+  const [artifactBusy, setArtifactBusy] = useState(false);
+  const [artifactError, setArtifactError] = useState<string | null>(null);
+  const [attachOpen, setAttachOpen] = useState(false);
+  const [attachFileId, setAttachFileId] = useState("");
+  const artifactInputRef = useRef<HTMLInputElement | null>(null);
+
   // Comments (edit mode). null = still loading.
   const [comments, setComments] = useState<CommentModel[] | null>(null);
   const [commentsError, setCommentsError] = useState<string | null>(null);
@@ -150,6 +169,7 @@ export function TaskModal({
     setEpicId(task.epicId ?? "");
     setChecklist(task.checklist ?? []);
     setGithub({ issueNumber: task.githubIssueNumber, url: task.githubIssueUrl });
+    setArtifacts(task.files);
     setSaveError(null);
   }, [task?.id]);
 
@@ -353,6 +373,92 @@ export function TaskModal({
       );
     } finally {
       setCommentPosting(false);
+    }
+  }
+
+  async function linkArtifact(fileId: string): Promise<void> {
+    if (!task) return;
+    const res = await fetch(`/api/tasks/${task.id}/files`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fileId }),
+    });
+    const j = (await res.json().catch(() => ({}))) as Partial<ArtifactModel> & {
+      error?: string;
+    };
+    if (!res.ok) throw new Error(j.error ?? `Request failed: ${res.status}`);
+    setArtifacts((cur) =>
+      cur.some((a) => a.id === j.id)
+        ? cur
+        : [...cur, { id: j.id!, title: j.title!, versionCount: j.versionCount ?? 1 }],
+    );
+    onArtifactsChanged?.();
+  }
+
+  async function handleAttachArtifact() {
+    if (!attachFileId) return;
+    setArtifactBusy(true);
+    setArtifactError(null);
+    try {
+      await linkArtifact(attachFileId);
+      setAttachOpen(false);
+      setAttachFileId("");
+    } catch (err) {
+      setArtifactError(err instanceof Error ? err.message : "Couldn't attach the file.");
+    } finally {
+      setArtifactBusy(false);
+    }
+  }
+
+  async function handleUnlinkArtifact(fileId: string) {
+    if (!task) return;
+    setArtifactBusy(true);
+    setArtifactError(null);
+    try {
+      const res = await fetch(`/api/tasks/${task.id}/files`, {
+        method: "DELETE",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileId }),
+      });
+      if (!res.ok) {
+        const j = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(j.error ?? `Request failed: ${res.status}`);
+      }
+      setArtifacts((cur) => cur.filter((a) => a.id !== fileId));
+      onArtifactsChanged?.();
+    } catch (err) {
+      setArtifactError(err instanceof Error ? err.message : "Couldn't unlink the file.");
+    } finally {
+      setArtifactBusy(false);
+    }
+  }
+
+  // Upload a brand-new artifact: S3 direct upload → register as a project
+  // file → link it to this task. The file also appears in the project's
+  // Files section (it's a normal ProjectFile).
+  async function handleUploadArtifact(e: React.ChangeEvent<HTMLInputElement>) {
+    const picked = e.target.files?.[0];
+    e.target.value = "";
+    if (!picked || !task) return;
+    setArtifactBusy(true);
+    setArtifactError(null);
+    try {
+      const meta = await uploadFileToS3(picked, `project-files/${projectId}`);
+      const res = await fetch(`/api/projects/${projectId}/files`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: picked.name, ...meta }),
+      });
+      const j = (await res.json().catch(() => ({}))) as { id?: string; error?: string };
+      if (!res.ok || !j.id) throw new Error(j.error ?? "Failed to save the upload");
+      await linkArtifact(j.id);
+    } catch (err) {
+      setArtifactError(err instanceof Error ? err.message : "Upload failed.");
+    } finally {
+      setArtifactBusy(false);
     }
   }
 
@@ -696,6 +802,105 @@ export function TaskModal({
               </button>
             )}
             {linkError && <p className="text-accent-coral">{linkError}</p>}
+          </div>
+        )}
+
+        {!isCreate && task && (canManage || artifacts.length > 0) && (
+          <div className="flex flex-col gap-2 pt-2 border-t border-border text-xs">
+            <span className="text-muted-foreground font-medium uppercase tracking-wide">
+              Work files
+              {artifacts.length > 0 && ` (${artifacts.length})`}
+            </span>
+            {artifacts.map((a) => (
+              <div key={a.id} className="flex items-center justify-between gap-2">
+                <Link
+                  to={`/documents/file/${a.id}`}
+                  className="min-w-0 truncate text-sm text-accent-coral hover:underline"
+                >
+                  {a.title}
+                </Link>
+                <span className="flex-shrink-0 text-muted-foreground">
+                  {a.versionCount} {a.versionCount === 1 ? "version" : "versions"}
+                  {canManage && (
+                    <button
+                      type="button"
+                      onClick={() => void handleUnlinkArtifact(a.id)}
+                      disabled={artifactBusy}
+                      className="ml-2 text-muted-foreground hover:text-foreground hover:underline disabled:opacity-60"
+                    >
+                      Unlink
+                    </button>
+                  )}
+                </span>
+              </div>
+            ))}
+            {canManage && (
+              <div className="flex items-center gap-3">
+                <input
+                  ref={artifactInputRef}
+                  type="file"
+                  className="hidden"
+                  onChange={(e) => void handleUploadArtifact(e)}
+                />
+                <button
+                  type="button"
+                  onClick={() => artifactInputRef.current?.click()}
+                  disabled={artifactBusy}
+                  className="text-accent-coral hover:underline disabled:opacity-60"
+                >
+                  {artifactBusy ? "Working…" : "Upload file"}
+                </button>
+                {options.projectFiles.some(
+                  (f) => !artifacts.some((a) => a.id === f.id),
+                ) &&
+                  (attachOpen ? (
+                    <span className="flex items-center gap-2">
+                      <select
+                        value={attachFileId}
+                        onChange={(e) => setAttachFileId(e.target.value)}
+                        className="px-2 py-1 text-xs border border-border rounded-md bg-background text-foreground"
+                      >
+                        <option value="">Choose a file…</option>
+                        {options.projectFiles
+                          .filter((f) => !artifacts.some((a) => a.id === f.id))
+                          .map((f) => (
+                            <option key={f.id} value={f.id}>
+                              {f.title}
+                            </option>
+                          ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => void handleAttachArtifact()}
+                        disabled={artifactBusy || !attachFileId}
+                        className="text-accent-coral hover:underline disabled:opacity-60"
+                      >
+                        Attach
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAttachOpen(false);
+                          setAttachFileId("");
+                        }}
+                        className="text-muted-foreground hover:underline"
+                      >
+                        Cancel
+                      </button>
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setAttachOpen(true)}
+                      disabled={artifactBusy}
+                      className="text-accent-coral hover:underline disabled:opacity-60"
+                    >
+                      Attach existing
+                    </button>
+                  ))}
+              </div>
+            )}
+            {artifactError && <p className="text-accent-coral">{artifactError}</p>}
           </div>
         )}
 

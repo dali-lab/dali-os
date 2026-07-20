@@ -8,26 +8,26 @@ function req(cookie?: string): Request {
 }
 
 describe("isTablessRequest", () => {
-  it("is false when no Cookie header", () => {
-    expect(isTablessRequest(req())).toBe(false);
+  it("defaults to tabless with no Cookie header", () => {
+    expect(isTablessRequest(req())).toBe(true);
   });
 
-  it("is false when the tabless cookie is absent", () => {
-    expect(isTablessRequest(req("__dali_sid=abc; foo=bar"))).toBe(false);
+  it("defaults to tabless when the cookie is absent", () => {
+    expect(isTablessRequest(req("__dali_sid=abc; foo=bar"))).toBe(true);
   });
 
-  it("is true when the tabless cookie is set to 1", () => {
+  it("is true when the cookie is set to 1", () => {
     expect(isTablessRequest(req(`${TABLESS_COOKIE}=1`))).toBe(true);
   });
 
   it("finds the cookie among others", () => {
     expect(
-      isTablessRequest(req(`__dali_sid=abc; ${TABLESS_COOKIE}=1; theme=dark`)),
-    ).toBe(true);
+      isTablessRequest(req(`__dali_sid=abc; ${TABLESS_COOKIE}=0; theme=dark`)),
+    ).toBe(false);
   });
 
-  it("is false for any value other than 1 (e.g. a cleared cookie)", () => {
-    expect(isTablessRequest(req(`${TABLESS_COOKIE}=`))).toBe(false);
+  it("is false only for the explicit tabbed opt-in (0)", () => {
     expect(isTablessRequest(req(`${TABLESS_COOKIE}=0`))).toBe(false);
+    expect(isTablessRequest(req(`${TABLESS_COOKIE}=`))).toBe(true);
   });
 });

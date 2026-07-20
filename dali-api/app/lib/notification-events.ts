@@ -98,7 +98,7 @@ export const EVENT_TYPES = {
     area: "Tasks",
     label: "Task status changes",
     description: "When someone moves a task you're assigned to a new status.",
-    defaults: { inApp: true, slackDm: false, email: "Off" },
+    defaults: { inApp: true, desktop: false, slackDm: false, email: "Off" },
   },
   "task.github_update": {
     kind: "General",
@@ -112,6 +112,20 @@ export const EVENT_TYPES = {
     area: "Documents",
     label: "Comment replies",
     description: "Replies in document and file comment threads you're part of.",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
+  "file.comment": {
+    kind: "General",
+    area: "Documents",
+    label: "File feedback",
+    description: "New comments on files you uploaded or are working on via a task.",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
+  "file.new_version": {
+    kind: "General",
+    area: "Documents",
+    label: "New file versions",
+    description: "When a new version of a file you commented on or are working on is uploaded.",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
   "pagedoc.mention": {

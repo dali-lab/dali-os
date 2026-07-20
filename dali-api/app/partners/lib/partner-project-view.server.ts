@@ -82,6 +82,7 @@ export type PartnerProjectViewData = {
     title: string;
     fileName: string | null;
     sizeBytes: number | null;
+    contentType: string | null;
     downloadUrl: string | null;
   }[];
 };
@@ -210,7 +211,7 @@ export async function loadPartnerProjectView(
           id: true,
           title: true,
           currentVersion: {
-            select: { fileName: true, sizeBytes: true, s3Key: true },
+            select: { fileName: true, sizeBytes: true, s3Key: true, contentType: true },
           },
         },
       }),
@@ -362,6 +363,7 @@ export async function loadPartnerProjectView(
         title: f.title,
         fileName: f.currentVersion?.fileName ?? null,
         sizeBytes: f.currentVersion?.sizeBytes ?? null,
+        contentType: f.currentVersion?.contentType ?? null,
         downloadUrl: f.currentVersion?.s3Key
           ? await getDownloadUrl(f.currentVersion.s3Key)
           : null,
