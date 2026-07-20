@@ -31,10 +31,15 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   if (request.method === "DELETE") {
     const core = await isCore(auth.user.sub);
+    const isAuthor = comment.authorId === auth.user.sub;
+    // Authors delete their own on the shared surfaces (page-doc FAQs, and
+    // partner comments on shared docs); doc/file threads otherwise stay Core.
     const canDelete =
       comment.targetType === "pagedoc"
-        ? core || comment.authorId === auth.user.sub
-        : core;
+        ? core || isAuthor
+        : comment.targetType === "doc"
+          ? core || (auth.user.type === "partner" && isAuthor)
+          : core;
     if (!canDelete) return forbidden(request);
 
     await prisma.docComment.delete({ where: { id: comment.id } });

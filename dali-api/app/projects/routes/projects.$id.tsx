@@ -297,6 +297,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     select: {
       id: true,
       title: true,
+      partnerVisible: true,
       currentVersion: { select: { fileName: true, sizeBytes: true } },
       _count: { select: { versions: true } },
     },
@@ -307,6 +308,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     fileName: f.currentVersion?.fileName ?? null,
     sizeBytes: f.currentVersion?.sizeBytes ?? null,
     versionCount: f._count.versions,
+    partnerVisible: f.partnerVisible,
   }));
 
   // Content edits (name/status, description, details, docs/files, epics/
@@ -2173,6 +2175,7 @@ function OverviewTab({
         projectId={project.id}
         files={files}
         canEdit={canEdit}
+        hasActivePartner={hasActivePartner}
       />
     </div>
   );
@@ -2687,15 +2690,42 @@ function FilesBlock({
   projectId,
   files,
   canEdit,
+  hasActivePartner,
 }: {
   projectId: string;
   files: LoaderData["files"];
   canEdit: boolean;
+  hasActivePartner: boolean;
 }) {
   const revalidator = useRevalidator();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Share/unshare a file with the project's partner org(s) — same pattern as
+  // DocumentsBlock.togglePartnerVisible. Persisted via its own API route; the
+  // badge state comes back through the loader.
+  async function togglePartnerVisible(id: string, next: boolean) {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/files/${id}/partner-visible`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ partnerVisible: next }),
+      });
+      if (!res.ok) {
+        const b = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(b.error ?? "Failed to update sharing");
+      }
+      revalidator.revalidate();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong");
+    } finally {
+      setBusy(false);
+    }
+  }
   // When set, the chosen file is added as a new version of this file id;
   // otherwise it creates a new ProjectFile.
   const versionForId = useRef<string | null>(null);
@@ -2805,35 +2835,67 @@ function FilesBlock({
                   {f.versionCount > 1 ? ` · v${f.versionCount}` : ""}
                 </span>
               </Link>
-              {canEdit && (
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <Tooltip label="New version">
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {f.partnerVisible && !canEdit && (
+                  <Tooltip label="Shared with partner — partners on this project can download this file">
+                    <span className="flex items-center text-accent-teal">
+                      <Handshake className="w-3.5 h-3.5" />
+                    </span>
+                  </Tooltip>
+                )}
+                {canEdit && (hasActivePartner || f.partnerVisible) && (
+                  <Tooltip
+                    label={
+                      f.partnerVisible
+                        ? "Shared with partner — click to stop sharing"
+                        : "Share with partner"
+                    }
+                  >
                     <button
                       type="button"
                       disabled={busy}
-                      onClick={() => {
-                        versionForId.current = f.id;
-                        fileInputRef.current?.click();
-                      }}
-                      aria-label="New version"
-                      className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-60"
+                      onClick={() => void togglePartnerVisible(f.id, !f.partnerVisible)}
+                      aria-label={f.partnerVisible ? "Shared file with partner" : "Share file with partner"}
+                      className={`p-1 rounded disabled:opacity-60 ${
+                        f.partnerVisible
+                          ? "text-accent-teal"
+                          : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                      }`}
                     >
-                      <Upload className="w-3.5 h-3.5" />
+                      <Handshake className="w-3.5 h-3.5" />
                     </button>
                   </Tooltip>
-                  <Tooltip label="Delete file">
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => void deleteFile(f.id, f.title)}
-                      aria-label="Delete file"
-                      className="p-1 rounded text-destructive hover:text-destructive/80 disabled:opacity-60"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </Tooltip>
-                </div>
-              )}
+                )}
+                {canEdit && (
+                  <>
+                    <Tooltip label="New version">
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => {
+                          versionForId.current = f.id;
+                          fileInputRef.current?.click();
+                        }}
+                        aria-label="New version"
+                        className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-60"
+                      >
+                        <Upload className="w-3.5 h-3.5" />
+                      </button>
+                    </Tooltip>
+                    <Tooltip label="Delete file">
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void deleteFile(f.id, f.title)}
+                        aria-label="Delete file"
+                        className="p-1 rounded text-destructive hover:text-destructive/80 disabled:opacity-60"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </Tooltip>
+                  </>
+                )}
+              </div>
             </div>
           ))}
         </div>

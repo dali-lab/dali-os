@@ -7,6 +7,7 @@ export default [
     route("profile", "routes/profile.tsx"),
     route("onboarding", "routes/onboarding.tsx"),
     route("calendar", "calendar/routes/calendar.tsx"),
+    route("calendar/check-in/:id", "calendar/routes/calendar.check-in.$id.tsx"),
     // My Tasks surface: Open tasks + browsable notification history.
     route("notifications", "routes/notifications.tsx"),
 
@@ -354,6 +355,7 @@ export default [
   // Project files (standalone uploads with versions)
   route("api/projects/:id/files", "projects/routes/api.projects.$id.files.ts"),
   route("api/files/:id", "projects/routes/api.files.$id.ts"),
+  route("api/files/:id/partner-visible", "projects/routes/api.files.$id.partner-visible.ts"),
 
   // Lab-wide document/file tags
   route("api/doctags", "routes/api.doctags.ts"),
