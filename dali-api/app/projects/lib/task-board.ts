@@ -50,6 +50,10 @@ export type TaskCardModel = {
   // null means the task is not mirrored.
   githubIssueUrl: string | null;
   githubIssueNumber: number | null;
+  // Linked work artifacts (ProjectFile) — versioned uploads the task's work
+  // lives in (graphics, animation, design exports). Card shows a count chip;
+  // the modal lists them with links to the file page.
+  files: { id: string; title: string; versionCount: number }[];
   createdBy: { id: string; name: string };
   // ISO timestamp (UTC).
   createdAt: string;
@@ -75,6 +79,8 @@ export type TaskBoardOptions = {
   // modal's sprint/epic pickers. Sprints ordered Active → Planned → Closed.
   sprints: BoardSprint[];
   epics: BoardEpic[];
+  // Live project files for the modal's "attach existing artifact" picker.
+  projectFiles: { id: string; title: string }[];
 };
 
 export type TaskBoard = Record<TaskStatus, TaskCardModel[]>;

@@ -11,16 +11,16 @@ const OPTIONS: {
   icon: typeof PanelTop;
 }[] = [
   {
+    value: "tabless",
+    label: "Single page",
+    description: "One page at a time, using your browser's own tabs and history (default)",
+    icon: Square,
+  },
+  {
     value: "tabs",
     label: "Tabbed workspace",
     description: "Open sections as tabs, with split view and pinning",
     icon: PanelTop,
-  },
-  {
-    value: "tabless",
-    label: "Single page",
-    description: "One page at a time, using your browser's own tabs and history",
-    icon: Square,
   },
 ];
 
@@ -40,7 +40,7 @@ function reloadSettings() {
 export function WorkspaceSettingsBlock() {
   // Matches AppearanceSettingsBlock: render defaults on the server, then correct
   // to the cookie-backed values on mount to avoid a hydration mismatch.
-  const [tabless, setTabless] = useState(false);
+  const [tabless, setTabless] = useState(true);
   const [focus, setFocus] = useState(false);
 
   useEffect(() => {

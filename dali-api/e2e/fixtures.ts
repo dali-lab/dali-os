@@ -9,7 +9,7 @@ type LoginOptions = { netId?: string; daliEmail?: string; personalEmail?: string
 const LAUNCH_WELCOME_SEEN_KEY = 'dalios-launch-welcome-seen-v1';
 
 export const test = base.extend<{ loginAs: (opts: LoginOptions) => Promise<void> }>({
-  page: async ({ page }, use) => {
+  page: async ({ page, baseURL }, use) => {
     await page.addInitScript((key) => {
       try {
         window.localStorage.setItem(key, 'e2e');
@@ -17,6 +17,13 @@ export const test = base.extend<{ loginAs: (opts: LoginOptions) => Promise<void>
         // localStorage unavailable (e.g. about:blank) — ignore.
       }
     }, LAUNCH_WELCOME_SEEN_KEY);
+    // The suite was written against the tabbed workspace shell (several specs
+    // locate content via frameLocator on workspace iframes). Tabless is the
+    // app default now, so pin the tabbed opt-in cookie per context. Keep the
+    // name/value in sync with TABLESS_COOKIE in app/lib/tabless.ts.
+    if (baseURL) {
+      await page.context().addCookies([{ name: 'dali_tabless', value: '0', url: baseURL }]);
+    }
     await use(page);
   },
   loginAs: async ({ page }, use) => {
