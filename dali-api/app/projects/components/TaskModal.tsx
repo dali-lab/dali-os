@@ -8,9 +8,14 @@ import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { Modal } from "~/components/Modal";
 import { Button } from "~/components/ui/Button";
-import type { TaskBoardOptions, TaskCardModel, Priority } from "../lib/task-board";
+import type { TaskBoardOptions, TaskCardModel, Priority, TaskStatus } from "../lib/task-board";
+import { TASK_STATUSES, TASK_STATUS_LABELS } from "../lib/task-board";
 
 const PRIORITIES: Priority[] = ["Low", "Normal", "High", "Urgent"];
+
+// Sentinel option in the Status dropdown that archives the task instead of
+// setting a status.
+const ARCHIVE_OPTION = "__archive__";
 
 type Patch = Partial<TaskCardModel>;
 
@@ -36,6 +41,7 @@ export function TaskModal({
   onPatch,
   onCreate,
   onDelete,
+  onArchive,
 }: {
   // Present in edit mode; omitted (create mode) opens an empty form.
   task?: TaskCardModel;
@@ -47,6 +53,8 @@ export function TaskModal({
   // Edit mode only. Removes the task (parent handles optimistic removal +
   // closing the modal).
   onDelete?: () => Promise<void> | void;
+  // Edit mode only. Archives the task (soft — kept, hidden from the board).
+  onArchive?: () => Promise<void> | void;
 }) {
   const isCreate = !task;
   const [title, setTitle] = useState(task?.title ?? "");
@@ -59,6 +67,8 @@ export function TaskModal({
     task?.dueAt ? dateInputValue(task.dueAt) : "",
   );
   const [domainId, setDomainId] = useState<string>(task?.domain?.id ?? "");
+  // Either a TaskStatus or ARCHIVE_OPTION. Edit mode only.
+  const [statusValue, setStatusValue] = useState<string>(task?.status ?? "Todo");
   const [saving, setSaving] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -91,6 +101,7 @@ export function TaskModal({
     setAssigneeIds(task.assignees.map((a) => a.id));
     setDueDate(task.dueAt ? dateInputValue(task.dueAt) : "");
     setDomainId(task.domain?.id ?? "");
+    setStatusValue(task.status);
   }, [task?.id]);
 
   function diffPatch(current: TaskCardModel): Patch {
@@ -99,6 +110,9 @@ export function TaskModal({
     const nextDescription = description.trim() ? description.trim() : null;
     if (nextDescription !== current.description) patch.description = nextDescription;
     if (priority !== current.priority) patch.priority = priority;
+    if (statusValue !== ARCHIVE_OPTION && statusValue !== current.status) {
+      patch.status = statusValue as TaskStatus;
+    }
     const nextDueIso = dueDate ? endOfDayIso(dueDate) : null;
     if (nextDueIso !== current.dueAt) patch.dueAt = nextDueIso;
     const nextDomain =
@@ -123,7 +137,14 @@ export function TaskModal({
   }
 
   async function handleSave() {
-    if (!task || !onPatch) return;
+    if (!task) return;
+    // "Archive" in the Status dropdown is a distinct action, not a status
+    // write — hand off to onArchive (which removes the card + closes).
+    if (statusValue === ARCHIVE_OPTION) {
+      await onArchive?.();
+      return;
+    }
+    if (!onPatch) return;
     const patch = diffPatch(task);
     if (Object.keys(patch).length > 0) {
       await onPatch(patch);
@@ -198,6 +219,24 @@ export function TaskModal({
         </Field>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {!isCreate && (
+            <Field label="Status">
+              <select
+                value={statusValue}
+                disabled={!canManage}
+                onChange={(e) => setStatusValue(e.target.value)}
+                className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
+              >
+                {TASK_STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {TASK_STATUS_LABELS[s]}
+                  </option>
+                ))}
+                {onArchive && <option value={ARCHIVE_OPTION}>Archive</option>}
+              </select>
+            </Field>
+          )}
+
           <Field label="Priority">
             <select
               value={priority}

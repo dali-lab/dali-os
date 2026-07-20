@@ -4,12 +4,14 @@ import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { syncIssueForTask } from "../lib/github-task-sync";
 import { notifyTaskAssigned } from "../lib/task-notifications.server";
+import { isTaskStatus, type TaskStatus } from "../lib/task-board";
 
 // PATCH /api/tasks/:id
 //
-// Edit fields on an existing task that aren't covered by the move endpoint.
-// Status/position changes still go through /api/tasks/:id/move so its
-// column-rebalance logic stays unified. Body is a partial — only present
+// Edit fields on an existing task. Drag-reordering still goes through
+// /api/tasks/:id/move so its column-rebalance (position) logic stays unified,
+// but a plain status set from the modal's Status dropdown — and manual
+// archive/un-archive — come through here. Body is a partial — only present
 // fields are written. Permission model mirrors task creation
 // (isCore === Admin || Core).
 
@@ -28,6 +30,12 @@ type Body = {
   domainId?: string | null;
   // Full replacement set. Empty array clears assignees.
   assigneeIds?: string[];
+  // Manual status set from the task modal's Status dropdown. (Drag between
+  // columns still goes through /move, which also rebalances position.)
+  status?: TaskStatus;
+  // Manual archive toggle from the modal. true = archive now (drops off the
+  // board), false = un-archive.
+  archived?: boolean;
 };
 
 function isPriority(x: unknown): x is Priority {
@@ -55,6 +63,8 @@ function isBody(x: unknown): x is Body {
     if (!Array.isArray(o.assigneeIds)) return false;
     if (!o.assigneeIds.every((id) => typeof id === "string")) return false;
   }
+  if (o.status !== undefined && !isTaskStatus(o.status)) return false;
+  if (o.archived !== undefined && typeof o.archived !== "boolean") return false;
   return true;
 }
 
@@ -118,6 +128,8 @@ export async function action({ request, params }: Route.ActionArgs) {
     description?: string | null;
     priority?: Priority;
     domainId?: string | null;
+    status?: TaskStatus;
+    archivedAt?: Date | null;
   } = {};
   if ("dueAt" in body) {
     const parsed = parseDueAt(body.dueAt);
@@ -136,6 +148,12 @@ export async function action({ request, params }: Route.ActionArgs) {
   if ("description" in body) {
     const trimmed = body.description?.trim() ?? "";
     data.description = trimmed === "" ? null : trimmed;
+  }
+  if ("status" in body && body.status) {
+    data.status = body.status;
+  }
+  if ("archived" in body) {
+    data.archivedAt = body.archived ? new Date() : null;
   }
   if ("priority" in body && body.priority) {
     data.priority = body.priority;

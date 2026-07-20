@@ -97,6 +97,7 @@ export function TaskBoard({
         if ("title" in patch) body.title = patch.title;
         if ("description" in patch) body.description = patch.description;
         if ("priority" in patch) body.priority = patch.priority;
+        if ("status" in patch) body.status = patch.status;
         const res = await fetch(`/api/tasks/${taskId}`, {
           method: "PATCH",
           credentials: "include",
@@ -119,6 +120,17 @@ export function TaskBoard({
     move(
       (cur) => cur.filter((t) => t.id !== taskId),
       () => persistDelete(taskId),
+    );
+  }
+
+  // Manual archive from the modal's Status dropdown — same optimistic-remove
+  // shape as delete, but the row is kept (archivedAt set) so it shows up in
+  // the Archived modal.
+  function archiveTask(taskId: string) {
+    setOpenTaskId(null);
+    move(
+      (cur) => cur.filter((t) => t.id !== taskId),
+      () => persistArchive(taskId),
     );
   }
 
@@ -264,6 +276,7 @@ export function TaskBoard({
           onClose={() => setOpenTaskId(null)}
           onPatch={(patch) => patchTask(openTask.id, patch)}
           onDelete={() => deleteTask(openTask.id)}
+          onArchive={() => archiveTask(openTask.id)}
         />
       )}
 
@@ -531,6 +544,19 @@ async function persistDelete(taskId: string): Promise<void> {
   const res = await fetch(`/api/tasks/${taskId}`, {
     method: "DELETE",
     credentials: "include",
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `Request failed: ${res.status}`);
+  }
+}
+
+async function persistArchive(taskId: string): Promise<void> {
+  const res = await fetch(`/api/tasks/${taskId}`, {
+    method: "PATCH",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ archived: true }),
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };

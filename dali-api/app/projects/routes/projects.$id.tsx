@@ -9,6 +9,7 @@ import {
   useRevalidator,
   useSearchParams,
   useSubmit,
+  type ShouldRevalidateFunctionArgs,
 } from "react-router";
 import { Check, Handshake, Pencil, X, Settings, Folder, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink } from "lucide-react";
 import { Modal, ModalHeader } from "~/components/Modal";
@@ -704,6 +705,22 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     presencePhotoUrl: presenceUser?.photoUrl ?? null,
     presenceSubtitle: presenceUser?.subtitle ?? null,
   };
+}
+
+// The loader doesn't depend on search params, so a pure search-param change
+// (opening/closing the task modal via ?task=, switching ?tab=) shouldn't
+// re-run it. Skipping the revalidation avoids a needless DB round-trip and the
+// re-render that can bounce the board's scroll position on task open.
+export function shouldRevalidate({
+  currentUrl,
+  nextUrl,
+  formMethod,
+  defaultShouldRevalidate,
+}: ShouldRevalidateFunctionArgs) {
+  if (!formMethod && currentUrl.pathname === nextUrl.pathname) {
+    return false;
+  }
+  return defaultShouldRevalidate;
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
