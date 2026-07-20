@@ -20,8 +20,9 @@ import type { Locator, Page } from '@playwright/test';
 //
 // dnd-kit's PointerSensor has an activation distance of 6px, so the drag must
 // move past that threshold before it engages; we step the mouse to be safe.
-// The whole card is the drag source (no separate grip handle); a sub-threshold
-// press still counts as the click that opens the task modal.
+// The whole card — title included — is the drag source (no grip handle, no
+// selectable text); a sub-threshold press still counts as the click that
+// opens the task modal.
 
 // The task-board column shell: `flex-shrink-0 w-64 border rounded-lg ...`.
 const COLUMN = 'div.w-64.rounded-lg';
@@ -47,9 +48,7 @@ async function dragHandleTo(page: Page, handle: Locator, target: Locator) {
   }
 
   const startX = handleBox.x + handleBox.width / 2;
-  // Grab the lower portion of the card: the title line swallows pointerdown
-  // so its text stays drag-selectable, so a drag must start below it.
-  const startY = handleBox.y + handleBox.height * 0.75;
+  const startY = handleBox.y + handleBox.height / 2;
   // Drop at the destination column's horizontal centre, on the same row band as
   // the (now visible) handle. The columns share a row, so the handle's y is
   // inside the destination column's visible area too — no risk of aiming
