@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRevalidator, useSearchParams } from "react-router";
 import { Button } from "~/components/ui/Button";
 import type { DragEndEvent } from "@dnd-kit/core";
@@ -189,28 +189,21 @@ export function TaskBoard({
     let targetIndex: number;
     if (isTaskStatus(overId)) {
       toStatus = overId;
-      targetIndex = -1; // dropped on the column shell: append
-      if (toStatus === fromStatus && !sprintFilter) {
-        // Same column, no card target — nothing to reorder.
-        return;
-      }
+      // Dropped on the column shell: append. On the card's own column that's
+      // no reorder intent at all — bail.
+      if (toStatus === fromStatus) return;
+      targetIndex = -1;
     } else {
       const overTask = tasks.find((t) => t.id === overId);
       if (!overTask || overTask.id === taskId) return;
       toStatus = overTask.status;
-      if (sprintFilter) {
-        // With a sprint slice active the visible order isn't the full column
-        // order, so card-relative indexes would scramble hidden tasks. Allow
-        // status moves (append) but not reordering.
-        if (toStatus === fromStatus) return;
-        targetIndex = -1;
-      } else {
-        targetIndex = buildTaskBoard(tasks)[toStatus].findIndex(
-          (t) => t.id === overId,
-        );
-      }
+      // The over card's index in the FULL column, even when a sprint filter
+      // is active: inserting at the target's global position preserves hidden
+      // tasks' relative order while landing where the user sees.
+      targetIndex = buildTaskBoard(tasks)[toStatus].findIndex(
+        (t) => t.id === overId,
+      );
     }
-    if (toStatus === fromStatus && targetIndex === -1 && sprintFilter) return;
 
     const orderedIds = moveTaskInBoard(tasks, taskId, toStatus, targetIndex).orderedIds;
     move(
@@ -547,14 +540,13 @@ function SprintPill({
   );
 }
 
-// The whole card is the drag source: the KanbanBoard pointer sensor's
-// activation distance disambiguates click from drag, so a press-and-release
-// still opens the modal while a press-and-move starts a drag. The one
-// exception is the title, which swallows pointerdown so its text can be
-// drag-selected/copied (a real <button> body would refuse selection
-// entirely); a click that ended a selection inside the card is treated as a
-// select, not an open. Keyboard activation (Enter/Space) also opens the
-// modal so the card stays operable without a pointer.
+// The whole card — title included — is the drag source: the KanbanBoard
+// pointer sensor's activation distance disambiguates click from drag, so a
+// press-and-release still opens the modal while a press-and-move starts a
+// drag. Card text is deliberately not selectable (Trello/Linear behavior);
+// copy the title from the modal, where it's an input. Keyboard activation
+// (Enter/Space) also opens the modal so the card stays operable without a
+// pointer.
 function TaskCard({
   card,
   dragHandleProps = {},
@@ -566,7 +558,6 @@ function TaskCard({
   isDragging: boolean;
   onOpen: () => void;
 }) {
-  const bodyRef = useRef<HTMLDivElement>(null);
   const overdue =
     card.dueAt != null &&
     card.status !== "Done" &&
@@ -576,22 +567,6 @@ function TaskCard({
   const checklist = Array.isArray(card.checklist) ? card.checklist : null;
   const checklistDone = checklist?.filter((i) => i.done).length ?? 0;
 
-  // Don't open the task if the click ended a text selection inside this card
-  // (e.g. the user drag-selected the title to copy it).
-  function handleActivate() {
-    const sel = typeof window !== "undefined" ? window.getSelection() : null;
-    if (
-      sel &&
-      !sel.isCollapsed &&
-      sel.toString().trim() !== "" &&
-      sel.anchorNode &&
-      bodyRef.current?.contains(sel.anchorNode)
-    ) {
-      return;
-    }
-    onOpen();
-  }
-
   return (
     <div
       {...dragHandleProps}
@@ -600,10 +575,9 @@ function TaskCard({
       }`}
     >
       <div
-        ref={bodyRef}
         role="button"
         tabIndex={0}
-        onClick={handleActivate}
+        onClick={onOpen}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
@@ -612,12 +586,7 @@ function TaskCard({
         }}
         className="flex-1 min-w-0 text-left p-2.5 cursor-pointer focus:outline-none"
       >
-        <div
-          className="text-foreground select-text"
-          onPointerDown={(e) => e.stopPropagation()}
-        >
-          {card.title}
-        </div>
+        <div className="text-foreground">{card.title}</div>
         <div className="mt-1.5 flex items-center justify-between gap-2">
           <span className={`text-[11px] ${PRIORITY_TONE[card.priority]}`}>
             {card.priority}
