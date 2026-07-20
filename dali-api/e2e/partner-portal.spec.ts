@@ -199,19 +199,28 @@ test.describe('partner portal', () => {
     await expect(
       page.getByRole('heading', { name: 'Tuck Alumni Connect' }),
     ).toBeVisible();
-    await expect(page.getByText('Sprint 3 — Matching flow')).toBeVisible();
+    // Sprint name also appears in the momentum hero, so scope to the roadmap.
+    await expect(
+      page.locator('#roadmap').getByText('Sprint 3 — Matching flow'),
+    ).toBeVisible();
     await expect(page.getByText('2 of 5 tasks done')).toBeVisible();
     await expect(page.getByText('Weekly Partner Update')).toBeVisible();
     await expect(page.getByText('Internal Retro Notes')).not.toBeVisible();
   });
 
-  test('shared page opens an editable collab editor', async ({ page }) => {
+  test('shared page is read-only for partners but allows comments', async ({ page }) => {
     const pageId = await getPageId('Weekly Partner Update');
     await page.goto(`/partner/projects/project-tuck-alumni/pages/${pageId}`);
     await expect(
       page.getByRole('heading', { name: 'Weekly Partner Update' }),
     ).toBeVisible();
-    await expect(page.locator('[contenteditable="true"]')).toBeVisible();
+    // The body renders but is view-only for partners — no editable surface.
+    await expect(page.locator('[contenteditable="false"]')).toBeVisible();
+    await expect(page.locator('[contenteditable="true"]')).toHaveCount(0);
+    // ...but the comments rail lets them leave feedback.
+    await expect(
+      page.getByRole('heading', { name: 'Comments' }),
+    ).toBeVisible();
   });
 
   test('unshared pages and other orgs’ projects 404', async ({ page }) => {
@@ -265,7 +274,7 @@ test.describe('partner self-signup', () => {
     // Submit a pitch and land on its status page.
     await page.goto('/partner/apply');
     await page.getByLabel('Project title').fill('Warehouse robot dashboard');
-    await page.getByRole('button', { name: 'Submit pitch' }).click();
+    await page.getByRole('button', { name: 'Submit application' }).click();
     await expect(
       page.getByRole('heading', { name: 'Warehouse robot dashboard' }),
     ).toBeVisible();
@@ -346,7 +355,7 @@ test.describe('bound application form', () => {
         .locator('section', { hasText: 'A few more questions' })
         .locator('textarea')
         .fill('Around $10k for the pilot term.');
-      await page.getByRole('button', { name: 'Submit pitch' }).click();
+      await page.getByRole('button', { name: 'Submit application' }).click();
 
       await expect(
         page.getByRole('heading', { name: 'Alumni portal refresh' }),

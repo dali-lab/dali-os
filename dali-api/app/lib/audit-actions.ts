@@ -56,6 +56,7 @@ export const AUDIT_ACTIONS = [
   "projectFile.create",
   "projectFile.version",
   "projectFile.delete",
+  "projectFile.partner-visibility",
   "doctag.create",
   "email.send",
   "email.extension_notice",

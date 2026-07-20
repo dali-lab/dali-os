@@ -1021,6 +1021,10 @@ model ProjectFile {
   // during the create→first-version transaction.
   currentVersionId String? @unique
 
+  // When true, partners on this project can see + download the file from the
+  // partner portal (mirrors Page.partnerVisible for shared documents).
+  partnerVisible Boolean @default(false)
+
   archivedAt DateTime?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
