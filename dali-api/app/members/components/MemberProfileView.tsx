@@ -386,6 +386,14 @@ function PersonalSection({
                     label="Pronouns"
                     defaultValue={member.pronouns ?? ""}
                   />
+                  {/* Handle sits with the identity fields here so its edit
+                      position matches where it reads in view mode (just under
+                      the name), not buried among contact fields. */}
+                  <FieldInput
+                    name="handle"
+                    label="Handle (for @mentions)"
+                    defaultValue={member.handle ?? ""}
+                  />
                   <FieldInput
                     name="major"
                     label="Major"
@@ -431,11 +439,6 @@ function PersonalSection({
                 name="timeZone"
                 label="Time zone (IANA, e.g. America/New_York)"
                 defaultValue={member.timeZone ?? ""}
-              />
-              <FieldInput
-                name="handle"
-                label="Handle (for @mentions)"
-                defaultValue={member.handle ?? ""}
               />
               <FieldInput
                 name="githubUsername"
@@ -1041,7 +1044,6 @@ const PERSONAL_FIELDS = new Set<keyof ProfileMember>([
   "netId",
   "personalEmail",
   "timeZone",
-  "handle",
   "githubUsername",
   "linkedinUrl",
   "personalSite",
@@ -1054,6 +1056,7 @@ const PERSONAL_FIELDS = new Set<keyof ProfileMember>([
 const PERSONAL_FIELDS_WITH_IDENTITY = new Set<keyof ProfileMember>([
   ...PERSONAL_FIELDS,
   ...ACCOUNT_FIELDS_BASE,
+  "handle",
   "major",
   "classYear",
 ]);

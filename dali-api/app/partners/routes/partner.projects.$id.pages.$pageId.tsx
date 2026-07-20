@@ -44,11 +44,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     projectId: params.id!,
     collabToken: parseSessionCookie(request),
     userName: presenceUser?.name ?? fallbackName,
+    currentUserId: auth.user.sub,
   };
 }
 
 export default function PartnerProjectPage() {
-  const { page, projectId, collabToken, userName } =
+  const { page, projectId, collabToken, userName, currentUserId } =
     useLoaderData<typeof loader>();
 
   return (
@@ -62,6 +63,7 @@ export default function PartnerProjectPage() {
         title={page.title}
         collabToken={collabToken}
         userName={userName}
+        currentUserId={currentUserId}
       />
     </div>
   );

@@ -1,13 +1,14 @@
 // Emitters for task-facing notification events (task.assigned, task.comment,
-// task.github_update). Each helper loads what it needs and dispatches via
-// notify(); callers fire-and-forget so a delivery hiccup never fails the
-// underlying write.
+// task.status_changed, task.github_update). Each helper loads what it needs
+// and dispatches via notify(); callers fire-and-forget so a delivery hiccup
+// never fails the underlying write.
 
 import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
+import { TASK_STATUS_LABELS } from "./task-board";
 
 function taskLink(projectId: string, taskId: string): string {
-  return `/projects/${projectId}?tab=work&task=${taskId}`;
+  return `/projects/${projectId}?tab=board&task=${taskId}`;
 }
 
 const COMMENT_PREVIEW_MAX = 200;
@@ -74,6 +75,41 @@ export async function notifyTaskComment(args: {
     message: {
       title: `New comment on: ${task.title}`,
       body: preview,
+      link: taskLink(task.projectId, task.id),
+    },
+    recipients: recipients.map((userId) => ({ userId })),
+  });
+}
+
+export async function notifyTaskStatusChanged(
+  taskId: string,
+  // The user who moved the task; assignees other than them are notified.
+  actorUserId: string | null,
+  newStatus: string,
+): Promise<void> {
+  const task = await prisma.task.findUnique({
+    where: { id: taskId },
+    select: {
+      id: true,
+      title: true,
+      projectId: true,
+      assignees: { select: { userId: true } },
+      project: { select: { name: true } },
+    },
+  });
+  if (!task) return;
+  const recipients = task.assignees
+    .map((a) => a.userId)
+    .filter((id) => id !== actorUserId);
+  if (recipients.length === 0) return;
+  const label =
+    (TASK_STATUS_LABELS as Record<string, string>)[newStatus] ?? newStatus;
+  await notify({
+    eventType: "task.status_changed",
+    createdByUserId: actorUserId,
+    message: {
+      title: `Task moved to ${label}: ${task.title}`,
+      body: `In ${task.project.name}.`,
       link: taskLink(task.projectId, task.id),
     },
     recipients: recipients.map((userId) => ({ userId })),

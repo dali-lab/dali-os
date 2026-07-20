@@ -187,7 +187,7 @@ export default function PartnerSettings({ actionData }: Route.ComponentProps) {
     "self-start rounded-xl bg-dark-blue text-white text-sm font-heading font-semibold px-5 py-2.5 hover:opacity-90 transition disabled:opacity-50";
 
   return (
-    <div className="flex flex-col gap-8 max-w-2xl">
+    <div className="flex flex-col gap-8 max-w-2xl mx-auto">
       <h1 className="font-heading text-3xl font-bold text-dark-blue">Settings</h1>
 
       {error && (

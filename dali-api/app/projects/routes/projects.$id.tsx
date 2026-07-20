@@ -10,7 +10,7 @@ import {
   useSearchParams,
   useSubmit,
 } from "react-router";
-import { Check, Handshake, Pencil, X, Settings, Folder, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink } from "lucide-react";
+import { CalendarDays, CalendarX, ChartNoAxesGantt, Check, Handshake, History, List, Pencil, Pin, X, Settings, Folder, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink } from "lucide-react";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { Tooltip } from "~/components/ui/IconButton";
 import { EditableSection } from "~/components/EditableSection";
@@ -22,7 +22,7 @@ import { prisma } from "~/lib/db";
 import { ensureProjectGroup } from "~/lib/groups";
 import { ensureMeetingNotesFolder } from "~/lib/pages";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
-import { fullName } from "~/lib/display";
+import { formatDateShort, formatDateTime, fullName, UNKNOWN_LABEL } from "~/lib/display";
 import { USER_NAME_SELECT } from "~/lib/prisma-shapes";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { Avatar } from "~/components/ui/Avatar";
@@ -38,7 +38,11 @@ import {
 import { getPresenceUser } from "~/lib/presence-user";
 import { TaskBoard } from "../components/TaskBoard";
 import { ProjectMentorshipTab } from "~/mentorship/components/ProjectMentorshipTab";
-import { type TimelineEpic, type EpicStatus } from "../components/EpicsTimeline";
+import {
+  EpicsTimeline,
+  type TimelineEpic,
+  type EpicStatus,
+} from "../components/EpicsTimeline";
 import {
   EpicSprintManager,
   type EditableEpic,
@@ -95,18 +99,60 @@ type ProjectStatus = (typeof STATUSES)[number];
 
 // "Scope" is no longer a public tab — its domain/term/challenge config moved
 // into a settings popup (gated to Core/Admin/Staff). Public tabs are just the
-// content views.
-const TABS = ["overview", "work", "mentorship"] as const;
+// content views. Board and Planning are separate tabs (Linear-style: different
+// data gets real navigation); the only sub-controls are display toggles and
+// filters, never a second tab level.
+const TABS = ["overview", "board", "planning", "mentorship"] as const;
 type Tab = (typeof TABS)[number];
 function isTab(x: string | null): x is Tab {
-  return x === "overview" || x === "work" || x === "mentorship";
+  return (TABS as readonly string[]).includes(x ?? "");
 }
 
 const TAB_LABELS: Record<Tab, string> = {
   overview: "Overview",
-  work: "Work",
+  board: "Board",
+  planning: "Planning",
   mentorship: "Mentorship",
 };
+
+// Audit actions surfaced in the Overview "Recent activity" card. Restricted to
+// actions whose metadata reliably carries a projectId — document.delete,
+// projectFile.version, and projectFile.delete don't record one, so they can't
+// be attributed to a project here without extra joins.
+const PROJECT_ACTIVITY_ACTIONS = [
+  "projectFile.create",
+  "projectFile.partner-visibility",
+  "page.partner-visibility",
+  "project.assignment.level",
+  "partner.project.link",
+  "partner.project.update",
+  "partner.project.unlink",
+] as const;
+
+const ACTIVITY_LABELS: Record<string, string> = {
+  "projectFile.create": "added a file",
+  "projectFile.partner-visibility": "changed a file's partner sharing",
+  "page.partner-visibility": "changed a document's partner sharing",
+  "project.assignment.level": "changed a team member's level",
+  "partner.project.link": "linked a partner organization",
+  "partner.project.update": "updated partnership dates",
+  "partner.project.unlink": "unlinked a partner organization",
+};
+
+// Same shape as the home-tab notification timestamps.
+function relativeTime(iso: string): string {
+  const now = Date.now();
+  const t = new Date(iso).getTime();
+  const diff = Math.max(0, now - t);
+  const m = Math.floor(diff / 60_000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `${d}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -128,6 +174,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       deploymentUrl: true,
       githubTeamSlug: true,
       slackChannelName: true,
+      slackChannelId: true,
       chartStringType: true,
       chartString: true,
       overviewPageId: true,
@@ -208,6 +255,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         },
       },
       tasks: {
+        // Archived tasks (auto-archived Done/Cancelled) drop off the board.
+        where: { archivedAt: null },
         orderBy: { createdAt: "asc" },
         select: {
           id: true,
@@ -219,6 +268,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           dueAt: true,
           epicId: true,
           sprintId: true,
+          checklist: true,
           githubIssueNumber: true,
           githubIssueUrl: true,
           createdAt: true,
@@ -289,6 +339,17 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       children: (childrenByParent.get(p.id) ?? []).map(toDocumentDto),
     }));
 
+  // Pinned Overview/PRD docs — rendered at the top of the Documents block.
+  // Only shown while the referenced page still exists non-archived in this
+  // project's workspace (pageRows is exactly that set).
+  const workspacePageIds = new Set(pageRows.map((p) => p.id));
+  const pinnedDocuments = [
+    { id: project.overviewPageId, label: "Overview" },
+    { id: project.prdPageId, label: "PRD" },
+  ].flatMap((d) =>
+    d.id && workspacePageIds.has(d.id) ? [{ id: d.id, label: d.label }] : [],
+  );
+
   // Project files — standalone uploads with their current version.
   // Tags are edited in the file/document editor, not on this list.
   const fileRows = await prisma.projectFile.findMany({
@@ -297,6 +358,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     select: {
       id: true,
       title: true,
+      partnerVisible: true,
       currentVersion: { select: { fileName: true, sizeBytes: true } },
       _count: { select: { versions: true } },
     },
@@ -307,6 +369,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     fileName: f.currentVersion?.fileName ?? null,
     sizeBytes: f.currentVersion?.sizeBytes ?? null,
     versionCount: f._count.versions,
+    partnerVisible: f.partnerVisible,
   }));
 
   // Content edits (name/status, description, details, docs/files, epics/
@@ -401,6 +464,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     dueAt: t.dueAt ? t.dueAt.toISOString() : null,
     epicId: t.epicId,
     sprintId: t.sprintId,
+    checklist: (t.checklist as TaskCardModel["checklist"]) ?? null,
     assignees: t.assignees.map((a) => ({
       id: a.user.id,
       name: fullName(a.user),
@@ -424,6 +488,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       memberMap.set(id, fullName(a.user));
     }
   }
+  const sprintFilterOrder = { Active: 0, Planned: 1, Closed: 2 } as const;
   const boardOptions: TaskBoardOptions = {
     members: [...memberMap.entries()]
       .map(([id, name]) => ({ id, name }))
@@ -436,7 +501,25 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       })
     ).map((d) => ({ id: d.id, name: d.displayName })),
     repoUrls: project.repoUrls,
+    sprints: [...sprints]
+      .sort(
+        (a, b) =>
+          sprintFilterOrder[a.status] - sprintFilterOrder[b.status] ||
+          a.startsAt.localeCompare(b.startsAt),
+      )
+      .map((s) => ({ id: s.id, name: s.name, status: s.status })),
+    epics: project.epics.map((e) => ({ id: e.id, title: e.title })),
   };
+
+  // Per-epic task progress for the epic list rows + timeline tooltips.
+  // Cancelled tasks don't count toward either side.
+  const taskCountsByEpic: Record<string, { done: number; total: number }> = {};
+  for (const t of project.tasks) {
+    if (!t.epicId || t.status === "Cancelled") continue;
+    const counts = (taskCountsByEpic[t.epicId] ??= { done: 0, total: 0 });
+    counts.total += 1;
+    if (t.status === "Done") counts.done += 1;
+  }
 
   // Team grouped by term, newest term first. Current = highest sortKey.
   //
@@ -642,6 +725,68 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       })
     : [];
 
+  // Next upcoming meetings for this project (Overview card). Bounded to 5;
+  // cancelled and unscheduled (selectedAt null) meetings are excluded. The
+  // model has no location/URL field — rows link to /calendar instead.
+  const meetingRows = await prisma.scheduledMeeting.findMany({
+    where: {
+      projectId: project.id,
+      status: { not: "Cancelled" },
+      selectedAt: { gte: new Date() },
+    },
+    orderBy: { selectedAt: "asc" },
+    take: 5,
+    select: { id: true, title: true, selectedAt: true, durationMinutes: true },
+  });
+  const upcomingMeetings = meetingRows.flatMap((m) =>
+    m.selectedAt
+      ? [
+          {
+            id: m.id,
+            title: m.title,
+            startsAt: m.selectedAt.toISOString(),
+            durationMinutes: m.durationMinutes,
+          },
+        ]
+      : [],
+  );
+
+  // Recent project-scoped audit activity, editors only. See
+  // PROJECT_ACTIVITY_ACTIONS for why some project events aren't included.
+  let recentActivity: {
+    id: string;
+    action: string;
+    actorName: string;
+    createdAt: string;
+  }[] = [];
+  if (canEdit) {
+    const activityRows = await prisma.auditLog.findMany({
+      where: {
+        action: { in: [...PROJECT_ACTIVITY_ACTIONS] },
+        metadata: { path: ["projectId"], equals: project.id },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 10,
+      select: { id: true, action: true, userId: true, createdAt: true },
+    });
+    const actorIds = [
+      ...new Set(activityRows.flatMap((r) => (r.userId ? [r.userId] : []))),
+    ];
+    const actors = actorIds.length
+      ? await prisma.user.findMany({
+          where: { id: { in: actorIds } },
+          select: USER_NAME_SELECT,
+        })
+      : [];
+    const actorNameById = new Map(actors.map((u) => [u.id, fullName(u)]));
+    recentActivity = activityRows.map((r) => ({
+      id: r.id,
+      action: r.action,
+      actorName: (r.userId ? actorNameById.get(r.userId) : null) ?? UNKNOWN_LABEL,
+      createdAt: r.createdAt.toISOString(),
+    }));
+  }
+
   return {
     project: {
       id: project.id,
@@ -656,6 +801,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       deploymentUrl: project.deploymentUrl,
       githubTeamSlug: project.githubTeamSlug,
       slackChannelName: project.slackChannelName,
+      slackChannelId: project.slackChannelId,
       chartStringType: project.chartStringType,
       chartString: project.chartString,
       overviewPageId: project.overviewPageId,
@@ -674,18 +820,28 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       derivedDomains,
     },
     allDomainOptions: allDomains.map((d) => ({ id: d.id, name: d.displayName })),
-    plannedTerms: plannedTerms.map((t) => ({ id: t.id, code: t.code })),
+    // sortKey rides along so the Overview challenge section can split the
+    // grid into current vs future terms client-side.
+    plannedTerms: plannedTerms.map((t) => ({
+      id: t.id,
+      code: t.code,
+      sortKey: t.sortKey,
+    })),
     allTermOptions: allTerms,
     domainScopeGrid,
     teams,
     termStatuses,
     documents,
+    pinnedDocuments,
     files,
+    upcomingMeetings,
+    recentActivity,
     epics,
     editableEpics,
     sprints,
     tasks,
     boardOptions,
+    taskCountsByEpic,
     canEdit,
     canEditScope,
     canEditAssignmentLevel: core,
@@ -693,7 +849,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     hasActivePartner,
     linkablePartnerOrgs,
     canViewMentorshipTab,
-    currentTerm: current ? { id: current.id, code: current.code } : null,
+    currentTerm: current
+      ? { id: current.id, code: current.code, sortKey: current.sortKey }
+      : null,
     collabToken,
     userName,
     currentUserId: auth.user.sub,
@@ -967,12 +1125,16 @@ export default function ProjectDetail() {
     project,
     teams,
     documents,
+    pinnedDocuments,
     files,
+    upcomingMeetings,
+    recentActivity,
     epics,
     editableEpics,
     sprints,
     tasks,
     boardOptions,
+    taskCountsByEpic,
     allDomainOptions,
     plannedTerms,
     allTermOptions,
@@ -997,7 +1159,13 @@ export default function ProjectDetail() {
   const partnerNames = project.partners.map((p) => p.org.name);
 
   const tabParam = searchParams.get("tab");
-  const tab: Tab = isTab(tabParam) ? tabParam : "overview";
+  // A ?tab=mentorship deep link from a non-mentor would otherwise render an
+  // empty body (valid tab, but its content branch is gated) — treat it as
+  // invalid and fall back to Overview.
+  const tab: Tab =
+    isTab(tabParam) && (tabParam !== "mentorship" || canViewMentorshipTab)
+      ? tabParam
+      : "overview";
   const setTab = (next: Tab) => {
     setSearchParams(
       (prev) => {
@@ -1055,12 +1223,24 @@ export default function ProjectDetail() {
         )}
       </div>
 
+      {/* Page-level action errors — above the tab content so a failed save
+          (e.g. the header form) is visible from any tab. The settings modal
+          keeps its own inline copy. */}
+      {actionData?.error && (
+        <div className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-md px-3 py-2">
+          {actionData.error}
+        </div>
+      )}
+
       {tab === "overview" && (
         <OverviewTab
           project={project}
           teams={teams}
           documents={documents}
+          pinnedDocuments={pinnedDocuments}
           files={files}
+          upcomingMeetings={upcomingMeetings}
+          recentActivity={recentActivity}
           canEdit={canEdit}
           canEditFinance={canEditScope}
           canEditAssignmentLevel={canEditAssignmentLevel}
@@ -1068,8 +1248,8 @@ export default function ProjectDetail() {
           hasActivePartner={hasActivePartner}
           linkablePartnerOrgs={linkablePartnerOrgs}
           domainScopeGrid={domainScopeGrid}
+          plannedTerms={plannedTerms}
           currentTerm={currentTerm}
-          actionError={actionData?.error}
         />
       )}
 
@@ -1100,21 +1280,30 @@ export default function ProjectDetail() {
         </Modal>
       )}
 
-      {tab === "work" && (
-        // Work tab keys off the raw edit permission, not the page-level
-        // Edit-mode toggle: epics/sprints/tasks each gate their own inline
-        // edit affordances, so there's nothing to "turn on" first.
-        <WorkTab
+      {/* Board and Planning key off the raw edit permission, not the
+          page-level Edit-mode toggle: epics/sprints/tasks each gate their own
+          inline edit affordances, so there's nothing to "turn on" first. */}
+      {tab === "board" && (
+        <TaskBoard
+          projectId={project.id}
+          initialTasks={tasks}
+          options={boardOptions}
+          canManage={canEdit}
+          currentUserId={currentUserId}
+          currentUserName={userName}
+        />
+      )}
+
+      {tab === "planning" && (
+        <PlanningTab
           projectId={project.id}
           epics={epics}
           editableEpics={editableEpics}
           sprints={sprints}
-          tasks={tasks}
-          boardOptions={boardOptions}
+          taskCountsByEpic={taskCountsByEpic}
           canEdit={canEdit}
           collabToken={collabToken}
           userName={userName}
-          currentUserId={currentUserId}
         />
       )}
 
@@ -1226,6 +1415,13 @@ function ProjectHeader({
                   {project.name}
                 </h1>
                 <StatusBadge status={project.status} />
+                {project.status === "Active" && !project.isActiveThisTerm && (
+                  <Tooltip label="Status is Active, but the current term isn't in this project's term set — it isn't running right now.">
+                    <span className="text-[11px] px-2 py-0.5 rounded-full border border-border bg-muted/50 text-muted-foreground font-medium">
+                      Not running this term
+                    </span>
+                  </Tooltip>
+                )}
               </>
             )}
 
@@ -1674,6 +1870,17 @@ function DetailsSegment({
                   placeholder="project-name"
                   className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
                 />
+              ) : project.slackChannelName && project.slackChannelId ? (
+                // Only the channel *id* resolves reliably in Slack's
+                // app_redirect; a bare name renders as plain text below.
+                <a
+                  href={`https://slack.com/app_redirect?channel=${project.slackChannelId}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-2 py-1.5 text-sm text-accent-coral hover:underline break-all"
+                >
+                  {project.slackChannelName}
+                </a>
               ) : (
                 <span className="px-2 py-1.5 text-sm text-foreground">
                   {project.slackChannelName ?? "—"}
@@ -1931,9 +2138,11 @@ function StatusBadge({ status }: { status: (typeof STATUSES)[number] }) {
 function TeamSection({
   teams,
   canEdit,
+  currentTermCode,
 }: {
   teams: LoaderData["teams"];
   canEdit: boolean;
+  currentTermCode: string | null;
 }) {
   const [showAll, setShowAll] = useState(false);
   // teams is pre-sorted newest term first by the loader.
@@ -1963,7 +2172,9 @@ function TeamSection({
             <div key={team.code}>
               <div className="text-xs font-medium text-muted-foreground mb-1.5">
                 {team.code}
-                {team.code === teams[0].code && (
+                {/* "Current" only when this group's term IS the current term —
+                    the newest group may be a past term on a wrapped project. */}
+                {currentTermCode !== null && team.code === currentTermCode && (
                   <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded border border-accent-teal/40 bg-accent-teal/15 text-accent-teal">
                     Current
                   </span>
@@ -2057,8 +2268,8 @@ function TeamLevelEditor({
         })}
       </select>
       {error && (
-        <span className="text-[10px] text-destructive" title={error}>
-          !
+        <span className="text-[10px] leading-tight text-destructive" role="alert">
+          {error}
         </span>
       )}
     </span>
@@ -2069,7 +2280,10 @@ function OverviewTab({
   project,
   teams,
   documents,
+  pinnedDocuments,
   files,
+  upcomingMeetings,
+  recentActivity,
   canEdit,
   canEditFinance,
   canEditAssignmentLevel,
@@ -2077,13 +2291,16 @@ function OverviewTab({
   hasActivePartner,
   linkablePartnerOrgs,
   domainScopeGrid,
+  plannedTerms,
   currentTerm,
-  actionError,
 }: {
   project: LoaderData["project"];
   teams: LoaderData["teams"];
   documents: LoaderData["documents"];
+  pinnedDocuments: LoaderData["pinnedDocuments"];
   files: LoaderData["files"];
+  upcomingMeetings: LoaderData["upcomingMeetings"];
+  recentActivity: LoaderData["recentActivity"];
   canEdit: boolean;
   canEditFinance: boolean;
   canEditAssignmentLevel: boolean;
@@ -2091,9 +2308,11 @@ function OverviewTab({
   hasActivePartner: boolean;
   linkablePartnerOrgs: LoaderData["linkablePartnerOrgs"];
   domainScopeGrid: LoaderData["domainScopeGrid"];
+  plannedTerms: LoaderData["plannedTerms"];
   currentTerm: LoaderData["currentTerm"];
-  actionError?: string;
 }) {
+  const [showFutureChallenges, setShowFutureChallenges] = useState(false);
+
   // The current term's per-domain challenge, read-only on Overview. Edited in
   // the Scope settings popup. Only non-empty cells for the current term show.
   const currentChallenges = currentTerm
@@ -2102,40 +2321,91 @@ function OverviewTab({
       )
     : [];
 
+  // Future planned terms with non-empty challenge text, soonest first —
+  // collapsed under the current term so members can see where the project is
+  // headed without the Core-only settings gear. Read-only, like the above.
+  const futureChallengeGroups = currentTerm
+    ? plannedTerms
+        .filter((t) => t.sortKey > currentTerm.sortKey)
+        .sort((a, b) => a.sortKey - b.sortKey)
+        .map((t) => ({
+          termId: t.id,
+          termCode: t.code,
+          cells: domainScopeGrid.filter(
+            (c) => c.termId === t.id && c.scope.trim() !== "",
+          ),
+        }))
+        .filter((g) => g.cells.length > 0)
+    : [];
+
   return (
     <div className="flex flex-col gap-4">
-      {actionError && (
-        <div className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-md px-3 py-2">
-          {actionError}
-        </div>
-      )}
-
       {/* Description — its own segment on top, separate from Project details */}
       <DescriptionSegment description={project.description} canEdit={canEdit} />
 
       {/* Challenge for the current term, per declared domain (read-only). */}
-      {currentTerm && currentChallenges.length > 0 && (
-        <section className="bg-card border border-border rounded-lg p-4">
-          <h3 className="text-sm font-semibold text-foreground mb-3">
-            Challenge{" "}
-            <span className="text-xs font-normal text-muted-foreground">
-              · {currentTerm.code}
-            </span>
-          </h3>
-          <div className="space-y-3">
-            {currentChallenges.map((c) => (
-              <div key={c.domainId}>
-                <div className="text-xs font-medium text-muted-foreground">
-                  {c.domainName}
-                </div>
-                <p className="text-sm text-foreground whitespace-pre-wrap mt-0.5">
-                  {c.scope}
-                </p>
+      {currentTerm &&
+        (currentChallenges.length > 0 || futureChallengeGroups.length > 0) && (
+          <section className="bg-card border border-border rounded-lg p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-foreground">
+                Challenge{" "}
+                <span className="text-xs font-normal text-muted-foreground">
+                  · {currentTerm.code}
+                </span>
+              </h3>
+              {futureChallengeGroups.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowFutureChallenges((v) => !v)}
+                  className="text-xs font-medium text-accent-coral hover:underline"
+                >
+                  {showFutureChallenges
+                    ? "Hide upcoming terms"
+                    : `Upcoming terms (${futureChallengeGroups.length})`}
+                </button>
+              )}
+            </div>
+            {currentChallenges.length > 0 ? (
+              <div className="space-y-3">
+                {currentChallenges.map((c) => (
+                  <div key={c.domainId}>
+                    <div className="text-xs font-medium text-muted-foreground">
+                      {c.domainName}
+                    </div>
+                    <p className="text-sm text-foreground whitespace-pre-wrap mt-0.5">
+                      {c.scope}
+                    </p>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </section>
-      )}
+            ) : (
+              <p className="text-sm text-muted-foreground italic">
+                No challenge for {currentTerm.code} yet.
+              </p>
+            )}
+            {showFutureChallenges &&
+              futureChallengeGroups.map((g) => (
+                <div key={g.termId} className="mt-4 pt-3 border-t border-border">
+                  <div className="text-xs font-semibold text-muted-foreground mb-2">
+                    {g.termCode}
+                  </div>
+                  <div className="space-y-3">
+                    {g.cells.map((c) => (
+                      <div key={c.domainId}>
+                        <div className="text-xs font-medium text-muted-foreground">
+                          {c.domainName}
+                        </div>
+                        <p className="text-sm text-foreground whitespace-pre-wrap mt-0.5">
+                          {c.scope}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+          </section>
+        )}
 
       {/* Partner organizations funding this project. Core manages links. */}
       <PartnersSection
@@ -2156,14 +2426,45 @@ function OverviewTab({
 
       {/* Team — read-only summary, separate from the editable details. */}
       <section className="bg-card border border-border rounded-lg p-4">
-        <TeamSection teams={teams} canEdit={canEditAssignmentLevel} />
+        <TeamSection
+          teams={teams}
+          canEdit={canEditAssignmentLevel}
+          currentTermCode={currentTerm?.code ?? null}
+        />
       </section>
+
+      {/* Next scheduled meetings for this project. Hidden entirely when there
+          are none — no empty-state card. */}
+      {upcomingMeetings.length > 0 && (
+        <section className="bg-card border border-border rounded-lg p-4">
+          <h2 className="text-sm font-semibold text-foreground flex items-center gap-2 mb-3">
+            <CalendarDays className="w-4 h-4" /> Meetings
+          </h2>
+          <div className="flex flex-col divide-y divide-border">
+            {upcomingMeetings.map((m) => (
+              <Link
+                key={m.id}
+                to="/calendar"
+                className="py-2.5 flex items-center justify-between gap-3 text-sm group"
+              >
+                <span className="truncate font-medium text-foreground group-hover:text-accent-coral">
+                  {m.title}
+                </span>
+                <span className="text-xs text-muted-foreground flex-shrink-0">
+                  {formatDateTime(m.startsAt)}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Documents — collab-doc pages; rows + Add open the doc as a split-screen
           tab beside the project (via the TabWorkspace shell). */}
       <DocumentsBlock
         projectId={project.id}
         documents={documents}
+        pinnedDocuments={pinnedDocuments}
         canEdit={canEdit}
         hasActivePartner={hasActivePartner}
       />
@@ -2173,7 +2474,30 @@ function OverviewTab({
         projectId={project.id}
         files={files}
         canEdit={canEdit}
+        hasActivePartner={hasActivePartner}
       />
+
+      {/* Recent project-scoped audit activity — editors only (the loader
+          returns an empty list otherwise). Read-only. */}
+      {canEdit && recentActivity.length > 0 && (
+        <section className="bg-card border border-border rounded-lg p-4">
+          <h2 className="text-sm font-semibold text-foreground flex items-center gap-2 mb-3">
+            <History className="w-4 h-4" /> Recent activity
+          </h2>
+          <ul className="flex flex-col gap-2">
+            {recentActivity.map((a) => (
+              <li key={a.id} className="text-xs text-muted-foreground">
+                <span className="text-foreground font-medium">{a.actorName}</span>{" "}
+                {ACTIVITY_LABELS[a.action] ?? a.action}
+                <span className="text-muted-foreground/70">
+                  {" "}
+                  · {relativeTime(a.createdAt)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </div>
   );
 }
@@ -2322,6 +2646,17 @@ function PartnersSection({
                       {p.org.name}
                     </span>
                   )}
+                  {/* Partnership lifecycle at a glance: ended partnerships keep
+                      their record (partner-end), active ones show their start. */}
+                  {p.endedAt ? (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded border border-border bg-muted/50 text-muted-foreground">
+                      Ended {formatDateShort(p.endedAt)}
+                    </span>
+                  ) : p.active && p.startedAt ? (
+                    <span className="text-xs text-muted-foreground">
+                      since {formatDateShort(p.startedAt)}
+                    </span>
+                  ) : null}
                 </div>
                 {p.org.contacts.length > 0 && (
                   <div className="text-xs text-muted-foreground mt-0.5">
@@ -2331,18 +2666,48 @@ function PartnersSection({
                   </div>
                 )}
               </div>
+              {canManage && !p.endedAt && (
+                <Form
+                  method="post"
+                  onSubmit={(e) => {
+                    if (
+                      !window.confirm(
+                        `End the partnership with ${p.org.name}? The record and its dates are kept — this only marks the partnership as ended today.`,
+                      )
+                    ) {
+                      e.preventDefault();
+                    }
+                  }}
+                >
+                  <input type="hidden" name="intent" value="partner-end" />
+                  <input type="hidden" name="projectPartnerId" value={p.id} />
+                  <Tooltip label="End partnership (keeps the record)">
+                    <button
+                      type="submit"
+                      aria-label="End partnership"
+                      className="inline-flex items-center justify-center p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/40 flex-shrink-0"
+                    >
+                      <CalendarX className="w-3.5 h-3.5" />
+                    </button>
+                  </Tooltip>
+                </Form>
+              )}
               {canManage && (
                 <Form
                   method="post"
                   onSubmit={(e) => {
-                    if (!window.confirm(`Unlink ${p.org.name}? This permanently deletes the partnership record.`)) {
+                    if (
+                      !window.confirm(
+                        `Unlink ${p.org.name}? This erases the partnership record entirely — use "End partnership" instead to keep the history.`,
+                      )
+                    ) {
                       e.preventDefault();
                     }
                   }}
                 >
                   <input type="hidden" name="intent" value="partner-unlink" />
                   <input type="hidden" name="projectPartnerId" value={p.id} />
-                  <Tooltip label="Unlink organization">
+                  <Tooltip label="Unlink organization (erases the record)">
                     <button
                       type="submit"
                       aria-label="Unlink organization"
@@ -2364,11 +2729,13 @@ function PartnersSection({
 function DocumentsBlock({
   projectId,
   documents,
+  pinnedDocuments,
   canEdit,
   hasActivePartner,
 }: {
   projectId: string;
   documents: LoaderData["documents"];
+  pinnedDocuments: LoaderData["pinnedDocuments"];
   canEdit: boolean;
   hasActivePartner: boolean;
 }) {
@@ -2608,6 +2975,23 @@ function DocumentsBlock({
         <p className="text-sm text-muted-foreground italic">No documents yet.</p>
       ) : (
         <div className="flex flex-col divide-y divide-border">
+          {/* Pinned Overview/PRD pages on top — same open-as-tab flow as the
+              rows below, marked like the DEFAULT-folder chip. */}
+          {pinnedDocuments.map((d) => (
+            <div key={d.id} className="py-2.5 flex items-center gap-1.5 text-sm">
+              <Pin className="w-3.5 h-3.5 flex-shrink-0 text-muted-foreground" />
+              <button
+                type="button"
+                onClick={() => openDocumentTab(d.id, d.label)}
+                className="truncate text-left font-medium text-foreground hover:text-accent-coral"
+              >
+                {d.label}
+              </button>
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground/70 flex-shrink-0">
+                Pinned
+              </span>
+            </div>
+          ))}
           {documents.map((doc) =>
             doc.kind === "Folder" ? (
               <div key={doc.id} className="py-2.5 flex flex-col gap-1">
@@ -2687,15 +3071,42 @@ function FilesBlock({
   projectId,
   files,
   canEdit,
+  hasActivePartner,
 }: {
   projectId: string;
   files: LoaderData["files"];
   canEdit: boolean;
+  hasActivePartner: boolean;
 }) {
   const revalidator = useRevalidator();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Share/unshare a file with the project's partner org(s) — same pattern as
+  // DocumentsBlock.togglePartnerVisible. Persisted via its own API route; the
+  // badge state comes back through the loader.
+  async function togglePartnerVisible(id: string, next: boolean) {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/files/${id}/partner-visible`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ partnerVisible: next }),
+      });
+      if (!res.ok) {
+        const b = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(b.error ?? "Failed to update sharing");
+      }
+      revalidator.revalidate();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong");
+    } finally {
+      setBusy(false);
+    }
+  }
   // When set, the chosen file is added as a new version of this file id;
   // otherwise it creates a new ProjectFile.
   const versionForId = useRef<string | null>(null);
@@ -2805,35 +3216,67 @@ function FilesBlock({
                   {f.versionCount > 1 ? ` · v${f.versionCount}` : ""}
                 </span>
               </Link>
-              {canEdit && (
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <Tooltip label="New version">
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {f.partnerVisible && !canEdit && (
+                  <Tooltip label="Shared with partner — partners on this project can download this file">
+                    <span className="flex items-center text-accent-teal">
+                      <Handshake className="w-3.5 h-3.5" />
+                    </span>
+                  </Tooltip>
+                )}
+                {canEdit && (hasActivePartner || f.partnerVisible) && (
+                  <Tooltip
+                    label={
+                      f.partnerVisible
+                        ? "Shared with partner — click to stop sharing"
+                        : "Share with partner"
+                    }
+                  >
                     <button
                       type="button"
                       disabled={busy}
-                      onClick={() => {
-                        versionForId.current = f.id;
-                        fileInputRef.current?.click();
-                      }}
-                      aria-label="New version"
-                      className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-60"
+                      onClick={() => void togglePartnerVisible(f.id, !f.partnerVisible)}
+                      aria-label={f.partnerVisible ? "Shared file with partner" : "Share file with partner"}
+                      className={`p-1 rounded disabled:opacity-60 ${
+                        f.partnerVisible
+                          ? "text-accent-teal"
+                          : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                      }`}
                     >
-                      <Upload className="w-3.5 h-3.5" />
+                      <Handshake className="w-3.5 h-3.5" />
                     </button>
                   </Tooltip>
-                  <Tooltip label="Delete file">
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => void deleteFile(f.id, f.title)}
-                      aria-label="Delete file"
-                      className="p-1 rounded text-destructive hover:text-destructive/80 disabled:opacity-60"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </Tooltip>
-                </div>
-              )}
+                )}
+                {canEdit && (
+                  <>
+                    <Tooltip label="New version">
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => {
+                          versionForId.current = f.id;
+                          fileInputRef.current?.click();
+                        }}
+                        aria-label="New version"
+                        className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-60"
+                      >
+                        <Upload className="w-3.5 h-3.5" />
+                      </button>
+                    </Tooltip>
+                    <Tooltip label="Delete file">
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void deleteFile(f.id, f.title)}
+                        aria-label="Delete file"
+                        className="p-1 rounded text-destructive hover:text-destructive/80 disabled:opacity-60"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </Tooltip>
+                  </>
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -2842,73 +3285,114 @@ function FilesBlock({
   );
 }
 
-function WorkTab({
+// Planning holds the epics & sprints manager with the timeline as a display
+// toggle (Linear-style: the list and the Gantt are two renderings of the same
+// epics-and-sprints data, so they get a ViewToggle-pattern switch, not
+// navigation). The toggle lives in `?view=` like the rest of this page's UI
+// state so a timeline link is shareable.
+function PlanningTab({
   projectId,
   epics,
   editableEpics,
   sprints,
-  tasks,
-  boardOptions,
+  taskCountsByEpic,
   canEdit,
   collabToken,
   userName,
-  currentUserId,
 }: {
   projectId: string;
   epics: TimelineEpic[];
   editableEpics: EditableEpic[];
   sprints: EditableSprint[];
-  tasks: TaskCardModel[];
-  boardOptions: TaskBoardOptions;
+  taskCountsByEpic: Record<string, { done: number; total: number }>;
   canEdit: boolean;
   collabToken: string | null;
   userName: string;
-  currentUserId: string;
 }) {
-  const [taskBoardOpen, setTaskBoardOpen] = useState(true);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const timeline = searchParams.get("view") === "timeline";
+  const setTimeline = (next: boolean) => {
+    setSearchParams(
+      (prev) => {
+        if (next) prev.set("view", "timeline");
+        else prev.delete("view");
+        return prev;
+      },
+      { replace: true, preventScrollReset: true },
+    );
+  };
 
   return (
-    <div className="flex flex-col gap-6">
-      <section>
-        <h2 className="text-sm font-semibold text-foreground mb-3">Epics &amp; sprints</h2>
+    <div className="flex flex-col gap-3">
+      <div className="flex justify-end">
+        <div
+          className="inline-flex items-center border border-border rounded-md overflow-hidden"
+          role="group"
+          aria-label="Planning view"
+        >
+          <PlanningToggleButton
+            active={!timeline}
+            onClick={() => setTimeline(false)}
+            label="List view"
+          >
+            <List className="w-3.5 h-3.5" />
+          </PlanningToggleButton>
+          <PlanningToggleButton
+            active={timeline}
+            onClick={() => setTimeline(true)}
+            label="Timeline view"
+          >
+            <ChartNoAxesGantt className="w-3.5 h-3.5" />
+          </PlanningToggleButton>
+        </div>
+      </div>
+
+      {timeline ? (
+        <EpicsTimeline epics={epics} taskCounts={taskCountsByEpic} />
+      ) : (
         <EpicSprintManager
           projectId={projectId}
-          timelineEpics={epics}
           epics={editableEpics}
           sprints={sprints}
+          taskCounts={taskCountsByEpic}
           canManage={canEdit}
           collabToken={collabToken}
           userName={userName}
         />
-      </section>
-
-      <section>
-        <button
-          type="button"
-          onClick={() => setTaskBoardOpen((o) => !o)}
-          aria-expanded={taskBoardOpen}
-          className={`flex items-center gap-1.5 ${taskBoardOpen ? "mb-3" : ""}`}
-        >
-          <span
-            aria-hidden
-            className={`inline-block text-muted-foreground transition-transform ${taskBoardOpen ? "rotate-90" : ""}`}
-          >
-            ›
-          </span>
-          <h2 className="text-sm font-semibold text-foreground">Task board</h2>
-        </button>
-        {taskBoardOpen && (
-          <TaskBoard
-            projectId={projectId}
-            initialTasks={tasks}
-            options={boardOptions}
-            canManage={canEdit}
-            currentUserId={currentUserId}
-            currentUserName={userName}
-          />
-        )}
-      </section>
+      )}
     </div>
+  );
+}
+
+// Same look as ViewToggle's buttons (the hub's list/cards switch) — that
+// component is hardwired to list/card values, so the planning toggle borrows
+// its styling rather than its state.
+function PlanningToggleButton({
+  active,
+  onClick,
+  label,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      aria-label={label}
+      title={label}
+      className={`px-2 py-1.5 transition-colors ${
+        active
+          ? "bg-accent-coral/15 text-accent-coral"
+          : "text-muted-foreground hover:bg-muted"
+      }`}
+    >
+      {children}
+    </button>
   );
 }
 

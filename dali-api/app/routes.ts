@@ -335,6 +335,8 @@ export default [
   // Project task board
   route("api/projects/:id/tasks", "projects/routes/api.projects.$id.tasks.ts"),
   route("api/tasks/:id/move", "projects/routes/api.tasks.$id.move.ts"),
+  route("api/tasks/:id/comments", "projects/routes/api.tasks.$id.comments.ts"),
+  route("api/tasks/:id/github", "projects/routes/api.tasks.$id.github.ts"),
   route("api/tasks/:id", "projects/routes/api.tasks.$id.ts"),
 
   // Project epics & sprints
@@ -358,6 +360,7 @@ export default [
   // Project files (standalone uploads with versions)
   route("api/projects/:id/files", "projects/routes/api.projects.$id.files.ts"),
   route("api/files/:id", "projects/routes/api.files.$id.ts"),
+  route("api/files/:id/partner-visible", "projects/routes/api.files.$id.partner-visible.ts"),
 
   // Lab-wide document/file tags
   route("api/doctags", "routes/api.doctags.ts"),

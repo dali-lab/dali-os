@@ -93,6 +93,13 @@ export const EVENT_TYPES = {
     description: "New comments on tasks you're assigned.",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
+  "task.status_changed": {
+    kind: "General",
+    area: "Tasks",
+    label: "Task status changes",
+    description: "When someone moves a task you're assigned to a new status.",
+    defaults: { inApp: true, slackDm: false, email: "Off" },
+  },
   "task.github_update": {
     kind: "General",
     area: "Tasks",

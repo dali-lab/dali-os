@@ -1,8 +1,9 @@
 import type { Route } from "./+types/api.comments";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireAuth, forbidden } from "~/lib/auth";
+import { requireAuth, forbidden, type AuthSuccess } from "~/lib/auth";
 import { isCore, isLabMember } from "~/lib/roles";
+import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import { hydrateAuthors } from "~/lib/collabAuth";
@@ -59,11 +60,40 @@ async function targetExists(targetType: CommentTarget, targetId: string): Promis
   return !!file && file.archivedAt === null;
 }
 
+// A partner may comment on a `doc` only when it's a live, partner-visible page
+// in a project their org actively partners on — the same gate that lets them
+// open the page (partner.projects.$id.pages.$pageId) and its collab socket.
+async function partnerCanAccessDoc(userSub: string, pageId: string): Promise<boolean> {
+  const page = await prisma.page.findFirst({
+    where: {
+      id: pageId,
+      workspaceType: "Project",
+      archivedAt: null,
+      partnerVisible: true,
+    },
+    select: { workspaceId: true },
+  });
+  if (!page?.workspaceId) return false;
+  return partnerHasProjectAccess(userSub, page.workspaceId);
+}
+
 // Auth split by target: page-doc FAQ threads are open to any lab member (so
-// anyone can ask a question); doc/file comments stay on the project-edit gate
-// (Core/Admin — the same surface that can open the doc/file).
-async function canAccessTarget(targetType: CommentTarget, userId: string): Promise<boolean> {
-  return targetType === "pagedoc" ? isLabMember(userId) : isCore(userId);
+// anyone can ask a question); doc comments stay on the project-edit gate
+// (Core/Admin), plus partners on that page's shared surface; file comments
+// stay Core-only.
+async function canAccessTarget(
+  auth: AuthSuccess,
+  targetType: CommentTarget,
+  targetId: string,
+): Promise<boolean> {
+  if (targetType === "pagedoc") return isLabMember(auth.user.sub);
+  if (targetType === "doc") {
+    if (await isCore(auth.user.sub)) return true;
+    return auth.user.type === "partner"
+      ? partnerCanAccessDoc(auth.user.sub, targetId)
+      : false;
+  }
+  return isCore(auth.user.sub);
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -82,7 +112,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   ) {
     return withCors(request, Response.json({ error: "Invalid target" }, { status: 400 }));
   }
-  if (!(await canAccessTarget(targetType, auth.user.sub))) {
+  if (!(await canAccessTarget(auth, targetType, targetId))) {
     return forbidden(request);
   }
 
@@ -130,7 +160,7 @@ export async function action({ request }: Route.ActionArgs) {
   const body = await parseJson(request, CreateSchema);
   if (body instanceof Response) return withCors(request, body);
 
-  if (!(await canAccessTarget(body.targetType, auth.user.sub))) {
+  if (!(await canAccessTarget(auth, body.targetType, body.targetId))) {
     return forbidden(request);
   }
 

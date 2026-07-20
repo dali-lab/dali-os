@@ -1,11 +1,13 @@
-// Sprint close-out: Active sprints past endsAt flip to Closed, unfinished
+// Sprint lifecycle: Active sprints past endsAt flip to Closed — unfinished
 // tasks roll to the project's next Planned sprint (else the backlog), and a
-// summary lands in the project's Slack channel.
+// summary lands in the project's Slack channel — and Planned sprints at or
+// past startsAt flip to Active. Parallel sprints are allowed by design, so
+// every due sprint activates; there is no "only one Active" guard. Activation
+// is silent (no Slack post — the close-out summary is the channel moment).
 //
-// The Active→Closed flip is the CAS claim — only the machine that wins it
-// does the rollover and the post, so a crashed run loses at most one
-// close-out rather than duplicating it (same trade as scheduled
-// announcements).
+// Each status flip is a CAS claim — only the machine that wins it does the
+// follow-up work, so a crashed run loses at most one close-out rather than
+// duplicating it (same trade as scheduled announcements).
 
 import { prisma } from "~/lib/db";
 import { getAppEnv } from "~/lib/app-env";
@@ -95,8 +97,27 @@ export async function runSprintLifecycle({ now }: JobContext): Promise<JobResult
     }
   }
 
+  // Activation pass, after close-out so a Planned sprint whose whole window
+  // already elapsed (e.g. the runner was down) activates now and gets a
+  // normal close-out on a later tick instead of an activate-and-close in one.
+  const dueToStart = await prisma.sprint.findMany({
+    where: { status: "Planned", startsAt: { lte: now } },
+    orderBy: { startsAt: "asc" },
+    take: BATCH,
+    select: { id: true },
+  });
+
+  let activated = 0;
+  for (const sprint of dueToStart) {
+    const claim = await prisma.sprint.updateMany({
+      where: { id: sprint.id, status: "Planned" },
+      data: { status: "Active" },
+    });
+    if (claim.count > 0) activated++; // count === 0: raced with another machine or a manual move
+  }
+
   return {
-    items: closed,
+    items: closed + activated,
     note: failed > 0 ? `${failed} close-out(s) failed — see logs` : undefined,
   };
 }

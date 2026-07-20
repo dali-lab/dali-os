@@ -13,19 +13,21 @@ import type { Locator, Page } from '@playwright/test';
 //     top-level navigation lands on the empty "No tabs open" workspace. We append
 //     `?embed=1` (the same flag the iframe uses) so the route renders standalone,
 //     matching the pattern in calendar-settings.spec.ts.
-//  2. "To do" / "In progress" also appear as status labels in the epics/sprints
-//     timeline above the board, so columns must be scoped to the KanbanBoard
-//     shell (`div.w-64.rounded-lg` — see KanbanBoard.tsx BoardColumn shellClass),
+//  2. "To do" / "In progress" also appear as status labels elsewhere on the
+//     page, so columns must be scoped to the KanbanBoard shell
+//     (`div.w-64.rounded-lg` — see KanbanBoard.tsx BoardColumn shellClass),
 //     not matched by text anywhere on the page.
 //
 // dnd-kit's PointerSensor has an activation distance of 6px, so the drag must
 // move past that threshold before it engages; we step the mouse to be safe.
+// The whole card is the drag source (no separate grip handle); a sub-threshold
+// press still counts as the click that opens the task modal.
 
 // The task-board column shell: `flex-shrink-0 w-64 border rounded-lg ...`.
 const COLUMN = 'div.w-64.rounded-lg';
 // The card container: `border border-border rounded-md bg-background` shell in
-// TaskBoard.tsx. The drag handle inside it carries aria-label="Drag task".
-const CARD = 'div.rounded-md.bg-background:has([aria-label="Drag task"])';
+// TaskBoard.tsx (the sortable wrapper spreads the drag listeners onto it).
+const CARD = 'div.rounded-md.bg-background';
 
 const column = (page: Page, label: string): Locator =>
   page.locator(COLUMN).filter({ hasText: label }).first();
@@ -33,9 +35,8 @@ const column = (page: Page, label: string): Locator =>
 // Drag `handle` into `target`, stepping past the 6px activation threshold first
 // so the PointerSensor engages, then gliding into the column.
 async function dragHandleTo(page: Page, handle: Locator, target: Locator) {
-  // The task board sits below a tall epics/sprints timeline, so the card can
-  // start off-screen. Bring the handle into view before measuring — a mouse
-  // drag to off-viewport coordinates never reaches the element.
+  // Bring the card into view before measuring — a mouse drag to off-viewport
+  // coordinates never reaches the element.
   await handle.scrollIntoViewIfNeeded();
 
   const handleBox = await handle.boundingBox();
@@ -46,7 +47,9 @@ async function dragHandleTo(page: Page, handle: Locator, target: Locator) {
   }
 
   const startX = handleBox.x + handleBox.width / 2;
-  const startY = handleBox.y + handleBox.height / 2;
+  // Grab the lower portion of the card: the title line swallows pointerdown
+  // so its text stays drag-selectable, so a drag must start below it.
+  const startY = handleBox.y + handleBox.height * 0.75;
   // Drop at the destination column's horizontal centre, on the same row band as
   // the (now visible) handle. The columns share a row, so the handle's y is
   // inside the destination column's visible area too — no risk of aiming
@@ -91,7 +94,7 @@ test.describe('KanbanBoard drag (TaskBoard)', () => {
     expect(created.ok()).toBe(true);
 
     // ?embed=1 renders the project route standalone (no workspace iframe shell).
-    await page.goto(`/projects/${PROJECT_ID}?tab=work&embed=1`);
+    await page.goto(`/projects/${PROJECT_ID}?tab=board&embed=1`);
     await page.waitForLoadState('networkidle');
 
     const todoColumn = column(page, 'To do');
@@ -99,12 +102,10 @@ test.describe('KanbanBoard drag (TaskBoard)', () => {
     await expect(todoColumn).toBeVisible();
     await expect(inProgressColumn).toBeVisible();
 
-    // The card we just created, scoped to the "To do" column.
+    // The card we just created, scoped to the "To do" column. The card itself
+    // is the drag source now — there is no separate grip handle.
     const card = todoColumn.locator(CARD).filter({ hasText: cardTitle }).first();
     await expect(card).toBeVisible();
-
-    const handle = card.getByLabel('Drag task');
-    await expect(handle).toBeVisible();
 
     // Watch for the move POST that the optimistic hook fires.
     const movePromise = page.waitForRequest(
@@ -112,7 +113,7 @@ test.describe('KanbanBoard drag (TaskBoard)', () => {
         /\/api\/tasks\/[^/]+\/move$/.test(req.url()) && req.method() === 'POST',
     );
 
-    await dragHandleTo(page, handle, inProgressColumn);
+    await dragHandleTo(page, card, inProgressColumn);
 
     const moveReq = await movePromise;
     expect(moveReq.postDataJSON()).toMatchObject({ status: 'InProgress' });

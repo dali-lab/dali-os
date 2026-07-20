@@ -1,16 +1,27 @@
 import { prisma } from "~/lib/db";
 import { currentTerm } from "~/lib/roles";
 import { resolvePhotoUrl } from "~/lib/photo";
+import { getDownloadUrl } from "~/lib/s3";
 import { fullName } from "~/lib/display";
+
+// The three time states every work item collapses to, so the UI can speak one
+// visual language: past (teal/settled), current (coral/live), planned (dashed).
+export type PartnerWorkState = "past" | "current" | "planned";
 
 export type PartnerProjectSprint = {
   id: string;
   name: string;
   startsAt: string;
   endsAt: string;
-  status: "Active" | "Closed";
+  status: "Active" | "Closed" | "Planned";
   done: number;
   open: number;
+};
+
+export type PartnerProjectStory = {
+  id: string;
+  title: string;
+  status: "Todo" | "InProgress" | "Done";
 };
 
 export type PartnerProjectEpic = {
@@ -19,6 +30,10 @@ export type PartnerProjectEpic = {
   status: "Backlog" | "Open" | "InProgress" | "Done" | "Cancelled";
   startsAt: string | null;
   endsAt: string | null;
+  // Scope (what we're building) and schedule (when) — the two parallel
+  // children of an epic. Sprints carry every status so the epic reads as a
+  // mini past→current→planned timeline.
+  stories: PartnerProjectStory[];
   sprints: PartnerProjectSprint[];
 };
 
@@ -32,9 +47,19 @@ export type PartnerProjectViewData = {
   };
   partnerSince: string | null;
   currentTermCode: string | null;
-  team: { name: string; domains: string[] }[];
-  // Current-work hierarchy: epic cards first, with their in-flight sprints
-  // nested under each. Sprints with no epic sit in ungroupedSprints.
+  team: { name: string; domains: string[]; photoUrl: string | null }[];
+  // Aggregate live progress across the in-flight sprint(s) — the hero readout.
+  // Null when nothing is active (between sprints / not yet started).
+  momentum: {
+    label: string;
+    done: number;
+    total: number;
+    endsAt: string;
+    daysLeft: number;
+  } | null;
+  // Roadmap: every non-cancelled epic (position order), each carrying its
+  // stories and its full sprint history. Sprints with no epic sit in
+  // ungroupedSprints.
   epics: PartnerProjectEpic[];
   ungroupedSprints: PartnerProjectSprint[];
   nextSprint: { name: string; startsAt: string; endsAt: string } | null;
@@ -49,6 +74,15 @@ export type PartnerProjectViewData = {
     title: string;
     iconEmoji: string | null;
     updatedAt: string;
+  }[];
+  // Partner-visible file uploads, each with a short-lived signed download URL
+  // resolved server-side — the partner never sees a file id or an API surface.
+  sharedFiles: {
+    id: string;
+    title: string;
+    fileName: string | null;
+    sizeBytes: number | null;
+    downloadUrl: string | null;
   }[];
 };
 
@@ -82,121 +116,125 @@ export async function loadPartnerProjectView(
 
   const current = await currentTerm();
 
+  const sprintSelect = {
+    id: true,
+    name: true,
+    startsAt: true,
+    endsAt: true,
+    status: true,
+  } as const;
+
   const [
     partnership,
     assignments,
-    activeSprints,
-    plannedSprint,
-    lastClosedSprint,
+    epicsRaw,
+    ungroupedSprintRows,
     recentlyDone,
     sharedPages,
+    sharedFileRows,
   ] = await Promise.all([
-    partnerOrgId
-      ? prisma.projectPartner.findFirst({
-          where: { projectId: project.id, partnerOrgId },
-          select: { startedAt: true },
-        })
-      : Promise.resolve(null),
-    current
-      ? prisma.projectAssignment.findMany({
-          where: { projectId: project.id, termId: current.id },
-          select: {
-            user: { select: { id: true, firstName: true, lastName: true } },
-            domain: { select: { name: true } },
+      partnerOrgId
+        ? prisma.projectPartner.findFirst({
+            where: { projectId: project.id, partnerOrgId },
+            select: { startedAt: true },
+          })
+        : Promise.resolve(null),
+      current
+        ? prisma.projectAssignment.findMany({
+            where: { projectId: project.id, termId: current.id },
+            select: {
+              user: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  photoUrl: true,
+                },
+              },
+              domain: { select: { name: true } },
+            },
+          })
+        : Promise.resolve([]),
+      // Cancelled epics are dropped work — partners never see them. Each epic
+      // carries its stories (scope) and every sprint (schedule/history).
+      prisma.epic.findMany({
+        where: { projectId: project.id, status: { not: "Cancelled" } },
+        orderBy: { position: "asc" },
+        select: {
+          id: true,
+          title: true,
+          status: true,
+          startsAt: true,
+          endsAt: true,
+          stories: {
+            orderBy: { position: "asc" },
+            select: { id: true, title: true, status: true },
           },
-        })
-      : Promise.resolve([]),
-    prisma.sprint.findMany({
-      where: { projectId: project.id, status: "Active" },
-      orderBy: { startsAt: "asc" },
-      select: {
-        id: true,
-        name: true,
-        startsAt: true,
-        endsAt: true,
-        epicId: true,
-        epic: {
-          select: {
-            id: true,
-            title: true,
-            status: true,
-            startsAt: true,
-            endsAt: true,
-            position: true,
+          sprints: { orderBy: { startsAt: "asc" }, select: sprintSelect },
+        },
+      }),
+      prisma.sprint.findMany({
+        where: { projectId: project.id, epicId: null },
+        orderBy: { startsAt: "asc" },
+        select: sprintSelect,
+      }),
+      prisma.task.findMany({
+        where: { projectId: project.id, status: "Done" },
+        orderBy: { updatedAt: "desc" },
+        take: 8,
+        select: {
+          id: true,
+          title: true,
+          updatedAt: true,
+          domain: { select: { displayName: true } },
+        },
+      }),
+      prisma.page.findMany({
+        where: {
+          workspaceType: "Project",
+          workspaceId: project.id,
+          archivedAt: null,
+          partnerVisible: true,
+        },
+        orderBy: { position: "asc" },
+        select: { id: true, title: true, iconEmoji: true, updatedAt: true },
+      }),
+      prisma.projectFile.findMany({
+        where: {
+          projectId: project.id,
+          archivedAt: null,
+          partnerVisible: true,
+        },
+        orderBy: { createdAt: "asc" },
+        select: {
+          id: true,
+          title: true,
+          currentVersion: {
+            select: { fileName: true, sizeBytes: true, s3Key: true },
           },
         },
-      },
-    }),
-    prisma.sprint.findFirst({
-      where: { projectId: project.id, status: "Planned" },
-      orderBy: { startsAt: "asc" },
-      select: { name: true, startsAt: true, endsAt: true },
-    }),
-    prisma.sprint.findFirst({
-      where: { projectId: project.id, status: "Closed" },
-      orderBy: { endsAt: "desc" },
-      select: {
-        id: true,
-        name: true,
-        startsAt: true,
-        endsAt: true,
-        epicId: true,
-        epic: {
-          select: {
-            id: true,
-            title: true,
-            status: true,
-            startsAt: true,
-            endsAt: true,
-            position: true,
-          },
-        },
-      },
-    }),
-    prisma.task.findMany({
-      where: { projectId: project.id, status: "Done" },
-      orderBy: { updatedAt: "desc" },
-      take: 8,
-      select: {
-        id: true,
-        title: true,
-        updatedAt: true,
-        domain: { select: { displayName: true } },
-      },
-    }),
-    prisma.page.findMany({
-      where: {
-        workspaceType: "Project",
-        workspaceId: project.id,
-        archivedAt: null,
-        partnerVisible: true,
-      },
-      orderBy: { position: "asc" },
-      select: { id: true, title: true, iconEmoji: true, updatedAt: true },
-    }),
-  ]);
+      }),
+    ]);
 
-  // Progress counts for the sprints we'll show (active, or the last closed
-  // one as a fallback so the page never reads empty between sprints).
-  const summarySprints = activeSprints.length
-    ? activeSprints.map((s) => ({ ...s, status: "Active" as const }))
-    : lastClosedSprint
-      ? [{ ...lastClosedSprint, status: "Closed" as const }]
-      : [];
-  const counts = summarySprints.length
+  // One count pass over every sprint on the board — cheap, and it lets each
+  // sprint (past, current, or planned) show its own done/total.
+  const allSprintRows = [
+    ...epicsRaw.flatMap((e) => e.sprints),
+    ...ungroupedSprintRows,
+  ];
+  const counts = allSprintRows.length
     ? await prisma.task.groupBy({
         by: ["sprintId", "status"],
         where: {
           projectId: project.id,
-          sprintId: { in: summarySprints.map((s) => s.id) },
+          sprintId: { in: allSprintRows.map((s) => s.id) },
         },
         _count: { _all: true },
       })
     : [];
 
-  function toSprintCard(
-    s: (typeof summarySprints)[number],
-  ): PartnerProjectSprint {
+  type SprintRow = (typeof allSprintRows)[number];
+  function toSprintCard(s: SprintRow): PartnerProjectSprint {
     const mine = counts.filter((c) => c.sprintId === s.id);
     const total = mine.reduce((sum, c) => sum + c._count._all, 0);
     const done = mine
@@ -216,48 +254,72 @@ export async function loadPartnerProjectView(
     };
   }
 
-  // Group under epics (ordered by epic.position). Sprints with no epic stay
-  // in ungroupedSprints so they still surface on the partner view.
-  const epicMap = new Map<
-    string,
-    PartnerProjectEpic & { position: number }
-  >();
-  const ungroupedSprints: PartnerProjectSprint[] = [];
-  for (const s of summarySprints) {
-    const card = toSprintCard(s);
-    if (!s.epic) {
-      ungroupedSprints.push(card);
-      continue;
-    }
-    const existing = epicMap.get(s.epic.id);
-    if (existing) {
-      existing.sprints.push(card);
-    } else {
-      epicMap.set(s.epic.id, {
-        id: s.epic.id,
-        title: s.epic.title,
-        status: s.epic.status,
-        startsAt: s.epic.startsAt?.toISOString() ?? null,
-        endsAt: s.epic.endsAt?.toISOString() ?? null,
-        sprints: [card],
-        position: s.epic.position,
-      });
-    }
-  }
-  const epics: PartnerProjectEpic[] = [...epicMap.values()]
-    .sort((a, b) => a.position - b.position || a.title.localeCompare(b.title))
-    .map(({ position: _position, ...epic }) => epic);
+  const epics: PartnerProjectEpic[] = epicsRaw.map((e) => ({
+    id: e.id,
+    title: e.title,
+    status: e.status,
+    startsAt: e.startsAt?.toISOString() ?? null,
+    endsAt: e.endsAt?.toISOString() ?? null,
+    stories: e.stories,
+    sprints: e.sprints.map(toSprintCard),
+  }));
+  const ungroupedSprints = ungroupedSprintRows.map(toSprintCard);
 
   // Dedupe the roster: one row per person, domains joined.
-  const roster = new Map<string, { name: string; domains: Set<string> }>();
+  const roster = new Map<
+    string,
+    { name: string; domains: Set<string>; photoUrl: string | null }
+  >();
   for (const a of assignments) {
     const entry = roster.get(a.user.id) ?? {
       name: fullName(a.user),
       domains: new Set<string>(),
+      photoUrl: a.user.photoUrl,
     };
     entry.domains.add(a.domain.name);
     roster.set(a.user.id, entry);
   }
+  const team = await Promise.all(
+    [...roster.values()].map(async (r) => ({
+      name: r.name,
+      domains: [...r.domains].sort(),
+      photoUrl: await resolvePhotoUrl(r.photoUrl),
+    })),
+  );
+
+  const allCards = allSprintRows.map(toSprintCard);
+
+  // Aggregate the in-flight sprints into a single hero readout. One active
+  // sprint → its name; several → a count. Deadline is the soonest end.
+  const activeCards = allCards.filter((c) => c.status === "Active");
+  const momentum =
+    activeCards.length > 0
+      ? (() => {
+          const done = activeCards.reduce((sum, c) => sum + c.done, 0);
+          const total = activeCards.reduce((sum, c) => sum + c.done + c.open, 0);
+          const endsAt = activeCards.map((c) => c.endsAt).sort()[0];
+          const daysLeft = Math.max(
+            0,
+            Math.ceil((new Date(endsAt).getTime() - Date.now()) / 86_400_000),
+          );
+          return {
+            label:
+              activeCards.length === 1
+                ? activeCards[0].name
+                : `${activeCards.length} sprints active`,
+            done,
+            total,
+            endsAt,
+            daysLeft,
+          };
+        })()
+      : null;
+
+  // Soonest planned sprint anywhere on the board — the "what's next" pointer.
+  const nextSprint =
+    allCards
+      .filter((c) => c.status === "Planned")
+      .sort((a, b) => a.startsAt.localeCompare(b.startsAt))[0] ?? null;
 
   return {
     project: {
@@ -271,17 +333,15 @@ export async function loadPartnerProjectView(
     },
     partnerSince: partnership?.startedAt?.toISOString() ?? null,
     currentTermCode: current?.code ?? null,
-    team: [...roster.values()].map((r) => ({
-      name: r.name,
-      domains: [...r.domains].sort(),
-    })),
+    team,
+    momentum,
     epics,
     ungroupedSprints,
-    nextSprint: plannedSprint
+    nextSprint: nextSprint
       ? {
-          name: plannedSprint.name,
-          startsAt: plannedSprint.startsAt.toISOString(),
-          endsAt: plannedSprint.endsAt.toISOString(),
+          name: nextSprint.name,
+          startsAt: nextSprint.startsAt,
+          endsAt: nextSprint.endsAt,
         }
       : null,
     recentlyDone: recentlyDone.map((t) => ({
@@ -296,5 +356,16 @@ export async function loadPartnerProjectView(
       iconEmoji: p.iconEmoji,
       updatedAt: p.updatedAt.toISOString(),
     })),
+    sharedFiles: await Promise.all(
+      sharedFileRows.map(async (f) => ({
+        id: f.id,
+        title: f.title,
+        fileName: f.currentVersion?.fileName ?? null,
+        sizeBytes: f.currentVersion?.sizeBytes ?? null,
+        downloadUrl: f.currentVersion?.s3Key
+          ? await getDownloadUrl(f.currentVersion.s3Key)
+          : null,
+      })),
+    ),
   };
 }

@@ -1021,6 +1021,10 @@ model ProjectFile {
   // during the create→first-version transaction.
   currentVersionId String? @unique
 
+  // When true, partners on this project can see + download the file from the
+  // partner portal (mirrors Page.partnerVisible for shared documents).
+  partnerVisible Boolean @default(false)
+
   archivedAt DateTime?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
@@ -2483,6 +2487,12 @@ model Task {
   // children (Linear/Notion style).
   // JSON shape: [{ "text": "...", "done": false }]
   checklist Json?
+
+  // Soft archive. Done/Cancelled tasks left untouched past the
+  // task-auto-archive job's threshold get stamped here and drop off the
+  // board (the loader filters archivedAt: null). The row is preserved, not
+  // deleted, so it stays reportable/restorable.
+  archivedAt DateTime?
 
   // Optional mirror to a GitHub issue. All three populated together when the
   // task was created with the "Create GitHub issue" toggle on; null when not
