@@ -1,4 +1,5 @@
 import { prisma } from "~/lib/db";
+import { resolvePhotoUrl } from "~/lib/photo";
 import { weekNumberInTerm, weekStartForNumber, weeksInTerm } from "./week";
 import type { Vibe } from "./vibe";
 
@@ -7,7 +8,13 @@ import type { Vibe } from "./vibe";
 // is one cell — a submitted note (with its vibe), a missing note (a due week
 // with no note), or a future week (not yet due).
 
-export type GridPerson = { id: string; firstName: string; lastName: string };
+export type GridPerson = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  // Resolved (browser-usable) profile photo URL, or null.
+  photoUrl: string | null;
+};
 
 export type GridCell = {
   week: number;
@@ -111,8 +118,8 @@ export async function buildGrid({
         menteeUserId: true,
         projectId: true,
         domainId: true,
-        mentor: { select: { id: true, firstName: true, lastName: true } },
-        mentee: { select: { id: true, firstName: true, lastName: true } },
+        mentor: { select: { id: true, firstName: true, lastName: true, photoUrl: true } },
+        mentee: { select: { id: true, firstName: true, lastName: true, photoUrl: true } },
       },
     }),
     prisma.mentorNote.findMany({
@@ -155,12 +162,38 @@ export async function buildGrid({
     );
   }
 
+  // Resolve each unique person's stored photo once (S3 presign / passthrough),
+  // then stamp the resolved URL onto every GridPerson.
+  const rawPhotoById = new Map<string, string | null>();
+  for (const p of pairs) {
+    rawPhotoById.set(p.mentor.id, p.mentor.photoUrl);
+    rawPhotoById.set(p.mentee.id, p.mentee.photoUrl);
+  }
+  const photoById = new Map(
+    await Promise.all(
+      [...rawPhotoById].map(
+        async ([id, raw]) =>
+          [id, await resolvePhotoUrl(raw)] as [string, string | null],
+      ),
+    ),
+  );
+  const toPerson = (u: {
+    id: string;
+    firstName: string;
+    lastName: string;
+  }): GridPerson => ({
+    id: u.id,
+    firstName: u.firstName,
+    lastName: u.lastName,
+    photoUrl: photoById.get(u.id) ?? null,
+  });
+
   // Group pairs by mentor.
   const byMentor = new Map<string, GridMentorGroup>();
   for (const p of pairs) {
     let group = byMentor.get(p.mentorUserId);
     if (!group) {
-      group = { mentor: p.mentor, rows: [] };
+      group = { mentor: toPerson(p.mentor), rows: [] };
       byMentor.set(p.mentorUserId, group);
     }
     const cells: GridCell[] = weeks.map((week) => {
@@ -186,7 +219,7 @@ export async function buildGrid({
     });
     group.rows.push({
       key: `${p.mentorUserId}|${p.menteeUserId}|${p.projectId}|${p.domainId}`,
-      mentee: p.mentee,
+      mentee: toPerson(p.mentee),
       menteeId: p.menteeUserId,
       projectId: p.projectId,
       domainId: p.domainId,
