@@ -1419,8 +1419,9 @@ function SprintForm({
           ...(epics ? { epicId: epicId || null } : {}),
         });
       }}
-      className="flex flex-wrap items-end gap-2 mb-3"
+      className="flex items-end gap-2 mb-3"
     >
+      <div className="flex flex-wrap items-end gap-2 flex-1 min-w-0">
       <label className="flex flex-col gap-1 text-xs flex-1 min-w-[160px]">
         <span className="text-muted-foreground">Name</span>
         <input
@@ -1481,7 +1482,8 @@ function SprintForm({
           </select>
         </label>
       )}
-      <div className="flex items-center gap-1">
+      </div>
+      <div className="flex items-center gap-1 flex-shrink-0">
         <button
           type="submit"
           disabled={busy}
