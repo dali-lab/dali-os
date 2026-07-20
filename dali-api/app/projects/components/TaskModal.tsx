@@ -442,7 +442,7 @@ export function TaskModal({
       open
       onClose={guardedClose}
       labelledBy="task-modal-title"
-      containerClassName="bg-card rounded-2xl shadow-brand-2 max-w-lg w-full p-5 sm:p-6 my-auto"
+      containerClassName="bg-card rounded-2xl shadow-brand-2 max-w-2xl w-full p-5 sm:p-6 my-auto"
     >
       <div className="flex flex-col gap-4">
         <div className="flex items-start justify-between gap-3">
@@ -812,12 +812,6 @@ export function TaskModal({
           </div>
         )}
 
-        {!isCreate && task && (
-          <div className="pt-2 border-t border-border text-[11px] text-muted-foreground">
-            Created by {task.createdBy.name} on {formatCreatedAt(task.createdAt)}
-          </div>
-        )}
-
         {saveError && <p className="text-xs text-accent-coral">{saveError}</p>}
 
         <div className="flex items-center gap-2 pt-2 border-t border-border">
@@ -882,6 +876,12 @@ export function TaskModal({
               ))}
           </div>
         </div>
+
+        {!isCreate && task && (
+          <div className="text-[11px] text-muted-foreground text-right">
+            Created by {task.createdBy.name} on {formatCreatedAt(task.createdAt)}
+          </div>
+        )}
       </div>
     </Modal>
   );

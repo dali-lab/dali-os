@@ -3391,29 +3391,6 @@ function PlanningTab({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex justify-end">
-        <div
-          className="inline-flex items-center border border-border rounded-md overflow-hidden"
-          role="group"
-          aria-label="Planning view"
-        >
-          <PlanningToggleButton
-            active={!timeline}
-            onClick={() => setTimeline(false)}
-            label="List view"
-          >
-            <List className="w-3.5 h-3.5" />
-          </PlanningToggleButton>
-          <PlanningToggleButton
-            active={timeline}
-            onClick={() => setTimeline(true)}
-            label="Timeline view"
-          >
-            <ChartNoAxesGantt className="w-3.5 h-3.5" />
-          </PlanningToggleButton>
-        </div>
-      </div>
-
       <EpicSprintManager
         projectId={projectId}
         epics={editableEpics}
@@ -3424,6 +3401,28 @@ function PlanningTab({
         userName={userName}
         view={timeline ? "timeline" : "list"}
         timelineEpics={epics}
+        viewToggle={
+          <div
+            className="inline-flex items-center border border-border rounded-md overflow-hidden"
+            role="group"
+            aria-label="Planning view"
+          >
+            <PlanningToggleButton
+              active={!timeline}
+              onClick={() => setTimeline(false)}
+              label="List view"
+            >
+              <List className="w-3.5 h-3.5" />
+            </PlanningToggleButton>
+            <PlanningToggleButton
+              active={timeline}
+              onClick={() => setTimeline(true)}
+              label="Timeline view"
+            >
+              <ChartNoAxesGantt className="w-3.5 h-3.5" />
+            </PlanningToggleButton>
+          </div>
+        }
       />
     </div>
   );

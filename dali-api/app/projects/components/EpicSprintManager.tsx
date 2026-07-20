@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useRevalidator } from "react-router";
-import { X, GripVertical, Check, Trash2 } from "lucide-react";
+import { X, GripVertical, Check, Trash2, Pencil, Maximize2 } from "lucide-react";
+import { Tooltip } from "~/components/ui/IconButton";
 import {
   DndContext,
   PointerSensor,
@@ -74,6 +75,9 @@ type Props = {
   view?: "list" | "timeline";
   // TimelineEpic shape for the timeline body (only read when view=timeline).
   timelineEpics?: TimelineEpic[];
+  // The list/timeline view switch, rendered on the toolbar row (right side),
+  // with the "Add epic" button on the left of the same line.
+  viewToggle?: ReactNode;
 };
 
 function dateInputValue(iso: string): string {
@@ -111,6 +115,7 @@ export function EpicSprintManager({
   userName,
   view = "list",
   timelineEpics = [],
+  viewToggle,
 }: Props) {
   const revalidator = useRevalidator();
   const [error, setError] = useState<string | null>(null);
@@ -231,6 +236,25 @@ export function EpicSprintManager({
     <div className="flex flex-col gap-4">
       {errorBanner}
 
+      {/* Toolbar: "Add epic" (timeline view) on the left, the list/timeline
+          toggle on the right — same line. */}
+      {viewToggle && (
+        <div className="flex items-center justify-between gap-2">
+          {view === "timeline" && canManage ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setNewEpicOpen(true)}
+            >
+              + Add epic
+            </Button>
+          ) : (
+            <span />
+          )}
+          {viewToggle}
+        </div>
+      )}
+
       {/* New epic — a modal like the detail view, not inline inputs in the
           list. On save we immediately reopen as the real detail modal for the
           created epic (see onSubmit), so sprints/stories can be added right
@@ -308,17 +332,6 @@ export function EpicSprintManager({
 
       {view === "timeline" ? (
         <div className="flex flex-col gap-3">
-          {canManage && (
-            <div className="flex justify-end">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setNewEpicOpen(true)}
-              >
-                + Add epic
-              </Button>
-            </div>
-          )}
           {/* Clicking an epic or sprint bar opens the same detail/edit modal
               the list view uses (openEpic). */}
           <EpicsTimeline
@@ -505,14 +518,16 @@ export function EpicSprintManager({
                         </span>
                       )}
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => openEpic(epic.id)}
-                      aria-label={`Open ${epic.title}`}
-                      className="flex-shrink-0 text-xs font-medium text-accent-coral hover:underline"
-                    >
-                      Open
-                    </button>
+                    <Tooltip label="Open">
+                      <button
+                        type="button"
+                        onClick={() => openEpic(epic.id)}
+                        aria-label={`Open ${epic.title}`}
+                        className="flex-shrink-0 text-muted-foreground hover:text-accent-coral"
+                      >
+                        <Maximize2 className="w-3.5 h-3.5" />
+                      </button>
+                    </Tooltip>
                   </div>
 
                   {expanded && (
@@ -672,13 +687,16 @@ export function EpicSprintManager({
                     </span>
                   </div>
                   {canManage && (
-                    <button
-                      type="button"
-                      onClick={() => setEditSprintId(sprint.id)}
-                      className="text-xs text-muted-foreground hover:text-foreground flex-shrink-0"
-                    >
-                      Edit
-                    </button>
+                    <Tooltip label="Edit sprint">
+                      <button
+                        type="button"
+                        onClick={() => setEditSprintId(sprint.id)}
+                        aria-label="Edit sprint"
+                        className="text-muted-foreground hover:text-foreground flex-shrink-0"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                    </Tooltip>
                   )}
                 </div>
               ),
@@ -878,37 +896,43 @@ function EpicDetail({
         </div>
         <div className="flex items-center gap-3 flex-shrink-0">
           {canManage && !editing && (
-            <button
-              type="button"
-              onClick={() => {
-                setEditing(true);
-                setEditEpicOpen(true);
-              }}
-              className="text-xs font-medium text-accent-coral hover:underline"
-            >
-              Edit
-            </button>
+            <Tooltip label="Edit epic">
+              <button
+                type="button"
+                onClick={() => {
+                  setEditing(true);
+                  setEditEpicOpen(true);
+                }}
+                aria-label="Edit epic"
+                className="text-muted-foreground hover:text-accent-coral"
+              >
+                <Pencil className="w-4 h-4" />
+              </button>
+            </Tooltip>
           )}
           {canManage && (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => {
-                if (
-                  !window.confirm(
-                    `Delete epic "${epic.title}"? Its sprints and tasks will be unlinked; its user stories will be deleted.`,
+            <Tooltip label="Delete epic">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  if (
+                    !window.confirm(
+                      `Delete epic "${epic.title}"? Its sprints and tasks will be unlinked; its user stories will be deleted.`,
+                    )
                   )
-                )
-                  return;
-                run(async () => {
-                  await api(`/api/epics/${epic.id}`, "DELETE");
-                  onDeleted();
-                });
-              }}
-              className="text-xs text-destructive hover:underline disabled:opacity-60"
-            >
-              Delete epic
-            </button>
+                    return;
+                  run(async () => {
+                    await api(`/api/epics/${epic.id}`, "DELETE");
+                    onDeleted();
+                  });
+                }}
+                aria-label="Delete epic"
+                className="text-destructive hover:text-destructive/80 disabled:opacity-60"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </Tooltip>
           )}
           <button
             type="button"
@@ -1076,24 +1100,30 @@ function EpicDetail({
                     <span className="text-[11px] text-muted-foreground">{story.status}</span>
                     {canEditContent && (
                       <>
-                        <button
-                          type="button"
-                          onClick={() => setEditStoryId(story.id)}
-                          className="text-xs text-muted-foreground hover:text-foreground"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => {
-                            if (!window.confirm(`Delete story "${story.title}"?`)) return;
-                            run(() => api(`/api/stories/${story.id}`, "DELETE"));
-                          }}
-                          className="text-xs text-destructive hover:underline disabled:opacity-60"
-                        >
-                          Delete
-                        </button>
+                        <Tooltip label="Edit story">
+                          <button
+                            type="button"
+                            onClick={() => setEditStoryId(story.id)}
+                            aria-label="Edit story"
+                            className="text-muted-foreground hover:text-foreground"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                        </Tooltip>
+                        <Tooltip label="Delete story">
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => {
+                              if (!window.confirm(`Delete story "${story.title}"?`)) return;
+                              run(() => api(`/api/stories/${story.id}`, "DELETE"));
+                            }}
+                            aria-label="Delete story"
+                            className="text-destructive hover:text-destructive/80 disabled:opacity-60"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </Tooltip>
                       </>
                     )}
                   </div>
@@ -1201,13 +1231,16 @@ function EpicDetail({
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <span className="text-[11px] text-muted-foreground">{sprint.status}</span>
                     {canEditContent && (
-                      <button
-                        type="button"
-                        onClick={() => setEditSprintId(sprint.id)}
-                        className="text-xs text-muted-foreground hover:text-foreground"
-                      >
-                        Edit
-                      </button>
+                      <Tooltip label="Edit sprint">
+                        <button
+                          type="button"
+                          onClick={() => setEditSprintId(sprint.id)}
+                          aria-label="Edit sprint"
+                          className="text-muted-foreground hover:text-foreground"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                      </Tooltip>
                     )}
                   </div>
                 </div>
