@@ -372,21 +372,17 @@ export function FinalizeModal({
         </div>
 
         <div className="flex gap-2">
-          <button
-            type="button"
-            disabled={running || savingFields}
-            onClick={() => run([...selected])}
-            className="px-3 py-1.5 text-sm font-medium rounded-md border border-border hover:bg-muted disabled:opacity-60 transition-colors"
-          >
-            {running ? "Running…" : "Run selected"}
-          </button>
           <Button
             variant="primary"
             size="sm"
-            disabled={running || savingFields}
-            onClick={() => run(AUTOMATIONS.filter((a) => a.configured).map((a) => a.id))}
+            disabled={running || savingFields || selected.size === 0}
+            onClick={() => run([...selected])}
           >
-            {running ? "Running…" : "Run all"}
+            {running
+              ? "Running…"
+              : selected.size === AUTOMATIONS.filter((a) => a.configured).length
+                ? "Finalize"
+                : `Finalize (${selected.size})`}
           </Button>
         </div>
       </div>
