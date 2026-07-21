@@ -30,6 +30,7 @@ describe("mark_notification_read", () => {
     mockPrisma.notification.findUnique.mockResolvedValue({
       recipientUserId: "u1",
       readAt: null,
+      kind: "General",
       scheduledMeetingId: null,
     });
     mockPrisma.notification.update.mockResolvedValue({});
@@ -42,6 +43,7 @@ describe("mark_notification_read", () => {
     mockPrisma.notification.findUnique.mockResolvedValue({
       recipientUserId: "u1",
       readAt: null,
+      kind: "MeetingInvite",
       scheduledMeetingId: "m1",
     });
     const out = await runMarkNotificationRead("u1", { notificationId: "n1" });
@@ -49,10 +51,24 @@ describe("mark_notification_read", () => {
     expect(mockPrisma.notification.update).not.toHaveBeenCalled();
   });
 
+  it("marks a MeetingReminder read even when it has scheduledMeetingId", async () => {
+    mockPrisma.notification.findUnique.mockResolvedValue({
+      recipientUserId: "u1",
+      readAt: null,
+      kind: "MeetingReminder",
+      scheduledMeetingId: "m1",
+    });
+    mockPrisma.notification.update.mockResolvedValue({});
+    const out = await runMarkNotificationRead("u1", { notificationId: "n1" });
+    expect(out).toEqual({ ok: true, alreadyRead: false });
+    expect(mockPrisma.notification.update).toHaveBeenCalled();
+  });
+
   it("is idempotent for already-read", async () => {
     mockPrisma.notification.findUnique.mockResolvedValue({
       recipientUserId: "u1",
       readAt: new Date(),
+      kind: "General",
       scheduledMeetingId: null,
     });
     const out = await runMarkNotificationRead("u1", { notificationId: "n1" });
@@ -71,6 +87,7 @@ describe("mark_notification_read", () => {
     mockPrisma.notification.findUnique.mockResolvedValue({
       recipientUserId: "u2",
       readAt: null,
+      kind: "General",
       scheduledMeetingId: null,
     });
     await expect(

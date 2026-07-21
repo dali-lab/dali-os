@@ -1,9 +1,10 @@
-// /link — the desktop device-pairing approval page, opened in the system
-// browser (NOT the Tauri webview). Shows the device label + userCode for the
-// user to eyeball-compare against the app, and an Approve/Cancel action tied to
-// their authenticated web session. Standalone page (no app layout). All login
-// happens through the unmodified /login flow; this is the only new web surface.
-// Copy follows TAURI_DESKTOP_PLAN.md.
+// /link — the device-pairing approval page, opened in a real browser tab (the
+// system browser for the Tauri desktop app; a normal tab for the Relay browser
+// extension). Shows the device label + userCode for the user to eyeball-compare
+// against the client, and an Approve/Cancel action tied to their authenticated
+// web session. Standalone page (no app layout). All login happens through the
+// unmodified /login flow. Copy is client-agnostic (uses the pairing row's
+// deviceLabel) so the same page serves the desktop app and the extension.
 
 import { Form, Link, redirect } from "react-router";
 import type { Route } from "./+types/link";
@@ -97,7 +98,7 @@ export default function LinkPage({ loaderData }: Route.ComponentProps) {
       <Shell>
         <h1 className="text-xl font-semibold text-zinc-900">✅ Device approved</h1>
         <p className="mt-3 text-sm text-zinc-600">
-          Head back to <strong>DALI OS Desktop</strong> — it'll finish signing in
+          Head back to the app you were linking — it'll finish signing in
           automatically. You can close this tab.
         </p>
       </Shell>
@@ -120,9 +121,8 @@ export default function LinkPage({ loaderData }: Route.ComponentProps) {
       <Shell>
         <h1 className="text-xl font-semibold text-zinc-900">This pairing request expired</h1>
         <p className="mt-3 text-sm text-zinc-600">
-          For your security, pairing codes expire after a few minutes. Open{" "}
-          <strong>DALI OS Desktop</strong> and choose <strong>Sign in</strong>{" "}
-          again to get a fresh code.
+          For your security, pairing codes expire after a few minutes. Start
+          sign-in again in the app you're linking to get a fresh code.
         </p>
       </Shell>
     );
@@ -146,9 +146,8 @@ export default function LinkPage({ loaderData }: Route.ComponentProps) {
       <Shell>
         <h1 className="text-xl font-semibold text-zinc-900">Pairing code not found</h1>
         <p className="mt-3 text-sm text-zinc-600">
-          We couldn't find that pairing code. Open <strong>DALI OS Desktop</strong>{" "}
-          and choose <strong>Sign in</strong> to get a fresh code, then enter it
-          here.
+          We couldn't find that pairing code. Start sign-in again in the app
+          you're linking to get a fresh code, then enter it here.
         </p>
       </Shell>
     );
@@ -157,9 +156,10 @@ export default function LinkPage({ loaderData }: Route.ComponentProps) {
   if (data.view === "no_code") {
     return (
       <Shell>
-        <h1 className="text-xl font-semibold text-zinc-900">Link a desktop device</h1>
+        <h1 className="text-xl font-semibold text-zinc-900">Link a device or app</h1>
         <p className="mt-3 text-sm text-zinc-600">
-          Enter the code shown in <strong>DALI OS Desktop</strong>.
+          Enter the code shown in the app you're linking (DALI OS Desktop or the
+          Relay extension).
         </p>
         <Form method="post" className="mt-4 flex gap-2">
           <input
@@ -177,8 +177,7 @@ export default function LinkPage({ loaderData }: Route.ComponentProps) {
         </Form>
         {!data.signedIn && (
           <p className="mt-4 text-xs text-zinc-500">
-            Don't have the app open? Launch DALI OS Desktop and choose{" "}
-            <strong>Sign in</strong> first.
+            Don't have the code? Start sign-in in the app you're linking first.
           </p>
         )}
       </Shell>
@@ -189,8 +188,8 @@ export default function LinkPage({ loaderData }: Route.ComponentProps) {
     return (
       <Shell>
         <div className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          <strong>Sign in to approve a device.</strong> You're linking the DALI OS
-          desktop app. Sign in to continue, then you'll confirm the device.
+          <strong>Sign in to approve a device.</strong> You're linking an app to
+          your account. Sign in to continue, then you'll confirm the device.
         </div>
         <p className="mt-4 text-sm text-zinc-600">
           Pairing code <CodeChip code={data.userCode} /> — after signing in,
@@ -231,7 +230,7 @@ export default function LinkPage({ loaderData }: Route.ComponentProps) {
     <Shell>
       <h1 className="text-xl font-semibold text-zinc-900">Approve this device?</h1>
       <p className="mt-2 text-sm text-zinc-600">
-        <strong>DALI OS Desktop</strong> wants to sign in to your account.
+        This app wants to sign in to your account.
       </p>
       <dl className="mt-4 space-y-2 text-sm">
         <div className="flex items-center justify-between gap-3">
@@ -247,8 +246,9 @@ export default function LinkPage({ loaderData }: Route.ComponentProps) {
       </dl>
       <p className="mt-4 rounded-lg bg-amber-50 px-4 py-3 text-xs text-amber-900">
         ⚠️ Confirm this code matches the one shown in the app. Only approve if{" "}
-        <em>you</em> just opened DALI OS Desktop on this computer. Approving keeps
-        the app signed in to your account until you sign out or revoke it.
+        <em>you</em> just started sign-in from this app on this computer.
+        Approving keeps it signed in to your account until you sign out or
+        revoke it.
       </p>
       <p className="mt-3 text-xs text-zinc-500">
         Approving as <strong>{data.email}</strong> —{" "}

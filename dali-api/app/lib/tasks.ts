@@ -11,7 +11,9 @@ import { fullName } from "~/lib/display";
 // link, submitting the attached form, or hitting "mark all read") clears it
 // from tasks. Meeting invites are the exception: they only clear once the
 // recipient RSVPs (Accept/Maybe/Decline), and they drop off automatically once
-// the meeting is Cancelled — see TASK_WHERE.
+// the meeting is Cancelled — see TASK_WHERE. Meeting reminders ("Starting
+// soon") are dismissible like any other ping, and also drop off once their
+// occurrence time (dueAt) has passed.
 //
 //   MeetingInvite + scheduledMeetingId → "meeting"  (carries RSVP target)
 //   kind === MeetingReminder           → "reminder" (calendar fan-out)
@@ -98,7 +100,10 @@ export function resolveNotificationState(
   return "Open";
 }
 
-const TASK_WHERE = (userId: string): Prisma.NotificationWhereInput => ({
+const TASK_WHERE = (
+  userId: string,
+  now = new Date(),
+): Prisma.NotificationWhereInput => ({
   recipientUserId: userId,
   readAt: null,
   // A meeting-invite notification drops off Tasks the moment its meeting is
@@ -109,6 +114,27 @@ const TASK_WHERE = (userId: string): Prisma.NotificationWhereInput => ({
       OR: [
         { scheduledMeetingId: null },
         { scheduledMeeting: { status: { not: "Cancelled" } } },
+      ],
+    },
+    // "Starting soon" reminders stamp dueAt to the occurrence start. Once that
+    // time has passed the ping is stale — drop it from live Tasks. Pre-fix
+    // reminders with null dueAt fall back to the meeting's selectedAt so
+    // already-started one-offs clear without a manual dismiss.
+    {
+      OR: [
+        { kind: { not: "MeetingReminder" } },
+        { dueAt: { gt: now } },
+        {
+          AND: [
+            { dueAt: null },
+            {
+              OR: [
+                { scheduledMeeting: { selectedAt: { gt: now } } },
+                { scheduledMeeting: { selectedAt: null } },
+              ],
+            },
+          ],
+        },
       ],
     },
   ],
@@ -232,7 +258,13 @@ export async function listOpenTasks(userId: string): Promise<Task[]> {
             : "general";
 
     const meetingDue = n.scheduledMeeting?.selectedAt?.toISOString() ?? null;
-    const dueAt = meetingDue ?? (n.dueAt ? n.dueAt.toISOString() : null);
+    const notifDue = n.dueAt ? n.dueAt.toISOString() : null;
+    // Reminders stamp dueAt to the specific occurrence; prefer that over the
+    // series selectedAt so recurring meetings show the right chip.
+    const dueAt =
+      n.kind === "MeetingReminder"
+        ? notifDue ?? meetingDue
+        : meetingDue ?? notifDue;
 
     // Authenticated fill route (not the public /f/ one): the recipient is a
     // logged-in user, and the authed submit is what marks this todo read so
@@ -247,9 +279,13 @@ export async function listOpenTasks(userId: string): Promise<Task[]> {
     // bare link doesn't count: opening it isn't the same as being done. The
     // onboarding task clears only when the member completes the profile form
     // (see submitMemberForm), so it must NOT offer a manual Confirm.
+    // Meeting reminders carry scheduledMeetingId but clear by Confirm / mark-
+    // read, not RSVP — only invites are self-clearing via the meeting link.
     const isOnboarding =
       n.kind === "SystemAnnouncement" && n.link === ONBOARDING_LINK;
-    const hasAction = !!n.scheduledMeetingId || !!formLink || isOnboarding;
+    const isMeetingInvite =
+      n.kind === "MeetingInvite" && !!n.scheduledMeetingId;
+    const hasAction = isMeetingInvite || !!formLink || isOnboarding;
 
     return {
       id: n.id,
