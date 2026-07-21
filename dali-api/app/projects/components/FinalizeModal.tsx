@@ -21,7 +21,7 @@ const AUTOMATIONS: {
     id: "assignments",
     label: "Propagate assignments",
     description:
-      "Confirm proposed staffing rows and write canonical ProjectAssignment + DomainEligibility.",
+      "Confirm proposed staffing rows and write ProjectAssignment, DomainEligibility, and MentorshipPair links (P3 or Mentor-badge mentors paired to same-domain mentees). Change levels on the board if a domain has mentees but no mentor.",
     configured: true,
   },
   {
