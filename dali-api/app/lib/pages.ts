@@ -68,6 +68,39 @@ export async function createLabMeetingPage(input: {
   });
 }
 
+// Creates a Page in the Lab workspace (workspaceType=Lab, workspaceId=null —
+// see Page.workspaceType comment in schema.prisma). Same shape as
+// createProjectPage but for the lab-wide Documents area: supports Folder-kind
+// containers and one level of nesting under a top-level folder. Appends after
+// the current max position among siblings under the same parent.
+export async function createLabPage(input: {
+  title: string;
+  createdById: string;
+  parentPageId?: string | null;
+  kind?: PageKind;
+}): Promise<{ id: string }> {
+  const parentPageId = input.parentPageId ?? null;
+  const last = await prisma.page.findFirst({
+    where: { workspaceType: "Lab", workspaceId: null, parentPageId },
+    orderBy: { position: "desc" },
+    select: { position: true },
+  });
+  const position = last ? last.position + 1 : 0;
+
+  return prisma.page.create({
+    data: {
+      workspaceType: "Lab",
+      workspaceId: null,
+      title: input.title,
+      kind: input.kind ?? "FreeForm",
+      position,
+      parentPageId,
+      createdById: input.createdById,
+    },
+    select: { id: true },
+  });
+}
+
 export type MeetingNotesFolderKind = "Team" | "Partner";
 
 const MEETING_NOTES_FOLDER_TITLE: Record<MeetingNotesFolderKind, string> = {

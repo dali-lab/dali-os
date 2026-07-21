@@ -16,6 +16,7 @@ import {
   Home,
   Workflow,
   ClipboardList,
+  FileText,
   GraduationCap,
   ListTodo,
   HelpCircle,
@@ -243,6 +244,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
     { key: 'forms', label: 'Forms', to: '/forms', icon: ClipboardList, show: canViewForms },
     { key: 'hiring', label: 'Hiring', to: '/hiring', icon: Briefcase, show: hasHiringAccess },
     { key: 'projects', label: 'Projects', to: '/projects', icon: FolderKanban, show: true },
+    { key: 'documents', label: 'Documents', to: '/documents', icon: FileText, show: true },
     // Hidden from mentees entirely; the routes are gated server-side by
     // canViewMentorship. Mentors only see own-domain notes; Core/Admin see all.
     { key: 'mentorship', label: 'Mentorship', to: '/mentorship', icon: Heart, show: isLabMentor || isCore },
