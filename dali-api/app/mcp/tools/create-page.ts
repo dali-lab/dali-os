@@ -2,10 +2,10 @@
 // document (optionally seeded with Markdown content via the collab write
 // pipeline) or a Folder container. Mirrors api.projects.$id.documents — same
 // nesting rules (documents nest only inside top-level Folders; folders never
-// nest). Core-only.
+// nest) and same gate (Core, or staffed on the project).
 
 import { prisma } from "~/lib/db";
-import { isCore } from "~/lib/roles";
+import { canEditProject } from "./access";
 import { markdownToProseMirror } from "~/collab/import-markdown";
 import { replaceCollabDocContent } from "~/collab/write";
 import { pageDocName } from "~/collab/roomName";
@@ -15,7 +15,7 @@ const MAX_MARKDOWN_LENGTH = 300_000;
 export const CREATE_PAGE_TOOL = {
   name: "create_page",
   description:
-    "Create a page in a project's workspace: a FreeForm document (optionally with Markdown content) or a Folder. Documents can nest under a top-level Folder; folders can't nest. Core-only.",
+    "Create a page in a project's workspace: a FreeForm document (optionally with Markdown content) or a Folder. Documents can nest under a top-level Folder; folders can't nest. Requires Core or being staffed on the project.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -61,7 +61,7 @@ export class CreatePageError extends Error {
 }
 
 export async function runCreatePage(callerId: string, input: Input) {
-  if (!(await isCore(callerId))) {
+  if (!(await canEditProject(callerId, input.projectId))) {
     throw new CreatePageError("Forbidden", 403);
   }
 

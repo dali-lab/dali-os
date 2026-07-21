@@ -3,10 +3,10 @@
 // (~/collab/write.ts): markdown → ProseMirror JSON → Yjs, applied via a
 // Hocuspocus direct connection so open editors sync live and a version
 // snapshot is kept (the previous body stays restorable from Version history).
-// Core-only, matching create_page.
+// Gate mirrors web project-edit access: Core, or staffed on the page's project.
 
 import { prisma } from "~/lib/db";
-import { isCore } from "~/lib/roles";
+import { canEditProject } from "./access";
 import { markdownToProseMirror } from "~/collab/import-markdown";
 import { replaceCollabDocContent } from "~/collab/write";
 import { pageDocName } from "~/collab/roomName";
@@ -17,7 +17,7 @@ const MAX_MARKDOWN_LENGTH = 300_000;
 export const SET_PAGE_CONTENT_TOOL = {
   name: "set_page_content",
   description:
-    "Replace a project page's body with content rendered from Markdown (headings, lists, quotes, code blocks, links, bold/italic/strike, and images via ![alt](src) — use upload_project_file with purpose 'pageImage' to get a src). OVERWRITES the existing body; read_page first to preserve content. The old body remains restorable from the page's version history. Core-only.",
+    "Replace a project page's body with content rendered from Markdown (headings, lists, quotes, code blocks, links, bold/italic/strike, and images via ![alt](src) — use upload_project_file with purpose 'pageImage' to get a src). OVERWRITES the existing body; read_page first to preserve content. The old body remains restorable from the page's version history. Requires Core or being staffed on the project.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -44,23 +44,23 @@ export class SetPageContentError extends Error {
 }
 
 export async function runSetPageContent(callerId: string, input: Input) {
-  if (!(await isCore(callerId))) {
-    throw new SetPageContentError("Forbidden", 403);
-  }
-
   const page = await prisma.page.findUnique({
     where: { id: input.pageId },
     select: {
       id: true,
       kind: true,
       workspaceType: true,
+      workspaceId: true,
       contentDocId: true,
       archivedAt: true,
     },
   });
   if (!page) throw new SetPageContentError("Page not found", 404);
-  if (page.workspaceType !== "Project") {
+  if (page.workspaceType !== "Project" || !page.workspaceId) {
     throw new SetPageContentError("Only project workspace pages can be written via MCP", 400);
+  }
+  if (!(await canEditProject(callerId, page.workspaceId))) {
+    throw new SetPageContentError("Forbidden", 403);
   }
   if (page.kind !== "FreeForm") {
     throw new SetPageContentError(`${page.kind} pages have no editable body`, 400);

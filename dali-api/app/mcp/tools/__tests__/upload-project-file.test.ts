@@ -3,14 +3,14 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db");
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
-  return { ...real, isCore: vi.fn() };
+  return { ...real, isCore: vi.fn(), isProjectMember: vi.fn() };
 });
 vi.mock("~/lib/s3", () => ({
   putObject: vi.fn(),
 }));
 
 import { prisma } from "~/lib/db";
-import { isCore } from "~/lib/roles";
+import { isCore, isProjectMember } from "~/lib/roles";
 import { putObject } from "~/lib/s3";
 import {
   runUploadProjectFile,
@@ -42,8 +42,9 @@ beforeEach(() => {
 });
 
 describe("upload_project_file", () => {
-  it("is Core-only", async () => {
+  it("denies callers who are neither Core nor staffed", async () => {
     vi.mocked(isCore).mockResolvedValue(false);
+    vi.mocked(isProjectMember).mockResolvedValue(false);
     await expect(
       runUploadProjectFile("u1", {
         projectId: "p1",
@@ -52,6 +53,20 @@ describe("upload_project_file", () => {
         base64: PNG_BASE64,
       }),
     ).rejects.toMatchObject({ status: 403 });
+  });
+
+  it("allows non-Core members staffed on the project (web parity)", async () => {
+    vi.mocked(isCore).mockResolvedValue(false);
+    vi.mocked(isProjectMember).mockResolvedValue(true);
+    const out = await runUploadProjectFile("u1", {
+      projectId: "p1",
+      fileName: "shot.png",
+      contentType: "image/png",
+      base64: PNG_BASE64,
+      purpose: "pageImage",
+    });
+    expect(isProjectMember).toHaveBeenCalledWith("u1", "p1");
+    expect(out.src).toContain("/api/upload/raw?key=");
   });
 
   it("rejects blocked executable types", async () => {

@@ -3,11 +3,11 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db");
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
-  return { ...real, isCore: vi.fn() };
+  return { ...real, isCore: vi.fn(), isProjectMember: vi.fn() };
 });
 
 import { prisma } from "~/lib/db";
-import { isCore } from "~/lib/roles";
+import { isCore, isProjectMember } from "~/lib/roles";
 import { runUpdatePage, UpdatePageError } from "~/mcp/tools/update-page";
 
 const mockPrisma = prisma as unknown as {
@@ -42,11 +42,22 @@ beforeEach(() => {
 });
 
 describe("update_page", () => {
-  it("is Core-only", async () => {
+  it("denies callers who are neither Core nor staffed", async () => {
     vi.mocked(isCore).mockResolvedValue(false);
+    vi.mocked(isProjectMember).mockResolvedValue(false);
+    mockPrisma.page.findUnique.mockResolvedValue(basePage);
     await expect(runUpdatePage("u1", { pageId: "pg1", title: "x" })).rejects.toMatchObject({
       status: 403,
     });
+  });
+
+  it("allows non-Core members staffed on the project (web parity)", async () => {
+    vi.mocked(isCore).mockResolvedValue(false);
+    vi.mocked(isProjectMember).mockResolvedValue(true);
+    mockPrisma.page.findUnique.mockResolvedValue(basePage);
+    await runUpdatePage("u1", { pageId: "pg1", title: "Renamed" });
+    expect(isProjectMember).toHaveBeenCalledWith("u1", "p1");
+    expect(mockPrisma.page.update).toHaveBeenCalled();
   });
 
   it("renames and stamps lastEditedBy", async () => {

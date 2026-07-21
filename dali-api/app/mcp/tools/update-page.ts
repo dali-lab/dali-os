@@ -4,15 +4,16 @@
 // pages (systemKey) can't be archived or moved, and archiving a Folder
 // requires it to be empty. Archive is the Page model's soft delete, so this
 // doubles as the delete tool — idempotent re-syncs unarchive/rename instead of
-// duplicating. Core-only.
+// duplicating. Gate mirrors web project-edit access: Core, or staffed on the
+// page's project.
 
 import { prisma } from "~/lib/db";
-import { isCore } from "~/lib/roles";
+import { canEditProject } from "./access";
 
 export const UPDATE_PAGE_TOOL = {
   name: "update_page",
   description:
-    "Update a project workspace page: rename, set icon, move under a folder (or to top level), archive/unarchive (soft delete/restore). Core-only.",
+    "Update a project workspace page: rename, set icon, move under a folder (or to top level), archive/unarchive (soft delete/restore). Requires Core or being staffed on the project.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -55,10 +56,6 @@ export class UpdatePageError extends Error {
 }
 
 export async function runUpdatePage(callerId: string, input: Input) {
-  if (!(await isCore(callerId))) {
-    throw new UpdatePageError("Forbidden", 403);
-  }
-
   const page = await prisma.page.findUnique({
     where: { id: input.pageId },
     select: {
@@ -73,6 +70,9 @@ export async function runUpdatePage(callerId: string, input: Input) {
   });
   if (!page || page.workspaceType !== "Project" || !page.workspaceId) {
     throw new UpdatePageError("Page not found", 404);
+  }
+  if (!(await canEditProject(callerId, page.workspaceId))) {
+    throw new UpdatePageError("Forbidden", 403);
   }
 
   const data: {

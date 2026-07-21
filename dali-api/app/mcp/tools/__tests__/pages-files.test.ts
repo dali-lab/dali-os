@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db");
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
-  return { ...real, isCore: vi.fn() };
+  return { ...real, isCore: vi.fn(), isProjectMember: vi.fn() };
 });
 vi.mock("~/collab/export", () => ({
   collabDocToProseMirror: vi.fn(),
@@ -13,7 +13,7 @@ vi.mock("~/collab/write", () => ({
 }));
 
 import { prisma } from "~/lib/db";
-import { isCore } from "~/lib/roles";
+import { isCore, isProjectMember } from "~/lib/roles";
 import { collabDocToProseMirror } from "~/collab/export";
 import { replaceCollabDocContent } from "~/collab/write";
 import {
@@ -184,6 +184,7 @@ describe("pages + files tools", () => {
       id: "pg1",
       kind: "Folder",
       workspaceType: "Project",
+      workspaceId: "p1",
       contentDocId: null,
       archivedAt: null,
     });
@@ -195,6 +196,7 @@ describe("pages + files tools", () => {
       id: "pg1",
       kind: "FreeForm",
       workspaceType: "Project",
+      workspaceId: "p1",
       contentDocId: null,
       archivedAt: new Date(),
     });
@@ -209,6 +211,7 @@ describe("pages + files tools", () => {
       id: "pg1",
       kind: "FreeForm",
       workspaceType: "Project",
+      workspaceId: "p1",
       contentDocId: null,
       archivedAt: null,
     });
@@ -225,11 +228,49 @@ describe("pages + files tools", () => {
     expect(out).toMatchObject({ id: "pg1", blockCount: 2 });
   });
 
-  it("set_page_content is Core-only", async () => {
+  it("set_page_content denies callers who are neither Core nor staffed", async () => {
     vi.mocked(isCore).mockResolvedValue(false);
+    vi.mocked(isProjectMember).mockResolvedValue(false);
+    mockPrisma.page.findUnique.mockResolvedValue({
+      id: "pg1",
+      kind: "FreeForm",
+      workspaceType: "Project",
+      workspaceId: "p1",
+      contentDocId: null,
+      archivedAt: null,
+    });
     await expect(
       runSetPageContent("u1", { pageId: "pg1", markdown: "x" }),
     ).rejects.toMatchObject({ status: 403 });
+    expect(isProjectMember).toHaveBeenCalledWith("u1", "p1");
+  });
+
+  it("set_page_content allows non-Core members staffed on the project (web parity)", async () => {
+    vi.mocked(isCore).mockResolvedValue(false);
+    vi.mocked(isProjectMember).mockResolvedValue(true);
+    mockPrisma.page.findUnique.mockResolvedValue({
+      id: "pg1",
+      kind: "FreeForm",
+      workspaceType: "Project",
+      workspaceId: "p1",
+      contentDocId: null,
+      archivedAt: null,
+    });
+    mockPrisma.page.update.mockResolvedValue({ id: "pg1" });
+    const out = await runSetPageContent("u1", { pageId: "pg1", markdown: "hello" });
+    expect(out.id).toBe("pg1");
+    expect(replaceCollabDocContent).toHaveBeenCalled();
+  });
+
+  it("create_page allows non-Core members staffed on the project (web parity)", async () => {
+    vi.mocked(isCore).mockResolvedValue(false);
+    vi.mocked(isProjectMember).mockResolvedValue(true);
+    mockPrisma.project.findUnique.mockResolvedValue({ id: "p1" });
+    mockPrisma.page.findFirst.mockResolvedValue(null);
+    mockPrisma.page.create.mockResolvedValue({ id: "pg-new" });
+    const out = await runCreatePage("u1", { projectId: "p1", title: "Member doc" });
+    expect(out.id).toBe("pg-new");
+    expect(isProjectMember).toHaveBeenCalledWith("u1", "p1");
   });
 
   it("list_project_files returns current-version metadata", async () => {

@@ -8,10 +8,11 @@
 //               pass the returned `src` to set_page_content as ![alt](src).
 // Both return `src`, a stable session-authed URL (/api/upload/raw) that
 // redirects to a fresh presigned S3 GET — a bare presigned URL would expire
-// inside long-lived page content. Core-only, matching the app's file routes.
+// inside long-lived page content. Gate mirrors the app's file routes: Core,
+// or staffed on the project.
 
 import { prisma } from "~/lib/db";
-import { isCore } from "~/lib/roles";
+import { canEditProject } from "./access";
 import { putObject } from "~/lib/s3";
 import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL, isBlockedUpload } from "~/lib/file-validation";
 
@@ -22,7 +23,7 @@ const MAX_BASE64_LENGTH = 12_000_000;
 export const UPLOAD_PROJECT_FILE_TOOL = {
   name: "upload_project_file",
   description:
-    'Upload a file to a project from base64 content (max ~9 MB decoded). purpose "file" (default) adds it to the project\'s Files list; "pageImage" uploads an image for embedding in page bodies via set_page_content — use the returned src in ![alt](src). Core-only.',
+    'Upload a file to a project from base64 content (max ~9 MB decoded). purpose "file" (default) adds it to the project\'s Files list; "pageImage" uploads an image for embedding in page bodies via set_page_content — use the returned src in ![alt](src). Requires Core or being staffed on the project.',
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -69,7 +70,7 @@ export function rawUploadSrc(key: string): string {
 }
 
 export async function runUploadProjectFile(callerId: string, input: Input) {
-  if (!(await isCore(callerId))) {
+  if (!(await canEditProject(callerId, input.projectId))) {
     throw new UploadProjectFileError("Forbidden", 403);
   }
 
