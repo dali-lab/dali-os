@@ -230,7 +230,7 @@ export default function LinkPage({ loaderData }: Route.ComponentProps) {
     <Shell>
       <h1 className="text-xl font-semibold text-zinc-900">Approve this device?</h1>
       <p className="mt-2 text-sm text-zinc-600">
-        <strong>{data.deviceLabel}</strong> wants to sign in to your account.
+        This app wants to sign in to your account.
       </p>
       <dl className="mt-4 space-y-2 text-sm">
         <div className="flex items-center justify-between gap-3">
@@ -246,9 +246,9 @@ export default function LinkPage({ loaderData }: Route.ComponentProps) {
       </dl>
       <p className="mt-4 rounded-lg bg-amber-50 px-4 py-3 text-xs text-amber-900">
         ⚠️ Confirm this code matches the one shown in the app. Only approve if{" "}
-        <em>you</em> just started sign-in from <strong>{data.deviceLabel}</strong>{" "}
-        on this computer. Approving keeps it signed in to your account until you
-        sign out or revoke it.
+        <em>you</em> just started sign-in from this app on this computer.
+        Approving keeps it signed in to your account until you sign out or
+        revoke it.
       </p>
       <p className="mt-3 text-xs text-zinc-500">
         Approving as <strong>{data.email}</strong> —{" "}
