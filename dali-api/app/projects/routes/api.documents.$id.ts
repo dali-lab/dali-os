@@ -1,16 +1,19 @@
 import type { Route } from "./+types/api.documents.$id";
+import type { AuthSuccess } from "~/lib/auth";
 import { prisma } from "~/lib/db";
-import { requireProjectEditAccess } from "~/lib/auth";
+import { requireProjectEditAccess, requireMemberSession } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent } from "~/lib/audit";
 
 // POST   /api/documents/:id — rename. Body: { title }
 // DELETE /api/documents/:id — soft delete (sets archivedAt, matching the
 //                             Page model's documented soft-delete pattern;
-//                             archived pages drop out of the project list).
+//                             archived pages drop out of the workspace list).
 //
-// Documents are project-scoped FreeForm Pages. Same permission model as
-// project edit (isCore === Admin || Core).
+// Documents are FreeForm Pages. Project-scoped pages use the project-edit gate
+// (isCore === Admin || Core, or a project assignee); Lab-scoped pages (the
+// lab-wide Documents area) use the lab-member gate — the lab's members are the
+// Lab workspace's members, mirroring project membership.
 
 type Body = { title: string };
 
@@ -30,12 +33,23 @@ export async function action({ request, params }: Route.ActionArgs) {
     where: { id: pageId },
     select: { id: true, workspaceType: true, workspaceId: true, systemKey: true, kind: true },
   });
-  if (!page || page.workspaceType !== "Project" || !page.workspaceId) {
+  if (
+    !page ||
+    (page.workspaceType !== "Project" && page.workspaceType !== "Lab") ||
+    (page.workspaceType === "Project" && !page.workspaceId)
+  ) {
     return withCors(request, Response.json({ error: "Document not found" }, { status: 404 }));
   }
-  const gate = await requireProjectEditAccess(request, page.workspaceId);
-  if (!gate.ok) return gate.response;
-  const auth = gate.auth;
+  let auth: AuthSuccess;
+  if (page.workspaceType === "Lab") {
+    const gate = await requireMemberSession(request);
+    if (!gate.ok) return withCors(request, gate.response);
+    auth = gate.auth;
+  } else {
+    const gate = await requireProjectEditAccess(request, page.workspaceId!);
+    if (!gate.ok) return gate.response;
+    auth = gate.auth;
+  }
 
   if (request.method === "DELETE") {
     if (page.systemKey) {

@@ -1,5 +1,5 @@
 import { prisma } from "~/lib/db";
-import { isCore, isDomainLead, isProjectMember } from "~/lib/roles";
+import { isCore, isDomainLead, isProjectMember, isLabMember } from "~/lib/roles";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
 
@@ -129,6 +129,13 @@ export async function authorizeCollabDoc(
       return false;
     }
     if (await isCore(userSub)) return true;
+    // Lab-workspace pages (the lab-wide Documents area) open to any lab member
+    // — the lab's members are the Lab workspace's members, mirroring the
+    // project-member gate below. There's no read-only collab connection, so
+    // "can open" == "can edit the body" here (same as project pages).
+    if (page.workspaceType === "Lab") {
+      return isLabMember(userSub);
+    }
     if (page.workspaceType === "Project" && page.workspaceId) {
       if (await isProjectMember(userSub, page.workspaceId)) return true;
       if (page.partnerVisible) {

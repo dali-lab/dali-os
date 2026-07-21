@@ -2959,7 +2959,88 @@ function DocumentsBlock({
     }
   }
 
-  function DocRow({ doc, indent }: { doc: LoaderData["documents"][number]["children"][number]; indent: boolean }) {
+  // Drag-and-drop: reorder documents and move them into/out of folders.
+  // `drag` tracks the item being dragged; `dropTarget` highlights the current
+  // drop zone (a page id, or "root" for the top-level list).
+  const [drag, setDrag] = useState<{ id: string; isFolder: boolean } | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | "root" | null>(null);
+  async function moveDocument(id: string, parentPageId: string | null, beforeId: string | null) {
+    setDrag(null);
+    setDropTarget(null);
+    if (id === beforeId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/pages/${id}/move`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ parentPageId, beforeId }),
+      });
+      if (!res.ok) {
+        const b = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(b.error ?? "Failed to move document");
+      }
+      if (parentPageId) setExpanded((prev) => new Set(prev).add(parentPageId));
+      revalidator.revalidate();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong");
+    } finally {
+      setBusy(false);
+    }
+  }
+  // Drop onto a document row → reorder before it, into that row's parent.
+  function onDropBefore(targetId: string, targetParentId: string | null) {
+    if (drag) void moveDocument(drag.id, targetParentId, targetId);
+  }
+  // Drop onto a folder header → a doc moves into the folder; a folder reorders
+  // before that folder at the top level (folders never nest).
+  function onDropOnFolder(folderId: string) {
+    if (!drag) return;
+    if (drag.isFolder) void moveDocument(drag.id, null, folderId);
+    else void moveDocument(drag.id, folderId, null);
+  }
+
+  function DocRow({
+    doc,
+    indent,
+    parentId,
+  }: {
+    doc: LoaderData["documents"][number]["children"][number];
+    indent: boolean;
+    parentId: string | null;
+  }) {
+    const dragProps = canEdit
+      ? {
+          draggable: true,
+          onDragStart: (e: React.DragEvent) => {
+            setDrag({ id: doc.id, isFolder: false });
+            e.dataTransfer.effectAllowed = "move";
+            e.dataTransfer.setData("text/plain", doc.id);
+          },
+          onDragEnd: () => setDrag(null),
+          onDragOver: (e: React.DragEvent) => {
+            if (!drag) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+            if (dropTarget !== doc.id) setDropTarget(doc.id);
+          },
+          onDragLeave: () => setDropTarget((t) => (t === doc.id ? null : t)),
+          onDrop: (e: React.DragEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onDropBefore(doc.id, parentId);
+          },
+        }
+      : {};
+    return (
+      <div {...dragProps} className={drag && dropTarget === doc.id ? "border-t-2 border-accent-coral" : ""}>
+        <DocRowInner doc={doc} indent={indent} />
+      </div>
+    );
+  }
+
+  function DocRowInner({ doc, indent }: { doc: LoaderData["documents"][number]["children"][number]; indent: boolean }) {
     return (
       <div className={`py-2.5 flex items-center justify-between gap-3 text-sm ${indent ? "pl-6" : ""}`}>
         <button
@@ -3085,16 +3166,79 @@ function DocumentsBlock({
       {documents.length === 0 ? (
         <p className="text-sm text-muted-foreground italic">No documents yet.</p>
       ) : (
-        <div className="flex flex-col divide-y divide-border">
+        <div
+          onDragOver={
+            canEdit && drag
+              ? (e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                  if (dropTarget !== "root") setDropTarget("root");
+                }
+              : undefined
+          }
+          onDragLeave={
+            canEdit ? () => setDropTarget((t) => (t === "root" ? null : t)) : undefined
+          }
+          onDrop={
+            canEdit && drag
+              ? (e) => {
+                  e.preventDefault();
+                  void moveDocument(drag.id, null, null);
+                }
+              : undefined
+          }
+          className={`flex flex-col divide-y divide-border rounded-md ${
+            dropTarget === "root" ? "ring-2 ring-accent-coral/40" : ""
+          }`}
+        >
           {/* Pinned docs on top — full document rows (share/pin/delete), just
               lifted above the rest. The filled coral pin marks them pinned. */}
           {pinnedDocuments.map((d) => (
-            <DocRow key={d.id} doc={d} indent={false} />
+            <DocRow key={d.id} doc={d} indent={false} parentId={null} />
           ))}
           {documents.map((doc) =>
             doc.kind === "Folder" ? (
-              <div key={doc.id} className="py-2.5 flex flex-col gap-1">
-                <div className="flex items-center justify-between gap-3 text-sm">
+              <div
+                key={doc.id}
+                draggable={canEdit}
+                onDragStart={
+                  canEdit
+                    ? (e) => {
+                        setDrag({ id: doc.id, isFolder: true });
+                        e.dataTransfer.effectAllowed = "move";
+                        e.dataTransfer.setData("text/plain", doc.id);
+                      }
+                    : undefined
+                }
+                onDragEnd={canEdit ? () => setDrag(null) : undefined}
+                className={`py-2.5 flex flex-col gap-1 ${canEdit ? "cursor-grab active:cursor-grabbing" : ""}`}
+              >
+                <div
+                  onDragOver={
+                    canEdit && drag
+                      ? (e) => {
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = "move";
+                          if (dropTarget !== doc.id) setDropTarget(doc.id);
+                        }
+                      : undefined
+                  }
+                  onDragLeave={
+                    canEdit ? () => setDropTarget((t) => (t === doc.id ? null : t)) : undefined
+                  }
+                  onDrop={
+                    canEdit && drag
+                      ? (e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          onDropOnFolder(doc.id);
+                        }
+                      : undefined
+                  }
+                  className={`flex items-center justify-between gap-3 text-sm rounded-md ${
+                    dropTarget === doc.id ? "ring-2 ring-accent-coral/60 bg-accent-coral/5" : ""
+                  }`}
+                >
                   <button
                     type="button"
                     onClick={() => toggleExpanded(doc.id)}
@@ -3151,13 +3295,13 @@ function DocumentsBlock({
                   ) : (
                     <div className="flex flex-col divide-y divide-border">
                       {doc.children.map((child) => (
-                        <DocRow key={child.id} doc={child} indent />
+                        <DocRow key={child.id} doc={child} indent parentId={doc.id} />
                       ))}
                     </div>
                   ))}
               </div>
             ) : (
-              <DocRow key={doc.id} doc={doc} indent={false} />
+              <DocRow key={doc.id} doc={doc} indent={false} parentId={null} />
             ),
           )}
         </div>
