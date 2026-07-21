@@ -48,11 +48,13 @@ import {
   type EditableEpic,
   type EditableSprint,
 } from "../components/EpicSprintManager";
-import type {
-  TaskBoardOptions,
-  TaskCardModel,
-  TaskStatus,
-  Priority,
+import {
+  resolveTermIdForDate,
+  termIdsInRange,
+  type TaskBoardOptions,
+  type TaskCardModel,
+  type TaskStatus,
+  type Priority,
 } from "../lib/task-board";
 import { groupFilesByEpic } from "../lib/file-groups";
 
@@ -237,6 +239,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           status: true,
           startsAt: true,
           endsAt: true,
+          targetTermId: true,
           descriptionDocId: true,
           stories: {
             orderBy: { position: "asc" },
@@ -463,6 +466,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     status: e.status as EditableEpic["status"],
     startsAt: e.startsAt ? e.startsAt.toISOString() : null,
     endsAt: e.endsAt ? e.endsAt.toISOString() : null,
+    targetTermId: e.targetTermId,
     descriptionDocId: e.descriptionDocId,
     stories: e.stories.map((s) => ({
       id: s.id,
@@ -509,40 +513,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     createdBy: { id: t.createdBy.id, name: fullName(t.createdBy) },
     createdAt: t.createdAt.toISOString(),
   }));
-
-  // Board option lists for the TaskModal: members assignable on this project
-  // (deduped across terms — same person across multiple terms shows once) and
-  // every active domain.
-  const memberMap = new Map<string, string>();
-  for (const a of project.assignments) {
-    const id = a.user.id;
-    if (!memberMap.has(id)) {
-      memberMap.set(id, fullName(a.user));
-    }
-  }
-  const sprintFilterOrder = { Active: 0, Planned: 1, Closed: 2 } as const;
-  const boardOptions: TaskBoardOptions = {
-    members: [...memberMap.entries()]
-      .map(([id, name]) => ({ id, name }))
-      .sort((a, b) => a.name.localeCompare(b.name)),
-    domains: (
-      await prisma.domain.findMany({
-        where: { active: true },
-        orderBy: { displayName: "asc" },
-        select: { id: true, displayName: true },
-      })
-    ).map((d) => ({ id: d.id, name: d.displayName })),
-    repoUrls: project.repoUrls,
-    sprints: [...sprints]
-      .sort(
-        (a, b) =>
-          sprintFilterOrder[a.status] - sprintFilterOrder[b.status] ||
-          a.startsAt.localeCompare(b.startsAt),
-      )
-      .map((s) => ({ id: s.id, name: s.name, status: s.status, epicId: s.epicId })),
-    epics: project.epics.map((e) => ({ id: e.id, title: e.title })),
-    projectFiles: files.map((f) => ({ id: f.id, title: f.title })),
-  };
 
   // Per-epic task progress for the epic list rows + timeline tooltips.
   // Cancelled tasks don't count toward either side.
@@ -656,9 +626,17 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       select: { domainId: true },
       distinct: ["domainId"],
     }),
+    // Ascending (chronological) for the sprint→term resolvers below; the
+    // display option lists re-sort to newest-first where needed.
     prisma.term.findMany({
-      orderBy: { sortKey: "desc" },
-      select: { id: true, code: true },
+      orderBy: { sortKey: "asc" },
+      select: {
+        id: true,
+        code: true,
+        sortKey: true,
+        startDate: true,
+        endDate: true,
+      },
     }),
   ]);
   const declaredDomains = project.domains.map((d) => ({
@@ -684,6 +662,85 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const current = await currentTerm();
   const isActiveThisTerm =
     current !== null && plannedTerms.some((t) => t.id === current.id);
+
+  // ─── Board term derivation ───────────────────────────────────────────────
+  // Term-ness on the board is derived, not stored: a sprint's term is the one
+  // its start date falls in (roll-forward through break weeks, mirroring
+  // currentTerm()), and an epic's term footprint is the union of its sprints'
+  // terms, the terms its effective span overlaps, and its explicit target
+  // term. Term.startDate/endDate stays the single source of truth, so a sprint
+  // can never drift out of sync with "its" term. `allTerms` is ascending here,
+  // which resolveTermIdForDate/termIdsInRange rely on.
+  const sprintTermId = new Map<string, string | null>();
+  for (const s of project.sprints) {
+    sprintTermId.set(s.id, resolveTermIdForDate(allTerms, s.startsAt));
+  }
+  // Effective epic span (explicit dates expanded by sprint union) is already
+  // computed as ISO strings on `epics`; index it for the range overlap.
+  const epicSpanById = new Map(
+    epics.map((e) => [e.id, { startsAt: e.startsAt, endsAt: e.endsAt }]),
+  );
+  const boardEpics = project.epics.map((e) => {
+    const ids = new Set<string>();
+    for (const s of project.sprints) {
+      if (s.epicId !== e.id) continue;
+      const tid = sprintTermId.get(s.id);
+      if (tid) ids.add(tid);
+    }
+    const span = epicSpanById.get(e.id);
+    const start = span?.startsAt ? new Date(span.startsAt) : null;
+    const end = span?.endsAt ? new Date(span.endsAt) : null;
+    for (const tid of termIdsInRange(allTerms, start, end)) ids.add(tid);
+    if (e.targetTermId) ids.add(e.targetTermId);
+    return { id: e.id, title: e.title, termIds: [...ids] };
+  });
+  // Term filter options: the project's planned terms plus any term a sprint
+  // actually resolves to (a sprint may land in a term not in the planned set).
+  const boardTermIds = new Set<string>();
+  for (const t of plannedTerms) boardTermIds.add(t.id);
+  for (const tid of sprintTermId.values()) if (tid) boardTermIds.add(tid);
+  const boardTerms = allTerms
+    .filter((t) => boardTermIds.has(t.id))
+    .sort((a, b) => b.sortKey - a.sortKey)
+    .map((t) => ({ id: t.id, code: t.code }));
+  const boardCurrentTermId =
+    current && boardTermIds.has(current.id) ? current.id : null;
+
+  // Board option lists for the TaskModal: members assignable on this project
+  // (deduped across terms — same person across multiple terms shows once) and
+  // every active domain (reuses the `allDomains` fetch above).
+  const memberMap = new Map<string, string>();
+  for (const a of project.assignments) {
+    const id = a.user.id;
+    if (!memberMap.has(id)) {
+      memberMap.set(id, fullName(a.user));
+    }
+  }
+  const sprintFilterOrder = { Active: 0, Planned: 1, Closed: 2 } as const;
+  const boardOptions: TaskBoardOptions = {
+    members: [...memberMap.entries()]
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+    domains: allDomains.map((d) => ({ id: d.id, name: d.displayName })),
+    repoUrls: project.repoUrls,
+    sprints: [...sprints]
+      .sort(
+        (a, b) =>
+          sprintFilterOrder[a.status] - sprintFilterOrder[b.status] ||
+          a.startsAt.localeCompare(b.startsAt),
+      )
+      .map((s) => ({
+        id: s.id,
+        name: s.name,
+        status: s.status,
+        epicId: s.epicId,
+        termId: sprintTermId.get(s.id) ?? null,
+      })),
+    epics: boardEpics,
+    projectFiles: files.map((f) => ({ id: f.id, title: f.title })),
+    terms: boardTerms,
+    currentTermId: boardCurrentTermId,
+  };
 
   // Fetch all scope rows for this project (small N — at most |declared| ×
   // termCount, both single-digit in practice). Keyed by domainId+termId so
@@ -860,7 +917,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       code: t.code,
       sortKey: t.sortKey,
     })),
-    allTermOptions: allTerms,
+    allTermOptions: [...allTerms]
+      .sort((a, b) => b.sortKey - a.sortKey)
+      .map((t) => ({ id: t.id, code: t.code })),
     domainScopeGrid,
     teams,
     termStatuses,
@@ -1363,6 +1422,7 @@ export default function ProjectDetail() {
           epics={epics}
           editableEpics={editableEpics}
           sprints={sprints}
+          terms={plannedTerms}
           taskCountsByEpic={taskCountsByEpic}
           canEdit={canEdit}
           collabToken={collabToken}
@@ -3574,6 +3634,7 @@ function PlanningTab({
   epics,
   editableEpics,
   sprints,
+  terms,
   taskCountsByEpic,
   canEdit,
   collabToken,
@@ -3583,6 +3644,7 @@ function PlanningTab({
   epics: TimelineEpic[];
   editableEpics: EditableEpic[];
   sprints: EditableSprint[];
+  terms: { id: string; code: string }[];
   taskCountsByEpic: Record<string, { done: number; total: number }>;
   canEdit: boolean;
   collabToken: string | null;
@@ -3608,6 +3670,7 @@ function PlanningTab({
         projectId={projectId}
         epics={editableEpics}
         sprints={sprints}
+        terms={terms}
         taskCounts={taskCountsByEpic}
         canManage={canEdit}
         collabToken={collabToken}

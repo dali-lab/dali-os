@@ -35,12 +35,19 @@ export type EditableEpic = {
   // these over sprint-derived dates.
   startsAt: string | null;
   endsAt: string | null;
+  // Optional target term for cross-term epics — a planning signal ("we intend
+  // to land this in 26F"), not a hard scope. Null when unset. The board's term
+  // filter treats it as one of the terms an epic counts toward.
+  targetTermId: string | null;
   // Collab-doc reference for the epic's rich description (Notion-style),
   // same pattern as the project Overview/PRD pages. Null when none attached.
   descriptionDocId: string | null;
   // User stories under this epic, ordered by position.
   stories: EditableStory[];
 };
+
+// A term the project runs, for the epic target-term picker. Newest first.
+export type EpicTermOption = { id: string; code: string };
 
 export type EditableSprint = {
   id: string;
@@ -59,6 +66,9 @@ type Props = {
   projectId: string;
   epics: EditableEpic[];
   sprints: EditableSprint[];
+  // The project's planned terms (newest first) — options for an epic's
+  // optional target term. Empty hides the picker.
+  terms: EpicTermOption[];
   // Per-epic task progress keyed by epic id (Cancelled tasks excluded from
   // both numbers). Epics with no counted tasks may simply be absent.
   taskCounts: Record<string, { done: number; total: number }>;
@@ -109,6 +119,7 @@ export function EpicSprintManager({
   projectId,
   epics,
   sprints,
+  terms,
   taskCounts,
   canManage,
   collabToken,
@@ -284,6 +295,7 @@ export function EpicSprintManager({
         </p>
         <EpicForm
           busy={busy}
+          terms={terms}
           onCancel={() => setNewEpicOpen(false)}
           onSubmit={(values) =>
             run(async () => {
@@ -315,6 +327,7 @@ export function EpicSprintManager({
             projectId={projectId}
             epic={activeEpic}
             sprints={sprints.filter((s) => s.epicId === activeEpic.id)}
+            terms={terms}
             canManage={canManage}
             busy={busy}
             startInEdit={openInEdit}
@@ -748,6 +761,7 @@ function EpicDetail({
   projectId,
   epic,
   sprints,
+  terms,
   canManage,
   busy,
   startInEdit,
@@ -763,6 +777,7 @@ function EpicDetail({
   projectId: string;
   epic: EditableEpic;
   sprints: EditableSprint[];
+  terms: EpicTermOption[];
   canManage: boolean;
   busy: boolean;
   // When true the detail panel opens with the epic edit form already
@@ -954,6 +969,7 @@ function EpicDetail({
           <EpicForm
             busy={busy}
             initial={epic}
+            terms={terms}
             title={draftTitle}
             hideTitle
             onCancel={() => {
@@ -971,6 +987,15 @@ function EpicDetail({
           <div className="flex items-center justify-between text-xs">
             <div className="flex flex-wrap items-center gap-3 text-muted-foreground">
               <span>Status: <span className="text-foreground">{epic.status}</span></span>
+              {epic.targetTermId && (
+                <span>
+                  Target term:{" "}
+                  <span className="text-foreground">
+                    {terms.find((t) => t.id === epic.targetTermId)?.code ??
+                      "—"}
+                  </span>
+                </span>
+              )}
               {epic.startsAt && (
                 <span>
                   Start:{" "}
@@ -1258,6 +1283,7 @@ function EpicDetail({
 function EpicForm({
   initial,
   busy,
+  terms,
   onSubmit,
   onCancel,
   hideTitle = false,
@@ -1265,9 +1291,11 @@ function EpicForm({
 }: {
   initial?: EditableEpic;
   busy: boolean;
+  terms: EpicTermOption[];
   onSubmit: (values: {
     title: string;
     status: string;
+    targetTermId: string | null;
     startsAt: string | null;
     endsAt: string | null;
   }) => void;
@@ -1279,6 +1307,7 @@ function EpicForm({
   const [titleInternal, setTitleInternal] = useState(initial?.title ?? "");
   const title = hideTitle ? (titleProp ?? "") : titleInternal;
   const [status, setStatus] = useState(initial?.status ?? "Open");
+  const [targetTermId, setTargetTermId] = useState(initial?.targetTermId ?? "");
   const [startsAt, setStartsAt] = useState(
     initial?.startsAt ? dateInputValue(initial.startsAt) : "",
   );
@@ -1293,6 +1322,8 @@ function EpicForm({
         onSubmit({
           title,
           status,
+          // Empty → null clears the target term.
+          targetTermId: targetTermId || null,
           // Dates are optional for epics; empty → null clears the field.
           startsAt: startsAt ? new Date(startsAt).toISOString() : null,
           endsAt: endsAt ? new Date(endsAt).toISOString() : null,
@@ -1326,6 +1357,25 @@ function EpicForm({
             ))}
           </select>
         </label>
+        {/* Optional target term — a planning signal for cross-term epics, not
+            a hard scope. Only offered once the project has terms. */}
+        {terms.length > 0 && (
+          <label className="flex flex-col gap-1 text-xs">
+            <span className="text-muted-foreground">Target term (optional)</span>
+            <select
+              value={targetTermId}
+              onChange={(e) => setTargetTermId(e.target.value)}
+              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
+            >
+              <option value="">No target term</option>
+              {terms.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.code}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         {/* Start + End stay paired on one line even when the row wraps. */}
         <div className="flex items-end gap-2">
           <label className="flex flex-col gap-1 text-xs">
