@@ -93,6 +93,9 @@ export async function runMeetingReminders({ now, settings }: JobContext): Promis
               body: `Starts ${formatApplicationDateTime(occ.start)}.`,
               link: `/calendar?meeting=${meeting.id}`,
               scheduledMeetingId: meeting.id,
+              // Stamp the occurrence start so past reminders drop off Tasks
+              // once the meeting has begun (see listOpenTasks).
+              dueAt: occ.start,
             },
             recipients: [{ userId }],
           });
