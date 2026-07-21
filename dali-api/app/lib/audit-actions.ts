@@ -78,6 +78,7 @@ export const AUDIT_ACTIONS = [
   "partner.application.submitted",
   "partner.magic_link.requested",
   "page.partner-visibility",
+  "page.pin",
   "education.offering.create",
   "education.offering.update",
   "education.offering.status",

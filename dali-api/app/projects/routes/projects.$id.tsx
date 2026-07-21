@@ -9,6 +9,7 @@ import {
   useRevalidator,
   useSearchParams,
   useSubmit,
+  type ShouldRevalidateFunctionArgs,
 } from "react-router";
 import { CalendarDays, CalendarX, ChartNoAxesGantt, Check, Handshake, History, List, Pencil, Pin, X, Settings, Folder, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink } from "lucide-react";
 import { Modal, ModalHeader } from "~/components/Modal";
@@ -39,7 +40,6 @@ import { getPresenceUser } from "~/lib/presence-user";
 import { TaskBoard } from "../components/TaskBoard";
 import { ProjectMentorshipTab } from "~/mentorship/components/ProjectMentorshipTab";
 import {
-  EpicsTimeline,
   type TimelineEpic,
   type EpicStatus,
 } from "../components/EpicsTimeline";
@@ -329,6 +329,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       parentPageId: true,
       systemKey: true,
       partnerVisible: true,
+      pinnedAt: true,
     },
   });
   const childrenByParent = new Map<string, typeof pageRows>();
@@ -344,24 +345,26 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     kind: d.kind,
     isSystem: d.systemKey !== null,
     partnerVisible: d.partnerVisible,
+    pinned: d.pinnedAt !== null,
   });
+  // Top-level docs for the main list. Pinned ones are lifted into
+  // `pinnedDocuments` (rendered above), so they don't appear twice.
   const documents = pageRows
-    .filter((p) => p.parentPageId === null)
+    .filter((p) => p.parentPageId === null && p.pinnedAt === null)
     .map((p) => ({
       ...toDocumentDto(p),
       children: (childrenByParent.get(p.id) ?? []).map(toDocumentDto),
     }));
 
-  // Pinned Overview/PRD docs — rendered at the top of the Documents block.
-  // Only shown while the referenced page still exists non-archived in this
-  // project's workspace (pageRows is exactly that set).
-  const workspacePageIds = new Set(pageRows.map((p) => p.id));
-  const pinnedDocuments = [
-    { id: project.overviewPageId, label: "Overview" },
-    { id: project.prdPageId, label: "PRD" },
-  ].flatMap((d) =>
-    d.id && workspacePageIds.has(d.id) ? [{ id: d.id, label: d.label }] : [],
-  );
+  // Pinned docs — any page a teammate pinned, most-recent pin first, rendered
+  // at the top of the Documents block (and lifted out of the list above).
+  const pinnedDocuments = pageRows
+    .filter((p) => p.pinnedAt !== null && p.parentPageId === null)
+    .sort((a, b) => (b.pinnedAt?.getTime() ?? 0) - (a.pinnedAt?.getTime() ?? 0))
+    .map((p) => ({
+      ...toDocumentDto(p),
+      children: (childrenByParent.get(p.id) ?? []).map(toDocumentDto),
+    }));
 
   // Project files — standalone uploads with their current version.
   // Tags are edited in the file/document editor, not on this list.
@@ -536,7 +539,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           sprintFilterOrder[a.status] - sprintFilterOrder[b.status] ||
           a.startsAt.localeCompare(b.startsAt),
       )
-      .map((s) => ({ id: s.id, name: s.name, status: s.status })),
+      .map((s) => ({ id: s.id, name: s.name, status: s.status, epicId: s.epicId })),
     epics: project.epics.map((e) => ({ id: e.id, title: e.title })),
     projectFiles: files.map((f) => ({ id: f.id, title: f.title })),
   };
@@ -888,6 +891,35 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     presencePhotoUrl: presenceUser?.photoUrl ?? null,
     presenceSubtitle: presenceUser?.subtitle ?? null,
   };
+}
+
+// The loader doesn't depend on search params, so a pure search-param change
+// (opening/closing the task modal via ?task=, switching the ?epic= filter or
+// ?tab=) shouldn't re-run it. Skipping that revalidation avoids a needless
+// DB round-trip and the re-render that otherwise bounces the board's scroll
+// position to the top when you open a task.
+export function shouldRevalidate({
+  currentUrl,
+  nextUrl,
+  formMethod,
+  defaultShouldRevalidate,
+}: ShouldRevalidateFunctionArgs) {
+  // Skip revalidation only for a pure search-param *navigation* — opening/
+  // closing the task modal (?task=), switching the board filter (?epic=/
+  // ?sprint=) or the planning view (?view=). Those don't change loader data,
+  // and re-running the loader would bounce the board's scroll to the top.
+  //
+  // Crucially, this must NOT swallow an explicit revalidator.revalidate()
+  // (same URL, search unchanged), which the page relies on to refresh after a
+  // mutation — pinning a doc, partner-sharing, file uploads, epic/task edits.
+  if (
+    !formMethod &&
+    currentUrl.pathname === nextUrl.pathname &&
+    currentUrl.search !== nextUrl.search
+  ) {
+    return false;
+  }
+  return defaultShouldRevalidate;
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -2836,6 +2868,30 @@ function DocumentsBlock({
     }
   }
 
+  // Pin/unpin a doc to the top of the Documents block. Same persist-then-
+  // revalidate shape as sharing.
+  async function togglePin(id: string, next: boolean) {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/pages/${id}/pin`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pinned: next }),
+      });
+      if (!res.ok) {
+        const b = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(b.error ?? "Failed to update pin");
+      }
+      revalidator.revalidate();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   // Add document: create an "Untitled" page immediately, then open it as a
   // split-screen tab beside the project. The title is renamed inline in the
   // editor (auto-saves), so there's no separate title prompt first. When
@@ -2948,6 +3004,26 @@ function DocumentsBlock({
               </button>
             </Tooltip>
           )}
+          {/* Pin is top-level only — nested docs (e.g. under Partner/Team
+              meeting-notes folders) can't be pinned to the top. */}
+          {canEdit && !indent && (
+            <Tooltip label={doc.pinned ? "Pinned — click to unpin" : "Pin to top"}>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void togglePin(doc.id, !doc.pinned)}
+                aria-label={doc.pinned ? "Unpin document" : "Pin document"}
+                aria-pressed={doc.pinned}
+                className={`flex items-center disabled:opacity-60 ${
+                  doc.pinned
+                    ? "text-accent-coral"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Pin className={`w-3.5 h-3.5 ${doc.pinned ? "fill-current" : ""}`} />
+              </button>
+            </Tooltip>
+          )}
           {canEdit && (
             <Tooltip label="Delete document">
               <button
@@ -3010,22 +3086,10 @@ function DocumentsBlock({
         <p className="text-sm text-muted-foreground italic">No documents yet.</p>
       ) : (
         <div className="flex flex-col divide-y divide-border">
-          {/* Pinned Overview/PRD pages on top — same open-as-tab flow as the
-              rows below, marked like the DEFAULT-folder chip. */}
+          {/* Pinned docs on top — full document rows (share/pin/delete), just
+              lifted above the rest. The filled coral pin marks them pinned. */}
           {pinnedDocuments.map((d) => (
-            <div key={d.id} className="py-2.5 flex items-center gap-1.5 text-sm">
-              <Pin className="w-3.5 h-3.5 flex-shrink-0 text-muted-foreground" />
-              <button
-                type="button"
-                onClick={() => openDocumentTab(d.id, d.label)}
-                className="truncate text-left font-medium text-foreground hover:text-accent-coral"
-              >
-                {d.label}
-              </button>
-              <span className="text-[10px] uppercase tracking-wide text-muted-foreground/70 flex-shrink-0">
-                Pinned
-              </span>
-            </div>
+            <DocRow key={d.id} doc={d} indent={false} />
           ))}
           {documents.map((doc) =>
             doc.kind === "Folder" ? (
@@ -3381,12 +3445,13 @@ function PlanningTab({
   userName: string;
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
-  const timeline = searchParams.get("view") === "timeline";
+  // Timeline is the default view; the list view is opt-in via ?view=list.
+  const timeline = searchParams.get("view") !== "list";
   const setTimeline = (next: boolean) => {
     setSearchParams(
       (prev) => {
-        if (next) prev.set("view", "timeline");
-        else prev.delete("view");
+        if (next) prev.delete("view");
+        else prev.set("view", "list");
         return prev;
       },
       { replace: true, preventScrollReset: true },
@@ -3395,42 +3460,39 @@ function PlanningTab({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex justify-end">
-        <div
-          className="inline-flex items-center border border-border rounded-md overflow-hidden"
-          role="group"
-          aria-label="Planning view"
-        >
-          <PlanningToggleButton
-            active={!timeline}
-            onClick={() => setTimeline(false)}
-            label="List view"
+      <EpicSprintManager
+        projectId={projectId}
+        epics={editableEpics}
+        sprints={sprints}
+        taskCounts={taskCountsByEpic}
+        canManage={canEdit}
+        collabToken={collabToken}
+        userName={userName}
+        view={timeline ? "timeline" : "list"}
+        timelineEpics={epics}
+        viewToggle={
+          <div
+            className="inline-flex items-center border border-border rounded-md overflow-hidden"
+            role="group"
+            aria-label="Planning view"
           >
-            <List className="w-3.5 h-3.5" />
-          </PlanningToggleButton>
-          <PlanningToggleButton
-            active={timeline}
-            onClick={() => setTimeline(true)}
-            label="Timeline view"
-          >
-            <ChartNoAxesGantt className="w-3.5 h-3.5" />
-          </PlanningToggleButton>
-        </div>
-      </div>
-
-      {timeline ? (
-        <EpicsTimeline epics={epics} taskCounts={taskCountsByEpic} />
-      ) : (
-        <EpicSprintManager
-          projectId={projectId}
-          epics={editableEpics}
-          sprints={sprints}
-          taskCounts={taskCountsByEpic}
-          canManage={canEdit}
-          collabToken={collabToken}
-          userName={userName}
-        />
-      )}
+            <PlanningToggleButton
+              active={!timeline}
+              onClick={() => setTimeline(false)}
+              label="List view"
+            >
+              <List className="w-3.5 h-3.5" />
+            </PlanningToggleButton>
+            <PlanningToggleButton
+              active={timeline}
+              onClick={() => setTimeline(true)}
+              label="Timeline view"
+            >
+              <ChartNoAxesGantt className="w-3.5 h-3.5" />
+            </PlanningToggleButton>
+          </div>
+        }
+      />
     </div>
   );
 }

@@ -3568,13 +3568,24 @@ function CreateScheduledMeetingForm({
   const [organizerCalendarLinkId, setOrganizerCalendarLinkId] = useState<string>(
     googleLinks[0]?.id ?? "",
   );
+  // Meeting notes are opt-in — type/label/project only appear when this is on.
+  const [createNote, setCreateNote] = useState(false);
   const [meetingType, setMeetingType] = useState<"Team" | "Partner" | "Other">("Other");
   const [meetingTypeLabel, setMeetingTypeLabel] = useState("");
   const [projectId, setProjectId] = useState("");
+  // Self check-in is independent of the meeting note (QR lives on the note when
+  // one exists, otherwise on /calendar/check-in/:id).
   const [selfCheckIn, setSelfCheckIn] = useState(false);
   const [status, setStatus] = useState<
     | null
-    | { ok: true; count: number; gcalError?: string | null; notePageId?: string | null }
+    | {
+        ok: true;
+        count: number;
+        gcalError?: string | null;
+        notePageId?: string | null;
+        meetingId?: string | null;
+        selfCheckIn?: boolean;
+      }
     | { ok: false; error: string }
   >(null);
   const [submitting, setSubmitting] = useState(false);
@@ -3586,11 +3597,11 @@ function CreateScheduledMeetingForm({
   // system-managed project group (see GroupOption.projectId) — still fully
   // overridable by the sender.
   useEffect(() => {
-    if (selectedGroupIds.length !== 1) return;
+    if (!createNote || selectedGroupIds.length !== 1) return;
     const g = groupsById.get(selectedGroupIds[0]!);
     if (g?.projectId && !projectId) setProjectId(g.projectId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedGroupIds]);
+  }, [selectedGroupIds, createNote]);
 
   // Both pickers filled → derive duration; otherwise fall back to 30 min so
   // "schedule later" (no start/end yet) still produces a valid payload.
@@ -3598,7 +3609,7 @@ function CreateScheduledMeetingForm({
   const startEndValid =
     !startLocal || !endLocal || new Date(endLocal).getTime() > new Date(startLocal).getTime();
   const meetingTypeValid =
-    meetingType !== "Other" || meetingTypeLabel.trim().length > 0;
+    !createNote || meetingType !== "Other" || meetingTypeLabel.trim().length > 0;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -3622,9 +3633,11 @@ function CreateScheduledMeetingForm({
       if (organizerCalendarLinkId) {
         payload.organizerCalendarLinkId = organizerCalendarLinkId;
       }
-      payload.meetingType = meetingType;
-      if (meetingType === "Other") payload.meetingTypeLabel = meetingTypeLabel.trim();
-      if (projectId) payload.projectId = projectId;
+      if (createNote) {
+        payload.meetingType = meetingType;
+        if (meetingType === "Other") payload.meetingTypeLabel = meetingTypeLabel.trim();
+        if (projectId) payload.projectId = projectId;
+      }
       if (canSetSelfCheckIn) {
         payload.attendanceMode = selfCheckIn ? "SelfCheckIn" : "Roster";
       }
@@ -3656,6 +3669,8 @@ function CreateScheduledMeetingForm({
           count: json.notifiedCount ?? 0,
           gcalError: json.gcalError ?? null,
           notePageId: json.notePageId ?? null,
+          meetingId: json.meeting?.id ?? null,
+          selfCheckIn,
         });
         setTitle("");
         setRepeats("none");
@@ -3663,6 +3678,7 @@ function CreateScheduledMeetingForm({
         onEndLocalChange("");
         onChangeSelectedUserIds([]);
         onChangeSelectedGroupIds([]);
+        setCreateNote(false);
         setMeetingType("Other");
         setMeetingTypeLabel("");
         setProjectId("");
@@ -3678,201 +3694,239 @@ function CreateScheduledMeetingForm({
   const canSubmit =
     title.trim().length > 0 && duration > 0 && startEndValid && meetingTypeValid && !submitting;
 
+  const fieldClass =
+    "w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/40";
+  const labelClass = "block text-sm font-medium text-foreground mb-1";
+
   return (
     <section className="bg-card border border-border shadow-brand-1 rounded-lg p-4">
-      <h2 className="font-heading font-semibold text-foreground mb-3">Create Meeting</h2>
-      <form onSubmit={submit} className="space-y-3">
-        <div>
-          <label htmlFor="meeting-title" className="block text-sm font-medium text-foreground mb-1">
-            Title
-          </label>
-          <input
-            id="meeting-title"
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            required
-            className="w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground"
-          />
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <h2 className="font-heading font-semibold text-foreground mb-4">Create Meeting</h2>
+      <form onSubmit={submit} className="space-y-5">
+        {/* Essentials */}
+        <div className="space-y-3">
           <div>
-            <label htmlFor="meeting-start" className="block text-sm font-medium text-foreground mb-1">
-              Starts <span className="text-muted-foreground font-normal">(optional)</span>
+            <label htmlFor="meeting-title" className={labelClass}>
+              Title
             </label>
             <input
-              id="meeting-start"
-              type="datetime-local"
-              value={startLocal}
-              onChange={(e) => {
-                const next = e.target.value;
-                onStartLocalChange(next);
-                // If end is missing or now precedes start, push it to start + current duration.
-                if (next && (!endLocal || new Date(endLocal).getTime() <= new Date(next).getTime())) {
-                  const d = new Date(next);
-                  d.setMinutes(d.getMinutes() + (duration > 0 ? duration : 30));
-                  onEndLocalChange(toDatetimeLocal(d));
-                }
-              }}
-              className="w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/40"
+              id="meeting-title"
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              required
+              className={fieldClass}
             />
           </div>
-          <div>
-            <label htmlFor="meeting-end" className="block text-sm font-medium text-foreground mb-1">
-              Ends
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="meeting-start" className={labelClass}>
+                Starts <span className="text-muted-foreground font-normal">(optional)</span>
+              </label>
+              <input
+                id="meeting-start"
+                type="datetime-local"
+                value={startLocal}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  onStartLocalChange(next);
+                  if (next && (!endLocal || new Date(endLocal).getTime() <= new Date(next).getTime())) {
+                    const d = new Date(next);
+                    d.setMinutes(d.getMinutes() + (duration > 0 ? duration : 30));
+                    onEndLocalChange(toDatetimeLocal(d));
+                  }
+                }}
+                className={fieldClass}
+              />
+            </div>
+            <div>
+              <label htmlFor="meeting-end" className={labelClass}>
+                Ends
+              </label>
+              <input
+                id="meeting-end"
+                type="datetime-local"
+                value={endLocal}
+                min={startLocal || undefined}
+                onChange={(e) => onEndLocalChange(e.target.value)}
+                className={`${fieldClass} ${startEndValid ? "" : "border-red-500"}`}
+              />
+              {!startEndValid && (
+                <p className="mt-1 text-xs text-red-600">End must be after start.</p>
+              )}
+            </div>
+          </div>
+          <ParticipantPicker
+            users={users}
+            groups={groups}
+            selectedUserIds={selectedUserIds}
+            selectedGroupIds={selectedGroupIds}
+            onChangeUsers={onChangeSelectedUserIds}
+            onChangeGroups={onChangeSelectedGroupIds}
+            usersById={usersById}
+            groupsById={groupsById}
+            resolvedCount={resolvedParticipantIds.length}
+          />
+        </div>
+
+        {/* Secondary scheduling details — quieter, less visual weight */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 border-t border-border">
+          <div className="pt-3">
+            <label htmlFor="meeting-recurrence" className={labelClass}>
+              Repeats
             </label>
-            <input
-              id="meeting-end"
-              type="datetime-local"
-              value={endLocal}
-              min={startLocal || undefined}
-              onChange={(e) => onEndLocalChange(e.target.value)}
-              className={`w-full px-3 py-2 text-sm border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/40 ${
-                startEndValid ? "border-border" : "border-red-500"
-              }`}
-            />
-            {!startEndValid && (
-              <p className="mt-1 text-xs text-red-600">End must be after start.</p>
+            <select
+              id="meeting-recurrence"
+              value={repeats}
+              onChange={(e) => setRepeats(e.target.value as Repeats)}
+              className={fieldClass}
+            >
+              {REPEATS_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="pt-3">
+            <label htmlFor="organizer-calendar" className={labelClass}>
+              Send invite from
+            </label>
+            {googleLinks.length === 0 ? (
+              <p className="text-xs text-muted-foreground pt-2">
+                No Google calendar linked. Link one in My Availability to send Gmail invites.
+              </p>
+            ) : (
+              <select
+                id="organizer-calendar"
+                value={organizerCalendarLinkId}
+                onChange={(e) => setOrganizerCalendarLinkId(e.target.value)}
+                className={fieldClass}
+              >
+                <option value="">No invite (in-app notification only)</option>
+                {googleLinks.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.displayName ? `${l.displayName} — ${l.externalEmail}` : l.externalEmail}
+                  </option>
+                ))}
+              </select>
             )}
           </div>
         </div>
-        <div>
-          <label htmlFor="meeting-recurrence" className="block text-sm font-medium text-foreground mb-1">
-            Repeats
-          </label>
-          <select
-            id="meeting-recurrence"
-            value={repeats}
-            onChange={(e) => setRepeats(e.target.value as Repeats)}
-            className="w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground"
-          >
-            {REPEATS_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </div>
 
-        <div>
-          <label htmlFor="organizer-calendar" className="block text-sm font-medium text-foreground mb-1">
-            Send invite from
-          </label>
-          {googleLinks.length === 0 ? (
-            <p className="text-xs text-muted-foreground">
-              No Google calendar linked. Link one in the My Availability tab to send Gmail invites.
-            </p>
-          ) : (
-            <select
-              id="organizer-calendar"
-              value={organizerCalendarLinkId}
-              onChange={(e) => setOrganizerCalendarLinkId(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground"
-            >
-              <option value="">No invite (in-app notification only)</option>
-              {googleLinks.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.displayName ? `${l.displayName} — ${l.externalEmail}` : l.externalEmail}
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
+        {/* Optional add-ons */}
+        <div className="space-y-3 pt-1 border-t border-border">
+          <p className="pt-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Optional
+          </p>
 
-        <ParticipantPicker
-          users={users}
-          groups={groups}
-          selectedUserIds={selectedUserIds}
-          selectedGroupIds={selectedGroupIds}
-          onChangeUsers={onChangeSelectedUserIds}
-          onChangeGroups={onChangeSelectedGroupIds}
-          usersById={usersById}
-          groupsById={groupsById}
-          resolvedCount={resolvedParticipantIds.length}
-        />
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label htmlFor="meeting-type" className="block text-sm font-medium text-foreground mb-1">
-              Meeting type
-            </label>
-            <select
-              id="meeting-type"
-              value={meetingType}
-              onChange={(e) => setMeetingType(e.target.value as typeof meetingType)}
-              className="w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground"
-            >
-              <option value="Team">Team meeting</option>
-              <option value="Partner">Partner meeting</option>
-              <option value="Other">Other</option>
-            </select>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Creates a meeting note with an attendance checklist
-              {canSetSelfCheckIn && selfCheckIn
-                ? " and a self check-in QR code."
-                : projectId
-                  ? " under the project's documents."
-                  : " in Lab documents."}{" "}
-              Invites go only to people and groups in Participants.
-            </p>
-          </div>
-          {meetingType === "Other" && (
-            <div>
-              <label
-                htmlFor="meeting-type-label"
-                className="block text-sm font-medium text-foreground mb-1"
-              >
-                Meeting type name
-              </label>
+          <div className="rounded-md border border-border bg-muted/20 p-3 space-y-3">
+            <label className="flex items-start gap-2.5 cursor-pointer">
               <input
-                id="meeting-type-label"
-                type="text"
-                value={meetingTypeLabel}
-                onChange={(e) => setMeetingTypeLabel(e.target.value)}
-                placeholder="e.g. Kickoff"
-                required
-                className="w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground"
+                type="checkbox"
+                checked={createNote}
+                onChange={(e) => setCreateNote(e.target.checked)}
+                className="mt-0.5 h-3.5 w-3.5 rounded border-border"
               />
+              <span>
+                <span className="block text-sm font-medium text-foreground">
+                  Create meeting note
+                </span>
+                <span className="block text-xs text-muted-foreground mt-0.5">
+                  Adds a note with an attendance checklist
+                  {projectId ? " under the project's documents" : " in Lab documents"}. Invites
+                  still go only to people and groups in Participants.
+                </span>
+              </span>
+            </label>
+
+            {createNote && (
+              <div className="pl-6 space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="meeting-type" className={labelClass}>
+                      Meeting type
+                    </label>
+                    <select
+                      id="meeting-type"
+                      value={meetingType}
+                      onChange={(e) => setMeetingType(e.target.value as typeof meetingType)}
+                      className={fieldClass}
+                    >
+                      <option value="Team">Team meeting</option>
+                      <option value="Partner">Partner meeting</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+                  {meetingType === "Other" && (
+                    <div>
+                      <label htmlFor="meeting-type-label" className={labelClass}>
+                        Meeting type name
+                      </label>
+                      <input
+                        id="meeting-type-label"
+                        type="text"
+                        value={meetingTypeLabel}
+                        onChange={(e) => setMeetingTypeLabel(e.target.value)}
+                        placeholder="e.g. Partner hub meeting"
+                        required
+                        className={fieldClass}
+                      />
+                    </div>
+                  )}
+                  <div className={meetingType === "Other" ? "sm:col-span-2" : ""}>
+                    <label htmlFor="meeting-project" className={labelClass}>
+                      Project <span className="text-muted-foreground font-normal">(optional)</span>
+                    </label>
+                    <select
+                      id="meeting-project"
+                      value={projectId}
+                      onChange={(e) => setProjectId(e.target.value)}
+                      className={fieldClass}
+                    >
+                      <option value="">No project — Lab documents</option>
+                      {myProjects.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {canSetSelfCheckIn && (
+            <div className="rounded-md border border-border bg-muted/20 p-3">
+              <label className="flex items-start gap-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={selfCheckIn}
+                  onChange={(e) => setSelfCheckIn(e.target.checked)}
+                  className="mt-0.5 h-3.5 w-3.5 rounded border-border"
+                />
+                <span>
+                  <span className="block text-sm font-medium text-foreground">
+                    Self check-in (QR)
+                  </span>
+                  <span className="block text-xs text-muted-foreground mt-0.5">
+                    Attendees mark themselves present. Works with or without a meeting note —
+                    {createNote
+                      ? " the QR appears on the note."
+                      : " you'll get a shareable check-in link after creating."}
+                  </span>
+                </span>
+              </label>
             </div>
           )}
-          <div>
-            <label htmlFor="meeting-project" className="block text-sm font-medium text-foreground mb-1">
-              Project{" "}
-              <span className="text-muted-foreground font-normal">(optional)</span>
-            </label>
-            <select
-              id="meeting-project"
-              value={projectId}
-              onChange={(e) => setProjectId(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground"
-            >
-              <option value="">No project</option>
-              {myProjects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </div>
         </div>
 
-        {canSetSelfCheckIn && (
-          <label className="inline-flex items-center gap-2 text-sm text-foreground cursor-pointer">
-            <input
-              type="checkbox"
-              checked={selfCheckIn}
-              onChange={(e) => setSelfCheckIn(e.target.checked)}
-              className="h-3.5 w-3.5 rounded border-border"
-            />
-            Self check-in (QR)
-          </label>
-        )}
-
-        <div className="flex items-center justify-between pt-1">
-          <div className="text-sm">
+        <div className="flex items-center justify-between gap-3 pt-1">
+          <div className="text-sm min-w-0">
             {status?.ok === true && !status.gcalError && (
               <span className="text-green-700">
-                Meeting created. Notified {status.count} participant{status.count === 1 ? "" : "s"}.
+                Meeting created. Notified {status.count} participant
+                {status.count === 1 ? "" : "s"}.
                 {status.notePageId && (
                   <>
                     {" "}
@@ -3883,6 +3937,19 @@ function CreateScheduledMeetingForm({
                       className="underline font-medium"
                     >
                       View meeting note
+                    </a>
+                  </>
+                )}
+                {status.selfCheckIn && !status.notePageId && status.meetingId && (
+                  <>
+                    {" "}
+                    <a
+                      href={`/calendar/check-in/${status.meetingId}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline font-medium"
+                    >
+                      Open check-in / QR
                     </a>
                   </>
                 )}
