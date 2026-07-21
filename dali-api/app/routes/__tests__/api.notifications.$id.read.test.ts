@@ -97,6 +97,25 @@ describe("POST /api/notifications/:id/read intent=unread", () => {
     expect(mockPrisma.notification.update).not.toHaveBeenCalled();
   });
 
+  it("allows unread for a MeetingReminder that has scheduledMeetingId", async () => {
+    mockPrisma.notification.findUnique.mockResolvedValue({
+      recipientUserId: USER_ID,
+      readAt: new Date(),
+      scheduledMeetingId: "m1",
+      kind: "MeetingReminder",
+      link: "/calendar?meeting=m1",
+    });
+    const res = await action({
+      request: unreadReq("n1"),
+      params: { id: "n1" },
+    } as any);
+    expect(res.status).toBe(200);
+    expect(mockPrisma.notification.update).toHaveBeenCalledWith({
+      where: { id: "n1" },
+      data: { readAt: null },
+    });
+  });
+
   it("is a no-op echo for the onboarding task", async () => {
     mockPrisma.notification.findUnique.mockResolvedValue({
       recipientUserId: USER_ID,
@@ -127,6 +146,50 @@ describe("POST /api/notifications/:id/read intent=unread", () => {
       params: { id: "n1" },
     } as any);
     expect(res.status).toBe(200);
+    expect(mockPrisma.notification.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/notifications/:id/read", () => {
+  function readReq(id: string) {
+    return new Request(`http://localhost/api/notifications/${id}/read`, {
+      method: "POST",
+    });
+  }
+
+  it("marks a MeetingReminder read even when it has scheduledMeetingId", async () => {
+    mockPrisma.notification.findUnique.mockResolvedValue({
+      recipientUserId: USER_ID,
+      readAt: null,
+      scheduledMeetingId: "m1",
+      kind: "MeetingReminder",
+      link: "/calendar?meeting=m1",
+    });
+    const res = await action({
+      request: readReq("n1"),
+      params: { id: "n1" },
+    } as any);
+    expect(res.status).toBe(200);
+    expect(mockPrisma.notification.update).toHaveBeenCalledWith({
+      where: { id: "n1" },
+      data: { readAt: expect.any(Date) },
+    });
+  });
+
+  it("still skips MeetingInvite on plain read", async () => {
+    mockPrisma.notification.findUnique.mockResolvedValue({
+      recipientUserId: USER_ID,
+      readAt: null,
+      scheduledMeetingId: "m1",
+      kind: "MeetingInvite",
+      link: null,
+    });
+    const res = await action({
+      request: readReq("n1"),
+      params: { id: "n1" },
+    } as any);
+    const json = await res.json();
+    expect(json).toMatchObject({ ok: true, skipped: "meeting-invite" });
     expect(mockPrisma.notification.update).not.toHaveBeenCalled();
   });
 });

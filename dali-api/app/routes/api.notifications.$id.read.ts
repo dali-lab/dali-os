@@ -55,12 +55,17 @@ export async function action({ request, params }: Route.ActionArgs) {
     return forbidden(request);
   }
 
+  // Meeting invites (only) clear via RSVP, not mark-read. Meeting reminders
+  // also carry scheduledMeetingId but are dismissible like any other ping.
+  const isMeetingInvite =
+    existing.kind === "MeetingInvite" && !!existing.scheduledMeetingId;
+
   // Re-open path: flip readAt back to null so the row returns to Open in
   // History + the Tasks list. Self-clearing rows (meeting invites / onboarding)
   // own their own read state, so re-opening them is a no-op echo — mirrors the
   // skips below for the read path.
   if (intent === "unread") {
-    if (existing.scheduledMeetingId) {
+    if (isMeetingInvite) {
       return withCors(request, Response.json({ ok: true, skipped: "meeting-invite" }));
     }
     if (existing.kind === "SystemAnnouncement" && existing.link === ONBOARDING_LINK) {
@@ -80,7 +85,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   // A meeting invite only clears once the recipient RSVPs (via the rsvp
   // endpoint, which sets readAt itself). A plain read — opening its link —
   // must not dismiss it, so it stays a todo until an Accept/Maybe/Decline.
-  if (existing.scheduledMeetingId) {
+  if (isMeetingInvite) {
     return withCors(request, Response.json({ ok: true, skipped: "meeting-invite" }));
   }
 

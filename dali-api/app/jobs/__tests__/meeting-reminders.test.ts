@@ -56,6 +56,7 @@ describe("runMeetingReminders", () => {
           kind: "MeetingReminder",
           title: "Starting soon: Design sync",
           scheduledMeetingId: "m1",
+          dueAt: IN_10_MIN,
         }),
       }),
     );

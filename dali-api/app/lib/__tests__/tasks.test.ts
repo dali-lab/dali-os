@@ -38,7 +38,8 @@ beforeEach(() => {
 });
 
 // The where clause the Tasks views filter on. Cancelled-meeting invites and
-// stale interview-assignment notifications must both be excluded.
+// stale interview-assignment notifications must both be excluded. Past
+// MeetingReminder rows (dueAt in the past) drop off live Tasks too.
 function expectedWhere(userId: string) {
   return {
     recipientUserId: userId,
@@ -48,6 +49,23 @@ function expectedWhere(userId: string) {
         OR: [
           { scheduledMeetingId: null },
           { scheduledMeeting: { status: { not: "Cancelled" } } },
+        ],
+      },
+      {
+        OR: [
+          { kind: { not: "MeetingReminder" } },
+          { dueAt: { gt: expect.any(Date) } },
+          {
+            AND: [
+              { dueAt: null },
+              {
+                OR: [
+                  { scheduledMeeting: { selectedAt: { gt: expect.any(Date) } } },
+                  { scheduledMeeting: { selectedAt: null } },
+                ],
+              },
+            ],
+          },
         ],
       },
     ],
@@ -119,6 +137,37 @@ describe("listOpenTasks", () => {
       id: "n2",
       source: "general",
       hasAction: false,
+    });
+  });
+
+  it("treats MeetingReminder as dismissible (hasAction false) even with scheduledMeetingId", async () => {
+    mockPrisma.notification.findMany.mockResolvedValue([
+      {
+        id: "n3",
+        kind: "MeetingReminder",
+        title: "Starting soon: Design sync",
+        body: "Starts Fri, May 22, 11:00 AM",
+        link: "/calendar?meeting=m1",
+        dueAt: new Date("2026-05-22T15:00:00Z"),
+        createdAt: new Date("2026-05-22T14:45:00Z"),
+        readAt: null,
+        formId: null,
+        scheduledMeetingId: "m1",
+        scheduledMeeting: {
+          selectedAt: new Date("2026-05-22T15:00:00Z"),
+          status: "Confirmed",
+        },
+        interviewAssignment: null,
+        form: null,
+      },
+    ]);
+
+    const tasks = await listOpenTasks("user-1");
+    expect(tasks[0]).toMatchObject({
+      id: "n3",
+      source: "reminder",
+      hasAction: false,
+      dueAt: "2026-05-22T15:00:00.000Z",
     });
   });
 });
