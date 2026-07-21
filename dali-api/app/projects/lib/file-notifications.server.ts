@@ -6,6 +6,7 @@
 
 import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
+import { currentProjectParticipantIds } from "./project-members.server";
 
 const PREVIEW_MAX = 200;
 
@@ -24,6 +25,7 @@ async function loadFileAudience(fileId: string): Promise<{
     where: { id: fileId },
     select: {
       title: true,
+      projectId: true,
       versions: { select: { uploadedById: true } },
       comments: { select: { authorId: true } },
       taskLinks: {
@@ -34,12 +36,19 @@ async function loadFileAudience(fileId: string): Promise<{
     },
   });
   if (!file) return null;
-  const userIds = new Set<string>();
-  for (const v of file.versions) userIds.add(v.uploadedById);
-  for (const c of file.comments) userIds.add(c.authorId);
+  const stakeholders = new Set<string>();
+  for (const v of file.versions) stakeholders.add(v.uploadedById);
+  for (const c of file.comments) stakeholders.add(c.authorId);
   for (const l of file.taskLinks) {
-    for (const a of l.task.assignees) userIds.add(a.userId);
+    for (const a of l.task.assignees) stakeholders.add(a.userId);
   }
+  // Gate to who's currently on the project so people who have rolled off stop
+  // hearing about a file they once touched (uploaded / commented / were an
+  // assignee of a linked task).
+  const members = await currentProjectParticipantIds(file.projectId);
+  const userIds = new Set<string>(
+    [...stakeholders].filter((id) => members.has(id)),
+  );
   return { title: file.title, versionCount: file.versions.length, userIds };
 }
 

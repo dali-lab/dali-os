@@ -6,6 +6,7 @@ import {
   Search,
   ExternalLink,
   RotateCcw,
+  Check,
 } from "lucide-react";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import {
@@ -18,6 +19,7 @@ import {
 } from "~/lib/tasks";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { RsvpButtons } from "~/components/RsvpButtons";
+import { TASKS_CHANGED_EVENT } from "~/components/NotificationBell";
 import type { Route } from "./+types/notifications";
 
 export const meta: Route.MetaFunction = () => [
@@ -107,7 +109,27 @@ function openLink(link: string, label: string) {
 }
 
 function OpenTab({ tasks }: { tasks: Task[] }) {
-  if (tasks.length === 0) {
+  const [items, setItems] = useState(tasks);
+  // Re-sync when the loader hands down a fresh list (revalidation, tab switch).
+  useEffect(() => setItems(tasks), [tasks]);
+
+  // Meeting invites clear only by RSVPing, so they carry no manual dismiss.
+  // Everything else — reminders, announcements, general to-dos — can be marked
+  // read here: POST /read clears the notification and drops the sidebar count.
+  async function markRead(id: string) {
+    setItems((prev) => prev.filter((t) => t.id !== id));
+    try {
+      await fetch(`/api/notifications/${id}/read`, {
+        method: "POST",
+        credentials: "include",
+        keepalive: true,
+      });
+    } finally {
+      window.dispatchEvent(new Event(TASKS_CHANGED_EVENT));
+    }
+  }
+
+  if (items.length === 0) {
     return (
       <p className="text-sm text-muted-foreground py-8 text-center">
         You're all caught up — no open tasks.
@@ -116,7 +138,7 @@ function OpenTab({ tasks }: { tasks: Task[] }) {
   }
   return (
     <ul className="flex flex-col gap-2">
-      {tasks.map((t) => (
+      {items.map((t) => (
         <li
           key={t.id}
           className="flex items-start gap-3 rounded-lg border border-border bg-card px-4 py-3"
@@ -146,14 +168,25 @@ function OpenTab({ tasks }: { tasks: Task[] }) {
               </div>
             ) : null}
           </div>
-          {t.source !== "meeting" && t.link && (
-            <button
-              type="button"
-              onClick={() => openLink(t.link!, t.title)}
-              className="flex items-center gap-1 text-xs font-medium text-accent-coral hover:underline flex-shrink-0"
-            >
-              Open <ExternalLink className="w-3 h-3" />
-            </button>
+          {t.source !== "meeting" && (
+            <div className="flex flex-shrink-0 items-center gap-3">
+              {t.link && (
+                <button
+                  type="button"
+                  onClick={() => openLink(t.link!, t.title)}
+                  className="flex items-center gap-1 text-xs font-medium text-accent-coral hover:underline"
+                >
+                  Open <ExternalLink className="w-3 h-3" />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => void markRead(t.id)}
+                className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+              >
+                <Check className="w-3 h-3" /> Mark as read
+              </button>
+            </div>
           )}
         </li>
       ))}
