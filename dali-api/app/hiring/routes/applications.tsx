@@ -1,12 +1,15 @@
 import { useMemo, useState } from "react";
 import { redirect, useLoaderData, useNavigate, useSearchParams } from "react-router";
-import { Search } from "lucide-react";
+import { Search, Inbox, ChevronRight } from "lucide-react";
 import type { Route } from "./+types/applications";
 import { requireAuth } from "~/lib/auth";
 import { getUserRoles } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { hiringPills } from "~/hiring/components/hiringPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
+import { PageHeader } from "~/hiring/components/PageHeader";
+import { EmptyState } from "~/hiring/components/EmptyState";
+import { CycleStatusPill, Pill } from "~/hiring/components/Pill";
 
 export const handle = { areaPills: true };
 
@@ -206,10 +209,12 @@ function formatDate(iso: string): string {
   });
 }
 
+// Application submission status tones. Composed through the shared `Pill`
+// helper so these read the same shape as every other hiring status chip.
 const STATUS_TONE: Record<string, string> = {
-  Submitted: "bg-green-50 text-green-700 border border-green-100",
-  Draft: "bg-muted text-muted-foreground",
-  Withdrawn: "bg-red-50 text-red-700 border border-red-100",
+  Submitted: "bg-green-100 text-green-700",
+  Draft: "bg-muted text-foreground/80",
+  Withdrawn: "bg-red-100 text-red-700",
 };
 
 export default function ApplicationsDatabase() {
@@ -240,14 +245,19 @@ export default function ApplicationsDatabase() {
 
   if (data.gate === "empty") {
     return (
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-5">
         {areaPills}
         <Header />
-        <p className="text-sm text-muted-foreground">
-          {data.isCore
-            ? "No application cycles exist yet."
-            : "You aren't assigned as a reviewer on any cycle yet."}
-        </p>
+        <EmptyState
+          icon={Inbox}
+          title={data.isCore ? "No cycles yet" : "No cycles assigned to you"}
+          description={
+            data.isCore
+              ? "Applications appear here once a cycle is created and applicants start submitting."
+              : "You aren't a reviewer on any cycle yet. Once you're assigned, its applicants show up here."
+          }
+          action={data.isCore ? { label: "Set up a cycle", to: "/hiring/lead" } : undefined}
+        />
       </div>
     );
   }
@@ -256,16 +266,18 @@ export default function ApplicationsDatabase() {
   // to choose between (Core/Admin, or a reviewer covering multiple domains).
   const showDomainFilter = data.domainOptions.length > 1;
 
-  return (
-    <div className="flex flex-col gap-4">
-      {areaPills}
-      <Header />
+  const selectedCycle = data.cycles.find((c) => c.id === data.selectedCycleId);
+  const isFiltered = domainId !== "" || status !== "" || query.trim() !== "";
 
-      <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-        <label
-          htmlFor="cycle-select"
-          className="text-sm font-medium text-muted-foreground"
-        >
+  return (
+    <div className="flex flex-col gap-5">
+      {areaPills}
+      <Header
+        chip={selectedCycle ? <CycleStatusPill status={selectedCycle.status} /> : undefined}
+      />
+
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+        <label htmlFor="cycle-select" className="sr-only">
           Cycle
         </label>
         <select
@@ -279,7 +291,7 @@ export default function ApplicationsDatabase() {
             next.set("cycle", e.target.value);
             setSearchParams(next);
           }}
-          className="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground sm:w-72"
+          className="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 sm:w-72"
         >
           {data.cycles.map((c) => (
             <option key={c.id} value={c.id}>
@@ -292,7 +304,7 @@ export default function ApplicationsDatabase() {
             aria-label="Filter by domain"
             value={domainId}
             onChange={(e) => setDomainId(e.target.value)}
-            className="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground sm:w-48"
+            className="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 sm:w-48"
           >
             <option value="">All domains</option>
             {data.domainOptions.map((d) => (
@@ -306,7 +318,7 @@ export default function ApplicationsDatabase() {
           aria-label="Filter by status"
           value={status}
           onChange={(e) => setStatus(e.target.value)}
-          className="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground sm:w-40"
+          className="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 sm:w-40"
         >
           <option value="">All statuses</option>
           {Object.keys(STATUS_TONE).map((s) => (
@@ -315,47 +327,53 @@ export default function ApplicationsDatabase() {
             </option>
           ))}
         </select>
-        <div className="relative w-full sm:ml-auto sm:w-64 min-w-[12rem]">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70 pointer-events-none" />
+        <div className="relative w-full min-w-[12rem] sm:ml-auto sm:w-64">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/70" />
           <input
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search by name or email"
             aria-label="Search applicants by name or email"
-            className="w-full pl-8 pr-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+            className="w-full rounded-md border border-border bg-background py-2 pl-8 pr-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
           />
         </div>
       </div>
 
-      <div className="bg-card border border-border rounded-lg overflow-hidden">
-        {filteredRows.length === 0 ? (
-          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-            {rows.length === 0 ? (
-              <>
-                No submissions for {data.selectedCycleName}
-                {data.isCore ? "" : " in your domains"}.
-              </>
-            ) : (
-              "No applicants match the current filters."
-            )}
-          </div>
-        ) : (
+      {filteredRows.length === 0 ? (
+        <EmptyState
+          icon={rows.length === 0 ? Inbox : Search}
+          title={
+            rows.length === 0 ? "No submissions yet" : "No matching applicants"
+          }
+          description={
+            rows.length === 0
+              ? `Nothing has been submitted for ${data.selectedCycleName}${
+                  data.isCore ? "" : " in your domains"
+                } yet.`
+              : "No applicants match the current filters. Try clearing your search or status filter."
+          }
+        />
+      ) : (
+        <div className="overflow-hidden rounded-lg border border-border bg-card">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[640px]">
-              <thead className="bg-muted/30 text-muted-foreground text-xs uppercase tracking-wide">
+            <table className="w-full min-w-[640px] text-sm">
+              <thead className="border-b border-border bg-muted/40 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 <tr>
-                  <th className="text-left font-medium px-4 py-2">
-                    Applicant ({filteredRows.length}
-                    {filteredRows.length === data.rows.length
-                      ? ""
-                      : ` of ${data.rows.length}`}
-                    )
+                  <th scope="col" className="px-4 py-3 text-left">
+                    Applicant
+                    <span className="ml-1.5 font-normal normal-case text-muted-foreground/70">
+                      {filteredRows.length}
+                      {isFiltered ? ` of ${data.rows.length}` : ""}
+                    </span>
                   </th>
-                  <th className="text-left font-medium px-4 py-2">Domain</th>
-                  <th className="text-left font-medium px-4 py-2">Status</th>
-                  <th className="text-left font-medium px-4 py-2">Submitted</th>
-                  <th className="text-left font-medium px-4 py-2">Reviews</th>
+                  <th scope="col" className="px-4 py-3 text-left">Domain</th>
+                  <th scope="col" className="px-4 py-3 text-left">Status</th>
+                  <th scope="col" className="px-4 py-3 text-left">Submitted</th>
+                  <th scope="col" className="px-4 py-3 text-left">Reviews</th>
+                  <th scope="col" className="w-10 px-4 py-3">
+                    <span className="sr-only">Open</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -363,45 +381,49 @@ export default function ApplicationsDatabase() {
                   <tr
                     key={r.id}
                     onClick={() => navigate(`/hiring/applications/${r.id}`)}
-                    className="border-t border-border hover:bg-muted/20 cursor-pointer"
+                    className="group cursor-pointer border-t border-border transition-colors hover:bg-muted/40"
                   >
-                    <td className="px-4 py-2 text-foreground">{r.name}</td>
-                    <td className="px-4 py-2 text-foreground">{r.domain}</td>
-                    <td className="px-4 py-2">
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                          STATUS_TONE[r.status] ?? "bg-muted text-muted-foreground"
-                        }`}
-                      >
-                        {r.status}
-                      </span>
+                    <td className="px-4 py-3 font-medium text-foreground">
+                      {r.name}
+                      {r.email && (
+                        <span className="ml-2 hidden font-normal text-muted-foreground sm:inline">
+                          {r.email}
+                        </span>
+                      )}
                     </td>
-                    <td className="px-4 py-2 text-muted-foreground">
+                    <td className="px-4 py-3 text-foreground">{r.domain}</td>
+                    <td className="px-4 py-3">
+                      <Pill color={STATUS_TONE[r.status]}>{r.status}</Pill>
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">
                       {r.submittedAt ? formatDate(r.submittedAt) : "—"}
                     </td>
-                    <td className="px-4 py-2 text-muted-foreground">
+                    <td className="px-4 py-3 text-muted-foreground">
                       {r.reviewCount}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <ChevronRight
+                        className="ml-auto h-4 w-4 text-muted-foreground/40 transition-colors group-hover:text-accent-coral"
+                        aria-hidden
+                      />
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function Header() {
+function Header({ chip }: { chip?: React.ReactNode }) {
   return (
-    <header>
-      <h1 className="font-heading text-2xl font-bold text-foreground">
-        Applications
-      </h1>
-      <p className="text-sm text-muted-foreground mt-1">
-        Every submission for a cycle. Pick a cycle to view its applicants.
-      </p>
-    </header>
+    <PageHeader
+      title="Applications"
+      subtitle="Every submission for a cycle. Pick a cycle to browse its applicants."
+      chip={chip}
+    />
   );
 }

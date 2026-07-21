@@ -16,7 +16,11 @@ import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 import { Confetti } from "~/components/Confetti";
 import { formatInterviewDate, formatInterviewTimeRange } from "~/hiring/lib/interview-time";
 import { APPLICATIONS_FROM_EMAIL } from "~/lib/app-env";
-import { Button } from "~/components/ui/Button";
+import { Button, buttonClasses } from "~/components/ui/Button";
+import { StatusStepper } from "~/hiring/components/StatusStepper";
+import { EmptyState } from "~/hiring/components/EmptyState";
+import { Pill, InterviewStatusPill } from "~/hiring/components/Pill";
+import { CalendarClock } from "lucide-react";
 
 export const meta: Route.MetaFunction = () => [{ title: "Apply to DALI · DALI OS" }];
 
@@ -285,21 +289,6 @@ function DeadlineLine({ closeDate, originalCloseDate }: { closeDate: string; ori
 
 const cardBg = "bg-brand-tint";
 
-function StatusBadge({ label, variant }: { label: string; variant: "blue" | "green" | "yellow" | "red" | "gray" }) {
-  const styles: Record<string, string> = {
-    blue: "bg-blue-100 text-blue-700",
-    green: "bg-green-100 text-green-700",
-    yellow: "bg-yellow-100 text-yellow-800",
-    red: "bg-red-100 text-red-700",
-    gray: "bg-muted text-muted-foreground",
-  };
-  return (
-    <span className={`text-xs px-2.5 py-0.5 rounded-full font-semibold ${styles[variant]}`}>
-      {label}
-    </span>
-  );
-}
-
 function PulsingDot({ color }: { color: string }) {
   return <span className={`w-2 h-2 rounded-full ${color} animate-pulse`} />;
 }
@@ -315,11 +304,7 @@ function StageIndicator({ stage }: { stage: DomainApplicationStatus | "Applicati
   const currentStep = steps.find(s => s.keys.includes(stage));
   if (!currentStep) return null;
 
-  return (
-    <div className="px-2.5 py-1 rounded-full text-xs font-medium bg-accent-teal text-white">
-      {currentStep.label}
-    </div>
-  );
+  return <Pill color="bg-accent-teal text-white">{currentStep.label}</Pill>;
 }
 
 // ─── Stage Views ─────────────────────────────────────────────────────────────
@@ -332,12 +317,12 @@ function ApplicationOpenView({ cycleName, closeDate }: { cycleName: string; clos
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
         </svg>
       </div>
-      <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">Applications Are Open</h2>
+      <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">Applications are open</h2>
       <p className="text-muted-foreground mb-8 leading-relaxed">
-        The {cycleName} application cycle is now accepting applications. Start yours to join the DALI Lab!
+        The {cycleName} cycle is accepting applications right now. Start yours to join the DALI Lab — you can save your progress and come back any time.
       </p>
-      <Link to="/portal/apply" className="px-8 py-3 rounded-full bg-accent-coral text-white font-semibold font-heading tracking-wider hover:bg-accent-coral/90 transition shadow-lg hover:shadow-xl">
-        Start Application
+      <Link to="/portal/apply" className={buttonClasses("primary", "md")}>
+        Start your application
       </Link>
     </div>
   );
@@ -351,12 +336,12 @@ function ApplicationDraftView({ cycleName, closeDate }: { cycleName: string; clo
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
         </svg>
       </div>
-      <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">Application In Progress</h2>
+      <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">Your application is in progress</h2>
       <p className="text-muted-foreground mb-8 leading-relaxed">
-        You have a draft application for {cycleName}. Complete and submit it to be considered!
+        You have a saved draft for {cycleName}. Pick up where you left off and submit it to be considered.
       </p>
-      <Link to="/portal/apply" className="px-8 py-3 rounded-full bg-accent-coral text-white font-semibold font-heading tracking-wider hover:bg-accent-coral/90 transition shadow-lg hover:shadow-xl">
-        Continue Application
+      <Link to="/portal/apply" className={buttonClasses("primary", "md")}>
+        Continue your application
       </Link>
     </div>
   );
@@ -371,13 +356,13 @@ function WithdrawnView({ cycleName }: { cycleName: string }) {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
         </div>
-        <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">Application Withdrawn</h2>
+        <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">Application withdrawn</h2>
         <p className="text-muted-foreground leading-relaxed">
           You withdrew your application for {cycleName}. If you change your mind, contact the DALI team.
         </p>
         <div className="mt-4">
-          <Link to="/portal/application" className="text-sm text-accent-coral hover:underline">
-            View your submission →
+          <Link to="/portal/application" className="text-sm font-semibold text-accent-coral hover:underline">
+            View your submitted application
           </Link>
         </div>
       </div>
@@ -394,7 +379,7 @@ function PendingView({ cycleName }: { cycleName: string }) {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
         </div>
-        <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">Application Pending Review</h2>
+        <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">Application under review</h2>
         <p className="text-muted-foreground leading-relaxed">
           Your application is being reviewed by the DALI team. We'll update you here once a decision has been made.
         </p>
@@ -418,7 +403,7 @@ function RejectedView({ cycleName }: { cycleName: string }) {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
           </svg>
         </div>
-        <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">Thank You for Applying</h2>
+        <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">Thank you for applying</h2>
         <p className="text-muted-foreground leading-relaxed max-w-lg mx-auto">
           Unfortunately, we are unable to move your application forward for {cycleName}. The applicant pool was extremely competitive this cycle.
         </p>
@@ -432,19 +417,16 @@ function RejectedView({ cycleName }: { cycleName: string }) {
           You can request feedback on your application. A member of the DALI team will follow up with you via email.
         </p>
         {feedbackRequested ? (
-          <div className="flex items-center gap-2 text-sm text-green-600 font-medium">
+          <div className="flex items-center gap-2 text-sm text-accent-teal font-medium">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
             </svg>
             Feedback requested — we'll be in touch soon.
           </div>
         ) : (
-          <button
-            onClick={() => setFeedbackRequested(true)}
-            className="px-5 py-2 rounded-full border-2 border-accent-coral text-accent-coral text-sm font-semibold hover:bg-accent-coral hover:text-white transition"
-          >
-            Request Feedback
-          </button>
+          <Button variant="secondary" size="md" onClick={() => setFeedbackRequested(true)}>
+            Request feedback
+          </Button>
         )}
       </div>
     </div>
@@ -522,9 +504,9 @@ function InvitedToInterviewView({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
           </svg>
         </div>
-        <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">You're Invited to Interview!</h2>
+        <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">You're invited to interview</h2>
         <p className="text-muted-foreground leading-relaxed">
-          Congratulations! The DALI team would like to interview you for <span className="font-medium text-dark-blue">{domainApp.domainName}</span>. Please select a time slot below.
+          Congratulations! The DALI team would like to interview you for <span className="font-medium text-dark-blue">{domainApp.domainName}</span>. Pick a time that works for you below.
         </p>
       </div>
 
@@ -559,7 +541,7 @@ function InvitedToInterviewView({
             onClick={handleConfirm}
             disabled={!selectedSlot || booking}
           >
-            {booking ? "Booking..." : "Confirm Time"}
+            {booking ? "Booking…" : "Confirm this time"}
           </Button>
         </>
       )}
@@ -680,9 +662,9 @@ function InterviewScheduledView({
     const grouped = groupSlotsByDate(rescheduleSlots);
     return (
       <div className="max-w-2xl mx-auto py-12">
-        <h2 className="font-heading text-xl font-bold text-dark-blue mb-2">Reschedule Interview</h2>
+        <h2 className="font-heading text-xl font-bold text-dark-blue mb-2">Reschedule your interview</h2>
         <p className="text-sm text-muted-foreground mb-6">
-          Currently scheduled: <strong>{slot.date}, {slot.time}</strong> ({formatInterviewLocation(interview.location)}). Choose a format and new time.
+          Currently scheduled: <strong>{slot.date}, {slot.time}</strong> ({formatInterviewLocation(interview.location)}). Pick a new time below.
         </p>
 
         {rescheduleError && (
@@ -717,13 +699,13 @@ function InterviewScheduledView({
               disabled={!selectedRescheduleSlotId || confirmingReschedule}
               className="mr-3"
             >
-              {confirmingReschedule ? "Rescheduling..." : "Confirm Reschedule"}
+              {confirmingReschedule ? "Rescheduling…" : "Confirm new time"}
             </Button>
           </>
         )}
-        <button onClick={exitRescheduling} className="text-sm font-semibold text-muted-foreground hover:underline">
-          Cancel
-        </button>
+        <Button variant="ghost" size="md" onClick={exitRescheduling}>
+          Keep my current time
+        </Button>
       </div>
     );
   }
@@ -736,7 +718,7 @@ function InterviewScheduledView({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
           </svg>
         </div>
-        <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">Interview Confirmed</h2>
+        <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">Interview confirmed</h2>
         <p className="text-muted-foreground leading-relaxed">
           You're all set for your <span className="font-medium text-dark-blue">{domainApp.domainName}</span> interview!
         </p>
@@ -749,7 +731,7 @@ function InterviewScheduledView({
             <p className="text-lg font-bold text-dark-blue mt-1">{slot.date}</p>
             <p className="text-sm text-dark-blue">{slot.time}</p>
           </div>
-          <StatusBadge label="Scheduled" variant="green" />
+          <InterviewStatusPill status="Scheduled" />
         </div>
         <div className="pt-4 border-t border-border/60">
           <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Location</span>
@@ -772,23 +754,23 @@ function InterviewScheduledView({
       <p className="text-sm text-muted-foreground mb-4">A calendar invite has been sent to your Dartmouth email.</p>
 
       <div className="flex flex-wrap items-center gap-3">
-        <button onClick={() => setRescheduling(true)} className="px-5 py-2.5 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition">
-          Reschedule
-        </button>
+        <Button variant="secondary" size="md" onClick={() => setRescheduling(true)}>
+          Reschedule interview
+        </Button>
         {declining ? (
           <div className="rounded-xl border-2 border-red-200 bg-red-50 px-4 py-3 text-left space-y-2">
-            <p className="text-sm font-semibold text-red-700">This action is final</p>
-            <p className="text-xs text-red-600/80">Cancelling your interview will withdraw you from the interview process for this domain. You will not be able to rebook.</p>
+            <p className="text-sm font-semibold text-red-700">This can't be undone</p>
+            <p className="text-xs text-red-600/80">Cancelling withdraws you from the interview process for this domain, and you won't be able to rebook.</p>
             <div className="flex items-center gap-3 pt-1">
-              <button onClick={handleCancel} disabled={cancelling} className="px-4 py-1.5 rounded-full bg-red-600 text-white text-sm font-semibold hover:bg-red-700 transition disabled:opacity-50">
-                {cancelling ? "Cancelling..." : "Yes, withdraw"}
-              </button>
-              <button onClick={() => setDeclining(false)} className="text-sm font-semibold text-muted-foreground hover:underline">Go back</button>
+              <Button variant="destructive" size="sm" onClick={handleCancel} disabled={cancelling}>
+                {cancelling ? "Cancelling…" : "Yes, cancel my interview"}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setDeclining(false)}>Keep my interview</Button>
             </div>
           </div>
         ) : (
           <button onClick={() => setDeclining(true)} className="text-sm font-semibold text-muted-foreground hover:text-red-500 transition">
-            Cancel Interview
+            Cancel interview
           </button>
         )}
         {cancelError && (
@@ -810,7 +792,7 @@ function PostInterviewPendingView() {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
         </svg>
       </div>
-      <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">Interview Complete</h2>
+      <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">Interview complete</h2>
       <p className="text-muted-foreground leading-relaxed mb-4">
         Thanks for interviewing with us! The team is reviewing all candidates and will share a final decision soon.
       </p>
@@ -900,7 +882,7 @@ function WaitlistedView({ cycleName }: { cycleName: string }) {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
         </div>
-        <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">You're on the Waitlist</h2>
+        <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">You're on the waitlist</h2>
         <p className="text-muted-foreground leading-relaxed max-w-lg mx-auto">
           You performed well in the interview process and we'd love to have you at DALI. We've placed you on the waitlist for {cycleName} and will reach out if a spot becomes available.
         </p>
@@ -963,6 +945,9 @@ function DomainApplicationCard({
       </button>
       {isExpanded && (
         <div className="px-2">
+          <div className="px-4 pt-6 pb-2 sm:px-8">
+            <StatusStepper status={stage} />
+          </div>
           {stage === "Pending" && <PendingView cycleName={cycleName} />}
           {stage === "Rejected" && <RejectedView cycleName={cycleName} />}
           {stage === "InvitedToInterview" && (
@@ -1021,9 +1006,12 @@ export default function Portal() {
 
   if (!cycleId) {
     return (
-      <div className="max-w-2xl mx-auto py-16 text-center px-6">
-        <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">No Active Cycle</h2>
-        <p className="text-muted-foreground">There is no active application cycle right now. Check back later!</p>
+      <div className="max-w-2xl mx-auto py-16 px-6">
+        <EmptyState
+          icon={CalendarClock}
+          title="No application cycle is open right now"
+          description="There's no active DALI application cycle at the moment. Check back soon — the next one will show up here as soon as it opens."
+        />
       </div>
     );
   }
@@ -1064,16 +1052,12 @@ export default function Portal() {
       {/* Content */}
       <div className="px-6 md:px-16 lg:px-24 py-10">
         {topLevelStage === "ApplicationsClosed" && (
-          <div className="max-w-2xl mx-auto text-center py-16">
-            <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-muted flex items-center justify-center">
-              <svg className="w-8 h-8 text-muted-foreground/70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <h2 className="font-heading text-2xl font-bold text-dark-blue mb-3">Applications Closed</h2>
-            <p className="text-muted-foreground leading-relaxed">
-              The application window for {cycleName} has closed. Check back for future application cycles!
-            </p>
+          <div className="max-w-2xl mx-auto py-16">
+            <EmptyState
+              icon={CalendarClock}
+              title="Applications are closed"
+              description={`The application window for ${cycleName} has closed. Check back here for future cycles — we'd love to see you apply next time.`}
+            />
           </div>
         )}
         {topLevelStage === "ApplicationOpen" && <ApplicationOpenView cycleName={cycleName} closeDate={closeDate} />}
@@ -1085,11 +1069,8 @@ export default function Portal() {
                 <p className="text-sm text-blue-800">
                   The cycle is still open — you can still update your application.
                 </p>
-                <Link
-                  to="/portal/apply"
-                  className="shrink-0 px-4 py-2 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition"
-                >
-                  Edit Application
+                <Link to="/portal/apply" className={buttonClasses("primary", "sm", "shrink-0")}>
+                  Edit your application
                 </Link>
               </div>
             )}
@@ -1105,17 +1086,14 @@ export default function Portal() {
                 <p className="text-sm text-blue-800">
                   The cycle is still open — you can still update your application.
                 </p>
-                <Link
-                  to="/portal/apply"
-                  className="shrink-0 px-4 py-2 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition"
-                >
-                  Edit Application
+                <Link to="/portal/apply" className={buttonClasses("primary", "sm", "shrink-0")}>
+                  Edit your application
                 </Link>
               </div>
             )}
             <div className="flex justify-end">
-              <Link to="/portal/application" className="text-sm text-accent-coral hover:underline">
-                View your submission →
+              <Link to="/portal/application" className="text-sm font-semibold text-accent-coral hover:underline">
+                View your submitted application
               </Link>
             </div>
             {das.map(da => (

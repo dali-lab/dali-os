@@ -8,7 +8,8 @@ import { presignAnswers } from "~/hiring/lib/presign";
 import { ApplicationViewer } from "~/hiring/components/ApplicationViewer";
 import { ReviewSummary } from "~/hiring/components/ReviewSummary";
 import { DetailCard } from "~/hiring/components/DetailCard";
-import { ApplicantDetailHeader } from "~/hiring/components/ApplicantDetailHeader";
+import { PageHeader } from "~/hiring/components/PageHeader";
+import { Pill } from "~/hiring/components/Pill";
 import {
   InterviewNotesCard,
   type InterviewNotesData,
@@ -446,10 +447,10 @@ export default function ApplicationReadOnlyDetail() {
 
   return (
     <div className="space-y-6 pb-12">
-      <ApplicantDetailHeader
-        name={data.applicantName}
-        domainName={data.domainName}
-        cycleName={data.cycleName}
+      <PageHeader
+        title={data.applicantName}
+        subtitle={`${data.domainName} · ${data.cycleName}`}
+        back={{ label: "Back to applications", to: "/hiring/applications" }}
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -667,15 +668,15 @@ function DelibsSection({ delibs }: { delibs: DelibsRef[] }) {
           {delibs.map((s) => (
             <li key={s.id} className="px-6 py-3 flex items-center gap-3">
               <span className="text-sm font-medium text-foreground">{s.type} delibs</span>
-              <span
-                className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${
+              <Pill
+                color={
                   s.status === "Active"
                     ? "bg-amber-100 text-amber-800"
                     : "bg-muted text-foreground/80"
-                }`}
+                }
               >
                 {s.status}
-              </span>
+              </Pill>
               {s.column && (
                 <span className="text-xs text-muted-foreground">in “{s.column}”</span>
               )}

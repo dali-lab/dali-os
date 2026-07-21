@@ -5,9 +5,12 @@ import { FormBuilderTab } from '~/components/form-builder/FormBuilder'
 import { RichTextViewer, isEmptyDoc } from '~/components/RichTextViewer'
 import { ChallengePreviewModal } from '~/hiring/components/ChallengePreviewModal'
 import { Tooltip } from '~/components/ui/IconButton'
+import { Button } from '~/components/ui/Button'
+import { PageHeader } from '~/hiring/components/PageHeader'
 import type { Question } from '~/types'
 import type { loader } from '~/hiring/routes/challenges.$id'
 import { formatDateTime } from '~/lib/display'
+import { cn } from '~/lib/cn'
 
 export function resolveDuplicateDomainId(version: { domainId: string | null }): string {
   // A general version's domainId is null; coerce to '' so the form's selected
@@ -103,28 +106,24 @@ export function ChallengeDetail() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <div className="flex justify-between items-start">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">{challenge.name}</h1>
-            <p className="mt-1 text-muted-foreground">
-              Created {new Date(challenge.createdAt).toLocaleDateString()}
-            </p>
-          </div>
-          {!isCreatingVersion && (
-            <button
+      <PageHeader
+        title={challenge.name}
+        subtitle={`Created ${new Date(challenge.createdAt).toLocaleDateString()}`}
+        actions={
+          !isCreatingVersion && (
+            <Button
+              variant="primary"
               onClick={() => {
                 if (selectedVersion && selectedVersion.domainId) setSelectedDomainId(selectedVersion.domainId)
                 setIsCreatingVersion(true)
               }}
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-accent-coral hover:bg-accent-coral/90 shadow-sm"
             >
-              <Plus className="w-4 h-4 mr-2" />
-              New Version
-            </button>
-          )}
-        </div>
-      </div>
+              <Plus className="h-4 w-4" />
+              New version
+            </Button>
+          )
+        }
+      />
 
       <div className="flex flex-col lg:flex-row gap-8">
         {/* Left Sidebar: Versions List */}
@@ -143,11 +142,12 @@ export function ChallengeDetail() {
                       setSelectedVersionId(version.id)
                       setIsCreatingVersion(false)
                     }}
-                    className={`w-full text-left p-4 rounded-xl border transition-colors ${
+                    className={cn(
+                      'w-full text-left p-4 rounded-xl border transition-colors',
                       selectedVersionId === version.id && !isCreatingVersion
-                        ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-500'
-                        : 'border-border bg-card hover:bg-muted/50'
-                    }`}
+                        ? 'border-accent-coral bg-brand-tint'
+                        : 'border-border bg-card hover:bg-muted/50',
+                    )}
                   >
                     <div className="flex items-center justify-between mb-2">
                       <div>
@@ -181,9 +181,9 @@ export function ChallengeDetail() {
             <div className="bg-card rounded-xl border border-border shadow-sm p-6">
               <div className="mb-6 pb-6 border-b border-border space-y-4">
                 <div>
-                  <h2 className="text-lg font-bold text-foreground">Create New Version</h2>
+                  <h2 className="font-heading text-lg font-bold text-foreground">Create new version</h2>
                   <p className="text-sm text-muted-foreground mt-1">
-                    Build your new challenge version below. It will be saved as v{nextVersionNumber}.
+                    Build the challenge below. It will be saved as v{nextVersionNumber}.
                   </p>
                 </div>
                 <div>
@@ -203,10 +203,10 @@ export function ChallengeDetail() {
             </div>
           ) : selectedVersion ? (
             <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-              <div className="px-6 py-5 border-b border-border bg-muted/50 flex justify-between items-center">
+              <div className="px-6 py-5 border-b border-border bg-muted/50 flex justify-between items-center gap-3">
                 <div>
-                  <h2 className="text-lg font-semibold text-foreground">
-                    Version {challenge.versions.findIndex((v) => v.id === selectedVersionId) + 1} Preview
+                  <h2 className="font-heading text-lg font-semibold text-foreground">
+                    Version {challenge.versions.findIndex((v) => v.id === selectedVersionId) + 1} preview
                   </h2>
                   <p className="text-sm text-muted-foreground mt-1">
                     {selectedVersion.domain?.name ?? 'General'} · Created by{' '}
@@ -214,25 +214,26 @@ export function ChallengeDetail() {
                     {formatDateTime(selectedVersion.createdAt)}
                   </p>
                 </div>
-                <div className="flex items-center gap-3">
-                  <Tooltip label="Preview">
+                <div className="flex items-center gap-2 shrink-0">
+                  <Tooltip label="Preview as applicant">
                     <button
                       onClick={() => setShowPreviewModal(true)}
-                      aria-label="Preview"
-                      className="inline-flex items-center justify-center p-1.5 rounded-md text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                      aria-label="Preview as applicant"
+                      className="inline-flex items-center justify-center p-1.5 rounded-md text-muted-foreground hover:text-accent-coral hover:bg-muted"
                     >
                       <Eye className="w-4 h-4" />
                     </button>
                   </Tooltip>
-                  <button
+                  <Button
+                    variant="secondary"
+                    size="sm"
                     onClick={() => {
                       setSelectedDomainId(resolveDuplicateDomainId(selectedVersion))
                       setIsCreatingVersion(true)
                     }}
-                    className="text-sm text-blue-600 hover:text-blue-700 font-medium"
                   >
-                    Duplicate to New Version
-                  </button>
+                    Duplicate to new version
+                  </Button>
                 </div>
               </div>
               {/* Rubrics are now assigned at the domain+cycle level, not per challenge version */}
@@ -287,19 +288,18 @@ export function ChallengeDetail() {
               </div>
             </div>
           ) : (
-            <div className="text-center py-12 bg-card rounded-xl border border-border border-dashed">
-              <FileText className="mx-auto h-12 w-12 text-muted-foreground/70" />
-              <h3 className="mt-2 text-sm font-medium text-foreground">No versions</h3>
-              <p className="mt-1 text-sm text-muted-foreground">Get started by creating a new version.</p>
-              <div className="mt-6">
-                <button
-                  onClick={() => setIsCreatingVersion(true)}
-                  className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-accent-coral hover:bg-accent-coral/90"
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Create Version
-                </button>
-              </div>
+            <div className="flex flex-col items-center rounded-xl border border-dashed border-border bg-card px-6 py-12 text-center">
+              <span className="mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                <FileText className="h-5 w-5" aria-hidden />
+              </span>
+              <p className="font-heading text-base font-semibold text-foreground">No versions yet</p>
+              <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+                Create the first version to define the questions applicants will answer.
+              </p>
+              <Button variant="primary" size="sm" className="mt-4" onClick={() => setIsCreatingVersion(true)}>
+                <Plus className="h-4 w-4" />
+                Create version
+              </Button>
             </div>
           )}
         </div>

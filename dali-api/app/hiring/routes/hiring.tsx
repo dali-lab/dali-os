@@ -6,9 +6,21 @@ import { getPipelineData } from "~/hiring/lib/pipeline.server";
 import { hiringPills } from "~/hiring/components/hiringPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import { PipelinePanel } from "~/hiring/components/analytics/PipelinePanel";
+import { PageHeader } from "~/hiring/components/PageHeader";
+import { EmptyState } from "~/hiring/components/EmptyState";
+import { CycleStatusPill } from "~/hiring/components/Pill";
 import { buttonClasses } from "~/components/ui/Button";
 import { formatInterviewDate, formatInterviewTimeRange } from "~/hiring/lib/interview-time";
-import { cn } from "~/lib/cn";
+import {
+  CheckCircle2,
+  ClipboardList,
+  Mic,
+  Users,
+  Send,
+  Activity,
+  ShieldCheck,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 export const handle = { areaPills: true };
 
@@ -34,24 +46,36 @@ export async function loader({ request }: Route.LoaderArgs) {
   return { ...hub, pipeline };
 }
 
-const STAGE_STYLES: Record<string, string> = {
-  Open: "bg-green-100 text-green-800",
-  UnderReview: "bg-amber-100 text-amber-800",
-  Draft: "bg-muted text-muted-foreground",
-};
-
 function Card({
   title,
+  icon: Icon,
+  count,
   children,
   cta,
 }: {
   title: string;
+  icon?: LucideIcon;
+  count?: number;
   children: React.ReactNode;
   cta?: { label: string; to: string };
 }) {
   return (
-    <section className="bg-card border border-border rounded-lg p-5 flex flex-col gap-3">
-      <h2 className="font-heading font-semibold text-foreground">{title}</h2>
+    <section className="bg-card border border-border rounded-lg p-5 flex flex-col gap-3 transition-colors hover:border-accent-coral/40">
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="flex items-center gap-2 font-heading font-semibold text-foreground">
+          {Icon && (
+            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-brand-tint text-navy">
+              <Icon className="h-4 w-4" aria-hidden />
+            </span>
+          )}
+          {title}
+        </h2>
+        {count != null && count > 0 && (
+          <span className="inline-flex min-w-6 items-center justify-center rounded-full bg-accent-coral/12 px-2 py-0.5 text-xs font-bold text-accent-coral">
+            {count}
+          </span>
+        )}
+      </div>
       <div className="flex-1 text-sm text-foreground">{children}</div>
       {cta && (
         <Link to={cta.to} className={buttonClasses("secondary", "sm") + " self-start"}>
@@ -89,44 +113,39 @@ export default function HiringHub() {
     hub.core !== null;
 
   return (
-    <div className="flex flex-col gap-5">
+    <div>
       <AreaPillNav items={hiringPills({ ...hub.roles, active: "hub" })} />
 
-      <header>
-        <h1 className="font-heading text-2xl font-bold text-foreground">Hiring</h1>
-        {hub.cycle ? (
-          <p className="text-sm text-muted-foreground mt-1 flex items-center gap-2">
-            {hub.cycle.name}
-            <span
-              className={cn(
-                "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold",
-                STAGE_STYLES[hub.cycle.status] ?? "bg-muted text-muted-foreground",
+      <div className="flex flex-col gap-5">
+      <PageHeader
+        title="Hiring"
+        chip={hub.cycle ? <CycleStatusPill status={hub.cycle.status} /> : undefined}
+        subtitle={
+          hub.cycle ? (
+            <>
+              {hub.cycle.name}
+              {hub.cycle.closeDate && hub.cycle.status === "Open" && (
+                <>
+                  {" · closes "}
+                  {new Date(hub.cycle.closeDate).toLocaleDateString(undefined, {
+                    month: "short",
+                    day: "numeric",
+                  })}
+                </>
               )}
-            >
-              {hub.cycle.status === "UnderReview" ? "Under review" : hub.cycle.status}
-            </span>
-            {hub.cycle.closeDate && hub.cycle.status === "Open" && (
-              <span>
-                closes{" "}
-                {new Date(hub.cycle.closeDate).toLocaleDateString(undefined, {
-                  month: "short",
-                  day: "numeric",
-                })}
-              </span>
-            )}
-          </p>
-        ) : (
-          <p className="text-sm text-muted-foreground mt-1">
-            No active application cycle.
-          </p>
-        )}
-      </header>
+            </>
+          ) : (
+            "No cycle is open right now."
+          )
+        }
+      />
 
       {hasCards && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {showConfidentialityCard && hub.cycle && (
             <Card
               title="Confidentiality agreement"
+              icon={ShieldCheck}
               cta={{
                 label: "Read & sign",
                 to: `/hiring/cycles/${hub.needsConfidentialitySignature}/confidentiality`,
@@ -140,7 +159,7 @@ export default function HiringHub() {
           )}
 
           {hub.pendingReviews.count > 0 && (
-            <Card title="My reviews">
+            <Card title="My reviews" icon={ClipboardList} count={hub.pendingReviews.count}>
               <ul className="flex flex-col gap-2">
                 {hub.pendingReviews.items.map((item) => (
                   <li key={item.reviewId}>
@@ -168,7 +187,7 @@ export default function HiringHub() {
           )}
 
           {hub.upcomingInterviews.length > 0 && (
-            <Card title="My interviews">
+            <Card title="My interviews" icon={Mic} count={hub.upcomingInterviews.length}>
               <ul className="flex flex-col gap-2">
                 {hub.upcomingInterviews.map((iv) => (
                   <li key={iv.id}>
@@ -197,6 +216,7 @@ export default function HiringHub() {
             <Card
               key={session.id}
               title={`${session.domainName} delibs`}
+              icon={Users}
               cta={{
                 label: "Open board",
                 to: `/hiring/domain-lead/delibs/${session.id}`,
@@ -209,6 +229,8 @@ export default function HiringHub() {
           {hub.core && hub.core.releaseQueue > 0 && (
             <Card
               title="Release queue"
+              icon={Send}
+              count={hub.core.releaseQueue}
               cta={{
                 label: "Manage cycle",
                 to: hub.cycle ? `/hiring/lead/cycle/${hub.cycle.id}` : "/hiring/lead",
@@ -225,7 +247,7 @@ export default function HiringHub() {
           )}
 
           {hub.core && (
-            <Card title="Cycle health">
+            <Card title="Cycle health" icon={Activity}>
               <ul className="flex flex-col gap-1.5">
                 <HealthRow
                   count={hub.core.health.submitted}
@@ -268,15 +290,13 @@ export default function HiringHub() {
       {hub.pipeline && <PipelinePanel data={hub.pipeline} />}
 
       {!hasCards && !hub.pipeline && (
-        <div className="bg-card border border-border rounded-lg p-8 text-center">
-          <p className="font-heading font-semibold text-foreground">
-            Nothing needs you right now
-          </p>
-          <p className="text-sm text-muted-foreground mt-1">
-            Reviews and interviews you're assigned to will show up here.
-          </p>
-        </div>
+        <EmptyState
+          icon={CheckCircle2}
+          title="You're all caught up"
+          description="Reviews and interviews you're assigned to will show up here as cycles get underway."
+        />
       )}
+      </div>
     </div>
   );
 }

@@ -7,6 +7,10 @@ import { hiringPills } from '~/hiring/components/hiringPills'
 import { AreaPillNav } from '~/components/AreaPillNav'
 import { CycleSelector } from '~/hiring/components/CycleSelector'
 import { Section } from '~/hiring/components/Section'
+import { PageHeader } from '~/hiring/components/PageHeader'
+import { EmptyState } from '~/hiring/components/EmptyState'
+import { Pill, RecommendationPill } from '~/hiring/components/Pill'
+import { buttonClasses } from '~/components/ui/Button'
 import { getActiveCycle, cycleStatusToStage, inferUnderReviewStage } from '~/hiring/lib/cycles'
 import { getCycleConfidentialityState } from '~/hiring/lib/confidentiality'
 import { ConfidentialityGate } from '~/hiring/components/ConfidentialityGate'
@@ -258,12 +262,14 @@ export default function ReviewerDashboard() {
 
   if (!activeCycle) {
     return (
-      <div className="space-y-8">
+      <div className="space-y-6">
         {areaPills}
-        <h1 className="text-2xl font-bold text-foreground">Reviews</h1>
-        <div className="bg-card rounded-xl border border-border shadow-sm p-8 text-center">
-          <p className="text-muted-foreground">You are not assigned as a reviewer for any active cycle.</p>
-        </div>
+        <PageHeader title="Reviews" subtitle="Score the applications assigned to you." />
+        <EmptyState
+          icon={FileText}
+          title="No reviews assigned yet"
+          description="You're not assigned as a reviewer for any active cycle. Assignments from your domain lead will show up here."
+        />
       </div>
     )
   }
@@ -330,17 +336,11 @@ export default function ReviewerDashboard() {
   return (
     <div className="space-y-6">
       {areaPills}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">
-            Reviews
-          </h1>
-          <p className="mt-1 text-muted-foreground">
-            Your assigned applications and live delibs.
-          </p>
-        </div>
-        <CycleSelector cycles={availableCycles} activeId={activeCycle.id} />
-      </div>
+      <PageHeader
+        title="Reviews"
+        subtitle="Score the applications assigned to you, and watch live delibs."
+        actions={<CycleSelector cycles={availableCycles} activeId={activeCycle.id} />}
+      />
 
       {/* View pills — Review vs the live Delibs mirror. Delibs only gets a
           pill while a session is live; with one view the bar collapses. */}
@@ -365,11 +365,11 @@ export default function ReviewerDashboard() {
 
       {view === 'review' && (
       <Section
-        title="Assigned Written Applications"
-        icon={<FileText className="w-4 h-4 text-blue-600" />}
+        title="Assigned written applications"
+        icon={<FileText className="w-4 h-4 text-muted-foreground" />}
         badge={
           !confidentialityRequired && reviews.length > 0 ? (
-            <span className="text-xs font-medium text-gray-500">
+            <span className="text-xs font-medium text-muted-foreground">
               {submittedReviews.length}/{reviews.length} submitted
             </span>
           ) : null
@@ -382,62 +382,28 @@ export default function ReviewerDashboard() {
             next="/hiring/reviewer"
           />
         ) : reviews.length === 0 ? (
-          <p className="text-sm text-gray-500">
-            You don't have any assigned applications yet. You'll see them here
-            once your Domain Lead assigns reviewers.
-          </p>
+          <EmptyState
+            icon={FileText}
+            title="No applications assigned yet"
+            description="Once your domain lead assigns you reviewers, your applications appear here."
+          />
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-gray-50 rounded-xl border border-gray-200 p-4 flex flex-col gap-3 min-h-[300px]">
-              <div className="flex items-center justify-between border-b border-gray-200 pb-2 mb-2">
-                <h3 className="font-bold text-gray-700">Pending</h3>
-                <span className="bg-white px-2.5 py-0.5 rounded-full text-xs font-bold border shadow-sm text-gray-600">
-                  {pendingReviews.length}
-                </span>
-              </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <ReviewColumn title="Pending" count={pendingReviews.length} emptyLabel="Nothing pending">
               {pendingReviews.map((r: any) => (
                 <ReviewCard key={r.id} review={r} variant="pending" />
               ))}
-              {pendingReviews.length === 0 && (
-                <div className="py-6 text-center border-2 border-dashed border-gray-300 rounded-lg bg-white/50">
-                  <p className="text-sm text-gray-500 italic">No pending reviews</p>
-                </div>
-              )}
-            </div>
-
-            <div className="bg-blue-50/50 rounded-xl border border-blue-100 p-4 flex flex-col gap-3 min-h-[300px]">
-              <div className="flex items-center justify-between border-b border-blue-200 pb-2 mb-2">
-                <h3 className="font-bold text-blue-800">In Progress</h3>
-                <span className="bg-white px-2.5 py-0.5 rounded-full text-xs font-bold border border-blue-200 shadow-sm text-blue-700">
-                  {inProgressReviews.length}
-                </span>
-              </div>
+            </ReviewColumn>
+            <ReviewColumn title="In progress" count={inProgressReviews.length} emptyLabel="Nothing in progress">
               {inProgressReviews.map((r: any) => (
                 <ReviewCard key={r.id} review={r} variant="inProgress" />
               ))}
-              {inProgressReviews.length === 0 && (
-                <div className="py-6 text-center border-2 border-dashed border-blue-200 rounded-lg bg-white/50">
-                  <p className="text-sm text-blue-400 italic">None in progress</p>
-                </div>
-              )}
-            </div>
-
-            <div className="bg-green-50/50 rounded-xl border border-green-100 p-4 flex flex-col gap-3 min-h-[300px]">
-              <div className="flex items-center justify-between border-b border-green-200 pb-2 mb-2">
-                <h3 className="font-bold text-green-800">Submitted</h3>
-                <span className="bg-white px-2.5 py-0.5 rounded-full text-xs font-bold border border-green-200 shadow-sm text-green-700">
-                  {submittedReviews.length}
-                </span>
-              </div>
+            </ReviewColumn>
+            <ReviewColumn title="Submitted" count={submittedReviews.length} emptyLabel="Nothing submitted yet">
               {submittedReviews.map((r: any) => (
                 <ReviewCard key={r.id} review={r} variant="submitted" />
               ))}
-              {submittedReviews.length === 0 && (
-                <div className="py-6 text-center border-2 border-dashed border-green-200 rounded-lg bg-white/50">
-                  <p className="text-sm text-green-500 italic">No submitted reviews</p>
-                </div>
-              )}
-            </div>
+            </ReviewColumn>
           </div>
         )}
       </Section>
@@ -445,14 +411,14 @@ export default function ReviewerDashboard() {
 
       {view === 'delibs' && (
       <Section
-        title="Delibs View"
-        icon={<ListOrdered className="w-4 h-4 text-blue-600" />}
+        title="Delibs view"
+        icon={<ListOrdered className="w-4 h-4 text-muted-foreground" />}
         badge={
           !confidentialityRequired && (delibsSessions?.length ?? 0) > 0 ? (
-            <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full flex items-center">
-              <EyeOff className="w-3 h-3 mr-1" />
-              Live · Read-only
-            </span>
+            <Pill className="gap-1">
+              <EyeOff className="w-3 h-3" />
+              Live · read-only
+            </Pill>
           ) : null
         }
       >
@@ -463,10 +429,11 @@ export default function ReviewerDashboard() {
             next="/hiring/reviewer"
           />
         ) : (delibsSessions?.length ?? 0) === 0 ? (
-          <p className="text-sm text-gray-500">
-            No active deliberations. Once your Domain Lead opens a delibs
-            session, you'll see a live, read-only view of the buckets here.
-          </p>
+          <EmptyState
+            icon={ListOrdered}
+            title="No active deliberations"
+            description="When your domain lead opens a delibs session, you'll see a live, read-only view of the buckets here."
+          />
         ) : (
           <div className="space-y-8">
             {(delibsSessions as any[]).map((session: any) => (
@@ -495,8 +462,8 @@ export default function ReviewerDashboard() {
 const INITIAL_COLUMN_STYLES: Record<string, { label: string; classes: string; heading: string }> = {
   'No Decision': {
     label: 'No Decision',
-    classes: 'border-gray-200 bg-gray-50',
-    heading: 'text-gray-700',
+    classes: 'border-border bg-muted/40',
+    heading: 'text-foreground',
   },
   Interview: {
     label: 'Interview',
@@ -545,8 +512,8 @@ function DelibsSessionView({
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
-        <h3 className="font-semibold text-gray-900">
-          {session.domain?.name ?? 'Domain'} · {isInitial ? 'Written Delibs' : 'Final Delibs'}
+        <h3 className="font-heading font-semibold text-foreground">
+          {session.domain?.name ?? 'Domain'} · {isInitial ? 'Written delibs' : 'Final delibs'}
         </h3>
       </div>
       <div
@@ -558,10 +525,8 @@ function DelibsSessionView({
           return (
             <div key={col} className={`rounded-xl border p-4 min-h-[160px] ${style.classes}`}>
               <div className="flex items-center justify-between mb-3">
-                <h4 className={`font-bold text-sm ${style.heading}`}>{style.label}</h4>
-                <span className="bg-white px-2 py-0.5 rounded-full text-xs font-bold border shadow-sm">
-                  {ids.length}
-                </span>
+                <h4 className={`font-heading font-semibold text-sm ${style.heading}`}>{style.label}</h4>
+                <Pill>{ids.length}</Pill>
               </div>
               <div className="space-y-2">
                 {ids.map((id, i) => {
@@ -573,18 +538,18 @@ function DelibsSessionView({
                       key={id}
                       type="button"
                       onClick={() => onSelect(id)}
-                      className="w-full text-left bg-white p-3 rounded-md border border-gray-200 shadow-sm flex items-center gap-2 hover:shadow-md hover:border-blue-300 transition cursor-pointer"
+                      className="w-full text-left bg-card p-3 rounded-md border border-border shadow-sm flex items-center gap-2 hover:shadow-md hover:border-accent-coral/40 transition cursor-pointer"
                     >
                       {!isInitial && col === 'Waitlist' && (
-                        <span className="text-gray-400 font-bold text-xs w-4">{i + 1}.</span>
+                        <span className="text-muted-foreground font-bold text-xs w-4">{i + 1}.</span>
                       )}
-                      <span className="font-medium text-gray-900 text-sm">{label}</span>
+                      <span className="font-medium text-foreground text-sm">{label}</span>
                     </button>
                   )
                 })}
                 {ids.length === 0 && (
-                  <div className="py-4 text-center border-2 border-dashed border-gray-300 rounded-md bg-white/50">
-                    <p className="text-xs text-gray-500 italic">Empty</p>
+                  <div className="py-4 text-center border-2 border-dashed border-border rounded-md bg-card/50">
+                    <p className="text-xs text-muted-foreground italic">Empty</p>
                   </div>
                 )}
               </div>
@@ -596,44 +561,65 @@ function DelibsSessionView({
   )
 }
 
+// A quiet, neutral column shell for the review kanban. Boldness lives in the
+// cards' single primary action, not in painted column backgrounds.
+function ReviewColumn({
+  title,
+  count,
+  emptyLabel,
+  children,
+}: {
+  title: string
+  count: number
+  emptyLabel: string
+  children: React.ReactNode
+}) {
+  return (
+    <div className="flex flex-col gap-3 rounded-xl border border-border bg-muted/30 p-4 min-h-[280px]">
+      <div className="flex items-center justify-between border-b border-border pb-2">
+        <h3 className="font-heading text-sm font-semibold text-foreground">{title}</h3>
+        <Pill>{count}</Pill>
+      </div>
+      {count === 0 ? (
+        <p className="py-6 text-center text-sm text-muted-foreground">{emptyLabel}</p>
+      ) : (
+        children
+      )}
+    </div>
+  )
+}
+
 function ReviewCard({ review, variant }: { review: any; variant: 'pending' | 'inProgress' | 'submitted' }) {
   const da = review.domainApplication
   const user = da?.application?.user
   const domain = da?.challengeVersion?.domain
   const appId = da?.applicationId ?? da?.application?.id
+  const name = `${user?.firstName ?? '?'} ${user?.lastName ?? ''}`.trim()
 
-  const borderClass = variant === 'submitted'
-    ? 'border-green-200'
-    : variant === 'inProgress'
-    ? 'border-blue-200 ring-1 ring-blue-100'
-    : 'border-border'
+  // The in-progress card carries the one coral action — the review you should
+  // pick back up. Pending and submitted stay secondary.
+  const ctaLabel =
+    variant === 'pending' ? 'Start review' : variant === 'inProgress' ? 'Continue review' : 'View review'
+  const ctaVariant = variant === 'inProgress' ? 'primary' : 'secondary'
 
   return (
-    <div className={`bg-card p-4 rounded-lg border ${borderClass} shadow-sm hover:shadow-md transition-shadow`}>
-      <div className="flex justify-between items-start mb-1">
-        <h4 className="font-bold text-foreground">
-          {user?.firstName ?? '?'} {user?.lastName ?? ''}
-        </h4>
-        {variant === 'submitted' && <CheckCircle className="w-4 h-4 text-green-500" />}
+    <div className="flex flex-col gap-2 rounded-lg border border-border bg-card p-4 shadow-sm hover:shadow-md transition-shadow">
+      <div className="flex justify-between items-start gap-2">
+        <h4 className="font-heading font-semibold text-foreground">{name}</h4>
+        {variant === 'submitted' && <CheckCircle className="w-4 h-4 shrink-0 text-accent-teal" />}
       </div>
-      <p className="text-xs text-muted-foreground mb-3">{domain?.name ?? 'Unknown Domain'}</p>
+      <p className="text-xs text-muted-foreground">{domain?.name ?? 'Unknown domain'}</p>
       {variant === 'submitted' && review.overallRecommendation && (
-        <p className="text-xs font-medium text-muted-foreground mb-3 bg-muted inline-block px-2 py-0.5 rounded">
-          {review.overallRecommendation}
-        </p>
+        <div>
+          <RecommendationPill value={review.overallRecommendation} />
+        </div>
       )}
       {appId && (
         <Link
           to={`/hiring/reviewer/application/${appId}`}
-          className={`block w-full text-center px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-            variant === 'pending'
-              ? 'bg-blue-50 text-blue-700 hover:bg-blue-100'
-              : variant === 'inProgress'
-              ? 'bg-accent-coral text-white hover:bg-accent-coral/90'
-              : 'bg-card border border-gray-300 text-foreground/80 hover:bg-muted/50'
-          }`}
+          className={buttonClasses(ctaVariant, 'sm', 'mt-1 w-full')}
         >
-          {variant === 'pending' ? 'Start Review' : variant === 'inProgress' ? 'Continue Review' : 'View Review'}
+          {ctaLabel}
         </Link>
       )}
     </div>

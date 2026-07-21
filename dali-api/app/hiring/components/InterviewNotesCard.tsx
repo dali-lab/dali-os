@@ -1,7 +1,7 @@
 import type React from "react";
 import { Link } from "react-router";
 import { Calendar, MapPin, Users } from "lucide-react";
-import { INTERVIEW_STATUS_COLORS, INTERVIEW_STATUS_LABELS } from "~/hiring/lib/labels";
+import { InterviewStatusPill, RecommendationPill } from "~/hiring/components/Pill";
 
 const LOCATION_LABELS: Record<string, string> = {
   PodAppa: "Pod Appa",
@@ -73,8 +73,6 @@ export function InterviewNotesCard({
 }): React.ReactElement {
   const start = new Date(interview.startTime);
   const end = interview.endTime != null ? new Date(interview.endTime) : null;
-  const statusLabel = INTERVIEW_STATUS_LABELS[interview.status] ?? interview.status;
-  const statusClass = INTERVIEW_STATUS_COLORS[interview.status] ?? "bg-muted text-foreground/80";
   const joint = jointNotesText(interview.jointNotes);
   const interviewers = interview.interviewers ?? [];
   const interviewersWithNotes = interviewers.filter(
@@ -89,14 +87,12 @@ export function InterviewNotesCard({
             {start.toLocaleDateString(undefined, { month: "short", day: "numeric" })}{" "}
             {start.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
           </span>
-          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusClass}`}>
-            {statusLabel}
-          </span>
+          <InterviewStatusPill status={interview.status} />
         </div>
         {interview.recommendation && (
-          <div className="text-sm">
-            <span className="text-muted-foreground">Recommendation:</span>{" "}
-            <span className="font-medium text-foreground">{interview.recommendation}</span>
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-muted-foreground">Recommendation:</span>
+            <RecommendationPill value={interview.recommendation} />
           </div>
         )}
         {interview.recommendationNotes && (
@@ -147,11 +143,7 @@ export function InterviewNotesCard({
   return (
     <div className="px-6 py-4 space-y-3">
       <div className="flex flex-wrap items-center gap-3">
-        <span
-          className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${statusClass}`}
-        >
-          {statusLabel}
-        </span>
+        <InterviewStatusPill status={interview.status} />
         <span className="inline-flex items-center gap-1.5 text-sm text-foreground">
           <Calendar className="w-3.5 h-3.5 text-muted-foreground" aria-hidden />
           {start.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
@@ -173,7 +165,7 @@ export function InterviewNotesCard({
                 href={interview.zoomJoinUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-blue-600 hover:underline ml-1"
+                className="text-accent-coral hover:underline ml-1"
               >
                 link
               </a>
@@ -195,7 +187,7 @@ export function InterviewNotesCard({
           {interview.openInInterviewerHref && (
             <Link
               to={interview.openInInterviewerHref}
-              className="text-xs text-blue-600 hover:underline"
+              className="text-xs text-accent-coral hover:underline"
             >
               Open in interviewer view
             </Link>
@@ -227,9 +219,7 @@ export function InterviewNotesCard({
           </div>
           {interview.recommendation && (
             <div className="mt-2">
-              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-muted text-foreground/80">
-                {interview.recommendation}
-              </span>
+              <RecommendationPill value={interview.recommendation} />
             </div>
           )}
           {interview.recommendationNotes && interview.recommendationNotes.trim().length > 0 && (

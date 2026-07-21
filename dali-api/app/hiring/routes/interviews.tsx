@@ -6,6 +6,10 @@ import { hiringPills } from '~/hiring/components/hiringPills'
 import { AreaPillNav } from '~/components/AreaPillNav'
 import { CycleSelector } from '~/hiring/components/CycleSelector'
 import { Section } from '~/hiring/components/Section'
+import { PageHeader } from '~/hiring/components/PageHeader'
+import { EmptyState } from '~/hiring/components/EmptyState'
+import { InterviewStatusPill } from '~/hiring/components/Pill'
+import { buttonClasses } from '~/components/ui/Button'
 import { getActiveCycle } from '~/hiring/lib/cycles'
 import CalendarGrid from '~/hiring/components/CalendarGrid'
 import { zonedWallTimeUtc } from '~/lib/timezone'
@@ -312,12 +316,17 @@ export default function InterviewsDashboard() {
 
   if (!activeCycle) {
     return (
-      <div className="space-y-8">
+      <div className="space-y-6">
         {areaPills}
-        <h1 className="text-2xl font-bold text-foreground">Interviews</h1>
-        <div className="bg-card rounded-xl border border-border shadow-sm p-8 text-center">
-          <p className="text-muted-foreground">You are not assigned as an interviewer for any active cycle.</p>
-        </div>
+        <PageHeader
+          title="Interviews"
+          subtitle="Your assigned interviews and availability."
+        />
+        <EmptyState
+          icon={Video}
+          title="You're not interviewing this cycle"
+          description="You aren't assigned as an interviewer for any active cycle. Once a hiring lead adds you, your interviews and availability will show up here."
+        />
       </div>
     )
   }
@@ -325,34 +334,31 @@ export default function InterviewsDashboard() {
   return (
     <div className="space-y-6">
       {areaPills}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Interviews</h1>
-          <p className="mt-1 text-muted-foreground">
-            Your assigned interviews and availability.
-          </p>
-        </div>
-        <CycleSelector cycles={availableCycles} activeId={activeCycle.id} />
-      </div>
+      <PageHeader
+        title="Interviews"
+        subtitle="Your assigned interviews and availability."
+        actions={<CycleSelector cycles={availableCycles} activeId={activeCycle.id} />}
+      />
 
       <Section
-        title="Assigned Interviews"
-        icon={<Video className="w-4 h-4 text-blue-600" />}
+        title="Assigned interviews"
+        icon={<Video className="w-4 h-4 text-muted-foreground" />}
         badge={
           scheduledInterviews.length > 0 ? (
-            <span className="text-xs font-medium text-gray-500">
+            <span className="text-xs font-medium text-muted-foreground">
               {scheduledInterviews.length} scheduled
             </span>
           ) : null
         }
       >
         {scheduledInterviews.length === 0 ? (
-          <p className="text-sm text-gray-500">
-            No interviews have been scheduled with you yet. Once applicants book
-            interviews on your availability, they'll appear here.
-          </p>
+          <EmptyState
+            icon={Video}
+            title="No interviews scheduled yet"
+            description="Once applicants book interviews on your availability, they'll appear here."
+          />
         ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {scheduledInterviews.map((assignment: any) => {
             const interview = assignment.interview
             if (!interview) return null
@@ -364,26 +370,29 @@ export default function InterviewsDashboard() {
             return (
               <div
                 key={assignment.id}
-                className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden flex flex-col"
+                className="bg-card rounded-xl border border-border shadow-sm overflow-hidden flex flex-col"
               >
-                <div className="p-6 border-b border-gray-200 bg-gray-50 flex justify-between items-start">
-                  <div>
-                    <h3 className="text-lg font-bold text-gray-900 mb-1">
+                <div className="p-5 border-b border-border bg-muted/50 flex justify-between items-start gap-3">
+                  <div className="min-w-0">
+                    <h3 className="font-heading text-lg font-semibold text-foreground">
                       {applicant ? `${applicant.firstName} ${applicant.lastName}` : 'Applicant'}
                     </h3>
-                    {domains && (
-                      <p className="text-xs text-gray-500">{domains}</p>
-                    )}
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      {domains && (
+                        <span className="text-xs text-muted-foreground">{domains}</span>
+                      )}
+                      <InterviewStatusPill status={interview.status} />
+                    </div>
                   </div>
-                  <div className="text-right bg-white px-3 py-2 rounded-lg border shadow-sm">
-                    <p className="text-sm font-bold text-gray-900">
+                  <div className="shrink-0 text-right bg-card px-3 py-2 rounded-lg border border-border">
+                    <p className="text-sm font-semibold text-foreground">
                       {startDate.toLocaleDateString(undefined, {
                         weekday: 'short',
                         month: 'short',
                         day: 'numeric',
                       })}
                     </p>
-                    <p className="text-sm text-gray-500">
+                    <p className="text-sm text-muted-foreground">
                       {startDate.toLocaleTimeString(undefined, {
                         hour: 'numeric',
                         minute: '2-digit',
@@ -396,20 +405,20 @@ export default function InterviewsDashboard() {
                     </p>
                   </div>
                 </div>
-                <div className="p-6 flex-1 flex items-end gap-3">
+                <div className="p-5 flex-1 flex flex-wrap items-end gap-2">
                   <Link
                     to={`/hiring/interviews/${interview.id}`}
-                    className="inline-flex items-center justify-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-lg text-white bg-accent-coral hover:bg-accent-coral/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                    className={buttonClasses('primary', 'md')}
                   >
-                    Open Interview
+                    Open interview
                   </Link>
                   <button
                     type="button"
                     onClick={() => handleDeclineInterview(interview.id)}
                     disabled={decliningId === interview.id}
-                    className="inline-flex items-center justify-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                    className={buttonClasses('secondary', 'md')}
                   >
-                    {decliningId === interview.id ? 'Marking…' : 'Mark Unavailable'}
+                    {decliningId === interview.id ? 'Marking…' : 'Mark unavailable'}
                   </button>
                 </div>
               </div>
@@ -420,15 +429,15 @@ export default function InterviewsDashboard() {
       </Section>
 
       <Section
-        title="Interview Availability"
-        icon={<CalendarDays className="w-4 h-4 text-blue-600" />}
+        title="Interview availability"
+        icon={<CalendarDays className="w-4 h-4 text-muted-foreground" />}
         badge={
           needsAvailabilityPrompt ? (
             <span className="text-xs font-medium text-accent-coral">
               Action needed
             </span>
           ) : savedAvailability.length > 0 ? (
-            <span className="text-xs font-medium text-green-700">
+            <span className="text-xs font-medium text-muted-foreground">
               {savedAvailability.length} blocks saved
             </span>
           ) : null
@@ -437,11 +446,11 @@ export default function InterviewsDashboard() {
         {interviewConfig ? (
           <div className="space-y-3">
             {importError && (
-              <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
+              <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/30 text-sm text-destructive">
                 {importError}
               </div>
             )}
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-muted-foreground">
               Click or drag to select the times you are available to conduct
               interviews. 15-minute blocks.
             </p>
@@ -461,11 +470,11 @@ export default function InterviewsDashboard() {
             />
           </div>
         ) : (
-          <p className="text-sm text-gray-500">
-            Interview dates have not been configured yet. You'll be able to
-            set your availability once your Hiring Lead configures the
-            interview window.
-          </p>
+          <EmptyState
+            icon={CalendarDays}
+            title="Availability isn't open yet"
+            description="You'll be able to set the times you can interview once your hiring lead configures the interview window."
+          />
         )}
       </Section>
     </div>

@@ -20,6 +20,8 @@ import { QuestionList } from "~/hiring/components/ApplicationAnswers";
 import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
 import { type UrlCheckState } from "~/components/form-builder/QuestionField";
 import { FormField } from "~/forms/components/FormField";
+import { Button } from "~/components/ui/Button";
+import { Pill } from "~/hiring/components/Pill";
 
 export const meta: Route.MetaFunction = () => [{ title: "Apply · DALI OS" }];
 
@@ -1284,25 +1286,26 @@ export default function PortalApply() {
     return (
       <div className="max-w-3xl mx-auto px-6 py-10">
         <div className="flex items-center justify-between mb-2">
-          <h2 className="font-heading text-xl font-bold text-dark-blue">{cycleName} Application</h2>
+          <h2 className="font-heading text-xl font-bold text-dark-blue">{cycleName} application</h2>
         </div>
         <p className="text-sm text-muted-foreground mb-8">
-          Select the domains you'd like to apply for, then start your application.
+          Pick the domains you'd like to apply for, then start your application. You can add or remove domains any time before you submit.
         </p>
 
         <div className="space-y-8">
           {renderDomainSelector()}
 
-          {error && <p className="text-sm text-red-500">{error}</p>}
+          {error && <p className="text-sm text-red-600">{error}</p>}
 
           <div>
-            <button
+            <Button
+              variant="primary"
+              size="md"
               onClick={handleCreateDraft}
               disabled={selectedDomainIds.length === 0}
-              className="px-6 py-2.5 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50"
             >
-              Start Application
-            </button>
+              Start application
+            </Button>
           </div>
         </div>
       </div>
@@ -1319,25 +1322,25 @@ export default function PortalApply() {
 
       <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_220px] lg:gap-10">
         <div className="max-w-3xl">
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="font-heading text-xl font-bold text-dark-blue">{cycleName} Application</h2>
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <h2 className="font-heading text-xl font-bold text-dark-blue">{cycleName} application</h2>
             {submitting ? (
-              <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-muted text-muted-foreground flex items-center gap-1">
-                <span className="inline-block w-3 h-3 border-2 border-border border-t-muted-foreground rounded-full animate-spin" />
-                Submitting...
-              </span>
+              <Pill color="bg-muted text-muted-foreground">
+                <span className="inline-block w-3 h-3 border-2 border-border border-t-muted-foreground rounded-full animate-spin mr-1.5" />
+                Submitting…
+              </Pill>
             ) : Object.keys(wordCountErrors).length > 0 ? (
-              <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-red-100 text-red-700">Action required</span>
+              <Pill color="bg-red-100 text-red-700">Action needed</Pill>
             ) : Object.keys(urlWarnings).length > 0 ? (
-              <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-amber-100 text-amber-700">Action required</span>
+              <Pill color="bg-amber-100 text-amber-700">Action needed</Pill>
             ) : isAlreadySubmitted ? (
-              <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-green-100 text-green-700">Submitted</span>
+              <Pill color="bg-green-100 text-green-700">Submitted</Pill>
             ) : (
-              <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-blue-100 text-blue-700">Draft</span>
+              <Pill color="bg-blue-100 text-blue-700">Draft</Pill>
             )}
           </div>
           <p className="text-sm text-muted-foreground mb-8">
-            Fill out the form below. Your progress is saved automatically.
+            Work through each section below. There's no submit until you're ready — your answers save automatically as you go.
           </p>
 
           <div className="space-y-8">
@@ -1509,14 +1512,14 @@ export default function PortalApply() {
           ) : null;
         })()}
 
-        {error && <p className="text-sm text-red-500">{error}</p>}
+        {error && <p className="text-sm text-red-600">{error}</p>}
 
         {/* Word-count errors banner — hard error, blocks submission */}
         {Object.keys(wordCountErrors).length > 0 && (
           <div ref={warningBannerRef} className="rounded-xl border border-red-200 bg-red-50 px-5 py-4">
-            <p className="text-sm font-semibold text-red-800 mb-1">Some answers exceed the word limit</p>
+            <p className="text-sm font-semibold text-red-800 mb-1">A couple of answers run long</p>
             <p className="text-xs text-red-700">
-              The following answers are over the allowed word count. Trim them down before submitting.
+              These answers are over the word limit — trim them down and you'll be ready to submit.
             </p>
             <ul className="text-xs text-red-700 mt-2 list-disc list-inside space-y-0.5">
               {Object.entries(wordCountErrors).map(([key, v]) => (
@@ -1539,38 +1542,39 @@ export default function PortalApply() {
         )}
 
         {/* Actions */}
-        <div className="flex items-center gap-3 pt-2">
-          <button
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pt-2">
+          <Button
+            variant="primary"
+            size="md"
             onClick={() => openReviewIfValid()}
             disabled={submitting || checkingUrls}
-            className="px-6 py-2.5 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50 flex items-center gap-2"
           >
             {checkingUrls && (
               <span className="inline-block w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
             )}
             {submitting
-              ? "Submitting..."
+              ? "Submitting…"
               : checkingUrls
-                ? "Checking links..."
+                ? "Checking links…"
                 : isAlreadySubmitted
-                  ? "Review Updates"
-                  : "Review Application"}
-          </button>
-          <span className="text-xs text-muted-foreground/70 flex items-center gap-1.5">
+                  ? "Review your updates"
+                  : "Review your application"}
+          </Button>
+          <span className="text-xs text-muted-foreground flex items-center gap-1.5">
             {saving ? (
               <>
                 <span className="inline-block w-3 h-3 border-2 border-border border-t-accent-coral rounded-full animate-spin" />
-                Saving...
+                Saving…
               </>
             ) : hasSavedOnce ? (
               <>
-                <svg className="w-3.5 h-3.5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <svg className="w-3.5 h-3.5 text-accent-teal" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                 </svg>
-                Draft auto-saved
+                All changes saved
               </>
             ) : (
-              <>Changes will be saved automatically</>
+              <>Your answers save automatically</>
             )}
           </span>
         </div>
@@ -1651,22 +1655,20 @@ export default function PortalApply() {
         </div>
 
         <div className="flex gap-3 justify-end pt-5 mt-5 border-t border-border">
-          <button
-            type="button"
+          <Button
+            variant="secondary"
             onClick={() => setShowReviewModal(false)}
             disabled={submitting}
-            className="px-5 py-2 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition disabled:opacity-50"
           >
-            Go Back and Edit
-          </button>
-          <button
-            type="button"
+            Keep editing
+          </Button>
+          <Button
+            variant="primary"
             onClick={() => { setShowReviewModal(false); doSubmit(acceptedUrlWarnings); }}
             disabled={submitting}
-            className="px-5 py-2 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50"
           >
-            {submitting ? "Submitting..." : "Confirm Submission"}
-          </button>
+            {submitting ? "Submitting…" : isAlreadySubmitted ? "Update application" : "Submit application"}
+          </Button>
         </div>
       </Modal>
 
@@ -1700,26 +1702,26 @@ export default function PortalApply() {
           })}
         </ul>
         <div className="flex gap-3 justify-end">
-          <button
+          <Button
+            variant="secondary"
             onClick={() => {
               setShowWarningModal(false);
               scrollToFirstWarning();
             }}
-            className="px-5 py-2 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition"
           >
-            Go Back and Fix
-          </button>
-          <button
+            Go back and fix the links
+          </Button>
+          <Button
+            variant="primary"
             onClick={() => {
               setAcceptedUrlWarnings(true);
               setShowWarningModal(false);
               setShowReviewModal(true);
             }}
             disabled={submitting}
-            className="px-5 py-2 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50"
           >
-            Submit Anyway
-          </button>
+            Continue anyway
+          </Button>
         </div>
       </Modal>
 
@@ -1737,23 +1739,23 @@ export default function PortalApply() {
           for this domain, since each challenge has its own questions. This can't be undone.
         </p>
         <div className="flex gap-3 justify-end">
-          <button
+          <Button
+            variant="secondary"
             onClick={() => setPendingChallengeChange(null)}
-            className="px-5 py-2 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition"
           >
-            Cancel
-          </button>
-          <button
+            Keep this challenge
+          </Button>
+          <Button
+            variant="destructive"
             onClick={() => {
               if (pendingChallengeChange) {
                 applyChallengePick(pendingChallengeChange.domainId, pendingChallengeChange.toCvId);
               }
               setPendingChallengeChange(null);
             }}
-            className="px-5 py-2 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition"
           >
-            Switch and Clear Answers
-          </button>
+            Switch and clear answers
+          </Button>
         </div>
       </Modal>
     </div>

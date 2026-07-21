@@ -1,7 +1,10 @@
 import type React from "react";
+import { PageHeader } from "~/hiring/components/PageHeader";
 
 // Applicant name + "domain · cycle" subtitle for the hiring detail routes,
-// with an optional status pill rendered top-right.
+// with an optional status pill rendered inline beside the name. Delegates to
+// the shared PageHeader so every detail view opens with the same Dosis title,
+// spacing, and chip placement as the rest of the hiring area.
 export function ApplicantDetailHeader({
   name,
   domainName,
@@ -14,14 +17,10 @@ export function ApplicantDetailHeader({
   statusSlot?: React.ReactNode;
 }): React.ReactElement {
   return (
-    <div className="flex items-start justify-between gap-4">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">{name}</h1>
-        <p className="mt-1 text-muted-foreground">
-          {domainName} · {cycleName}
-        </p>
-      </div>
-      {statusSlot != null && <div className="flex-shrink-0">{statusSlot}</div>}
-    </div>
+    <PageHeader
+      title={name}
+      subtitle={`${domainName} · ${cycleName}`}
+      chip={statusSlot}
+    />
   );
 }

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react'
 import { APPLICATION_TZ, zonedWallTimeUtc, getZonedParts } from '~/lib/timezone'
+import { Button, buttonClasses } from '~/components/ui/Button'
 
 // ─── Types ─���─────────────────────────────────────────────────────────────────
 
@@ -318,10 +319,10 @@ export default function CalendarGrid({
           <button
             onClick={onImportFromGoogle}
             disabled={importing}
-            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-300 text-xs font-medium text-foreground/80 hover:bg-muted/50 disabled:opacity-50 transition"
+            className={buttonClasses('secondary', 'sm')}
           >
             <Calendar className="w-4 h-4" />
-            <span className="hidden sm:inline">{importing ? 'Importing...' : 'Import from Google Calendar'}</span>
+            <span className="hidden sm:inline">{importing ? 'Importing…' : 'Import from Google Calendar'}</span>
             <span className="sm:hidden">{importing ? 'Importing…' : 'Import'}</span>
           </button>
         )}
@@ -386,13 +387,12 @@ export default function CalendarGrid({
                   const isOutOfRange = cellDate < rangeStartDay || cellDate >= dayAfterRangeEnd
                   const isLocked = isInterview || isPast || isOutOfRange
 
-                  let bg = 'bg-card hover:bg-green-50'
-                  
+                  let bg = 'bg-card hover:bg-green-100 cursor-pointer'
+
                   if (isInterview) bg = 'bg-blue-100 cursor-not-allowed'
                   else if (isOutOfRange) bg = 'bg-muted/30 cursor-not-allowed'
-
                   else if (isPast) bg = 'bg-muted/50 cursor-not-allowed'
-                  else if (isSelected) bg = 'bg-green-400 hover:bg-green-500'
+                  else if (isSelected) bg = 'bg-green-400 hover:bg-green-500 cursor-pointer'
 
                   return (
                     <div
@@ -401,7 +401,7 @@ export default function CalendarGrid({
                       data-block-past={isPast ? '1' : '0'}
                       onMouseDown={() => !isLocked && handleMouseDown(key, isPast)}
                       onMouseEnter={() => !isLocked && handleMouseEnter(key, isPast)}
-                      className={`border-r last:border-r-0 border-border transition-colors ${isHourBoundary ? 'border-t border-border' : 'border-t border-gray-50'} ${bg}`}
+                      className={`border-r last:border-r-0 border-border transition-colors ${isHourBoundary ? 'border-t border-border' : 'border-t border-border/40'} ${bg}`}
                       style={{ height: BLOCK_HEIGHT_PX }}
                     />
                   )
@@ -416,7 +416,7 @@ export default function CalendarGrid({
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 sm:px-6 py-3 sm:py-4 border-t border-border">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
           <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 bg-card border border-gray-300 rounded" /> Unavailable
+            <div className="w-3 h-3 bg-card border border-border rounded" /> Unavailable
           </div>
           <div className="flex items-center gap-1.5">
             <div className="w-3 h-3 bg-green-400 rounded" /> Available
@@ -427,15 +427,15 @@ export default function CalendarGrid({
         </div>
         <div className="flex items-center gap-3 sm:justify-end">
           {dirty && (
-            <span className="text-xs text-amber-600 font-medium">Unsaved changes</span>
+            <span className="text-xs text-accent-coral font-medium">Unsaved changes</span>
           )}
-          <button
+          <Button
             onClick={handleSave}
             disabled={!dirty || saving}
-            className="px-5 py-2 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition disabled:opacity-50 disabled:cursor-not-allowed"
+            variant="primary"
           >
-            {saving ? 'Saving...' : 'Save Availability'}
-          </button>
+            {saving ? 'Saving…' : 'Save availability'}
+          </Button>
         </div>
       </div>
     </div>

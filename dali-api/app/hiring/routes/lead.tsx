@@ -6,9 +6,12 @@ import { requireAuth } from "~/lib/auth";
 import { isCore, getUserRoles } from "~/lib/roles";
 import { hiringPills } from "~/hiring/components/hiringPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
-import { ChevronRight, ChevronDown, Plus } from "lucide-react";
+import { ChevronRight, ChevronDown, Plus, Layers } from "lucide-react";
 import { Modal, ModalHeader } from "~/components/Modal";
-import { STATUS_COLORS, STATUS_LABELS } from "~/hiring/lib/labels";
+import { Button } from "~/components/ui/Button";
+import { PageHeader } from "~/hiring/components/PageHeader";
+import { EmptyState } from "~/hiring/components/EmptyState";
+import { CycleStatusPill } from "~/hiring/components/Pill";
 
 export const handle = { areaPills: true };
 
@@ -73,22 +76,20 @@ export default function HiringLeadDashboard() {
   const [showModal, setShowModal] = useState(false);
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-5">
       {data?.pillRoles && (
         <AreaPillNav items={hiringPills({ ...data.pillRoles, active: "cycles" })} />
       )}
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-foreground">Hiring Cycles</h1>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowModal(true)}
-            className="flex items-center gap-1.5 px-3 py-2 bg-accent-coral text-white text-sm font-medium rounded-md hover:bg-accent-coral/90 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <Plus className="w-4 h-4" />
-            New Cycle
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title="Hiring cycles"
+        subtitle="Set up, run, and revisit each recruiting cycle."
+        actions={
+          <Button variant="primary" onClick={() => setShowModal(true)}>
+            <Plus className="h-4 w-4" />
+            New cycle
+          </Button>
+        }
+      />
 
       <Modal
         open={showModal}
@@ -115,7 +116,7 @@ export default function HiringLeadDashboard() {
                     required
                     autoFocus
                     autoComplete="off"
-                    className="w-full px-3 py-2 text-sm text-foreground border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 text-sm text-foreground bg-card border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
                   />
                 </div>
                 <div>
@@ -126,7 +127,7 @@ export default function HiringLeadDashboard() {
                     id="cycle-type"
                     name="cycleType"
                     defaultValue="Standard"
-                    className="w-full px-3 py-2 text-sm text-foreground border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 text-sm text-foreground bg-card border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
                   >
                     <option value="Standard">Standard hire</option>
                     <option value="InternToFull">Fellowship</option>
@@ -136,19 +137,12 @@ export default function HiringLeadDashboard() {
                   </p>
                 </div>
                 <div className="flex justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowModal(false)}
-                    className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-gray-300 rounded-md hover:bg-muted/50"
-                  >
+                  <Button variant="secondary" onClick={() => setShowModal(false)}>
                     Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-3 py-2 text-sm font-medium text-white bg-accent-coral rounded-md hover:bg-accent-coral/90"
-                  >
-                    Create
-                  </button>
+                  </Button>
+                  <Button type="submit" variant="primary">
+                    Create cycle
+                  </Button>
                 </div>
               </Form>
         </>
@@ -202,10 +196,11 @@ function ActiveCycleHero({ cycles }: { cycles: any[] }) {
 
   if (heroes.length === 0) {
     return (
-      <div className="bg-card border-2 border-dashed border-gray-300 rounded-xl p-8 text-center">
-        <p className="text-muted-foreground mb-1">No active hiring cycle.</p>
-        <p className="text-sm text-muted-foreground/70">Create a new cycle to get started.</p>
-      </div>
+      <EmptyState
+        icon={Layers}
+        title="No active hiring cycle"
+        description="Create a cycle to open applications, assign reviewers, and start moving candidates through the funnel."
+      />
     );
   }
 
@@ -218,18 +213,16 @@ function ActiveCycleHero({ cycles }: { cycles: any[] }) {
           <Link
             key={c.id}
             to={heroLinkFor(c)}
-            className="block bg-card border border-border rounded-xl p-6 hover:border-blue-300 hover:shadow-md transition-all"
+            className="block bg-card border border-border rounded-xl p-6 hover:border-accent-coral/40 hover:shadow-md transition-all"
           >
-            <div className="flex items-start justify-between">
+            <div className="flex items-start justify-between gap-4">
               <div className="space-y-2">
                 <div className="flex items-center gap-3 flex-wrap">
                   <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     {CYCLE_TYPE_LABELS[c.cycleType] ?? c.cycleType}
                   </span>
-                  <span className="text-xl font-bold text-foreground">{c.name}</span>
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[currentStatus]}`}>
-                    {STATUS_LABELS[currentStatus]}
-                  </span>
+                  <span className="font-heading text-xl font-bold text-foreground">{c.name}</span>
+                  <CycleStatusPill status={currentStatus} />
                 </div>
                 <div className="flex items-center gap-4 text-sm text-muted-foreground">
                   <span>{domains.join(", ") || "No domains"}</span>
@@ -237,8 +230,8 @@ function ActiveCycleHero({ cycles }: { cycles: any[] }) {
                   <span>{c._count.applications} application{c._count.applications !== 1 ? "s" : ""}</span>
                 </div>
               </div>
-              <div className="flex items-center gap-2 text-blue-600 font-medium text-sm">
-                Manage Cycle
+              <div className="flex shrink-0 items-center gap-2 text-accent-coral font-medium text-sm">
+                Manage cycle
                 <ChevronRight className="w-4 h-4" />
               </div>
             </div>
@@ -262,13 +255,14 @@ function PastCycles({ cycles }: { cycles: any[] }) {
     <div className="border border-border rounded-lg overflow-hidden">
       <button
         onClick={() => setOpen(!open)}
+        aria-expanded={open}
         className="w-full px-5 py-3 flex items-center justify-between bg-muted/50 hover:bg-muted transition text-left"
       >
-        <span className="text-sm font-semibold text-foreground/80">Past Cycles ({pastCycles.length})</span>
-        <ChevronDown className={`w-4 h-4 text-muted-foreground/70 transition-transform ${open ? "rotate-180" : ""}`} />
+        <span className="text-sm font-semibold text-foreground/80">Past cycles ({pastCycles.length})</span>
+        <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (
-        <div className="divide-y divide-gray-100">
+        <div className="divide-y divide-border">
           {pastCycles.map((cycle: any) => {
             const currentStatus = cycle.statusUpdates[0]?.newStatus ?? "Draft";
             const domains = cycle.domains.map((d: any) => d.domain.name);
@@ -279,18 +273,16 @@ function PastCycles({ cycles }: { cycles: any[] }) {
                 className="flex items-center justify-between px-5 py-3 hover:bg-muted/50 transition-colors"
               >
                 <div className="flex items-center gap-3 flex-wrap">
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                     {CYCLE_TYPE_LABELS[cycle.cycleType] ?? cycle.cycleType}
                   </span>
                   <span className="text-sm font-medium text-foreground">{cycle.name}</span>
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[currentStatus]}`}>
-                    {STATUS_LABELS[currentStatus]}
-                  </span>
-                  <span className="text-xs text-muted-foreground/70">
+                  <CycleStatusPill status={currentStatus} />
+                  <span className="text-xs text-muted-foreground">
                     {domains.join(", ")} · {cycle._count.applications} app{cycle._count.applications !== 1 ? "s" : ""}
                   </span>
                 </div>
-                <ChevronRight className="w-4 h-4 text-muted-foreground/70" />
+                <ChevronRight className="w-4 h-4 text-muted-foreground" />
               </Link>
             );
           })}

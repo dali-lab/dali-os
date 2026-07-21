@@ -12,6 +12,8 @@ import { Button } from "~/components/ui/Button";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { hiringPills } from "~/hiring/components/hiringPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
+import { PageHeader } from "~/hiring/components/PageHeader";
+import { EmptyState } from "~/hiring/components/EmptyState";
 import type { loader } from "~/hiring/routes/library";
 
 type Tab = "challenges" | "rubrics" | "agreements";
@@ -38,8 +40,12 @@ export default function Library() {
   };
 
   return (
-    <div className="space-y-8">
+    <div className="flex flex-col gap-6">
       <AreaPillNav items={hiringPills({ ...data.pillRoles, active: "library" })} />
+      <PageHeader
+        title="Library"
+        subtitle="Reusable challenges, rubrics, and confidentiality agreements — versioned independently of any hiring cycle, then bound to cycles as needed."
+      />
       <div
         className="inline-flex self-start rounded-lg border border-border bg-muted/40 p-0.5"
         role="tablist"
@@ -105,13 +111,13 @@ function ChallengesPanel({
     <div className="space-y-6">
       <div className="flex justify-between items-start gap-4 flex-wrap">
         <div className="min-w-0">
-          <h2 className="text-lg font-bold text-foreground">
-            {activeDomainName} Challenges
+          <h2 className="font-heading text-lg font-bold text-foreground">
+            {activeDomainName} challenges
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
             {isGeneral
-              ? "Manage the general application form and its versions."
-              : "Manage domain challenges and their versions independently of hiring cycles."}
+              ? "The general application form and its versions."
+              : "Domain challenges and their versions, kept separately from any cycle."}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
@@ -119,7 +125,7 @@ function ChallengesPanel({
             value={activeDomain}
             onChange={(e) => setActiveDomain(e.target.value)}
             aria-label="Domain"
-            className="px-3 py-2 rounded-lg border border-border bg-card text-sm font-medium text-foreground hover:bg-muted/50 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+            className="px-3 py-2 rounded-lg border border-border bg-card text-sm font-medium text-foreground hover:bg-muted/50 focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
           >
             <option value={GENERAL_TAB_ID}>General</option>
             {domains.map((domain: any) => (
@@ -130,7 +136,7 @@ function ChallengesPanel({
           </select>
           <Button variant="primary" size="sm" onClick={() => setShowModal(true)}>
             <Plus className="w-4 h-4" />
-            New Challenge
+            New challenge
           </Button>
         </div>
       </div>
@@ -152,7 +158,7 @@ function ChallengesPanel({
                     <FileText className="w-6 h-6" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <h3 className="text-lg font-bold text-foreground group-hover:text-blue-600 transition-colors break-words">
+                    <h3 className="font-heading text-lg font-bold text-foreground group-hover:text-accent-coral transition-colors break-words">
                       {challenge.name}
                     </h3>
                     <p className="text-sm text-muted-foreground mt-1">
@@ -168,13 +174,14 @@ function ChallengesPanel({
                     <input type="hidden" name="id" value={challenge.id} />
                     <button
                       type="submit"
-                      className="p-1.5 text-muted-foreground/70 hover:text-red-600 hover:bg-red-50 rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
+                      aria-label="Delete challenge"
+                      className="p-1.5 text-muted-foreground hover:text-destructive rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
                       onClick={(e) => e.stopPropagation()}
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </Form>
-                  <ChevronRight className="w-5 h-5 text-muted-foreground/70 group-hover:text-blue-500 transition-colors" />
+                  <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-accent-coral transition-colors" />
                 </div>
               </div>
               <div className="mt-6 pt-4 border-t border-border text-sm text-muted-foreground">
@@ -184,8 +191,12 @@ function ChallengesPanel({
           );
         })}
         {filtered.length === 0 && (
-          <div className="col-span-full text-center py-12 text-muted-foreground/70 text-sm">
-            No challenges for this domain yet.
+          <div className="col-span-full">
+            <EmptyState
+              icon={FileText}
+              title={`No ${activeDomainName.toLowerCase()} challenges yet`}
+              description="Create a challenge, then add versions to it as the prompt evolves across cycles."
+            />
           </div>
         )}
       </div>
@@ -199,7 +210,7 @@ function ChallengesPanel({
       >
         <ModalHeader
           titleId="new-challenge-title"
-          title="New Challenge"
+          title="New challenge"
           onClose={() => setShowModal(false)}
           className="mb-0"
         />
@@ -221,7 +232,7 @@ function ChallengesPanel({
           )}
           <div>
             <label className="block text-sm font-medium text-foreground/80 mb-1">
-              Challenge Name <span className="text-red-500">*</span>
+              Challenge name <span className="text-destructive">*</span>
             </label>
             <input
               type="text"
@@ -232,7 +243,7 @@ function ChallengesPanel({
               required
               autoFocus
               autoComplete="off"
-              className="block w-full rounded-lg border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2.5 text-foreground bg-card placeholder-gray-400"
+              className="block w-full rounded-lg border border-border shadow-sm focus:outline-none focus:ring-2 focus:ring-accent-coral/30 sm:text-sm p-2.5 text-foreground bg-card placeholder:text-muted-foreground"
             />
           </div>
 
@@ -250,7 +261,7 @@ function ChallengesPanel({
               size="sm"
               disabled={!newChallengeName.trim()}
             >
-              Create Challenge
+              Create challenge
             </Button>
           </div>
         </Form>
@@ -265,16 +276,16 @@ function RubricsPanel({ rubrics }: { rubrics: any[] }) {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center gap-4 flex-wrap">
         <div>
-          <h2 className="text-lg font-bold text-foreground">Evaluation Rubrics</h2>
+          <h2 className="font-heading text-lg font-bold text-foreground">Evaluation rubrics</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Manage rubrics and their versions independently of hiring cycles.
+            Scoring rubrics and their versions, kept separately from any cycle.
           </p>
         </div>
         <Button variant="primary" size="sm" onClick={() => setShowModal(true)}>
           <Plus className="w-4 h-4" />
-          New Rubric
+          New rubric
         </Button>
       </div>
 
@@ -291,7 +302,7 @@ function RubricsPanel({ rubrics }: { rubrics: any[] }) {
                   <ListOrdered className="w-6 h-6" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <h3 className="font-bold text-foreground group-hover:text-blue-600 transition-colors break-words">
+                  <h3 className="font-heading font-bold text-foreground group-hover:text-accent-coral transition-colors break-words">
                     {rubric.name}
                   </h3>
                   <div className="flex items-center gap-2 mt-1">
@@ -302,14 +313,18 @@ function RubricsPanel({ rubrics }: { rubrics: any[] }) {
                   </div>
                 </div>
               </div>
-              <ChevronRight className="w-5 h-5 text-muted-foreground/70 group-hover:text-blue-500 flex-shrink-0" />
+              <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-accent-coral flex-shrink-0" />
             </div>
           </Link>
         ))}
         {rubrics.length === 0 && (
-          <p className="text-muted-foreground col-span-3 text-sm italic">
-            No rubrics yet.
-          </p>
+          <div className="col-span-full">
+            <EmptyState
+              icon={ListOrdered}
+              title="No rubrics yet"
+              description="Create a rubric to define scoring criteria reviewers use during evaluation."
+            />
+          </div>
         )}
       </div>
 
@@ -321,7 +336,7 @@ function RubricsPanel({ rubrics }: { rubrics: any[] }) {
         <div className="space-y-4">
           <ModalHeader
             titleId="new-rubric-title"
-            title="New Rubric"
+            title="New rubric"
             onClose={() => setShowModal(false)}
             className="mb-0"
           />
@@ -342,7 +357,7 @@ function RubricsPanel({ rubrics }: { rubrics: any[] }) {
                 value={newRubricName}
                 onChange={(e) => setNewRubricName(e.target.value)}
                 placeholder="e.g. Design Challenge Rubric"
-                className="w-full px-3 py-2 text-sm text-foreground border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 text-sm text-foreground bg-card border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-accent-coral/30 placeholder:text-muted-foreground"
                 autoFocus
                 autoComplete="off"
               />
@@ -361,7 +376,7 @@ function RubricsPanel({ rubrics }: { rubrics: any[] }) {
                 size="sm"
                 disabled={!newRubricName.trim()}
               >
-                Create
+                Create rubric
               </Button>
             </div>
           </Form>
@@ -383,21 +398,21 @@ function AgreementsPanel({
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center gap-4 flex-wrap">
         <div>
-          <h2 className="text-lg font-bold text-foreground">
-            Confidentiality Agreements
+          <h2 className="font-heading text-lg font-bold text-foreground">
+            Confidentiality agreements
           </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Versioned confidentiality agreements. Bind a specific version to a
-            cycle from the cycle admin page; reviewers, interviewers, domain
-            leads, and admins must sign before viewing sensitive cycle data.
+          <p className="mt-1 text-sm text-muted-foreground max-w-2xl">
+            Versioned agreements. Bind a version to a cycle from its admin page;
+            reviewers, interviewers, domain leads, and admins must sign before
+            viewing sensitive cycle data.
           </p>
         </div>
         {canEdit && (
           <Button variant="primary" size="sm" onClick={() => setShowModal(true)}>
             <Plus className="w-4 h-4" />
-            New Agreement
+            New agreement
           </Button>
         )}
       </div>
@@ -417,7 +432,7 @@ function AgreementsPanel({
                     <ShieldCheck className="w-6 h-6" />
                   </div>
                   <div className="min-w-0">
-                    <h3 className="font-bold text-foreground group-hover:text-blue-600 transition-colors truncate">
+                    <h3 className="font-heading font-bold text-foreground group-hover:text-accent-coral transition-colors truncate">
                       {agreement.name}
                     </h3>
                     <div className="flex items-center gap-2 mt-1">
@@ -433,15 +448,19 @@ function AgreementsPanel({
                     </div>
                   </div>
                 </div>
-                <ChevronRight className="w-5 h-5 text-muted-foreground/70 group-hover:text-blue-500 shrink-0" />
+                <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-accent-coral shrink-0" />
               </div>
             </Link>
           );
         })}
         {agreements.length === 0 && (
-          <p className="text-muted-foreground col-span-3 text-sm italic">
-            No agreements yet.
-          </p>
+          <div className="col-span-full">
+            <EmptyState
+              icon={ShieldCheck}
+              title="No agreements yet"
+              description="Create a confidentiality agreement, then bind a version to a cycle so the team can read and sign it."
+            />
+          </div>
         )}
       </div>
 
@@ -453,7 +472,7 @@ function AgreementsPanel({
         <div className="space-y-4">
           <ModalHeader
             titleId="new-agreement-title"
-            title="New Confidentiality Agreement"
+            title="New confidentiality agreement"
             onClose={() => setShowModal(false)}
             className="mb-0"
           />
@@ -474,7 +493,7 @@ function AgreementsPanel({
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 placeholder="e.g. Hiring Confidentiality — 2026"
-                className="w-full px-3 py-2 text-sm text-foreground border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 text-sm text-foreground bg-card border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-accent-coral/30 placeholder:text-muted-foreground"
                 autoFocus
                 autoComplete="off"
               />
@@ -493,7 +512,7 @@ function AgreementsPanel({
                 size="sm"
                 disabled={!newName.trim()}
               >
-                Create
+                Create agreement
               </Button>
             </div>
           </Form>

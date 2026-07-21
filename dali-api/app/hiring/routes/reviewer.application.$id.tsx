@@ -11,6 +11,9 @@ import { presignAnswers } from '~/hiring/lib/presign'
 import type { Route } from './+types/reviewer.application.$id'
 import { ApplicationViewer } from '~/hiring/components/ApplicationViewer'
 import { SaveStatusIndicator } from '~/hiring/components/SaveStatusIndicator'
+import { PageHeader } from '~/hiring/components/PageHeader'
+import { Pill } from '~/hiring/components/Pill'
+import { Button } from '~/components/ui/Button'
 import { CollaborativeEditor } from '~/components/CollaborativeEditor'
 import { PresenceProvider } from '~/components/collab/PresenceProvider'
 import { PresenceBar } from '~/components/collab/PresenceBar'
@@ -392,19 +395,19 @@ export default function ReviewerApplicationReview() {
       subtitle={presenceSubtitle}
     >
     <div className="space-y-6 pb-12 relative">
-      <div>
-        <div className="flex items-center justify-end mb-4">
-          <PresenceBar />
-        </div>
-        <div className="flex justify-between items-end">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">
-              Review: {application.user.firstName} {application.user.lastName}
-            </h1>
-            <p className="mt-1 text-muted-foreground">{cycle.name}</p>
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        back={{ label: 'Back to reviews', to: '/hiring/reviewer' }}
+        title={`Review: ${application.user.firstName} ${application.user.lastName}`}
+        subtitle={cycle.name}
+        chip={
+          isSubmitted ? (
+            <Pill color="bg-green-100 text-green-700">Submitted</Pill>
+          ) : (
+            <Pill color="bg-yellow-100 text-yellow-700">In progress</Pill>
+          )
+        }
+        actions={<PresenceBar />}
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left: Application Content */}
@@ -421,8 +424,8 @@ export default function ReviewerApplicationReview() {
         {/* Right: Review Form */}
         <div className="space-y-6">
           <div className="bg-card rounded-xl border border-border shadow-sm sticky top-24">
-            <div className="px-6 py-4 border-b border-border bg-blue-50 flex items-center justify-between">
-              <h2 className="text-lg font-bold text-blue-900">Your Review</h2>
+            <div className="px-6 py-4 border-b border-border bg-muted/50 flex items-center justify-between">
+              <h2 className="font-heading text-lg font-semibold text-foreground">Your review</h2>
               {!isSubmitted && (
                 <SaveStatusIndicator saving={isSaving} lastSaved={lastSaved} />
               )}
@@ -431,7 +434,7 @@ export default function ReviewerApplicationReview() {
 
               {/* Scoring */}
               <div>
-                <h3 className="text-sm font-bold text-foreground uppercase tracking-wider mb-4">Scoring</h3>
+                <h3 className="font-heading text-sm font-semibold text-foreground uppercase tracking-wider mb-4">Scoring</h3>
                 {flatCriteria.length === 0 ? (
                   <p className="text-sm text-muted-foreground/70 italic">No rubric attached to this application.</p>
                 ) : (
@@ -446,7 +449,7 @@ export default function ReviewerApplicationReview() {
                             <div key={criterion.key}>
                               <div className="flex justify-between items-center mb-1">
                                 <label className="text-sm font-medium text-foreground">{criterion.label}</label>
-                                <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                                <span className="text-xs font-bold text-foreground bg-muted px-2 py-1 rounded">
                                   {scores[criterion.key] ?? 0} / {criterion.maxScore}
                                 </span>
                               </div>
@@ -457,7 +460,7 @@ export default function ReviewerApplicationReview() {
                                 type="range" min="0" max={criterion.maxScore}
                                 value={scores[criterion.key] ?? 0}
                                 onChange={(e) => setScores((prev) => ({ ...prev, [criterion.key]: parseInt(e.target.value) }))}
-                                className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-blue-600"
+                                className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-accent-coral"
                               />
                               <div className="flex justify-between text-xs text-muted-foreground/70 mt-1"><span>0</span><span>{criterion.maxScore}</span></div>
                             </div>
@@ -471,8 +474,8 @@ export default function ReviewerApplicationReview() {
 
               {/* Feedback — collaborative editor */}
               <div>
-                <h3 className="text-sm font-bold text-foreground uppercase tracking-wider mb-2">Internal Feedback</h3>
-                <p className="text-xs text-muted-foreground mb-2">Notes for other reviewers. Not visible to applicant.</p>
+                <h3 className="font-heading text-sm font-semibold text-foreground uppercase tracking-wider mb-2">Internal feedback</h3>
+                <p className="text-xs text-muted-foreground mb-2">Notes for other reviewers. Not visible to the applicant.</p>
                 {existingReview && collabToken ? (
                   <CollaborativeEditor
                     editorId="feedback"
@@ -486,7 +489,7 @@ export default function ReviewerApplicationReview() {
                   <textarea
                     rows={4}
                     disabled
-                    className="block w-full rounded-md border-gray-300 shadow-sm sm:text-sm border p-2 text-foreground bg-muted/50"
+                    className="block w-full rounded-md border-border shadow-sm sm:text-sm border p-2 text-foreground bg-muted/50"
                     placeholder="Save the review first to enable collaborative editing..."
                   />
                 )}
@@ -494,8 +497,8 @@ export default function ReviewerApplicationReview() {
 
               {/* Rejection Rationale — collaborative editor */}
               <div>
-                <h3 className="text-sm font-bold text-foreground uppercase tracking-wider mb-2">
-                  Rejection Rationale <span className="text-xs font-normal text-muted-foreground normal-case">(Optional)</span>
+                <h3 className="font-heading text-sm font-semibold text-foreground uppercase tracking-wider mb-2">
+                  Rejection rationale <span className="text-xs font-normal text-muted-foreground normal-case">(optional)</span>
                 </h3>
                 {existingReview && collabToken ? (
                   <CollaborativeEditor
@@ -510,7 +513,7 @@ export default function ReviewerApplicationReview() {
                   <textarea
                     rows={3}
                     disabled
-                    className="block w-full rounded-md border-gray-300 shadow-sm sm:text-sm border p-2 text-foreground bg-muted/50"
+                    className="block w-full rounded-md border-border shadow-sm sm:text-sm border p-2 text-foreground bg-muted/50"
                     placeholder="Save the review first to enable collaborative editing..."
                   />
                 )}
@@ -518,15 +521,15 @@ export default function ReviewerApplicationReview() {
 
               {/* Overall Recommendation */}
               <div className="pt-4 border-t border-border">
-                <h3 className="text-sm font-bold text-foreground uppercase tracking-wider mb-3">Overall Recommendation</h3>
+                <h3 className="font-heading text-sm font-semibold text-foreground uppercase tracking-wider mb-3">Overall recommendation</h3>
                 <div className="space-y-2">
                   {RECOMMENDATIONS.map((rec) => (
-                    <label key={rec} className={`flex items-center p-3 border rounded-lg cursor-pointer transition-colors ${overallRecommendation === rec ? 'border-blue-500 bg-blue-50' : 'border-border hover:bg-muted/50'}`}>
+                    <label key={rec} className={`flex items-center p-3 border rounded-lg cursor-pointer transition-colors ${overallRecommendation === rec ? 'border-accent-coral bg-brand-tint' : 'border-border hover:bg-muted/50'}`}>
                       <input
                         type="radio" name="recommendation" value={rec}
                         checked={overallRecommendation === rec}
                         onChange={() => setOverallRecommendation(rec)}
-                        className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                        className="h-4 w-4 accent-accent-coral border-border focus:ring-accent-coral"
                       />
                       <span className="ml-3 text-sm font-medium text-foreground">{rec}</span>
                     </label>
@@ -539,7 +542,9 @@ export default function ReviewerApplicationReview() {
                 {!existingReview?.submittedAt ? (
                   <>
                     {existingReview && (
-                      <button
+                      <Button
+                        variant="primary"
+                        className="w-full"
                         onClick={async () => {
                           flushSave()
                           const res = await fetch(`/api/hiring/reviews/${existingReview.id}/submit`, {
@@ -547,29 +552,29 @@ export default function ReviewerApplicationReview() {
                           })
                           if (res.ok) window.location.reload()
                         }}
-                        className="w-full flex justify-center items-center px-4 py-3 text-sm font-medium rounded-lg text-white bg-green-600 hover:bg-green-700 shadow-sm"
                       >
-                        Submit Review
-                      </button>
+                        Submit review
+                      </Button>
                     )}
                   </>
                 ) : (
                   <div className="space-y-2">
                     <div className="flex items-center justify-center gap-2 py-3 bg-green-50 border border-green-200 rounded-lg">
                       <Check className="w-4 h-4 text-green-600" />
-                      <span className="text-sm font-medium text-green-800">Review Submitted</span>
+                      <span className="text-sm font-medium text-green-800">Review submitted</span>
                     </div>
-                    <button
+                    <Button
+                      variant="secondary"
+                      className="w-full"
                       onClick={async () => {
                         const res = await fetch(`/api/hiring/reviews/${existingReview.id}/unsubmit`, {
                           method: 'POST', credentials: 'include',
                         })
                         if (res.ok) window.location.reload()
                       }}
-                      className="w-full flex justify-center items-center px-4 py-2 text-sm font-medium rounded-lg text-foreground/80 bg-card border border-gray-300 hover:bg-muted/50"
                     >
-                      Unsubmit & Edit
-                    </button>
+                      Unsubmit to edit
+                    </Button>
                   </div>
                 )}
               </div>
@@ -582,8 +587,8 @@ export default function ReviewerApplicationReview() {
       <div className="fixed bottom-6 right-4 sm:bottom-8 sm:right-8 flex flex-col gap-4 z-50">
         <button
           onClick={() => setShowRubric(!showRubric)}
-          className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all ${showRubric ? 'bg-blue-600 text-white' : 'bg-card text-blue-600 hover:bg-blue-50 border border-border'}`}
-          title="Scoring Guide"
+          className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all ${showRubric ? 'bg-accent-coral text-white' : 'bg-card text-accent-coral hover:bg-brand-tint border border-border'}`}
+          title="Scoring guide"
         >
           {showRubric ? <X className="w-6 h-6" /> : <HelpCircle className="w-6 h-6" />}
         </button>
@@ -591,17 +596,17 @@ export default function ReviewerApplicationReview() {
 
       {showRubric && (
         <div className="fixed bottom-20 right-4 sm:bottom-24 sm:right-8 w-80 max-w-[calc(100vw-2rem)] bg-card rounded-xl shadow-2xl border border-border overflow-hidden z-50">
-          <div className="bg-blue-600 px-4 py-3 flex justify-between items-center">
-            <h3 className="font-bold text-white flex items-center"><HelpCircle className="w-4 h-4 mr-2" />Scoring Guide</h3>
+          <div className="bg-accent-coral px-4 py-3 flex justify-between items-center">
+            <h3 className="font-heading font-semibold text-white flex items-center"><HelpCircle className="w-4 h-4 mr-2" />Scoring guide</h3>
           </div>
-          <ul className="divide-y divide-gray-100 max-h-[50vh] overflow-y-auto">
+          <ul className="divide-y divide-border max-h-[50vh] overflow-y-auto">
             {flatCriteria.length === 0 ? (
               <li className="p-4 text-sm text-muted-foreground/70 italic">No rubric attached.</li>
             ) : flatCriteria.map((c) => (
               <li key={c.key} className="p-4 hover:bg-muted/50">
                 <div className="flex justify-between items-start mb-1">
-                  <h4 className="font-bold text-foreground">{c.label}</h4>
-                  <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded">Max: {c.maxScore}</span>
+                  <h4 className="font-heading font-semibold text-foreground">{c.label}</h4>
+                  <span className="text-xs font-bold text-foreground bg-muted px-2 py-1 rounded">Max: {c.maxScore}</span>
                 </div>
                 {c.description && <p className="text-xs text-muted-foreground">{c.description}</p>}
               </li>
