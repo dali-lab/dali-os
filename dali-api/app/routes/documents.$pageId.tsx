@@ -4,7 +4,7 @@ import type { Route } from "./+types/documents.$pageId";
 import { prisma } from "~/lib/db";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { parseSessionCookie } from "~/lib/cookies";
-import { isCore, isProjectMember } from "~/lib/roles";
+import { isCore, isProjectMember, isLabMember } from "~/lib/roles";
 import { fullName } from "~/lib/display";
 import { getPresenceUser } from "~/lib/presence-user";
 import { DocumentEditor } from "~/components/DocumentEditor";
@@ -79,6 +79,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // the collab handshake rejected members), plus the offering's instructors
   // for EducationOffering-workspace pages.
   let canEdit = await isCore(auth.user.sub);
+  if (!canEdit && page.workspaceType === "Lab") {
+    canEdit = await isLabMember(auth.user.sub);
+  }
   if (!canEdit && page.workspaceType === "Project" && page.workspaceId) {
     canEdit = await isProjectMember(auth.user.sub, page.workspaceId);
   }

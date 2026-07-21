@@ -124,7 +124,7 @@ export async function loadSettingsPageData(request: Request) {
     }),
     prisma.notificationPreference.findMany({
       where: { userId },
-      select: { eventType: true, inApp: true, slackDm: true, digestFrequency: true },
+      select: { eventType: true, inApp: true, desktop: true, slackDm: true, digestFrequency: true },
     }),
     prisma.scheduledJob.findMany({
       where: { name: { in: ["notification-digest-daily", "notification-digest-weekly"] } },

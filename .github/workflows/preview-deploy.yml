@@ -3,7 +3,7 @@ name: PR Preview Deploy
 on:
   pull_request:
     types: [opened, synchronize, reopened]
-    branches: [dev]
+    branches: [staging]
 
 concurrency:
   group: preview-pr-${{ github.event.pull_request.number }}
@@ -13,7 +13,7 @@ env:
   PROJECT_ID: falling-morning-15858013
   PARENT_BRANCH_NAME: development
   FLY_ORG_OVERRIDE: ${{ vars.FLY_ORG }}
-  FLY_ORG_REFERENCE_APP: dali-api-dev
+  FLY_ORG_REFERENCE_APP: dali-api-staging
 
 jobs:
   prep-neon-db:
@@ -285,3 +285,162 @@ jobs:
             - Pick a seeded user at [`/dev-login`](${{ needs.deploy-api.outputs.url }}/dev-login).
             - Database is a Neon branch `preview-pr-${{ github.event.pull_request.number }}` (reset + reseeded on every push).
             - Torn down automatically when this PR closes.
+
+  pagespeed:
+    name: PageSpeed Insights
+    needs: [deploy-api]
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 15
+    permissions:
+      pull-requests: write
+    env:
+      PREVIEW_URL: ${{ needs.deploy-api.outputs.url }}
+      # PSI runs from Google's infrastructure and cannot authenticate, but
+      # previews run NODE_ENV=development so /dev-login-as is live: PSI's
+      # browser picks up the session cookie on the 302 and what actually gets
+      # measured is the authenticated member Home. The admin seed user is the
+      # most stable seed row and renders the fullest nav/widget surface.
+      AUTH_LOGIN_PATH: "/dev-login-as?daliEmail=admin@dali.dartmouth.edu&redirect=/"
+      # Report-only by default. Set to 1-100 to fail this check when the
+      # authenticated Home *mobile* performance score drops below it.
+      MIN_PERF_SCORE: "0"
+      # Effectively required: keyless PSI requests are rate-limited (429)
+      # from datacenter IPs. Without the secret the job no-ops with a notice.
+      PAGESPEED_API_KEY: ${{ secrets.PAGESPEED_API_KEY }}
+    steps:
+      - name: Check for API key
+        id: precheck
+        run: |
+          if [ -z "$PAGESPEED_API_KEY" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            {
+              echo '### PageSpeed Insights — skipped'
+              echo
+              echo 'The `PAGESPEED_API_KEY` repo secret is not set, and keyless PSI requests get rate-limited from CI. Create an API key in Google Cloud (enable the "PageSpeed Insights API", free) and add it as a repo secret to activate this check.'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Warm up preview app
+        if: steps.precheck.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          n=0
+          until curl -sfo /dev/null --max-time 30 "$PREVIEW_URL/login"; do
+            n=$((n+1))
+            if [ $n -ge 10 ]; then
+              echo "preview app never became reachable at $PREVIEW_URL" >&2
+              exit 1
+            fi
+            echo "waiting for preview app (attempt $n/10)..."
+            sleep $((n*5))
+          done
+          # Warm the authenticated Home loaders too (the cookie jar carries
+          # the dev-login session through the redirect) so PSI doesn't measure
+          # a cold Fly machine (min_machines_running = 0) or cold Neon compute.
+          curl -sfL -c /tmp/psi-cookies -o /dev/null --max-time 60 \
+            "$PREVIEW_URL$AUTH_LOGIN_PATH"
+
+      - name: Run PageSpeed Insights
+        if: steps.precheck.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          run_psi() {
+            local strategy="$1" target="$2" out="$3" n=0
+            local args=( -sSf -G --max-time 180
+              --data-urlencode "url=$target"
+              --data-urlencode "strategy=$strategy"
+              --data-urlencode "category=performance"
+              --data-urlencode "category=accessibility"
+              --data-urlencode "category=best-practices" )
+            if [ -n "${PAGESPEED_API_KEY:-}" ]; then
+              args+=( --data-urlencode "key=$PAGESPEED_API_KEY" )
+            fi
+            until curl "${args[@]}" -o "$out" \
+                "https://www.googleapis.com/pagespeedonline/v5/runPagespeed"; do
+              n=$((n+1))
+              if [ $n -ge 3 ]; then
+                echo "PSI $strategy for $target failed after 3 attempts" >&2
+                return 1
+              fi
+              echo "PSI $strategy attempt $n failed — retrying in $((n*15))s"
+              sleep $((n*15))
+            done
+          }
+          for strategy in mobile desktop; do
+            run_psi "$strategy" "$PREVIEW_URL$AUTH_LOGIN_PATH" "psi-home-$strategy.json"
+            run_psi "$strategy" "$PREVIEW_URL/login" "psi-login-$strategy.json"
+          done
+
+      - name: Build report
+        if: steps.precheck.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          # If the dev-login redirect ever breaks, PSI silently measures the
+          # login page instead of Home — fail loudly rather than report wrong
+          # numbers under the Home label.
+          FINAL=$(jq -r '.lighthouseResult.finalDisplayedUrl // .lighthouseResult.finalUrl // ""' psi-home-mobile.json)
+          case "$FINAL" in
+            */login*) echo "dev-login redirect broke: Home run landed on $FINAL" >&2; exit 1 ;;
+          esac
+
+          score() {
+            jq -r --arg c "$2" \
+              '.lighthouseResult.categories[$c].score as $s
+               | if $s == null then "–" else ($s*100 | round | tostring) end' "$1"
+          }
+          metric() {
+            jq -r --arg a "$2" '.lighthouseResult.audits[$a].displayValue // "–"' "$1"
+          }
+          row() {
+            local label="$1" strategy="$2" f="psi-$1-$2.json"
+            echo "| $label | $strategy | $(score "$f" performance) | $(score "$f" accessibility) | $(score "$f" best-practices) | $(metric "$f" largest-contentful-paint) | $(metric "$f" total-blocking-time) | $(metric "$f" cumulative-layout-shift) |"
+          }
+
+          {
+            echo '<!-- pagespeed-insights -->'
+            echo '### PageSpeed Insights'
+            echo
+            echo '| Page | Strategy | Perf | A11y | Best practices | LCP | TBT | CLS |'
+            echo '|---|---|---|---|---|---|---|---|'
+            row home mobile
+            row home desktop
+            row login mobile
+            row login desktop
+            echo
+            echo "\`home\` is the authenticated member Home (admin seed user via \`/dev-login-as\`, includes one constant redirect hop). Preview VM is shared-cpu-1x/1GB — compare scores across PRs, not against prod."
+          } > psi-report.md
+          cat psi-report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Find existing PageSpeed comment
+        if: steps.precheck.outputs.skip != 'true'
+        id: find
+        uses: peter-evans/find-comment@v3
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: github-actions[bot]
+          body-includes: <!-- pagespeed-insights -->
+
+      - name: Upsert PageSpeed comment
+        if: steps.precheck.outputs.skip != 'true'
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          comment-id: ${{ steps.find.outputs.comment-id }}
+          issue-number: ${{ github.event.pull_request.number }}
+          edit-mode: replace
+          body-path: psi-report.md
+
+      - name: Enforce performance threshold
+        if: steps.precheck.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          if [ "$MIN_PERF_SCORE" -le 0 ]; then
+            echo "Report-only mode (MIN_PERF_SCORE=$MIN_PERF_SCORE) — not gating."
+            exit 0
+          fi
+          PERF=$(jq -r '.lighthouseResult.categories.performance.score // 0 | .*100 | round' psi-home-mobile.json)
+          echo "Authenticated Home mobile performance score: $PERF (threshold: $MIN_PERF_SCORE)"
+          if [ "$PERF" -lt "$MIN_PERF_SCORE" ]; then
+            echo "Performance score $PERF is below MIN_PERF_SCORE=$MIN_PERF_SCORE" >&2
+            exit 1
+          fi

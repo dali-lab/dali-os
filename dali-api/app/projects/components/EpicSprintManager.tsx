@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useRevalidator } from "react-router";
-import { X, GripVertical, Check, Trash2 } from "lucide-react";
+import { X, GripVertical, Check, Trash2, Pencil, Maximize2 } from "lucide-react";
+import { Tooltip } from "~/components/ui/IconButton";
 import {
   DndContext,
   PointerSensor,
@@ -56,9 +57,11 @@ const SPRINT_STATUSES = ["Planned", "Active", "Closed"] as const;
 
 type Props = {
   projectId: string;
-  timelineEpics: TimelineEpic[];
   epics: EditableEpic[];
   sprints: EditableSprint[];
+  // Per-epic task progress keyed by epic id (Cancelled tasks excluded from
+  // both numbers). Epics with no counted tasks may simply be absent.
+  taskCounts: Record<string, { done: number; total: number }>;
   canManage: boolean;
   // Hocuspocus WebSocket auth token; userName labels the presence cursor.
   // Both are forwarded into the EpicDetail modal where the description
@@ -66,6 +69,15 @@ type Props = {
   // the editor's read-only fallback handles it.
   collabToken: string | null;
   userName: string;
+  // Which body to render. "timeline" (the default planning view) swaps the
+  // epic/sprint list for the clickable timeline; the New-epic + detail modals
+  // stay shared across both. "list" keeps the original manager.
+  view?: "list" | "timeline";
+  // TimelineEpic shape for the timeline body (only read when view=timeline).
+  timelineEpics?: TimelineEpic[];
+  // The list/timeline view switch, rendered on the toolbar row (right side),
+  // with the "Add epic" button on the left of the same line.
+  viewToggle?: ReactNode;
 };
 
 function dateInputValue(iso: string): string {
@@ -95,12 +107,15 @@ async function api(url: string, method: "POST" | "DELETE", body?: unknown): Prom
 
 export function EpicSprintManager({
   projectId,
-  timelineEpics,
   epics,
   sprints,
+  taskCounts,
   canManage,
   collabToken,
   userName,
+  view = "list",
+  timelineEpics = [],
+  viewToggle,
 }: Props) {
   const revalidator = useRevalidator();
   const [error, setError] = useState<string | null>(null);
@@ -113,12 +128,14 @@ export function EpicSprintManager({
   // subset (see /api/projects/:id/epics/reorder).
   const [statusFilter, setStatusFilter] = useState<"All" | EditableEpic["status"]>("All");
   const [epicsOpen, setEpicsOpen] = useState(true);
-  const [timelineOpen, setTimelineOpen] = useState(true);
+  // The all-sprints section below the epic list.
+  const [allSprintsOpen, setAllSprintsOpen] = useState(true);
+  const [newSprintOpen, setNewSprintOpen] = useState(false);
+  const [editSprintId, setEditSprintId] = useState<string | null>(null);
   // The selected epic opens its detail view in a modal over the list.
   const [openEpicId, setOpenEpicId] = useState<string | null>(null);
-  // When set, the detail panel jumps straight into the epic edit form rather
-  // than the read view. "Open" always edits by default; viewers without
-  // manage rights fall back to read-only inside the panel.
+  // When set, the detail panel opens straight into the epic edit form rather
+  // than the default read view (used by deep flows that mean "edit now").
   const [openInEdit, setOpenInEdit] = useState(false);
   // When set, the detail panel opens with this sprint's edit form expanded
   // (entered by clicking a nested sprint row in the epic list).
@@ -141,7 +158,7 @@ export function EpicSprintManager({
     epicId: string,
     opts?: { edit?: boolean; sprintId?: string; addSprint?: boolean },
   ) {
-    setOpenInEdit(opts?.edit ?? true);
+    setOpenInEdit(opts?.edit ?? false);
     setOpenSprintId(opts?.sprintId ?? null);
     setOpenAddSprint(opts?.addSprint ?? false);
     setOpenEpicId(epicId);
@@ -212,9 +229,31 @@ export function EpicSprintManager({
       : orderedEpics.filter((e) => e.status === statusFilter);
   const filtering = statusFilter !== "All";
 
+  // For the all-sprints section: resolve each sprint's owning epic title.
+  const epicTitleById = new Map(epics.map((e) => [e.id, e.title]));
+
   return (
     <div className="flex flex-col gap-4">
       {errorBanner}
+
+      {/* Toolbar: "Add epic" (timeline view) on the left, the list/timeline
+          toggle on the right — same line. */}
+      {viewToggle && (
+        <div className="flex items-center justify-between gap-2">
+          {view === "timeline" && canManage ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setNewEpicOpen(true)}
+            >
+              + Add epic
+            </Button>
+          ) : (
+            <span />
+          )}
+          {viewToggle}
+        </div>
+      )}
 
       {/* New epic — a modal like the detail view, not inline inputs in the
           list. On save we immediately reopen as the real detail modal for the
@@ -291,6 +330,23 @@ export function EpicSprintManager({
         )}
       </Modal>
 
+      {view === "timeline" ? (
+        <div className="flex flex-col gap-3">
+          {/* Clicking an epic or sprint bar opens the same detail/edit modal
+              the list view uses (openEpic). */}
+          <EpicsTimeline
+            epics={timelineEpics}
+            taskCounts={taskCounts}
+            onEpicClick={canManage ? (id) => openEpic(id) : undefined}
+            onSprintClick={
+              canManage
+                ? (epicId, sprintId) => openEpic(epicId, { sprintId })
+                : undefined
+            }
+          />
+        </div>
+      ) : (
+        <>
       {/* Epics */}
       <section className="bg-card border border-border rounded-lg p-4">
         <div className={`flex items-center justify-between gap-2 ${epicsOpen ? "mb-3" : ""}`}>
@@ -346,6 +402,14 @@ export function EpicSprintManager({
 
         {epicsOpen && (
           <>
+        {/* Reordering needs the full epic id set, so drag grips disappear
+            while a status filter is active — say so instead of hiding them
+            silently. */}
+        {filtering && canManage && orderedEpics.length > 1 && visibleEpics.length > 0 && (
+          <p className="text-[11px] text-muted-foreground italic mb-2">
+            Clear the status filter to reorder.
+          </p>
+        )}
         {visibleEpics.length === 0 && !newEpicOpen ? (
           <p className="text-sm text-muted-foreground italic">
             {filtering ? `No epics with status "${statusFilter}".` : "No epics yet."}
@@ -357,6 +421,7 @@ export function EpicSprintManager({
                 {visibleEpics.map((epic) => {
               const epicSprints = sprints.filter((s) => s.epicId === epic.id);
               const expanded = expandedEpicIds.has(epic.id);
+              const counts = taskCounts[epic.id];
               return (
                 <SortableEpicRow key={epic.id} id={epic.id} draggable={canManage && !filtering}>
                   {(dragHandleProps, isDragging) => (
@@ -436,15 +501,33 @@ export function EpicSprintManager({
                         {epic.stories.length}{" "}
                         {epic.stories.length === 1 ? "story" : "stories"}
                       </button>
+                      {counts && counts.total > 0 && (
+                        <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                          {counts.done}/{counts.total} tasks
+                          <span
+                            aria-hidden
+                            className="inline-block w-14 h-0.5 rounded-full bg-border overflow-hidden"
+                          >
+                            <span
+                              className="block h-full rounded-full bg-accent-teal/70"
+                              style={{
+                                width: `${Math.round((counts.done / counts.total) * 100)}%`,
+                              }}
+                            />
+                          </span>
+                        </span>
+                      )}
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => openEpic(epic.id)}
-                      aria-label={`Open ${epic.title}`}
-                      className="flex-shrink-0 text-xs font-medium text-accent-coral hover:underline"
-                    >
-                      Open
-                    </button>
+                    <Tooltip label="Open">
+                      <button
+                        type="button"
+                        onClick={() => openEpic(epic.id)}
+                        aria-label={`Open ${epic.title}`}
+                        className="flex-shrink-0 text-muted-foreground hover:text-accent-coral"
+                      >
+                        <Maximize2 className="w-3.5 h-3.5" />
+                      </button>
+                    </Tooltip>
                   </div>
 
                   {expanded && (
@@ -500,25 +583,131 @@ export function EpicSprintManager({
         )}
       </section>
 
-      {/* Timeline (read-only visualization) */}
-      <section>
-        <button
-          type="button"
-          onClick={() => setTimelineOpen((o) => !o)}
-          aria-expanded={timelineOpen}
-          className="flex items-center gap-1.5 mb-2"
-        >
-          <span
-            aria-hidden
-            className={`inline-block text-muted-foreground transition-transform ${timelineOpen ? "rotate-90" : ""}`}
+      {/* All sprints — sprints can exist without an epic (Sprint.epicId is
+          nullable and the task board filters by sprint), so the epic detail
+          modal isn't a complete home for them. Every sprint is listed and
+          editable here; per-epic editing inside the modal stays intact. */}
+      <section className="bg-card border border-border rounded-lg p-4">
+        <div className={`flex items-center justify-between gap-2 ${allSprintsOpen ? "mb-3" : ""}`}>
+          <button
+            type="button"
+            onClick={() => setAllSprintsOpen((o) => !o)}
+            aria-expanded={allSprintsOpen}
+            className="flex items-center gap-1.5 min-w-0"
           >
-            ›
-          </span>
-          {/* h3 so Timeline matches Epics/Sprints (global heading → Dosis). */}
-          <h3 className="text-sm font-semibold text-foreground">Timeline</h3>
-        </button>
-        {timelineOpen && <EpicsTimeline epics={timelineEpics} />}
+            <span
+              aria-hidden
+              className={`inline-block text-muted-foreground transition-transform ${allSprintsOpen ? "rotate-90" : ""}`}
+            >
+              ›
+            </span>
+            <h3 className="text-sm font-semibold text-foreground">Sprints</h3>
+          </button>
+          {canManage && !newSprintOpen && (
+            <button
+              type="button"
+              onClick={() => {
+                setAllSprintsOpen(true);
+                setNewSprintOpen(true);
+              }}
+              className="text-xs font-medium text-accent-coral hover:underline"
+            >
+              + New sprint
+            </button>
+          )}
+        </div>
+
+        {allSprintsOpen && (
+          <>
+        {newSprintOpen && (
+          <SprintForm
+            busy={busy}
+            epics={epics}
+            onCancel={() => setNewSprintOpen(false)}
+            onSubmit={(values) =>
+              run(async () => {
+                await api(`/api/projects/${projectId}/sprints`, "POST", values);
+                setNewSprintOpen(false);
+              })
+            }
+          />
+        )}
+
+        {sprints.length === 0 && !newSprintOpen ? (
+          <p className="text-sm text-muted-foreground italic">No sprints yet.</p>
+        ) : (
+          <div className="flex flex-col divide-y divide-border">
+            {sprints.map((sprint) =>
+              editSprintId === sprint.id ? (
+                <div key={sprint.id} className="py-2">
+                  <SprintForm
+                    busy={busy}
+                    initial={sprint}
+                    epics={epics}
+                    onCancel={() => setEditSprintId(null)}
+                    onSubmit={(values) =>
+                      run(async () => {
+                        await api(`/api/sprints/${sprint.id}`, "POST", values);
+                        setEditSprintId(null);
+                      })
+                    }
+                    onDelete={() => {
+                      if (
+                        !window.confirm(
+                          `Delete sprint "${sprint.name}"? Its tasks move back to the backlog.`,
+                        )
+                      )
+                        return;
+                      run(async () => {
+                        await api(`/api/sprints/${sprint.id}`, "DELETE");
+                        setEditSprintId(null);
+                      });
+                    }}
+                  />
+                </div>
+              ) : (
+                <div
+                  key={sprint.id}
+                  className="py-2 flex items-center justify-between gap-3 text-sm"
+                >
+                  <div className="min-w-0 flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span className="text-foreground">{sprint.name}</span>
+                    <span className="text-[11px] px-1.5 py-0.5 rounded-full border border-border text-muted-foreground bg-muted/30">
+                      {sprint.status}
+                    </span>
+                    <span className="text-[11px] text-muted-foreground">
+                      {dateInputValue(sprint.startsAt)} → {dateInputValue(sprint.endsAt)}
+                    </span>
+                    <span className="text-[11px] text-muted-foreground">
+                      {sprint.epicId ? (
+                        (epicTitleById.get(sprint.epicId) ?? "Unknown epic")
+                      ) : (
+                        <span className="italic">No epic</span>
+                      )}
+                    </span>
+                  </div>
+                  {canManage && (
+                    <Tooltip label="Edit sprint">
+                      <button
+                        type="button"
+                        onClick={() => setEditSprintId(sprint.id)}
+                        aria-label="Edit sprint"
+                        className="text-muted-foreground hover:text-foreground flex-shrink-0"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                    </Tooltip>
+                  )}
+                </div>
+              ),
+            )}
+          </div>
+        )}
+          </>
+        )}
       </section>
+        </>
+      )}
     </div>
   );
 }
@@ -577,7 +766,8 @@ function EpicDetail({
   canManage: boolean;
   busy: boolean;
   // When true the detail panel opens with the epic edit form already
-  // expanded (the default when opening via the row's "Open" affordance).
+  // expanded. The default open is a read view; deep flows that mean "edit
+  // now" (and the sprint entry points below) opt in.
   startInEdit: boolean;
   // When set, opens with this sprint's edit form already expanded (entered by
   // clicking a nested sprint row in the epic list).
@@ -591,6 +781,13 @@ function EpicDetail({
   onClose: () => void;
   onDeleted: () => void;
 }) {
+  // The modal opens as a read view by default; "editing" switches on the
+  // edit affordances (title input, details form, story/sprint editing, live
+  // description). Deep flows that arrive to edit — startInEdit, a nested
+  // sprint row, "Add one" — start with it on.
+  const [editing, setEditing] = useState(
+    canManage && (startInEdit || startEditSprintId != null || startAddSprint),
+  );
   // Editing a sprint takes precedence over the epic-edit form so opening from
   // a nested sprint row lands directly on that sprint. Opening to add a sprint
   // skips the epic-edit form and scrolls to Sprints instead.
@@ -659,6 +856,9 @@ function EpicDetail({
     return () => cancelAnimationFrame(id);
   }, [startEditSprintId, startAddSprint]);
 
+  // Story/sprint edit affordances show only while the modal is in edit mode.
+  const canEditContent = canManage && editing;
+
   return (
     <div className="flex flex-col gap-4 max-h-[80vh] overflow-y-auto">
       {/* Modal header */}
@@ -682,38 +882,57 @@ function EpicDetail({
             </h2>
           )}
           {!editEpicOpen && (
-            <p className="text-[11px] text-muted-foreground mt-0.5">
-              {epic.status}
+            <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
+              <span className="px-1.5 py-0.5 rounded-full border border-border bg-muted/30">
+                {epic.status}
+              </span>
               {epic.startsAt && epic.endsAt && (
-                <>
-                  {" · "}
+                <span>
                   {dateInputValue(epic.startsAt)} → {dateInputValue(epic.endsAt)}
-                </>
+                </span>
               )}
             </p>
           )}
         </div>
         <div className="flex items-center gap-3 flex-shrink-0">
+          {canManage && !editing && (
+            <Tooltip label="Edit epic">
+              <button
+                type="button"
+                onClick={() => {
+                  setEditing(true);
+                  setEditEpicOpen(true);
+                }}
+                aria-label="Edit epic"
+                className="text-muted-foreground hover:text-accent-coral"
+              >
+                <Pencil className="w-4 h-4" />
+              </button>
+            </Tooltip>
+          )}
           {canManage && (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => {
-                if (
-                  !window.confirm(
-                    `Delete epic "${epic.title}"? Its sprints, stories and tasks will be unlinked, not deleted.`,
+            <Tooltip label="Delete epic">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  if (
+                    !window.confirm(
+                      `Delete epic "${epic.title}"? Its sprints and tasks will be unlinked; its user stories will be deleted.`,
+                    )
                   )
-                )
-                  return;
-                run(async () => {
-                  await api(`/api/epics/${epic.id}`, "DELETE");
-                  onDeleted();
-                });
-              }}
-              className="text-xs text-destructive hover:underline disabled:opacity-60"
-            >
-              Delete epic
-            </button>
+                    return;
+                  run(async () => {
+                    await api(`/api/epics/${epic.id}`, "DELETE");
+                    onDeleted();
+                  });
+                }}
+                aria-label="Delete epic"
+                className="text-destructive hover:text-destructive/80 disabled:opacity-60"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </Tooltip>
           )}
           <button
             type="button"
@@ -727,7 +946,9 @@ function EpicDetail({
       </div>
 
       {/* Epic details (status / dates) — title edits in the header above.
-          Description is a separate collab editor below. */}
+          Description is a separate collab editor below. Edit mode only: the
+          read view already shows status + dates in the header. */}
+      {editing && (
       <section className="bg-card border border-border rounded-lg p-4">
         {editEpicOpen ? (
           <EpicForm
@@ -779,6 +1000,7 @@ function EpicDetail({
           </div>
         )}
       </section>
+      )}
 
       {/* Description — always live as a collab editor (the project's
           Overview/PRD pattern). The room name is the epic's descriptionDocId
@@ -798,7 +1020,7 @@ function EpicDetail({
               documentName={`epic:${descriptionDocId}:description`}
               token={collabToken}
               userName={userName}
-              disabled={!canManage}
+              disabled={!canEditContent}
               placeholder="What is this epic about?"
               className="border border-border rounded-md"
             />
@@ -818,7 +1040,7 @@ function EpicDetail({
       <section className="bg-card border border-border rounded-lg p-4">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-semibold text-foreground">User stories</h3>
-          {canManage && !newStoryOpen && (
+          {canEditContent && !newStoryOpen && (
             <button
               type="button"
               onClick={() => setNewStoryOpen(true)}
@@ -876,26 +1098,32 @@ function EpicDetail({
                   </div>
                   <div className="flex items-center gap-3 flex-shrink-0">
                     <span className="text-[11px] text-muted-foreground">{story.status}</span>
-                    {canManage && (
+                    {canEditContent && (
                       <>
-                        <button
-                          type="button"
-                          onClick={() => setEditStoryId(story.id)}
-                          className="text-xs text-muted-foreground hover:text-foreground"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => {
-                            if (!window.confirm(`Delete story "${story.title}"?`)) return;
-                            run(() => api(`/api/stories/${story.id}`, "DELETE"));
-                          }}
-                          className="text-xs text-destructive hover:underline disabled:opacity-60"
-                        >
-                          Delete
-                        </button>
+                        <Tooltip label="Edit story">
+                          <button
+                            type="button"
+                            onClick={() => setEditStoryId(story.id)}
+                            aria-label="Edit story"
+                            className="text-muted-foreground hover:text-foreground"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                        </Tooltip>
+                        <Tooltip label="Delete story">
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => {
+                              if (!window.confirm(`Delete story "${story.title}"?`)) return;
+                              run(() => api(`/api/stories/${story.id}`, "DELETE"));
+                            }}
+                            aria-label="Delete story"
+                            className="text-destructive hover:text-destructive/80 disabled:opacity-60"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </Tooltip>
                       </>
                     )}
                   </div>
@@ -906,7 +1134,8 @@ function EpicDetail({
         )}
       </section>
 
-      {/* Sprints — created only here, scoped to this epic */}
+      {/* Sprints scoped to this epic. (Every sprint — including epic-less
+          ones — is also listed in the all-sprints section on the main view.) */}
       <section ref={sprintsRef} className="bg-card border border-border rounded-lg p-4">
         <div className={`flex items-center justify-between gap-2 ${sprintsOpen ? "mb-3" : ""}`}>
           <button
@@ -923,7 +1152,7 @@ function EpicDetail({
             </span>
             <h3 className="text-sm font-semibold text-foreground">Sprints</h3>
           </button>
-          {canManage && !newSprintOpen && (
+          {canEditContent && !newSprintOpen && (
             <button
               type="button"
               onClick={() => {
@@ -1001,14 +1230,17 @@ function EpicDetail({
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <span className="text-[11px] text-muted-foreground">{sprint.status}</span>
-                    {canManage && (
-                      <button
-                        type="button"
-                        onClick={() => setEditSprintId(sprint.id)}
-                        className="text-xs text-muted-foreground hover:text-foreground"
-                      >
-                        Edit
-                      </button>
+                    {canEditContent && (
+                      <Tooltip label="Edit sprint">
+                        <button
+                          type="button"
+                          onClick={() => setEditSprintId(sprint.id)}
+                          aria-label="Edit sprint"
+                          className="text-muted-foreground hover:text-foreground"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                      </Tooltip>
                     )}
                   </div>
                 </div>
@@ -1124,7 +1356,9 @@ function EpicForm({
           size="sm"
           disabled={busy}
         >
-          Save
+          {/* Creating a new epic hands off to the detail modal to add
+              sprints/stories, so "Next" signals there's more after this. */}
+          {initial ? "Save" : "Next"}
         </Button>
         <button
           type="button"
@@ -1138,22 +1372,26 @@ function EpicForm({
   );
 }
 
-// Sprints are always created/edited from within an epic's detail panel, so
-// there is no epic picker — the epic is implied by context.
 function SprintForm({
   initial,
   busy,
+  epics,
   onSubmit,
   onCancel,
   onDelete,
 }: {
   initial?: EditableSprint;
   busy: boolean;
+  // When provided (the all-sprints section), renders an optional epic picker
+  // and includes `epicId` in the submitted values (null = no epic). Omitted
+  // inside the epic detail modal, where the epic is implied by context.
+  epics?: { id: string; title: string }[];
   onSubmit: (values: {
     name: string;
     startsAt: string;
     endsAt: string;
     status: string;
+    epicId?: string | null;
   }) => void;
   onCancel: () => void;
   onDelete?: () => void;
@@ -1164,6 +1402,8 @@ function SprintForm({
   );
   const [endsAt, setEndsAt] = useState(initial ? dateInputValue(initial.endsAt) : "");
   const [status, setStatus] = useState(initial?.status ?? "Planned");
+  // "" = no epic; only meaningful when the picker is shown.
+  const [epicId, setEpicId] = useState(initial?.epicId ?? "");
 
   return (
     <form
@@ -1176,10 +1416,12 @@ function SprintForm({
           startsAt: new Date(startsAt).toISOString(),
           endsAt: new Date(endsAt).toISOString(),
           status,
+          ...(epics ? { epicId: epicId || null } : {}),
         });
       }}
-      className="flex flex-wrap items-end gap-2 mb-3"
+      className="flex items-end gap-2 mb-3"
     >
+      <div className="flex flex-wrap items-end gap-2 flex-1 min-w-0">
       <label className="flex flex-col gap-1 text-xs flex-1 min-w-[160px]">
         <span className="text-muted-foreground">Name</span>
         <input
@@ -1223,7 +1465,25 @@ function SprintForm({
           ))}
         </select>
       </label>
-      <div className="flex items-center gap-1">
+      {epics && (
+        <label className="flex flex-col gap-1 text-xs">
+          <span className="text-muted-foreground">Epic (optional)</span>
+          <select
+            value={epicId}
+            onChange={(e) => setEpicId(e.target.value)}
+            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
+          >
+            <option value="">No epic</option>
+            {epics.map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.title}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      </div>
+      <div className="flex items-center gap-1 flex-shrink-0">
         <button
           type="submit"
           disabled={busy}

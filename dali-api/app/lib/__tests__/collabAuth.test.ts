@@ -17,6 +17,7 @@ vi.mock("~/lib/roles", () => ({
   isDomainLead: vi.fn().mockResolvedValue(false),
   isCore: vi.fn().mockResolvedValue(false),
   isProjectMember: vi.fn().mockResolvedValue(false),
+  isLabMember: vi.fn().mockResolvedValue(false),
 }));
 
 vi.mock("~/partners/lib/partner-access", () => ({
@@ -28,7 +29,7 @@ vi.mock("~/hiring/lib/confidentiality", () => ({
 }));
 
 import { prisma } from "~/lib/db";
-import { isDomainLead, isCore, isProjectMember } from "~/lib/roles";
+import { isDomainLead, isCore, isProjectMember, isLabMember } from "~/lib/roles";
 import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { authorizeCollabDoc } from "../collabAuth";
@@ -40,6 +41,7 @@ beforeEach(() => {
   (isDomainLead as any).mockResolvedValue(false);
   (isCore as any).mockResolvedValue(false);
   (isProjectMember as any).mockResolvedValue(false);
+  (isLabMember as any).mockResolvedValue(false);
   (partnerHasProjectAccess as any).mockResolvedValue(false);
   (getCycleConfidentialityState as any).mockResolvedValue({ status: "signed", activeVersionId: "v1" });
   (prisma as any).interview.findUnique.mockResolvedValue({ applicationCycleId: "cycle1" });
@@ -195,7 +197,16 @@ describe("authorizeCollabDoc", () => {
       expect(await authorizeCollabDoc("user1", "doc:p1:body")).toBe(true);
     });
 
-    it("rejects non-Core on Lab pages", async () => {
+    it("allows a lab member on Lab pages", async () => {
+      (isLabMember as any).mockResolvedValue(true);
+      mockPrisma.page.findUnique.mockResolvedValue(
+        projectPage({ workspaceType: "Lab", workspaceId: null }),
+      );
+      expect(await authorizeCollabDoc("user1", "doc:p1:body")).toBe(true);
+      expect(isLabMember).toHaveBeenCalledWith("user1");
+    });
+
+    it("rejects a non-member on Lab pages", async () => {
       mockPrisma.page.findUnique.mockResolvedValue(
         projectPage({ workspaceType: "Lab", workspaceId: null }),
       );

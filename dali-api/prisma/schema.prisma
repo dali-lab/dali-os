@@ -1021,6 +1021,10 @@ model ProjectFile {
   // during the create→first-version transaction.
   currentVersionId String? @unique
 
+  // When true, partners on this project can see + download the file from the
+  // partner portal (mirrors Page.partnerVisible for shared documents).
+  partnerVisible Boolean @default(false)
+
   archivedAt DateTime?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
@@ -1030,10 +1034,26 @@ model ProjectFile {
   versions       ProjectFileVersion[] @relation("FileVersions")
   currentVersion ProjectFileVersion?  @relation("FileCurrentVersion", fields: [currentVersionId], references: [id])
 
-  tags     ProjectFileTag[]
-  comments DocComment[]
+  tags      ProjectFileTag[]
+  comments  DocComment[]
+  taskLinks TaskFileLink[]
 
   @@index([projectId, archivedAt])
+}
+
+// m2m: Task ↔ ProjectFile. Links work artifacts (graphics, animation, design
+// exports) to board tasks so the upload → feedback → re-upload loop is
+// reachable from the card. A file may serve several tasks and vice versa.
+model TaskFileLink {
+  taskId    String
+  fileId    String
+  createdAt DateTime @default(now())
+
+  task Task        @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  file ProjectFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, fileId])
+  @@index([fileId])
 }
 
 model ProjectFileVersion {
@@ -1054,6 +1074,9 @@ model ProjectFileVersion {
   // Back-relation for ProjectFile.currentVersion (a file points at one of its
   // own versions). Optional + named to disambiguate from FileVersions.
   fileAsCurrent ProjectFile? @relation("FileCurrentVersion")
+
+  // File comments pinned to this version (DocComment.versionId).
+  comments DocComment[]
 
   @@index([fileId, createdAt(sort: Desc)])
 }
@@ -1087,6 +1110,12 @@ model DocComment {
   // a second FK on the polymorphic column).
   file   ProjectFile? @relation(fields: [fileId], references: [id], onDelete: Cascade)
   fileId String?
+
+  // File comments only: the version that was current when the comment was
+  // written, so feedback reads against the right iteration ("on V2"). Null for
+  // doc/pagedoc comments and file comments predating version pinning.
+  version   ProjectFileVersion? @relation(fields: [versionId], references: [id], onDelete: SetNull)
+  versionId String?
 
   @@index([targetType, targetId, createdAt])
   @@index([parentId])
@@ -2484,6 +2513,12 @@ model Task {
   // JSON shape: [{ "text": "...", "done": false }]
   checklist Json?
 
+  // Soft archive. Done/Cancelled tasks left untouched past the
+  // task-auto-archive job's threshold get stamped here and drop off the
+  // board (the loader filters archivedAt: null). The row is preserved, not
+  // deleted, so it stays reportable/restorable.
+  archivedAt DateTime?
+
   // Optional mirror to a GitHub issue. All three populated together when the
   // task was created with the "Create GitHub issue" toggle on; null when not
   // mirrored. The (githubRepo, githubIssueNumber) pair is the lookup key for
@@ -2499,6 +2534,7 @@ model Task {
   assignees TaskAssignee[]
   comments  TaskComment[]
   reminders TaskReminder[]
+  files     TaskFileLink[]
 
   createdById String
   createdBy   User     @relation("TaskCreatedBy", fields: [createdById], references: [id])
@@ -2510,6 +2546,7 @@ model Task {
 }
 
 enum TaskStatus {
+  Backlog
   Todo
   InProgress
   InReview
@@ -3387,6 +3424,11 @@ model Page {
   // future public flag — the audiences are orthogonal.
   partnerVisible Boolean @default(false)
 
+  // Pinned to the top of the project's Documents block. Timestamp so pins can
+  // be ordered most-recent-first. Null = not pinned. (Distinct from the
+  // system Overview/PRD docs, which are always shown pinned.)
+  pinnedAt DateTime?
+
   // Set when this page was auto-created as a meeting's attendance-tracking
   // note (see ScheduledMeeting.notePage / meetingType). Lets the document
   // route know to render the AttendanceChecklist above the editor.
@@ -3520,6 +3562,9 @@ model NotificationPreference {
   // evolving a default never requires a backfill.
   eventType String
   inApp     Boolean @default(true)
+  // Native banner raised by the desktop app for an in-app row. Sub-preference
+  // of inApp: without the in-app row there is nothing to banner.
+  desktop Boolean @default(true)
   // Slack DM requires a resolved User.slackUserId; without one the channel
   // silently skips regardless of this toggle.
   slackDm Boolean @default(false)

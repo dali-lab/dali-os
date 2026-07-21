@@ -8,10 +8,10 @@ Project conventions for Claude when running inside `anthropics/claude-code-actio
 - **DB**: Postgres 16 via Prisma 7 ORM. Hosted on Neon (serverless). Adapters: `@prisma/adapter-neon` (prod-ish), `@prisma/adapter-pg` (local).
 - **Realtime collab**: Hocuspocus server + Yjs CRDT + Tiptap editor.
 - **Background jobs**: in-process 60s runner (`dali-api/app/jobs/`), cross-machine dedup via a Postgres CAS lease on `ScheduledJob` rows (no Redis). Per-job toggles/intervals/settings live in Admin → Jobs.
-- **Notifications**: three channels (in-app, email/digest, Slack DM) dispatched by `notify()` per user preference — see "Background jobs & notifications" below.
+- **Notifications**: three channels (in-app, email/digest, Slack DM) dispatched by `notify()` per user preference — see "Background jobs & notifications" below. The desktop app layers native banners on the in-app feed: gated per event by the `desktop` sub-preference and flagged urgent via registry `timeSensitive`, resolved at feed-read time (`/api/notifications`), with `/api/notifications/stream` (SSE) for live delivery.
 - **Auth**: Google OAuth, Dartmouth CAS, JWT via `jose`.
 - **Styling**: Tailwind CSS 4.
-- **Deploy**: Fly.io. Branches: `dev` → `staging` → `prod`. Migrations require `DIRECT_URL` (non-pooled Neon endpoint) in addition to pooled `DATABASE_URL` — see `dali-api/prisma/MIGRATIONS.md`.
+- **Deploy**: Fly.io. Branches: `staging` → `prod`. Migrations require `DIRECT_URL` (non-pooled Neon endpoint) in addition to pooled `DATABASE_URL` — see `dali-api/prisma/MIGRATIONS.md`.
 - **Package manager**: npm. Node 22.
 
 ## Commands (run from `dali-api/`)
@@ -30,7 +30,7 @@ No ESLint/Prettier script is wired up today — don't invent lint commands.
 
 ## Branching & PRs
 
-- PRs target `dev`, not `main` or `prod`.
+- PRs target `staging`, not `main` or `prod`.
 - `prod` deploys come from staged promotion, not direct merges.
 - Claude's branches use the prefix `claude/issue-<N>`.
 
@@ -70,7 +70,7 @@ These live in `.github/workflows/` — treat their failures as blocking:
 ## Operating rules when running in CI
 
 - **Never use `--no-verify`, `--no-gpg-sign`, or any git flag that bypasses hooks.**
-- **Never force-push `dev`, `staging`, `prod`, or `main`.** Force-push to your own `claude/issue-*` branch is fine if needed.
+- **Never force-push `staging`, `prod`, or `main`.** Force-push to your own `claude/issue-*` branch is fine if needed.
 - **Don't modify files under `.github/workflows/`** unless the task explicitly asks you to. CI pipeline changes are out of scope for ordinary issues.
 - **Don't touch `prisma/migrations/` to "fix" a migration error.** Fix the schema or the seed instead, and regenerate a new migration.
 - **When a CI failure is ambiguous or forces a real tradeoff, stop and leave a PR comment explaining the options.** Do not guess. Handing work back with a written explanation is a valid outcome.
@@ -83,7 +83,7 @@ The `desktop/` directory is a Tauri v2 macOS shell — a thin native wrapper aro
 - **Separate build pipeline.** Desktop is built and released by `desktop-release.yml` on `desktop-v*` tags, not by the main `deploy.yml`. Don't conflate them.
 - **Two signing layers.** Apple Developer ID (Gatekeeper) + a Tauri updater minisign keypair. The private minisign key lives in CI secrets (`TAURI_SIGNING_PRIVATE_KEY`). Never hardcode or log it.
 - **IPC security boundary.** The main WKWebView window loads a remote origin and has zero IPC access (no capability grants it). All native escalation happens in Rust directly or from the local bundled pairing windows. Don't add `remote.urls` entries to any capability file for the prod origin.
-- **Additive server routes only.** The desktop shell depends on `/auth/pair/*`, `/auth/handoff`, and `/link` routes in `dali-api`. Changes to those routes affect the native app — note that in the PR description.
+- **Additive server routes only.** The desktop shell depends on `/auth/pair/*`, `/auth/handoff`, `/link`, `/api/notifications`, `/api/notifications/stream`, and the `/api/notifications/:id/read` + `/:id/rsvp` actions (banner buttons post to them) in `dali-api`. Changes to those routes affect the native app — note that in the PR description.
 - **Don't touch signing config** (`src-tauri/tauri.conf.json` `plugins.updater.pubkey`, or `src-tauri/capabilities/`) without flagging it. Signing mismatches break auto-update for all installed clients.
 - Desktop dev: `npm install && npm run tauri:dev` from `desktop/`. Requires Rust (stable) + Xcode Command Line Tools.
 

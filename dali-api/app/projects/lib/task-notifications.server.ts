@@ -1,13 +1,26 @@
 // Emitters for task-facing notification events (task.assigned, task.comment,
-// task.github_update). Each helper loads what it needs and dispatches via
-// notify(); callers fire-and-forget so a delivery hiccup never fails the
-// underlying write.
+// task.status_changed, task.github_update). Each helper loads what it needs
+// and dispatches via notify(); callers fire-and-forget so a delivery hiccup
+// never fails the underlying write.
 
 import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
+import { TASK_STATUS_LABELS } from "./task-board";
+import { currentProjectParticipantIds } from "./project-members.server";
 
 function taskLink(projectId: string, taskId: string): string {
-  return `/projects/${projectId}?tab=work&task=${taskId}`;
+  return `/projects/${projectId}?tab=board&task=${taskId}`;
+}
+
+// Drop anyone no longer on the project — a historical task assignee who has
+// since rolled off should stop getting the project's task activity.
+async function onProject(
+  projectId: string,
+  userIds: string[],
+): Promise<string[]> {
+  if (userIds.length === 0) return userIds;
+  const members = await currentProjectParticipantIds(projectId);
+  return userIds.filter((id) => members.has(id));
 }
 
 const COMMENT_PREVIEW_MAX = 200;
@@ -19,8 +32,8 @@ export async function notifyTaskAssigned(args: {
   // notifies.
   actorUserId?: string | null;
 }): Promise<void> {
-  const recipients = args.addedUserIds.filter((id) => id !== args.actorUserId);
-  if (recipients.length === 0) return;
+  const added = args.addedUserIds.filter((id) => id !== args.actorUserId);
+  if (added.length === 0) return;
   const task = await prisma.task.findUnique({
     where: { id: args.taskId },
     select: {
@@ -32,6 +45,8 @@ export async function notifyTaskAssigned(args: {
     },
   });
   if (!task) return;
+  const recipients = await onProject(task.projectId, added);
+  if (recipients.length === 0) return;
   await notify({
     eventType: "task.assigned",
     createdByUserId: args.actorUserId ?? null,
@@ -60,9 +75,10 @@ export async function notifyTaskComment(args: {
     },
   });
   if (!task) return;
-  const recipients = task.assignees
-    .map((a) => a.userId)
-    .filter((id) => id !== args.authorId);
+  const recipients = await onProject(
+    task.projectId,
+    task.assignees.map((a) => a.userId).filter((id) => id !== args.authorId),
+  );
   if (recipients.length === 0) return;
   const preview =
     args.body.length > COMMENT_PREVIEW_MAX
@@ -74,6 +90,42 @@ export async function notifyTaskComment(args: {
     message: {
       title: `New comment on: ${task.title}`,
       body: preview,
+      link: taskLink(task.projectId, task.id),
+    },
+    recipients: recipients.map((userId) => ({ userId })),
+  });
+}
+
+export async function notifyTaskStatusChanged(
+  taskId: string,
+  // The user who moved the task; assignees other than them are notified.
+  actorUserId: string | null,
+  newStatus: string,
+): Promise<void> {
+  const task = await prisma.task.findUnique({
+    where: { id: taskId },
+    select: {
+      id: true,
+      title: true,
+      projectId: true,
+      assignees: { select: { userId: true } },
+      project: { select: { name: true } },
+    },
+  });
+  if (!task) return;
+  const recipients = await onProject(
+    task.projectId,
+    task.assignees.map((a) => a.userId).filter((id) => id !== actorUserId),
+  );
+  if (recipients.length === 0) return;
+  const label =
+    (TASK_STATUS_LABELS as Record<string, string>)[newStatus] ?? newStatus;
+  await notify({
+    eventType: "task.status_changed",
+    createdByUserId: actorUserId,
+    message: {
+      title: `Task moved to ${label}: ${task.title}`,
+      body: `In ${task.project.name}.`,
       link: taskLink(task.projectId, task.id),
     },
     recipients: recipients.map((userId) => ({ userId })),
@@ -95,6 +147,11 @@ export async function notifyTaskGithubUpdate(args: {
     },
   });
   if (!task || task.assignees.length === 0) return;
+  const recipients = await onProject(
+    task.projectId,
+    task.assignees.map((a) => a.userId),
+  );
+  if (recipients.length === 0) return;
   await notify({
     eventType: "task.github_update",
     message:
@@ -109,6 +166,6 @@ export async function notifyTaskGithubUpdate(args: {
             body: `The linked issue was reopened — status set to ${args.newStatus}.`,
             link: taskLink(task.projectId, task.id),
           },
-    recipients: task.assignees.map((a) => ({ userId: a.userId })),
+    recipients: recipients.map((userId) => ({ userId })),
   });
 }

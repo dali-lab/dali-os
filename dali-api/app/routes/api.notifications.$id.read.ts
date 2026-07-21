@@ -2,6 +2,7 @@ import type { Route } from "./+types/api.notifications.$id.read";
 import { prisma } from "~/lib/db";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
+import { publishNotificationChange } from "~/lib/notify-stream.server";
 import { ONBOARDING_LINK } from "~/members/lib/welcome.server";
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -72,6 +73,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       where: { id },
       data: { readAt: null },
     });
+    publishNotificationChange([auth.user.sub]);
     return withCors(request, Response.json({ ok: true }));
   }
 
@@ -96,5 +98,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     where: { id },
     data: { readAt: new Date() },
   });
+  // Converge the desktop badge without waiting for its sync backstop.
+  publishNotificationChange([auth.user.sub]);
   return withCors(request, Response.json({ ok: true }));
 }

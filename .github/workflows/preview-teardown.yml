@@ -3,7 +3,7 @@ name: PR Preview Teardown
 on:
   pull_request:
     types: [closed]
-    branches: [dev]
+    branches: [staging]
 
 concurrency:
   group: preview-pr-${{ github.event.pull_request.number }}

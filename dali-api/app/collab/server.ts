@@ -5,6 +5,7 @@ import { verifyCollabToken } from "./auth";
 import { loadDocument, maybeSnapshot, storeDocument } from "./persistence";
 import { isPresenceRoom } from "./roomName";
 import { authorizeCollabDoc } from "~/lib/collabAuth";
+import { isPartnerUser } from "~/partners/lib/partner-access";
 import { notifyCollabDocMentions } from "./mentions.server";
 
 const WS_MAX_PAYLOAD_BYTES = 1_048_576; // 1 MB
@@ -71,9 +72,11 @@ export function startCollabServer() {
     async onAuthenticate({
       token,
       documentName,
+      connectionConfig,
     }: {
       token: string;
       documentName: string;
+      connectionConfig: { readOnly: boolean };
     }) {
       if (!token) throw new Error("No authentication token provided");
       const user = await verifyCollabToken(token);
@@ -86,6 +89,13 @@ export function startCollabServer() {
           throw new Error(
             `User ${user.sub} not authorized for document ${documentName}`,
           );
+        }
+        // Shared project pages (doc:*) are read-only for partner accounts —
+        // they view and comment, but the team owns the body. Members have no
+        // PartnerUser row so they're unaffected; partnersow:* (co-drafted SOWs)
+        // is intentionally left editable.
+        if (documentName.startsWith("doc:") && (await isPartnerUser(user.sub))) {
+          connectionConfig.readOnly = true;
         }
       }
 

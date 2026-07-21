@@ -18,14 +18,9 @@ pub fn handle_urls(app: &AppHandle, urls: &[Url]) {
             .find(|(k, _)| k == "link" || k == "path")
             .map(|(_, v)| v.into_owned());
 
-        window::show_main(app);
-        if let Some(path) = target {
-            let full = if path.starts_with("http") {
-                path
-            } else {
-                format!("{}{}", config::PROD_ORIGIN, path)
-            };
-            window::navigate_main(app, &full);
+        match target {
+            Some(path) => window::open_link(app, &path),
+            None => window::show_main(app),
         }
     }
 }

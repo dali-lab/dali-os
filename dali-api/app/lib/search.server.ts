@@ -3,6 +3,7 @@ import { prisma } from "~/lib/db";
 import { LAB_MEMBER_WHERE } from "~/lib/prisma-shapes";
 import type { UserRoles } from "~/lib/roles";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
+import { TASK_STATUS_LABELS } from "~/projects/lib/task-board";
 import {
   buildUrl,
   computeHiringVisibility,
@@ -39,9 +40,11 @@ export async function runSearch(opts: {
   const tasks: Promise<SearchResult[]>[] = [
     searchPeople(q, like),
     searchProjects(q, like),
+    searchTasks(q, like),
     searchOfferings(q, like),
     searchPartnerOrgs(q, like),
     searchDocuments(q, like),
+    searchProjectFiles(q, like),
     searchApplications(opts.userId, roles, q, like),
     // Forms & folders — Forms area gate.
     roles.canViewForms ? searchForms(q, like) : NONE,
@@ -102,12 +105,92 @@ async function searchPeople(q: string, like: Like): Promise<SearchResult[]> {
 
 async function searchProjects(q: string, like: Like): Promise<SearchResult[]> {
   // Archived projects are effectively retired — keep them out of quick-jump.
+  // Description matches too (a project is often findable by what it does, not
+  // what it's called), so it must feed the ranker as a scored field.
   const rows = await prisma.project.findMany({
-    where: { status: { not: "Archived" }, name: like },
-    select: { id: true, name: true },
+    where: { status: { not: "Archived" }, OR: [{ name: like }, { description: like }] },
+    select: { id: true, name: true, description: true },
     take: RAW_TAKE,
   });
-  return simpleResults("project", "Project", rows.map((r) => ({ id: r.id, label: r.name })), q);
+  return rankResults(
+    rows.map((p) => ({
+      result: {
+        type: "project" as const,
+        id: p.id,
+        title: p.name,
+        subtitle: "Project",
+        url: buildUrl.project(p.id),
+      },
+      text: [p.name, p.description ?? ""],
+    })),
+    q,
+  );
+}
+
+async function searchTasks(q: string, like: Like): Promise<SearchResult[]> {
+  // Every member can open every project's board, so tasks get the same
+  // scoping as projects: members-only auth, Archived projects excluded.
+  // Reuses the "project" result type so the palette needs no new icon/section;
+  // the url deep-links to the task modal on the project board.
+  const rows = await prisma.task.findMany({
+    // archivedAt: auto-archived Done/Cancelled tasks are off the board, so
+    // they shouldn't surface here either.
+    where: { title: like, archivedAt: null, project: { status: { not: "Archived" } } },
+    select: {
+      id: true,
+      title: true,
+      status: true,
+      projectId: true,
+      project: { select: { name: true } },
+    },
+    take: RAW_TAKE,
+  });
+  return rankResults(
+    rows.map((t) => ({
+      result: {
+        type: "project" as const,
+        id: t.id,
+        title: t.title,
+        subtitle: `${t.project.name} · ${TASK_STATUS_LABELS[t.status]}`,
+        url: `/projects/${t.projectId}?tab=board&task=${t.id}`,
+      },
+      text: [t.title],
+    })),
+    q,
+  );
+}
+
+async function searchProjectFiles(q: string, like: Like): Promise<SearchResult[]> {
+  // Uploaded project files; archived ones are out, mirroring pages. Matches
+  // the display title or the current version's original filename (a file is
+  // often remembered by what it was uploaded as). Reuses the "document" result
+  // type — same section/icon as pages.
+  const rows = await prisma.projectFile.findMany({
+    where: {
+      archivedAt: null,
+      OR: [{ title: like }, { currentVersion: { fileName: like } }],
+    },
+    select: {
+      id: true,
+      title: true,
+      currentVersion: { select: { fileName: true } },
+      project: { select: { name: true } },
+    },
+    take: RAW_TAKE,
+  });
+  return rankResults(
+    rows.map((f) => ({
+      result: {
+        type: "document" as const,
+        id: f.id,
+        title: f.title || "Untitled",
+        subtitle: f.project.name,
+        url: `/documents/file/${f.id}`,
+      },
+      text: [f.title, f.currentVersion?.fileName ?? ""],
+    })),
+    q,
+  );
 }
 
 async function searchOfferings(q: string, like: Like): Promise<SearchResult[]> {

@@ -56,6 +56,11 @@ pub fn run() {
             app.set_menu(menu::build(&handle)?)?;
             tray::install(&handle)?;
 
+            // Notification backend (macOS: UN delegate + action categories +
+            // authorization). Before first show so cold-start banner clicks
+            // are delivered.
+            notify::init(&handle);
+
             // Pairing window stays built + hidden, ready to show.
             window::build_pairing(&handle)?;
 

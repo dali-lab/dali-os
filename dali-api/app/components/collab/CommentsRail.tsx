@@ -11,6 +11,9 @@ export type Comment = {
   anchor: { from: string; to: string } | null;
   resolved: boolean;
   createdAt: string;
+  // File comments: the ProjectFileVersion current when the comment was
+  // written. Null on doc/pagedoc comments and pre-pinning file comments.
+  versionId?: string | null;
 };
 
 type Thread = { root: Comment; replies: Comment[] };
@@ -26,6 +29,23 @@ export type ThreadActions = {
 
 export function formatCommentDate(iso: string) {
   return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+// "V2" chip on file comments — which iteration the feedback was written on.
+function VersionChip({
+  comment,
+  versionLabels,
+}: {
+  comment: Comment;
+  versionLabels?: Record<string, string>;
+}) {
+  const label = comment.versionId ? versionLabels?.[comment.versionId] : undefined;
+  if (!label) return null;
+  return (
+    <span className="mr-1.5 px-1 py-0.5 rounded bg-muted text-muted-foreground font-medium">
+      {label}
+    </span>
+  );
 }
 
 // Comment threads for a document or file. Doc-level (anchor === null) and
@@ -46,6 +66,8 @@ export function CommentsRail({
   registerRefresh,
   mentionPath,
   focusCommentId,
+  versionLabels,
+  versionId,
 }: {
   targetType: "doc" | "file" | "pagedoc";
   targetId: string;
@@ -61,6 +83,12 @@ export function CommentsRail({
   // Arriving from a comment-mention notification (?comment=<id>): scroll to and
   // flash this comment once threads load.
   focusCommentId?: string;
+  // File hosts: versionId → display label ("V2"), so feedback reads against
+  // the iteration it was written on.
+  versionLabels?: Record<string, string>;
+  // File hosts: the version currently being previewed — new comments are
+  // stamped with it rather than whatever version happens to be current.
+  versionId?: string | null;
   onClearPendingAnchor?: () => void;
   onFocusAnchor?: (anchor: { from: string; to: string }) => void;
   // Lets the host trigger a refetch (e.g. after creating an inline comment
@@ -140,7 +168,7 @@ export function CommentsRail({
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ targetType, targetId, body, parentId, anchor, path: mentionPath }),
+        body: JSON.stringify({ targetType, targetId, body, parentId, anchor, path: mentionPath, versionId }),
       });
       if (!res.ok) {
         const b = (await res.json().catch(() => ({}))) as { error?: string };
@@ -298,7 +326,10 @@ export function CommentsRail({
               >
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-medium text-foreground">{t.root.author}</span>
-                  <span className="text-[10px] text-muted-foreground">{formatCommentDate(t.root.createdAt)}</span>
+                  <span className="text-[10px] text-muted-foreground">
+                    <VersionChip comment={t.root} versionLabels={versionLabels} />
+                    {formatCommentDate(t.root.createdAt)}
+                  </span>
                 </div>
                 {t.root.anchor && (
                   <span className="text-[10px] text-accent-coral">inline</span>
@@ -310,7 +341,10 @@ export function CommentsRail({
                 <div key={r.id} data-comment-id={r.id} className="ml-3 mt-1.5 pl-2 border-l border-border">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-medium text-foreground">{r.author}</span>
-                    <span className="text-[10px] text-muted-foreground">{formatCommentDate(r.createdAt)}</span>
+                    <span className="text-[10px] text-muted-foreground">
+                      <VersionChip comment={r} versionLabels={versionLabels} />
+                      {formatCommentDate(r.createdAt)}
+                    </span>
                   </div>
                   <p className="text-sm text-foreground whitespace-pre-wrap mt-0.5">{r.body}</p>
                 </div>

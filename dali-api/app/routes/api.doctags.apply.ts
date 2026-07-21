@@ -46,7 +46,11 @@ export async function action({ request }: Route.ActionArgs) {
       where: { id: targetId },
       select: { workspaceType: true, archivedAt: true },
     });
-    if (!page || page.workspaceType !== "Project" || page.archivedAt !== null) {
+    if (
+      !page ||
+      (page.workspaceType !== "Project" && page.workspaceType !== "Lab") ||
+      page.archivedAt !== null
+    ) {
       return withCors(request, Response.json({ error: "Document not found" }, { status: 404 }));
     }
     if (op === "add") {

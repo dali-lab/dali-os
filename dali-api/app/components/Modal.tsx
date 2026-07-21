@@ -69,7 +69,10 @@ export function Modal({
     const dialog = dialogRef.current;
     if (dialog) {
       const target = initialFocusRef?.current ?? getFocusable(dialog)[0] ?? dialog;
-      target.focus();
+      // preventScroll: focusing the dialog must not scroll the page/board
+      // behind the overlay into view (the trigger — e.g. a task card — can be
+      // far down a long board, which otherwise jumps it to the top on open).
+      target.focus({ preventScroll: true });
     }
 
     const previousOverflow = document.body.style.overflow;

@@ -7,6 +7,7 @@ import type { TaskStatus } from "./task-board";
 // Failures are logged and swallowed so a GH outage never blocks user writes.
 
 const STATUS_LABELS: Record<TaskStatus, string | null> = {
+  Backlog: "status:backlog",
   Todo: "status:todo",
   InProgress: "status:in-progress",
   InReview: "status:in-review",
@@ -15,6 +16,7 @@ const STATUS_LABELS: Record<TaskStatus, string | null> = {
 };
 
 const ALL_STATUS_LABELS = [
+  "status:backlog",
   "status:todo",
   "status:in-progress",
   "status:in-review",
@@ -82,7 +84,7 @@ export async function createIssueForTask(taskId: string, repoInput: string): Pro
     const gh = githubAppClient();
 
     const { assignees, missing } = resolveAssignees(task.assignees);
-    const body = `Tracked in dalios: ${appBaseUrl()}/projects/${task.projectId}?tab=work&task=${task.id}`;
+    const body = `Tracked in dalios: ${appBaseUrl()}/projects/${task.projectId}?tab=board&task=${task.id}`;
 
     const res = await gh.rest.issues.create({
       owner,

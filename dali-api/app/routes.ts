@@ -7,6 +7,8 @@ export default [
     route("profile", "routes/profile.tsx"),
     route("onboarding", "routes/onboarding.tsx"),
     route("calendar", "calendar/routes/calendar.tsx"),
+    // Standalone self-check-in surface for meetings without a meeting note.
+    route("calendar/check-in/:id", "calendar/routes/calendar.check-in.$id.tsx"),
     // My Tasks surface: Open tasks + browsable notification history.
     route("notifications", "routes/notifications.tsx"),
 
@@ -93,6 +95,9 @@ export default [
 
     // Documents & files — full-page reusable editor + file viewer. Literal
     // "file" segment precedes the :pageId param so it isn't captured.
+    // The bare /documents route is the lab-wide Documents hub (aggregates
+    // lab-wide docs + the viewer's project-hub docs).
+    route("documents", "routes/documents.hub.tsx"),
     route("documents/file/:fileId", "routes/documents.file.$fileId.tsx"),
     route("documents/:pageId", "routes/documents.$pageId.tsx"),
 
@@ -285,6 +290,7 @@ export default [
   route("api/groups/:groupId", "admin-console/routes/api.groups.$groupId.ts"),
   route("api/tour/complete", "routes/api.tour.complete.ts"),
   route("api/notifications", "routes/api.notifications.ts"),
+  route("api/notifications/stream", "routes/api.notifications.stream.ts"),
   route("api/notifications/send", "admin-console/routes/api.notifications.send.ts"),
   route("api/notifications/:id/read", "routes/api.notifications.$id.read.ts"),
   route("api/notifications/:id/rsvp", "routes/api.notifications.$id.rsvp.ts"),
@@ -334,6 +340,9 @@ export default [
   // Project task board
   route("api/projects/:id/tasks", "projects/routes/api.projects.$id.tasks.ts"),
   route("api/tasks/:id/move", "projects/routes/api.tasks.$id.move.ts"),
+  route("api/tasks/:id/comments", "projects/routes/api.tasks.$id.comments.ts"),
+  route("api/tasks/:id/github", "projects/routes/api.tasks.$id.github.ts"),
+  route("api/tasks/:id/files", "projects/routes/api.tasks.$id.files.ts"),
   route("api/tasks/:id", "projects/routes/api.tasks.$id.ts"),
 
   // Project epics & sprints
@@ -351,12 +360,17 @@ export default [
 
   // Project documents (collab Pages scoped to the project)
   route("api/projects/:id/documents", "projects/routes/api.projects.$id.documents.ts"),
+  // Lab-wide documents (collab Pages scoped to the Lab workspace)
+  route("api/lab-documents", "routes/api.lab-documents.ts"),
   route("api/documents/:id", "projects/routes/api.documents.$id.ts"),
   route("api/pages/:id/partner-visible", "projects/routes/api.pages.$id.partner-visible.ts"),
+  route("api/pages/:id/pin", "projects/routes/api.pages.$id.pin.ts"),
+  route("api/pages/:id/move", "projects/routes/api.pages.$id.move.ts"),
 
   // Project files (standalone uploads with versions)
   route("api/projects/:id/files", "projects/routes/api.projects.$id.files.ts"),
   route("api/files/:id", "projects/routes/api.files.$id.ts"),
+  route("api/files/:id/partner-visible", "projects/routes/api.files.$id.partner-visible.ts"),
 
   // Lab-wide document/file tags
   route("api/doctags", "routes/api.doctags.ts"),
@@ -446,6 +460,7 @@ export default [
   // S3 file upload
   route("api/upload/presign", "routes/api.upload.presign.ts"),
   route("api/upload/url", "routes/api.upload.url.ts"),
+  route("api/upload/raw", "routes/api.upload.raw.ts"),
 
   // Gmail OAuth one-time authorization
   route("admin/authorize-gmail", "routes/admin.authorize-gmail.ts"),

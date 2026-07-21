@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { Plus } from "lucide-react";
+import { Avatar } from "~/components/ui/Avatar";
 import { VIBE_META } from "../lib/vibe";
 import type {
   GridCell,
@@ -35,8 +36,17 @@ export function MentorGrid({
 }) {
   return (
     <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
-      <h2 className="font-heading font-semibold text-foreground">
-        {heading ?? fullName(group.mentor)}
+      <h2 className="font-heading font-semibold text-foreground flex items-center gap-2">
+        {heading ?? (
+          <>
+            <Avatar
+              photoUrl={group.mentor.photoUrl}
+              name={fullName(group.mentor)}
+              size="sm"
+            />
+            {fullName(group.mentor)}
+          </>
+        )}
       </h2>
       <div className="overflow-x-auto">
         <table className="border-separate border-spacing-1 text-sm">
@@ -62,8 +72,15 @@ export function MentorGrid({
             {group.rows.map((row) => (
               <tr key={row.key}>
                 <td className="pr-3 whitespace-nowrap">
-                  <span className="font-medium text-foreground">
-                    {fullName(row.mentee)}
+                  <span className="inline-flex items-center gap-2 align-middle">
+                    <Avatar
+                      photoUrl={row.mentee.photoUrl}
+                      name={fullName(row.mentee)}
+                      size="xs"
+                    />
+                    <span className="font-medium text-foreground">
+                      {fullName(row.mentee)}
+                    </span>
                   </span>{" "}
                   <span className="text-xs text-muted-foreground">
                     {row.projectName} · {row.domainCode}

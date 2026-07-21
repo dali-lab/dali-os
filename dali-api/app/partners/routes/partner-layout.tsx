@@ -73,7 +73,7 @@ export default function PartnerLayout() {
       </nav>
 
       <div className="pt-16">
-        <main className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
+        <main className="w-full px-4 sm:px-6 lg:px-10 py-8">
           <Outlet />
         </main>
       </div>

@@ -5,7 +5,7 @@ import { Tooltip } from "~/components/ui/IconButton";
 import type { Route } from "./+types/documents.file.$fileId";
 import { prisma } from "~/lib/db";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
-import { isCore } from "~/lib/roles";
+import { isCore, isProjectMember } from "~/lib/roles";
 import { getDownloadUrl } from "~/lib/s3";
 import { hydrateAuthors } from "~/lib/collabAuth";
 import { formatBytes, uploadFileToS3 } from "~/lib/upload-client";
@@ -64,6 +64,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           uploadedById: true,
           createdAt: true,
           s3Key: true,
+          contentType: true,
         },
       },
     },
@@ -72,20 +73,35 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     throw new Response("Not found", { status: 404 });
   }
 
-  const canEdit = await isCore(auth.user.sub);
+  // Upload + comment are open to Core and members of the owning project (the
+  // artifact feedback loop runs on project members); the curated tag list
+  // stays Core-managed, matching /api/doctags.
+  const core = await isCore(auth.user.sub);
+  const canEdit = core || (await isProjectMember(auth.user.sub, file.projectId));
+  const canManageTags = core;
 
   const uploaderNames = await hydrateAuthors(file.versions.map((v) => v.uploadedById));
   const nameById = new Map(uploaderNames.map((u) => [u.id, u.name]));
 
   const versions = await Promise.all(
-    file.versions.map(async (v) => ({
+    // Newest first, so the oldest upload is V1.
+    file.versions.map(async (v, i) => ({
       id: v.id,
+      label: `V${file.versions.length - i}`,
       fileName: v.fileName,
       sizeBytes: v.sizeBytes,
       uploadedBy: nameById.get(v.uploadedById) ?? "Unknown",
       createdAt: v.createdAt.toISOString(),
       isCurrent: v.id === file.currentVersionId,
+      contentType: v.contentType,
       downloadUrl: await getDownloadUrl(v.s3Key),
+      // Inline-preview URL: forces the known content type + inline disposition
+      // so the browser renders it even when the S3 object's stored Content-Type
+      // is wrong or missing (e.g. generated PDFs served as octet-stream).
+      previewUrl: await getDownloadUrl(v.s3Key, {
+        contentType: v.contentType ?? undefined,
+        inline: true,
+      }),
     })),
   );
 
@@ -104,13 +120,23 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     allTags,
     versions,
     canEdit,
+    canManageTags,
     currentUserId: auth.user.sub,
   };
 }
 
 export default function FilePage() {
-  const { fileId, projectId, title, tags, allTags, versions, canEdit, currentUserId } =
-    useLoaderData() as Exclude<Awaited<ReturnType<typeof loader>>, Response>;
+  const {
+    fileId,
+    projectId,
+    title,
+    tags,
+    allTags,
+    versions,
+    canEdit,
+    canManageTags,
+    currentUserId,
+  } = useLoaderData() as Exclude<Awaited<ReturnType<typeof loader>>, Response>;
 
   const revalidator = useRevalidator();
   const [fileSearchParams] = useSearchParams();
@@ -118,6 +144,14 @@ export default function FilePage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Which version the preview panel shows. Defaults to the current version
+  // (versions are newest-first, and the current one is usually newest).
+  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(
+    versions.find((v) => v.isCurrent)?.id ?? versions[0]?.id ?? null,
+  );
+  const selected =
+    versions.find((v) => v.id === selectedVersionId) ?? versions[0] ?? null;
 
   async function onPick(e: React.ChangeEvent<HTMLInputElement>) {
     const picked = e.target.files?.[0];
@@ -156,10 +190,16 @@ export default function FilePage() {
               targetId={fileId}
               applied={tags}
               allTags={allTags}
-              canEdit={canEdit}
-              canCreate={canEdit}
+              canEdit={canManageTags}
+              canCreate={canManageTags}
             />
           </div>
+
+          {selected && (
+            <div className="mt-6">
+              <FilePreview version={selected} />
+            </div>
+          )}
 
           <div className="flex items-center justify-between mt-6 mb-2">
             <h2 className="text-sm font-semibold text-foreground">Versions</h2>
@@ -192,8 +232,26 @@ export default function FilePage() {
 
           <ul className="flex flex-col divide-y divide-border border border-border rounded-lg">
             {versions.map((v) => (
-              <li key={v.id} className="flex items-center justify-between gap-3 px-3 py-2.5 text-sm">
+              <li
+                key={v.id}
+                role="button"
+                tabIndex={0}
+                aria-pressed={v.id === selected?.id}
+                onClick={() => setSelectedVersionId(v.id)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setSelectedVersionId(v.id);
+                  }
+                }}
+                className={`flex items-center justify-between gap-3 px-3 py-2.5 text-sm cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-coral/40 ${
+                  v.id === selected?.id ? "bg-accent-teal/10" : "hover:bg-muted/40"
+                }`}
+              >
                 <div className="min-w-0">
+                  <span className="mr-2 text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-medium">
+                    {v.label}
+                  </span>
                   <span className="text-foreground truncate">{v.fileName}</span>
                   {v.isCurrent && (
                     <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-accent-teal/15 text-accent-teal">
@@ -214,6 +272,7 @@ export default function FilePage() {
                   <a
                     href={v.downloadUrl}
                     aria-label="Download"
+                    onClick={(e) => e.stopPropagation()}
                     className="inline-flex items-center justify-center p-1.5 rounded border border-border hover:bg-muted text-muted-foreground hover:text-foreground flex-shrink-0"
                   >
                     <Download className="w-3.5 h-3.5" />
@@ -231,9 +290,80 @@ export default function FilePage() {
             currentUserId={currentUserId}
             canComment={canEdit}
             focusCommentId={focusCommentId}
+            versionLabels={Object.fromEntries(versions.map((v) => [v.id, v.label]))}
+            versionId={selected?.id ?? null}
           />
         </aside>
       </div>
+    </div>
+  );
+}
+
+type FileVersionView = Exclude<
+  Awaited<ReturnType<typeof loader>>,
+  Response
+>["versions"][number];
+
+// Inline preview of a file version. Images, video, audio, and PDFs render
+// directly from the presigned S3 URL; anything else (e.g. .psd/.ae source
+// files) falls back to a download prompt.
+function FilePreview({ version }: { version: FileVersionView }) {
+  const ct = version.contentType ?? "";
+  const isImage = ct.startsWith("image/");
+  const isVideo = ct.startsWith("video/");
+  const isAudio = ct.startsWith("audio/");
+  const isPdf = ct === "application/pdf";
+  const isText = ct.startsWith("text/") || ct === "application/json";
+
+  if (isVideo) {
+    return (
+      // `key` forces a reload when the previewed version changes — <video>
+      // doesn't re-fetch on a src prop change alone.
+      <video
+        key={version.id}
+        src={version.previewUrl}
+        controls
+        className="max-w-full max-h-[70vh] rounded-lg border border-border bg-black"
+      />
+    );
+  }
+  if (isAudio) {
+    return (
+      <audio key={version.id} src={version.previewUrl} controls className="w-full" />
+    );
+  }
+  if (isImage) {
+    return (
+      <img
+        src={version.previewUrl}
+        alt={version.fileName}
+        className="max-w-full max-h-[70vh] rounded-lg border border-border object-contain bg-muted/20"
+      />
+    );
+  }
+  if (isPdf || isText) {
+    return (
+      <iframe
+        key={version.id}
+        src={version.previewUrl}
+        title={version.fileName}
+        className="w-full h-[70vh] rounded-lg border border-border bg-white"
+      />
+    );
+  }
+  return (
+    <div className="rounded-lg border border-border bg-muted/20 px-4 py-10 text-center text-sm text-muted-foreground">
+      <p>
+        No inline preview for this file type
+        {version.contentType ? ` (${version.contentType})` : ""}.
+      </p>
+      <a
+        href={version.downloadUrl}
+        className="mt-3 inline-flex items-center gap-1 text-accent-coral hover:underline"
+      >
+        <Download className="w-3.5 h-3.5" />
+        Download to view
+      </a>
     </div>
   );
 }

@@ -91,10 +91,11 @@ export type CreateScheduledMeetingInput = {
   meetingType?: MeetingType | null;
   meetingTypeLabel?: string | null;
   projectId?: string | null;
-  // Roster (default): organizer/Core check attendees off by hand. SelfCheckIn:
-  // a checkInToken is generated and attendees mark themselves present via the
-  // check-in route — meant for events too large to check off manually (e.g.
-  // an all-lab Group meeting). Only meaningful alongside meetingType.
+  // Roster (default): organizer/Core check attendees off by hand (needs a
+  // meeting note for the checklist UI). SelfCheckIn: a checkInToken is
+  // generated and attendees mark themselves present via the check-in route —
+  // works with or without a meeting note (QR lives on the note when present,
+  // otherwise on /calendar/check-in/:id).
   attendanceMode?: AttendanceMode;
 };
 
@@ -108,12 +109,6 @@ export type CreateScheduledMeetingResult =
       checkInToken: string | null;
     }
   | { ok: false; error: string };
-
-const MEETING_TYPE_LABELS: Record<MeetingType, string> = {
-  Team: "Team",
-  Partner: "Partner",
-  Other: "", // overridden by meetingTypeLabel
-};
 
 export async function createScheduledMeeting(
   input: CreateScheduledMeetingInput,
@@ -213,22 +208,18 @@ export async function createScheduledMeeting(
     }
   }
 
-  // MeetingAttendance fan-out follows the meeting's participant scope only
-  // (plus the organizer) — never the whole lab. A project-less meeting still
-  // only invites whoever was listed; pick a Term group in Participants if you
-  // actually want every current-term member. Note-page creation branches on
-  // whether there's a project: project-scoped meetings get a Page under the
-  // project's shared documents (optionally nested in the Team/Partner
-  // meeting-notes folder); project-less meetings get a Lab-workspace page
-  // instead, so there's still somewhere to host the QR / AttendanceChecklist.
+  // Note-page creation is optional (driven by meetingType). Attendance rows
+  // fan out for notes (roster checklist) and for SelfCheckIn (QR / self-serve
+  // present) — either alone or together. Scope is always the meeting's
+  // participants (+ organizer), never the whole lab.
   let notePageId: string | null = null;
   if (input.meetingType) {
-    const label =
-      input.meetingType === "Other"
-        ? (input.meetingTypeLabel ?? "").trim() || "Other"
-        : MEETING_TYPE_LABELS[input.meetingType];
+    // Auto-generated note pages are titled with just the meeting date — the
+    // note already lives under its Team/Partner folder (or carries its custom
+    // "Other" label via the meeting itself), so repeating "… meeting note" in
+    // the title is redundant.
     const noteDate = startDate ?? new Date();
-    const title = `${label} meeting note (${formatDateShort(noteDate)})`;
+    const title = formatDateShort(noteDate);
 
     if (input.projectId) {
       // Team/Partner notes nest under their default, undeletable folder;
@@ -258,7 +249,9 @@ export async function createScheduledMeeting(
       });
       notePageId = page.id;
     }
+  }
 
+  if (input.meetingType || attendanceMode === "SelfCheckIn") {
     const attendeeIds = Array.from(new Set([...participantUserIds, input.organizerId]));
     await prisma.meetingAttendance.createMany({
       data: attendeeIds.map((userId) => ({

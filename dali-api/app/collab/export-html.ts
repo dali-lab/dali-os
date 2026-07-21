@@ -84,6 +84,11 @@ function renderNode(node: PMNode): string {
       return "<hr />";
     case "hardBreak":
       return "<br />";
+    case "image": {
+      const src = typeof node.attrs?.src === "string" ? escapeHtml(node.attrs.src) : "";
+      const alt = typeof node.attrs?.alt === "string" ? escapeHtml(node.attrs.alt) : "";
+      return src ? `<img src="${src}" alt="${alt}" />` : "";
+    }
     default:
       // Unknown block: render its children so content is never dropped.
       return renderNodes(node.content);
@@ -111,6 +116,7 @@ export function buildExportHtml(title: string, bodyHtml: string): string {
   code { font-family: "SF Mono", Menlo, monospace; font-size: 0.9em; }
   hr { border: none; border-top: 1px solid #ddd; margin: 24px 0; }
   a { color: #1155cc; }
+  img { max-width: 100%; height: auto; border-radius: 6px; margin: 12px 0; }
 </style>
 </head>
 <body>

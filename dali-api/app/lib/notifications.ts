@@ -4,6 +4,7 @@
 
 import type { Prisma } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db";
+import { EVENT_TYPES, isEventType, type EventDef } from "~/lib/notification-events";
 
 // Invites for a Cancelled meeting are hidden everywhere — inbox, bell,
 // tasks, and digest emails alike. Combine this with the per-user filter on
@@ -55,4 +56,30 @@ export async function listMyNotifications(
   ]);
 
   return { items, unreadCount };
+}
+
+export type DesktopPrefRow = { eventType: string; desktop: boolean };
+
+/**
+ * Desktop-app annotations for feed items: `desktop` — should this item raise a
+ * native banner (per-event preference, registry default when no row) — and
+ * `urgent` — the registry's timeSensitive flag. Resolved at read time for the
+ * same reason preferences aren't stamped on rows: a preference change must
+ * apply to rows the app hasn't surfaced yet.
+ */
+export function annotateDesktopFeed<T extends { eventType: string }>(
+  items: T[],
+  prefs: DesktopPrefRow[],
+): (T & { desktop: boolean; urgent: boolean })[] {
+  const desktopByType = new Map(prefs.map((p) => [p.eventType, p.desktop]));
+  return items.map((item) => {
+    const def: EventDef = isEventType(item.eventType)
+      ? EVENT_TYPES[item.eventType]
+      : EVENT_TYPES.general;
+    return {
+      ...item,
+      desktop: desktopByType.get(item.eventType) ?? def.defaults.desktop,
+      urgent: def.timeSensitive === true,
+    };
+  });
 }

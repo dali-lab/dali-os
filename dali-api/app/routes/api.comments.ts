@@ -1,8 +1,10 @@
 import type { Route } from "./+types/api.comments";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireAuth, forbidden } from "~/lib/auth";
-import { isCore, isLabMember } from "~/lib/roles";
+import { requireAuth, forbidden, type AuthSuccess } from "~/lib/auth";
+import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
+import { notifyFileComment } from "~/projects/lib/file-notifications.server";
+import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import { hydrateAuthors } from "~/lib/collabAuth";
@@ -32,6 +34,9 @@ const CreateSchema = z.object({
   // Page-doc FAQ comments only: the page path, so @-mention notifications can
   // deep-link back to the guide (with ?doc=1).
   path: z.string().max(1000).optional(),
+  // File comments only: the version the commenter was viewing, so feedback
+  // is pinned to the iteration it was written against.
+  versionId: z.string().min(1).nullable().optional(),
 });
 
 type CommentTarget = "doc" | "file" | "pagedoc";
@@ -59,11 +64,46 @@ async function targetExists(targetType: CommentTarget, targetId: string): Promis
   return !!file && file.archivedAt === null;
 }
 
+// A partner may comment on a `doc` only when it's a live, partner-visible page
+// in a project their org actively partners on — the same gate that lets them
+// open the page (partner.projects.$id.pages.$pageId) and its collab socket.
+async function partnerCanAccessDoc(userSub: string, pageId: string): Promise<boolean> {
+  const page = await prisma.page.findFirst({
+    where: {
+      id: pageId,
+      workspaceType: "Project",
+      archivedAt: null,
+      partnerVisible: true,
+    },
+    select: { workspaceId: true },
+  });
+  if (!page?.workspaceId) return false;
+  return partnerHasProjectAccess(userSub, page.workspaceId);
+}
+
 // Auth split by target: page-doc FAQ threads are open to any lab member (so
-// anyone can ask a question); doc/file comments stay on the project-edit gate
-// (Core/Admin — the same surface that can open the doc/file).
-async function canAccessTarget(targetType: CommentTarget, userId: string): Promise<boolean> {
-  return targetType === "pagedoc" ? isLabMember(userId) : isCore(userId);
+// anyone can ask a question); doc comments stay on the project-edit gate
+// (Core/Admin), plus partners on that page's shared surface; file comments
+// are open to Core and members of the owning project — the artifact feedback
+// loop (upload → mentor comment → re-upload) runs on project members.
+async function canAccessTarget(
+  auth: AuthSuccess,
+  targetType: CommentTarget,
+  targetId: string,
+): Promise<boolean> {
+  if (targetType === "pagedoc") return isLabMember(auth.user.sub);
+  if (targetType === "doc") {
+    if (await isCore(auth.user.sub)) return true;
+    return auth.user.type === "partner"
+      ? partnerCanAccessDoc(auth.user.sub, targetId)
+      : false;
+  }
+  if (await isCore(auth.user.sub)) return true;
+  const file = await prisma.projectFile.findUnique({
+    where: { id: targetId },
+    select: { projectId: true },
+  });
+  return file ? isProjectMember(auth.user.sub, file.projectId) : false;
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -82,7 +122,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   ) {
     return withCors(request, Response.json({ error: "Invalid target" }, { status: 400 }));
   }
-  if (!(await canAccessTarget(targetType, auth.user.sub))) {
+  if (!(await canAccessTarget(auth, targetType, targetId))) {
     return forbidden(request);
   }
 
@@ -97,6 +137,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       anchor: true,
       resolvedAt: true,
       createdAt: true,
+      versionId: true,
     },
   });
 
@@ -112,6 +153,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     anchor: r.anchor as { from: string; to: string } | null,
     resolved: r.resolvedAt !== null,
     createdAt: r.createdAt.toISOString(),
+    versionId: r.versionId,
   }));
 
   return withCors(request, Response.json({ comments }));
@@ -130,7 +172,7 @@ export async function action({ request }: Route.ActionArgs) {
   const body = await parseJson(request, CreateSchema);
   if (body instanceof Response) return withCors(request, body);
 
-  if (!(await canAccessTarget(body.targetType, auth.user.sub))) {
+  if (!(await canAccessTarget(auth, body.targetType, body.targetId))) {
     return forbidden(request);
   }
 
@@ -156,6 +198,31 @@ export async function action({ request }: Route.ActionArgs) {
   // Anchors only make sense on documents.
   const anchor = body.targetType === "doc" ? (body.anchor ?? null) : null;
 
+  // File comments are pinned to a version so feedback reads against the
+  // right iteration: the one the commenter was viewing (sent by the file
+  // page), falling back to the current version for callers that don't say.
+  let versionId: string | null = null;
+  if (body.targetType === "file") {
+    if (body.versionId) {
+      const version = await prisma.projectFileVersion.findFirst({
+        where: { id: body.versionId, fileId: body.targetId },
+        select: { id: true },
+      });
+      if (!version) {
+        return withCors(request, Response.json({ error: "Invalid version" }, { status: 400 }));
+      }
+      versionId = version.id;
+    } else {
+      versionId =
+        (
+          await prisma.projectFile.findUnique({
+            where: { id: body.targetId },
+            select: { currentVersionId: true },
+          })
+        )?.currentVersionId ?? null;
+    }
+  }
+
   const created = await prisma.docComment.create({
     data: {
       targetType: body.targetType,
@@ -166,9 +233,22 @@ export async function action({ request }: Route.ActionArgs) {
       anchor: anchor === null ? undefined : anchor,
       // Real FK only on the file side (see schema note).
       fileId: body.targetType === "file" ? body.targetId : null,
+      versionId,
     },
     select: { id: true },
   });
+
+  // Root comments on a file notify its audience (uploaders + linked-task
+  // assignees). Replies are covered by the thread-reply path below.
+  if (body.targetType === "file" && !body.parentId) {
+    void notifyFileComment({
+      fileId: body.targetId,
+      authorId: auth.user.sub,
+      body: body.body,
+    }).catch((err) =>
+      console.error(`comment ${created.id}: file comment notify failed`, err),
+    );
+  }
 
   if (body.parentId) {
     void notifyThreadReply({

@@ -1,17 +1,21 @@
 import type { Route } from "./+types/api.tasks.$id";
-import { prisma } from "~/lib/db";
+import { prisma, Prisma } from "~/lib/db";
 import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { syncIssueForTask } from "../lib/github-task-sync";
 import { notifyTaskAssigned } from "../lib/task-notifications.server";
+import { parseChecklistInput, type ChecklistItem } from "../lib/task-checklist";
 
-// PATCH /api/tasks/:id
+// PATCH  /api/tasks/:id — edit fields not covered by the move endpoint.
+//        Status/position changes still go through /api/tasks/:id/move so its
+//        column-rebalance logic stays unified. Body is a partial — only
+//        present fields are written.
+// DELETE /api/tasks/:id — hard-delete. Mirrors MCP delete_task: assignee and
+//        comment rows go first (RESTRICT FKs), reminders cascade via their
+//        FK, and a linked GitHub issue is left untouched on GH.
 //
-// Edit fields on an existing task that aren't covered by the move endpoint.
-// Status/position changes still go through /api/tasks/:id/move so its
-// column-rebalance logic stays unified. Body is a partial — only present
-// fields are written. Permission model mirrors task creation
-// (isCore === Admin || Core).
+// Permission model mirrors task creation (isCore === Admin || Core, or a
+// project member).
 
 const PRIORITIES = ["Low", "Normal", "High", "Urgent"] as const;
 type Priority = (typeof PRIORITIES)[number];
@@ -26,6 +30,13 @@ type Body = {
   priority?: Priority;
   // Null clears the domain.
   domainId?: string | null;
+  // Null moves the task to the backlog. Must belong to the task's project.
+  sprintId?: string | null;
+  // Null unlinks the epic. Must belong to the task's project.
+  epicId?: string | null;
+  // Full replacement checklist. Null or empty clears; item shape is
+  // validated separately (parseChecklistInput).
+  checklist?: unknown;
   // Full replacement set. Empty array clears assignees.
   assigneeIds?: string[];
 };
@@ -51,6 +62,12 @@ function isBody(x: unknown): x is Body {
   ) {
     return false;
   }
+  if (o.sprintId !== undefined && o.sprintId !== null && typeof o.sprintId !== "string")
+    return false;
+  if (o.epicId !== undefined && o.epicId !== null && typeof o.epicId !== "string")
+    return false;
+  if (o.checklist !== undefined && o.checklist !== null && !Array.isArray(o.checklist))
+    return false;
   if (o.assigneeIds !== undefined) {
     if (!Array.isArray(o.assigneeIds)) return false;
     if (!o.assigneeIds.every((id) => typeof id === "string")) return false;
@@ -70,7 +87,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
   if (preflight) return preflight;
 
-  if (request.method !== "PATCH") {
+  if (request.method !== "PATCH" && request.method !== "DELETE") {
     return withCors(
       request,
       Response.json({ error: "Method not allowed" }, { status: 405 }),
@@ -85,6 +102,18 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
   const gate = await requireProjectEditAccess(request, task.projectId);
   if (!gate.ok) return gate.response;
+
+  if (request.method === "DELETE") {
+    // Same rows and order as MCP delete_task; TaskReminder rows cascade via
+    // their onDelete: Cascade FK. A linked GitHub issue is left as-is on GH —
+    // deleting here only severs the mirror.
+    await prisma.$transaction([
+      prisma.taskAssignee.deleteMany({ where: { taskId: params.id } }),
+      prisma.taskComment.deleteMany({ where: { taskId: params.id } }),
+      prisma.task.delete({ where: { id: params.id } }),
+    ]);
+    return withCors(request, Response.json({ ok: true }));
+  }
 
   let body: unknown;
   try {
@@ -105,6 +134,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     description?: string | null;
     priority?: Priority;
     domainId?: string | null;
+    sprintId?: string | null;
+    epicId?: string | null;
+    checklist?: ChecklistItem[] | typeof Prisma.JsonNull;
   } = {};
   if ("dueAt" in body) {
     const parsed = parseDueAt(body.dueAt);
@@ -129,6 +161,56 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
   if ("domainId" in body) {
     data.domainId = body.domainId ?? null;
+  }
+  // Sprint/epic assignments are validated against the task's own project so
+  // one project's member can't attach tasks to another project's board.
+  if ("sprintId" in body) {
+    const sprintId = body.sprintId ?? null;
+    if (sprintId !== null) {
+      const sprint = await prisma.sprint.findUnique({
+        where: { id: sprintId },
+        select: { projectId: true },
+      });
+      if (!sprint || sprint.projectId !== task.projectId) {
+        return withCors(
+          request,
+          Response.json({ error: "Sprint is not part of this project" }, { status: 400 }),
+        );
+      }
+    }
+    data.sprintId = sprintId;
+  }
+  if ("epicId" in body) {
+    const epicId = body.epicId ?? null;
+    if (epicId !== null) {
+      const epic = await prisma.epic.findUnique({
+        where: { id: epicId },
+        select: { projectId: true },
+      });
+      if (!epic || epic.projectId !== task.projectId) {
+        return withCors(
+          request,
+          Response.json({ error: "Epic is not part of this project" }, { status: 400 }),
+        );
+      }
+    }
+    data.epicId = epicId;
+  }
+  if ("checklist" in body) {
+    if (body.checklist === null) {
+      data.checklist = Prisma.JsonNull;
+    } else {
+      const parsed = parseChecklistInput(body.checklist);
+      if (parsed === null) {
+        return withCors(
+          request,
+          Response.json({ error: "Invalid checklist" }, { status: 400 }),
+        );
+      }
+      // Prisma 7 distinguishes "set to JSON null" vs "unset"; use the
+      // sentinel for an empty checklist so the column is cleared.
+      data.checklist = parsed.length === 0 ? Prisma.JsonNull : parsed;
+    }
   }
 
   // Assignees are a full replacement: drop existing rows, then create the
