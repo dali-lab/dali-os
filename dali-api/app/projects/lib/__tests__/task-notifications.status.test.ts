@@ -2,18 +2,26 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
 vi.mock("~/lib/notify.server", () => ({ notify: vi.fn() }));
+vi.mock("~/projects/lib/project-members.server", () => ({
+  currentProjectParticipantIds: vi.fn(),
+}));
 
 import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
+import { currentProjectParticipantIds } from "~/projects/lib/project-members.server";
 import { notifyTaskStatusChanged } from "~/projects/lib/task-notifications.server";
 
 const mockPrisma = prisma as unknown as {
   task: { findUnique: ReturnType<typeof vi.fn> };
 };
 const mockNotify = notify as unknown as ReturnType<typeof vi.fn>;
+const mockMembers = currentProjectParticipantIds as unknown as ReturnType<
+  typeof vi.fn
+>;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockMembers.mockResolvedValue(new Set(["u1", "u2"]));
 });
 
 describe("notifyTaskStatusChanged", () => {
