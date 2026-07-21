@@ -2,9 +2,13 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
 vi.mock("~/lib/notify.server", () => ({ notify: vi.fn() }));
+vi.mock("~/projects/lib/project-members.server", () => ({
+  currentProjectParticipantIds: vi.fn(),
+}));
 
 import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
+import { currentProjectParticipantIds } from "~/projects/lib/project-members.server";
 import {
   notifyFileComment,
   notifyFileNewVersion,
@@ -14,15 +18,21 @@ const mockPrisma = prisma as unknown as {
   projectFile: { findUnique: ReturnType<typeof vi.fn> };
 };
 const mockNotify = notify as unknown as ReturnType<typeof vi.fn>;
+const mockMembers = currentProjectParticipantIds as unknown as ReturnType<
+  typeof vi.fn
+>;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Default: every stakeholder is currently on the project.
+  mockMembers.mockResolvedValue(new Set(["uploader", "mentor", "assignee"]));
 });
 
 // Audience: version uploaders + comment authors + linked-task assignees,
 // with overlap (uploader is also an assignee here).
 const FILE = {
   title: "Hero animation",
+  projectId: "p1",
   versions: [{ uploadedById: "uploader" }, { uploadedById: "uploader" }],
   comments: [{ authorId: "mentor" }],
   taskLinks: [
@@ -56,6 +66,17 @@ describe("notifyFileComment", () => {
     await notifyFileComment({ fileId: "f1", authorId: "mentor", body: "x".repeat(300) });
 
     expect(mockNotify.mock.calls[0][0].message.body).toBe(`${"x".repeat(200)}…`);
+  });
+
+  it("excludes a stakeholder who has rolled off the project", async () => {
+    mockPrisma.projectFile.findUnique.mockResolvedValue(FILE);
+    // "assignee" once worked the file but is no longer on the project.
+    mockMembers.mockResolvedValue(new Set(["uploader", "mentor"]));
+
+    await notifyFileComment({ fileId: "f1", authorId: "mentor", body: "note" });
+
+    expect(currentProjectParticipantIds).toHaveBeenCalledWith("p1");
+    expect(recipientIds()).toEqual(["uploader"]);
   });
 
   it("is a no-op when the author is the only stakeholder", async () => {
