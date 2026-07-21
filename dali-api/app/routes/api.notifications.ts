@@ -96,13 +96,16 @@ export async function action({ request }: Route.ActionArgs) {
 
   // POST with no id = "mark all read". Excluded: meeting invites (clear only on
   // RSVP) and the onboarding task (clears only when onboarding is finished), so
-  // neither is dismissed by a blanket read.
+  // neither is dismissed by a blanket read. Meeting reminders share
+  // scheduledMeetingId with invites but are dismissible — leave them in.
   await prisma.notification.updateMany({
     where: {
       recipientUserId: auth.user.sub,
       readAt: null,
-      scheduledMeetingId: null,
-      NOT: { kind: "SystemAnnouncement", link: ONBOARDING_LINK },
+      NOT: [
+        { kind: "MeetingInvite", scheduledMeetingId: { not: null } },
+        { kind: "SystemAnnouncement", link: ONBOARDING_LINK },
+      ],
     },
     data: { readAt: new Date() },
   });
