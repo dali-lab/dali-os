@@ -9,7 +9,9 @@ import { ChevronDown } from "lucide-react";
 import { ApplicationViewer } from "~/hiring/components/ApplicationViewer";
 import { ReviewSummary } from "~/hiring/components/ReviewSummary";
 import { DetailCard } from "~/hiring/components/DetailCard";
-import { ApplicantDetailHeader } from "~/hiring/components/ApplicantDetailHeader";
+import { PageHeader } from "~/hiring/components/PageHeader";
+import { StatusStepper } from "~/hiring/components/StatusStepper";
+import { Pill, RecommendationPill } from "~/hiring/components/Pill";
 import {
   InterviewNotesCard,
   type InterviewNotesData,
@@ -25,22 +27,6 @@ import {
 } from "~/hiring/lib/domain-application-status";
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
 import type { Question } from "~/types";
-import { RECOMMENDATION_COLORS } from "~/hiring/lib/labels";
-
-// bg + text + an explicit same-hue border (e.g. red pill → red border), so the
-// outline always matches the pill and never falls back to the neutral gray
-// border from the global `*` rule. Mirrors the dashboard's DECISION_COLORS:
-// `-300` light borders read clearly (not the faint `-200`), with dark variants.
-const STATUS_BADGE: Record<string, { bg: string; label: string }> = {
-  ApplicationOpen: { bg: "bg-muted text-foreground/80 border-current/30", label: "Draft" },
-  Pending: { bg: "bg-yellow-100 text-yellow-800 border-yellow-300 dark:border-yellow-700", label: "Pending Review" },
-  Rejected: { bg: "bg-red-100 text-red-700 border-red-300 dark:bg-red-900/30 dark:text-red-400 dark:border-red-700", label: "Rejected" },
-  InvitedToInterview: { bg: "bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-700", label: "Invited to Interview" },
-  InterviewScheduled: { bg: "bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-700", label: "Interview Scheduled" },
-  PostInterviewPending: { bg: "bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-700", label: "Post-Interview" },
-  Accepted: { bg: "bg-green-100 text-green-700 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700", label: "Accepted" },
-  Waitlisted: { bg: "bg-yellow-100 text-yellow-700 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-700", label: "Waitlisted" },
-};
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const user = (data as any)?.application?.user;
@@ -244,7 +230,6 @@ export default function DomainLeadApplicationView() {
   const reviews: any[] = da.reviews ?? [];
   const decisions: any[] = da.decisions ?? [];
   const interview = da.interviews?.[0] ?? null;
-  const statusInfo = STATUS_BADGE[inferredStatus] ?? STATUS_BADGE.Pending;
 
   const questionLabels: Record<string, string> = {};
   for (const q of [...generalQuestions, ...challengeQuestions]) {
@@ -278,16 +263,16 @@ export default function DomainLeadApplicationView() {
   return (
     <div className="space-y-6 pb-12">
       {/* Header */}
-      <ApplicantDetailHeader
-        name={`${application.user.firstName} ${application.user.lastName}`}
-        domainName={da.challengeVersion.domain?.name}
-        cycleName={application.applicationCycle.name}
-        statusSlot={
-          <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold border ${statusInfo.bg}`}>
-            {statusInfo.label}
-          </span>
-        }
+      <PageHeader
+        title={`${application.user.firstName} ${application.user.lastName}`}
+        subtitle={`${da.challengeVersion.domain?.name ?? "Domain"} · ${application.applicationCycle.name}`}
+        back={{ label: "Back to dashboard", to: "/hiring/domain-lead" }}
       />
+
+      {/* Where this applicant stands in the pipeline. */}
+      <div className="rounded-xl border border-border bg-card px-5 py-4">
+        <StatusStepper status={inferredStatus} variant="compact" className="max-w-2xl" />
+      </div>
 
       {/* Two-column layout */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -313,7 +298,7 @@ export default function DomainLeadApplicationView() {
             className="overflow-hidden"
           >
             {reviews.length > 0 && (
-              <div className="divide-y divide-gray-100">
+              <div className="divide-y divide-border">
                 {reviews.map((review: any) => (
                   <ReviewCard key={review.id} review={review} criteriaByKey={criteriaByKey} />
                 ))}
@@ -393,15 +378,13 @@ function ReviewCard({
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-foreground">{name}</span>
           {isSubmitted ? (
-            <span className="text-xs text-green-700 bg-green-100 px-1.5 py-0.5 rounded font-medium">Submitted</span>
+            <Pill color="bg-green-100 text-green-700">Submitted</Pill>
           ) : (
-            <span className="text-xs text-yellow-700 bg-yellow-100 px-1.5 py-0.5 rounded font-medium">In Progress</span>
+            <Pill color="bg-yellow-100 text-yellow-700">In progress</Pill>
           )}
         </div>
         {review.overallRecommendation && (
-          <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${RECOMMENDATION_COLORS[review.overallRecommendation] ?? "bg-muted text-foreground/80"}`}>
-            {review.overallRecommendation}
-          </span>
+          <RecommendationPill value={review.overallRecommendation} />
         )}
       </div>
 

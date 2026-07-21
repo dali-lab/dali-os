@@ -6,6 +6,7 @@ import {
   RECOMMENDATION_COLORS,
   STAGE_LABELS,
 } from "~/hiring/lib/labels";
+import { Pill, InterviewStatusPill } from "~/hiring/components/Pill";
 import { useEffect } from "react";
 
 export interface ApplicantContextModalProps {
@@ -63,13 +64,9 @@ export function ApplicantContextModal({
                 {data.decisions?.length > 0 && (
                   <>
                     {" · "}
-                    <span
-                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                        DECISION_COLORS[data.decisions[0].type] ?? "bg-muted text-foreground/80"
-                      }`}
-                    >
+                    <Pill color={DECISION_COLORS[data.decisions[0].type] ?? "bg-muted text-foreground/80"}>
                       {data.decisions[0].type} ({STAGE_LABELS[data.decisions[0].stage] ?? data.decisions[0].stage})
-                    </span>
+                    </Pill>
                   </>
                 )}
               </p>
@@ -91,8 +88,8 @@ export function ApplicantContextModal({
             <p className="text-sm text-muted-foreground">Loading applicant context…</p>
           )}
           {isError && (
-            <p className="text-sm text-red-600">
-              Failed to load applicant context: {data.error ?? "unknown error"}
+            <p className="text-sm text-destructive">
+              Couldn&rsquo;t load applicant context: {data.error ?? "unknown error"}. Refresh to try again.
             </p>
           )}
 
@@ -350,7 +347,7 @@ export function ReviewsSection({
           No reviewers assigned yet.
         </div>
       ) : (
-        <div className="divide-y divide-gray-100">
+        <div className="divide-y divide-border">
           {reviews.map((review) => {
             const reviewer = review.cycleReviewer?.user;
             const name = reviewer ? `${reviewer.firstName} ${reviewer.lastName}` : "Unknown";
@@ -362,24 +359,20 @@ export function ReviewsSection({
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium text-foreground">{name}</span>
                     {isSubmitted ? (
-                      <span className="text-xs text-green-700 bg-green-100 px-1.5 py-0.5 rounded font-medium">
-                        Submitted
-                      </span>
+                      <Pill color="bg-green-100 text-green-700">Submitted</Pill>
                     ) : (
-                      <span className="text-xs text-yellow-700 bg-yellow-100 px-1.5 py-0.5 rounded font-medium">
-                        In Progress
-                      </span>
+                      <Pill color="bg-yellow-100 text-yellow-700">In progress</Pill>
                     )}
                   </div>
                   {review.overallRecommendation && (
-                    <span
-                      className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
+                    <Pill
+                      color={
                         RECOMMENDATION_COLORS[review.overallRecommendation] ??
                         "bg-muted text-foreground/80"
-                      }`}
+                      }
                     >
                       {review.overallRecommendation}
-                    </span>
+                    </Pill>
                   )}
                 </div>
 
@@ -458,15 +451,7 @@ function InterviewSection({ interview }: { interview: any | null }) {
             {new Date(interview.startTime).toLocaleDateString(undefined, { month: "short", day: "numeric" })}{" "}
             {new Date(interview.startTime).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
           </span>
-          <span
-            className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-              interview.status === "Completed"
-                ? "bg-green-100 text-green-700"
-                : "bg-blue-100 text-blue-700"
-            }`}
-          >
-            {interview.status}
-          </span>
+          <InterviewStatusPill status={interview.status} />
         </div>
         {interview.recommendation && (
           <div className="text-sm">
@@ -541,13 +526,9 @@ function DecisionsSection({ decisions }: { decisions: any[] }) {
           <div key={d.id} className="text-sm">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <span
-                  className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                    DECISION_COLORS[d.type] ?? "bg-muted text-foreground/80"
-                  }`}
-                >
+                <Pill color={DECISION_COLORS[d.type] ?? "bg-muted text-foreground/80"}>
                   {d.type}
-                </span>
+                </Pill>
                 <span className="text-xs text-muted-foreground">
                   {STAGE_LABELS[d.stage] ?? d.stage}
                 </span>

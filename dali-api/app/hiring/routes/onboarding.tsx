@@ -4,6 +4,9 @@ import { requireAuth, unauthorized, forbidden } from "~/lib/auth";
 import { isCore, getUserRoles } from "~/lib/roles";
 import { hiringPills } from "~/hiring/components/hiringPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
+import { PageHeader } from "~/hiring/components/PageHeader";
+import { EmptyState } from "~/hiring/components/EmptyState";
+import { UserPlus } from "lucide-react";
 import { prisma } from "~/lib/db";
 
 export const handle = { areaPills: true };
@@ -228,58 +231,66 @@ export default function HiringOnboarding() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <AreaPillNav items={hiringPills({ ...pillRoles, active: "onboarding" })} />
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="font-heading text-2xl font-bold text-foreground">Onboarding</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Accepted applicants and their onboarding progress.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          {domains.length > 0 && (
-            <select
-              value={selectedDomain ?? ""}
-              onChange={(e) => setParam("domain", e.target.value || null)}
-              className="rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-dark-blue"
-            >
-              <option value="">All domains</option>
-              {domains.map((d) => (
-                <option key={d.key} value={d.key}>
-                  {d.label}
-                </option>
-              ))}
-            </select>
-          )}
-          {cycles.length > 0 && (
-            <select
-              value={selectedCycleId ?? ""}
-              onChange={(e) => setParam("cycle", e.target.value)}
-              className="rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-dark-blue"
-            >
-              {cycles.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
-      </div>
+      <PageHeader
+        title="Onboarding"
+        subtitle="Accepted members and where each one stands on account setup."
+        actions={
+          <>
+            {domains.length > 0 && (
+              <select
+                value={selectedDomain ?? ""}
+                onChange={(e) => setParam("domain", e.target.value || null)}
+                aria-label="Filter by domain"
+                className="rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-dark-blue"
+              >
+                <option value="">All domains</option>
+                {domains.map((d) => (
+                  <option key={d.key} value={d.key}>
+                    {d.label}
+                  </option>
+                ))}
+              </select>
+            )}
+            {cycles.length > 0 && (
+              <select
+                value={selectedCycleId ?? ""}
+                onChange={(e) => setParam("cycle", e.target.value)}
+                aria-label="Filter by cycle"
+                className="rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-dark-blue"
+              >
+                {cycles.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </>
+        }
+      />
 
       {!selectedCycleId ? (
-        <div className="rounded-2xl border border-border bg-card py-16 text-center">
-          <p className="text-muted-foreground">No application cycles yet.</p>
-        </div>
+        <EmptyState
+          icon={UserPlus}
+          title="No application cycles yet"
+          description="Once a cycle runs and accepts applicants, the new members and their onboarding progress will show up here."
+        />
       ) : rows.length === 0 ? (
-        <div className="rounded-2xl border border-border bg-card py-16 text-center">
-          <p className="text-muted-foreground">
-            {selectedDomain
-              ? "No accepted applicants in this domain for the selected cycle."
-              : "No accepted applicants in this cycle yet."}
-          </p>
-        </div>
+        <EmptyState
+          icon={UserPlus}
+          title={
+            selectedDomain
+              ? "No accepted members in this domain"
+              : "No accepted members yet"
+          }
+          description={
+            selectedDomain
+              ? "No one in this domain has been released as accepted for the selected cycle."
+              : "Release accepted decisions from the cycle page and new members will appear here to onboard."
+          }
+        />
       ) : (
         <div className="overflow-x-auto rounded-2xl border border-border">
           <table className="w-full text-sm">

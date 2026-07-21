@@ -5,6 +5,8 @@ import type { loader } from "~/hiring/routes/confidentiality-agreements.$id";
 import { RichTextEditor } from "~/components/RichTextEditor";
 import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
 import { formatDateTime, fullName, UNKNOWN_LABEL } from "~/lib/display";
+import { Button } from "~/components/ui/Button";
+import { cn } from "~/lib/cn";
 
 const EMPTY_DOC = { type: "doc", content: [{ type: "paragraph" }] };
 
@@ -46,36 +48,33 @@ export function ConfidentialityAgreementDetail() {
                 name="name"
                 value={draftName}
                 onChange={(e) => setDraftName(e.target.value)}
-                className="px-3 py-2 text-base text-foreground border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-[16rem]"
+                className="px-3 py-2 text-base text-foreground bg-card border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-accent-coral/30 min-w-[16rem]"
                 autoFocus
               />
-              <button
-                type="submit"
-                className="px-3 py-2 text-sm font-medium text-white bg-accent-coral rounded-md hover:bg-accent-coral/90"
-              >
-                Save
-              </button>
-              <button
-                type="button"
+              <Button type="submit" variant="primary" size="sm">
+                Save name
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
                 onClick={() => {
                   setDraftName(agreement.name);
                   setIsRenaming(false);
                 }}
-                className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-gray-300 rounded-md hover:bg-muted/50"
               >
                 Cancel
-              </button>
+              </Button>
             </Form>
           ) : (
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold text-foreground">
+              <h1 className="font-heading text-2xl font-bold text-foreground">
                 {agreement.name}
               </h1>
               {canEdit && (
                 <button
                   type="button"
                   onClick={() => setIsRenaming(true)}
-                  className="text-muted-foreground/70 hover:text-foreground"
+                  className="text-muted-foreground hover:text-foreground"
                   aria-label="Rename agreement"
                 >
                   <Pencil className="w-4 h-4" />
@@ -90,14 +89,10 @@ export function ConfidentialityAgreementDetail() {
         </div>
 
         {canEdit && !isCreatingVersion && (
-          <button
-            type="button"
-            onClick={handleStartCreate}
-            className="inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg text-white bg-accent-coral hover:bg-accent-coral/90 shadow-sm"
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            New Version
-          </button>
+          <Button variant="primary" onClick={handleStartCreate}>
+            <Plus className="h-4 w-4" />
+            New version
+          </Button>
         )}
       </div>
 

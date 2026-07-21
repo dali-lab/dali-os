@@ -23,17 +23,19 @@ export function DomainToggle({ domains, selectedDomainId }: Props) {
   ];
 
   return (
-    <div className="flex max-w-full overflow-x-auto rounded-md border border-border bg-card p-0.5">
+    <div className="inline-flex max-w-full items-center overflow-x-auto rounded-md border border-border">
       {options.map((opt) => {
         const active = (opt.id ?? null) === (selectedDomainId ?? null);
         return (
           <button
             key={opt.id ?? "__all__"}
+            type="button"
+            aria-pressed={active}
             onClick={() => select(opt.id)}
-            className={`shrink-0 whitespace-nowrap px-3 py-1.5 text-sm rounded transition-colors ${
+            className={`shrink-0 whitespace-nowrap px-3 py-1.5 text-sm transition-colors ${
               active
-                ? "bg-accent-teal text-white"
-                : "text-foreground hover:bg-muted/50"
+                ? "bg-accent-coral/15 text-accent-coral"
+                : "text-muted-foreground hover:bg-muted"
             }`}
           >
             {opt.name}

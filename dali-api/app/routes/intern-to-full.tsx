@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { redirect, useLoaderData, useFetcher, Link } from "react-router";
+import { redirect, useLoaderData, useFetcher } from "react-router";
 import type { Route } from "./+types/intern-to-full";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
@@ -14,6 +14,10 @@ import type { Question } from "~/types";
 import { FormFieldList } from "~/forms/components/FormField";
 import { findMissingRequired } from "~/lib/form-answers";
 import { APPLICATION_TZ, APPLICATION_TZ_LABEL } from "~/lib/timezone";
+import { PageHeader } from "~/hiring/components/PageHeader";
+import { EmptyState } from "~/hiring/components/EmptyState";
+import { Button } from "~/components/ui/Button";
+import { Info } from "lucide-react";
 
 export const meta: Route.MetaFunction = () => [
   { title: "Fellowship · DALI OS" },
@@ -254,20 +258,22 @@ export default function InternToFullRoute() {
 
   return (
     <div className="max-w-3xl mx-auto py-10 px-6">
-      <header className="mb-8">
-        <h1 className="font-heading text-2xl font-bold text-dark-blue mb-1">
-          Fellowship Application
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          {cycle.name}
-          {cycle.closeDate &&
-            ` · closes ${new Date(cycle.closeDate).toLocaleDateString("en-US", {
-              month: "long",
-              day: "numeric",
-              year: "numeric",
-              timeZone: APPLICATION_TZ,
-            })} ${APPLICATION_TZ_LABEL}`}
-        </p>
+      <div className="mb-8">
+        <PageHeader
+          title="Fellowship application"
+          subtitle={
+            <>
+              {cycle.name}
+              {cycle.closeDate &&
+                ` · closes ${new Date(cycle.closeDate).toLocaleDateString("en-US", {
+                  month: "long",
+                  day: "numeric",
+                  year: "numeric",
+                  timeZone: APPLICATION_TZ,
+                })} ${APPLICATION_TZ_LABEL}`}
+            </>
+          }
+        />
         {internDomains.length > 0 && (
           <p className="mt-2 text-xs text-muted-foreground">
             You're currently in{" "}
@@ -280,7 +286,7 @@ export default function InternToFullRoute() {
             .
           </p>
         )}
-      </header>
+      </div>
 
       {withdrawn ? (
         <Message title="Application withdrawn">
@@ -296,14 +302,15 @@ export default function InternToFullRoute() {
   );
 }
 
-function Message({ title, children }: { title: string; children: React.ReactNode }) {
+function Message({ title, children }: { title: string; children: string }) {
   return (
-    <div className="max-w-2xl mx-auto py-16 px-6 text-center">
-      <h2 className="font-heading text-xl font-bold text-dark-blue mb-2">{title}</h2>
-      <p className="text-sm text-muted-foreground">{children}</p>
-      <Link to="/" className="mt-6 inline-block text-sm text-accent-coral hover:underline">
-        Open home
-      </Link>
+    <div className="max-w-2xl mx-auto py-16 px-6">
+      <EmptyState
+        icon={Info}
+        title={title}
+        description={children}
+        action={{ label: "Back to dashboard", to: "/" }}
+      />
     </div>
   );
 }
@@ -411,27 +418,25 @@ function FormView({
       )}
       {justSaved && !error && (
         <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
-          Draft saved.
+          Draft saved — you can come back and finish any time.
         </div>
       )}
 
       <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="button"
+        <Button
+          variant="secondary"
           onClick={() => submitForm("save-draft")}
           disabled={busy}
-          className="px-5 py-2 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition disabled:opacity-50"
         >
           {busy && fetcher.formData?.get("intent") === "save-draft" ? "Saving…" : "Save draft"}
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          variant="primary"
           onClick={() => submitForm("submit")}
           disabled={busy}
-          className="px-6 py-2.5 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50"
         >
-          {busy && fetcher.formData?.get("intent") === "submit" ? "Submitting…" : "Submit"}
-        </button>
+          {busy && fetcher.formData?.get("intent") === "submit" ? "Submitting…" : "Submit application"}
+        </Button>
       </div>
     </div>
   );
@@ -445,11 +450,11 @@ function SubmittedView({ draftId }: { draftId?: string } = {}) {
     <div className="space-y-6">
       <div className="rounded-2xl border border-green-200 bg-green-50/50 px-6 py-8 text-center">
         <h2 className="font-heading text-xl font-bold text-dark-blue mb-2">
-          Submitted
+          Your application is in
         </h2>
         <p className="text-sm text-muted-foreground">
-          Your fellowship application is in. Hiring leads will review it and reach out
-          with a decision.
+          Thanks for applying. Hiring leads will review your fellowship application and
+          reach out with a decision.
         </p>
       </div>
       <div className="flex justify-end">
@@ -457,17 +462,18 @@ function SubmittedView({ draftId }: { draftId?: string } = {}) {
           <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 space-y-2">
             <p className="text-sm font-semibold text-red-700">Withdraw this application?</p>
             <p className="text-xs text-red-600/80">You can't reopen it without contacting the hiring lead.</p>
-            <div className="flex gap-3">
-              <button
+            <div className="flex items-center gap-3">
+              <Button
+                variant="destructive"
+                size="sm"
                 onClick={() => fetcher.submit({ intent: "withdraw" }, { method: "post" })}
                 disabled={busy}
-                className="px-4 py-1.5 rounded-full bg-red-600 text-white text-sm font-semibold disabled:opacity-50"
               >
                 {busy ? "Withdrawing…" : "Yes, withdraw"}
-              </button>
-              <button onClick={() => setConfirming(false)} className="text-sm text-muted-foreground hover:underline">
-                Cancel
-              </button>
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
+                Keep my application
+              </Button>
             </div>
           </div>
         ) : (

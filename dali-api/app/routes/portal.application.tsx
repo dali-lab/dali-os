@@ -10,6 +10,7 @@ import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 import { Modal } from "~/components/Modal";
 import { QuestionList } from "~/hiring/components/ApplicationAnswers";
 import { sendInterviewCancelEmails } from "~/hiring/lib/interview-emails";
+import { Button } from "~/components/ui/Button";
 
 export const meta: Route.MetaFunction = () => [{ title: "My application · DALI OS" }];
 
@@ -246,9 +247,9 @@ export default function PortalApplication() {
             </svg>
             Back to portal
           </Link>
-          <h1 className="font-heading text-xl font-bold text-dark-blue">Your Application</h1>
+          <h1 className="font-heading text-xl font-bold text-dark-blue">Your application</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Submitted {submittedDate} — this view reflects your most recently saved answers.
+            Submitted {submittedDate}. This is exactly what the DALI team sees — your most recently saved answers.
           </p>
         </div>
       </div>
@@ -275,21 +276,21 @@ export default function PortalApplication() {
               </div>
             </div>
           ) : canWithdraw ? (
-            <div className="rounded-2xl border border-border px-6 py-5 flex items-center justify-between gap-4">
+            <div className="rounded-2xl border border-border px-6 py-5 flex flex-wrap items-center justify-between gap-4">
               <div>
                 <p className="text-sm font-semibold text-dark-blue">No longer want to be considered?</p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Withdrawing removes your application from review. This cannot be undone from the portal.
+                  Withdrawing removes your application from review. You can't undo this from the portal.
                 </p>
               </div>
-              <button
-                type="button"
+              <Button
+                variant="secondary"
                 onClick={() => setShowWithdrawModal(true)}
                 disabled={submittingWithdraw}
-                className="shrink-0 px-5 py-2 rounded-full border-2 border-red-500 text-red-500 text-sm font-semibold hover:bg-red-500 hover:text-white transition disabled:opacity-50"
+                className="shrink-0"
               >
-                Withdraw Application
-              </button>
+                Withdraw application
+              </Button>
             </div>
           ) : null}
 
@@ -334,22 +335,20 @@ export default function PortalApplication() {
           Your application will be removed from review. You can't undo this from the portal — you'd need to contact the DALI team to reverse it.
         </p>
         <div className="flex gap-3 justify-end">
-          <button
-            type="button"
+          <Button
+            variant="secondary"
             onClick={() => setShowWithdrawModal(false)}
             disabled={submittingWithdraw}
-            className="px-5 py-2 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition disabled:opacity-50"
           >
-            Cancel
-          </button>
-          <button
-            type="button"
+            Keep my application
+          </Button>
+          <Button
+            variant="destructive"
             onClick={confirmWithdraw}
             disabled={submittingWithdraw}
-            className="px-5 py-2 rounded-full bg-red-500 text-white text-sm font-semibold hover:bg-red-500/90 transition disabled:opacity-50"
           >
-            {submittingWithdraw ? "Withdrawing..." : "Withdraw"}
-          </button>
+            {submittingWithdraw ? "Withdrawing…" : "Withdraw application"}
+          </Button>
         </div>
       </Modal>
     </div>

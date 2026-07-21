@@ -58,7 +58,7 @@ export function hiringPills(args: {
     ...(isDomainLead
       ? [
           {
-            label: "Domain",
+            label: "My Domain",
             to: "/hiring/domain-lead",
             active: active === "domain",
             icon: Globe,

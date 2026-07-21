@@ -5,7 +5,6 @@ import {
   Clock,
   Check,
   Video,
-  ChevronDown,
   FileText,
   MapPin,
   MessageSquare,
@@ -23,10 +22,15 @@ import { PresenceBar } from '~/components/collab/PresenceBar'
 import { useSharedString } from '~/components/collab/useSharedString'
 import { ApplicationViewer } from '~/hiring/components/ApplicationViewer'
 import { ReviewSummary } from '~/hiring/components/ReviewSummary'
+import { PageHeader } from '~/hiring/components/PageHeader'
+import { Section } from '~/hiring/components/Section'
+import { DetailCard } from '~/hiring/components/DetailCard'
+import { StatusStepper } from '~/hiring/components/StatusStepper'
+import { InterviewStatusPill, RecommendationPill } from '~/hiring/components/Pill'
+import { Button } from '~/components/ui/Button'
 import { buildCriteriaLabelMap } from '~/hiring/lib/rubric-criteria'
 import type { Route } from './+types/interviews.$interviewId'
-import type { Question } from '~/types'
-import { INTERVIEW_STATUS_COLORS } from '~/hiring/lib/labels'
+import type { Question, DomainApplicationStatus } from '~/types'
 
 const RECOMMENDATION_OPTIONS = [
   'Strong Hire',
@@ -217,10 +221,6 @@ export default function InterviewDetailPage() {
       return { id: a.id, name, roleLabel: ROLE_LABELS[a.role] ?? a.role }
     })
 
-  // Collapsible panel state
-  const [showApplication, setShowApplication] = useState(false)
-  const [showReviews, setShowReviews] = useState(false)
-
   const application = interview.domainApplication?.application
   const generalQuestions: any[] =
     application?.generalChallengeVersion?.questions ?? []
@@ -323,6 +323,24 @@ export default function InterviewDetailPage() {
     }
   }, [interview.id])
 
+  const displayStatus = isCompleted ? 'Completed' : interview.status
+  // The interview surface always sits on the Interview stage of the funnel; once
+  // it's completed the application moves to post-interview review. Both land on
+  // the same stepper node, so this mirrors real backend state without inventing
+  // any — it's just how far this application has travelled.
+  const pipelineStatus: DomainApplicationStatus = isCompleted
+    ? 'PostInterviewPending'
+    : 'InterviewScheduled'
+
+  const locationLabel =
+    interview.location === 'PodAppa'
+      ? 'Pod Appa'
+      : interview.location === 'PodMomo'
+        ? 'Pod Momo'
+        : interview.location === 'Online'
+          ? 'Online'
+          : null
+
   return (
     <PresenceProvider
       pageId={`interview:${interview.id}`}
@@ -332,281 +350,237 @@ export default function InterviewDetailPage() {
       photoUrl={presencePhotoUrl}
       subtitle={presenceSubtitle}
     >
-    <div className="space-y-8 max-w-6xl mx-auto">
-      <div className="flex items-center justify-end">
-        <PresenceBar />
-      </div>
+    <div className="space-y-6 max-w-6xl mx-auto">
+      <PageHeader
+        back={{ label: 'Back to interviews', to: '/hiring/interviews' }}
+        title={applicant ? `${applicant.firstName} ${applicant.lastName}` : 'Applicant'}
+        subtitle={domain ? `${domain} interview` : 'Interview'}
+        chip={<InterviewStatusPill status={displayStatus} />}
+        actions={<PresenceBar />}
+      />
 
-      {/* Header */}
-      <div className="bg-card rounded-xl border border-border shadow-sm p-6">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <h1 className="text-xl font-bold text-foreground flex items-center">
-              <Video className="w-5 h-5 mr-2 text-blue-600" />
-              Interview:{' '}
-              {applicant
-                ? `${applicant.firstName} ${applicant.lastName}`
-                : 'Applicant'}
-            </h1>
-            <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-              <span className="flex items-center">
-                <Clock className="w-4 h-4 mr-1 text-muted-foreground/70" />
-                {startDate.toLocaleDateString(undefined, {
-                  weekday: 'long',
-                  month: 'long',
-                  day: 'numeric',
-                  year: 'numeric',
-                })}{' '}
-                {startDate.toLocaleTimeString(undefined, {
-                  hour: 'numeric',
-                  minute: '2-digit',
-                })}{' '}
-                -{' '}
-                {endDate.toLocaleTimeString(undefined, {
-                  hour: 'numeric',
-                  minute: '2-digit',
-                })}
+      {/* Logistics + pipeline position */}
+      <DetailCard title="Interview details">
+        <div className="px-6 py-5 space-y-5">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5">
+              <Clock className="w-4 h-4 text-muted-foreground" aria-hidden />
+              {startDate.toLocaleDateString(undefined, {
+                weekday: 'long',
+                month: 'long',
+                day: 'numeric',
+                year: 'numeric',
+              })}{' '}
+              {startDate.toLocaleTimeString(undefined, {
+                hour: 'numeric',
+                minute: '2-digit',
+              })}{' '}
+              -{' '}
+              {endDate.toLocaleTimeString(undefined, {
+                hour: 'numeric',
+                minute: '2-digit',
+              })}
+            </span>
+            {locationLabel && (
+              <span className="inline-flex items-center gap-1.5">
+                <MapPin className="w-4 h-4 text-muted-foreground" aria-hidden />
+                {locationLabel}
               </span>
-              {domain && (
-                <span className="px-2 py-0.5 bg-muted text-foreground/80 rounded text-xs font-medium">
-                  {domain}
-                </span>
-              )}
-              {interview.location && (
-                <span className="flex items-center">
-                  <MapPin className="w-4 h-4 mr-1 text-muted-foreground/70" />
-                  {interview.location === 'PodAppa'
-                    ? 'Pod Appa'
-                    : interview.location === 'PodMomo'
-                      ? 'Pod Momo'
-                      : 'Online'}
-                </span>
-              )}
-              {interview.location === 'Online' && interview.zoomJoinUrl && (
-                <a href={interview.zoomJoinUrl} target="_blank" rel="noopener noreferrer"
-                   className="flex items-center text-sm text-blue-600 hover:underline">
-                  <Video className="w-4 h-4 mr-1" />
-                  Join Zoom
-                </a>
-              )}
-              <span
-                className={`px-2 py-0.5 rounded text-xs font-medium ${
-                  isCompleted
-                    ? 'bg-green-100 text-green-700'
-                    : INTERVIEW_STATUS_COLORS[interview.status] ??
-                      'bg-muted text-foreground/80'
-                }`}
+            )}
+            {interview.location === 'Online' && interview.zoomJoinUrl && (
+              <a
+                href={interview.zoomJoinUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-accent-coral hover:underline"
               >
-                {isCompleted ? 'Completed' : interview.status}
-              </span>
-              <span className="flex items-center">
-                <Users className="w-4 h-4 mr-1 text-muted-foreground/70" />
-                {coInterviewers.length > 0 ? (
-                  <>
-                    with{' '}
-                    {coInterviewers
-                      .map(
-                        (c: { name: string; roleLabel: string }) =>
-                          `${c.name} (${c.roleLabel})`,
-                      )
-                      .join(', ')}
-                  </>
-                ) : (
-                  'No co-interviewer assigned'
-                )}
-              </span>
-            </div>
+                <Video className="w-4 h-4" aria-hidden />
+                Join Zoom call
+              </a>
+            )}
+            <span className="inline-flex items-center gap-1.5">
+              <Users className="w-4 h-4 text-muted-foreground" aria-hidden />
+              {coInterviewers.length > 0
+                ? `With ${coInterviewers
+                    .map(
+                      (c: { name: string; roleLabel: string }) =>
+                        `${c.name} (${c.roleLabel})`,
+                    )
+                    .join(', ')}`
+                : 'No co-interviewer assigned'}
+            </span>
           </div>
+          <StatusStepper
+            status={pipelineStatus}
+            variant="compact"
+            className="max-w-md"
+          />
         </div>
-      </div>
+      </DetailCard>
 
       {/* Prep note from deliberations (read-only) */}
       {interview.domainApplication?.interviewPrepNote?.trim() && (
-        <div className="bg-blue-50 rounded-xl border border-blue-200 shadow-sm p-6">
-          <h2 className="text-sm font-semibold text-blue-900 uppercase tracking-wide mb-2">
-            From deliberations — to bring up in the interview
+        <div className="bg-brand-tint rounded-xl border border-border p-6">
+          <h2 className="font-heading text-sm font-semibold text-foreground mb-2">
+            From deliberations — bring this up in the interview
           </h2>
-          <p className="text-sm text-blue-900 whitespace-pre-wrap">
+          <p className="text-sm text-foreground whitespace-pre-wrap">
             {interview.domainApplication.interviewPrepNote}
           </p>
         </div>
       )}
 
       {/* Application (collapsible) */}
-      <div className="bg-card rounded-xl border border-border shadow-sm">
-        <button
-          onClick={() => setShowApplication(!showApplication)}
-          className="w-full flex items-center justify-between px-6 py-4 text-left hover:bg-muted/50 rounded-xl"
-        >
-          <span className="flex items-center text-lg font-semibold text-foreground">
-            <FileText className="w-5 h-5 mr-2 text-blue-600" />
-            Application
+      <Section
+        title="Application"
+        icon={<FileText className="w-4 h-4 text-muted-foreground" />}
+        defaultOpen={false}
+      >
+        <ApplicationViewer
+          application={viewerApplication}
+          questionLabels={questionLabels}
+          readOnly
+        />
+      </Section>
+
+      {/* Reviewer notes (collapsible) */}
+      <Section
+        title="Reviewer notes"
+        icon={<MessageSquare className="w-4 h-4 text-muted-foreground" />}
+        badge={
+          <span className="text-xs font-medium text-muted-foreground">
+            {submittedReviews.length}
           </span>
-          <ChevronDown
-            className={`w-5 h-5 text-muted-foreground/70 transition-transform ${
-              showApplication ? 'rotate-180' : ''
-            }`}
-          />
-        </button>
-        {showApplication && (
-          <div className="px-6 pb-6 border-t border-border pt-6">
-            <ApplicationViewer
-              application={viewerApplication}
-              questionLabels={questionLabels}
-              readOnly
+        }
+        defaultOpen={false}
+      >
+        {submittedReviews.length === 0 ? (
+          <p className="text-sm text-muted-foreground italic">
+            No submitted reviews for this applicant yet.
+          </p>
+        ) : (
+          <div className="space-y-6">
+            {submittedReviews.map((review: any) => {
+              const m = review.cycleReviewer?.user
+              const reviewerName =
+                m?.firstName && m?.lastName
+                  ? `${m.firstName} ${m.lastName}`
+                  : m?.daliEmail ?? 'Reviewer'
+              return (
+                <div
+                  key={review.id}
+                  className="border border-border rounded-lg p-4"
+                >
+                  <ReviewSummary
+                    reviewerName={reviewerName}
+                    submittedAt={review.submittedAt}
+                    overallRecommendation={review.overallRecommendation}
+                    scores={review.scores}
+                    criteria={criteriaByKey}
+                    feedback={review.feedback}
+                    rejectionRationale={review.rejectionRationale}
+                  />
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </Section>
+
+      {/* Joint interview notes — collaborative editor */}
+      <DetailCard
+        title="Interview notes"
+        subtitle="Shared in real time — both interviewers edit the same document."
+      >
+        <div className="p-6">
+          {collabToken ? (
+            <CollaborativeEditor
+              editorId="notes"
+              documentName={`interview:${interview.id}:notes`}
+              token={collabToken}
+              userName={userName}
+              disabled={isCompleted}
+              placeholder="Write your interview notes here…"
             />
-          </div>
-        )}
-      </div>
+          ) : (
+            <div className="p-4 bg-accent-yellow/10 rounded-lg border border-accent-yellow/40 text-sm text-foreground">
+              Your session expired. Refresh the page to keep editing these notes together.
+            </div>
+          )}
+        </div>
+      </DetailCard>
 
-      {/* Reviewer Notes (collapsible) */}
-      <div className="bg-card rounded-xl border border-border shadow-sm">
-        <button
-          onClick={() => setShowReviews(!showReviews)}
-          className="w-full flex items-center justify-between px-6 py-4 text-left hover:bg-muted/50 rounded-xl"
-        >
-          <span className="flex items-center text-lg font-semibold text-foreground">
-            <MessageSquare className="w-5 h-5 mr-2 text-blue-600" />
-            Reviewer Notes ({submittedReviews.length})
-          </span>
-          <ChevronDown
-            className={`w-5 h-5 text-muted-foreground/70 transition-transform ${
-              showReviews ? 'rotate-180' : ''
-            }`}
-          />
-        </button>
-        {showReviews && (
-          <div className="px-6 pb-6 border-t border-border pt-6">
-            {submittedReviews.length === 0 ? (
-              <p className="text-sm text-muted-foreground italic">
-                No submitted reviews for this applicant.
-              </p>
-            ) : (
-              <div className="space-y-6">
-                {submittedReviews.map((review: any) => {
-                  const m = review.cycleReviewer?.user
-                  const reviewerName =
-                    m?.firstName && m?.lastName
-                      ? `${m.firstName} ${m.lastName}`
-                      : m?.daliEmail ?? 'Reviewer'
-                  return (
-                    <div
-                      key={review.id}
-                      className="border border-border rounded-lg p-4"
-                    >
-                      <ReviewSummary
-                        reviewerName={reviewerName}
-                        submittedAt={review.submittedAt}
-                        overallRecommendation={review.overallRecommendation}
-                        scores={review.scores}
-                        criteria={criteriaByKey}
-                        feedback={review.feedback}
-                        rejectionRationale={review.rejectionRationale}
-                      />
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Joint Interview Notes — collaborative editor */}
-      <div className="bg-card rounded-xl border border-border shadow-sm p-6">
-        <h2 className="text-lg font-semibold text-foreground mb-4">
-          Interview Notes
-        </h2>
-        <p className="text-xs text-muted-foreground mb-3">
-          Shared notes — both interviewers edit this document in real-time.
-        </p>
-        {collabToken ? (
-          <CollaborativeEditor
-            editorId="notes"
-            documentName={`interview:${interview.id}:notes`}
-            token={collabToken}
-            userName={userName}
-            disabled={isCompleted}
-            placeholder="Write your interview notes here..."
-          />
-        ) : (
-          <div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200 text-sm text-yellow-800">
-            Session expired — please refresh to enable collaborative editing.
-          </div>
-        )}
-      </div>
-
-      {/* Joint Recommendation */}
-      <div className="bg-card rounded-xl border border-border shadow-sm p-6">
-        <h2 className="text-lg font-semibold text-foreground mb-1">
-          Joint Recommendation
-        </h2>
-        <p className="text-xs text-muted-foreground mb-4">
-          One shared recommendation for this interview. Either interviewer
-          submits it on behalf of both — only one of you needs to mark it
-          complete.
-        </p>
-
-        {isCompleted ? (
-          <div className="p-4 bg-green-50 rounded-lg border border-green-200">
-            <div className="flex items-start justify-between mb-2">
-              <div className="flex items-center">
-                <Check className="w-5 h-5 text-green-600 mr-2" />
-                <span className="font-medium text-green-800">
-                  Interview Completed
+      {/* Joint recommendation */}
+      <DetailCard
+        title="Joint recommendation"
+        subtitle="One shared recommendation for this interview — either interviewer submits it on behalf of both."
+      >
+        <div className="p-6">
+          {isCompleted ? (
+            <div className="rounded-lg border border-border bg-brand-tint p-4">
+              <div className="flex items-start justify-between gap-3 mb-3">
+                <span className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
+                  <Check className="w-5 h-5 text-accent-teal" aria-hidden />
+                  Interview completed
                 </span>
+                <button
+                  onClick={handleReopen}
+                  disabled={completing}
+                  className="text-xs font-medium text-accent-coral hover:underline disabled:text-muted-foreground disabled:no-underline"
+                >
+                  {completing ? 'Reopening…' : 'Reopen interview'}
+                </button>
               </div>
-              <button
-                onClick={handleReopen}
-                disabled={completing}
-                className="text-xs font-medium text-green-700 hover:text-green-900 underline disabled:text-muted-foreground/70 disabled:no-underline"
-              >
-                {completing ? 'Reopening…' : 'Reopen'}
-              </button>
+              <div className="flex flex-wrap items-center gap-2 text-sm text-foreground">
+                <span className="text-muted-foreground">Recommendation:</span>
+                {(interview.recommendation ?? recommendation) ? (
+                  <RecommendationPill value={interview.recommendation ?? recommendation} />
+                ) : (
+                  <span className="text-muted-foreground">Not recorded</span>
+                )}
+              </div>
+              {interview.recommendationNotes && (
+                <p className="mt-2 text-sm text-foreground whitespace-pre-wrap">
+                  {interview.recommendationNotes}
+                </p>
+              )}
             </div>
-            <p className="text-sm text-green-700">
-              <strong>Recommendation:</strong>{' '}
-              {interview.recommendation ?? recommendation}
-            </p>
-            {interview.recommendationNotes && (
-              <p className="text-sm text-green-700 mt-1">
-                <strong>Notes:</strong> {interview.recommendationNotes}
-              </p>
-            )}
-          </div>
-        ) : (
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-foreground/80 mb-1">
-                Recommendation
-              </label>
-              <select
-                value={recommendation}
-                onChange={(e) => setRecommendation(e.target.value)}
-                className="w-full sm:w-64 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">Select a recommendation...</option>
-                {RECOMMENDATION_OPTIONS.map((opt) => (
-                  <option key={opt} value={opt}>
-                    {opt}
-                  </option>
-                ))}
-              </select>
-            </div>
+          ) : (
+            <div className="space-y-4">
+              <div>
+                <label
+                  htmlFor="recommendation"
+                  className="block text-sm font-medium text-foreground mb-1.5"
+                >
+                  Recommendation
+                </label>
+                <select
+                  id="recommendation"
+                  value={recommendation}
+                  onChange={(e) => setRecommendation(e.target.value)}
+                  className="w-full sm:w-64 px-3 py-2 bg-card border border-border rounded-lg text-sm text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-coral/30 focus-visible:ring-offset-2"
+                >
+                  <option value="">Select a recommendation…</option>
+                  {RECOMMENDATION_OPTIONS.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-            <div className="flex items-center gap-3">
-              <button
+              <Button
                 onClick={handleMarkComplete}
                 disabled={!recommendation || completing}
-                className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50"
+                variant="primary"
               >
-                <Check className="w-4 h-4 mr-1.5" />
-                {completing ? 'Completing...' : 'Mark Complete'}
-              </button>
+                <Check className="w-4 h-4" aria-hidden />
+                {completing ? 'Completing interview…' : 'Complete interview'}
+              </Button>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      </DetailCard>
     </div>
     </PresenceProvider>
   )

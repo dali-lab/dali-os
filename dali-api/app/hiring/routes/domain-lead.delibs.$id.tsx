@@ -7,11 +7,15 @@ import { requireAuth } from "~/lib/auth";
 import { parseSessionCookie } from "~/lib/cookies";
 import { isDomainLead } from "~/lib/roles";
 import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
-import { GripVertical } from "lucide-react";
+import { GripVertical, Users } from "lucide-react";
 import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
 import { INITIAL_COLUMNS, FINAL_COLUMNS, buildColumnOrder } from "~/hiring/lib/delibs";
 import { inReviewPipelineFilter } from "~/hiring/lib/application-pipeline-filter";
 import { ApplicantContextModal } from "~/hiring/components/delibs/ApplicantContextModal";
+import { PageHeader } from "~/hiring/components/PageHeader";
+import { EmptyState } from "~/hiring/components/EmptyState";
+import { Button } from "~/components/ui/Button";
+import { Pill } from "~/hiring/components/Pill";
 
 // Same recommendation scale + tones used by the ApplicantContextModal, so the
 // card's reviewer/interviewer recommendation pills read consistently.
@@ -331,8 +335,10 @@ export default function DelibsKanban() {
             </span>
           ),
           renderEmpty: () => (
-            <div className="py-8 text-center border-2 border-dashed border-gray-300 rounded-lg bg-card/50">
-              <p className="text-sm text-muted-foreground/70 italic">Empty</p>
+            <div className="rounded-lg border-2 border-dashed border-border bg-card/50 py-8 text-center">
+              <p className="text-sm italic text-muted-foreground/70">
+                {isClosed ? "Empty" : "Drop applicants here"}
+              </p>
             </div>
           ),
         };
@@ -345,43 +351,35 @@ export default function DelibsKanban() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">
-            {session.type === "Initial" ? "Initial" : "Final"} Deliberations —{" "}
-            {session.domain.name}
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Drag applications between columns. Changes save automatically.
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          {saving && (
-            <span className="text-xs text-muted-foreground/70">Saving...</span>
-          )}
-          {isClosed ? (
-            <span className="px-3 py-1.5 text-sm font-medium bg-muted text-muted-foreground rounded-lg">
-              Closed
-            </span>
-          ) : (
-            <button
-              onClick={() => setShowCloseConfirm(true)}
-              className="px-4 py-2 text-sm font-medium rounded-lg bg-red-600 hover:bg-red-700 text-white transition"
-            >
-              Close Delibs
-            </button>
-          )}
-        </div>
-      </div>
+      <PageHeader
+        title={`${session.type === "Initial" ? "Initial" : "Final"} deliberations`}
+        subtitle="Drag applicants between columns. Changes save automatically."
+        chip={<Pill color="bg-brand-tint text-navy">{session.domain.name}</Pill>}
+        back={{ label: "Back to dashboard", to: "/hiring/domain-lead" }}
+        actions={
+          <>
+            {saving && (
+              <span className="text-xs text-muted-foreground/70">Saving…</span>
+            )}
+            {isClosed ? (
+              <Pill color="bg-muted text-muted-foreground">Closed</Pill>
+            ) : (
+              <Button variant="destructive" onClick={() => setShowCloseConfirm(true)}>
+                Close delibs
+              </Button>
+            )}
+          </>
+        }
+      />
 
       {/* Close confirmation */}
       {showCloseConfirm && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-4">
           <div>
             <p className="text-sm font-bold text-red-900">
               Close deliberations and create Draft decisions?
             </p>
-            <p className="text-xs text-red-700 mt-0.5">
+            <p className="mt-0.5 text-xs text-red-700">
               {columns
                 .filter((c) => c !== defaultColumn)
                 .map(
@@ -393,19 +391,17 @@ export default function DelibsKanban() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowCloseConfirm(false)}
-              className="px-3 py-1.5 text-sm font-medium text-foreground/80 bg-card border border-gray-300 rounded-lg hover:bg-muted/50"
-            >
-              Cancel
-            </button>
-            <button
+            <Button variant="secondary" size="sm" onClick={() => setShowCloseConfirm(false)}>
+              Keep open
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
               onClick={handleClose}
               disabled={closing}
-              className="px-3 py-1.5 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50"
             >
-              {closing ? "Closing..." : "Confirm & Close"}
-            </button>
+              {closing ? "Closing…" : "Confirm & close"}
+            </Button>
           </div>
         </div>
       )}
@@ -420,11 +416,22 @@ export default function DelibsKanban() {
         />
       )}
 
-      {/* Kanban Board. Migrated from native HTML5 drag to @dnd-kit via the
+      {domainApplications.length === 0 ? (
+        <EmptyState
+          icon={Users}
+          title="No applicants to deliberate yet"
+          description={
+            session.type === "Initial"
+              ? "Applicants appear here once their reviews are all submitted. Check back as reviewing wraps up."
+              : "Applicants appear here once their interviews are complete."
+          }
+        />
+      ) : (
+      /* Kanban Board. Migrated from native HTML5 drag to @dnd-kit via the
           shared KanbanBoard primitive: keyboard drag now works, the stray
           post-drag click is gone (activation-distance sensor), and the drop
           ring is the shared coral instead of the old blue-400. Per-column
-          color theming is preserved through each column's className. */}
+          color theming is preserved through each column's className. */
       <KanbanBoard<DomainApp>
         id={`delibs-board-${session.id}`}
         layout="grid"
@@ -461,6 +468,7 @@ export default function DelibsKanban() {
           ) : null;
         }}
       />
+      )}
     </div>
   );
 }

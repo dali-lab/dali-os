@@ -3,13 +3,11 @@
 // rationale. Shared by the applications-database detail page, the domain-lead
 // dashboard, and the interviewer page, which each wrap it in their own chrome.
 
-const DEFAULT_RECOMMENDATION_TONE: Record<string, string> = {
-  "Strong Hire": "bg-green-100 text-green-800",
-  Hire: "bg-green-50 text-green-700",
-  "Lean Hire": "bg-lime-50 text-lime-700",
-  "Lean No Hire": "bg-amber-50 text-amber-700",
-  "No Hire": "bg-red-50 text-red-700",
-};
+import { RECOMMENDATION_COLORS } from "~/hiring/lib/labels";
+
+// The recommendation badge speaks the same tones as the shared RecommendationPill
+// (see labels.ts). Callers may still override via the `recommendationTone` prop.
+const DEFAULT_RECOMMENDATION_TONE = RECOMMENDATION_COLORS;
 
 export interface ReviewSummaryProps {
   reviewerName?: string;

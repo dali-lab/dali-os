@@ -1,9 +1,16 @@
-import { Outlet, redirect, useLoaderData, Link } from "react-router";
+import { Outlet, redirect, useLoaderData, Link, NavLink } from "react-router";
 import type { Route } from "./+types/applicant-layout";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { userInitials } from "~/lib/display";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 import { PortalProfileMenu } from "~/components/PortalProfileMenu";
+import { cn } from "~/lib/cn";
+
+const portalNavLinkClass = ({ isActive }: { isActive: boolean }) =>
+  cn(
+    "transition-colors",
+    isActive ? "text-accent-coral" : "text-dark-blue hover:text-accent-coral",
+  );
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -37,12 +44,12 @@ export default function ApplicantLayout() {
         </Link>
 
         <div className="ml-6 flex items-center gap-4 text-sm font-medium">
-          <Link to="/portal/hiring" className="text-dark-blue hover:text-accent-coral transition">
+          <NavLink to="/portal/hiring" className={portalNavLinkClass}>
             Apply
-          </Link>
-          <Link to="/portal/education" className="text-dark-blue hover:text-accent-coral transition">
+          </NavLink>
+          <NavLink to="/portal/education" className={portalNavLinkClass}>
             Education
-          </Link>
+          </NavLink>
         </div>
 
         <PortalProfileMenu

@@ -8,7 +8,7 @@ import { getUserRoles } from "~/lib/roles";
 import { hiringPills } from "~/hiring/components/hiringPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import { requireAuth } from "~/lib/auth";
-import { CheckCircle, Plus, Trash2, Check, Clock, X, CircleDashed, ChevronDown, Eye, Send, Search, ChevronUp } from "lucide-react";
+import { CheckCircle, Plus, Trash2, Check, Clock, X, CircleDashed, ChevronDown, Eye, Send, Search, ChevronUp, Users } from "lucide-react";
 import { inferDomainApplicationStatus } from "~/hiring/lib/domain-application-status";
 import { inReviewPipelineFilter } from "~/hiring/lib/application-pipeline-filter";
 import { getReviewStatus } from "~/hiring/lib/review-status";
@@ -20,6 +20,10 @@ import { Modal } from "~/components/Modal";
 import { ChallengePreviewModal } from "~/hiring/components/ChallengePreviewModal";
 import { Tooltip } from "~/components/ui/IconButton";
 import { CycleSelector } from "~/hiring/components/CycleSelector";
+import { PageHeader } from "~/hiring/components/PageHeader";
+import { EmptyState } from "~/hiring/components/EmptyState";
+import { CycleStatusPill } from "~/hiring/components/Pill";
+import { Button, buttonClasses } from "~/components/ui/Button";
 import {
   summarizeDecisionPills,
   synthesizePrePipelinePill,
@@ -31,7 +35,7 @@ import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
 import type { DecisionType } from "~/types";
 import { formatVersionLabel, buildVersionNumberMap } from "~/lib/formatVersion";
 import { selectActiveCycleForDomainLead } from "~/hiring/lib/cycle-picker";
-import { STATUS_LABELS, DECISION_LABELS, STATUS_COLORS, DECISION_COLORS } from "~/hiring/lib/labels";
+import { DECISION_LABELS, DECISION_COLORS } from "~/hiring/lib/labels";
 
 const STATUS_MESSAGES: Record<string, string> = {
   Draft: "This cycle is still being set up.",
@@ -671,9 +675,17 @@ export default function DomainLeadDashboard() {
 
   if (domainData.length === 0) {
     return (
-      <div className="text-center py-16">
-        <h1 className="font-heading text-2xl font-bold text-foreground mb-2">Domain Lead Dashboard</h1>
-        <p className="text-muted-foreground">You are not assigned as a domain lead for any domain.</p>
+      <div className="flex flex-col gap-5">
+        {areaPills}
+        <PageHeader
+          title="Domain lead"
+          subtitle="Your dashboard for running a domain's hiring cycle."
+        />
+        <EmptyState
+          icon={Users}
+          title="No domains assigned to you"
+          description="You aren't a domain lead for any domain yet. Once you're assigned, your domain's setup, reviews, interviews, and decisions live here."
+        />
       </div>
     );
   }
@@ -681,7 +693,10 @@ export default function DomainLeadDashboard() {
   return (
     <div className="space-y-8">
       {areaPills}
-      <h1 className="font-heading text-2xl font-bold text-foreground">Domain Lead Dashboard</h1>
+      <PageHeader
+        title="Domain lead"
+        subtitle="Run each domain's hiring cycle — setup, reviews, interviews, and decisions."
+      />
 
       {domainData.map(({ assignment, cycle, availableCycles, apps, challengeVersionOptions, linkedChallengeVersions, isChallengeReady, interviews, reviewers: cycleReviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, initialDelibsCount, finalDelibsCount, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews, confidentialityRequired }: any, idx: number) => {
         const isInternToFull = cycle?.cycleType === "InternToFull";
@@ -724,11 +739,7 @@ export default function DomainLeadDashboard() {
                       <h2 className="font-heading text-2xl font-bold text-foreground">{assignment.domain.name}</h2>
                       <span className="text-muted-foreground/70 hidden sm:inline">·</span>
                       <span className="text-lg text-muted-foreground">{cycle.name}</span>
-                      {currentStatus && (
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border border-current/30 ${STATUS_COLORS[currentStatus]}`}>
-                          {STATUS_LABELS[currentStatus]}
-                        </span>
-                      )}
+                      {currentStatus && <CycleStatusPill status={currentStatus} />}
                       <CycleSelector cycles={availableCycles ?? []} activeId={cycle.id} />
                     </div>
                     {currentStatus !== "Draft" && !confidentialityRequired && (
@@ -970,9 +981,11 @@ export default function DomainLeadDashboard() {
                           rubricCriteria={rubricCriteria ?? []}
                         />
                       ) : (
-                        <div className="text-center text-muted-foreground text-sm py-6">
-                          No applicants in review. Anyone invited to interview appears under Interviews.
-                        </div>
+                        <EmptyState
+                          icon={Users}
+                          title="No applicants in review"
+                          description="Anyone invited to interview moves down to the Interviews section."
+                        />
                       )}
                     </Section>
                     );
@@ -1099,12 +1112,14 @@ export default function DomainLeadDashboard() {
                                   {" "}— drafts from final delibs. Finalizing locks them in for the hiring lead to release.
                                 </span>
                               </div>
-                              <button
+                              <Button
+                                variant="primary"
+                                size="sm"
                                 onClick={finalizeAll}
-                                className="flex-shrink-0 px-3 py-1.5 text-xs font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition self-start sm:self-auto"
+                                className="shrink-0 self-start sm:self-auto"
                               >
-                                Finalize All ({finalizableCount})
-                              </button>
+                                Finalize all ({finalizableCount})
+                              </Button>
                             </div>
                           )}
 
@@ -1254,12 +1269,13 @@ export default function DomainLeadDashboard() {
                                           <td className="px-6 py-4 text-muted-foreground text-xs">{row.crossDomain}</td>
                                           <td className="px-6 py-4 text-right">
                                             {canFinalize && row.daId && finalizableByDaId.has(row.daId) ? (
-                                              <button
+                                              <Button
+                                                variant="primary"
+                                                size="sm"
                                                 onClick={(e) => { e.stopPropagation(); finalizeOne(row.daId); }}
-                                                className="px-2 py-1 text-xs font-medium rounded bg-accent-coral hover:bg-accent-coral/90 text-white transition"
                                               >
                                                 Finalize
-                                              </button>
+                                              </Button>
                                             ) : (
                                               <span className="text-xs text-muted-foreground/60">—</span>
                                             )}
@@ -1303,12 +1319,13 @@ export default function DomainLeadDashboard() {
                                       </div>
                                       {canFinalize && row.daId && finalizableByDaId.has(row.daId) && (
                                         <div className="flex flex-wrap items-center gap-2">
-                                          <button
+                                          <Button
+                                            variant="primary"
+                                            size="sm"
                                             onClick={(e) => { e.stopPropagation(); finalizeOne(row.daId); }}
-                                            className="px-2 py-1 text-xs font-medium rounded bg-accent-coral hover:bg-accent-coral/90 text-white transition"
                                           >
                                             Finalize
-                                          </button>
+                                          </Button>
                                         </div>
                                       )}
                                     </li>
@@ -2459,13 +2476,14 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                 <td className="px-6 py-4 text-right">
                   <div className="flex flex-wrap items-center justify-end gap-2">
                   {isUnderReview && draftToFinalize ? (
-                    <button
+                    <Button
+                      variant="primary"
+                      size="sm"
                       onClick={() => handleFinalize(draftToFinalize.id)}
                       disabled={finalizingId === draftToFinalize.id}
-                      className="px-2 py-1 text-xs font-medium rounded bg-accent-coral hover:bg-accent-coral/90 text-white transition disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {finalizingId === draftToFinalize.id ? "Finalizing…" : "Finalize"}
-                    </button>
+                    </Button>
                   ) : (
                     <span className="text-xs text-muted-foreground/60">—</span>
                   )}
@@ -2475,14 +2493,16 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
             );
           })}
           {displayedApps.length === 0 && (
-            <tr><td colSpan={isUnderReview && canAssignReviewers ? 5 : 4} className="px-6 py-8 text-center text-muted-foreground/70 text-sm">
-              {filter === "finalize" ? "No applications need finalization." : "No applications."}
+            <tr><td colSpan={isUnderReview && canAssignReviewers ? 5 : 4} className="px-6 py-10 text-center text-muted-foreground text-sm">
+              {filter === "finalize"
+                ? "Nothing to finalize right now. Draft decisions from delibs show up here, ready to lock in."
+                : "No applicants in this view yet."}
             </td></tr>
           )}
         </tbody>
       </table>
       </div>
-      <ul className="sm:hidden divide-y divide-gray-100">
+      <ul className="sm:hidden divide-y divide-border">
         {displayedApps.map((app: any) => {
           const da = app.domainApplications[0];
           const reviews = da?.reviews ?? [];
@@ -2552,21 +2572,24 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
               </div>
               {isUnderReview && draftToFinalize && (
                 <div className="flex flex-wrap items-center gap-2">
-                  <button
+                  <Button
+                    variant="primary"
+                    size="sm"
                     onClick={() => handleFinalize(draftToFinalize.id)}
                     disabled={finalizingId === draftToFinalize.id}
-                    className="px-2 py-1 text-xs font-medium rounded bg-accent-coral hover:bg-accent-coral/90 text-white transition disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {finalizingId === draftToFinalize.id ? "Finalizing…" : "Finalize"}
-                  </button>
+                  </Button>
                 </div>
               )}
             </li>
           );
         })}
         {displayedApps.length === 0 && (
-          <li className="px-6 py-8 text-center text-muted-foreground/70 text-sm">
-            {filter === "finalize" ? "No applications need finalization." : "No applications."}
+          <li className="px-6 py-10 text-center text-muted-foreground text-sm">
+            {filter === "finalize"
+              ? "Nothing to finalize right now. Draft decisions from delibs show up here, ready to lock in."
+              : "No applicants in this view yet."}
           </li>
         )}
       </ul>
