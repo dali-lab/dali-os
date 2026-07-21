@@ -104,6 +104,16 @@ function renderBlock(doc: PDFKit.PDFDocument, node: PMNode, listPrefix?: string)
         .stroke();
       doc.moveDown(0.5);
       break;
+    case "image": {
+      // Fetching + embedding the binary is out of scope for the PDF pipeline;
+      // degrade to a labelled placeholder so the reader knows content exists.
+      const alt = typeof node.attrs?.alt === "string" && node.attrs.alt ? node.attrs.alt : "";
+      doc.font("Times-Italic").fontSize(11).fillColor("#555");
+      doc.text(alt ? `[Image: ${alt}]` : "[Image]");
+      doc.fillColor("#1a1a1a");
+      doc.moveDown(0.5);
+      break;
+    }
     default:
       (node.content ?? []).forEach((child) => renderBlock(doc, child, listPrefix));
   }

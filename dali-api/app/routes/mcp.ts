@@ -178,10 +178,26 @@ import {
   CreatePageError,
 } from "~/mcp/tools/create-page";
 import {
+  SET_PAGE_CONTENT_TOOL,
+  runSetPageContent,
+  SetPageContentError,
+} from "~/mcp/tools/set-page-content";
+import {
+  UPDATE_PAGE_TOOL,
+  runUpdatePage,
+  UpdatePageError,
+} from "~/mcp/tools/update-page";
+import {
   LIST_PROJECT_FILES_TOOL,
   runListProjectFiles,
   ListProjectFilesError,
 } from "~/mcp/tools/list-project-files";
+import {
+  UPLOAD_PROJECT_FILE_TOOL,
+  runUploadProjectFile,
+  UploadProjectFileError,
+} from "~/mcp/tools/upload-project-file";
+import { GET_TASK_TOOL, runGetTask, GetTaskError } from "~/mcp/tools/get-task";
 import {
   LINK_TASK_TO_GITHUB_TOOL,
   runLinkTaskToGithub,
@@ -275,6 +291,7 @@ const TOOLS = [
   LIST_MY_PROJECTS_TOOL,
   GET_PROJECT_OVERVIEW_TOOL,
   LIST_MY_TASKS_TOOL,
+  GET_TASK_TOOL,
   UPDATE_TASK_STATUS_TOOL,
   // Project hub additions:
   CREATE_TASK_TOOL,
@@ -297,7 +314,11 @@ const TOOLS = [
   LIST_PROJECT_PAGES_TOOL,
   READ_PAGE_TOOL,
   CREATE_PAGE_TOOL,
+  // Notion-export → hub sync additions:
+  SET_PAGE_CONTENT_TOOL,
+  UPDATE_PAGE_TOOL,
   LIST_PROJECT_FILES_TOOL,
+  UPLOAD_PROJECT_FILE_TOOL,
   LINK_TASK_TO_GITHUB_TOOL,
   UNLINK_TASK_FROM_GITHUB_TOOL,
 ] as const;
@@ -367,7 +388,11 @@ function rpcErrorFromTool(id: unknown, err: unknown): Response | null {
     ListProjectPagesError,
     ReadPageError,
     CreatePageError,
+    SetPageContentError,
+    UpdatePageError,
     ListProjectFilesError,
+    UploadProjectFileError,
+    GetTaskError,
     LinkTaskToGithubError,
     UnlinkTaskFromGithubError,
   ];
@@ -405,7 +430,10 @@ export async function action({ request }: Route.ActionArgs) {
   );
   if (limited) return limited;
 
-  const body = await safeJson<JsonRpcRequest>(request);
+  // Above safeJson's 1 MB default so upload_project_file's base64 payloads
+  // fit (13 MB body ≥ the tool's 12M-char base64 cap, ~9 MB decoded).
+  // Authed + rate-limited, so the larger cap isn't an open amplification.
+  const body = await safeJson<JsonRpcRequest>(request, 13 * 1024 * 1024);
   if (body instanceof Response) return body;
 
   if (!body || body.jsonrpc !== "2.0" || typeof body.method !== "string") {
@@ -546,6 +574,12 @@ export async function action({ request }: Route.ActionArgs) {
               args as Parameters<typeof runListMyTasks>[1],
             );
             break;
+          case "get_task":
+            payload = await runGetTask(
+              auth.user.id,
+              args as Parameters<typeof runGetTask>[1],
+            );
+            break;
           case "update_task_status":
             payload = await runUpdateTaskStatus(
               auth.user.id,
@@ -671,6 +705,24 @@ export async function action({ request }: Route.ActionArgs) {
             payload = await runCreatePage(
               auth.user.id,
               args as Parameters<typeof runCreatePage>[1],
+            );
+            break;
+          case "set_page_content":
+            payload = await runSetPageContent(
+              auth.user.id,
+              args as Parameters<typeof runSetPageContent>[1],
+            );
+            break;
+          case "update_page":
+            payload = await runUpdatePage(
+              auth.user.id,
+              args as Parameters<typeof runUpdatePage>[1],
+            );
+            break;
+          case "upload_project_file":
+            payload = await runUploadProjectFile(
+              auth.user.id,
+              args as Parameters<typeof runUploadProjectFile>[1],
             );
             break;
           case "list_project_files":

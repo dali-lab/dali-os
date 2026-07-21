@@ -91,6 +91,11 @@ function renderBlock(node: PMNode, depth: number): string {
       return `---\n\n`;
     case "hardBreak":
       return "  \n";
+    case "image": {
+      const src = typeof node.attrs?.src === "string" ? node.attrs.src : "";
+      const alt = typeof node.attrs?.alt === "string" ? node.attrs.alt : "";
+      return `![${alt}](${src})\n\n`;
+    }
     case "text":
       return applyMarks(node.text ?? "", node.marks);
     default:
