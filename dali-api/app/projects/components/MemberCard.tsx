@@ -29,11 +29,15 @@ type Props = {
   /** The card is the one being dragged — dim it; the DragOverlay floats a copy. */
   isDragging: boolean;
   /**
-   * Optional mentorship control (the "Mentor" dropdown badge) rendered below
-   * the card body. It's interactive, so it lives outside the card's drag/click
-   * surface and stops propagation itself.
+   * Optional mentorship control (the Mentor/Mentee badge) rendered below the
+   * card body. Interactive — lives outside the card's drag/click surface.
    */
   mentorSlot?: ReactNode;
+  /**
+   * Optional assignment-level control (P1/P2/P3) for project-column cards.
+   * Same stop-propagation wrapper as mentorSlot.
+   */
+  levelSlot?: ReactNode;
   /**
    * Tint the card as an external mentor — this member mentors someone on
    * another team. A distinct teal edge marks the cross-team relationship.
@@ -51,6 +55,7 @@ export function MemberCard({
   dragHandleProps,
   isDragging,
   mentorSlot,
+  levelSlot,
   accentExternal,
 }: Props) {
   const fullName = buildFullName(card);
@@ -104,16 +109,17 @@ export function MemberCard({
         domainNames={domainNames}
         onRemove={onRemove}
       />
-      {mentorSlot && (
-        // Keep drag/click off the mentorship control: a press here must not
+      {(levelSlot || mentorSlot) && (
+        // Keep drag/click off interactive controls: a press here must not
         // start a card drag or open the bid modal.
         <div
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
           onPointerDown={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
-          className="cursor-default"
+          className="flex flex-wrap items-center gap-1.5 cursor-default"
         >
+          {levelSlot}
           {mentorSlot}
         </div>
       )}
