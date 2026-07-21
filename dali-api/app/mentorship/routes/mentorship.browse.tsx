@@ -23,9 +23,9 @@ import { TemplatesModal } from "../components/TemplatesModal";
 import { MentorGrid } from "../components/MentorGrid";
 import {
   buildGrid,
-  termWeekCount,
   type MentorGridResult,
 } from "../lib/mentor-grid.server";
+import { VIBES, VIBE_META } from "../lib/vibe";
 
 export const meta: Route.MetaFunction = () => [
   { title: "Notes · DALI OS" },
@@ -43,9 +43,9 @@ type LoaderData = {
     projectId: string;
     domainId: string;
     termId: string;
-    // Week number within the selected term ("" = any week). When set, the grid
-    // shows only that week's column.
-    week: string;
+    // Vibe ("" = any). When set, only mentee rows with at least one weekly
+    // note of this vibe are shown.
+    status: string;
   };
   options: {
     mentors: FilterOption[];
@@ -53,8 +53,8 @@ type LoaderData = {
     projects: FilterOption[];
     domains: FilterOption[];
     terms: FilterOption[];
-    // Week 1..N for the selected term (empty when no term is selected).
-    weeks: FilterOption[];
+    // Vibe filter options (Good / Ok / Bad with user-facing labels).
+    statuses: FilterOption[];
   };
   grid: MentorGridResult;
   isCore: boolean;
@@ -84,7 +84,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     projectId: pickFilter(url.searchParams.get("projectId")),
     domainId: pickFilter(url.searchParams.get("domainId")),
     termId: termParam !== null ? termParam : defaultTerm?.id ?? "",
-    week: pickFilter(url.searchParams.get("week")),
+    status: pickFilter(url.searchParams.get("status")),
   };
 
   // Scope non-Core viewers to their own notes/pairs + own-domain mentee data.
@@ -130,7 +130,6 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   // The selected term (defaulted to current) drives the grid's week axis.
   const selectedTerm = terms.find((t) => t.id === filters.termId) ?? null;
-  const selectedWeek = filters.week ? Number(filters.week) : null;
 
   function uniquePeople(
     ...lists: { id: string; firstName: string; lastName: string }[][]
@@ -166,28 +165,37 @@ export async function loader({ request }: Route.LoaderArgs) {
       label: `${d.displayName} (${d.code})`,
     })),
     terms: terms.map((t) => ({ id: t.id, label: t.code })),
-    // Week 1..N of the selected term. Empty when no term is selected (week
-    // numbering has no origin then).
-    weeks: selectedTerm
-      ? Array.from({ length: termWeekCount(selectedTerm.startDate, selectedTerm.endDate) }, (_, i) => ({
-          id: String(i + 1),
-          label: `Week ${i + 1}`,
-        }))
-      : [],
+    // Vibe filter options — the note's at-a-glance status.
+    statuses: VIBES.map((v) => ({ id: v, label: VIBE_META[v].label })),
   };
 
   // The grid is a mentor → mentees → weeks matrix, scoped to one term. Without
   // a selected term there's no week axis, so we render an empty-state prompt.
-  const grid: LoaderData["grid"] = selectedTerm
+  let grid: LoaderData["grid"] = selectedTerm
     ? await buildGrid({
         term: selectedTerm,
         filters,
-        weekFilter: selectedWeek,
         viewerId: auth.user.sub,
         pairScope,
         noteScope,
       })
     : { weeks: [], currentWeek: null, mentors: [], termSelected: false };
+
+  // Status (vibe) filter: keep only mentee rows with at least one weekly note
+  // of the selected vibe, and drop mentors left with no matching rows.
+  if (filters.status) {
+    grid = {
+      ...grid,
+      mentors: grid.mentors
+        .map((m) => ({
+          ...m,
+          rows: m.rows.filter((r) =>
+            r.cells.some((c) => c.vibe === filters.status),
+          ),
+        }))
+        .filter((m) => m.rows.length > 0),
+    };
+  }
 
   const data: LoaderData = {
     filters,
@@ -308,10 +316,10 @@ export default function MentorshipBrowse() {
           value={data.filters.domainId}
         />
         <FilterSelect
-          name="week"
-          label="Week"
-          options={data.options.weeks}
-          value={data.filters.week}
+          name="status"
+          label="Status"
+          options={data.options.statuses}
+          value={data.filters.status}
         />
         <div className="ml-auto flex items-center gap-2">
           <button

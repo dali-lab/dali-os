@@ -7,6 +7,8 @@ export default [
     route("profile", "routes/profile.tsx"),
     route("onboarding", "routes/onboarding.tsx"),
     route("calendar", "calendar/routes/calendar.tsx"),
+    // Standalone self-check-in surface for meetings without a meeting note.
+    route("calendar/check-in/:id", "calendar/routes/calendar.check-in.$id.tsx"),
     // My Tasks surface: Open tasks + browsable notification history.
     route("notifications", "routes/notifications.tsx"),
 
@@ -357,6 +359,7 @@ export default [
   route("api/projects/:id/documents", "projects/routes/api.projects.$id.documents.ts"),
   route("api/documents/:id", "projects/routes/api.documents.$id.ts"),
   route("api/pages/:id/partner-visible", "projects/routes/api.pages.$id.partner-visible.ts"),
+  route("api/pages/:id/pin", "projects/routes/api.pages.$id.pin.ts"),
 
   // Project files (standalone uploads with versions)
   route("api/projects/:id/files", "projects/routes/api.projects.$id.files.ts"),
