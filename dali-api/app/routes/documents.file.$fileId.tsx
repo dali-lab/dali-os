@@ -95,6 +95,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       isCurrent: v.id === file.currentVersionId,
       contentType: v.contentType,
       downloadUrl: await getDownloadUrl(v.s3Key),
+      // Inline-preview URL: forces the known content type + inline disposition
+      // so the browser renders it even when the S3 object's stored Content-Type
+      // is wrong or missing (e.g. generated PDFs served as octet-stream).
+      previewUrl: await getDownloadUrl(v.s3Key, {
+        contentType: v.contentType ?? undefined,
+        inline: true,
+      }),
     })),
   );
 
@@ -314,7 +321,7 @@ function FilePreview({ version }: { version: FileVersionView }) {
       // doesn't re-fetch on a src prop change alone.
       <video
         key={version.id}
-        src={version.downloadUrl}
+        src={version.previewUrl}
         controls
         className="max-w-full max-h-[70vh] rounded-lg border border-border bg-black"
       />
@@ -322,13 +329,13 @@ function FilePreview({ version }: { version: FileVersionView }) {
   }
   if (isAudio) {
     return (
-      <audio key={version.id} src={version.downloadUrl} controls className="w-full" />
+      <audio key={version.id} src={version.previewUrl} controls className="w-full" />
     );
   }
   if (isImage) {
     return (
       <img
-        src={version.downloadUrl}
+        src={version.previewUrl}
         alt={version.fileName}
         className="max-w-full max-h-[70vh] rounded-lg border border-border object-contain bg-muted/20"
       />
@@ -337,7 +344,8 @@ function FilePreview({ version }: { version: FileVersionView }) {
   if (isPdf || isText) {
     return (
       <iframe
-        src={version.downloadUrl}
+        key={version.id}
+        src={version.previewUrl}
         title={version.fileName}
         className="w-full h-[70vh] rounded-lg border border-border bg-white"
       />
