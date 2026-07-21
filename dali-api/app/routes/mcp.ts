@@ -68,6 +68,8 @@ import {
   LIST_MY_PROJECTS_TOOL,
   runListMyProjects,
 } from "~/mcp/tools/list-my-projects";
+import { LIST_PROJECTS_TOOL, runListProjects } from "~/mcp/tools/list-projects";
+import { LIST_TERMS_TOOL, runListTerms } from "~/mcp/tools/list-terms";
 import {
   GET_PROJECT_OVERVIEW_TOOL,
   runGetProjectOverview,
@@ -289,6 +291,8 @@ const TOOLS = [
   CANCEL_MEETING_TOOL,
   LIST_GROUPS_TOOL,
   LIST_MY_PROJECTS_TOOL,
+  LIST_PROJECTS_TOOL,
+  LIST_TERMS_TOOL,
   GET_PROJECT_OVERVIEW_TOOL,
   LIST_MY_TASKS_TOOL,
   GET_TASK_TOOL,
@@ -562,6 +566,15 @@ export async function action({ request }: Route.ActionArgs) {
               auth.user.id,
               args as Parameters<typeof runListMyProjects>[1],
             );
+            break;
+          case "list_projects":
+            payload = await runListProjects(
+              auth.user.id,
+              args as Parameters<typeof runListProjects>[1],
+            );
+            break;
+          case "list_terms":
+            payload = await runListTerms();
             break;
           case "get_project_overview":
             payload = await runGetProjectOverview(
