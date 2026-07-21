@@ -283,17 +283,19 @@ export default function MentorshipBrowse() {
       >
         {/* Keep the header term when applying secondary filters. */}
         <input type="hidden" name="termId" value={data.filters.termId} />
-        <FilterSelect
+        <FilterAutocomplete
           name="mentorId"
           label="Mentor"
           options={data.options.mentors}
           value={data.filters.mentorId}
+          placeholder="Search mentors…"
         />
-        <FilterSelect
+        <FilterAutocomplete
           name="menteeId"
           label="Mentee"
           options={data.options.mentees}
           value={data.filters.menteeId}
+          placeholder="Search mentees…"
         />
         <FilterSelect
           name="projectId"
@@ -391,6 +393,127 @@ function FilterSelect({
           </option>
         ))}
       </select>
+    </label>
+  );
+}
+
+// Searchable person filter (mentor / mentee). Keeps a hidden input so the
+// existing GET form still submits mentorId / menteeId.
+function FilterAutocomplete({
+  name,
+  label,
+  options,
+  value,
+  placeholder,
+}: {
+  name: string;
+  label: string;
+  options: FilterOption[];
+  value: string;
+  placeholder: string;
+}) {
+  const selected = options.find((o) => o.id === value) ?? null;
+  const [selectedId, setSelectedId] = useState(value);
+  const [selectedLabel, setSelectedLabel] = useState(selected?.label ?? "");
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLLabelElement>(null);
+
+  useEffect(() => {
+    setSelectedId(value);
+    setSelectedLabel(options.find((o) => o.id === value)?.label ?? "");
+  }, [value, options]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(e: MouseEvent) {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        setQuery("");
+      }
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [open]);
+
+  const q = query.trim().toLowerCase();
+  const filtered = options.filter((o) =>
+    q ? o.label.toLowerCase().includes(q) : true,
+  );
+
+  function choose(option: FilterOption | null) {
+    setSelectedId(option?.id ?? "");
+    setSelectedLabel(option?.label ?? "");
+    setQuery("");
+    setOpen(false);
+  }
+
+  return (
+    <label
+      ref={rootRef}
+      className="relative inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+    >
+      {label}
+      <input type="hidden" name={name} value={selectedId} />
+      <input
+        type="text"
+        value={open ? query : selectedLabel}
+        placeholder={selectedLabel || placeholder}
+        autoComplete="off"
+        onFocus={() => {
+          setOpen(true);
+          setQuery("");
+        }}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setOpen(true);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            setOpen(false);
+            setQuery("");
+          }
+          if (e.key === "Backspace" && !open && selectedId) {
+            choose(null);
+          }
+        }}
+        className="w-44 rounded-md border border-border bg-background px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+      />
+      {open && (
+        <div className="absolute left-0 top-full z-20 mt-1 max-h-56 w-56 overflow-auto rounded-md border border-border bg-card py-1 text-sm shadow-brand-2">
+          <button
+            type="button"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              choose(null);
+            }}
+            className="flex w-full px-3 py-1.5 text-left text-muted-foreground hover:bg-muted/60"
+          >
+            Any
+          </button>
+          {filtered.length === 0 ? (
+            <div className="px-3 py-1.5 text-muted-foreground">No matches</div>
+          ) : (
+            filtered.map((o) => (
+              <button
+                key={o.id}
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  choose(o);
+                }}
+                className={`flex w-full px-3 py-1.5 text-left hover:bg-muted/60 ${
+                  o.id === selectedId
+                    ? "bg-muted/40 font-medium text-foreground"
+                    : "text-foreground"
+                }`}
+              >
+                {o.label}
+              </button>
+            ))
+          )}
+        </div>
+      )}
     </label>
   );
 }
