@@ -191,13 +191,22 @@ export const prisma = {
     findFirst: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
     create: vi.fn(),
+    update: vi.fn(),
+    count: vi.fn().mockResolvedValue(0),
   },
   projectFile: {
     findUnique: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
+    create: vi.fn(),
+    update: vi.fn(),
   },
   projectFileVersion: {
     findFirst: vi.fn(),
+    create: vi.fn(),
+  },
+  collabDocument: {
+    findUnique: vi.fn(),
+    upsert: vi.fn(),
   },
   docComment: {
     create: vi.fn(),

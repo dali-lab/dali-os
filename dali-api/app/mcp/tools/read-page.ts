@@ -1,16 +1,19 @@
 // MCP `read_page` — returns a Page's body as Markdown. Reads the persisted
-// Yjs binary from CollabDocument (keyed by Page.contentDocId), decodes to
-// ProseMirror JSON, and renders to Markdown via export-markdown.ts. Read
-// access is any authenticated member.
+// Yjs binary from CollabDocument, decodes to ProseMirror JSON, and renders to
+// Markdown via export-markdown.ts. The doc name is derived from the page id
+// (doc:{pageId}:body — the room DocumentEditor writes to); Page.contentDocId
+// only overrides for seeded pages that point at a custom doc. Read access is
+// any authenticated member.
 
 import { prisma } from "~/lib/db";
 import { collabDocToProseMirror } from "~/collab/export";
 import { renderMarkdown } from "~/collab/export-markdown";
+import { pageDocName } from "~/collab/roomName";
 
 export const READ_PAGE_TOOL = {
   name: "read_page",
   description:
-    "Read a workspace page's content as Markdown. Lossy for blocks outside the StarterKit set (tables, embeds render as plain text fallback).",
+    "Read a workspace page's content as Markdown (StarterKit set + images). Lossy for blocks outside that set (tables, embeds render as plain text fallback). Round-trips with set_page_content.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -46,11 +49,8 @@ export async function runReadPage(_callerId: string, input: Input) {
   });
   if (!page) throw new ReadPageError("Page not found", 404);
 
-  let markdown = "";
-  if (page.contentDocId) {
-    const doc = await collabDocToProseMirror(page.contentDocId);
-    markdown = renderMarkdown(doc);
-  }
+  const doc = await collabDocToProseMirror(page.contentDocId ?? pageDocName(page.id));
+  const markdown = doc.content?.length ? renderMarkdown(doc) : "";
 
   return {
     id: page.id,

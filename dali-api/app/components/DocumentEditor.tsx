@@ -184,6 +184,7 @@ export function DocumentEditor({
             userName={userName}
             disabled={!canEdit}
             enableMentions
+            enableImages
             focusMentionUserId={focusMentionUserId}
             placeholder="Start writing…"
             className="min-h-[60vh]"
