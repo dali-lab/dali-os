@@ -403,7 +403,7 @@ export async function action({ request }: Route.ActionArgs) {
               return `${domain} (mentees but no P3/Mentor: ${names})`;
             })
             .join("; ") +
-          ". Raise someone to P3 on the board (or mark Mentor / add an external mentor), then re-run Propagate.";
+          ". Raise someone to P3 on their domain chip (or mark Mentor / add an external mentor), then re-run Propagate.";
       }
 
       results.assignments = {

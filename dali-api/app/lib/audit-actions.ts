@@ -48,6 +48,7 @@ export const AUDIT_ACTIONS = [
   "staffing.mentorRole.set",
   "staffing.externalMentor.add",
   "staffing.externalMentor.remove",
+  "staffing.eligibility.set",
   "project.assignment.level",
   "slack.connect",
   "slack.disconnect",
