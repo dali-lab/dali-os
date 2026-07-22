@@ -1,9 +1,10 @@
 // MCP `set_sprint_status` — move a sprint between Planned/Active/Closed.
-// Core-only. Wrapping it as a separate tool (rather than a status field on
-// `update_sprint`) makes the lifecycle transition explicit in tool calls.
+// Core or project member. Wrapping it as a separate tool (rather than a status
+// field on `update_sprint`) makes the lifecycle transition explicit in tool
+// calls.
 
 import { prisma } from "~/lib/db";
-import { isCore } from "~/lib/roles";
+import { canEditProject } from "./access";
 
 const SPRINT_STATUSES = ["Planned", "Active", "Closed"] as const;
 type SprintStatus = (typeof SPRINT_STATUSES)[number];
@@ -11,7 +12,7 @@ type SprintStatus = (typeof SPRINT_STATUSES)[number];
 export const SET_SPRINT_STATUS_TOOL = {
   name: "set_sprint_status",
   description:
-    "Set a sprint's lifecycle status (Planned, Active, Closed). Core-only. Note: parallel sprints can be Active at the same time.",
+    "Set a sprint's lifecycle status (Planned, Active, Closed). Requires Core or project-member access. Note: parallel sprints can be Active at the same time.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -37,15 +38,15 @@ export class SetSprintStatusError extends Error {
 }
 
 export async function runSetSprintStatus(callerId: string, input: Input) {
-  if (!(await isCore(callerId))) {
-    throw new SetSprintStatusError("Forbidden", 403);
-  }
-
   const sprint = await prisma.sprint.findUnique({
     where: { id: input.sprintId },
-    select: { id: true, status: true },
+    select: { id: true, projectId: true, status: true },
   });
   if (!sprint) throw new SetSprintStatusError("Sprint not found", 404);
+
+  if (!(await canEditProject(callerId, sprint.projectId))) {
+    throw new SetSprintStatusError("Forbidden", 403);
+  }
 
   await prisma.sprint.update({
     where: { id: input.sprintId },

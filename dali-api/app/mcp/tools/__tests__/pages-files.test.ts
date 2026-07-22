@@ -11,10 +11,14 @@ vi.mock("~/collab/export", () => ({
 vi.mock("~/collab/write", () => ({
   replaceCollabDocContent: vi.fn(),
 }));
+vi.mock("~/lib/collabAuth", () => ({
+  authorizeCollabDoc: vi.fn(),
+}));
 
 import { prisma } from "~/lib/db";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { collabDocToProseMirror } from "~/collab/export";
+import { authorizeCollabDoc } from "~/lib/collabAuth";
 import { replaceCollabDocContent } from "~/collab/write";
 import {
   runListProjectPages,
@@ -79,6 +83,7 @@ describe("pages + files tools", () => {
   });
 
   it("read_page derives the doc:{id}:body room for app-created pages", async () => {
+    vi.mocked(authorizeCollabDoc).mockResolvedValue(true);
     mockPrisma.page.findUnique.mockResolvedValue({
       id: "pg1",
       title: "Notes",
@@ -95,11 +100,14 @@ describe("pages + files tools", () => {
       ],
     });
     const out = await runReadPage("u1", { pageId: "pg1" });
+    // Authorization is keyed on the page's own doc room, not any contentDocId.
+    expect(authorizeCollabDoc).toHaveBeenCalledWith("u1", "doc:pg1:body");
     expect(collabDocToProseMirror).toHaveBeenCalledWith("doc:pg1:body");
     expect(out.markdown.startsWith("# Hi")).toBe(true);
   });
 
   it("read_page prefers contentDocId when set (seeded pages)", async () => {
+    vi.mocked(authorizeCollabDoc).mockResolvedValue(true);
     mockPrisma.page.findUnique.mockResolvedValue({
       id: "pg1",
       title: "Handbook",
@@ -118,6 +126,23 @@ describe("pages + files tools", () => {
   it("read_page 404s missing page", async () => {
     mockPrisma.page.findUnique.mockResolvedValue(null);
     await expect(runReadPage("u1", { pageId: "x" })).rejects.toBeInstanceOf(ReadPageError);
+  });
+
+  it("read_page denies callers not authorized on the page's workspace", async () => {
+    vi.mocked(authorizeCollabDoc).mockResolvedValue(false);
+    mockPrisma.page.findUnique.mockResolvedValue({
+      id: "pg1",
+      title: "Secret",
+      kind: "FreeForm",
+      workspaceType: "EducationOffering",
+      workspaceId: "off1",
+      contentDocId: null,
+      iconEmoji: null,
+    });
+    await expect(
+      runReadPage("u1", { pageId: "pg1" }),
+    ).rejects.toMatchObject({ name: "ReadPageError", status: 403 });
+    expect(collabDocToProseMirror).not.toHaveBeenCalled();
   });
 
   it("create_page rejects a non-Folder parent (app nesting rule)", async () => {

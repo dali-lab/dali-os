@@ -1,14 +1,15 @@
-// MCP `create_sprint` — Core-only, mirrors api.projects.$id.sprints.
+// MCP `create_sprint` — Core or project member, mirrors api.projects.$id.sprints.
 
 import { prisma } from "~/lib/db";
-import { isCore } from "~/lib/roles";
+import { canEditProject } from "./access";
 
 const SPRINT_STATUSES = ["Planned", "Active", "Closed"] as const;
 type SprintStatus = (typeof SPRINT_STATUSES)[number];
 
 export const CREATE_SPRINT_TOOL = {
   name: "create_sprint",
-  description: "Create a sprint on a project. Core-only.",
+  description:
+    "Create a sprint on a project. Requires Core or project-member access.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -49,7 +50,7 @@ export class CreateSprintError extends Error {
 }
 
 export async function runCreateSprint(callerId: string, input: Input) {
-  if (!(await isCore(callerId))) {
+  if (!(await canEditProject(callerId, input.projectId))) {
     throw new CreateSprintError("Forbidden", 403);
   }
 
