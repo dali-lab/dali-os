@@ -91,9 +91,12 @@ export function FinalizeModal({
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`/api/staffing/mentor-role?cycleId=${encodeURIComponent(cycleId)}`, {
-          credentials: "include",
-        });
+        const res = await fetch(
+          `/api/staffing/mentor-role?cycleId=${encodeURIComponent(cycleId)}&projectId=${encodeURIComponent(projectId)}`,
+          {
+            credentials: "include",
+          },
+        );
         if (!res.ok) return;
         const d = (await res.json()) as {
           nonP3Mentors: { userId: string; firstName: string; lastName: string }[];
@@ -110,7 +113,7 @@ export function FinalizeModal({
     return () => {
       cancelled = true;
     };
-  }, [open, cycleId]);
+  }, [open, cycleId, projectId]);
 
   // Persist the channel name + GitHub slug to the Project WITHOUT running
   // automations (keeps the project details page in sync). Cancel reverts edits.

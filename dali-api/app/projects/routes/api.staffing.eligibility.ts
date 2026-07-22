@@ -91,7 +91,8 @@ export async function action({ request }: Route.ActionArgs) {
   });
 
   // If they're live-assigned in this domain, keep the board assignment level
-  // in sync so Propagate / mentorship pairing sees the new level.
+  // in sync so Propagate / mentorship pairing sees the new level. Preserve any
+  // other selected domains on the same project (multi-domain staffing).
   const cycleRows = await prisma.staffingAssignment.findMany({
     where: {
       staffingCycleId: cycle.id,
@@ -107,8 +108,15 @@ export async function action({ request }: Route.ActionArgs) {
       status: true,
     },
   });
-  const live = dedupeLiveAssignments(cycleRows)[0] ?? null;
-  if (live && live.domainId === body.domainId && live.level !== body.level && live.projectId) {
+  const liveRows = dedupeLiveAssignments(cycleRows);
+  const match = liveRows.find((r) => r.domainId === body.domainId) ?? null;
+  if (match && match.level !== body.level && match.projectId) {
+    const siblings = liveRows.filter((r) => r.projectId === match.projectId);
+    const nextDomains = siblings.map((r) =>
+      r.domainId === body.domainId
+        ? { domainId: r.domainId, level: body.level }
+        : { domainId: r.domainId, level: r.level },
+    );
     await prisma.$transaction(async (tx) => {
       await tx.staffingAssignment.deleteMany({
         where: {
@@ -117,18 +125,20 @@ export async function action({ request }: Route.ActionArgs) {
           status: "Proposed",
         },
       });
-      await tx.staffingAssignment.create({
-        data: {
-          userId: body.userId,
-          staffingCycleId: cycle.id,
-          projectId: live.projectId,
-          termId: cycle.termId,
-          domainId: body.domainId,
-          level: body.level,
-          status: "Proposed",
-          assignedById: auth.user.sub,
-        },
-      });
+      for (const d of nextDomains) {
+        await tx.staffingAssignment.create({
+          data: {
+            userId: body.userId,
+            staffingCycleId: cycle.id,
+            projectId: match.projectId,
+            termId: cycle.termId,
+            domainId: d.domainId,
+            level: d.level,
+            status: "Proposed",
+            assignedById: auth.user.sub,
+          },
+        });
+      }
     });
   }
 
