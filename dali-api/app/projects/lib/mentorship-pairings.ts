@@ -13,9 +13,9 @@ type Tx = {
   mentorshipPair: {
     findMany: (args: {
       where: { projectId: string; termId: string };
-      select: { menteeUserId: true; mentorUserId: true; domainId: true };
+      select: { id: true; menteeUserId: true; mentorUserId: true; domainId: true };
     }) => Promise<
-      { menteeUserId: string; mentorUserId: string; domainId: string }[]
+      { id: string; menteeUserId: string; mentorUserId: string; domainId: string }[]
     >;
     createMany: (args: {
       data: {
@@ -26,6 +26,7 @@ type Tx = {
         domainId: string;
       }[];
     }) => Promise<{ count: number }>;
+    deleteMany: (args: { where: { id: { in: string[] } } }) => Promise<{ count: number }>;
   };
 };
 
@@ -33,9 +34,12 @@ type Tx = {
 // staffed on the project: every mentee gets paired to every mentor in the same
 // domain. A member's role defaults to their level (P3 → mentor, P1/P2 →
 // mentee); `roleOverride` (from the staffing board's per-card role badge, keyed
-// by userId) flips it when present. Additive only — existing pairs are never
-// deleted, so Core overrides (manual adds/removals via the /mentorship/pairs
-// UI) are preserved across re-finalizes. Returns the count of new pairs created.
+// by userId) flips it when present.
+//
+// Creates missing same-domain pairs (additive for still-valid rows so Core
+// manual adds stay). Prunes pairs whose mentee is no longer ProjectAssigned in
+// that domain on this project+term (domain moves / drops). Returns the count
+// of new pairs created.
 export async function derivePairings(
   tx: Tx,
   projectId: string,
@@ -72,12 +76,26 @@ export async function derivePairings(
     bucketFor(em.domainId).mentors.push(em.userId);
   }
 
+  // Mentee must still be staffed in the pair's domain — otherwise the pair is
+  // leftover from a prior domain (or project) assignment.
+  const staffedKeys = new Set(assignments.map((a) => `${a.userId}|${a.domainId}`));
+
   const existing = await tx.mentorshipPair.findMany({
     where: { projectId, termId },
-    select: { menteeUserId: true, mentorUserId: true, domainId: true },
+    select: { id: true, menteeUserId: true, mentorUserId: true, domainId: true },
   });
+  const staleIds = existing
+    .filter((p) => !staffedKeys.has(`${p.menteeUserId}|${p.domainId}`))
+    .map((p) => p.id);
+  if (staleIds.length > 0) {
+    await tx.mentorshipPair.deleteMany({ where: { id: { in: staleIds } } });
+  }
+
+  const staleIdSet = new Set(staleIds);
   const seen = new Set(
-    existing.map((p) => `${p.menteeUserId}|${p.mentorUserId}|${p.domainId}`),
+    existing
+      .filter((p) => !staleIdSet.has(p.id))
+      .map((p) => `${p.menteeUserId}|${p.mentorUserId}|${p.domainId}`),
   );
 
   const toCreate: {

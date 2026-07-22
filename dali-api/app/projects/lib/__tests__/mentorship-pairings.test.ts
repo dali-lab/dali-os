@@ -4,14 +4,16 @@ import { derivePairings, findDomainsMissingMentors } from "../mentorship-pairing
 type Row = { userId: string; domainId: string; level: "P1" | "P2" | "P3" };
 type Pair = { menteeUserId: string; mentorUserId: string; domainId: string };
 
-function mkTx(assignments: Row[], existing: Pair[]) {
+function mkTx(assignments: Row[], existing: (Pair & { id?: string })[]) {
   const created: Pair[] = [];
+  const deleted: string[] = [];
+  const withIds = existing.map((p, i) => ({ id: p.id ?? `existing-${i}`, ...p }));
   const tx = {
     projectAssignment: {
       findMany: vi.fn().mockResolvedValue(assignments),
     },
     mentorshipPair: {
-      findMany: vi.fn().mockResolvedValue(existing),
+      findMany: vi.fn().mockResolvedValue(withIds),
       createMany: vi.fn().mockImplementation(async ({ data }: any) => {
         for (const d of data) {
           created.push({
@@ -22,9 +24,14 @@ function mkTx(assignments: Row[], existing: Pair[]) {
         }
         return { count: data.length };
       }),
+      deleteMany: vi.fn().mockImplementation(async ({ where }: any) => {
+        const ids: string[] = where.id.in;
+        deleted.push(...ids);
+        return { count: ids.length };
+      }),
     },
   };
-  return { tx, created };
+  return { tx, created, deleted };
 }
 
 describe("derivePairings", () => {
@@ -86,6 +93,32 @@ describe("derivePairings", () => {
     expect(n).toBe(1);
     expect(created).toEqual([
       { menteeUserId: "mentee-a", mentorUserId: "mentor-y", domainId: "d1" },
+    ]);
+  });
+
+  it("prunes pairs whose mentee is no longer staffed in that domain", async () => {
+    // Gaelle moved Fullstack → UI/UX: old Fullstack→Moiz pair must go; new
+    // UI/UX mentor pair is created.
+    const { tx, created, deleted } = mkTx(
+      [
+        { userId: "gaelle", domainId: "uiux", level: "P1" },
+        { userId: "uiux-mentor", domainId: "uiux", level: "P3" },
+        { userId: "moiz", domainId: "fullstack", level: "P3" },
+      ],
+      [
+        {
+          id: "stale-fs",
+          menteeUserId: "gaelle",
+          mentorUserId: "moiz",
+          domainId: "fullstack",
+        },
+      ],
+    );
+    const n = await derivePairings(tx as any, "proj1", "term1");
+    expect(deleted).toEqual(["stale-fs"]);
+    expect(n).toBe(1);
+    expect(created).toEqual([
+      { menteeUserId: "gaelle", mentorUserId: "uiux-mentor", domainId: "uiux" },
     ]);
   });
 
