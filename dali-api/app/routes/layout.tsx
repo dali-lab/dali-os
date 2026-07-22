@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Outlet, redirect, useLoaderData, useLocation, useMatches, useNavigate, useSearchParams, type ShouldRevalidateFunctionArgs } from 'react-router'
+import { Outlet, redirect, useLoaderData, useLocation, useMatches, useNavigate, useNavigationType, useSearchParams, type ShouldRevalidateFunctionArgs } from 'react-router'
 import { cn } from '~/lib/cn'
 import { Layout } from '~/components/Layout'
 import { Breadcrumbs } from '~/components/Breadcrumbs'
@@ -143,6 +143,7 @@ export default function AppLayoutRoute() {
   const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, isLabMentor: isLabMentorFlag, isEmbedded, tabless, focus } = useLoaderData<typeof loader>()
   const [searchParams] = useSearchParams()
   const location = useLocation()
+  const navigationType = useNavigationType()
   const matches = useMatches()
   const navigate = useNavigate()
   const hasAreaSubnav = matches.some(
@@ -244,14 +245,22 @@ export default function AppLayoutRoute() {
 
     // Restore on entering this location. rAF waits for the new route's content
     // to paint so the target offset exists; fall back to top when unseen.
+    // A REPLACE navigation is an in-place URL update on the same page — opening
+    // a task drawer (`?task=`) or toggling a board filter, both via
+    // `setSearchParams({ replace: true })`. React Router mints a fresh
+    // location.key for it, so restoring/resetting here would yank the current
+    // view to the top (the reported taskboard jump); leave scroll untouched and
+    // only (re)attach the recorder below. POP restores; PUSH lands at top.
     let raf = 0;
-    try {
-      const saved = window.sessionStorage.getItem(key);
-      raf = window.requestAnimationFrame(() => {
-        window.scrollTo(0, saved ? parseInt(saved, 10) || 0 : 0);
-      });
-    } catch {
-      // sessionStorage disabled — nothing to restore.
+    if (navigationType !== "REPLACE") {
+      try {
+        const saved = window.sessionStorage.getItem(key);
+        raf = window.requestAnimationFrame(() => {
+          window.scrollTo(0, saved ? parseInt(saved, 10) || 0 : 0);
+        });
+      } catch {
+        // sessionStorage disabled — nothing to restore.
+      }
     }
 
     // Continuously record this entry's scroll while it's the active location,
@@ -269,7 +278,7 @@ export default function AppLayoutRoute() {
       onScroll(); // capture final position for this entry before it changes
       window.removeEventListener("scroll", onScroll);
     };
-  }, [location.key]);
+  }, [location.key, navigationType]);
 
   // Where every routed page actually renders — inside a TabWorkspace iframe
   // (tab mode) or directly in the shell's main column (tabless mode). The
