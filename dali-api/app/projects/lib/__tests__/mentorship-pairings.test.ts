@@ -4,14 +4,18 @@ import { derivePairings, findDomainsMissingMentors } from "../mentorship-pairing
 type Row = { userId: string; domainId: string; level: "P1" | "P2" | "P3" };
 type Pair = { menteeUserId: string; mentorUserId: string; domainId: string };
 
-function mkTx(assignments: Row[], existing: Pair[]) {
+function mkTx(assignments: Row[]) {
   const created: Pair[] = [];
+  let deletedWhere: { projectId: string; termId: string } | null = null;
   const tx = {
     projectAssignment: {
       findMany: vi.fn().mockResolvedValue(assignments),
     },
     mentorshipPair: {
-      findMany: vi.fn().mockResolvedValue(existing),
+      deleteMany: vi.fn().mockImplementation(async ({ where }: any) => {
+        deletedWhere = where;
+        return { count: 1 };
+      }),
       createMany: vi.fn().mockImplementation(async ({ data }: any) => {
         for (const d of data) {
           created.push({
@@ -24,20 +28,22 @@ function mkTx(assignments: Row[], existing: Pair[]) {
       }),
     },
   };
-  return { tx, created };
+  return {
+    tx,
+    created,
+    getDeletedWhere: () => deletedWhere,
+  };
 }
 
 describe("derivePairings", () => {
   it("creates one pair per (mentee, mentor) in the same domain", async () => {
-    const { tx, created } = mkTx(
-      [
-        { userId: "mentee-a", domainId: "d1", level: "P1" },
-        { userId: "mentee-b", domainId: "d1", level: "P2" },
-        { userId: "mentor-x", domainId: "d1", level: "P3" },
-      ],
-      [],
-    );
+    const { tx, created, getDeletedWhere } = mkTx([
+      { userId: "mentee-a", domainId: "d1", level: "P1" },
+      { userId: "mentee-b", domainId: "d1", level: "P2" },
+      { userId: "mentor-x", domainId: "d1", level: "P3" },
+    ]);
     const n = await derivePairings(tx as any, "proj1", "term1");
+    expect(getDeletedWhere()).toEqual({ projectId: "proj1", termId: "term1" });
     expect(n).toBe(2);
     expect(created).toEqual([
       { menteeUserId: "mentee-a", mentorUserId: "mentor-x", domainId: "d1" },
@@ -46,70 +52,67 @@ describe("derivePairings", () => {
   });
 
   it("does not cross domain boundaries", async () => {
-    const { tx, created } = mkTx(
-      [
-        { userId: "mentee-a", domainId: "d1", level: "P1" },
-        { userId: "mentor-x", domainId: "d2", level: "P3" },
-      ],
-      [],
-    );
+    const { tx, created } = mkTx([
+      { userId: "mentee-a", domainId: "d1", level: "P1" },
+      { userId: "mentor-x", domainId: "d2", level: "P3" },
+    ]);
     const n = await derivePairings(tx as any, "proj1", "term1");
     expect(n).toBe(0);
     expect(created).toEqual([]);
   });
 
   it("pairs to multiple mentors in the same domain", async () => {
-    const { tx, created } = mkTx(
-      [
-        { userId: "mentee-a", domainId: "d1", level: "P1" },
-        { userId: "mentor-x", domainId: "d1", level: "P3" },
-        { userId: "mentor-y", domainId: "d1", level: "P3" },
-      ],
-      [],
-    );
+    const { tx, created } = mkTx([
+      { userId: "mentee-a", domainId: "d1", level: "P1" },
+      { userId: "mentor-x", domainId: "d1", level: "P3" },
+      { userId: "mentor-y", domainId: "d1", level: "P3" },
+    ]);
     const n = await derivePairings(tx as any, "proj1", "term1");
     expect(n).toBe(2);
   });
 
-  it("is additive: skips pairs that already exist (Core override preserved)", async () => {
-    const { tx, created } = mkTx(
-      [
-        { userId: "mentee-a", domainId: "d1", level: "P1" },
-        { userId: "mentor-x", domainId: "d1", level: "P3" },
-        { userId: "mentor-y", domainId: "d1", level: "P3" },
-      ],
-      [
-        { menteeUserId: "mentee-a", mentorUserId: "mentor-x", domainId: "d1" },
-      ],
-    );
+  it("replaces prior pairs for the project+term (domain moves drop old links)", async () => {
+    // Even with no new pairs to create, prior rows for this project+term are cleared.
+    const { tx, created, getDeletedWhere } = mkTx([
+      { userId: "gaelle", domainId: "uiux", level: "P1" },
+      { userId: "moiz", domainId: "fullstack", level: "P3" },
+    ]);
+    const n = await derivePairings(tx as any, "evergreen", "26x");
+    expect(getDeletedWhere()).toEqual({ projectId: "evergreen", termId: "26x" });
+    expect(n).toBe(0);
+    expect(created).toEqual([]);
+  });
+
+  it("rebuilds the full derived set after clearing prior pairs", async () => {
+    const { tx, created } = mkTx([
+      { userId: "mentee-a", domainId: "d1", level: "P1" },
+      { userId: "mentor-x", domainId: "d1", level: "P3" },
+      { userId: "mentor-y", domainId: "d1", level: "P3" },
+    ]);
     const n = await derivePairings(tx as any, "proj1", "term1");
-    expect(n).toBe(1);
+    expect(n).toBe(2);
     expect(created).toEqual([
+      { menteeUserId: "mentee-a", mentorUserId: "mentor-x", domainId: "d1" },
       { menteeUserId: "mentee-a", mentorUserId: "mentor-y", domainId: "d1" },
     ]);
   });
 
   it("never creates pairs when there is no P3 in the domain", async () => {
-    const { tx, created } = mkTx(
-      [
-        { userId: "mentee-a", domainId: "d1", level: "P1" },
-        { userId: "mentee-b", domainId: "d1", level: "P2" },
-      ],
-      [],
-    );
+    const { tx, created, getDeletedWhere } = mkTx([
+      { userId: "mentee-a", domainId: "d1", level: "P1" },
+      { userId: "mentee-b", domainId: "d1", level: "P2" },
+    ]);
     const n = await derivePairings(tx as any, "proj1", "term1");
+    expect(getDeletedWhere()).toEqual({ projectId: "proj1", termId: "term1" });
     expect(n).toBe(0);
     expect(created).toEqual([]);
   });
 
   it("role override promotes a non-P3 to mentor", async () => {
-    const { tx, created } = mkTx(
-      [
-        { userId: "mentee-a", domainId: "d1", level: "P1" },
-        { userId: "mentor-p2", domainId: "d1", level: "P2" },
-      ],
-      [],
-    );
+    const { tx, created } = mkTx([
+      { userId: "mentee-a", domainId: "d1", level: "P1" },
+      { userId: "mentor-p2", domainId: "d1", level: "P2" },
+    ]);
     const n = await derivePairings(tx as any, "proj1", "term1", {
       roleOverride: new Map([["mentor-p2", true]]),
     });
@@ -120,13 +123,10 @@ describe("derivePairings", () => {
   });
 
   it("role override demotes a P3 to mentee", async () => {
-    const { tx, created } = mkTx(
-      [
-        { userId: "p3-demoted", domainId: "d1", level: "P3" },
-        { userId: "mentor-x", domainId: "d1", level: "P3" },
-      ],
-      [],
-    );
+    const { tx, created } = mkTx([
+      { userId: "p3-demoted", domainId: "d1", level: "P3" },
+      { userId: "mentor-x", domainId: "d1", level: "P3" },
+    ]);
     const n = await derivePairings(tx as any, "proj1", "term1", {
       roleOverride: new Map([["p3-demoted", false]]),
     });
