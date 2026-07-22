@@ -1,15 +1,18 @@
-import type { ReactNode } from "react";
-import { GraduationCap } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { GraduationCap, Plus } from "lucide-react";
 import { fullName as buildFullName } from "~/lib/display";
 import { Avatar } from "~/components/ui/Avatar";
 import { RolePills } from "~/components/ui/RolePills";
-import type { MemberCardModel, Level } from "../lib/staffing-board";
+import { ALL_LEVELS, type Level } from "~/lib/level";
+import type { DomainLevel, MemberCardModel } from "../lib/staffing-board";
 
 const LEVEL_BADGE: Record<Level, { label: string; cls: string }> = {
   P1: { label: "P1", cls: "bg-muted text-muted-foreground" },
   P2: { label: "P2", cls: "bg-accent-teal/15 text-accent-teal" },
   P3: { label: "P3", cls: "bg-accent-coral/15 text-accent-coral" },
 };
+
+type DomainOption = { id: string; name: string };
 
 type Props = {
   card: MemberCardModel;
@@ -34,15 +37,18 @@ type Props = {
    */
   mentorSlot?: ReactNode;
   /**
-   * Optional assignment-level control (P1/P2/P3) for project-column cards.
-   * Same stop-propagation wrapper as mentorSlot.
-   */
-  levelSlot?: ReactNode;
-  /**
    * Tint the card as an external mentor — this member mentors someone on
    * another team. A distinct teal edge marks the cross-team relationship.
    */
   accentExternal?: boolean;
+  /** Managers: edit DomainEligibility chips + add a domain. */
+  canEditDomains?: boolean;
+  /** All domains available to add (not already on the card). */
+  allDomains?: DomainOption[];
+  onChangeDomainLevel?: (domainId: string, level: Level) => void;
+  onAddDomain?: (domainId: string, level: Level) => void;
+  /** Highlight the domain used by the live staffing assignment. */
+  assignmentDomainId?: string | null;
 };
 
 export function MemberCard({
@@ -55,8 +61,12 @@ export function MemberCard({
   dragHandleProps,
   isDragging,
   mentorSlot,
-  levelSlot,
   accentExternal,
+  canEditDomains,
+  allDomains,
+  onChangeDomainLevel,
+  onAddDomain,
+  assignmentDomainId,
 }: Props) {
   const fullName = buildFullName(card);
 
@@ -108,18 +118,22 @@ export function MemberCard({
         projectNames={projectNames}
         domainNames={domainNames}
         onRemove={onRemove}
+        canEditDomains={canEditDomains}
+        allDomains={allDomains}
+        onChangeDomainLevel={onChangeDomainLevel}
+        onAddDomain={onAddDomain}
+        assignmentDomainId={assignmentDomainId}
       />
-      {(levelSlot || mentorSlot) && (
-        // Keep drag/click off interactive controls: a press here must not
+      {mentorSlot && (
+        // Keep drag/click off the mentorship control: a press here must not
         // start a card drag or open the bid modal.
         <div
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
           onPointerDown={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
-          className="flex flex-wrap items-center gap-1.5 cursor-default"
+          className="cursor-default"
         >
-          {levelSlot}
           {mentorSlot}
         </div>
       )}
@@ -180,12 +194,22 @@ function MemberCardBody({
   projectNames,
   domainNames,
   onRemove,
+  canEditDomains,
+  allDomains,
+  onChangeDomainLevel,
+  onAddDomain,
+  assignmentDomainId,
 }: {
   card: MemberCardModel;
   fullName: string;
   projectNames: Record<string, string>;
   domainNames: Record<string, string>;
   onRemove?: () => void;
+  canEditDomains?: boolean;
+  allDomains?: DomainOption[];
+  onChangeDomainLevel?: (domainId: string, level: Level) => void;
+  onAddDomain?: (domainId: string, level: Level) => void;
+  assignmentDomainId?: string | null;
 }) {
   return (
     <>
@@ -238,7 +262,14 @@ function MemberCardBody({
         )}
       </div>
 
-      <DomainLevelStrip card={card} />
+      <DomainLevelStrip
+        card={card}
+        canEdit={canEditDomains}
+        allDomains={allDomains}
+        onChangeLevel={onChangeDomainLevel}
+        onAddDomain={onAddDomain}
+        assignmentDomainId={assignmentDomainId}
+      />
       <BidStrip card={card} projectNames={projectNames} domainNames={domainNames} />
     </>
   );
@@ -268,25 +299,166 @@ export function MemberCardPreview({
   );
 }
 
-function DomainLevelStrip({ card }: { card: MemberCardModel }) {
-  if (card.domainLevels.length === 0) {
+function DomainLevelStrip({
+  card,
+  canEdit,
+  allDomains,
+  onChangeLevel,
+  onAddDomain,
+  assignmentDomainId,
+}: {
+  card: MemberCardModel;
+  canEdit?: boolean;
+  allDomains?: DomainOption[];
+  onChangeLevel?: (domainId: string, level: Level) => void;
+  onAddDomain?: (domainId: string, level: Level) => void;
+  assignmentDomainId?: string | null;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [newDomainId, setNewDomainId] = useState("");
+  const [newLevel, setNewLevel] = useState<Level>("P1");
+
+  const haveIds = new Set(card.domainLevels.map((d) => d.domainId));
+  const available = (allDomains ?? []).filter((d) => !haveIds.has(d.id));
+
+  if (card.domainLevels.length === 0 && !canEdit) {
     return <p className="text-[11px] text-muted-foreground italic">No domain eligibility</p>;
   }
+
   return (
-    <div className="flex flex-wrap gap-1">
+    <div
+      className="flex flex-wrap gap-1 items-center"
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
       {card.domainLevels.map((d) => (
-        <span
-          key={d.domainName}
-          className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded bg-muted text-foreground"
-          title={`${d.domainName} · ${LEVEL_BADGE[d.level].label}`}
-        >
-          {d.domainName}
-          <span className={`px-1 rounded font-bold ${LEVEL_BADGE[d.level].cls}`}>
-            {LEVEL_BADGE[d.level].label}
-          </span>
-        </span>
+        <DomainLevelChip
+          key={d.domainId}
+          domain={d}
+          canEdit={!!canEdit && !!onChangeLevel}
+          isAssignment={assignmentDomainId === d.domainId}
+          onChangeLevel={(level) => onChangeLevel?.(d.domainId, level)}
+        />
       ))}
+      {canEdit && onAddDomain && !adding && available.length > 0 && (
+        <button
+          type="button"
+          onClick={() => setAdding(true)}
+          title="Add domain"
+          aria-label="Add domain"
+          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium rounded border border-dashed border-border text-muted-foreground hover:text-foreground hover:bg-muted"
+        >
+          <Plus className="w-2.5 h-2.5" aria-hidden />
+          Domain
+        </button>
+      )}
+      {canEdit && adding && (
+        <div className="flex flex-wrap items-center gap-1 w-full mt-0.5">
+          <select
+            value={newDomainId}
+            onChange={(e) => setNewDomainId(e.target.value)}
+            aria-label="Domain to add"
+            className="max-w-[9rem] rounded border border-border bg-background px-1 py-0.5 text-[10px] text-foreground"
+          >
+            <option value="">Domain…</option>
+            {available.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={newLevel}
+            onChange={(e) => setNewLevel(e.target.value as Level)}
+            aria-label="Level for new domain"
+            className="rounded border border-border bg-background px-1 py-0.5 text-[10px] font-bold text-foreground"
+          >
+            {ALL_LEVELS.map((l) => (
+              <option key={l} value={l}>
+                {l}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            disabled={!newDomainId}
+            onClick={() => {
+              if (!newDomainId) return;
+              onAddDomain?.(newDomainId, newLevel);
+              setAdding(false);
+              setNewDomainId("");
+              setNewLevel("P1");
+            }}
+            className="rounded bg-accent-coral px-1.5 py-0.5 text-[10px] font-medium text-white disabled:opacity-50"
+          >
+            Add
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setAdding(false);
+              setNewDomainId("");
+              setNewLevel("P1");
+            }}
+            className="rounded px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+      {card.domainLevels.length === 0 && canEdit && !adding && available.length === 0 && (
+        <p className="text-[11px] text-muted-foreground italic">No domains left to add</p>
+      )}
     </div>
+  );
+}
+
+function DomainLevelChip({
+  domain,
+  canEdit,
+  isAssignment,
+  onChangeLevel,
+}: {
+  domain: DomainLevel;
+  canEdit: boolean;
+  isAssignment: boolean;
+  onChangeLevel: (level: Level) => void;
+}) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded ${
+        isAssignment
+          ? "bg-accent-coral/10 text-foreground ring-1 ring-accent-coral/30"
+          : "bg-muted text-foreground"
+      }`}
+      title={
+        isAssignment
+          ? `${domain.domainName} · ${domain.level} (staffing assignment)`
+          : `${domain.domainName} · ${domain.level}`
+      }
+    >
+      {domain.domainName}
+      {canEdit ? (
+        <select
+          value={domain.level}
+          aria-label={`Level for ${domain.domainName}`}
+          onChange={(e) => onChangeLevel(e.target.value as Level)}
+          className={`rounded border-0 px-1 py-0 text-[10px] font-bold focus:outline-none focus:ring-1 focus:ring-accent-coral/40 ${LEVEL_BADGE[domain.level].cls}`}
+        >
+          {ALL_LEVELS.map((l) => (
+            <option key={l} value={l}>
+              {l}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <span className={`px-1 rounded font-bold ${LEVEL_BADGE[domain.level].cls}`}>
+          {LEVEL_BADGE[domain.level].label}
+        </span>
+      )}
+    </span>
   );
 }
 

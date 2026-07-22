@@ -15,7 +15,6 @@ import { CheckCircle2, UserPlus } from "lucide-react";
 import { Button } from "~/components/ui/Button";
 import { MemberCard, MemberCardPreview } from "./MemberCard";
 import { RoleBadge } from "./RoleBadge";
-import { LevelBadge } from "./LevelBadge";
 import { BidModal } from "./BidModal";
 import { FinalizeModal } from "./FinalizeModal";
 import { AddMemberControl } from "./AddMemberControl";
@@ -23,6 +22,7 @@ import { AddExternalMentorModal } from "./AddExternalMentorModal";
 import { DomainFilter } from "./DomainFilter";
 import { sanitizeChannelName } from "~/slack/lib/channel-name";
 import type { Level } from "~/lib/level";
+import type { DomainLevel } from "../lib/staffing-board";
 
 type ProjectMeta = {
   id: string;
@@ -124,32 +124,63 @@ export function StaffingBoard({
     [cycleId],
   );
 
-  // Change an assigned member's level on the live board (Proposed row). Used so
-  // leads can raise someone to P3 before Propagate creates MentorshipPairs.
-  const changeAssignmentLevel = useCallback(
-    async (userId: string, next: Level) => {
-      const current = assignments.find((a) => a.userId === userId);
-      if (!current || current.level === next) return;
-      const prev = assignments;
-      setAssignments((list) =>
-        list.map((a) => (a.userId === userId ? { ...a, level: next } : a)),
-      );
+  // Per-member DomainEligibility chips shown on cards. Optimistic local copy
+  // so level/domain edits feel instant; revalidation reconciles from the loader.
+  const [domainLevelsByUser, setDomainLevelsByUser] = useState<
+    Record<string, DomainLevel[]>
+  >(() => Object.fromEntries(members.map((m) => [m.userId, m.domainLevels])));
+  useEffect(() => {
+    setDomainLevelsByUser(
+      Object.fromEntries(members.map((m) => [m.userId, m.domainLevels])),
+    );
+  }, [members]);
+
+  const membersForBoard = useMemo(
+    () =>
+      members.map((m) => ({
+        ...m,
+        domainLevels: domainLevelsByUser[m.userId] ?? m.domainLevels,
+      })),
+    [members, domainLevelsByUser],
+  );
+
+  const upsertDomainLevel = useCallback(
+    async (userId: string, domainId: string, level: Level, domainName: string) => {
+      const prev = domainLevelsByUser[userId] ?? [];
+      const next: DomainLevel[] = prev.some((d) => d.domainId === domainId)
+        ? prev.map((d) => (d.domainId === domainId ? { ...d, level } : d))
+        : [...prev, { domainId, domainName, level }];
+      setDomainLevelsByUser((map) => ({ ...map, [userId]: next }));
+
+      // Keep live assignment level in sync when editing the assigned domain.
+      const assignment = assignments.find((a) => a.userId === userId);
+      const prevAssignments = assignments;
+      if (assignment && assignment.domainId === domainId && assignment.level !== level) {
+        setAssignments((list) =>
+          list.map((a) => (a.userId === userId ? { ...a, level } : a)),
+        );
+      }
+
       setError(null);
       try {
-        await persist({
-          cycleId,
-          userId,
-          projectId: current.projectId,
-          domainId: current.domainId,
-          level: next,
+        const res = await fetch("/api/staffing/eligibility", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cycleId, userId, domainId, level }),
         });
+        if (!res.ok) {
+          const json = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(json.error ?? `Failed: ${res.status}`);
+        }
         revalidator.revalidate();
       } catch (err) {
-        setAssignments(prev);
-        setError(err instanceof Error ? err.message : "Failed to update level");
+        setDomainLevelsByUser((map) => ({ ...map, [userId]: prev }));
+        setAssignments(prevAssignments);
+        setError(err instanceof Error ? err.message : "Failed to update domain");
       }
     },
-    [assignments, cycleId, revalidator],
+    [assignments, cycleId, domainLevelsByUser, revalidator],
   );
 
   // Non-roster external mentors placed on project columns. Managers only.
@@ -230,13 +261,13 @@ export function StaffingBoard({
   const projectIds = useMemo(() => projects.map((p) => p.id), [projects]);
 
   const board = useMemo(
-    () => buildBoard({ projectIds, members, assignments, cardOrder: order }),
-    [projectIds, members, assignments, order],
+    () => buildBoard({ projectIds, members: membersForBoard, assignments, cardOrder: order }),
+    [projectIds, membersForBoard, assignments, order],
   );
 
   const memberById = useMemo(
-    () => new Map(members.map((m) => [m.userId, m])),
-    [members],
+    () => new Map(membersForBoard.map((m) => [m.userId, m])),
+    [membersForBoard],
   );
 
   // Flat userId → card lookup so the DragOverlay can render the active card
@@ -626,18 +657,25 @@ export function StaffingBoard({
                 />
               );
             })()}
-            levelSlot={(() => {
-              if (!canManage || card.isExternalMentor) return undefined;
-              if (columnIdOf.get(card.userId) === UNASSIGNED) return undefined;
-              const assignment = assignments.find((a) => a.userId === card.userId);
-              if (!assignment) return undefined;
-              return (
-                <LevelBadge
-                  level={assignment.level}
-                  onChange={(next) => void changeAssignmentLevel(card.userId, next)}
-                />
-              );
-            })()}
+            canEditDomains={canManage && !card.isExternalMentor}
+            allDomains={domains}
+            assignmentDomainId={
+              assignments.find((a) => a.userId === card.userId)?.domainId ?? null
+            }
+            onChangeDomainLevel={(domainId, level) => {
+              const name =
+                domains.find((d) => d.id === domainId)?.name ??
+                domainNames[domainId] ??
+                "?";
+              void upsertDomainLevel(card.userId, domainId, level, name);
+            }}
+            onAddDomain={(domainId, level) => {
+              const name =
+                domains.find((d) => d.id === domainId)?.name ??
+                domainNames[domainId] ??
+                "?";
+              void upsertDomainLevel(card.userId, domainId, level, name);
+            }}
           />
         )}
         renderOverlay={(activeId) => {
