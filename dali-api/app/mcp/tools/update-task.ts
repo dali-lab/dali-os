@@ -1,10 +1,10 @@
 // MCP `update_task` — edit fields on a task (title/priority/dueAt/sprintId/
-// epicId/domainId/assignees). Mirrors api.tasks.$id PATCH (Core-only). Use
-// `update_task_status` for status changes (it has special column-rebalance
-// semantics).
+// epicId/domainId/assignees). Mirrors api.tasks.$id PATCH (Core or project
+// member). Use `update_task_status` for status changes (it has special
+// column-rebalance semantics).
 
 import { prisma } from "~/lib/db";
-import { isCore } from "~/lib/roles";
+import { canEditProject } from "./access";
 import { syncIssueForTask } from "~/projects/lib/github-task-sync";
 import { notifyTaskAssigned } from "~/projects/lib/task-notifications.server";
 
@@ -14,7 +14,7 @@ type Priority = (typeof PRIORITIES)[number];
 export const UPDATE_TASK_TOOL = {
   name: "update_task",
   description:
-    "Edit fields on a project task (title, priority, due date, sprint, epic, domain, assignees). Core-only. Status changes go through `update_task_status`. Empty string clears nullable fields; omit a field to leave it unchanged.",
+    "Edit fields on a project task (title, priority, due date, sprint, epic, domain, assignees). Requires Core or project-member access. Status changes go through `update_task_status`. Empty string clears nullable fields; omit a field to leave it unchanged.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -68,19 +68,20 @@ export class UpdateTaskError extends Error {
 }
 
 export async function runUpdateTask(callerId: string, input: Input) {
-  if (!(await isCore(callerId))) {
-    throw new UpdateTaskError("Forbidden", 403);
-  }
-
   const task = await prisma.task.findUnique({
     where: { id: input.taskId },
     select: {
       id: true,
+      projectId: true,
       githubIssueNumber: true,
       assignees: { select: { userId: true } },
     },
   });
   if (!task) throw new UpdateTaskError("Task not found", 404);
+
+  if (!(await canEditProject(callerId, task.projectId))) {
+    throw new UpdateTaskError("Forbidden", 403);
+  }
 
   const data: {
     title?: string;
@@ -107,11 +108,36 @@ export async function runUpdateTask(callerId: string, input: Input) {
       data.dueAt = d;
     }
   }
+  // Sprint/epic reassignments are validated against the task's own project so
+  // one project's editor can't attach the task to another project's board
+  // (matches the web PATCH route's guard).
   if (input.sprintId !== undefined) {
-    data.sprintId = input.sprintId === "" ? null : input.sprintId;
+    if (input.sprintId === "") {
+      data.sprintId = null;
+    } else {
+      const sprint = await prisma.sprint.findUnique({
+        where: { id: input.sprintId },
+        select: { projectId: true },
+      });
+      if (!sprint || sprint.projectId !== task.projectId) {
+        throw new UpdateTaskError("Sprint is not part of this project", 400);
+      }
+      data.sprintId = input.sprintId;
+    }
   }
   if (input.epicId !== undefined) {
-    data.epicId = input.epicId === "" ? null : input.epicId;
+    if (input.epicId === "") {
+      data.epicId = null;
+    } else {
+      const epic = await prisma.epic.findUnique({
+        where: { id: input.epicId },
+        select: { projectId: true },
+      });
+      if (!epic || epic.projectId !== task.projectId) {
+        throw new UpdateTaskError("Epic is not part of this project", 400);
+      }
+      data.epicId = input.epicId;
+    }
   }
   if (input.domainId !== undefined) {
     data.domainId = input.domainId === "" ? null : input.domainId;

@@ -3,11 +3,11 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db");
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
-  return { ...real, isCore: vi.fn() };
+  return { ...real, isCore: vi.fn(), isProjectMember: vi.fn() };
 });
 
 import { prisma } from "~/lib/db";
-import { isCore } from "~/lib/roles";
+import { isCore, isProjectMember } from "~/lib/roles";
 import { runListEpics, LIST_EPICS_TOOL } from "~/mcp/tools/list-epics";
 import {
   runCreateEpic,
@@ -132,16 +132,37 @@ describe("epic + story tools", () => {
 
   it("update_story rejects empty title", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
-    mockPrisma.userStory.findUnique.mockResolvedValue({ id: "us1" });
+    mockPrisma.userStory.findUnique.mockResolvedValue({
+      id: "us1",
+      epic: { projectId: "p1" },
+    });
     await expect(
       runUpdateStory("u1", { storyId: "us1", title: "  " }),
     ).rejects.toMatchObject({ status: 400 });
   });
 
-  it("delete_story is Core-only", async () => {
+  it("delete_story rejects callers without project edit access", async () => {
     vi.mocked(isCore).mockResolvedValue(false);
+    vi.mocked(isProjectMember).mockResolvedValue(false);
+    mockPrisma.userStory.findUnique.mockResolvedValue({
+      id: "us1",
+      epic: { projectId: "p1" },
+    });
     await expect(runDeleteStory("u1", { storyId: "us1" })).rejects.toMatchObject({
       status: 403,
     });
+  });
+
+  it("delete_story allows a non-Core project member (web parity)", async () => {
+    vi.mocked(isCore).mockResolvedValue(false);
+    vi.mocked(isProjectMember).mockResolvedValue(true);
+    mockPrisma.userStory.findUnique.mockResolvedValue({
+      id: "us1",
+      epic: { projectId: "p1" },
+    });
+    mockPrisma.userStory.delete.mockResolvedValue({});
+    const out = await runDeleteStory("u1", { storyId: "us1" });
+    expect(out).toEqual({ ok: true, storyId: "us1" });
+    expect(isProjectMember).toHaveBeenCalledWith("u1", "p1");
   });
 });

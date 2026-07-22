@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db");
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
-  return { ...real, isCore: vi.fn() };
+  return { ...real, isCore: vi.fn(), isProjectMember: vi.fn() };
 });
 vi.mock("~/projects/lib/task-notifications.server", () => ({
   notifyTaskAssigned: vi.fn().mockResolvedValue(undefined),
@@ -14,7 +14,7 @@ vi.mock("~/projects/lib/github-task-sync", () => ({
 }));
 
 import { prisma } from "~/lib/db";
-import { isCore } from "~/lib/roles";
+import { isCore, isProjectMember } from "~/lib/roles";
 import { createIssueForTask } from "~/projects/lib/github-task-sync";
 import {
   runCreateTask,
@@ -37,11 +37,29 @@ describe("create_task", () => {
     expect(CREATE_TASK_TOOL.requiredScope).toBe("mcp:write");
   });
 
-  it("rejects non-Core callers", async () => {
+  it("rejects callers without project edit access", async () => {
     vi.mocked(isCore).mockResolvedValue(false);
+    vi.mocked(isProjectMember).mockResolvedValue(false);
     await expect(
       runCreateTask("u1", { projectId: "p1", title: "x" }),
     ).rejects.toMatchObject({ name: "CreateTaskError", status: 403 });
+  });
+
+  it("allows a non-Core project member (web parity)", async () => {
+    vi.mocked(isCore).mockResolvedValue(false);
+    vi.mocked(isProjectMember).mockResolvedValue(true);
+    mockPrisma.project.findUnique.mockResolvedValue({ id: "p1", repoUrls: [] });
+    mockPrisma.task.findFirst.mockResolvedValue(null);
+    mockPrisma.$transaction.mockImplementation(async (fn: unknown) => {
+      const cb = fn as (tx: typeof prisma) => Promise<unknown>;
+      return cb({
+        task: { create: vi.fn().mockResolvedValue({ id: "t-new" }) },
+        taskAssignee: { createMany: vi.fn() },
+      } as unknown as typeof prisma);
+    });
+    const out = await runCreateTask("u1", { projectId: "p1", title: "Build" });
+    expect(out).toMatchObject({ id: "t-new" });
+    expect(isProjectMember).toHaveBeenCalledWith("u1", "p1");
   });
 
   it("rejects when project is missing", async () => {
