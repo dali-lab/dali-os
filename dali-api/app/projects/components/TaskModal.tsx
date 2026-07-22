@@ -159,6 +159,7 @@ export function TaskModal({
   const [linkRepo, setLinkRepo] = useState<string>(githubRepos[0] ?? "");
   const [linkIssueNumber, setLinkIssueNumber] = useState("");
   const [linkBusy, setLinkBusy] = useState(false);
+  const [createBusy, setCreateBusy] = useState(false);
   const [linkError, setLinkError] = useState<string | null>(null);
 
   // Artifacts (edit mode): linked project files. Local so link/unlink/upload
@@ -488,6 +489,38 @@ export function TaskModal({
     }
   }
 
+  // Create a brand-new GitHub issue for this task (no issueNumber → the server
+  // files the issue via createIssueForTask and returns the mirror fields).
+  async function handleCreateGithub() {
+    if (!task) return;
+    if (!linkRepo) {
+      setLinkError("Select a repository.");
+      return;
+    }
+    setCreateBusy(true);
+    setLinkError(null);
+    try {
+      const res = await fetch(`/api/tasks/${task.id}/github`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ repo: linkRepo }),
+      });
+      const j = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        githubIssueNumber?: number;
+        githubIssueUrl?: string;
+      };
+      if (!res.ok) throw new Error(j.error ?? `Request failed: ${res.status}`);
+      setGithub({ issueNumber: j.githubIssueNumber ?? null, url: j.githubIssueUrl ?? null });
+      setLinkOpen(false);
+    } catch (err) {
+      setLinkError(err instanceof Error ? err.message : "Couldn't create the issue.");
+    } finally {
+      setCreateBusy(false);
+    }
+  }
+
   async function handleLinkGithub() {
     if (!task) return;
     const num = Number(linkIssueNumber);
@@ -814,21 +847,13 @@ export function TaskModal({
                   ))}
                 </select>
                 <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min={1}
-                    value={linkIssueNumber}
-                    onChange={(e) => setLinkIssueNumber(e.target.value)}
-                    placeholder="Issue #"
-                    className="w-24 px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
-                  />
                   <Button
                     variant="secondary"
                     size="sm"
-                    onClick={() => void handleLinkGithub()}
-                    disabled={linkBusy || !linkIssueNumber}
+                    onClick={() => void handleCreateGithub()}
+                    disabled={createBusy || linkBusy}
                   >
-                    {linkBusy ? "Linking…" : "Link"}
+                    {createBusy ? "Creating…" : "Create new issue"}
                   </Button>
                   <button
                     type="button"
@@ -841,6 +866,25 @@ export function TaskModal({
                     Cancel
                   </button>
                 </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground">or link existing</span>
+                  <input
+                    type="number"
+                    min={1}
+                    value={linkIssueNumber}
+                    onChange={(e) => setLinkIssueNumber(e.target.value)}
+                    placeholder="Issue #"
+                    className="w-24 px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
+                  />
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => void handleLinkGithub()}
+                    disabled={linkBusy || createBusy || !linkIssueNumber}
+                  >
+                    {linkBusy ? "Linking…" : "Link"}
+                  </Button>
+                </div>
               </div>
             ) : (
               <button
@@ -848,7 +892,7 @@ export function TaskModal({
                 onClick={() => setLinkOpen(true)}
                 className="self-start text-accent-coral hover:underline"
               >
-                Link GitHub issue
+                Add GitHub issue
               </button>
             )}
             {linkError && <p className="text-accent-coral">{linkError}</p>}
