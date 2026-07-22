@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { Link, useFetcher, useNavigate } from "react-router";
 import {
   DndContext,
@@ -217,11 +217,33 @@ export function FormsBrowser({
     }
   }
 
+  // dnd-kit captures the pointer on the drag source, so pointerup synthesizes a
+  // native click on the card *after* the drag — which would follow its <Link>
+  // and open the form/folder. Flag it the moment a drag ends (synchronous, so
+  // it's set before the click fires) and swallow that one click in the capture
+  // phase; React Router's Link skips navigation once the click is defaultPrevented.
+  const suppressClickRef = useRef(false);
+  function endDrag() {
+    setDragging(null);
+    suppressClickRef.current = true;
+    // Safety net: clear on the next tick if no click follows (e.g. keyboard end).
+    setTimeout(() => {
+      suppressClickRef.current = false;
+    }, 0);
+  }
+  function guardCardClick(e: MouseEvent) {
+    if (suppressClickRef.current) {
+      e.preventDefault();
+      e.stopPropagation();
+      suppressClickRef.current = false;
+    }
+  }
+
   function handleDragStart(event: DragStartEvent) {
     setDragging((event.active.data.current as DragItem | undefined) ?? null);
   }
   function handleDragEnd(event: DragEndEvent) {
-    setDragging(null);
+    endDrag();
     const item = event.active.data.current as DragItem | undefined;
     const dest = event.over?.data.current as
       | { folderId: string | null }
@@ -360,7 +382,7 @@ export function FormsBrowser({
           sensors={sensors}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
-          onDragCancel={() => setDragging(null)}
+          onDragCancel={endDrag}
         >
           {folderId !== null && dragging !== null && (
             <MoveUpDropZone
@@ -376,6 +398,7 @@ export function FormsBrowser({
                 key={d.id}
                 folder={d}
                 busy={busy}
+                onClickCapture={guardCardClick}
                 dropDisabled={
                   dragging?.type === "folder" && dragging.id === d.id
                 }
@@ -396,6 +419,7 @@ export function FormsBrowser({
                 key={f.id}
                 form={f}
                 busy={busy}
+                onClickCapture={guardCardClick}
                 onRename={() => renameForm(f)}
                 onDelete={() => deleteForm(f)}
                 onMove={() =>
@@ -576,6 +600,7 @@ function FolderCardView({
   folder,
   busy,
   dropDisabled,
+  onClickCapture,
   onRename,
   onDelete,
   onMove,
@@ -585,6 +610,8 @@ function FolderCardView({
   // True while this folder itself is being dragged: no self-drop highlight,
   // no self-drop request.
   dropDisabled: boolean;
+  // Swallows the click synthesized after a drag so it doesn't navigate.
+  onClickCapture: (e: MouseEvent) => void;
   onRename: () => void;
   onDelete: () => void;
   onMove: () => void;
@@ -607,6 +634,7 @@ function FolderCardView({
         drag.setNodeRef(node);
         drop.setNodeRef(node);
       }}
+      onClickCapture={onClickCapture}
       // Only the listeners: spreading dnd-kit's attributes would put
       // role="button" on the anchor. Drag stays pointer-driven (no keyboard
       // sensor is configured), matching the other boards.
@@ -616,6 +644,10 @@ function FolderCardView({
           ? {
               transform: `translate3d(${drag.transform.x}px, ${drag.transform.y}px, 0)`,
               zIndex: 50,
+              // Kill the `transition-all` while dragging — otherwise every
+              // per-frame transform update animates over 150ms and the card
+              // trails the cursor, which reads as laggy/unresponsive.
+              transition: "none",
             }
           : undefined
       }
@@ -657,6 +689,7 @@ function FolderCardView({
 function FormCardView({
   form,
   busy,
+  onClickCapture,
   onRename,
   onDelete,
   onMove,
@@ -664,6 +697,8 @@ function FormCardView({
 }: {
   form: FormCard;
   busy: boolean;
+  // Swallows the click synthesized after a drag so it doesn't navigate.
+  onClickCapture: (e: MouseEvent) => void;
   onRename: () => void;
   onDelete: () => void;
   onMove: () => void;
@@ -678,11 +713,15 @@ function FormCardView({
     <div
       ref={drag.setNodeRef}
       {...drag.listeners}
+      onClickCapture={onClickCapture}
       style={
         drag.transform
           ? {
               transform: `translate3d(${drag.transform.x}px, ${drag.transform.y}px, 0)`,
               zIndex: 50,
+              // See FolderCardView: disable the transition mid-drag so the card
+              // tracks the cursor instead of easing behind it.
+              transition: "none",
             }
           : undefined
       }
