@@ -3,7 +3,10 @@ import {
   buildTaskBoard,
   moveTaskInBoard,
   nextPositionInColumn,
+  resolveTermIdForDate,
+  termIdsInRange,
   type TaskCardModel,
+  type TermWindow,
 } from "../task-board";
 
 function task(
@@ -94,5 +97,94 @@ describe("nextPositionInColumn", () => {
     const board = buildTaskBoard(TASKS);
     expect(nextPositionInColumn(board, "Done")).toBe(0);
     expect(nextPositionInColumn(board, "Todo")).toBe(3);
+  });
+});
+
+// Three consecutive terms with a one-week gap between each (the inter-term
+// break). Ascending, as the resolvers require.
+const TERMS: TermWindow[] = [
+  {
+    id: "spring",
+    startDate: new Date("2026-03-30T00:00:00.000Z"),
+    endDate: new Date("2026-06-01T00:00:00.000Z"),
+  },
+  {
+    id: "summer",
+    startDate: new Date("2026-06-22T00:00:00.000Z"),
+    endDate: new Date("2026-08-31T00:00:00.000Z"),
+  },
+  {
+    id: "fall",
+    startDate: new Date("2026-09-14T00:00:00.000Z"),
+    endDate: new Date("2026-12-01T00:00:00.000Z"),
+  },
+];
+
+describe("resolveTermIdForDate", () => {
+  it("resolves a date inside a term's window to that term", () => {
+    expect(resolveTermIdForDate(TERMS, new Date("2026-07-15T00:00:00Z"))).toBe(
+      "summer",
+    );
+  });
+
+  it("rolls a break-week date forward to the next term", () => {
+    // Between Spring's end and Summer's start — counts toward Summer.
+    expect(resolveTermIdForDate(TERMS, new Date("2026-06-10T00:00:00Z"))).toBe(
+      "summer",
+    );
+  });
+
+  it("resolves a date before every term to the first term", () => {
+    expect(resolveTermIdForDate(TERMS, new Date("2026-01-01T00:00:00Z"))).toBe(
+      "spring",
+    );
+  });
+
+  it("returns null for a date after the last term ends", () => {
+    expect(
+      resolveTermIdForDate(TERMS, new Date("2027-01-01T00:00:00Z")),
+    ).toBeNull();
+  });
+
+  it("treats the endDate boundary as still in-term", () => {
+    expect(resolveTermIdForDate(TERMS, TERMS[0].endDate)).toBe("spring");
+  });
+});
+
+describe("termIdsInRange", () => {
+  it("returns terms whose windows overlap the span", () => {
+    expect(
+      termIdsInRange(
+        TERMS,
+        new Date("2026-05-15T00:00:00Z"),
+        new Date("2026-07-15T00:00:00Z"),
+      ),
+    ).toEqual(["spring", "summer"]);
+  });
+
+  it("treats a null start as open-ended on the left", () => {
+    expect(
+      termIdsInRange(TERMS, null, new Date("2026-06-25T00:00:00Z")),
+    ).toEqual(["spring", "summer"]);
+  });
+
+  it("treats a null end as open-ended on the right", () => {
+    expect(
+      termIdsInRange(TERMS, new Date("2026-08-01T00:00:00Z"), null),
+    ).toEqual(["summer", "fall"]);
+  });
+
+  it("returns nothing when both bounds are null (no dated span)", () => {
+    expect(termIdsInRange(TERMS, null, null)).toEqual([]);
+  });
+
+  it("returns a single term for a span fully inside one window", () => {
+    expect(
+      termIdsInRange(
+        TERMS,
+        new Date("2026-07-01T00:00:00Z"),
+        new Date("2026-07-10T00:00:00Z"),
+      ),
+    ).toEqual(["summer"]);
   });
 });

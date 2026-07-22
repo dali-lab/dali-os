@@ -103,3 +103,47 @@ export async function derivePairings(
   await tx.mentorshipPair.createMany({ data: toCreate });
   return toCreate.length;
 }
+
+export type DomainMissingMentor = {
+  domainId: string;
+  menteeUserIds: string[];
+};
+
+// Domains where mentorship pairing cannot run: zero mentors and more than one
+// mentee. Solo mentee domains are fine (nothing to pair with). External mentors
+// and role overrides count. Used by finalize to surface a level/role gap.
+export function findDomainsMissingMentors(
+  assignments: { userId: string; domainId: string; level: "P1" | "P2" | "P3" }[],
+  opts?: {
+    roleOverride?: Map<string, boolean>;
+    externalMentors?: { userId: string; domainId: string }[];
+  },
+): DomainMissingMentor[] {
+  const override = opts?.roleOverride;
+  const byDomain = new Map<string, { mentees: string[]; mentors: string[] }>();
+  const bucketFor = (domainId: string) => {
+    let bucket = byDomain.get(domainId);
+    if (!bucket) {
+      bucket = { mentees: [], mentors: [] };
+      byDomain.set(domainId, bucket);
+    }
+    return bucket;
+  };
+  for (const a of assignments) {
+    const bucket = bucketFor(a.domainId);
+    const isMentor = override?.get(a.userId) ?? a.level === "P3";
+    if (isMentor) bucket.mentors.push(a.userId);
+    else bucket.mentees.push(a.userId);
+  }
+  for (const em of opts?.externalMentors ?? []) {
+    bucketFor(em.domainId).mentors.push(em.userId);
+  }
+
+  const gaps: DomainMissingMentor[] = [];
+  for (const [domainId, { mentees, mentors }] of byDomain) {
+    if (mentors.length > 0) continue;
+    if (mentees.length <= 1) continue;
+    gaps.push({ domainId, menteeUserIds: mentees });
+  }
+  return gaps;
+}

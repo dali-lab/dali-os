@@ -15,12 +15,14 @@ import { CheckCircle2, UserPlus } from "lucide-react";
 import { Button } from "~/components/ui/Button";
 import { MemberCard, MemberCardPreview } from "./MemberCard";
 import { RoleBadge } from "./RoleBadge";
+import { LevelBadge } from "./LevelBadge";
 import { BidModal } from "./BidModal";
 import { FinalizeModal } from "./FinalizeModal";
 import { AddMemberControl } from "./AddMemberControl";
 import { AddExternalMentorModal } from "./AddExternalMentorModal";
 import { DomainFilter } from "./DomainFilter";
 import { sanitizeChannelName } from "~/slack/lib/channel-name";
+import type { Level } from "~/lib/level";
 
 type ProjectMeta = {
   id: string;
@@ -120,6 +122,34 @@ export function StaffingBoard({
       }
     },
     [cycleId],
+  );
+
+  // Change an assigned member's level on the live board (Proposed row). Used so
+  // leads can raise someone to P3 before Propagate creates MentorshipPairs.
+  const changeAssignmentLevel = useCallback(
+    async (userId: string, next: Level) => {
+      const current = assignments.find((a) => a.userId === userId);
+      if (!current || current.level === next) return;
+      const prev = assignments;
+      setAssignments((list) =>
+        list.map((a) => (a.userId === userId ? { ...a, level: next } : a)),
+      );
+      setError(null);
+      try {
+        await persist({
+          cycleId,
+          userId,
+          projectId: current.projectId,
+          domainId: current.domainId,
+          level: next,
+        });
+        revalidator.revalidate();
+      } catch (err) {
+        setAssignments(prev);
+        setError(err instanceof Error ? err.message : "Failed to update level");
+      }
+    },
+    [assignments, cycleId, revalidator],
   );
 
   // Non-roster external mentors placed on project columns. Managers only.
@@ -583,16 +613,28 @@ export function StaffingBoard({
             isDragging={isDragging}
             mentorSlot={(() => {
               // Mentor/mentee role badge, on project-column cards for managers.
-              // Default role follows level (P3 → mentor); the override flips it.
-              // External mentors are inherently mentors — no toggle.
+              // Default role follows the assignment level (P3 → mentor); the
+              // override flips it. External mentors are inherently mentors.
               if (!canManage || card.isExternalMentor) return undefined;
               if (columnIdOf.get(card.userId) === UNASSIGNED) return undefined;
-              const defaultMentor = card.domainLevels.some((d) => d.level === "P3");
+              const defaultMentor = card.level === "P3";
               const isMentor = mentorRoles[card.userId] ?? defaultMentor;
               return (
                 <RoleBadge
                   isMentor={isMentor}
                   onToggle={() => void toggleMentorRole(card.userId, !isMentor)}
+                />
+              );
+            })()}
+            levelSlot={(() => {
+              if (!canManage || card.isExternalMentor) return undefined;
+              if (columnIdOf.get(card.userId) === UNASSIGNED) return undefined;
+              const assignment = assignments.find((a) => a.userId === card.userId);
+              if (!assignment) return undefined;
+              return (
+                <LevelBadge
+                  level={assignment.level}
+                  onChange={(next) => void changeAssignmentLevel(card.userId, next)}
                 />
               );
             })()}

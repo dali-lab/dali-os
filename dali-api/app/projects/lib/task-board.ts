@@ -68,9 +68,20 @@ export type BoardSprint = {
   // The epic this sprint belongs to (null = standalone). Powers the modal's
   // cascading Epic → Sprint picker: pick an epic, then only its sprints show.
   epicId: string | null;
+  // The Term this sprint falls in, resolved from its start date by the loader
+  // (see resolveTermIdForDate). Null when the Term table has no term at or
+  // after the sprint's start. Powers the board's term filter.
+  termId: string | null;
 };
 
-export type BoardEpic = { id: string; title: string };
+export type BoardEpic = {
+  id: string;
+  title: string;
+  // Terms this epic has work in — union of its sprints' resolved terms, terms
+  // overlapping its effective date span, and its explicit target term. The
+  // board's term filter prunes epic pills whose termIds miss the selected term.
+  termIds: string[];
+};
 
 // Choices the TaskModal needs to populate its assignee + domain dropdowns.
 // Loader fetches once per board render and passes through to TaskBoard.
@@ -86,7 +97,52 @@ export type TaskBoardOptions = {
   epics: BoardEpic[];
   // Live project files for the modal's "attach existing artifact" picker.
   projectFiles: { id: string; title: string }[];
+  // Term filter options: the project's planned terms plus any term a sprint
+  // resolves to, newest first. Fewer than two terms hides the filter.
+  terms: { id: string; code: string }[];
+  // The lab's current term when it appears in `terms` — the board's default
+  // filter selection. Null (project doesn't run this term) defaults to All.
+  currentTermId: string | null;
 };
+
+// Minimal Term shape the resolvers need. Callers pass terms sorted
+// chronologically (ascending sortKey/startDate).
+export type TermWindow = { id: string; startDate: Date; endDate: Date };
+
+/**
+ * Resolve the term a date falls in: the term whose [startDate, endDate]
+ * window contains it, or — for dates in an inter-term gap (break weeks) —
+ * the next upcoming term, mirroring currentTerm()'s roll-forward so a sprint
+ * planned during the break before a term counts toward that term. Null when
+ * the date is after every term's end.
+ */
+export function resolveTermIdForDate(
+  terms: TermWindow[],
+  date: Date,
+): string | null {
+  for (const t of terms) {
+    if (date <= t.endDate) return t.id;
+  }
+  return null;
+}
+
+/**
+ * Terms whose windows overlap [start, end]. Either bound may be null
+ * (open-ended): a null start matches every term up to `end`, a null end every
+ * term from `start` on. Both null = no dated span = no terms.
+ */
+export function termIdsInRange(
+  terms: TermWindow[],
+  start: Date | null,
+  end: Date | null,
+): string[] {
+  if (!start && !end) return [];
+  return terms
+    .filter(
+      (t) => (!start || t.endDate >= start) && (!end || t.startDate <= end),
+    )
+    .map((t) => t.id);
+}
 
 export type TaskBoard = Record<TaskStatus, TaskCardModel[]>;
 
