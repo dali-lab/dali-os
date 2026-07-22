@@ -44,6 +44,9 @@ const PRIORITY_TONE: Record<Priority, string> = {
 
 // The `?epic=` filter value for tasks with no epic.
 const NO_EPIC = "none";
+// The `?term=` filter value that shows every term (opts out of the default
+// current-term scoping).
+const ALL_TERMS = "all";
 
 export function TaskBoard({
   projectId,
@@ -82,6 +85,31 @@ export function TaskBoard({
   const openTaskId = searchParams.get("task");
   const epicFilter = searchParams.get("epic");
   const sprintFilter = searchParams.get("sprint");
+  const termParam = searchParams.get("term");
+
+  // The term filter only makes sense once the project spans more than one term
+  // (its options are the project's terms + any term a sprint lands in). With
+  // one term there's nothing to slice between, so it's hidden and the board
+  // shows everything.
+  const termFilterEnabled = options.terms.length >= 2;
+  // Effective term: an explicit `?term=` wins; otherwise default to the lab's
+  // current term when the project runs it (the whole point — open the board on
+  // this term's work, not the full multi-term backlog). `all` opts out.
+  const effectiveTerm = useMemo(() => {
+    if (!termFilterEnabled) return ALL_TERMS;
+    if (termParam === ALL_TERMS) return ALL_TERMS;
+    if (termParam && options.terms.some((t) => t.id === termParam)) {
+      return termParam;
+    }
+    return options.currentTermId ?? ALL_TERMS;
+  }, [termFilterEnabled, termParam, options.terms, options.currentTermId]);
+
+  const sprintTermById = useMemo(() => {
+    const m = new Map<string, string | null>();
+    for (const s of options.sprints) m.set(s.id, s.termId);
+    return m;
+  }, [options.sprints]);
+
   const setParam = useCallback(
     (key: string, value: string | null) => {
       setSearchParams(
@@ -112,19 +140,54 @@ export function TaskBoard({
     },
     [setSearchParams],
   );
+  // Changing term drops the sprint sub-filter (a sprint from another term
+  // would otherwise leave the board empty) — the epic filter stays put; its
+  // pill is kept visible below even when pruned so it can still be cleared.
+  const setTermFilter = useCallback(
+    (value: string) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.set("term", value);
+          next.delete("sprint");
+          return next;
+        },
+        { replace: true, preventScrollReset: true },
+      );
+    },
+    [setSearchParams],
+  );
   const setOpenTaskId = useCallback(
     (id: string | null) => setParam("task", id),
     [setParam],
   );
 
   // Sprint sub-filter only applies within a concrete epic; its options are that
-  // epic's sprints.
+  // epic's sprints, scoped to the selected term so the sub-pills never offer a
+  // sprint that the term filter would then hide.
   const epicSprints = useMemo(
     () =>
       epicFilter && epicFilter !== NO_EPIC
-        ? options.sprints.filter((s) => s.epicId === epicFilter)
+        ? options.sprints.filter(
+            (s) =>
+              s.epicId === epicFilter &&
+              (effectiveTerm === ALL_TERMS || s.termId === effectiveTerm),
+          )
         : [],
-    [options.sprints, epicFilter],
+    [options.sprints, epicFilter, effectiveTerm],
+  );
+
+  // Epic pills for the selected term: an epic shows only if it has work in the
+  // term (its termIds cover it). The currently-selected epic is always kept so
+  // it stays deselectable even when it has nothing in this term.
+  const visibleEpics = useMemo(
+    () =>
+      effectiveTerm === ALL_TERMS
+        ? options.epics
+        : options.epics.filter(
+            (e) => e.termIds.includes(effectiveTerm) || e.id === epicFilter,
+          ),
+    [options.epics, effectiveTerm, epicFilter],
   );
 
   const filteredTasks = useMemo(() => {
@@ -132,8 +195,18 @@ export function TaskBoard({
     if (epicFilter === NO_EPIC) ts = ts.filter((t) => t.epicId === null);
     else if (epicFilter) ts = ts.filter((t) => t.epicId === epicFilter);
     if (sprintFilter) ts = ts.filter((t) => t.sprintId === sprintFilter);
+    if (effectiveTerm !== ALL_TERMS) {
+      ts = ts.filter((t) =>
+        // Backlog (no sprint) is term-less — always visible so it stays the
+        // pool you plan the term from. A sprinted task shows only if its
+        // sprint resolves to the selected term.
+        t.sprintId === null
+          ? true
+          : sprintTermById.get(t.sprintId) === effectiveTerm,
+      );
+    }
     return ts;
-  }, [tasks, epicFilter, sprintFilter]);
+  }, [tasks, epicFilter, sprintFilter, effectiveTerm, sprintTermById]);
 
   const board = useMemo(() => buildTaskBoard(filteredTasks), [filteredTasks]);
   const openTask = openTaskId ? tasks.find((t) => t.id === openTaskId) ?? null : null;
@@ -321,21 +394,47 @@ export function TaskBoard({
   }));
 
   // Epic pills slice the board to one epic's tasks, plus "No epic" for tasks
-  // that aren't in any epic.
-  const showEpicFilter = options.epics.length > 0;
+  // that aren't in any epic. Under a term filter the pill set is pruned to
+  // epics with work in that term.
+  const showEpicFilter = visibleEpics.length > 0;
 
   return (
     <div className="flex flex-col gap-3">
       <Confetti trigger={celebrate} onFire={() => setCelebrate(false)} />
       <div className="flex flex-wrap items-center gap-2">
+        {termFilterEnabled && (
+          <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span className="font-medium">Term</span>
+            <select
+              value={effectiveTerm}
+              onChange={(e) => setTermFilter(e.target.value)}
+              aria-label="Filter board by term"
+              className="px-2 py-1 text-xs border border-border rounded-full bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+            >
+              {options.terms.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.code}
+                  {t.id === options.currentTermId ? " · current" : ""}
+                </option>
+              ))}
+              <option value={ALL_TERMS}>All terms</option>
+            </select>
+          </label>
+        )}
         {showEpicFilter && (
-          <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filter by epic">
+          <div
+            className={`flex flex-wrap items-center gap-1.5 ${
+              termFilterEnabled ? "pl-2 border-l border-border" : ""
+            }`}
+            role="group"
+            aria-label="Filter by epic"
+          >
             <FilterPill
               label="All"
               active={epicFilter === null}
               onClick={() => setEpicFilter(null)}
             />
-            {options.epics.map((e) => (
+            {visibleEpics.map((e) => (
               <FilterPill
                 key={e.id}
                 label={e.title}
