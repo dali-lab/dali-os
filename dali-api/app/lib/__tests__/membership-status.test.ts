@@ -1,4 +1,11 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+
+// membership-status.ts transitively imports ~/lib/db (the Prisma client). These
+// tests only exercise the pure resolver, so mock db to avoid loading the
+// generated client (which the unit-test CI job doesn't build). Mirrors
+// roles.test.ts / search.server.test.ts.
+vi.mock("~/lib/db");
+
 import {
   resolveMembershipStatus,
   commencementDate,
