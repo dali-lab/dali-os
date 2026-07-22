@@ -190,9 +190,10 @@ export async function action({ request }: Route.ActionArgs) {
         where: { staffingCycleId: cycle.id, status: { in: ["Proposed", "Confirmed"] } },
         select: { id: true, userId: true, projectId: true, domainId: true, level: true, status: true },
       });
-      // Target roster = members whose live assignment points at THIS project.
+      // Target roster = members whose live assignment points at THIS project
+      // (one row per userId+domainId — multi-domain staffing is allowed).
       const liveTarget = dedupeLiveAssignments(cycleRows).filter((r) => r.projectId === project.id);
-      const targetUserIds = new Set(liveTarget.map((r) => r.userId));
+      const targetKeys = new Set(liveTarget.map((r) => `${r.userId}|${r.domainId}`));
 
       // An assignment's domainId is unguarded (StaffingAssignment has no FK to
       // Domain), so a blank/stale value can slip in — e.g. a bid whose domain
@@ -211,13 +212,16 @@ export async function action({ request }: Route.ActionArgs) {
         })
       ).map((u) => `${u.firstName} ${u.lastName}`.trim());
 
-      // Members currently Confirmed on this project who are no longer in the
-      // target roster (dragged off / to another project / unassigned). Decline
-      // their stale Confirmed rows and drop the ProjectAssignment for this
-      // project+cycle. DomainEligibility is left intact — it's monotonic and a
-      // promotion already granted isn't revoked by re-staffing.
+      // Confirmed rows on this project whose (user, domain) is no longer live —
+      // member dragged off, or a domain chip deselected while they stay on the
+      // project. Decline those rows and drop the matching ProjectAssignment.
+      // DomainEligibility is left intact — it's monotonic and a promotion
+      // already granted isn't revoked by re-staffing.
       const droppedRows = cycleRows.filter(
-        (r) => r.status === "Confirmed" && r.projectId === project.id && !targetUserIds.has(r.userId),
+        (r) =>
+          r.status === "Confirmed" &&
+          r.projectId === project.id &&
+          !targetKeys.has(`${r.userId}|${r.domainId}`),
       );
 
       let droppedCount = 0;
@@ -394,8 +398,10 @@ export async function action({ request }: Route.ActionArgs) {
         const nameById = new Map(
           menteeUsers.map((u) => [u.id, `${u.firstName} ${u.lastName}`.trim()]),
         );
+        // Soft-skip: other domains still paired; surface a warning, not a
+        // hard error, so the rest of Propagate isn't treated as failed.
         mentorshipGapNote =
-          " Mentorship not created for " +
+          " Skipped mentorship for " +
           mentorshipGaps
             .map((g) => {
               const domain = domainNameById.get(g.domainId) ?? "Unknown domain";
@@ -403,13 +409,13 @@ export async function action({ request }: Route.ActionArgs) {
               return `${domain} (mentees but no P3/Mentor: ${names})`;
             })
             .join("; ") +
-          ". Raise someone to P3 on their domain chip (or mark Mentor / add an external mentor), then re-run Propagate.";
+          " — other domains were paired. Raise someone to P3 on their domain chip (or mark Mentor / add an external mentor), then re-run Propagate.";
       }
 
       results.assignments = {
-        // Flag as error when anyone was skipped or mentorship could not be
-        // derived for a multi-person domain — assignments still went through.
-        status: skippedNames.length > 0 || mentorshipGaps.length > 0 ? "error" : "ok",
+        // Invalid/blank domains are a real data error; mentorship gaps for
+        // individual domains are soft-skipped and stay status ok.
+        status: skippedNames.length > 0 ? "error" : "ok",
         message:
           (confirmedCount === 0 && droppedCount === 0
             ? "No proposed assignments for this project."

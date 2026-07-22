@@ -47,8 +47,13 @@ type Props = {
   allDomains?: DomainOption[];
   onChangeDomainLevel?: (domainId: string, level: Level) => void;
   onAddDomain?: (domainId: string, level: Level) => void;
-  /** Highlight the domain used by the live staffing assignment. */
-  assignmentDomainId?: string | null;
+  /** Domain ids selected for the live staffing assignment (multi allowed). */
+  assignmentDomainIds?: string[];
+  /**
+   * Toggle a domain into / out of the staffing assignment. Only wired on
+   * project columns — Unassigned cards have no assignment to edit.
+   */
+  onToggleAssignmentDomain?: (domainId: string) => void;
 };
 
 export function MemberCard({
@@ -66,7 +71,8 @@ export function MemberCard({
   allDomains,
   onChangeDomainLevel,
   onAddDomain,
-  assignmentDomainId,
+  assignmentDomainIds,
+  onToggleAssignmentDomain,
 }: Props) {
   const fullName = buildFullName(card);
 
@@ -122,7 +128,8 @@ export function MemberCard({
         allDomains={allDomains}
         onChangeDomainLevel={onChangeDomainLevel}
         onAddDomain={onAddDomain}
-        assignmentDomainId={assignmentDomainId}
+        assignmentDomainIds={assignmentDomainIds}
+        onToggleAssignmentDomain={onToggleAssignmentDomain}
       />
       {mentorSlot && (
         // Keep drag/click off the mentorship control: a press here must not
@@ -198,7 +205,8 @@ function MemberCardBody({
   allDomains,
   onChangeDomainLevel,
   onAddDomain,
-  assignmentDomainId,
+  assignmentDomainIds,
+  onToggleAssignmentDomain,
 }: {
   card: MemberCardModel;
   fullName: string;
@@ -209,7 +217,8 @@ function MemberCardBody({
   allDomains?: DomainOption[];
   onChangeDomainLevel?: (domainId: string, level: Level) => void;
   onAddDomain?: (domainId: string, level: Level) => void;
-  assignmentDomainId?: string | null;
+  assignmentDomainIds?: string[];
+  onToggleAssignmentDomain?: (domainId: string) => void;
 }) {
   return (
     <>
@@ -268,7 +277,8 @@ function MemberCardBody({
         allDomains={allDomains}
         onChangeLevel={onChangeDomainLevel}
         onAddDomain={onAddDomain}
-        assignmentDomainId={assignmentDomainId}
+        assignmentDomainIds={assignmentDomainIds}
+        onToggleAssignmentDomain={onToggleAssignmentDomain}
       />
       <BidStrip card={card} projectNames={projectNames} domainNames={domainNames} />
     </>
@@ -305,14 +315,16 @@ function DomainLevelStrip({
   allDomains,
   onChangeLevel,
   onAddDomain,
-  assignmentDomainId,
+  assignmentDomainIds,
+  onToggleAssignmentDomain,
 }: {
   card: MemberCardModel;
   canEdit?: boolean;
   allDomains?: DomainOption[];
   onChangeLevel?: (domainId: string, level: Level) => void;
   onAddDomain?: (domainId: string, level: Level) => void;
-  assignmentDomainId?: string | null;
+  assignmentDomainIds?: string[];
+  onToggleAssignmentDomain?: (domainId: string) => void;
 }) {
   const [adding, setAdding] = useState(false);
   const [newDomainId, setNewDomainId] = useState("");
@@ -320,6 +332,7 @@ function DomainLevelStrip({
 
   const haveIds = new Set(card.domainLevels.map((d) => d.domainId));
   const available = (allDomains ?? []).filter((d) => !haveIds.has(d.id));
+  const selected = new Set(assignmentDomainIds ?? card.assignmentDomainIds ?? []);
 
   if (card.domainLevels.length === 0 && !canEdit) {
     return <p className="text-[11px] text-muted-foreground italic">No domain eligibility</p>;
@@ -338,7 +351,9 @@ function DomainLevelStrip({
           key={d.domainId}
           domain={d}
           canEdit={!!canEdit && !!onChangeLevel}
-          isAssignment={assignmentDomainId === d.domainId}
+          isAssignment={selected.has(d.domainId)}
+          canToggleAssignment={!!onToggleAssignmentDomain}
+          onToggleAssignment={() => onToggleAssignmentDomain?.(d.domainId)}
           onChangeLevel={(level) => onChangeLevel?.(d.domainId, level)}
         />
       ))}
@@ -419,13 +434,35 @@ function DomainLevelChip({
   domain,
   canEdit,
   isAssignment,
+  canToggleAssignment,
+  onToggleAssignment,
   onChangeLevel,
 }: {
   domain: DomainLevel;
   canEdit: boolean;
   isAssignment: boolean;
+  canToggleAssignment: boolean;
+  onToggleAssignment: () => void;
   onChangeLevel: (level: Level) => void;
 }) {
+  const nameButton = canToggleAssignment ? (
+    <button
+      type="button"
+      onClick={onToggleAssignment}
+      title={
+        isAssignment
+          ? `Remove ${domain.domainName} from staffing assignment`
+          : `Staff in ${domain.domainName}`
+      }
+      aria-pressed={isAssignment}
+      className="hover:underline focus:outline-none focus:underline"
+    >
+      {domain.domainName}
+    </button>
+  ) : (
+    <span>{domain.domainName}</span>
+  );
+
   return (
     <span
       className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded ${
@@ -436,10 +473,12 @@ function DomainLevelChip({
       title={
         isAssignment
           ? `${domain.domainName} · ${domain.level} (staffing assignment)`
-          : `${domain.domainName} · ${domain.level}`
+          : canToggleAssignment
+            ? `Click ${domain.domainName} to staff in this domain · ${domain.level}`
+            : `${domain.domainName} · ${domain.level}`
       }
     >
-      {domain.domainName}
+      {nameButton}
       {canEdit ? (
         <select
           value={domain.level}

@@ -73,8 +73,12 @@ export type MemberCardModel = {
   // chips on the card regardless of column.
   domainLevels: DomainLevel[];
   // Level to display on the card. For Unassigned, the top-preference level.
-  // For an assigned column, the level recorded on the assignment row.
+  // For an assigned column, the highest assignment level (P3 > P2 > P1) among
+  // selected domains — drives the default Mentor badge.
   level: Level | null;
+  // Domain ids selected for the live staffing assignment on this project.
+  // Empty when Unassigned. Clicking a domain chip toggles membership here.
+  assignmentDomainIds: string[];
   // Member's top 3 project preferences in rank order. Always shown on the card.
   // Deduped by (projectId, rank): a member can bid the same project at one rank
   // in multiple domains (e.g. Evergreen #1 as both Fullstack and UI/UX) — those
@@ -99,23 +103,33 @@ export const UNASSIGNED = "__unassigned__";
  * A member can hold both a Proposed and a Confirmed StaffingAssignment in the
  * same cycle: dragging after finalize writes a fresh Proposed row without
  * touching the audit-trail Confirmed one. The board (and finalize) treat a
- * member's LIVE assignment as their Proposed row if present, else Confirmed —
+ * member's LIVE assignment(s) as their Proposed rows if any, else Confirmed —
  * so an in-progress re-edit wins over the already-finalized position. Declined
  * rows are audit only and must be filtered out before calling this.
  *
- * Returns one row per userId. Input order is otherwise preserved.
+ * Multiple domains per user on one project are allowed (one row per
+ * userId+domainId). When the user has any Proposed row, Confirmed rows for
+ * other domains/projects are dropped so a drag-away doesn't leave them on
+ * two projects at once.
  */
-export function dedupeLiveAssignments<T extends { userId: string; status: string }>(
-  rows: T[],
-): T[] {
-  const byUser = new Map<string, T>();
+export function dedupeLiveAssignments<
+  T extends { userId: string; status: string; domainId?: string },
+>(rows: T[]): T[] {
+  const byDomain = new Map<string, T>();
   for (const r of rows) {
-    const existing = byUser.get(r.userId);
+    const key = `${r.userId}|${r.domainId ?? ""}`;
+    const existing = byDomain.get(key);
     if (!existing || (existing.status === "Confirmed" && r.status === "Proposed")) {
-      byUser.set(r.userId, r);
+      byDomain.set(key, r);
     }
   }
-  return Array.from(byUser.values());
+  const collapsed = Array.from(byDomain.values());
+  const usersWithProposed = new Set(
+    collapsed.filter((r) => r.status === "Proposed").map((r) => r.userId),
+  );
+  return collapsed.filter(
+    (r) => r.status === "Proposed" || !usersWithProposed.has(r.userId),
+  );
 }
 
 /**
@@ -147,11 +161,11 @@ export function buildBoard(args: {
     m.set(o.userId, o.sortKey);
   }
 
-  const byUser = new Map<string, Assignment>();
+  const byUser = new Map<string, Assignment[]>();
   for (const a of assignments) {
-    // If multiple proposals exist for the same user (shouldn't, but be
-    // defensive), the latest write wins. Loader sorts to make this stable.
-    byUser.set(a.userId, a);
+    const list = byUser.get(a.userId) ?? [];
+    list.push(a);
+    byUser.set(a.userId, list);
   }
 
   // Initialise columns even when empty so the UI can render placeholders.
@@ -159,12 +173,15 @@ export function buildBoard(args: {
   for (const pid of projectIds) columns[pid] = [];
 
   for (const m of members) {
-    const assignment = byUser.get(m.userId) ?? null;
-    const columnKey = assignment?.projectId && columns[assignment.projectId]
-      ? assignment.projectId
-      : UNASSIGNED;
+    const userAssignments = byUser.get(m.userId) ?? [];
+    // All live domains for a user share one project (assign API enforces that).
+    const primary = userAssignments[0] ?? null;
+    const columnKey =
+      primary?.projectId && columns[primary.projectId]
+        ? primary.projectId
+        : UNASSIGNED;
 
-    const card = toCard(m, columnKey, assignment);
+    const card = toCard(m, columnKey, primary, userAssignments);
     columns[columnKey].push(card);
   }
 
@@ -193,15 +210,22 @@ export function buildBoard(args: {
 function toCard(
   member: MemberInput,
   columnKey: string,
-  assignment: Assignment | null,
+  primary: Assignment | null,
+  userAssignments: Assignment[],
 ): MemberCardModel {
   const prefsByProject = new Map(member.preferences.map((p) => [p.projectId, p]));
+  const rank = { P1: 1, P2: 2, P3: 3 } as const;
 
   let level: Level | null;
   if (columnKey === UNASSIGNED) {
     level = topPreference(member.preferences)?.level ?? null;
+  } else if (userAssignments.length > 0) {
+    level = userAssignments.reduce<Level>(
+      (best, a) => (rank[a.level] > rank[best] ? a.level : best),
+      userAssignments[0].level,
+    );
   } else {
-    level = assignment?.level ?? prefsByProject.get(columnKey)?.level ?? null;
+    level = primary?.level ?? prefsByProject.get(columnKey)?.level ?? null;
   }
 
   return {
@@ -214,6 +238,7 @@ function toCard(
     coreTitles: member.coreTitles,
     domainLevels: member.domainLevels,
     level,
+    assignmentDomainIds: userAssignments.map((a) => a.domainId),
     topPreferences: topPreferences(member.preferences),
     unresolvedBid: member.unresolvedBid ?? false,
     manuallyAdded: member.manuallyAdded ?? false,
@@ -252,28 +277,50 @@ function topPreference(prefs: Preference[]): Preference | null {
 }
 
 /**
- * Resolve which (domainId, level) to record on a new StaffingAssignment when
- * a member is dragged into a project column. Preference order:
- *   1. The member's existing preference for that project (the bid).
+ * Resolve which (domainId, level) rows to record when a member is dragged into
+ * a project column. Preference order:
+ *   1. All of the member's preferences for that project (multi-domain bids →
+ *      multi-domain assignment).
  *   2. The member's top-ranked preference overall (fallback when they didn't
  *      bid on this project but a lead is staffing them anyway).
- *   3. The member's DomainEligibility when they have exactly one — lets a lead
- *      place a manually-added, non-bidding member (their eligibility is the
- *      only domain+level they could be staffed at).
- *   4. null → caller must reject (no bid and no single eligibility to infer
- *      from; a member eligible in multiple domains is ambiguous here).
+ *   3. DomainEligibility: every eligibility when they have one or more — with
+ *      multiple domains the board seeds the first and the lead clicks chips to
+ *      add/remove. (Returning null only when there is nothing to infer.)
  */
+export function resolveAssignmentDomains(
+  member: MemberInput,
+  targetProjectId: string,
+): { domainId: string; level: Level }[] | null {
+  const matching = member.preferences.filter((p) => p.projectId === targetProjectId);
+  if (matching.length > 0) {
+    const rank = { P1: 1, P2: 2, P3: 3 } as const;
+    const byDomain = new Map<string, Level>();
+    for (const p of matching) {
+      const prev = byDomain.get(p.domainId);
+      if (!prev || rank[p.level] > rank[prev]) byDomain.set(p.domainId, p.level);
+    }
+    return [...byDomain.entries()].map(([domainId, level]) => ({ domainId, level }));
+  }
+  const top = topPreference(member.preferences);
+  if (top) return [{ domainId: top.domainId, level: top.level }];
+  if (member.domainLevels.length === 1) {
+    const only = member.domainLevels[0];
+    return [{ domainId: only.domainId, level: only.level }];
+  }
+  if (member.domainLevels.length > 1) {
+    // Ambiguous: seed with the first eligibility so the card can land on the
+    // column; the lead clicks other domain chips to add (or deselect).
+    const first = member.domainLevels[0];
+    return [{ domainId: first.domainId, level: first.level }];
+  }
+  return null;
+}
+
+/** @deprecated Prefer resolveAssignmentDomains — kept for callers that want one. */
 export function resolveAssignmentInputs(
   member: MemberInput,
   targetProjectId: string,
 ): { domainId: string; level: Level } | null {
-  const matching = member.preferences.find((p) => p.projectId === targetProjectId);
-  if (matching) return { domainId: matching.domainId, level: matching.level };
-  const top = topPreference(member.preferences);
-  if (top) return { domainId: top.domainId, level: top.level };
-  if (member.domainLevels.length === 1) {
-    const only = member.domainLevels[0];
-    return { domainId: only.domainId, level: only.level };
-  }
-  return null;
+  const domains = resolveAssignmentDomains(member, targetProjectId);
+  return domains?.[0] ?? null;
 }

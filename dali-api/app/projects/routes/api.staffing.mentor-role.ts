@@ -10,10 +10,12 @@ import { publishCycleChange } from "../lib/staffing-events.server";
 // to their level (P3 → mentor, else mentee); a StaffingMentorRole row overrides
 // it when a manager clicks the card's role badge. Gated to staffing managers.
 //
-//   GET  ?cycleId=
+//   GET  ?cycleId=&projectId=
 //          → { overrides: { [userId]: boolean }, nonP3Mentors: [{ userId, firstName, lastName }] }
-//        overrides drives each card's badge; nonP3Mentors are effective mentors
-//        who aren't P3 yet (finalize offers to promote them).
+//        overrides drives each card's badge (cycle-wide). nonP3Mentors are
+//        override mentors on the given project who aren't P3 there yet
+//        (finalize offers to promote them). Without projectId, nonP3Mentors
+//        is empty — avoid surfacing mentors from other projects.
 //   POST { cycleId, userId, isMentor }
 //          → upsert the override (idempotent on cycle+user).
 
@@ -38,6 +40,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const url = new URL(request.url);
   const cycleId = url.searchParams.get("cycleId");
+  const projectId = url.searchParams.get("projectId");
   if (!cycleId) {
     return withCors(request, Response.json({ error: "cycleId required" }, { status: 400 }));
   }
@@ -51,6 +54,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       where: { staffingCycleId: cycleId, status: { not: "Declined" } },
       select: {
         userId: true,
+        projectId: true,
         level: true,
         user: { select: { firstName: true, lastName: true } },
       },
@@ -60,21 +64,26 @@ export async function loader({ request }: Route.LoaderArgs) {
   const overrides: Record<string, boolean> = {};
   for (const r of overrideRows) overrides[r.userId] = r.isMentor;
 
-  // Effective mentors who aren't P3 in any staffed domain — finalize can promote
-  // them. Only override-driven mentors qualify: a default mentor is P3 already.
-  const isP3Somewhere = new Set<string>();
-  const nameByUser = new Map<string, { firstName: string; lastName: string }>();
-  for (const a of assignments) {
-    nameByUser.set(a.userId, a.user);
-    if (a.level === "P3") isP3Somewhere.add(a.userId);
+  // Finalize promote list is project-scoped: only override mentors live-assigned
+  // to this project who aren't P3 on that project. Cycle-wide overrides for
+  // people on other projects must not appear when finalizing an unrelated one.
+  let nonP3Mentors: { userId: string; firstName: string; lastName: string }[] = [];
+  if (projectId) {
+    const onProject = assignments.filter((a) => a.projectId === projectId);
+    const onProjectIds = new Set(onProject.map((a) => a.userId));
+    const isP3OnProject = new Set(
+      onProject.filter((a) => a.level === "P3").map((a) => a.userId),
+    );
+    const nameByUser = new Map<string, { firstName: string; lastName: string }>();
+    for (const a of onProject) nameByUser.set(a.userId, a.user);
+    nonP3Mentors = overrideRows
+      .filter((r) => r.isMentor && onProjectIds.has(r.userId) && !isP3OnProject.has(r.userId))
+      .map((r) => ({
+        userId: r.userId,
+        firstName: nameByUser.get(r.userId)?.firstName ?? "",
+        lastName: nameByUser.get(r.userId)?.lastName ?? "",
+      }));
   }
-  const nonP3Mentors = overrideRows
-    .filter((r) => r.isMentor && !isP3Somewhere.has(r.userId))
-    .map((r) => ({
-      userId: r.userId,
-      firstName: nameByUser.get(r.userId)?.firstName ?? "",
-      lastName: nameByUser.get(r.userId)?.lastName ?? "",
-    }));
 
   return withCors(request, Response.json({ overrides, nonP3Mentors }));
 }

@@ -4,7 +4,7 @@ import type { DragEndEvent } from "@dnd-kit/core";
 import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
 import {
   buildBoard,
-  resolveAssignmentInputs,
+  resolveAssignmentDomains,
   UNASSIGNED,
   type MemberCardModel,
   type MemberInput,
@@ -152,12 +152,13 @@ export function StaffingBoard({
         : [...prev, { domainId, domainName, level }];
       setDomainLevelsByUser((map) => ({ ...map, [userId]: next }));
 
-      // Keep live assignment level in sync when editing the assigned domain.
-      const assignment = assignments.find((a) => a.userId === userId);
+      // Keep live assignment level in sync when editing an assigned domain.
       const prevAssignments = assignments;
-      if (assignment && assignment.domainId === domainId && assignment.level !== level) {
+      if (assignments.some((a) => a.userId === userId && a.domainId === domainId && a.level !== level)) {
         setAssignments((list) =>
-          list.map((a) => (a.userId === userId ? { ...a, level } : a)),
+          list.map((a) =>
+            a.userId === userId && a.domainId === domainId ? { ...a, level } : a,
+          ),
         );
       }
 
@@ -181,6 +182,49 @@ export function StaffingBoard({
       }
     },
     [assignments, cycleId, domainLevelsByUser, revalidator],
+  );
+
+  const toggleAssignmentDomain = useCallback(
+    async (userId: string, domainId: string) => {
+      const current = assignments.filter((a) => a.userId === userId);
+      const projectId = current[0]?.projectId;
+      if (!projectId) return;
+
+      const has = current.some((a) => a.domainId === domainId);
+      let next: Assignment[];
+      if (has) {
+        if (current.length === 1) {
+          setError("Keep at least one domain, or drag the card to Unassigned.");
+          return;
+        }
+        next = current.filter((a) => a.domainId !== domainId);
+      } else {
+        const levels = domainLevelsByUser[userId] ?? members.find((m) => m.userId === userId)?.domainLevels ?? [];
+        const dl = levels.find((d) => d.domainId === domainId);
+        if (!dl) {
+          setError("Add that domain to their eligibility first.");
+          return;
+        }
+        next = [...current, { userId, projectId, domainId, level: dl.level }];
+      }
+
+      const prevAssignments = assignments;
+      setAssignments((list) => [...list.filter((a) => a.userId !== userId), ...next]);
+      setError(null);
+      try {
+        await persist({
+          cycleId,
+          userId,
+          projectId,
+          domains: next.map((a) => ({ domainId: a.domainId, level: a.level })),
+        });
+        revalidator.revalidate();
+      } catch (err) {
+        setAssignments(prevAssignments);
+        setError(err instanceof Error ? err.message : "Failed to update domains");
+      }
+    },
+    [assignments, cycleId, domainLevelsByUser, members, revalidator],
   );
 
   // Non-roster external mentors placed on project columns. Managers only.
@@ -310,6 +354,7 @@ export function StaffingBoard({
           { domainId: e.domainId, domainName: domainNames[e.domainId] ?? "?", level: "P3" },
         ],
         level: "P3",
+        assignmentDomainIds: [e.domainId],
         topPreferences: [],
         unresolvedBid: false,
         manuallyAdded: false,
@@ -373,19 +418,15 @@ export function StaffingBoard({
       ...withoutMoved.slice(insertAt),
     ];
 
-    // A cross-column move also needs the assignment updated. Resolve domain +
-    // level for a project column; UNASSIGNED clears the assignment.
+    // A cross-column move also needs the assignment updated. Resolve domain(s)
+    // + level for a project column; UNASSIGNED clears the assignment.
     const targetProjectId = toColumn === UNASSIGNED ? null : toColumn;
-    let assignmentBody: { domainId: string; level: "P1" | "P2" | "P3" } | null = null;
+    let assignmentDomains: { domainId: string; level: "P1" | "P2" | "P3" }[] | null = null;
     if (!movedWithinColumn && targetProjectId !== null) {
-      assignmentBody = resolveAssignmentInputs(member, targetProjectId);
-      if (!assignmentBody) {
+      assignmentDomains = resolveAssignmentDomains(member, targetProjectId);
+      if (!assignmentDomains) {
         setError(
-          `Can't infer a domain + level for ${member.firstName} ${member.lastName}: they have no bid and ${
-            member.domainLevels.length === 0
-              ? "no domain eligibility"
-              : "are eligible in multiple domains"
-          }. Add a bid, or set their eligibility to a single domain.`,
+          `Can't infer a domain + level for ${member.firstName} ${member.lastName}: they have no bid and no domain eligibility. Add a bid or set their eligibility.`,
         );
         return;
       }
@@ -402,7 +443,12 @@ export function StaffingBoard({
           ? withoutOld
           : [
               ...withoutOld,
-              { userId, projectId: targetProjectId, domainId: assignmentBody!.domainId, level: assignmentBody!.level },
+              ...assignmentDomains!.map((d) => ({
+                userId,
+                projectId: targetProjectId,
+                domainId: d.domainId,
+                level: d.level,
+              })),
             ],
       );
     }
@@ -419,8 +465,7 @@ export function StaffingBoard({
           cycleId,
           userId,
           projectId: targetProjectId,
-          domainId: assignmentBody?.domainId,
-          level: assignmentBody?.level,
+          domains: assignmentDomains ?? undefined,
         });
       }
       await persistOrder({ cycleId, columnKey: toColumn, userIds: nextDestIds });
@@ -659,8 +704,11 @@ export function StaffingBoard({
             })()}
             canEditDomains={canManage && !card.isExternalMentor}
             allDomains={domains}
-            assignmentDomainId={
-              assignments.find((a) => a.userId === card.userId)?.domainId ?? null
+            assignmentDomainIds={card.assignmentDomainIds}
+            onToggleAssignmentDomain={
+              canManage && !card.isExternalMentor && columnIdOf.get(card.userId) !== UNASSIGNED
+                ? (domainId) => void toggleAssignmentDomain(card.userId, domainId)
+                : undefined
             }
             onChangeDomainLevel={(domainId, level) => {
               const name =
@@ -925,6 +973,7 @@ async function persist(args: {
   projectId: string | null;
   domainId?: string;
   level?: Preference["level"];
+  domains?: { domainId: string; level: Preference["level"] }[];
 }): Promise<void> {
   const res = await fetch("/api/staffing/assign", {
     method: "POST",
