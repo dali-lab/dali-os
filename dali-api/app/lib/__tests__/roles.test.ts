@@ -26,7 +26,10 @@ const mockPrisma = prisma as unknown as {
   cycleInterviewer: { findFirst: ReturnType<typeof vi.fn> };
   projectAssignment: { findFirst: ReturnType<typeof vi.fn> };
   domainEligibility: { findFirst: ReturnType<typeof vi.fn> };
-  user: { findFirst: ReturnType<typeof vi.fn> };
+  user: {
+    findFirst: ReturnType<typeof vi.fn>;
+    findUnique: ReturnType<typeof vi.fn>;
+  };
   term: {
     findFirst: ReturnType<typeof vi.fn>;
     findMany: ReturnType<typeof vi.fn>;
@@ -46,7 +49,10 @@ beforeEach(() => {
   (mockPrisma as any).cycleInterviewer = { findFirst: vi.fn() };
   (mockPrisma as any).projectAssignment = { findFirst: vi.fn().mockResolvedValue(null) };
   (mockPrisma as any).domainEligibility = { findFirst: vi.fn().mockResolvedValue(null) };
-  (mockPrisma as any).user = { findFirst: vi.fn().mockResolvedValue(null) };
+  (mockPrisma as any).user = {
+    findFirst: vi.fn().mockResolvedValue(null),
+    findUnique: vi.fn().mockResolvedValue(null),
+  };
   // Core access scopes to the active election cycle, looked up via
   // currentTerm (findFirst) → cycle window (findMany). Default to a Spring
   // term so Core checks resolve a non-empty cycle.

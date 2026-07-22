@@ -10,6 +10,14 @@ datasource db {
   provider = "postgresql"
 }
 
+// Authoritative lab-membership status. Stored (not derived per-call) and
+// recomputed only at transitions — see membershipStatus below and
+// app/lib/membership-status.ts.
+enum MembershipStatus {
+  Active
+  Alumni
+}
+
 model User {
   // unique identifier
   id String @id @default(cuid())
@@ -44,10 +52,38 @@ model User {
 
   // ─── Profile fields (Phase 1 additions; all nullable) ─────────────────────
   // Dartmouth class year (e.g., 2026). Solves the "took a term off"
-  // ambiguity. Used for alumni derivation + display.
+  // ambiguity. Input to membership-status recompute + display.
   classYear      Int?
-  // Optional explicit graduation override for off-cycle graduations.
+  // Optional explicit graduation override for off-cycle graduations. A manual
+  // input to the status recompute (Alumni once past); never auto-stamped.
   graduatedAt    DateTime?
+
+  // ─── Membership status (authoritative, stored) ────────────────────────────
+  // Recomputed at transitions (term rollover, login, mutation) — never derived
+  // per request. See app/lib/membership-status.ts. Only meaningful when a
+  // DALIMember row is present; non-members keep the inert Active default.
+  membershipStatus           MembershipStatus  @default(Active)
+  // Manual pin. When set it wins over recompute and is never clobbered —
+  // handles BE dual-degree candidates (Active while enrolled), non-student
+  // staff (never graduate), and any misclassification.
+  membershipStatusOverride   MembershipStatus?
+  // Observability: when the stored status was last (re)computed.
+  membershipStatusComputedAt DateTime?
+
+  // ─── Dartmouth directory signals (cached inputs) ──────────────────────────
+  // From api.dartmouth.edu/api/people/{netid} (JWT-authenticated), refreshed
+  // at transitions. Inputs to the status recompute; see dartmouth-people.ts.
+  // dartmouthAffiliation: raw IDM code ("DART" | "ALUMNI" | "E-FAC" | ...).
+  // Stays DART for months post-graduation — the slow long-tail signal.
+  dartmouthAffiliation    String?
+  // "Alum" in the affiliations array — degree conferred; appears within weeks
+  // of Commencement. The prompt graduation signal.
+  dartmouthIsAlum         Boolean?
+  // "Student" in the affiliations array. Lingers after graduation, so
+  // currently-enrolled is the compound: isStudent AND NOT isAlum.
+  dartmouthIsStudent      Boolean?
+  dartmouthPeopleSyncedAt DateTime?
+
   pronouns       String?
   photoUrl       String?
   // Bio stored as a collab doc reference for rich formatting + @mentions.
