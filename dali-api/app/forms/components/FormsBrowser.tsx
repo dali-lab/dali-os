@@ -616,6 +616,10 @@ function FolderCardView({
           ? {
               transform: `translate3d(${drag.transform.x}px, ${drag.transform.y}px, 0)`,
               zIndex: 50,
+              // Kill the `transition-all` while dragging — otherwise every
+              // per-frame transform update animates over 150ms and the card
+              // trails the cursor, which reads as laggy/unresponsive.
+              transition: "none",
             }
           : undefined
       }
@@ -683,6 +687,9 @@ function FormCardView({
           ? {
               transform: `translate3d(${drag.transform.x}px, ${drag.transform.y}px, 0)`,
               zIndex: 50,
+              // See FolderCardView: disable the transition mid-drag so the card
+              // tracks the cursor instead of easing behind it.
+              transition: "none",
             }
           : undefined
       }
