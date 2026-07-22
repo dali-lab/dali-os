@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { derivePairings } from "../mentorship-pairings";
+import { derivePairings, findDomainsMissingMentors } from "../mentorship-pairings";
 
 type Row = { userId: string; domainId: string; level: "P1" | "P2" | "P3" };
 type Pair = { menteeUserId: string; mentorUserId: string; domainId: string };
@@ -134,5 +134,54 @@ describe("derivePairings", () => {
     expect(created).toEqual([
       { menteeUserId: "p3-demoted", mentorUserId: "mentor-x", domainId: "d1" },
     ]);
+  });
+});
+
+describe("findDomainsMissingMentors", () => {
+  it("flags a domain with multiple mentees and no mentor", () => {
+    const gaps = findDomainsMissingMentors([
+      { userId: "oscar", domainId: "uiux", level: "P2" },
+      { userId: "emma", domainId: "uiux", level: "P1" },
+    ]);
+    expect(gaps).toEqual([
+      { domainId: "uiux", menteeUserIds: ["oscar", "emma"] },
+    ]);
+  });
+
+  it("ignores solo mentee domains", () => {
+    const gaps = findDomainsMissingMentors([
+      { userId: "claire", domainId: "arvr", level: "P2" },
+    ]);
+    expect(gaps).toEqual([]);
+  });
+
+  it("ignores domains that have a P3 mentor", () => {
+    const gaps = findDomainsMissingMentors([
+      { userId: "oscar", domainId: "uiux", level: "P3" },
+      { userId: "emma", domainId: "uiux", level: "P1" },
+    ]);
+    expect(gaps).toEqual([]);
+  });
+
+  it("honours mentor role override and external mentors", () => {
+    expect(
+      findDomainsMissingMentors(
+        [
+          { userId: "oscar", domainId: "uiux", level: "P2" },
+          { userId: "emma", domainId: "uiux", level: "P1" },
+        ],
+        { roleOverride: new Map([["oscar", true]]) },
+      ),
+    ).toEqual([]);
+
+    expect(
+      findDomainsMissingMentors(
+        [
+          { userId: "emma", domainId: "uiux", level: "P1" },
+          { userId: "other", domainId: "uiux", level: "P1" },
+        ],
+        { externalMentors: [{ userId: "ext", domainId: "uiux" }] },
+      ),
+    ).toEqual([]);
   });
 });

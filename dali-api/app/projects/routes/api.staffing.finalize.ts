@@ -23,7 +23,7 @@ import { logAuditEvent } from "~/lib/audit";
 import { notify } from "~/lib/notify.server";
 import { dedupeLiveAssignments } from "../lib/staffing-board";
 import { publishCycleChange } from "../lib/staffing-events.server";
-import { derivePairings } from "../lib/mentorship-pairings";
+import { derivePairings, findDomainsMissingMentors } from "../lib/mentorship-pairings";
 
 // POST /api/staffing/finalize
 //
@@ -223,6 +223,7 @@ export async function action({ request }: Route.ActionArgs) {
       let droppedCount = 0;
       let pairsCreated = 0;
       let mentorsPromoted = 0;
+      let mentorshipGaps: { domainId: string; menteeUserIds: string[] }[] = [];
       const promoteMentors = body.promoteMentors === true;
       await prisma.$transaction(async (tx) => {
         for (const a of target) {
@@ -339,6 +340,17 @@ export async function action({ request }: Route.ActionArgs) {
           roleOverride,
           externalMentors,
         });
+
+        // After promotes + pairing: domains that still have multiple mentees
+        // and no mentor need a level (or Mentor badge / external) fix.
+        const roster = await tx.projectAssignment.findMany({
+          where: { projectId: project.id, termId: cycle.termId },
+          select: { userId: true, domainId: true, level: true },
+        });
+        mentorshipGaps = findDomainsMissingMentors(roster, {
+          roleOverride,
+          externalMentors,
+        });
       });
 
       // Tell each newly-confirmed member (rows that were still Proposed when
@@ -364,22 +376,46 @@ export async function action({ request }: Route.ActionArgs) {
       }
 
       const dropNote = droppedCount > 0 ? `, removed ${droppedCount}` : "";
-      const pairNote = pairsCreated > 0 ? `, paired ${pairsCreated} mentor link${pairsCreated === 1 ? "" : "s"}` : "";
+      const pairNote = `, paired ${pairsCreated} mentor link${pairsCreated === 1 ? "" : "s"}`;
       const promoteNote =
         mentorsPromoted > 0 ? `, promoted ${mentorsPromoted} mentor${mentorsPromoted === 1 ? "" : "s"} to P3` : "";
       const skipNote =
         skippedNames.length > 0
           ? ` Skipped ${skippedNames.length} with an invalid/blank domain (fix their bid): ${skippedNames.join(", ")}.`
           : "";
+
+      let mentorshipGapNote = "";
+      if (mentorshipGaps.length > 0) {
+        const menteeIds = [...new Set(mentorshipGaps.flatMap((g) => g.menteeUserIds))];
+        const menteeUsers = await prisma.user.findMany({
+          where: { id: { in: menteeIds } },
+          select: { id: true, firstName: true, lastName: true },
+        });
+        const nameById = new Map(
+          menteeUsers.map((u) => [u.id, `${u.firstName} ${u.lastName}`.trim()]),
+        );
+        mentorshipGapNote =
+          " Mentorship not created for " +
+          mentorshipGaps
+            .map((g) => {
+              const domain = domainNameById.get(g.domainId) ?? "Unknown domain";
+              const names = g.menteeUserIds.map((id) => nameById.get(id) ?? id).join(", ");
+              return `${domain} (mentees but no P3/Mentor: ${names})`;
+            })
+            .join("; ") +
+          ". Raise someone to P3 on the board (or mark Mentor / add an external mentor), then re-run Propagate.";
+      }
+
       results.assignments = {
-        // Flag as error when anyone was skipped so the lead sees the warning and
-        // follows up — the valid assignments still went through.
-        status: skippedNames.length > 0 ? "error" : "ok",
+        // Flag as error when anyone was skipped or mentorship could not be
+        // derived for a multi-person domain — assignments still went through.
+        status: skippedNames.length > 0 || mentorshipGaps.length > 0 ? "error" : "ok",
         message:
           (confirmedCount === 0 && droppedCount === 0
             ? "No proposed assignments for this project."
             : `Confirmed ${confirmedCount} assignment${confirmedCount === 1 ? "" : "s"}${dropNote}${pairNote}${promoteNote} → ProjectAssignment.`) +
-          skipNote,
+          skipNote +
+          mentorshipGapNote,
       };
     } catch (err) {
       results.assignments = { status: "error", message: slackErrorMessage(err) };
