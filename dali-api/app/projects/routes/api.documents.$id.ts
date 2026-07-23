@@ -6,9 +6,8 @@ import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent } from "~/lib/audit";
 
 // POST   /api/documents/:id — rename. Body: { title }
-// DELETE /api/documents/:id — soft delete (sets archivedAt, matching the
-//                             Page model's documented soft-delete pattern;
-//                             archived pages drop out of the workspace list).
+// DELETE /api/documents/:id — archive (sets archivedAt; archived pages drop
+//                             out of the hub / workspace list by default).
 //
 // Documents are FreeForm Pages. Project-scoped pages use the project-edit gate
 // (isCore === Admin || Core, or a project assignee); Lab-scoped pages (the
@@ -55,7 +54,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (page.systemKey) {
       return withCors(
         request,
-        Response.json({ error: "This default folder can't be deleted" }, { status: 400 }),
+        Response.json({ error: "This default folder can't be archived" }, { status: 400 }),
       );
     }
     if (page.kind === "Folder") {
@@ -65,7 +64,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       if (childCount > 0) {
         return withCors(
           request,
-          Response.json({ error: "Move or delete the documents inside this folder first" }, { status: 400 }),
+          Response.json({ error: "Move or archive the documents inside this folder first" }, { status: 400 }),
         );
       }
     }

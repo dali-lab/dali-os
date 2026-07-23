@@ -340,6 +340,10 @@ export default [
 
   // Project task board
   route("api/projects/:id/tasks", "projects/routes/api.projects.$id.tasks.ts"),
+  route(
+    "api/projects/:id/tasks/archive",
+    "projects/routes/api.projects.$id.tasks.archive.ts",
+  ),
   route("api/tasks/:id/move", "projects/routes/api.tasks.$id.move.ts"),
   route("api/tasks/:id/comments", "projects/routes/api.tasks.$id.comments.ts"),
   route("api/tasks/:id/github", "projects/routes/api.tasks.$id.github.ts"),

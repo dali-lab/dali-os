@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db");
 
 import { prisma } from "~/lib/db";
-import { runTaskAutoArchive } from "~/jobs/task-auto-archive.server";
+import { runTaskAutoArchive, archiveIdleTasks } from "~/jobs/task-auto-archive.server";
 
 const mockPrisma = prisma as unknown as Record<
   string,
@@ -23,7 +23,7 @@ describe("runTaskAutoArchive", () => {
     const result = await runTaskAutoArchive({
       now: NOW,
       lastSuccessAt: null,
-      settings: { archiveAfterDays: 30 },
+      settings: { archiveAfterDays: 7 },
     });
 
     expect(result.items).toBe(3);
@@ -32,9 +32,10 @@ describe("runTaskAutoArchive", () => {
     // Only unarchived, terminal-status, stale rows are touched...
     expect(arg.where.archivedAt).toBeNull();
     expect(arg.where.status).toEqual({ in: ["Done", "Cancelled"] });
-    // ...where "stale" is now minus the threshold (30 days here).
+    expect(arg.where.projectId).toBeUndefined();
+    // ...where "stale" is now minus the threshold (7 days here).
     const cutoff = arg.where.updatedAt.lt as Date;
-    expect(NOW.getTime() - cutoff.getTime()).toBe(30 * 24 * 60 * 60 * 1000);
+    expect(NOW.getTime() - cutoff.getTime()).toBe(7 * 24 * 60 * 60 * 1000);
     // ...and it stamps archivedAt with the run's `now`.
     expect(arg.data).toEqual({ archivedAt: NOW });
   });
@@ -45,12 +46,12 @@ describe("runTaskAutoArchive", () => {
     await runTaskAutoArchive({
       now: NOW,
       lastSuccessAt: null,
-      settings: { archiveAfterDays: 7 },
+      settings: { archiveAfterDays: 30 },
     });
 
     const arg = mockPrisma.task.updateMany.mock.calls[0][0];
     const cutoff = arg.where.updatedAt.lt as Date;
-    expect(NOW.getTime() - cutoff.getTime()).toBe(7 * 24 * 60 * 60 * 1000);
+    expect(NOW.getTime() - cutoff.getTime()).toBe(30 * 24 * 60 * 60 * 1000);
   });
 
   it("reports nothing archived without a note", async () => {
@@ -59,10 +60,26 @@ describe("runTaskAutoArchive", () => {
     const result = await runTaskAutoArchive({
       now: NOW,
       lastSuccessAt: null,
-      settings: { archiveAfterDays: 30 },
+      settings: { archiveAfterDays: 7 },
     });
 
     expect(result.items).toBe(0);
     expect(result.note).toBeUndefined();
+  });
+});
+
+describe("archiveIdleTasks", () => {
+  it("scopes to a project when projectId is set", async () => {
+    mockPrisma.task.updateMany.mockResolvedValue({ count: 1 });
+
+    const count = await archiveIdleTasks({
+      now: NOW,
+      archiveAfterDays: 7,
+      projectId: "proj-1",
+    });
+
+    expect(count).toBe(1);
+    const arg = mockPrisma.task.updateMany.mock.calls[0][0];
+    expect(arg.where.projectId).toBe("proj-1");
   });
 });

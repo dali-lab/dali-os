@@ -178,7 +178,7 @@ function JobRow({ job }: { job: JobView }) {
           <input
             type="number"
             min={1}
-            max={1440}
+            max={10080}
             value={interval}
             onChange={(e) => setInterval(e.target.value)}
             className="w-16 rounded-md border border-zinc-300 px-1.5 py-0.5 text-xs"

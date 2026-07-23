@@ -237,7 +237,8 @@ export const JOBS: JobDefinition[] = [
     name: "task-auto-archive",
     description:
       "Archives Done/Cancelled tasks left untouched past the threshold so they drop off the project board.",
-    intervalMinutes: 1440,
+    // Weekly cadence; the board's Archive button can run the same sweep early.
+    intervalMinutes: 10080,
     settings: [
       {
         key: "archiveAfterDays",
@@ -245,7 +246,7 @@ export const JOBS: JobDefinition[] = [
         unit: "days",
         min: 1,
         max: 365,
-        default: 30,
+        default: 7,
       },
     ],
     handler: runTaskAutoArchive,
