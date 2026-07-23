@@ -254,7 +254,7 @@ export const JOBS: JobDefinition[] = [
   {
     name: "membership-status-sync",
     description:
-      "Keeps member status (Active/Alumni) current: term-rollover Dartmouth sweep, daily re-sync of the ambiguous graduating cohort, and a DB-only recompute for time crossings. No-ops the API phases when DARTMOUTH_API_KEY is unset.",
+      "Keeps member status (Active/Alumni) current: term-rollover Dartmouth sweep, daily re-sync of the ambiguous graduating cohort, and a DB-only recompute for time crossings.",
     intervalMinutes: 1440,
     settings: [
       {

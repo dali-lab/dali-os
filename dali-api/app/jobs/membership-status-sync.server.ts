@@ -16,8 +16,8 @@
 //      crossings) with no API cost. Also backfills status on first run.
 //
 // Idempotent + bounded: writes only when a status changes, the API phases are
-// capped per run and no-op when DARTMOUTH_API_KEY is unset, and force-sync of
-// an already-fresh row is harmless.
+// capped per run, per-user sync failures are swallowed, and force-sync of an
+// already-fresh row is harmless.
 
 import { prisma } from "~/lib/db";
 import type { JobContext, JobResult } from "~/jobs/registry";
@@ -42,44 +42,40 @@ export async function runMembershipStatusSync({
   settings,
 }: JobContext): Promise<JobResult> {
   const maxApiPerRun = settings.maxApiPerRun ?? 200;
-  const hasApiKey = !!process.env.DARTMOUTH_API_KEY;
 
   let synced = 0;
 
   // ── Phases A + B: API refresh for members that need it ──────────────────
-  // Skipped entirely without an API key — the recompute in Phase C still runs
-  // from graduatedAt + classYear.
-  if (hasApiKey) {
-    const term = await currentTerm();
-    const cutoff = graduatedCohortCutoff(now);
+  // refreshDartmouthSignals swallows its own errors, so a transient API outage
+  // (or a missing key) degrades to Phase C's recompute per user rather than
+  // failing the run.
+  const term = await currentTerm();
+  const cutoff = graduatedCohortCutoff(now);
 
-    const candidates = await prisma.user.findMany({
-      where: {
-        daliMember: { isNot: null },
-        netId: { not: null },
-        OR: [
-          // A: never synced, or not synced since this term started.
-          { dartmouthPeopleSyncedAt: null },
-          ...(term
-            ? [{ dartmouthPeopleSyncedAt: { lt: term.startDate } }]
-            : []),
-          // B: ambiguous — looks still-enrolled but class has graduated.
-          {
-            membershipStatus: "Active" as const,
-            dartmouthIsStudent: true,
-            NOT: { dartmouthIsAlum: true },
-            classYear: { lte: cutoff },
-          },
-        ],
-      },
-      select: { id: true },
-      take: maxApiPerRun,
-    });
+  const candidates = await prisma.user.findMany({
+    where: {
+      daliMember: { isNot: null },
+      netId: { not: null },
+      OR: [
+        // A: never synced, or not synced since this term started.
+        { dartmouthPeopleSyncedAt: null },
+        ...(term ? [{ dartmouthPeopleSyncedAt: { lt: term.startDate } }] : []),
+        // B: ambiguous — looks still-enrolled but class has graduated.
+        {
+          membershipStatus: "Active" as const,
+          dartmouthIsStudent: true,
+          NOT: { dartmouthIsAlum: true },
+          classYear: { lte: cutoff },
+        },
+      ],
+    },
+    select: { id: true },
+    take: maxApiPerRun,
+  });
 
-    for (const u of candidates) {
-      await syncAndRecomputeMembershipStatus(u.id, { force: true });
-      synced++;
-    }
+  for (const u of candidates) {
+    await syncAndRecomputeMembershipStatus(u.id, { force: true });
+    synced++;
   }
 
   // ── Phase C: DB-only recompute of every member (catches time crossings,
@@ -114,7 +110,6 @@ export async function runMembershipStatusSync({
   const parts: string[] = [];
   if (synced > 0) parts.push(`${synced} refreshed`);
   if (recomputed > 0) parts.push(`${recomputed} status change(s)`);
-  if (!hasApiKey) parts.push("API key unset — recompute only");
 
   return {
     items: recomputed,
