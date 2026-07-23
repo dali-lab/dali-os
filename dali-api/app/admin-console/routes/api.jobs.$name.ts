@@ -17,7 +17,7 @@ import { runJob } from "~/jobs/runner.server";
 const PatchSchema = z
   .object({
     enabled: z.boolean().optional(),
-    intervalMinutes: z.number().int().min(1).max(1440).optional(),
+    intervalMinutes: z.number().int().min(1).max(10080).optional(),
     settings: z.record(z.string(), z.number()).optional(),
   })
   .refine((v) => Object.keys(v).length > 0, { message: "Nothing to update" });

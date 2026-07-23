@@ -64,6 +64,7 @@ export function TaskBoard({
     useOptimisticBoardMove<TaskCardModel>(initialTasks);
   const [isCreating, setIsCreating] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
+  const [archiving, setArchiving] = useState(false);
   const [celebrate, setCelebrate] = useState(false);
   const revalidator = useRevalidator();
 
@@ -77,6 +78,25 @@ export function TaskBoard({
     window.addEventListener("focus", refresh);
     return () => window.removeEventListener("focus", refresh);
   }, [refresh]);
+
+  // Same idle Done/Cancelled sweep as the weekly job, scoped to this project.
+  const runArchive = useCallback(async () => {
+    if (archiving) return;
+    setArchiving(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/tasks/archive`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error(`Archive failed: ${res.status}`);
+      refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Archive failed");
+    } finally {
+      setArchiving(false);
+    }
+  }, [archiving, projectId, refresh, setError]);
 
   // The open task is tracked in the URL (`?task=<id>`) so GitHub issue mirrors
   // and other external links can deep-link straight to a task. The sprint
@@ -474,6 +494,15 @@ export function TaskBoard({
           <div className="flex items-center gap-2 ml-auto">
             <Button variant="primary" size="sm" onClick={() => setIsCreating(true)}>
               + Add task
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => void runArchive()}
+              disabled={archiving}
+            >
+              <Archive className="w-3.5 h-3.5" />
+              {archiving ? "Archiving…" : "Archive"}
             </Button>
             <Button variant="secondary" size="sm" onClick={() => setShowArchived(true)}>
               <Archive className="w-3.5 h-3.5" />
