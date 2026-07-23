@@ -142,6 +142,8 @@ export function MemberProfileView({
         showIdentitySummary
       />
 
+      <MembershipStatusSection member={member} canManage={canManageEligibility} />
+
       <DomainsSection
         eligibilities={member.domainEligibilities}
         allDomains={allDomains}
@@ -184,6 +186,68 @@ export function MemberProfileView({
 }
 
 // ─── Sections ───────────────────────────────────────────────────────────────
+
+// Read-only status badge for everyone; a Core-only override control below it.
+// Status is stored + recomputed at transitions (see membership-status.ts); the
+// override pins it when the automatic derivation can't (e.g. a BE dual-degree
+// candidate who reads as Alumni while still enrolled).
+function MembershipStatusSection({
+  member,
+  canManage,
+}: {
+  member: ProfileMember;
+  canManage: boolean;
+}) {
+  const isAlumni = member.membershipStatus === "Alumni";
+  // Nothing actionable and nothing noteworthy for a plain Active member —
+  // don't add a card to every profile; only surface it for alumni or for Core.
+  if (!isAlumni && !canManage) return null;
+  return (
+    <section className="border border-border rounded-lg p-5 flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="font-heading text-sm font-semibold text-foreground">
+          Membership
+        </h2>
+        <span
+          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+            isAlumni
+              ? "bg-muted text-muted-foreground"
+              : "bg-accent-coral/15 text-accent-coral"
+          }`}
+        >
+          {member.membershipStatus}
+        </span>
+      </div>
+      {canManage && (
+        <>
+          <Form method="post" className="flex items-end gap-2 flex-wrap">
+            <input type="hidden" name="intent" value="set-membership-override" />
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="text-muted-foreground">Override</span>
+              <select
+                name="override"
+                defaultValue={member.membershipStatusOverride ?? "auto"}
+                className="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
+              >
+                <option value="auto">Auto (derive from signals)</option>
+                <option value="Active">Force Active</option>
+                <option value="Alumni">Force Alumni</option>
+              </select>
+            </label>
+            <button type="submit" className={buttonClasses("secondary", "sm")}>
+              Save
+            </button>
+          </Form>
+          <p className="text-xs text-muted-foreground">
+            {member.membershipStatusOverride
+              ? `Pinned to ${member.membershipStatusOverride}. Set to Auto to derive from Dartmouth signals + class year again.`
+              : "Auto: derived from Dartmouth signals + class year, recomputed at term boundaries."}
+          </p>
+        </>
+      )}
+    </section>
+  );
+}
 
 export function AccountSettingsSection({
   member,

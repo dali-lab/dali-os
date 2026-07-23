@@ -27,6 +27,8 @@ import {
 } from "~/admin-console/lib/eligibility.server";
 import { NEW_MEMBER_PROFILE_FORM_NAME } from "~/members/lib/profile-form-interpreter";
 import { normalizeHandle } from "~/lib/handle";
+import { recomputeMembershipStatus } from "~/lib/membership-status";
+import type { MembershipStatus } from "~/generated/prisma/client";
 import { getEducationProfile } from "~/education/lib/engagement.server";
 import {
   mentorshipPairWhere,
@@ -42,6 +44,10 @@ export type ProfileMember = {
   personalEmail: string | null;
   pronouns: string | null;
   classYear: number | null;
+  /** Stored, authoritative status. Read-only badge; recomputed at transitions. */
+  membershipStatus: MembershipStatus;
+  /** Manual pin (Core-only). null = derive automatically. */
+  membershipStatusOverride: MembershipStatus | null;
   major: string | null;
   hometown: string | null;
   linkedinUrl: string | null;
@@ -197,6 +203,8 @@ export async function loadProfilePage({
       personalEmail: true,
       pronouns: true,
       classYear: true,
+      membershipStatus: true,
+      membershipStatusOverride: true,
       major: true,
       hometown: true,
       linkedinUrl: true,
@@ -417,6 +425,24 @@ export async function runProfileAction({
     return null;
   }
 
+  if (intent === "set-membership-override") {
+    // Core-only, and not self-serviceable: forcing your own status is an
+    // authority action. "auto" (anything but a valid enum) clears the pin and
+    // lets the recompute derive from signals again.
+    if (!(await isCore(auth.user.sub))) {
+      return { error: "You don't have permission to change membership status." };
+    }
+    const raw = String(form.get("override") ?? "auto");
+    const override: MembershipStatus | null =
+      raw === "Active" || raw === "Alumni" ? raw : null;
+    await prisma.user.update({
+      where: { id: targetId },
+      data: { membershipStatusOverride: override },
+    });
+    await recomputeMembershipStatus(targetId);
+    return null;
+  }
+
   if (intent === "update-photo") {
     if (!(await isAdmin(auth.user.sub)) && auth.user.sub !== targetId) {
       return { error: "You don't have permission to edit this member." };
@@ -509,6 +535,10 @@ export async function runProfileAction({
     }
     throw e;
   }
+  // classYear feeds membership-status; keep the stored status consistent with
+  // an edit here (no-op when nothing status-relevant changed, and skipped for
+  // a manual override, which wins).
+  await recomputeMembershipStatus(targetId);
   return redirect(redirectPathFor(request, targetId));
 }
 
