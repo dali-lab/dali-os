@@ -21,7 +21,7 @@ const AUTOMATIONS: {
     id: "assignments",
     label: "Propagate assignments",
     description:
-      "Confirm proposed staffing rows and write ProjectAssignment, DomainEligibility, and MentorshipPair links (P3 or Mentor-badge mentors paired to same-domain mentees). Edit domain·level chips on each card if a domain has mentees but no mentor.",
+      "Confirm proposed staffing rows and write canonical ProjectAssignment + DomainEligibility.",
     configured: true,
   },
   {
@@ -91,12 +91,9 @@ export function FinalizeModal({
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(
-          `/api/staffing/mentor-role?cycleId=${encodeURIComponent(cycleId)}&projectId=${encodeURIComponent(projectId)}`,
-          {
-            credentials: "include",
-          },
-        );
+        const res = await fetch(`/api/staffing/mentor-role?cycleId=${encodeURIComponent(cycleId)}`, {
+          credentials: "include",
+        });
         if (!res.ok) return;
         const d = (await res.json()) as {
           nonP3Mentors: { userId: string; firstName: string; lastName: string }[];
@@ -113,7 +110,7 @@ export function FinalizeModal({
     return () => {
       cancelled = true;
     };
-  }, [open, cycleId, projectId]);
+  }, [open, cycleId]);
 
   // Persist the channel name + GitHub slug to the Project WITHOUT running
   // automations (keeps the project details page in sync). Cancel reverts edits.
@@ -164,6 +161,14 @@ export function FinalizeModal({
       else next.add(id);
       return next;
     });
+  }
+
+  function selectAll() {
+    setSelected(new Set(AUTOMATIONS.filter((a) => a.configured).map((a) => a.id)));
+  }
+
+  function unselectAll() {
+    setSelected(new Set());
   }
 
   async function run(ids: Automation[]) {
@@ -252,6 +257,25 @@ export function FinalizeModal({
           </label>
         </div>
       )}
+
+      <div className="flex items-center justify-end gap-3 mb-2">
+        <button
+          type="button"
+          disabled={running || selected.size === AUTOMATIONS.filter((a) => a.configured).length}
+          onClick={selectAll}
+          className="text-xs font-medium text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:hover:text-muted-foreground transition-colors"
+        >
+          Select all
+        </button>
+        <button
+          type="button"
+          disabled={running || selected.size === 0}
+          onClick={unselectAll}
+          className="text-xs font-medium text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:hover:text-muted-foreground transition-colors"
+        >
+          Unselect all
+        </button>
+      </div>
 
       <ul className="flex flex-col gap-2">
         {AUTOMATIONS.map((a) => {

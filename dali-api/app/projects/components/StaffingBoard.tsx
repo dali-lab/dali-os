@@ -606,7 +606,6 @@ export function StaffingBoard({
   return (
     <div className="flex flex-col gap-3">
       {canManage && <TermChannelBanner termId={termId} termCode={termCode} />}
-      {canManage && <SyncTeamsBanner termId={termId} termCode={termCode} />}
       <div className="flex items-center justify-end gap-3 flex-wrap">
         {canManage && <AddMemberControl cycleId={cycleId} />}
         <DomainFilter
@@ -858,110 +857,6 @@ function TermChannelBanner({ termId, termCode }: { termId: string; termCode: str
         >
           {running ? "Creating…" : "Create + invite"}
         </Button>
-      </div>
-    </div>
-  );
-}
-
-// Full-width banner: add-only GitHub team sync for every project staffed this
-// term. Ensures each project's org team, adds its rostered members, and grants
-// the team push on its repos. Idempotent — safe to re-run. Two-click confirm
-// because it can send org invites in bulk.
-function SyncTeamsBanner({ termId, termCode }: { termId: string; termCode: string }) {
-  const [running, setRunning] = useState(false);
-  const [confirming, setConfirming] = useState(false);
-  const [result, setResult] = useState<{ ok: boolean; message: string; warnings?: string[] } | null>(
-    null,
-  );
-
-  // Reset when the selected term changes.
-  useEffect(() => {
-    setResult(null);
-    setConfirming(false);
-  }, [termCode]);
-
-  async function run() {
-    setRunning(true);
-    setResult(null);
-    setConfirming(false);
-    try {
-      const res = await fetch("/api/staffing/sync-teams", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ termId }),
-      });
-      const json = (await res.json().catch(() => ({}))) as {
-        ok?: boolean;
-        message?: string;
-        error?: string;
-        warnings?: string[];
-      };
-      if (!res.ok) {
-        setResult({ ok: false, message: json.error ?? `Failed: ${res.status}` });
-        return;
-      }
-      setResult({ ok: json.ok ?? true, message: json.message ?? "Done.", warnings: json.warnings });
-    } catch (err) {
-      setResult({ ok: false, message: err instanceof Error ? err.message : "Network error" });
-    } finally {
-      setRunning(false);
-    }
-  }
-
-  return (
-    <div className="w-full rounded-lg border border-accent-coral/30 bg-accent-coral/10 px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-      <div className="min-w-0">
-        <p className="text-sm font-heading font-semibold text-foreground">
-          Sync GitHub teams{termCode ? ` for ${termCode}` : ""}
-        </p>
-        <p className="text-xs text-muted-foreground break-words">
-          For every project staffed this term: ensure its org team, add rostered members, and grant
-          the team push on its repos. Add-only — never removes anyone. Safe to re-run.
-        </p>
-        {result && (
-          <>
-            <p className={`text-xs mt-1 break-words ${result.ok ? "text-accent-teal" : "text-destructive"}`}>
-              {result.ok ? "✓ " : "✗ "}
-              {result.message}
-            </p>
-            {result.warnings?.length ? (
-              <ul className="text-xs text-muted-foreground mt-1 list-disc pl-4 max-h-32 overflow-auto break-words">
-                {result.warnings.map((w, i) => (
-                  <li key={i}>{w}</li>
-                ))}
-              </ul>
-            ) : null}
-          </>
-        )}
-      </div>
-      <div className="flex items-center gap-2 flex-shrink-0">
-        {confirming ? (
-          <>
-            <Button
-              variant="primary"
-              size="sm"
-              disabled={running}
-              onClick={run}
-              className="whitespace-nowrap"
-            >
-              {running ? "Syncing…" : "Confirm sync"}
-            </Button>
-            <Button variant="ghost" size="sm" disabled={running} onClick={() => setConfirming(false)}>
-              Cancel
-            </Button>
-          </>
-        ) : (
-          <Button
-            variant="primary"
-            size="sm"
-            disabled={running}
-            onClick={() => setConfirming(true)}
-            className="whitespace-nowrap"
-          >
-            Sync all current-term teams
-          </Button>
-        )}
       </div>
     </div>
   );
