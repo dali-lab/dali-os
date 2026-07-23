@@ -1,14 +1,15 @@
 // MCP `set_task_checklist` — replace the entire checklist (subtasks) on a
-// task. Stored as JSON `[{text, done}]`. Allowed for task assignees + Core,
-// same as `add_task_comment` and `update_task_status`.
+// task. Stored as JSON `[{text, done}]`. Allowed for the task's assignees and
+// for project editors (Core or project members), matching the web task PATCH
+// route plus the assignee self-service path shared with `update_task_status`.
 
 import { prisma, Prisma } from "~/lib/db";
-import { isCore } from "~/lib/roles";
+import { canEditProject } from "./access";
 
 export const SET_TASK_CHECKLIST_TOOL = {
   name: "set_task_checklist",
   description:
-    "Replace the entire checklist on a project task. Allowed for the task's assignees and for Core members. Pass an empty array to clear.",
+    "Replace the entire checklist on a project task. Allowed for the task's assignees and for project editors (Core or project members). Pass an empty array to clear.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -46,12 +47,16 @@ export class SetTaskChecklistError extends Error {
 export async function runSetTaskChecklist(callerId: string, input: Input) {
   const task = await prisma.task.findUnique({
     where: { id: input.taskId },
-    select: { id: true, assignees: { select: { userId: true } } },
+    select: {
+      id: true,
+      projectId: true,
+      assignees: { select: { userId: true } },
+    },
   });
   if (!task) throw new SetTaskChecklistError("Task not found", 404);
 
   const isAssignee = task.assignees.some((a) => a.userId === callerId);
-  if (!isAssignee && !(await isCore(callerId))) {
+  if (!isAssignee && !(await canEditProject(callerId, task.projectId))) {
     throw new SetTaskChecklistError("Forbidden", 403);
   }
 

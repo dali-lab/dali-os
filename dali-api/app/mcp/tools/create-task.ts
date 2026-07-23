@@ -1,8 +1,8 @@
 // MCP `create_task` — create a Task on a project. Mirrors
-// api.projects.$id.tasks (Core only). Optionally mirrors to GitHub.
+// api.projects.$id.tasks (Core or project member). Optionally mirrors to GitHub.
 
 import { prisma } from "~/lib/db";
-import { isCore } from "~/lib/roles";
+import { canEditProject } from "./access";
 import { isTaskStatus, TASK_STATUSES } from "~/projects/lib/task-board";
 import { createIssueForTask, normalizeRepo } from "~/projects/lib/github-task-sync";
 import { notifyTaskAssigned } from "~/projects/lib/task-notifications.server";
@@ -13,7 +13,7 @@ type Priority = (typeof PRIORITIES)[number];
 export const CREATE_TASK_TOOL = {
   name: "create_task",
   description:
-    "Create a project task. Core-only. Lands at end of target column. Optionally mirrors to a GitHub issue (`mirrorToGithubRepo` must be one of the project's repoUrls).",
+    "Create a project task. Requires Core or project-member access. Lands at end of target column. Optionally mirrors to a GitHub issue (`mirrorToGithubRepo` must be one of the project's repoUrls).",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -70,7 +70,7 @@ export class CreateTaskError extends Error {
 }
 
 export async function runCreateTask(callerId: string, input: Input) {
-  if (!(await isCore(callerId))) {
+  if (!(await canEditProject(callerId, input.projectId))) {
     throw new CreateTaskError("Forbidden", 403);
   }
 
@@ -85,6 +85,28 @@ export async function runCreateTask(callerId: string, input: Input) {
     select: { id: true, repoUrls: true },
   });
   if (!project) throw new CreateTaskError("Project not found", 404);
+
+  // A sprint/epic id must belong to this project — a foreign id would let a
+  // member of one project file tasks onto another project's board (matches the
+  // web create route's guard).
+  if (input.sprintId && input.sprintId !== "") {
+    const sprint = await prisma.sprint.findUnique({
+      where: { id: input.sprintId },
+      select: { projectId: true },
+    });
+    if (!sprint || sprint.projectId !== input.projectId) {
+      throw new CreateTaskError("Sprint is not part of this project", 400);
+    }
+  }
+  if (input.epicId && input.epicId !== "") {
+    const epic = await prisma.epic.findUnique({
+      where: { id: input.epicId },
+      select: { projectId: true },
+    });
+    if (!epic || epic.projectId !== input.projectId) {
+      throw new CreateTaskError("Epic is not part of this project", 400);
+    }
+  }
 
   let dueAt: Date | null = null;
   if (input.dueAt && input.dueAt !== "") {

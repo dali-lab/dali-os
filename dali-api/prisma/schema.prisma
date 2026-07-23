@@ -3811,8 +3811,11 @@ model OAuthClient {
   // Dartmouth-student and partner accounts. Null = any.
   requiredAccountType String?
   // If true, /oauth/callback/google verifies a DALIMember row exists for
-  // the authenticated user. MCP clients: true.
-  requireMembership   Boolean  @default(false)
+  // the authenticated user, and mcp-auth re-checks it on every request (the
+  // off-boarding kill switch). Defaults to true so a client provisioned
+  // without an explicit value fails closed — a non-member can't reach the MCP
+  // surface. Set false only for a deliberately public client.
+  requireMembership   Boolean  @default(true)
 
   grants OAuthGrant[]
 

@@ -71,10 +71,37 @@ describe("search_directory", () => {
     expect(out.results).toEqual([]);
   });
 
-  it("scopes user.findMany to DALIMember rows only (privacy)", async () => {
+  it("scopes to current-term members by default (member set + privacy)", async () => {
     mockPrisma.user.findMany.mockResolvedValue([]);
     await runSearchDirectory({ query: "x" });
     const call = mockPrisma.user.findMany.mock.calls[0][0];
-    expect(call.where.daliMember).toEqual({ isNot: null });
+    // Member predicate is AND-ed with the search OR; the member half stays
+    // scoped to DALIMember rows and, by default, current-term-active ones.
+    expect(call.where.AND[0].daliMember).toEqual({ isNot: null });
+    expect(call.where.AND[0].OR).toBeDefined();
+  });
+
+  it("drops the current-term filter when includeInactive is set", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([]);
+    await runSearchDirectory({ query: "x", includeInactive: true });
+    const call = mockPrisma.user.findMany.mock.calls[0][0];
+    expect(call.where.AND[0]).toEqual({ daliMember: { isNot: null } });
+  });
+
+  it("does not expose netId in bulk directory rows", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([
+      {
+        id: "u1",
+        firstName: "Ada",
+        lastName: "Lovelace",
+        daliEmail: "ada@dali.dartmouth.edu",
+        adminMembership: null,
+        coreAssignments: [],
+        domainLeadAssignmentsAsUser: [],
+        domainEligibilities: [],
+      },
+    ]);
+    const out = await runSearchDirectory({ query: "ada" });
+    expect(out.results[0]).not.toHaveProperty("netId");
   });
 });

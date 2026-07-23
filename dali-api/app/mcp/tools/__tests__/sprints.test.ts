@@ -3,11 +3,11 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db");
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
-  return { ...real, isCore: vi.fn() };
+  return { ...real, isCore: vi.fn(), isProjectMember: vi.fn() };
 });
 
 import { prisma } from "~/lib/db";
-import { isCore } from "~/lib/roles";
+import { isCore, isProjectMember } from "~/lib/roles";
 import { runListSprints, LIST_SPRINTS_TOOL } from "~/mcp/tools/list-sprints";
 import {
   runCreateSprint,
@@ -70,8 +70,9 @@ describe("sprint tools", () => {
     });
   });
 
-  it("create_sprint rejects non-Core", async () => {
+  it("create_sprint rejects callers without project edit access", async () => {
     vi.mocked(isCore).mockResolvedValue(false);
+    vi.mocked(isProjectMember).mockResolvedValue(false);
     await expect(
       runCreateSprint("u1", {
         projectId: "p1",
