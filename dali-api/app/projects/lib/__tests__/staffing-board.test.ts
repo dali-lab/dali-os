@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   buildBoard,
   dedupeLiveAssignments,
+  resolveAssignmentDomains,
   resolveAssignmentInputs,
   UNASSIGNED,
   type MemberInput,
@@ -295,7 +296,7 @@ describe("resolveAssignmentInputs", () => {
     expect(out).toBeNull();
   });
 
-  it("returns null when the member has no bid and multiple eligibilities (ambiguous)", () => {
+  it("seeds the first eligibility when the member has no bid and multiple eligibilities", () => {
     const out = resolveAssignmentInputs(
       member({
         preferences: [],
@@ -306,15 +307,39 @@ describe("resolveAssignmentInputs", () => {
       }),
       "p1",
     );
-    expect(out).toBeNull();
+    expect(out).toEqual({ domainId: "d1", level: "P2" });
+  });
+});
+
+describe("resolveAssignmentDomains", () => {
+  it("returns every bid domain for the target project", () => {
+    const out = resolveAssignmentDomains(
+      member({
+        preferences: [
+          { projectId: "p1", domainId: "d1", level: "P1", preferenceRank: 1, notes: null },
+          { projectId: "p1", domainId: "d2", level: "P2", preferenceRank: 1, notes: null },
+        ],
+      }),
+      "p1",
+    );
+    expect(out).toEqual([
+      { domainId: "d1", level: "P1" },
+      { domainId: "d2", level: "P2" },
+    ]);
   });
 });
 
 describe("dedupeLiveAssignments", () => {
-  const row = (userId: string, status: "Proposed" | "Confirmed", projectId: string) => ({
+  const row = (
+    userId: string,
+    status: "Proposed" | "Confirmed",
+    projectId: string,
+    domainId = "d1",
+  ) => ({
     userId,
     status,
     projectId,
+    domainId,
   });
 
   it("keeps a lone Confirmed row so a finalized roster stays on the board", () => {
@@ -322,7 +347,7 @@ describe("dedupeLiveAssignments", () => {
     expect(out).toEqual([row("u1", "Confirmed", "p1")]);
   });
 
-  it("prefers Proposed over Confirmed for the same user (in-progress re-edit wins)", () => {
+  it("prefers Proposed over Confirmed for the same user+domain (in-progress re-edit wins)", () => {
     // User was confirmed on p1, then dragged to p2 (fresh Proposed row).
     const out = dedupeLiveAssignments([
       row("u1", "Confirmed", "p1"),
@@ -339,7 +364,25 @@ describe("dedupeLiveAssignments", () => {
     expect(out).toEqual([row("u1", "Proposed", "p2")]);
   });
 
-  it("returns one row per user across a mixed set", () => {
+  it("keeps multiple Proposed domains for the same user on one project", () => {
+    const out = dedupeLiveAssignments([
+      row("u1", "Proposed", "p1", "d1"),
+      row("u1", "Proposed", "p1", "d2"),
+    ]);
+    expect(out).toHaveLength(2);
+    expect(out.map((r) => r.domainId).sort()).toEqual(["d1", "d2"]);
+  });
+
+  it("drops Confirmed domains when the user has any Proposed (re-edit wins)", () => {
+    const out = dedupeLiveAssignments([
+      row("u1", "Confirmed", "p1", "d1"),
+      row("u1", "Confirmed", "p1", "d2"),
+      row("u1", "Proposed", "p2", "d1"),
+    ]);
+    expect(out).toEqual([row("u1", "Proposed", "p2", "d1")]);
+  });
+
+  it("returns live rows across a mixed set (one per user+domain)", () => {
     const out = dedupeLiveAssignments([
       row("u1", "Confirmed", "p1"),
       row("u2", "Proposed", "p1"),

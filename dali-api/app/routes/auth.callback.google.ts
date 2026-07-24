@@ -8,6 +8,7 @@ import { logAuditEvent } from "~/lib/audit";
 import { upsertUserFromGoogle } from "~/lib/user-provisioning";
 import { classifyPartnerEmail } from "~/partners/lib/magic-link.server";
 import { getApiBaseUrl, getCasBaseUrl } from "~/lib/app-env";
+import { syncAndRecomputeMembershipStatus } from "~/lib/membership-status";
 
 const OAUTH_STATE_COOKIE = "__dali_oauth_state";
 
@@ -195,6 +196,11 @@ export async function loader({ request }: Route.LoaderArgs) {
   // unreachable through this route — they live on for the OAuth-provider
   // callback `/oauth/callback/google` which gates on a different signal.
   const { user } = await upsertUserFromGoogle(googleUser);
+
+  // Fire-and-forget membership-status sync (throttled ≤1/day). Members mostly
+  // sign in with Google; without a netId the Dartmouth refresh no-ops and the
+  // recompute still runs from graduatedAt + classYear. Never blocks the login.
+  void syncAndRecomputeMembershipStatus(user.id);
 
   const session = await issueSession({
     userId: user.id,

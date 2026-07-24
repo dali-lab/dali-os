@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
+import { publishNotificationChange } from "~/lib/notify-stream.server";
 import { parseJson } from "~/lib/validate";
 import { updateGoogleAttendeeRsvp } from "~/lib/google-calendar";
 import { primaryEmail } from "~/lib/display";
@@ -91,6 +92,9 @@ export async function action({ request, params }: Route.ActionArgs) {
       readAt: new Date(),
     },
   });
+  // Converge the desktop badge without waiting for its sync backstop (the
+  // desktop can RSVP straight from a banner action).
+  publishNotificationChange([auth.user.sub]);
 
   return withCors(request, Response.json({ ok: true, gcalError }));
 }

@@ -21,7 +21,7 @@ type EmailValue = (typeof EMAIL_VALUES)[number];
 export const LIST_NOTIFICATION_PREFERENCES_TOOL = {
   name: "list_notification_preferences",
   description:
-    "Return the authenticated member's notification settings for every event type — in-app, Slack DM, and email (Instant/Daily/Weekly/Off) — resolving registry defaults where no explicit preference is saved.",
+    "Return the authenticated member's notification settings for every event type — in-app, desktop banner, Slack DM, and email (Instant/Daily/Weekly/Off) — resolving registry defaults where no explicit preference is saved.",
   inputSchema: {
     type: "object" as const,
     properties: {},
@@ -45,6 +45,7 @@ export async function runListNotificationPreferences(callerId: string) {
         label: def.label,
         description: def.description,
         inApp: def.lockedInApp ? true : (row?.inApp ?? def.defaults.inApp),
+        desktop: row?.desktop ?? def.defaults.desktop,
         slackDm: row?.slackDm ?? def.defaults.slackDm,
         email: def.externalEmail
           ? "Off"
@@ -71,6 +72,10 @@ export const SET_NOTIFICATION_PREFERENCE_TOOL = {
         description: "Event type key, as returned by `list_notification_preferences`.",
       },
       inApp: { type: "boolean", description: "Show in the in-app notification bell." },
+      desktop: {
+        type: "boolean",
+        description: "Raise a native banner in the DALI OS desktop app (applies when in-app is on).",
+      },
       slackDm: { type: "boolean", description: "Send a Slack DM." },
       email: {
         type: "string",
@@ -87,6 +92,7 @@ export const SET_NOTIFICATION_PREFERENCE_TOOL = {
 type SetInput = {
   eventType: string;
   inApp?: boolean;
+  desktop?: boolean;
   slackDm?: boolean;
   email?: EmailValue;
 };
@@ -124,6 +130,7 @@ export async function runSetNotificationPreference(callerId: string, input: SetI
   };
   const existing = await prisma.notificationPreference.findUnique({ where });
   const inApp = input.inApp ?? existing?.inApp ?? def.defaults.inApp;
+  const desktop = input.desktop ?? existing?.desktop ?? def.defaults.desktop;
   const slackDm = input.slackDm ?? existing?.slackDm ?? def.defaults.slackDm;
   const digestFrequency =
     input.email ??
@@ -132,15 +139,16 @@ export async function runSetNotificationPreference(callerId: string, input: SetI
 
   await prisma.notificationPreference.upsert({
     where,
-    update: { inApp, slackDm, digestFrequency },
+    update: { inApp, desktop, slackDm, digestFrequency },
     create: {
       userId: callerId,
       eventType: input.eventType,
       inApp,
+      desktop,
       slackDm,
       digestFrequency,
     },
   });
 
-  return { ok: true, eventType: input.eventType, inApp, slackDm, email: digestFrequency };
+  return { ok: true, eventType: input.eventType, inApp, desktop, slackDm, email: digestFrequency };
 }

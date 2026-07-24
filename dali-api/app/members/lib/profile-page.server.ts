@@ -22,11 +22,13 @@ import {
   type Level,
 } from "~/admin-console/lib/eligibility";
 import {
-  addOrUpdateEligibility,
+  applyEligibilityWithNotify,
   removeEligibility,
 } from "~/admin-console/lib/eligibility.server";
 import { NEW_MEMBER_PROFILE_FORM_NAME } from "~/members/lib/profile-form-interpreter";
 import { normalizeHandle } from "~/lib/handle";
+import { isValidTimezone } from "~/lib/timezone";
+import { syncAvailabilityTimezone } from "~/lib/timezone-preference.server";
 import { getEducationProfile } from "~/education/lib/engagement.server";
 import {
   mentorshipPairWhere,
@@ -96,7 +98,7 @@ export type ProfilePageData = {
     pairs: Array<{
       id: string;
       role: "mentor" | "mentee";
-      counterpart: { id: string; firstName: string; lastName: string };
+      counterpart: { id: string; firstName: string; lastName: string; photoUrl: string | null };
       projectName: string;
       domainCode: string;
       termCode: string;
@@ -281,7 +283,7 @@ export async function loadProfilePage({
         where: { AND: [pairScope, { mentorUserId: targetId }] },
         select: {
           id: true,
-          mentee: { select: { id: true, firstName: true, lastName: true } },
+          mentee: { select: { id: true, firstName: true, lastName: true, photoUrl: true } },
           project: { select: { name: true } },
           domain: { select: { code: true } },
           term: { select: { code: true } },
@@ -291,7 +293,7 @@ export async function loadProfilePage({
         where: { AND: [pairScope, { menteeUserId: targetId }] },
         select: {
           id: true,
-          mentor: { select: { id: true, firstName: true, lastName: true } },
+          mentor: { select: { id: true, firstName: true, lastName: true, photoUrl: true } },
           project: { select: { name: true } },
           domain: { select: { code: true } },
           term: { select: { code: true } },
@@ -306,25 +308,43 @@ export async function loadProfilePage({
         },
       }),
     ]);
+    const rawPairs = [
+      ...asMentor.map((p) => ({
+        id: p.id,
+        role: "mentor" as const,
+        counterpart: p.mentee,
+        projectName: p.project.name,
+        domainCode: p.domain.code,
+        termCode: p.term.code,
+      })),
+      ...asMentee.map((p) => ({
+        id: p.id,
+        role: "mentee" as const,
+        counterpart: p.mentor,
+        projectName: p.project.name,
+        domainCode: p.domain.code,
+        termCode: p.term.code,
+      })),
+    ];
+    // Resolve each distinct counterpart avatar once (a member can appear in
+    // more than one pair).
+    const counterpartPhotos = new Map(
+      await Promise.all(
+        [...new Map(rawPairs.map((p) => [p.counterpart.id, p.counterpart.photoUrl]))].map(
+          async ([id, raw]) => [id, await resolvePhotoUrl(raw)] as const,
+        ),
+      ),
+    );
     mentorshipPanel = {
-      pairs: [
-        ...asMentor.map((p) => ({
-          id: p.id,
-          role: "mentor" as const,
-          counterpart: p.mentee,
-          projectName: p.project.name,
-          domainCode: p.domain.code,
-          termCode: p.term.code,
-        })),
-        ...asMentee.map((p) => ({
-          id: p.id,
-          role: "mentee" as const,
-          counterpart: p.mentor,
-          projectName: p.project.name,
-          domainCode: p.domain.code,
-          termCode: p.term.code,
-        })),
-      ],
+      pairs: rawPairs.map((p) => ({
+        ...p,
+        counterpart: {
+          id: p.counterpart.id,
+          firstName: p.counterpart.firstName,
+          lastName: p.counterpart.lastName,
+          photoUrl: counterpartPhotos.get(p.counterpart.id) ?? null,
+        },
+      })),
       recentNoteCount: noteCount,
     };
   }
@@ -398,7 +418,7 @@ export async function runProfileAction({
     if (!domainId || !level) {
       return { error: "Pick a domain and a level." };
     }
-    await addOrUpdateEligibility({
+    await applyEligibilityWithNotify({
       userId: targetId,
       domainId,
       level,
@@ -466,6 +486,10 @@ export async function runProfileAction({
     return { error: "Personal email looks malformed." };
   }
 
+  if (typeof data.timeZone === "string" && !isValidTimezone(data.timeZone)) {
+    return { error: "That timezone isn't a recognized IANA zone." };
+  }
+
   const classYearRaw = (form.get("classYear") as string | null)?.trim() ?? "";
   if (classYearRaw === "") {
     data.classYear = null;
@@ -509,6 +533,12 @@ export async function runProfileAction({
     }
     throw e;
   }
+
+  // Keep the calendar/working-hours zone in step with the display zone.
+  if (typeof data.timeZone === "string") {
+    await syncAvailabilityTimezone(targetId, data.timeZone);
+  }
+
   return redirect(redirectPathFor(request, targetId));
 }
 

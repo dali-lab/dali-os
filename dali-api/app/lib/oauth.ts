@@ -277,6 +277,7 @@ export async function exchangeGoogleCode(code: string, callbackUrl: string) {
     email: payload.email,
     firstName: (payload.given_name ?? "") as string,
     lastName: (payload.family_name ?? "") as string,
+    photoUrl: (payload.picture ?? null) as string | null,
     accessToken: data.access_token as string | undefined,
     refreshToken: data.refresh_token as string | undefined,
     expiresIn: data.expires_in as number | undefined,

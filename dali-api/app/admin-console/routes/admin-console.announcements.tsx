@@ -253,8 +253,9 @@ export default function AnnouncementsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-5 max-w-3xl">
+    <div className="flex flex-col gap-5">
       <AreaPillNav items={adminPills({ isAdmin: viewerIsAdmin, active: "announcements" })} />
+      <div className="flex flex-col gap-5 max-w-3xl">
       <header className="flex items-start gap-3">
         <Megaphone className="w-6 h-6 text-accent-coral mt-0.5" />
         <div>
@@ -572,6 +573,7 @@ export default function AnnouncementsPage() {
       </div>
 
       {scheduled.length > 0 && <ScheduledList scheduled={scheduled} />}
+      </div>
     </div>
   );
 }

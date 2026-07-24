@@ -3,6 +3,8 @@
 // rationale. Shared by the applications-database detail page, the domain-lead
 // dashboard, and the interviewer page, which each wrap it in their own chrome.
 
+import { Avatar } from "~/components/ui/Avatar";
+
 const DEFAULT_RECOMMENDATION_TONE: Record<string, string> = {
   "Strong Hire": "bg-green-100 text-green-800",
   Hire: "bg-green-50 text-green-700",
@@ -13,6 +15,7 @@ const DEFAULT_RECOMMENDATION_TONE: Record<string, string> = {
 
 export interface ReviewSummaryProps {
   reviewerName?: string;
+  reviewerPhotoUrl?: string | null;
   submittedAt?: string | Date | null;
   overallRecommendation?: string | null;
   // Maps a recommendation value to its badge classes. Defaults to a
@@ -30,6 +33,7 @@ export interface ReviewSummaryProps {
 
 export function ReviewSummary({
   reviewerName,
+  reviewerPhotoUrl,
   submittedAt,
   overallRecommendation,
   recommendationTone = DEFAULT_RECOMMENDATION_TONE,
@@ -45,20 +49,25 @@ export function ReviewSummary({
   return (
     <div className="space-y-5">
       {showHeader && (
-        <div>
+        <div className="flex items-center gap-2">
           {reviewerName && (
-            <div className="text-sm font-semibold text-foreground">{reviewerName}</div>
+            <Avatar photoUrl={reviewerPhotoUrl} name={reviewerName} size="sm" className="shrink-0" />
           )}
-          {submittedAt && (
-            <div className="text-xs text-muted-foreground">
-              Submitted{" "}
-              {new Date(submittedAt).toLocaleDateString(undefined, {
-                month: "short",
-                day: "numeric",
-                year: "numeric",
-              })}
-            </div>
-          )}
+          <div>
+            {reviewerName && (
+              <div className="text-sm font-semibold text-foreground">{reviewerName}</div>
+            )}
+            {submittedAt && (
+              <div className="text-xs text-muted-foreground">
+                Submitted{" "}
+                {new Date(submittedAt).toLocaleDateString(undefined, {
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                })}
+              </div>
+            )}
+          </div>
         </div>
       )}
 

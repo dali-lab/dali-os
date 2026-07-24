@@ -21,8 +21,8 @@ const Base = {
   // a project one — see createScheduledMeeting in ~/lib/scheduled-meeting.
   // Invites still come only from the meeting's participant scope.
   projectId: z.string().min(1).optional(),
-  // SelfCheckIn only makes sense alongside meetingType (that's what creates
-  // MeetingAttendance rows at all) — enforced by the refine below.
+  // SelfCheckIn is independent of meeting notes — attendance rows fan out
+  // whenever SelfCheckIn (or meetingType) is set; see createScheduledMeeting.
   attendanceMode: z.enum(["Roster", "SelfCheckIn"]).optional(),
 } as const;
 
@@ -39,10 +39,6 @@ const CreateSchema = z
   .refine((v) => v.meetingType !== "Other" || !!v.meetingTypeLabel, {
     message: "meetingTypeLabel is required when meetingType is Other",
     path: ["meetingTypeLabel"],
-  })
-  .refine((v) => v.attendanceMode !== "SelfCheckIn" || !!v.meetingType, {
-    message: "meetingType is required when attendanceMode is SelfCheckIn",
-    path: ["attendanceMode"],
   });
 
 export async function action({ request }: Route.ActionArgs) {

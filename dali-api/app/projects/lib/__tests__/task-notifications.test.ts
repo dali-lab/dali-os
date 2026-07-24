@@ -2,9 +2,13 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
 vi.mock("~/lib/notify.server", () => ({ notify: vi.fn() }));
+vi.mock("~/projects/lib/project-members.server", () => ({
+  currentProjectParticipantIds: vi.fn(),
+}));
 
 import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
+import { currentProjectParticipantIds } from "~/projects/lib/project-members.server";
 import {
   notifyTaskAssigned,
   notifyTaskComment,
@@ -15,9 +19,15 @@ const mockPrisma = prisma as unknown as {
   task: { findUnique: ReturnType<typeof vi.fn> };
 };
 const mockNotify = notify as unknown as ReturnType<typeof vi.fn>;
+const mockMembers = currentProjectParticipantIds as unknown as ReturnType<
+  typeof vi.fn
+>;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Default: everyone referenced in these tests is currently on the project.
+  // Individual tests override this to exercise the roll-off gate.
+  mockMembers.mockResolvedValue(new Set(["u1", "u2"]));
 });
 
 describe("notifyTaskAssigned", () => {
@@ -41,7 +51,7 @@ describe("notifyTaskAssigned", () => {
     expect(call.eventType).toBe("task.assigned");
     expect(call.createdByUserId).toBe("u1");
     expect(call.message.title).toBe("Task assigned: Ship it");
-    expect(call.message.link).toBe("/projects/p1?tab=work&task=t1");
+    expect(call.message.link).toBe("/projects/p1?tab=board&task=t1");
     expect(call.recipients).toEqual([{ userId: "u2" }]);
   });
 
@@ -91,6 +101,37 @@ describe("notifyTaskComment", () => {
       projectId: "p1",
       assignees: [{ userId: "u1" }],
     });
+
+    await notifyTaskComment({ taskId: "t1", authorId: "u1", body: "hi" });
+
+    expect(mockNotify).not.toHaveBeenCalled();
+  });
+
+  it("excludes an assignee who has rolled off the project", async () => {
+    mockPrisma.task.findUnique.mockResolvedValue({
+      id: "t1",
+      title: "Ship it",
+      projectId: "p1",
+      assignees: [{ userId: "u1" }, { userId: "u2" }, { userId: "gone" }],
+    });
+    // "gone" is a historical assignee but no longer on the project.
+    mockMembers.mockResolvedValue(new Set(["u1", "u2"]));
+
+    await notifyTaskComment({ taskId: "t1", authorId: "u1", body: "hi" });
+
+    expect(currentProjectParticipantIds).toHaveBeenCalledWith("p1");
+    expect(mockNotify).toHaveBeenCalledTimes(1);
+    expect(mockNotify.mock.calls[0][0].recipients).toEqual([{ userId: "u2" }]);
+  });
+
+  it("no-ops when every remaining assignee has left the project", async () => {
+    mockPrisma.task.findUnique.mockResolvedValue({
+      id: "t1",
+      title: "Ship it",
+      projectId: "p1",
+      assignees: [{ userId: "u2" }],
+    });
+    mockMembers.mockResolvedValue(new Set(["u1"]));
 
     await notifyTaskComment({ taskId: "t1", authorId: "u1", body: "hi" });
 

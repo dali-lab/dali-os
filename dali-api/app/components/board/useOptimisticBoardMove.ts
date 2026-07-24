@@ -53,6 +53,11 @@ export function useOptimisticBoardMove<TItem>(
   // `pendingSaves` was decremented is never dropped.
   const latestServerItems = useRef(serverItems);
   latestServerItems.current = serverItems;
+  // Server data as of the moment the current save burst started. Drain-time
+  // adoption only fires when fresh data actually arrived during the burst —
+  // adopting the *pre-save* snapshot would revert the optimistic change the
+  // save just persisted.
+  const serverItemsAtBurstStart = useRef(serverItems);
 
   // Adopt fresh server data only when no save is in flight. Keyed off the prop's
   // identity: React Router hands back a new array each loader run, so this fires
@@ -72,6 +77,9 @@ export function useOptimisticBoardMove<TItem>(
       });
       setError(null);
 
+      if (pendingSaves.current === 0) {
+        serverItemsAtBurstStart.current = latestServerItems.current;
+      }
       pendingSaves.current += 1;
       setSavingCount((c) => c + 1);
       void persist()
@@ -82,10 +90,15 @@ export function useOptimisticBoardMove<TItem>(
         .finally(() => {
           pendingSaves.current = Math.max(0, pendingSaves.current - 1);
           setSavingCount((c) => Math.max(0, c - 1));
-          // The last save drained: adopt the latest server data, including data
-          // that arrived while we were holding off (the revalidate-on-success
-          // sequence), so it's reflected instead of silently dropped.
-          if (adoptServerItems && pendingSaves.current === 0) {
+          // The last save drained: adopt server data that arrived while we were
+          // holding off (the revalidate-on-success sequence) so it's reflected
+          // instead of silently dropped. If nothing new arrived, keep the
+          // optimistic state — the stale pre-save snapshot would undo the move.
+          if (
+            adoptServerItems &&
+            pendingSaves.current === 0 &&
+            latestServerItems.current !== serverItemsAtBurstStart.current
+          ) {
             setItemsState(latestServerItems.current);
           }
         });

@@ -29,6 +29,17 @@ export function partnerProjectsWhere(
   };
 }
 
+// True iff `userSub` is a partner-portal account (has a PartnerUser row).
+// Used to mark a partner's collab connection to a shared document read-only —
+// they may view and comment, but the body is the team's to edit.
+export async function isPartnerUser(userSub: string): Promise<boolean> {
+  const row = await prisma.partnerUser.findUnique({
+    where: { userId: userSub },
+    select: { id: true },
+  });
+  return row !== null;
+}
+
 // True iff `userSub` has a PartnerUser row whose org holds an active
 // ProjectPartner link to a non-archived `projectId`. Used by route loaders
 // and by authorizeCollabDoc, so this module must stay prisma-only.

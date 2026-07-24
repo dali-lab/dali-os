@@ -1,7 +1,7 @@
-// MCP `update_story` — Core-only. Mirrors api.stories.$id POST.
+// MCP `update_story` — Core or project member. Mirrors api.stories.$id POST.
 
 import { prisma } from "~/lib/db";
-import { isCore } from "~/lib/roles";
+import { canEditProject } from "./access";
 
 const STORY_STATUSES = ["Todo", "InProgress", "Done"] as const;
 type StoryStatus = (typeof STORY_STATUSES)[number];
@@ -9,7 +9,7 @@ type StoryStatus = (typeof STORY_STATUSES)[number];
 export const UPDATE_STORY_TOOL = {
   name: "update_story",
   description:
-    "Edit a user story (title, notes, status). Core-only. Empty string clears notes.",
+    "Edit a user story (title, notes, status). Requires Core or project-member access. Empty string clears notes.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -42,15 +42,15 @@ export class UpdateStoryError extends Error {
 }
 
 export async function runUpdateStory(callerId: string, input: Input) {
-  if (!(await isCore(callerId))) {
-    throw new UpdateStoryError("Forbidden", 403);
-  }
-
   const story = await prisma.userStory.findUnique({
     where: { id: input.storyId },
-    select: { id: true },
+    select: { id: true, epic: { select: { projectId: true } } },
   });
   if (!story) throw new UpdateStoryError("Story not found", 404);
+
+  if (!(await canEditProject(callerId, story.epic.projectId))) {
+    throw new UpdateStoryError("Forbidden", 403);
+  }
 
   const data: { title?: string; notes?: string | null; status?: StoryStatus } = {};
 

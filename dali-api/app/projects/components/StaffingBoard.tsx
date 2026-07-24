@@ -4,7 +4,7 @@ import type { DragEndEvent } from "@dnd-kit/core";
 import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
 import {
   buildBoard,
-  resolveAssignmentInputs,
+  resolveAssignmentDomains,
   UNASSIGNED,
   type MemberCardModel,
   type MemberInput,
@@ -21,6 +21,8 @@ import { AddMemberControl } from "./AddMemberControl";
 import { AddExternalMentorModal } from "./AddExternalMentorModal";
 import { DomainFilter } from "./DomainFilter";
 import { sanitizeChannelName } from "~/slack/lib/channel-name";
+import type { Level } from "~/lib/level";
+import type { DomainLevel } from "../lib/staffing-board";
 
 type ProjectMeta = {
   id: string;
@@ -122,6 +124,109 @@ export function StaffingBoard({
     [cycleId],
   );
 
+  // Per-member DomainEligibility chips shown on cards. Optimistic local copy
+  // so level/domain edits feel instant; revalidation reconciles from the loader.
+  const [domainLevelsByUser, setDomainLevelsByUser] = useState<
+    Record<string, DomainLevel[]>
+  >(() => Object.fromEntries(members.map((m) => [m.userId, m.domainLevels])));
+  useEffect(() => {
+    setDomainLevelsByUser(
+      Object.fromEntries(members.map((m) => [m.userId, m.domainLevels])),
+    );
+  }, [members]);
+
+  const membersForBoard = useMemo(
+    () =>
+      members.map((m) => ({
+        ...m,
+        domainLevels: domainLevelsByUser[m.userId] ?? m.domainLevels,
+      })),
+    [members, domainLevelsByUser],
+  );
+
+  const upsertDomainLevel = useCallback(
+    async (userId: string, domainId: string, level: Level, domainName: string) => {
+      const prev = domainLevelsByUser[userId] ?? [];
+      const next: DomainLevel[] = prev.some((d) => d.domainId === domainId)
+        ? prev.map((d) => (d.domainId === domainId ? { ...d, level } : d))
+        : [...prev, { domainId, domainName, level }];
+      setDomainLevelsByUser((map) => ({ ...map, [userId]: next }));
+
+      // Keep live assignment level in sync when editing an assigned domain.
+      const prevAssignments = assignments;
+      if (assignments.some((a) => a.userId === userId && a.domainId === domainId && a.level !== level)) {
+        setAssignments((list) =>
+          list.map((a) =>
+            a.userId === userId && a.domainId === domainId ? { ...a, level } : a,
+          ),
+        );
+      }
+
+      setError(null);
+      try {
+        const res = await fetch("/api/staffing/eligibility", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cycleId, userId, domainId, level }),
+        });
+        if (!res.ok) {
+          const json = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(json.error ?? `Failed: ${res.status}`);
+        }
+        revalidator.revalidate();
+      } catch (err) {
+        setDomainLevelsByUser((map) => ({ ...map, [userId]: prev }));
+        setAssignments(prevAssignments);
+        setError(err instanceof Error ? err.message : "Failed to update domain");
+      }
+    },
+    [assignments, cycleId, domainLevelsByUser, revalidator],
+  );
+
+  const toggleAssignmentDomain = useCallback(
+    async (userId: string, domainId: string) => {
+      const current = assignments.filter((a) => a.userId === userId);
+      const projectId = current[0]?.projectId;
+      if (!projectId) return;
+
+      const has = current.some((a) => a.domainId === domainId);
+      let next: Assignment[];
+      if (has) {
+        if (current.length === 1) {
+          setError("Keep at least one domain, or drag the card to Unassigned.");
+          return;
+        }
+        next = current.filter((a) => a.domainId !== domainId);
+      } else {
+        const levels = domainLevelsByUser[userId] ?? members.find((m) => m.userId === userId)?.domainLevels ?? [];
+        const dl = levels.find((d) => d.domainId === domainId);
+        if (!dl) {
+          setError("Add that domain to their eligibility first.");
+          return;
+        }
+        next = [...current, { userId, projectId, domainId, level: dl.level }];
+      }
+
+      const prevAssignments = assignments;
+      setAssignments((list) => [...list.filter((a) => a.userId !== userId), ...next]);
+      setError(null);
+      try {
+        await persist({
+          cycleId,
+          userId,
+          projectId,
+          domains: next.map((a) => ({ domainId: a.domainId, level: a.level })),
+        });
+        revalidator.revalidate();
+      } catch (err) {
+        setAssignments(prevAssignments);
+        setError(err instanceof Error ? err.message : "Failed to update domains");
+      }
+    },
+    [assignments, cycleId, domainLevelsByUser, members, revalidator],
+  );
+
   // Non-roster external mentors placed on project columns. Managers only.
   type ExternalMentorRow = {
     id: string;
@@ -200,13 +305,13 @@ export function StaffingBoard({
   const projectIds = useMemo(() => projects.map((p) => p.id), [projects]);
 
   const board = useMemo(
-    () => buildBoard({ projectIds, members, assignments, cardOrder: order }),
-    [projectIds, members, assignments, order],
+    () => buildBoard({ projectIds, members: membersForBoard, assignments, cardOrder: order }),
+    [projectIds, membersForBoard, assignments, order],
   );
 
   const memberById = useMemo(
-    () => new Map(members.map((m) => [m.userId, m])),
-    [members],
+    () => new Map(membersForBoard.map((m) => [m.userId, m])),
+    [membersForBoard],
   );
 
   // Flat userId → card lookup so the DragOverlay can render the active card
@@ -249,6 +354,7 @@ export function StaffingBoard({
           { domainId: e.domainId, domainName: domainNames[e.domainId] ?? "?", level: "P3" },
         ],
         level: "P3",
+        assignmentDomainIds: [e.domainId],
         topPreferences: [],
         unresolvedBid: false,
         manuallyAdded: false,
@@ -312,19 +418,15 @@ export function StaffingBoard({
       ...withoutMoved.slice(insertAt),
     ];
 
-    // A cross-column move also needs the assignment updated. Resolve domain +
-    // level for a project column; UNASSIGNED clears the assignment.
+    // A cross-column move also needs the assignment updated. Resolve domain(s)
+    // + level for a project column; UNASSIGNED clears the assignment.
     const targetProjectId = toColumn === UNASSIGNED ? null : toColumn;
-    let assignmentBody: { domainId: string; level: "P1" | "P2" | "P3" } | null = null;
+    let assignmentDomains: { domainId: string; level: "P1" | "P2" | "P3" }[] | null = null;
     if (!movedWithinColumn && targetProjectId !== null) {
-      assignmentBody = resolveAssignmentInputs(member, targetProjectId);
-      if (!assignmentBody) {
+      assignmentDomains = resolveAssignmentDomains(member, targetProjectId);
+      if (!assignmentDomains) {
         setError(
-          `Can't infer a domain + level for ${member.firstName} ${member.lastName}: they have no bid and ${
-            member.domainLevels.length === 0
-              ? "no domain eligibility"
-              : "are eligible in multiple domains"
-          }. Add a bid, or set their eligibility to a single domain.`,
+          `Can't infer a domain + level for ${member.firstName} ${member.lastName}: they have no bid and no domain eligibility. Add a bid or set their eligibility.`,
         );
         return;
       }
@@ -341,7 +443,12 @@ export function StaffingBoard({
           ? withoutOld
           : [
               ...withoutOld,
-              { userId, projectId: targetProjectId, domainId: assignmentBody!.domainId, level: assignmentBody!.level },
+              ...assignmentDomains!.map((d) => ({
+                userId,
+                projectId: targetProjectId,
+                domainId: d.domainId,
+                level: d.level,
+              })),
             ],
       );
     }
@@ -358,8 +465,7 @@ export function StaffingBoard({
           cycleId,
           userId,
           projectId: targetProjectId,
-          domainId: assignmentBody?.domainId,
-          level: assignmentBody?.level,
+          domains: assignmentDomains ?? undefined,
         });
       }
       await persistOrder({ cycleId, columnKey: toColumn, userIds: nextDestIds });
@@ -500,7 +606,6 @@ export function StaffingBoard({
   return (
     <div className="flex flex-col gap-3">
       {canManage && <TermChannelBanner termId={termId} termCode={termCode} />}
-      {canManage && <SyncTeamsBanner termId={termId} termCode={termCode} />}
       <div className="flex items-center justify-end gap-3 flex-wrap">
         {canManage && <AddMemberControl cycleId={cycleId} />}
         <DomainFilter
@@ -583,11 +688,11 @@ export function StaffingBoard({
             isDragging={isDragging}
             mentorSlot={(() => {
               // Mentor/mentee role badge, on project-column cards for managers.
-              // Default role follows level (P3 → mentor); the override flips it.
-              // External mentors are inherently mentors — no toggle.
+              // Default role follows the assignment level (P3 → mentor); the
+              // override flips it. External mentors are inherently mentors.
               if (!canManage || card.isExternalMentor) return undefined;
               if (columnIdOf.get(card.userId) === UNASSIGNED) return undefined;
-              const defaultMentor = card.domainLevels.some((d) => d.level === "P3");
+              const defaultMentor = card.level === "P3";
               const isMentor = mentorRoles[card.userId] ?? defaultMentor;
               return (
                 <RoleBadge
@@ -596,6 +701,28 @@ export function StaffingBoard({
                 />
               );
             })()}
+            canEditDomains={canManage && !card.isExternalMentor}
+            allDomains={domains}
+            assignmentDomainIds={card.assignmentDomainIds}
+            onToggleAssignmentDomain={
+              canManage && !card.isExternalMentor && columnIdOf.get(card.userId) !== UNASSIGNED
+                ? (domainId) => void toggleAssignmentDomain(card.userId, domainId)
+                : undefined
+            }
+            onChangeDomainLevel={(domainId, level) => {
+              const name =
+                domains.find((d) => d.id === domainId)?.name ??
+                domainNames[domainId] ??
+                "?";
+              void upsertDomainLevel(card.userId, domainId, level, name);
+            }}
+            onAddDomain={(domainId, level) => {
+              const name =
+                domains.find((d) => d.id === domainId)?.name ??
+                domainNames[domainId] ??
+                "?";
+              void upsertDomainLevel(card.userId, domainId, level, name);
+            }}
           />
         )}
         renderOverlay={(activeId) => {
@@ -735,116 +862,13 @@ function TermChannelBanner({ termId, termCode }: { termId: string; termCode: str
   );
 }
 
-// Full-width banner: add-only GitHub team sync for every project staffed this
-// term. Ensures each project's org team, adds its rostered members, and grants
-// the team push on its repos. Idempotent — safe to re-run. Two-click confirm
-// because it can send org invites in bulk.
-function SyncTeamsBanner({ termId, termCode }: { termId: string; termCode: string }) {
-  const [running, setRunning] = useState(false);
-  const [confirming, setConfirming] = useState(false);
-  const [result, setResult] = useState<{ ok: boolean; message: string; warnings?: string[] } | null>(
-    null,
-  );
-
-  // Reset when the selected term changes.
-  useEffect(() => {
-    setResult(null);
-    setConfirming(false);
-  }, [termCode]);
-
-  async function run() {
-    setRunning(true);
-    setResult(null);
-    setConfirming(false);
-    try {
-      const res = await fetch("/api/staffing/sync-teams", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ termId }),
-      });
-      const json = (await res.json().catch(() => ({}))) as {
-        ok?: boolean;
-        message?: string;
-        error?: string;
-        warnings?: string[];
-      };
-      if (!res.ok) {
-        setResult({ ok: false, message: json.error ?? `Failed: ${res.status}` });
-        return;
-      }
-      setResult({ ok: json.ok ?? true, message: json.message ?? "Done.", warnings: json.warnings });
-    } catch (err) {
-      setResult({ ok: false, message: err instanceof Error ? err.message : "Network error" });
-    } finally {
-      setRunning(false);
-    }
-  }
-
-  return (
-    <div className="w-full rounded-lg border border-accent-coral/30 bg-accent-coral/10 px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-      <div className="min-w-0">
-        <p className="text-sm font-heading font-semibold text-foreground">
-          Sync GitHub teams{termCode ? ` for ${termCode}` : ""}
-        </p>
-        <p className="text-xs text-muted-foreground break-words">
-          For every project staffed this term: ensure its org team, add rostered members, and grant
-          the team push on its repos. Add-only — never removes anyone. Safe to re-run.
-        </p>
-        {result && (
-          <>
-            <p className={`text-xs mt-1 break-words ${result.ok ? "text-accent-teal" : "text-destructive"}`}>
-              {result.ok ? "✓ " : "✗ "}
-              {result.message}
-            </p>
-            {result.warnings?.length ? (
-              <ul className="text-xs text-muted-foreground mt-1 list-disc pl-4 max-h-32 overflow-auto break-words">
-                {result.warnings.map((w, i) => (
-                  <li key={i}>{w}</li>
-                ))}
-              </ul>
-            ) : null}
-          </>
-        )}
-      </div>
-      <div className="flex items-center gap-2 flex-shrink-0">
-        {confirming ? (
-          <>
-            <Button
-              variant="primary"
-              size="sm"
-              disabled={running}
-              onClick={run}
-              className="whitespace-nowrap"
-            >
-              {running ? "Syncing…" : "Confirm sync"}
-            </Button>
-            <Button variant="ghost" size="sm" disabled={running} onClick={() => setConfirming(false)}>
-              Cancel
-            </Button>
-          </>
-        ) : (
-          <Button
-            variant="primary"
-            size="sm"
-            disabled={running}
-            onClick={() => setConfirming(true)}
-            className="whitespace-nowrap"
-          >
-            Sync all current-term teams
-          </Button>
-        )}
-      </div>
-    </div>
-  );
-}
-
 async function persist(args: {
   cycleId: string;
   userId: string;
   projectId: string | null;
   domainId?: string;
   level?: Preference["level"];
+  domains?: { domainId: string; level: Preference["level"] }[];
 }): Promise<void> {
   const res = await fetch("/api/staffing/assign", {
     method: "POST",

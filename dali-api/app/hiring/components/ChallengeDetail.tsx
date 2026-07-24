@@ -8,6 +8,7 @@ import { Tooltip } from '~/components/ui/IconButton'
 import type { Question } from '~/types'
 import type { loader } from '~/hiring/routes/challenges.$id'
 import { formatDateTime } from '~/lib/display'
+import { useUserTimeZone } from '~/hooks/useUserTimeZone'
 
 export function resolveDuplicateDomainId(version: { domainId: string | null }): string {
   // A general version's domainId is null; coerce to '' so the form's selected
@@ -50,6 +51,7 @@ export function resolveInitialVersionId({
 
 export function ChallengeDetail() {
   const { challenge, domains: rawDomains } = useLoaderData<typeof loader>()
+  const tz = useUserTimeZone()
   const submit = useSubmit()
   const navigation = useNavigation()
   const [searchParams] = useSearchParams()
@@ -160,7 +162,7 @@ export function ChallengeDetail() {
                       <div className="text-right">
                         <div className="flex items-center justify-end text-xs text-muted-foreground mb-0.5">
                           <Clock className="w-3 h-3 mr-1 flex-shrink-0" />
-                          {formatDateTime(version.createdAt)}
+                          {formatDateTime(version.createdAt, tz)}
                         </div>
                         <div className="flex items-center justify-end text-xs text-muted-foreground">
                           <UserIcon className="w-3 h-3 mr-1 flex-shrink-0" />
@@ -211,7 +213,7 @@ export function ChallengeDetail() {
                   <p className="text-sm text-muted-foreground mt-1">
                     {selectedVersion.domain?.name ?? 'General'} · Created by{' '}
                     {selectedVersion.createdBy.firstName} {selectedVersion.createdBy.lastName} on{' '}
-                    {formatDateTime(selectedVersion.createdAt)}
+                    {formatDateTime(selectedVersion.createdAt, tz)}
                   </p>
                 </div>
                 <div className="flex items-center gap-3">

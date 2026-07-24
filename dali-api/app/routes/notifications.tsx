@@ -6,6 +6,7 @@ import {
   Search,
   ExternalLink,
   RotateCcw,
+  Check,
 } from "lucide-react";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import {
@@ -17,7 +18,10 @@ import {
   type NotificationState,
 } from "~/lib/tasks";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
+import { useUserTimeZone } from "~/hooks/useUserTimeZone";
+import { formatInTimeZone, getZonedYMD, zonedDayLabel } from "~/lib/timezone";
 import { RsvpButtons } from "~/components/RsvpButtons";
+import { TASKS_CHANGED_EVENT } from "~/components/NotificationBell";
 import type { Route } from "./+types/notifications";
 
 export const meta: Route.MetaFunction = () => [
@@ -75,24 +79,20 @@ function StateBadge({ state }: { state: NotificationState }) {
 }
 
 // Group history rows into Today / Yesterday / <date> buckets, preserving the
-// newest-first order the server returns.
-function dayLabel(iso: string): string {
-  const d = new Date(iso);
+// newest-first order the server returns. The day boundary is computed in the
+// viewer's timezone so an 11pm-ET item doesn't read "Yesterday" to a PT user.
+function dayLabel(iso: string, tz: string): string {
   const now = new Date();
-  const startOf = (x: Date) =>
-    new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-  const diffDays = Math.round((startOf(now) - startOf(d)) / 86_400_000);
-  if (diffDays === 0) return "Today";
-  if (diffDays === 1) return "Yesterday";
-  return d.toLocaleDateString(undefined, {
+  const sameYear = getZonedYMD(new Date(iso), tz).year === getZonedYMD(now, tz).year;
+  return zonedDayLabel(iso, now, tz, {
     month: "long",
     day: "numeric",
-    year: now.getFullYear() === d.getFullYear() ? undefined : "numeric",
+    year: sameYear ? undefined : "numeric",
   });
 }
 
-function timeLabel(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, {
+function timeLabel(iso: string, tz: string): string {
+  return formatInTimeZone(iso, tz, {
     month: "short",
     day: "numeric",
     hour: "numeric",
@@ -107,7 +107,27 @@ function openLink(link: string, label: string) {
 }
 
 function OpenTab({ tasks }: { tasks: Task[] }) {
-  if (tasks.length === 0) {
+  const [items, setItems] = useState(tasks);
+  // Re-sync when the loader hands down a fresh list (revalidation, tab switch).
+  useEffect(() => setItems(tasks), [tasks]);
+
+  // Meeting invites clear only by RSVPing, so they carry no manual dismiss.
+  // Everything else — reminders, announcements, general to-dos — can be marked
+  // read here: POST /read clears the notification and drops the sidebar count.
+  async function markRead(id: string) {
+    setItems((prev) => prev.filter((t) => t.id !== id));
+    try {
+      await fetch(`/api/notifications/${id}/read`, {
+        method: "POST",
+        credentials: "include",
+        keepalive: true,
+      });
+    } finally {
+      window.dispatchEvent(new Event(TASKS_CHANGED_EVENT));
+    }
+  }
+
+  if (items.length === 0) {
     return (
       <p className="text-sm text-muted-foreground py-8 text-center">
         You're all caught up — no open tasks.
@@ -116,7 +136,7 @@ function OpenTab({ tasks }: { tasks: Task[] }) {
   }
   return (
     <ul className="flex flex-col gap-2">
-      {tasks.map((t) => (
+      {items.map((t) => (
         <li
           key={t.id}
           className="flex items-start gap-3 rounded-lg border border-border bg-card px-4 py-3"
@@ -146,14 +166,25 @@ function OpenTab({ tasks }: { tasks: Task[] }) {
               </div>
             ) : null}
           </div>
-          {t.source !== "meeting" && t.link && (
-            <button
-              type="button"
-              onClick={() => openLink(t.link!, t.title)}
-              className="flex items-center gap-1 text-xs font-medium text-accent-coral hover:underline flex-shrink-0"
-            >
-              Open <ExternalLink className="w-3 h-3" />
-            </button>
+          {t.source !== "meeting" && (
+            <div className="flex flex-shrink-0 items-center gap-3">
+              {t.link && (
+                <button
+                  type="button"
+                  onClick={() => openLink(t.link!, t.title)}
+                  className="flex items-center gap-1 text-xs font-medium text-accent-coral hover:underline"
+                >
+                  Open <ExternalLink className="w-3 h-3" />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => void markRead(t.id)}
+                className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+              >
+                <Check className="w-3 h-3" /> Mark as read
+              </button>
+            </div>
           )}
         </li>
       ))}
@@ -177,6 +208,7 @@ function HistoryTab({
   const [cursor, setCursor] = useState(initial.nextCursor);
   const [counts, setCounts] = useState(initial.counts);
   const [loading, setLoading] = useState(false);
+  const tz = useUserTimeZone();
 
   // Debounce the search box so typing doesn't fire a request per keystroke.
   useEffect(() => {
@@ -253,13 +285,13 @@ function HistoryTab({
   const groups = useMemo(() => {
     const out: { label: string; rows: NotificationHistoryItem[] }[] = [];
     for (const item of items) {
-      const label = dayLabel(item.sentAt);
+      const label = dayLabel(item.sentAt, tz);
       const last = out[out.length - 1];
       if (last && last.label === label) last.rows.push(item);
       else out.push({ label, rows: [item] });
     }
     return out;
-  }, [items]);
+  }, [items, tz]);
 
   const tabs: { key: "all" | "open" | "cleared"; label: string }[] = [
     { key: "all", label: "All" },
@@ -329,23 +361,23 @@ function HistoryTab({
                       )}
                       <p className="text-[11px] text-muted-foreground mt-1">
                         {n.sender ? `${n.sender} · ` : ""}
-                        sent {timeLabel(n.sentAt)}
-                        {n.clearedAt ? ` · cleared ${timeLabel(n.clearedAt)}` : ""}
+                        sent {timeLabel(n.sentAt, tz)}
+                        {n.clearedAt ? ` · cleared ${timeLabel(n.clearedAt, tz)}` : ""}
                       </p>
                       {n.canRsvp ? <RsvpButtons notificationId={n.id} /> : null}
                     </div>
                     <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-                      {n.link && (
+                      {/* RSVP-able notifications (meeting invites) already
+                          have inline RSVP buttons, so the extra "Open calendar"
+                          link is redundant — it just dumps you on the calendar.
+                          Keep the link only for non-RSVP notifications. */}
+                      {n.link && !n.canRsvp && (
                         <button
                           type="button"
                           onClick={() => openLink(n.link!, n.title)}
                           className="flex items-center gap-1 text-xs font-medium text-accent-coral hover:underline"
                         >
-                          {n.canRsvp
-                            ? "Open calendar"
-                            : n.state === "Submitted"
-                              ? "View"
-                              : "Open"}{" "}
+                          {n.state === "Submitted" ? "View" : "Open"}{" "}
                           <ExternalLink className="w-3 h-3" />
                         </button>
                       )}

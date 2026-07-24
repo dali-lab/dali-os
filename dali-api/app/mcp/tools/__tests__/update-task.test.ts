@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db");
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
-  return { ...real, isCore: vi.fn() };
+  return { ...real, isCore: vi.fn(), isProjectMember: vi.fn() };
 });
 vi.mock("~/projects/lib/task-notifications.server", () => ({
   notifyTaskAssigned: vi.fn().mockResolvedValue(undefined),
@@ -13,7 +13,7 @@ vi.mock("~/projects/lib/github-task-sync", () => ({
 }));
 
 import { prisma } from "~/lib/db";
-import { isCore } from "~/lib/roles";
+import { isCore, isProjectMember } from "~/lib/roles";
 import { syncIssueForTask } from "~/projects/lib/github-task-sync";
 import {
   runUpdateTask,
@@ -35,8 +35,15 @@ describe("update_task", () => {
     expect(UPDATE_TASK_TOOL.requiredScope).toBe("mcp:write");
   });
 
-  it("rejects non-Core callers", async () => {
+  it("rejects callers without project edit access", async () => {
     vi.mocked(isCore).mockResolvedValue(false);
+    vi.mocked(isProjectMember).mockResolvedValue(false);
+    mockPrisma.task.findUnique.mockResolvedValue({
+      id: "t1",
+      projectId: "p1",
+      githubIssueNumber: null,
+      assignees: [],
+    });
     await expect(
       runUpdateTask("u1", { taskId: "t1", title: "x" }),
     ).rejects.toMatchObject({ status: 403 });

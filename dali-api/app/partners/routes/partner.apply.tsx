@@ -16,7 +16,7 @@ import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
 import { findMissingRequired } from "~/lib/form-answers";
 
 export const meta: Route.MetaFunction = () => [
-  { title: "Pitch a project · DALI OS" },
+  { title: "Apply · DALI OS" },
 ];
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -209,13 +209,13 @@ export default function PartnerApply({ actionData }: Route.ComponentProps) {
   const labelClass = "block text-sm font-medium text-dark-blue mb-1";
 
   return (
-    <div className="max-w-2xl">
+    <div className="max-w-2xl mx-auto">
       <h1 className="font-heading text-3xl font-bold text-dark-blue mb-2">
-        Pitch a project
+        Apply to partner with DALI
       </h1>
       <p className="text-muted-foreground mb-8">
-        Tell the lab what you'd like to build. After you submit, you can draft
-        a fuller statement of work together with the DALI team.
+        Submit this application first. Once the lab accepts it, you can draft a
+        statement of work together with the DALI team.
       </p>
 
       {error && (
@@ -355,7 +355,7 @@ export default function PartnerApply({ actionData }: Route.ComponentProps) {
           disabled={submitting}
           className="rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
         >
-          {submitting ? "Submitting…" : "Submit pitch"}
+          {submitting ? "Submitting…" : "Submit application"}
         </button>
       </Form>
     </div>

@@ -10,6 +10,7 @@ import { upsertUserFromGoogle } from "~/lib/user-provisioning";
 import { issueSession } from "~/lib/session";
 import { setSessionCookie } from "~/lib/cookies";
 import { getClientIp } from "~/lib/request-meta";
+import { syncAndRecomputeMembershipStatus } from "~/lib/membership-status";
 import { getApiBaseUrl, getCasBaseUrl, getFrontendUrl } from "~/lib/app-env";
 
 export async function action() {
@@ -75,6 +76,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   const { user } = await upsertUserFromGoogle(googleUser);
+
+  // Fire-and-forget membership-status sync (throttled ≤1/day). Never blocks.
+  void syncAndRecomputeMembershipStatus(user.id);
 
   // Resolve the OAuthClient policy. requireMembership is a belt-and-suspenders
   // check after the upsert (which already creates a DALIMember marker).

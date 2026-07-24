@@ -76,6 +76,8 @@ import { runSprintLifecycle } from "~/jobs/sprint-lifecycle.server";
 import { runFormWindows } from "~/jobs/form-windows.server";
 import { runInterviewReminders } from "~/jobs/interview-reminders.server";
 import { runStandupPrompts } from "~/jobs/standup-prompts.server";
+import { runTaskAutoArchive } from "~/jobs/task-auto-archive.server";
+import { runMembershipStatusSync } from "~/jobs/membership-status-sync.server";
 
 export const JOBS: JobDefinition[] = [
   {
@@ -193,7 +195,7 @@ export const JOBS: JobDefinition[] = [
   {
     name: "sprint-lifecycle",
     description:
-      "Closes Active sprints past their end date, rolls unfinished tasks to the next Planned sprint (else the backlog), and posts a summary to the project's Slack channel.",
+      "Activates Planned sprints at their start date. Closes Active sprints past their end date, rolls unfinished tasks to the next Planned sprint (else the backlog), and posts a summary to the project's Slack channel.",
     intervalMinutes: 60,
     handler: runSprintLifecycle,
   },
@@ -230,6 +232,41 @@ export const JOBS: JobDefinition[] = [
       },
     ],
     handler: runRetentionJanitor,
+  },
+  {
+    name: "task-auto-archive",
+    description:
+      "Archives Done/Cancelled tasks left untouched past the threshold so they drop off the project board.",
+    // Weekly cadence; the board's Archive button can run the same sweep early.
+    intervalMinutes: 10080,
+    settings: [
+      {
+        key: "archiveAfterDays",
+        label: "Archive after (idle)",
+        unit: "days",
+        min: 1,
+        max: 365,
+        default: 7,
+      },
+    ],
+    handler: runTaskAutoArchive,
+  },
+  {
+    name: "membership-status-sync",
+    description:
+      "Keeps member status (Active/Alumni) current: term-rollover Dartmouth sweep, daily re-sync of the ambiguous graduating cohort, and a DB-only recompute for time crossings.",
+    intervalMinutes: 1440,
+    settings: [
+      {
+        key: "maxApiPerRun",
+        label: "Max Dartmouth API calls per run",
+        unit: "",
+        min: 10,
+        max: 1000,
+        default: 200,
+      },
+    ],
+    handler: runMembershipStatusSync,
   },
 ];
 

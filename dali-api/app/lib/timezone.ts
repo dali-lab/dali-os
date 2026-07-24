@@ -160,3 +160,148 @@ export function zonedDayStartUtc(
 ): Date {
   return zonedWallTimeUtc(year, month, day, 0, 0, timezone);
 }
+
+/**
+ * The timezone a user's times should be DISPLAYED in. `User.timeZone` is the
+ * single source of truth; falls back to the lab's application timezone when the
+ * user has never set one or the stored value is invalid. Guarding here protects
+ * every call site from a bad stored IANA string.
+ */
+export function resolveUserTimeZone(
+  user: { timeZone?: string | null } | null | undefined,
+): string {
+  return isValidTimezone(user?.timeZone) ? user!.timeZone! : APPLICATION_TZ;
+}
+
+/**
+ * Format an instant in an explicit IANA zone. The shared primitive for all
+ * tz-aware display: because the zone is explicit (never the runtime's local
+ * zone), the server (UTC on Fly) and the client produce identical strings, so
+ * SSR hydration stays consistent.
+ */
+export function formatInTimeZone(
+  date: string | Date,
+  timezone: string,
+  opts: Intl.DateTimeFormatOptions,
+): string {
+  return new Intl.DateTimeFormat("en-US", { ...opts, timeZone: timezone }).format(
+    new Date(date),
+  );
+}
+
+/** "Mar 5, 2026 at 2:30 PM" in `timezone`. tz-aware twin of display.ts formatDateTime. */
+export function formatDateTimeInZone(date: string | Date, timezone: string): string {
+  const d = new Date(date);
+  const datePart = formatInTimeZone(d, timezone, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+  const timePart = formatInTimeZone(d, timezone, { hour: "numeric", minute: "2-digit" });
+  return `${datePart} at ${timePart}`;
+}
+
+/** "Mar 5, 2026" in `timezone`. tz-aware twin of display.ts formatDateShort. */
+export function formatDateShortInZone(date: string | Date, timezone: string): string {
+  return formatInTimeZone(date, timezone, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+/**
+ * "Thu, Jul 20, 2:30 PM EDT" — a concise instant with a dynamic zone
+ * abbreviation, for per-recipient server copy (reminder notifications) formatted
+ * in each recipient's own zone. Distinct from formatApplicationDateTime, which
+ * always pins ET for applicant/cycle-facing text.
+ */
+export function formatInstantWithZoneLabel(date: string | Date, timezone: string): string {
+  const text = formatInTimeZone(date, timezone, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  const abbrev =
+    new Intl.DateTimeFormat("en-US", { timeZone: timezone, timeZoneName: "short" })
+      .formatToParts(new Date(date))
+      .find((p) => p.type === "timeZoneName")?.value ?? "";
+  return abbrev ? `${text} ${abbrev}` : text;
+}
+
+/**
+ * "Today" / "Yesterday" / a formatted date, with the day boundary computed in
+ * `timezone` (not the host's local day) so bucketing is correct for the viewer.
+ */
+export function zonedDayLabel(
+  date: string | Date,
+  now: Date,
+  timezone: string,
+  fallbackOpts: Intl.DateTimeFormatOptions = { month: "long", day: "numeric" },
+): string {
+  const d = new Date(date);
+  const a = getZonedYMD(d, timezone);
+  const b = getZonedYMD(now, timezone);
+  const diffDays = Math.round(
+    (Date.UTC(b.year, b.month - 1, b.day) - Date.UTC(a.year, a.month - 1, a.day)) /
+      86_400_000,
+  );
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  return formatInTimeZone(d, timezone, fallbackOpts);
+}
+
+/**
+ * Friendly, human label for a stored IANA zone, e.g. "Pacific Time · Los Angeles
+ * (UTC-7)". For read-only display (the profile). Falls back to the raw zone if
+ * invalid.
+ */
+export function formatZoneLabel(timezone: string | null | undefined): string {
+  if (!isValidTimezone(timezone)) return timezone ?? "";
+  const now = new Date();
+  const generic =
+    new Intl.DateTimeFormat("en-US", { timeZone: timezone, timeZoneName: "longGeneric" })
+      .formatToParts(now)
+      .find((p) => p.type === "timeZoneName")?.value ?? "";
+  const offset = (
+    new Intl.DateTimeFormat("en-US", { timeZone: timezone, timeZoneName: "shortOffset" })
+      .formatToParts(now)
+      .find((p) => p.type === "timeZoneName")?.value ?? ""
+  ).replace("GMT", "UTC");
+  const city = timezone.split("/").pop()?.replace(/_/g, " ") ?? timezone;
+  const left = generic && generic !== city ? `${generic} · ${city}` : city;
+  return offset ? `${left} (${offset})` : left;
+}
+
+function timeWithAbbrev(d: Date, timezone: string): { time: string; abbrev: string } {
+  const time = formatInTimeZone(d, timezone, { hour: "numeric", minute: "2-digit" });
+  const abbrev =
+    new Intl.DateTimeFormat("en-US", { timeZone: timezone, timeZoneName: "short" })
+      .formatToParts(d)
+      .find((p) => p.type === "timeZoneName")?.value ?? "";
+  return { time, abbrev };
+}
+
+/**
+ * Dual-time string anchored to `anchorTz` with the viewer's local time appended,
+ * e.g. "2:00 PM EDT · 11:00 AM your time (PDT)". Used for applicant-facing
+ * interview times: the ET anchor is always shown (so an in-person Dartmouth
+ * interview can't be misread) while a remote applicant still sees their own
+ * clock. Collapses to the anchor alone when the viewer zone is unknown or
+ * renders the same wall-clock time as the anchor.
+ */
+export function formatDualTime(
+  date: string | Date,
+  viewerTz: string | null | undefined,
+  anchorTz: string,
+): string {
+  const d = new Date(date);
+  const anchor = timeWithAbbrev(d, anchorTz);
+  const anchorStr = `${anchor.time} ${anchor.abbrev}`.trim();
+  if (!isValidTimezone(viewerTz) || viewerTz === anchorTz) return anchorStr;
+  const viewer = timeWithAbbrev(d, viewerTz);
+  if (viewer.time === anchor.time && viewer.abbrev === anchor.abbrev) return anchorStr;
+  return `${anchorStr} · ${viewer.time} your time (${viewer.abbrev})`;
+}

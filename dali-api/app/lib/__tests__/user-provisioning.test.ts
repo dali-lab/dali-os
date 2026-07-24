@@ -108,6 +108,71 @@ describe("upsertUserFromGoogle", () => {
     expect(args.update).not.toHaveProperty("googleRefreshToken");
     expect(args.update).not.toHaveProperty("googleTokenExpiresAt");
   });
+
+  it("create → stores the Google photo on the new user, no redundant update", async () => {
+    const photo = "https://lh3.googleusercontent.com/a/x";
+    mockPrisma.user.upsert.mockResolvedValue({ id: "u-1", netId: null, photoUrl: photo });
+
+    await upsertUserFromGoogle({
+      email: "k@dali.dartmouth.edu",
+      firstName: "K",
+      lastName: "J",
+      photoUrl: photo,
+    });
+
+    expect(mockPrisma.user.upsert.mock.calls[0][0].create.photoUrl).toBe(photo);
+    // Upsert already returned the same photo → the follow-up update is skipped.
+    expect(mockPrisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it("existing user with no photo → refreshes from Google via update", async () => {
+    mockPrisma.user.upsert.mockResolvedValue({ id: "u-1", netId: null, photoUrl: null });
+
+    await upsertUserFromGoogle({
+      email: "k@dali.dartmouth.edu",
+      firstName: "K",
+      lastName: "J",
+      photoUrl: "https://lh3.googleusercontent.com/a/new",
+    });
+
+    expect(mockPrisma.user.update).toHaveBeenCalledWith({
+      where: { id: "u-1" },
+      data: { photoUrl: "https://lh3.googleusercontent.com/a/new" },
+    });
+  });
+
+  it("never clobbers a custom uploaded avatar (uploads/ key)", async () => {
+    mockPrisma.user.upsert.mockResolvedValue({
+      id: "u-1",
+      netId: null,
+      photoUrl: "uploads/avatars/u-1/custom.webp",
+    });
+
+    await upsertUserFromGoogle({
+      email: "k@dali.dartmouth.edu",
+      firstName: "K",
+      lastName: "J",
+      photoUrl: "https://lh3.googleusercontent.com/a/new",
+    });
+
+    expect(mockPrisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it("no picture from Google → never nulls an existing photo", async () => {
+    mockPrisma.user.upsert.mockResolvedValue({
+      id: "u-1",
+      netId: null,
+      photoUrl: "https://lh3.googleusercontent.com/a/old",
+    });
+
+    await upsertUserFromGoogle({
+      email: "k@dali.dartmouth.edu",
+      firstName: "K",
+      lastName: "J",
+    });
+
+    expect(mockPrisma.user.update).not.toHaveBeenCalled();
+  });
 });
 
 describe("upsertUserFromCas", () => {

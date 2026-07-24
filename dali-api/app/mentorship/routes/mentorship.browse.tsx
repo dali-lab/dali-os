@@ -23,9 +23,9 @@ import { TemplatesModal } from "../components/TemplatesModal";
 import { MentorGrid } from "../components/MentorGrid";
 import {
   buildGrid,
-  termWeekCount,
   type MentorGridResult,
 } from "../lib/mentor-grid.server";
+import { VIBES, VIBE_META } from "../lib/vibe";
 
 export const meta: Route.MetaFunction = () => [
   { title: "Notes · DALI OS" },
@@ -43,9 +43,9 @@ type LoaderData = {
     projectId: string;
     domainId: string;
     termId: string;
-    // Week number within the selected term ("" = any week). When set, the grid
-    // shows only that week's column.
-    week: string;
+    // Vibe ("" = any). When set, only mentee rows with at least one weekly
+    // note of this vibe are shown.
+    status: string;
   };
   options: {
     mentors: FilterOption[];
@@ -53,8 +53,8 @@ type LoaderData = {
     projects: FilterOption[];
     domains: FilterOption[];
     terms: FilterOption[];
-    // Week 1..N for the selected term (empty when no term is selected).
-    weeks: FilterOption[];
+    // Vibe filter options (Good / Ok / Bad with user-facing labels).
+    statuses: FilterOption[];
   };
   grid: MentorGridResult;
   isCore: boolean;
@@ -84,7 +84,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     projectId: pickFilter(url.searchParams.get("projectId")),
     domainId: pickFilter(url.searchParams.get("domainId")),
     termId: termParam !== null ? termParam : defaultTerm?.id ?? "",
-    week: pickFilter(url.searchParams.get("week")),
+    status: pickFilter(url.searchParams.get("status")),
   };
 
   // Scope non-Core viewers to their own notes/pairs + own-domain mentee data.
@@ -130,7 +130,6 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   // The selected term (defaulted to current) drives the grid's week axis.
   const selectedTerm = terms.find((t) => t.id === filters.termId) ?? null;
-  const selectedWeek = filters.week ? Number(filters.week) : null;
 
   function uniquePeople(
     ...lists: { id: string; firstName: string; lastName: string }[][]
@@ -166,28 +165,37 @@ export async function loader({ request }: Route.LoaderArgs) {
       label: `${d.displayName} (${d.code})`,
     })),
     terms: terms.map((t) => ({ id: t.id, label: t.code })),
-    // Week 1..N of the selected term. Empty when no term is selected (week
-    // numbering has no origin then).
-    weeks: selectedTerm
-      ? Array.from({ length: termWeekCount(selectedTerm.startDate, selectedTerm.endDate) }, (_, i) => ({
-          id: String(i + 1),
-          label: `Week ${i + 1}`,
-        }))
-      : [],
+    // Vibe filter options — the note's at-a-glance status.
+    statuses: VIBES.map((v) => ({ id: v, label: VIBE_META[v].label })),
   };
 
   // The grid is a mentor → mentees → weeks matrix, scoped to one term. Without
   // a selected term there's no week axis, so we render an empty-state prompt.
-  const grid: LoaderData["grid"] = selectedTerm
+  let grid: LoaderData["grid"] = selectedTerm
     ? await buildGrid({
         term: selectedTerm,
         filters,
-        weekFilter: selectedWeek,
         viewerId: auth.user.sub,
         pairScope,
         noteScope,
       })
     : { weeks: [], currentWeek: null, mentors: [], termSelected: false };
+
+  // Status (vibe) filter: keep only mentee rows with at least one weekly note
+  // of the selected vibe, and drop mentors left with no matching rows.
+  if (filters.status) {
+    grid = {
+      ...grid,
+      mentors: grid.mentors
+        .map((m) => ({
+          ...m,
+          rows: m.rows.filter((r) =>
+            r.cells.some((c) => c.vibe === filters.status),
+          ),
+        }))
+        .filter((m) => m.rows.length > 0),
+    };
+  }
 
   const data: LoaderData = {
     filters,
@@ -283,17 +291,19 @@ export default function MentorshipBrowse() {
       >
         {/* Keep the header term when applying secondary filters. */}
         <input type="hidden" name="termId" value={data.filters.termId} />
-        <FilterSelect
+        <FilterAutocomplete
           name="mentorId"
           label="Mentor"
           options={data.options.mentors}
           value={data.filters.mentorId}
+          placeholder="Search mentors…"
         />
-        <FilterSelect
+        <FilterAutocomplete
           name="menteeId"
           label="Mentee"
           options={data.options.mentees}
           value={data.filters.menteeId}
+          placeholder="Search mentees…"
         />
         <FilterSelect
           name="projectId"
@@ -308,10 +318,10 @@ export default function MentorshipBrowse() {
           value={data.filters.domainId}
         />
         <FilterSelect
-          name="week"
-          label="Week"
-          options={data.options.weeks}
-          value={data.filters.week}
+          name="status"
+          label="Status"
+          options={data.options.statuses}
+          value={data.filters.status}
         />
         <div className="ml-auto flex items-center gap-2">
           <button
@@ -391,6 +401,127 @@ function FilterSelect({
           </option>
         ))}
       </select>
+    </label>
+  );
+}
+
+// Searchable person filter (mentor / mentee). Keeps a hidden input so the
+// existing GET form still submits mentorId / menteeId.
+function FilterAutocomplete({
+  name,
+  label,
+  options,
+  value,
+  placeholder,
+}: {
+  name: string;
+  label: string;
+  options: FilterOption[];
+  value: string;
+  placeholder: string;
+}) {
+  const selected = options.find((o) => o.id === value) ?? null;
+  const [selectedId, setSelectedId] = useState(value);
+  const [selectedLabel, setSelectedLabel] = useState(selected?.label ?? "");
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLLabelElement>(null);
+
+  useEffect(() => {
+    setSelectedId(value);
+    setSelectedLabel(options.find((o) => o.id === value)?.label ?? "");
+  }, [value, options]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(e: MouseEvent) {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        setQuery("");
+      }
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [open]);
+
+  const q = query.trim().toLowerCase();
+  const filtered = options.filter((o) =>
+    q ? o.label.toLowerCase().includes(q) : true,
+  );
+
+  function choose(option: FilterOption | null) {
+    setSelectedId(option?.id ?? "");
+    setSelectedLabel(option?.label ?? "");
+    setQuery("");
+    setOpen(false);
+  }
+
+  return (
+    <label
+      ref={rootRef}
+      className="relative inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+    >
+      {label}
+      <input type="hidden" name={name} value={selectedId} />
+      <input
+        type="text"
+        value={open ? query : selectedLabel}
+        placeholder={selectedLabel || placeholder}
+        autoComplete="off"
+        onFocus={() => {
+          setOpen(true);
+          setQuery("");
+        }}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setOpen(true);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            setOpen(false);
+            setQuery("");
+          }
+          if (e.key === "Backspace" && !open && selectedId) {
+            choose(null);
+          }
+        }}
+        className="w-44 rounded-md border border-border bg-background px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+      />
+      {open && (
+        <div className="absolute left-0 top-full z-20 mt-1 max-h-56 w-56 overflow-auto rounded-md border border-border bg-card py-1 text-sm shadow-brand-2">
+          <button
+            type="button"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              choose(null);
+            }}
+            className="flex w-full px-3 py-1.5 text-left text-muted-foreground hover:bg-muted/60"
+          >
+            Any
+          </button>
+          {filtered.length === 0 ? (
+            <div className="px-3 py-1.5 text-muted-foreground">No matches</div>
+          ) : (
+            filtered.map((o) => (
+              <button
+                key={o.id}
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  choose(o);
+                }}
+                className={`flex w-full px-3 py-1.5 text-left hover:bg-muted/60 ${
+                  o.id === selectedId
+                    ? "bg-muted/40 font-medium text-foreground"
+                    : "text-foreground"
+                }`}
+              >
+                {o.label}
+              </button>
+            ))
+          )}
+        </div>
+      )}
     </label>
   );
 }

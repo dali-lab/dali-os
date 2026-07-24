@@ -7,6 +7,7 @@ import type { TaskStatus } from "./task-board";
 // Failures are logged and swallowed so a GH outage never blocks user writes.
 
 const STATUS_LABELS: Record<TaskStatus, string | null> = {
+  Backlog: "status:backlog",
   Todo: "status:todo",
   InProgress: "status:in-progress",
   InReview: "status:in-review",
@@ -15,6 +16,7 @@ const STATUS_LABELS: Record<TaskStatus, string | null> = {
 };
 
 const ALL_STATUS_LABELS = [
+  "status:backlog",
   "status:todo",
   "status:in-progress",
   "status:in-review",
@@ -67,22 +69,36 @@ export function wasRecentOutbound(repo: string, num: number): boolean {
 
 // ─── Public surface ─────────────────────────────────────────────────────────
 
-export async function createIssueForTask(taskId: string, repoInput: string): Promise<void> {
+export type TaskGithubMirror = {
+  githubRepo: string;
+  githubIssueNumber: number;
+  githubIssueUrl: string;
+};
+
+// Creates the issue and links it to the task. Returns the stored mirror fields
+// on success, or null when there's nothing to do (bad repo, task gone, already
+// linked) or the GH/DB write fails. Never throws — the fire-and-forget callers
+// (task create) rely on that; the synchronous caller (api.tasks.$id.github,
+// "create" mode) treats null as a failure to surface to the user.
+export async function createIssueForTask(
+  taskId: string,
+  repoInput: string,
+): Promise<TaskGithubMirror | null> {
   const repo = normalizeRepo(repoInput);
   if (!repo) {
     console.error(`github-task-sync: bad repo "${repoInput}" for task ${taskId}`);
-    return;
+    return null;
   }
   try {
     const task = await loadTask(taskId);
-    if (!task) return;
-    if (task.githubIssueNumber !== null) return; // already linked
+    if (!task) return null;
+    if (task.githubIssueNumber !== null) return null; // already linked
 
     const { owner, repo: name } = parseRepo(repo, "createIssueForTask");
     const gh = githubAppClient();
 
     const { assignees, missing } = resolveAssignees(task.assignees);
-    const body = `Tracked in dalios: ${appBaseUrl()}/projects/${task.projectId}?tab=work&task=${task.id}`;
+    const body = `Tracked in dalios: ${appBaseUrl()}/projects/${task.projectId}?tab=board&task=${task.id}`;
 
     const res = await gh.rest.issues.create({
       owner,
@@ -108,8 +124,15 @@ export async function createIssueForTask(taskId: string, repoInput: string): Pro
     if (missing.length > 0) {
       await postMissingAssigneesComment(owner, name, res.data.number, missing);
     }
+
+    return {
+      githubRepo: repo,
+      githubIssueNumber: res.data.number,
+      githubIssueUrl: res.data.html_url,
+    };
   } catch (err) {
     console.error(`github-task-sync: createIssueForTask(${taskId}) failed`, err);
+    return null;
   }
 }
 

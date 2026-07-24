@@ -42,6 +42,7 @@ describe("settings.notifications action", () => {
     const res = await post({
       "education.discussion:present": "1",
       "education.discussion:inApp": "on",
+      "education.discussion:desktop": "on",
       "education.discussion:slackDm": "on",
       "education.discussion:email": "Daily",
     });
@@ -51,11 +52,12 @@ describe("settings.notifications action", () => {
       where: {
         userId_eventType: { userId: "u1", eventType: "education.discussion" },
       },
-      update: { inApp: true, slackDm: true, digestFrequency: "Daily" },
+      update: { inApp: true, desktop: true, slackDm: true, digestFrequency: "Daily" },
       create: {
         userId: "u1",
         eventType: "education.discussion",
         inApp: true,
+        desktop: true,
         slackDm: true,
         digestFrequency: "Daily",
       },
@@ -73,7 +75,7 @@ describe("settings.notifications action", () => {
     expect(mockPrisma.notificationPreference.upsert).toHaveBeenCalledTimes(1);
     expect(mockPrisma.notificationPreference.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        update: { inApp: false, slackDm: false, digestFrequency: "Off" },
+        update: { inApp: false, desktop: false, slackDm: false, digestFrequency: "Off" },
       }),
     );
   });
@@ -86,7 +88,7 @@ describe("settings.notifications action", () => {
     });
     expect(mockPrisma.notificationPreference.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
-        update: { inApp: true, slackDm: false, digestFrequency: "Weekly" },
+        update: { inApp: true, desktop: false, slackDm: false, digestFrequency: "Weekly" },
       }),
     );
   });

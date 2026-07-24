@@ -15,6 +15,7 @@ import {
   List,
   ListOrdered,
   Quote,
+  Image as ImageIcon,
 } from "lucide-react";
 import * as Y from "yjs";
 import { HocuspocusProvider } from "@hocuspocus/provider";
@@ -41,6 +42,7 @@ import { useRegisterCollabEditor } from "./collab/PresenceProvider";
 import { VersionHistoryPanel } from "./collab/VersionHistoryPanel";
 import { EDITOR_CONTENT_CLASS, EditorShell } from "./editor/shared";
 import { mentionEditorExtension, searchMentionableUsers } from "./editor/mention";
+import { imageEditorExtensions, uploadEditorImage, IMAGE_UPLOAD_ACCEPT } from "./editor/image";
 
 interface CollaborativeEditorProps {
   documentName: string;
@@ -75,6 +77,15 @@ interface CollaborativeEditorProps {
    * room should run with it enabled so the schema stays consistent.
    */
   enableMentions?: boolean;
+
+  /**
+   * Enable images in the body (paste/drop/toolbar upload → S3, inserted by
+   * stable URL). Off by default. Same caveat as enableMentions: this adds an
+   * `image` node to the ProseMirror schema for this collab room — additive,
+   * but all clients on the room should run with it enabled so the schema
+   * stays consistent.
+   */
+  enableImages?: boolean;
 
   /**
    * When set (arriving from a mention notification), once the doc syncs the
@@ -341,11 +352,20 @@ const TOOLBAR_ACTIONS: ToolbarAction[] = [
   },
 ];
 
-function EditorToolbar({ editor, onOpenHistory }: { editor: Editor; onOpenHistory: () => void }) {
+function EditorToolbar({
+  editor,
+  onOpenHistory,
+  showImageButton = false,
+}: {
+  editor: Editor;
+  onOpenHistory: () => void;
+  showImageButton?: boolean;
+}) {
   // Tiptap doesn't trigger a React re-render on its own; re-render on every
   // transaction so the active-button highlighting (bold/heading/etc. state)
   // tracks the current selection.
   const [, setTick] = useState(0);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
   useEffect(() => {
     const rerender = () => setTick((t) => t + 1);
     editor.on("transaction", rerender);
@@ -353,6 +373,22 @@ function EditorToolbar({ editor, onOpenHistory }: { editor: Editor; onOpenHistor
       editor.off("transaction", rerender);
     };
   }, [editor]);
+
+  async function onImagePicked(files: FileList | null) {
+    for (const file of Array.from(files ?? [])) {
+      try {
+        const src = await uploadEditorImage(file);
+        editor
+          .chain()
+          .focus()
+          .setImage({ src, alt: file.name.replace(/\.[^.]+$/, "") })
+          .run();
+      } catch (err) {
+        console.error("[editor] image upload failed", err);
+      }
+    }
+    if (imageInputRef.current) imageInputRef.current.value = "";
+  }
 
   return (
     <div className="flex items-center justify-between gap-1 border-b border-border px-1.5 py-1">
@@ -378,6 +414,30 @@ function EditorToolbar({ editor, onOpenHistory }: { editor: Editor; onOpenHistor
             <Icon size={15} />
           </button>
         ))}
+        {showImageButton && (
+          <>
+            <button
+              type="button"
+              title="Image"
+              aria-label="Image"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                imageInputRef.current?.click();
+              }}
+              className="p-1.5 rounded transition-colors text-muted-foreground hover:text-foreground hover:bg-muted"
+            >
+              <ImageIcon size={15} />
+            </button>
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept={IMAGE_UPLOAD_ACCEPT}
+              multiple
+              className="hidden"
+              onChange={(e) => void onImagePicked(e.target.files)}
+            />
+          </>
+        )}
       </div>
       <button
         type="button"
@@ -516,6 +576,7 @@ function CollaborativeEditorInner({
   editorId,
   inlineComments,
   enableMentions = false,
+  enableImages = false,
   focusMentionUserId,
   entry,
 }: CollaborativeEditorProps & { entry: DocEntry }) {
@@ -549,6 +610,7 @@ function CollaborativeEditorInner({
       Placeholder.configure({ placeholder }),
       TabKeymap,
       ...(enableMentions ? [mentionEditorExtension(searchMentionableUsers)] : []),
+      ...(enableImages ? imageEditorExtensions() : []),
       createCollabExtension(entry.fragment, entry.provider),
       ...(inlineComments?.enabled
         ? [
@@ -842,7 +904,11 @@ function CollaborativeEditorInner({
       className={className}
     >
       {editor && !disabled ? (
-        <EditorToolbar editor={editor} onOpenHistory={() => setHistoryOpen(true)} />
+        <EditorToolbar
+          editor={editor}
+          onOpenHistory={() => setHistoryOpen(true)}
+          showImageButton={enableImages}
+        />
       ) : (
         <button
           type="button"

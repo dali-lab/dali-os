@@ -21,9 +21,11 @@ import {
 } from "~/lib/google-workspace";
 import { logAuditEvent } from "~/lib/audit";
 import { notify } from "~/lib/notify.server";
+import { notifyAdminsOfPromotion, isLevelAdvance } from "~/lib/promotion-notify.server";
+import type { Level } from "~/lib/level";
 import { dedupeLiveAssignments } from "../lib/staffing-board";
 import { publishCycleChange } from "../lib/staffing-events.server";
-import { derivePairings } from "../lib/mentorship-pairings";
+import { derivePairings, findDomainsMissingMentors } from "../lib/mentorship-pairings";
 
 // POST /api/staffing/finalize
 //
@@ -190,9 +192,10 @@ export async function action({ request }: Route.ActionArgs) {
         where: { staffingCycleId: cycle.id, status: { in: ["Proposed", "Confirmed"] } },
         select: { id: true, userId: true, projectId: true, domainId: true, level: true, status: true },
       });
-      // Target roster = members whose live assignment points at THIS project.
+      // Target roster = members whose live assignment points at THIS project
+      // (one row per userId+domainId — multi-domain staffing is allowed).
       const liveTarget = dedupeLiveAssignments(cycleRows).filter((r) => r.projectId === project.id);
-      const targetUserIds = new Set(liveTarget.map((r) => r.userId));
+      const targetKeys = new Set(liveTarget.map((r) => `${r.userId}|${r.domainId}`));
 
       // An assignment's domainId is unguarded (StaffingAssignment has no FK to
       // Domain), so a blank/stale value can slip in — e.g. a bid whose domain
@@ -211,20 +214,44 @@ export async function action({ request }: Route.ActionArgs) {
         })
       ).map((u) => `${u.firstName} ${u.lastName}`.trim());
 
-      // Members currently Confirmed on this project who are no longer in the
-      // target roster (dragged off / to another project / unassigned). Decline
-      // their stale Confirmed rows and drop the ProjectAssignment for this
-      // project+cycle. DomainEligibility is left intact — it's monotonic and a
-      // promotion already granted isn't revoked by re-staffing.
+      // Confirmed rows on this project whose (user, domain) is no longer live —
+      // member dragged off, or a domain chip deselected while they stay on the
+      // project. Decline those rows and drop the matching ProjectAssignment.
+      // DomainEligibility is left intact — it's monotonic and a promotion
+      // already granted isn't revoked by re-staffing.
       const droppedRows = cycleRows.filter(
-        (r) => r.status === "Confirmed" && r.projectId === project.id && !targetUserIds.has(r.userId),
+        (r) =>
+          r.status === "Confirmed" &&
+          r.projectId === project.id &&
+          !targetKeys.has(`${r.userId}|${r.domainId}`),
       );
 
       let droppedCount = 0;
       let pairsCreated = 0;
       let mentorsPromoted = 0;
+      let mentorshipGaps: { domainId: string; menteeUserIds: string[] }[] = [];
       const promoteMentors = body.promoteMentors === true;
+      // Capture each (user, domain)'s pre-upsert eligibility level so we can
+      // tell admins about genuine pay-level advancements after the tx commits
+      // (issue #1001). First-seen prior wins; later writes update the target.
+      const eligBumps = new Map<
+        string,
+        { userId: string; domainId: string; from: Level | null; to: Level }
+      >();
       await prisma.$transaction(async (tx) => {
+        const recordElig = async (userId: string, domainId: string, to: Level) => {
+          const key = `${userId}:${domainId}`;
+          const existing = eligBumps.get(key);
+          if (existing) {
+            existing.to = to;
+            return;
+          }
+          const cur = await tx.domainEligibility.findUnique({
+            where: { userId_domainId: { userId, domainId } },
+            select: { level: true },
+          });
+          eligBumps.set(key, { userId, domainId, from: cur?.level ?? null, to });
+        };
         for (const a of target) {
           if (a.status !== "Confirmed") {
             await tx.staffingAssignment.update({ where: { id: a.id }, data: { status: "Confirmed" } });
@@ -249,6 +276,7 @@ export async function action({ request }: Route.ActionArgs) {
           });
           // Eligibility is monotonic (only goes up); but the staffing lead
           // is the authority here, so mirror the assigned level.
+          await recordElig(a.userId, a.domainId, a.level);
           await tx.domainEligibility.upsert({
             where: { userId_domainId: { userId: a.userId, domainId: a.domainId } },
             update: { level: a.level, promotedBy: auth.user.sub },
@@ -300,6 +328,7 @@ export async function action({ request }: Route.ActionArgs) {
             });
             const promoted = new Set<string>();
             for (const r of belowP3) {
+              await recordElig(r.userId, r.domainId, "P3");
               await tx.domainEligibility.upsert({
                 where: { userId_domainId: { userId: r.userId, domainId: r.domainId } },
                 update: { level: "P3", promotedBy: auth.user.sub },
@@ -339,6 +368,17 @@ export async function action({ request }: Route.ActionArgs) {
           roleOverride,
           externalMentors,
         });
+
+        // After promotes + pairing: domains that still have multiple mentees
+        // and no mentor need a level (or Mentor badge / external) fix.
+        const roster = await tx.projectAssignment.findMany({
+          where: { projectId: project.id, termId: cycle.termId },
+          select: { userId: true, domainId: true, level: true },
+        });
+        mentorshipGaps = findDomainsMissingMentors(roster, {
+          roleOverride,
+          externalMentors,
+        });
       });
 
       // Tell each newly-confirmed member (rows that were still Proposed when
@@ -363,23 +403,62 @@ export async function action({ request }: Route.ActionArgs) {
         );
       }
 
+      // Tell admins about genuine pay-level advancements this run applied —
+      // staffing-lead level bumps and mentor→P3 promotions (issue #1001).
+      for (const b of eligBumps.values()) {
+        if (!isLevelAdvance(b.from, b.to)) continue;
+        void notifyAdminsOfPromotion({
+          userId: b.userId,
+          actorId: auth.user.sub,
+          summary: `was promoted to ${b.to} in ${domainNameById.get(b.domainId) ?? "a domain"}`,
+        }).catch((err) =>
+          console.error(`staffing finalize ${project.id}: promotion notify failed`, err),
+        );
+      }
+
       const dropNote = droppedCount > 0 ? `, removed ${droppedCount}` : "";
-      const pairNote = pairsCreated > 0 ? `, paired ${pairsCreated} mentor link${pairsCreated === 1 ? "" : "s"}` : "";
+      const pairNote = `, paired ${pairsCreated} mentor link${pairsCreated === 1 ? "" : "s"}`;
       const promoteNote =
         mentorsPromoted > 0 ? `, promoted ${mentorsPromoted} mentor${mentorsPromoted === 1 ? "" : "s"} to P3` : "";
       const skipNote =
         skippedNames.length > 0
           ? ` Skipped ${skippedNames.length} with an invalid/blank domain (fix their bid): ${skippedNames.join(", ")}.`
           : "";
+
+      let mentorshipGapNote = "";
+      if (mentorshipGaps.length > 0) {
+        const menteeIds = [...new Set(mentorshipGaps.flatMap((g) => g.menteeUserIds))];
+        const menteeUsers = await prisma.user.findMany({
+          where: { id: { in: menteeIds } },
+          select: { id: true, firstName: true, lastName: true },
+        });
+        const nameById = new Map(
+          menteeUsers.map((u) => [u.id, `${u.firstName} ${u.lastName}`.trim()]),
+        );
+        // Soft-skip: other domains still paired; surface a warning, not a
+        // hard error, so the rest of Propagate isn't treated as failed.
+        mentorshipGapNote =
+          " Skipped mentorship for " +
+          mentorshipGaps
+            .map((g) => {
+              const domain = domainNameById.get(g.domainId) ?? "Unknown domain";
+              const names = g.menteeUserIds.map((id) => nameById.get(id) ?? id).join(", ");
+              return `${domain} (mentees but no P3/Mentor: ${names})`;
+            })
+            .join("; ") +
+          " — other domains were paired. Raise someone to P3 on their domain chip (or mark Mentor / add an external mentor), then re-run Propagate.";
+      }
+
       results.assignments = {
-        // Flag as error when anyone was skipped so the lead sees the warning and
-        // follows up — the valid assignments still went through.
+        // Invalid/blank domains are a real data error; mentorship gaps for
+        // individual domains are soft-skipped and stay status ok.
         status: skippedNames.length > 0 ? "error" : "ok",
         message:
           (confirmedCount === 0 && droppedCount === 0
             ? "No proposed assignments for this project."
             : `Confirmed ${confirmedCount} assignment${confirmedCount === 1 ? "" : "s"}${dropNote}${pairNote}${promoteNote} → ProjectAssignment.`) +
-          skipNote,
+          skipNote +
+          mentorshipGapNote,
       };
     } catch (err) {
       results.assignments = { status: "error", message: slackErrorMessage(err) };

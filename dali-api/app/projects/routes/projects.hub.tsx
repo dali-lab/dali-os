@@ -6,6 +6,7 @@ import {
   useActionData,
   useLoaderData,
   useNavigate,
+  useSearchParams,
 } from "react-router";
 import type { Route } from "./+types/projects.hub";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
@@ -21,6 +22,7 @@ import { ViewToggle, useViewPreference } from "~/components/ViewToggle";
 import { buttonClasses } from "~/components/ui/Button";
 import { TermFilter } from "~/components/TermFilter";
 import { resolveTermFilter } from "~/lib/terms";
+import { ALL_TERMS } from "~/lib/terms.shared";
 
 export const handle = {
   areaPills: true,
@@ -102,16 +104,38 @@ export async function loader({ request }: Route.LoaderArgs) {
     }),
   );
 
-  const [partnerOrgs, canEdit, canStaff] = await Promise.all([
-    prisma.partnerOrg.findMany({
-      orderBy: { name: "asc" },
-      select: { id: true, name: true },
-    }),
-    isCore(auth.user.sub),
-    canViewStaffing(auth.user.sub),
-  ]);
+  const filteringByTerm = !isAll && !!termId;
 
-  return { rows, terms, selectedTerm: selected, partnerOrgs, canEdit, canStaff };
+  const [partnerOrgs, canEdit, canStaff, myAssignments, totalProjects] =
+    await Promise.all([
+      prisma.partnerOrg.findMany({
+        orderBy: { name: "asc" },
+        select: { id: true, name: true },
+      }),
+      isCore(auth.user.sub),
+      canViewStaffing(auth.user.sub),
+      // Which projects the viewer has (or had) an assignment on, any term —
+      // drives the "My projects" toggle chip.
+      prisma.projectAssignment.findMany({
+        where: { userId: auth.user.sub },
+        select: { projectId: true },
+        distinct: ["projectId"],
+      }),
+      // Only needed to tell "the term filter hid everything" apart from "no
+      // projects at all"; with the filter off, rows already is everything.
+      filteringByTerm ? prisma.project.count() : Promise.resolve(0),
+    ]);
+
+  return {
+    rows,
+    terms,
+    selectedTerm: selected,
+    partnerOrgs,
+    canEdit,
+    canStaff,
+    myProjectIds: myAssignments.map((a) => a.projectId),
+    hiddenByTermFilter: filteringByTerm && rows.length === 0 && totalProjects > 0,
+  };
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -178,21 +202,33 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function ProjectsListPage() {
-  const { rows, terms, selectedTerm, partnerOrgs, canEdit, canStaff } =
-    useLoaderData<typeof loader>();
+  const {
+    rows,
+    terms,
+    selectedTerm,
+    partnerOrgs,
+    canEdit,
+    canStaff,
+    myProjectIds,
+    hiddenByTermFilter,
+  } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [creating, setCreating] = useState(false);
   const [query, setQuery] = useState("");
+  const [mineOnly, setMineOnly] = useState(false);
   const [view, setView] = useViewPreference("dali:view:projects", "list");
 
   const filtered = useMemo(() => {
+    const mine = new Set(myProjectIds);
+    const base = mineOnly ? rows.filter((r) => mine.has(r.id)) : rows;
     const q = query.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((r) => {
+    if (!q) return base;
+    return base.filter((r) => {
       if (r.name.toLowerCase().includes(q)) return true;
       return r.partners.some((p) => p.name.toLowerCase().includes(q));
     });
-  }, [rows, query]);
+  }, [rows, query, mineOnly, myProjectIds]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -315,17 +351,54 @@ export default function ProjectsListPage() {
           placeholder="Search by project or partner name"
           className="flex-1 min-w-[200px] max-w-sm px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
         />
+        <button
+          type="button"
+          onClick={() => setMineOnly((v) => !v)}
+          aria-pressed={mineOnly}
+          className={`inline-flex items-center text-xs px-2.5 py-1 rounded-full border transition-colors ${
+            mineOnly
+              ? "border-accent-coral bg-accent-coral/10 text-accent-coral"
+              : "border-border text-muted-foreground hover:bg-muted/30"
+          }`}
+        >
+          My projects
+        </button>
         <TermFilter terms={terms} selected={selectedTerm} />
         <ViewToggle value={view} onChange={setView} />
         <span className="text-xs text-muted-foreground ml-auto">
           {filtered.length} {filtered.length === 1 ? "project" : "projects"}
-          {query && filtered.length !== rows.length ? ` of ${rows.length}` : ""}
+          {(query || mineOnly) && filtered.length !== rows.length
+            ? ` of ${rows.length}`
+            : ""}
         </span>
       </div>
 
       {filtered.length === 0 ? (
         <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-          {query ? "No projects match this search." : "No projects yet."}
+          {query ? (
+            "No projects match this search."
+          ) : mineOnly && rows.length > 0 ? (
+            "You're not on any of these projects."
+          ) : hiddenByTermFilter ? (
+            // Projects exist — the default current-term filter just hides them
+            // all. Say so, and offer the one-click way out.
+            <>
+              No Active projects run in this term.{" "}
+              <button
+                type="button"
+                onClick={() => {
+                  const next = new URLSearchParams(searchParams);
+                  next.set("term", ALL_TERMS);
+                  setSearchParams(next);
+                }}
+                className="font-medium text-accent-coral hover:underline"
+              >
+                Show all terms
+              </button>
+            </>
+          ) : (
+            "No projects yet."
+          )}
         </div>
       ) : view === "list" ? (
         <ProjectsTable rows={filtered} />
@@ -338,6 +411,10 @@ export default function ProjectsListPage() {
 
 function ProjectsTable({ rows }: { rows: ProjectRow[] }) {
   const navigate = useNavigate();
+  const open = (p: ProjectRow) => {
+    const url = `/projects/${p.id}`;
+    if (!requestOpenTabIfEmbedded(url, p.name)) navigate(url);
+  };
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm min-w-[640px]">
@@ -352,16 +429,27 @@ function ProjectsTable({ rows }: { rows: ProjectRow[] }) {
           {rows.map((p) => (
             <tr
               key={p.id}
-              onClick={() => {
-                const url = `/projects/${p.id}`;
-                if (!requestOpenTabIfEmbedded(url, p.name)) navigate(url);
-              }}
+              onClick={() => open(p)}
               className="border-t border-border hover:bg-muted/20 cursor-pointer"
             >
               <td className="px-4 py-2">
                 <div className="flex items-center gap-3 min-w-0">
                   <ProjectThumb project={p} />
-                  <span className="text-foreground truncate">{p.name}</span>
+                  {/* A real anchor so cmd/ctrl/middle-click opens a browser
+                      tab; a plain click defers to the row's embed-aware
+                      handler (same behavior as clicking anywhere else). */}
+                  <Link
+                    to={`/projects/${p.id}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (e.metaKey || e.ctrlKey || e.shiftKey) return;
+                      e.preventDefault();
+                      open(p);
+                    }}
+                    className="text-foreground truncate hover:underline"
+                  >
+                    {p.name}
+                  </Link>
                 </div>
               </td>
               <td className="px-4 py-2">

@@ -1,5 +1,15 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect, type CSSProperties, type ReactNode } from 'react'
 import { GripVertical, Plus, Pencil, Trash2, Save, Check, Loader2 } from 'lucide-react'
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import type { Question } from '~/types'
 import { RichTextEditor } from '~/components/RichTextEditor'
 import { Tooltip } from '~/components/ui/IconButton'
@@ -148,38 +158,24 @@ export function FormBuilderTab({
   const [maxWordsValue, setMaxWordsValue] = useState<string>('')
   const [acceptPresets, setAcceptPresets] = useState<Set<string>>(new Set())
   const [acceptCustom, setAcceptCustom] = useState('')
-  // Drag and drop state. Track the source by key (stable across reorders) so
-  // mid-drag splices don't invalidate it. Reorder happens on dragover of each
-  // row, picking before/after based on whether the cursor is past the row's
-  // vertical midpoint — more stable than dragenter, which can fire on inner
-  // children and skip rows.
-  const [dragKey, setDragKey] = useState<string | null>(null)
-  const handleDragStart = (e: React.DragEvent, key: string) => {
-    setDragKey(key)
-    e.dataTransfer.effectAllowed = 'move'
-    e.dataTransfer.setData('text/plain', key)
-  }
-  const handleRowDragOver = (e: React.DragEvent, overKey: string) => {
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-    if (!dragKey || dragKey === overKey) return
-    const rect = e.currentTarget.getBoundingClientRect()
-    const after = e.clientY > rect.top + rect.height / 2
+  // Drag-to-reorder via dnd-kit (same idiom as EpicSprintManager / KanbanBoard).
+  // The reorder commits once, on drop — no per-move state churn — and the live
+  // move is a CSS transform, so long forms stay responsive while dragging.
+  // `activeId` only tints sibling borders for the duration of a drag.
+  const [activeId, setActiveId] = useState<string | null>(null)
+  const dragSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+  )
+  const handleDragEnd = (event: DragEndEvent) => {
+    setActiveId(null)
+    const { active, over } = event
+    if (!over || active.id === over.id) return
     setQuestions((prev) => {
-      const from = prev.findIndex((q) => q.key === dragKey)
-      const overIdx = prev.findIndex((q) => q.key === overKey)
-      if (from === -1 || overIdx === -1) return prev
-      let to = after ? overIdx + 1 : overIdx
-      if (from < to) to -= 1
-      if (from === to) return prev
-      const updated = [...prev]
-      const [moved] = updated.splice(from, 1)
-      updated.splice(to, 0, moved)
-      return updated
+      const from = prev.findIndex((q) => q.key === active.id)
+      const to = prev.findIndex((q) => q.key === over.id)
+      if (from === -1 || to === -1) return prev
+      return arrayMove(prev, from, to)
     })
-  }
-  const handleDragEnd = () => {
-    setDragKey(null)
   }
   const resetEditState = () => {
     setEditingKey(null)
@@ -572,96 +568,109 @@ export function FormBuilderTab({
         />
       </div>
       <div className="space-y-2">
-        {questions.map((q, index) => (
-          <div
-            key={q.key}
-            draggable={editingKey !== q.key}
-            onDragStart={(e) => handleDragStart(e, q.key)}
-            onDragOver={(e) => handleRowDragOver(e, q.key)}
-            onDragEnd={handleDragEnd}
-            onDrop={(e) => e.preventDefault()}
-            className={`rounded-xl ${dragKey === q.key ? 'opacity-40' : ''}`}
+        <DndContext
+          sensors={dragSensors}
+          collisionDetection={closestCenter}
+          onDragStart={(e) => setActiveId(String(e.active.id))}
+          onDragEnd={handleDragEnd}
+          onDragCancel={() => setActiveId(null)}
+        >
+          <SortableContext
+            items={questions.map((q) => q.key)}
+            strategy={verticalListSortingStrategy}
           >
-            {editingKey === q.key ? (
-              renderEditForm()
-            ) : (
-              <div
-                className={`flex items-start gap-4 bg-card p-4 rounded-xl border shadow-sm group transition-colors duration-150 ${dragKey ? 'border-gray-300' : 'border-border'}`}
-              >
-                <div className="mt-1 cursor-grab active:cursor-grabbing text-muted-foreground/70 hover:text-muted-foreground select-none">
-                  <GripVertical className="w-5 h-5" />
-                </div>
-
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-1">
-                    <span className="text-sm font-medium text-muted-foreground">
-                      Q{index + 1}
-                    </span>
-                    <h4 className="text-base font-medium text-foreground">
-                      {q.data.label}
-                    </h4>
-                    {q.required && (
-                      <span className="text-xs font-medium text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
-                        Required
-                      </span>
-                    )}
-                    {q.data.afterDomains && (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800">
-                        After Domains
-                      </span>
-                    )}
-                    {q.type === 'textarea' && q.data.maxWords !== undefined && (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-800">
-                        Max {q.data.maxWords} words
-                      </span>
-                    )}
-                    <span className="text-xs font-medium text-muted-foreground bg-muted px-2 py-0.5 rounded-full capitalize">
-                      {q.type}
-                    </span>
-                  </div>
-
-                  {q.data.description && (
-                    <p className="text-sm text-muted-foreground mb-2">
-                      {q.data.description}
-                    </p>
-                  )}
-
-                  {(q.type === 'select' || q.type === 'skills_rating' || q.type === 'checkbox') && q.data.options && (
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {q.data.options.map((opt) => (
-                        <span
-                          key={opt}
-                          className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100"
+            {questions.map((q, index) => (
+              <SortableQuestionRow key={q.key} id={q.key} disabled={editingKey === q.key}>
+                {(dragHandleProps, isDragging) => (
+                  <div className={`rounded-xl ${isDragging ? 'opacity-40' : ''}`}>
+                    {editingKey === q.key ? (
+                      renderEditForm()
+                    ) : (
+                      <div
+                        className={`flex items-start gap-4 bg-card p-4 rounded-xl border shadow-sm group transition-colors duration-150 ${activeId ? 'border-gray-300' : 'border-border'}`}
+                      >
+                        <div
+                          {...dragHandleProps}
+                          aria-label={`Reorder ${q.data.label || 'question'}`}
+                          className="mt-1 cursor-grab active:cursor-grabbing text-muted-foreground/70 hover:text-muted-foreground select-none touch-none"
                         >
-                          {opt}
-                        </span>
-                      ))}
-                    </div>
-                  )}
+                          <GripVertical className="w-5 h-5" />
+                        </div>
 
-                  {q.type === 'file' && q.data.accept && (
-                    <p className="text-xs text-gray-500 mt-1">Accepts: {q.data.accept}</p>
-                  )}
-                </div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-1">
+                            <span className="text-sm font-medium text-muted-foreground">
+                              Q{index + 1}
+                            </span>
+                            <h4 className="text-base font-medium text-foreground">
+                              {q.data.label}
+                            </h4>
+                            {q.required && (
+                              <span className="text-xs font-medium text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
+                                Required
+                              </span>
+                            )}
+                            {q.data.afterDomains && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800">
+                                After Domains
+                              </span>
+                            )}
+                            {q.type === 'textarea' && q.data.maxWords !== undefined && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-800">
+                                Max {q.data.maxWords} words
+                              </span>
+                            )}
+                            <span className="text-xs font-medium text-muted-foreground bg-muted px-2 py-0.5 rounded-full capitalize">
+                              {q.type}
+                            </span>
+                          </div>
 
-                <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button
-                    onClick={() => handleEdit(q)}
-                    className="p-1.5 text-muted-foreground/70 hover:text-blue-600 rounded-md hover:bg-blue-50"
-                  >
-                    <Pencil className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(q.key)}
-                    className="p-1.5 text-muted-foreground/70 hover:text-red-600 rounded-md hover:bg-red-50"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        ))}
+                          {q.data.description && (
+                            <p className="text-sm text-muted-foreground mb-2">
+                              {q.data.description}
+                            </p>
+                          )}
+
+                          {(q.type === 'select' || q.type === 'skills_rating' || q.type === 'checkbox') && q.data.options && (
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {q.data.options.map((opt) => (
+                                <span
+                                  key={opt}
+                                  className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100"
+                                >
+                                  {opt}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
+                          {q.type === 'file' && q.data.accept && (
+                            <p className="text-xs text-gray-500 mt-1">Accepts: {q.data.accept}</p>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={() => handleEdit(q)}
+                            className="p-1.5 text-muted-foreground/70 hover:text-blue-600 rounded-md hover:bg-blue-50"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(q.key)}
+                            className="p-1.5 text-muted-foreground/70 hover:text-red-600 rounded-md hover:bg-red-50"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </SortableQuestionRow>
+            ))}
+          </SortableContext>
+        </DndContext>
 
         <button
           onClick={handleAddQuestion}
@@ -720,6 +729,38 @@ export function FormBuilderTab({
           )
         })()}
       </div>
+    </div>
+  )
+}
+
+// Sortable wrapper for a question row. Owns the dnd-kit node ref + transform;
+// hands the drag-handle props to the grip via a render prop so the rest of the
+// row (edit/delete buttons, links) stays non-draggable. Disabled while the row
+// is being inline-edited.
+function SortableQuestionRow({
+  id,
+  disabled,
+  children,
+}: {
+  id: string
+  disabled: boolean
+  children: (dragHandleProps: Record<string, unknown>, isDragging: boolean) => ReactNode
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id,
+    disabled,
+  })
+  const style: CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  }
+  const dragHandleProps = disabled
+    ? {}
+    : ({ ...attributes, ...listeners } as Record<string, unknown>)
+
+  return (
+    <div ref={setNodeRef} style={style}>
+      {children(dragHandleProps, isDragging)}
     </div>
   )
 }

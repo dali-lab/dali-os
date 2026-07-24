@@ -7,6 +7,15 @@ export const USER_NAME_SELECT = {
   lastName: true,
 } satisfies Prisma.UserSelect;
 
+// Name card + avatar. Raw photoUrl still needs resolvePhotoUrl() in the loader
+// before it reaches a component.
+export const USER_NAME_PHOTO_SELECT = {
+  id: true,
+  firstName: true,
+  lastName: true,
+  photoUrl: true,
+} satisfies Prisma.UserSelect;
+
 // Name + both Dartmouth emails
 export const USER_NAME_AND_EMAIL_SELECT = {
   id: true,

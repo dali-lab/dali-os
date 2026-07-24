@@ -3,6 +3,7 @@ import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { listCalendarsForLink } from "~/lib/google-calendar";
 import { loadProfilePage } from "~/members/lib/profile-page.server";
+import { isAdmin } from "~/lib/roles";
 import { jobByName, resolveJobSettings } from "~/jobs/registry";
 
 export type CalendarLinkDTO = {
@@ -84,7 +85,8 @@ export async function loadSettingsPageData(request: Request) {
 
   const userId = auth.user.sub;
 
-  const [profile, links, user, sessionRows, grants, notificationPrefs, digestRows] = await Promise.all([
+  const [profile, links, user, sessionRows, grants, notificationPrefs, digestRows, viewerIsAdmin] =
+    await Promise.all([
     loadProfilePage({ request, targetId: userId }),
     prisma.userCalendarLink.findMany({
       where: { userId },
@@ -124,12 +126,13 @@ export async function loadSettingsPageData(request: Request) {
     }),
     prisma.notificationPreference.findMany({
       where: { userId },
-      select: { eventType: true, inApp: true, slackDm: true, digestFrequency: true },
+      select: { eventType: true, inApp: true, desktop: true, slackDm: true, digestFrequency: true },
     }),
     prisma.scheduledJob.findMany({
       where: { name: { in: ["notification-digest-daily", "notification-digest-weekly"] } },
       select: { name: true, settings: true },
     }),
+    isAdmin(userId),
   ]);
 
   // Render the digest schedule as actually configured (Admin → Jobs), not a
@@ -217,6 +220,7 @@ export async function loadSettingsPageData(request: Request) {
         weeklyHour: weekly.sendHourEt,
         weeklyWeekday: weekly.sendWeekday ?? 1,
       },
+      isAdmin: viewerIsAdmin,
     },
   };
 }

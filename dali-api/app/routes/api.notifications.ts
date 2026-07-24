@@ -3,8 +3,9 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { listOpenTasks, listNotificationHistory } from "~/lib/tasks";
-import { listMyNotifications } from "~/lib/notifications";
-import { ONBOARDING_LINK } from "~/members/lib/welcome.server";
+import { listMyNotifications, annotateDesktopFeed } from "~/lib/notifications";
+import { publishNotificationChange } from "~/lib/notify-stream.server";
+import { ONBOARDING_EVENT_TYPE } from "~/members/lib/welcome.server";
 
 // Query params that switch the loader into history mode. Their presence (not
 // their value) flips the payload, so the legacy poller — which sends none — is
@@ -57,18 +58,28 @@ export async function loader({ request }: Route.LoaderArgs) {
     return withCors(request, Response.json(result));
   }
 
-  // Legacy payload (unchanged): the bell poller reads taskCount/tasks.
+  // Legacy payload: the bell poller reads taskCount/tasks.
   // dev (#…) refactored notification fetching into listMyNotifications();
   // keep that helper and layer the open-tasks payload on top so the bell
-  // still shows tasks (Tasks-nav feature).
-  const [{ items, unreadCount }, tasks] = await Promise.all([
+  // still shows tasks (Tasks-nav feature). Items additionally carry the
+  // desktop-app annotations (`desktop`, `urgent`); web clients ignore them.
+  const [{ items, unreadCount }, tasks, desktopPrefs] = await Promise.all([
     listMyNotifications(userId),
     listOpenTasks(userId),
+    prisma.notificationPreference.findMany({
+      where: { userId },
+      select: { eventType: true, desktop: true },
+    }),
   ]);
 
   return withCors(
     request,
-    Response.json({ items, unreadCount, taskCount: tasks.length, tasks }),
+    Response.json({
+      items: annotateDesktopFeed(items, desktopPrefs),
+      unreadCount,
+      taskCount: tasks.length,
+      tasks,
+    }),
   );
 }
 
@@ -85,16 +96,21 @@ export async function action({ request }: Route.ActionArgs) {
 
   // POST with no id = "mark all read". Excluded: meeting invites (clear only on
   // RSVP) and the onboarding task (clears only when onboarding is finished), so
-  // neither is dismissed by a blanket read.
+  // neither is dismissed by a blanket read. Meeting reminders share
+  // scheduledMeetingId with invites but are dismissible — leave them in.
   await prisma.notification.updateMany({
     where: {
       recipientUserId: auth.user.sub,
       readAt: null,
-      scheduledMeetingId: null,
-      NOT: { kind: "SystemAnnouncement", link: ONBOARDING_LINK },
+      NOT: [
+        { kind: "MeetingInvite", scheduledMeetingId: { not: null } },
+        { eventType: ONBOARDING_EVENT_TYPE },
+      ],
     },
     data: { readAt: new Date() },
   });
+  // Converge the desktop badge without waiting for its sync backstop.
+  publishNotificationChange([auth.user.sub]);
 
   return withCors(request, Response.json({ ok: true }));
 }

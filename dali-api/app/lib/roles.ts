@@ -2,7 +2,7 @@ import { prisma } from "~/lib/db";
 import { cycleSortKeyRange } from "~/lib/core-cycle";
 import type { AssignmentType } from "~/generated/prisma/client";
 
-function getAdminUserIdsFromEnv(): string[] {
+export function getAdminUserIdsFromEnv(): string[] {
   return (process.env.ADMIN_USER_IDS ?? "").split(",").filter(Boolean);
 }
 
@@ -34,6 +34,13 @@ export interface UserRoles {
   isInstructor: boolean;
   /** Interviewer on any cycle — mirrors the reviewer/interviewer sidebar convention. */
   isInterviewer: boolean;
+  /**
+   * Graduated former member — reads the stored `User.membershipStatus`
+   * (recomputed at transitions; see membership-status.ts). Informational for
+   * now: access is NOT suppressed here. The alumni sidebar variant + route
+   * guards land in a follow-up, where this flag will gate them.
+   */
+  isAlumni: boolean;
   /** Forms & Groups: Core, Admin, or Instructor. */
   canViewForms: boolean;
   /** Staffing, Intent to Work, Bids, Applications: Core or Admin. */
@@ -49,7 +56,7 @@ export async function getUserRoles(userId: string): Promise<UserRoles> {
 
   const cycleTermIds = await getActiveCoreCycleTermIds();
 
-  const [member, admin, core, domainLead, instructor, interviewer] = await Promise.all([
+  const [member, admin, core, domainLead, instructor, interviewer, userRow] = await Promise.all([
     prisma.dALIMember.findUnique({ where: { userId }, select: { id: true } }),
     prisma.adminMembership.findUnique({ where: { userId }, select: { id: true } }),
     // Core access tracks the active election cycle (Spring N → Winter N+1,
@@ -68,6 +75,9 @@ export async function getUserRoles(userId: string): Promise<UserRoles> {
     // mirrors the domain-lead "any row" convention.
     prisma.instructorAssignment.findFirst({ where: { userId }, select: { id: true } }),
     prisma.cycleInterviewer.findFirst({ where: { userId }, select: { id: true } }),
+    // Stored, authoritative membership status — one indexed column, no
+    // derivation. See membership-status.ts for how it's kept current.
+    prisma.user.findUnique({ where: { id: userId }, select: { membershipStatus: true } }),
   ]);
 
   const isAdminVal = admin !== null || envIds.includes(userId);
@@ -82,6 +92,7 @@ export async function getUserRoles(userId: string): Promise<UserRoles> {
     isDomainLead: domainLead !== null,
     isInstructor: isInstructorVal,
     isInterviewer: interviewer !== null,
+    isAlumni: userRow?.membershipStatus === "Alumni",
     canViewForms: isAdminVal || isCoreVal || isInstructorVal,
     canViewStaffing: isAdminVal || isCoreVal,
   };
@@ -359,6 +370,42 @@ export async function isDomainLead(userId: string): Promise<boolean> {
     select: { id: true },
   });
   return row !== null;
+}
+
+// ─── Tier resolution ─────────────────────────────────────────────────────────
+
+export type Tier =
+  | "Admin"
+  | "Core"
+  | "Member"
+  | "Alumni"
+  | "Partner"
+  | "Student";
+
+/**
+ * Resolve a user's single canonical tier for display. Authority checks win
+ * first (a former member who is now Admin/Core keeps that label); otherwise a
+ * lab member reads their stored `membershipStatus` (Active → Member, Alumni →
+ * Alumni). Reads no engagement tables — the Member/Alumni split is the stored
+ * status, not an assignment lookup.
+ */
+export async function tier(userId: string): Promise<Tier> {
+  if (await isAdmin(userId)) return "Admin";
+  if (await isCore(userId)) return "Core";
+
+  const [userRow, partner] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: userId },
+      select: { membershipStatus: true, daliMember: { select: { id: true } } },
+    }),
+    prisma.partnerUser.findUnique({ where: { userId }, select: { id: true } }),
+  ]);
+
+  if (userRow?.daliMember) {
+    return userRow.membershipStatus === "Alumni" ? "Alumni" : "Member";
+  }
+  if (partner !== null) return "Partner";
+  return "Student";
 }
 
 /**

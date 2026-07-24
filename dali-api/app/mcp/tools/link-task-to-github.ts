@@ -1,10 +1,10 @@
 // MCP `link_task_to_github` — create a GitHub issue mirror for a task that
-// isn't yet mirrored. Wraps createIssueForTask. Core-only.
+// isn't yet mirrored. Wraps createIssueForTask. Core or project member.
 // (v1: link = create-new-issue. Linking to an existing issue would require
 // new infrastructure; not in scope.)
 
 import { prisma } from "~/lib/db";
-import { isCore } from "~/lib/roles";
+import { canEditProject } from "./access";
 import {
   createIssueForTask,
   normalizeRepo,
@@ -13,7 +13,7 @@ import {
 export const LINK_TASK_TO_GITHUB_TOOL = {
   name: "link_task_to_github",
   description:
-    "Create a GitHub issue mirror for a task. `repo` must be one of the project's repoUrls. Core-only. Returns immediately; the GH write is fire-and-forget.",
+    "Create a GitHub issue mirror for a task. `repo` must be one of the project's repoUrls. Requires Core or project-member access. Returns immediately; the GH write is fire-and-forget.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -40,10 +40,6 @@ export class LinkTaskToGithubError extends Error {
 }
 
 export async function runLinkTaskToGithub(callerId: string, input: Input) {
-  if (!(await isCore(callerId))) {
-    throw new LinkTaskToGithubError("Forbidden", 403);
-  }
-
   const normalized = normalizeRepo(input.repo);
   if (!normalized) throw new LinkTaskToGithubError("Invalid repo", 400);
 
@@ -51,11 +47,17 @@ export async function runLinkTaskToGithub(callerId: string, input: Input) {
     where: { id: input.taskId },
     select: {
       id: true,
+      projectId: true,
       githubIssueNumber: true,
       project: { select: { repoUrls: true } },
     },
   });
   if (!task) throw new LinkTaskToGithubError("Task not found", 404);
+
+  if (!(await canEditProject(callerId, task.projectId))) {
+    throw new LinkTaskToGithubError("Forbidden", 403);
+  }
+
   if (task.githubIssueNumber !== null) {
     throw new LinkTaskToGithubError("Task is already linked to a GitHub issue", 400);
   }

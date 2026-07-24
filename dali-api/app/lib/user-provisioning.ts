@@ -17,6 +17,7 @@ export type GoogleClaims = {
   email: string;
   firstName: string;
   lastName: string;
+  photoUrl?: string | null;
 };
 
 export type CasClaims = {
@@ -54,8 +55,22 @@ export async function upsertUserFromGoogle(
       daliEmail: google.email,
       firstName: google.firstName,
       lastName: google.lastName,
+      photoUrl: google.photoUrl ?? null,
     },
+    select: { id: true, netId: true, photoUrl: true },
   });
+
+  // Refresh the profile photo from Google when it sends one, but never clobber
+  // a custom avatar the member uploaded through the app (an "uploads/" S3 key).
+  // Null/legacy/prior-Google URLs get refreshed since Google's URL can rotate.
+  const incomingPhoto = google.photoUrl ?? null;
+  const isCustomUpload = user.photoUrl?.startsWith("uploads/") ?? false;
+  if (incomingPhoto && incomingPhoto !== user.photoUrl && !isCustomUpload) {
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { photoUrl: incomingPhoto },
+    });
+  }
 
   // Ensure a DALIMember marker row exists for this user. DALIMember.userId
   // is NOT NULL after Phase 2; we upsert by userId.

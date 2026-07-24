@@ -9,17 +9,19 @@ import { publishCycleChange } from "../lib/staffing-events.server";
 
 // POST /api/staffing/assign
 //
-// Body: { userId, cycleId, projectId | null, domainId, level }
+// Body: { userId, cycleId, projectId | null, domainId?, level?, domains? }
 //   - projectId === null → move the member back to Unassigned (delete their
 //     Proposed StaffingAssignment for this cycle).
-//   - projectId set → upsert a Proposed StaffingAssignment for (userId, cycleId)
-//     pointing at the target project. The board is the single source of
-//     proposed state, so we clear any prior Proposed row for the same
-//     user+cycle in the same transaction.
+//   - projectId set → replace Proposed rows for (userId, cycleId) with one
+//     Proposed StaffingAssignment per domain (all on the same project). Pass
+//     `domains: [{ domainId, level }, ...]` for multi-domain staffing, or the
+//     legacy single `domainId` + `level`.
 //
 // The schema has no (userId, staffingCycleId) unique constraint — multiple
-// proposals across history are fine; we just want "at most one Proposed at a
-// time per (user, cycle)".
+// proposals across history are fine; we just want "at most one Proposed set at
+// a time per (user, cycle)" covering every selected domain.
+
+type DomainLevelBody = { domainId: string; level: Level };
 
 type Body = {
   userId: string;
@@ -27,7 +29,26 @@ type Body = {
   projectId: string | null;
   domainId?: string;
   level?: Level;
+  domains?: DomainLevelBody[];
 };
+
+function parseDomains(o: Record<string, unknown>): DomainLevelBody[] | null {
+  if (Array.isArray(o.domains)) {
+    if (o.domains.length === 0) return null;
+    const out: DomainLevelBody[] = [];
+    for (const item of o.domains) {
+      if (!item || typeof item !== "object") return null;
+      const d = item as Record<string, unknown>;
+      if (typeof d.domainId !== "string" || !isLevel(d.level)) return null;
+      out.push({ domainId: d.domainId, level: d.level });
+    }
+    return out;
+  }
+  if (typeof o.domainId === "string" && isLevel(o.level)) {
+    return [{ domainId: o.domainId, level: o.level }];
+  }
+  return null;
+}
 
 function isBody(x: unknown): x is Body {
   if (!x || typeof x !== "object") return false;
@@ -36,8 +57,9 @@ function isBody(x: unknown): x is Body {
   if (typeof o.cycleId !== "string") return false;
   if (o.projectId !== null && typeof o.projectId !== "string") return false;
   if (o.projectId !== null) {
-    if (typeof o.domainId !== "string") return false;
-    if (!isLevel(o.level)) return false;
+    const domains = parseDomains(o);
+    if (!domains) return false;
+    (o as Body).domains = domains;
   }
   return true;
 }
@@ -76,9 +98,10 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   const assignerId = auth.user.sub;
+  const domains = body.domains ?? [];
 
   await prisma.$transaction(async (tx) => {
-    // Drop any prior Proposed row for this (userId, cycle). Confirmed +
+    // Drop any prior Proposed rows for this (userId, cycle). Confirmed +
     // Declined rows are kept as audit trail.
     await tx.staffingAssignment.deleteMany({
       where: {
@@ -89,18 +112,20 @@ export async function action({ request }: Route.ActionArgs) {
     });
 
     if (body.projectId !== null) {
-      await tx.staffingAssignment.create({
-        data: {
-          userId: body.userId,
-          staffingCycleId: body.cycleId,
-          projectId: body.projectId,
-          termId: cycle.termId,
-          domainId: body.domainId!,
-          level: body.level!,
-          status: "Proposed",
-          assignedById: assignerId,
-        },
-      });
+      for (const d of domains) {
+        await tx.staffingAssignment.create({
+          data: {
+            userId: body.userId,
+            staffingCycleId: body.cycleId,
+            projectId: body.projectId,
+            termId: cycle.termId,
+            domainId: d.domainId,
+            level: d.level,
+            status: "Proposed",
+            assignedById: assignerId,
+          },
+        });
+      }
     }
   });
 
@@ -111,8 +136,12 @@ export async function action({ request }: Route.ActionArgs) {
     metadata: {
       cycleId: body.cycleId,
       projectId: body.projectId,
-      domainId: body.domainId ?? null,
-      level: body.level ?? null,
+      domains:
+        body.projectId === null
+          ? null
+          : domains.map((d) => ({ domainId: d.domainId, level: d.level })),
+      domainId: domains[0]?.domainId ?? null,
+      level: domains[0]?.level ?? null,
     },
     request,
   });

@@ -11,6 +11,7 @@ import {
   isPartnerAccount,
 } from "~/lib/auth";
 import { prisma } from "~/lib/db";
+import { isAdmin } from "~/lib/roles";
 import {
   EVENT_TYPES,
   isEventType,
@@ -33,11 +34,13 @@ export async function action({ request }: Route.ActionArgs) {
   if (!auth.ok) return unauthorized(request);
   if (auth.user.type === "applicant") return forbidden(request);
   if (await isPartnerAccount(auth)) return forbidden(request);
+  const viewerIsAdmin = await isAdmin(auth.user.sub);
 
   const form = await request.formData();
   const rows: {
     eventType: EventType;
     inApp: boolean;
+    desktop: boolean;
     slackDm: boolean;
     digestFrequency: DigestValue;
   }[] = [];
@@ -45,6 +48,8 @@ export async function action({ request }: Route.ActionArgs) {
   for (const eventType of VISIBLE_EVENTS) {
     if (!isEventType(eventType)) continue;
     const def: EventDef = EVENT_TYPES[eventType];
+    // Admin-only events aren't rendered for non-admins; ignore any forged post.
+    if (def.adminOnly && !viewerIsAdmin) continue;
     // Checkboxes submit only when checked; the hidden `${type}:present`
     // field distinguishes "unchecked" from "row not on the form".
     if (form.get(`${eventType}:present`) !== "1") continue;
@@ -60,6 +65,7 @@ export async function action({ request }: Route.ActionArgs) {
       eventType,
       inApp:
         def.lockedInApp || digestSelected ? true : form.get(`${eventType}:inApp`) === "on",
+      desktop: form.get(`${eventType}:desktop`) === "on",
       slackDm: form.get(`${eventType}:slackDm`) === "on",
       digestFrequency,
     });
@@ -72,11 +78,17 @@ export async function action({ request }: Route.ActionArgs) {
         where: {
           userId_eventType: { userId: auth.user.sub, eventType: r.eventType },
         },
-        update: { inApp: r.inApp, slackDm: r.slackDm, digestFrequency: r.digestFrequency },
+        update: {
+          inApp: r.inApp,
+          desktop: r.desktop,
+          slackDm: r.slackDm,
+          digestFrequency: r.digestFrequency,
+        },
         create: {
           userId: auth.user.sub,
           eventType: r.eventType,
           inApp: r.inApp,
+          desktop: r.desktop,
           slackDm: r.slackDm,
           digestFrequency: r.digestFrequency,
         },

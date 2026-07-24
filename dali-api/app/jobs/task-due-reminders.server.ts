@@ -17,7 +17,7 @@
 
 import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
-import { formatApplicationDateTime } from "~/lib/timezone";
+import { APPLICATION_TZ, formatInstantWithZoneLabel, resolveUserTimeZone } from "~/lib/timezone";
 import type { JobContext, JobResult } from "~/jobs/registry";
 import type { ReminderKind } from "~/generated/prisma/client";
 
@@ -107,6 +107,14 @@ export async function runTaskDueReminders({ now }: JobContext): Promise<JobResul
     take: CAP,
   });
 
+  // Resolve each recipient's display zone once so "Due …" reads in their own
+  // local time (with a zone label), not a hardcoded ET.
+  const tzRows = await prisma.user.findMany({
+    where: { id: { in: Array.from(new Set(pending.map((p) => p.userId))) } },
+    select: { id: true, timeZone: true },
+  });
+  const tzByUser = new Map(tzRows.map((r) => [r.id, resolveUserTimeZone(r)]));
+
   let sent = 0;
   for (const reminder of pending) {
     const task = reminder.task;
@@ -118,7 +126,10 @@ export async function runTaskDueReminders({ now }: JobContext): Promise<JobResul
       windowContains(reminder.kind, now, task.dueAt);
     if (!stillValid) continue; // inert (moved/closed/unassigned) — never sends
 
-    const when = formatApplicationDateTime(task.dueAt!);
+    const when = formatInstantWithZoneLabel(
+      task.dueAt!,
+      tzByUser.get(reminder.userId) ?? APPLICATION_TZ,
+    );
     try {
       await notify({
         eventType: "task.due_reminder",
@@ -127,13 +138,13 @@ export async function runTaskDueReminders({ now }: JobContext): Promise<JobResul
             ? {
                 title: `Task due tomorrow: ${task.title}`,
                 body: `Due ${when}.`,
-                link: `/projects/${task.projectId}?tab=work&task=${reminder.taskId}`,
+                link: `/projects/${task.projectId}?tab=board&task=${reminder.taskId}`,
                 dueAt: task.dueAt,
               }
             : {
                 title: `Task due now: ${task.title}`,
                 body: `Due ${when}.`,
-                link: `/projects/${task.projectId}?tab=work&task=${reminder.taskId}`,
+                link: `/projects/${task.projectId}?tab=board&task=${reminder.taskId}`,
                 dueAt: task.dueAt,
               },
         recipients: [{ userId: reminder.userId }],

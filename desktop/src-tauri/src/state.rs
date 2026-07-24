@@ -16,6 +16,16 @@ pub enum AuthState {
     LoggedOut,
 }
 
+// One tray-menu entry for a recent unread notification. Maintained by the
+// delivery loop (poller.rs); the tray menu handler resolves clicks against
+// this list by index.
+#[derive(Clone)]
+pub struct RecentNotif {
+    pub title: String,
+    pub link: Option<String>,
+    pub urgent: bool,
+}
+
 pub struct AppState {
     // Cheap to clone (Arc inside) — clone out before awaiting rather than
     // holding a State guard across .await.
@@ -26,6 +36,8 @@ pub struct AppState {
     // Notification ids already surfaced this session — dedupe so a steady poll
     // doesn't re-alert the same item.
     pub seen_notifs: Mutex<HashSet<String>>,
+    // Latest unread notifications, urgent first — rendered in the tray menu.
+    pub recent_notifs: Mutex<Vec<RecentNotif>>,
     // Webview zoom factor (View → Zoom). In-memory; resets to 1.0 on restart.
     pub zoom: Mutex<f64>,
 }
@@ -37,6 +49,7 @@ impl AppState {
             auth: Mutex::new(AuthState::Unpaired),
             pairing_cancel: AtomicBool::new(false),
             seen_notifs: Mutex::new(HashSet::new()),
+            recent_notifs: Mutex::new(Vec::new()),
             zoom: Mutex::new(1.0),
         }
     }

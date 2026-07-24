@@ -11,12 +11,9 @@ type Tx = {
     >;
   };
   mentorshipPair: {
-    findMany: (args: {
+    deleteMany: (args: {
       where: { projectId: string; termId: string };
-      select: { menteeUserId: true; mentorUserId: true; domainId: true };
-    }) => Promise<
-      { menteeUserId: string; mentorUserId: string; domainId: string }[]
-    >;
+    }) => Promise<{ count: number }>;
     createMany: (args: {
       data: {
         menteeUserId: string;
@@ -33,9 +30,11 @@ type Tx = {
 // staffed on the project: every mentee gets paired to every mentor in the same
 // domain. A member's role defaults to their level (P3 → mentor, P1/P2 →
 // mentee); `roleOverride` (from the staffing board's per-card role badge, keyed
-// by userId) flips it when present. Additive only — existing pairs are never
-// deleted, so Core overrides (manual adds/removals via the /mentorship/pairs
-// UI) are preserved across re-finalizes. Returns the count of new pairs created.
+// by userId) flips it when present.
+//
+// Replaces all existing MentorshipPair rows for this project+term, then writes
+// the derived set — so a domain move (e.g. Fullstack → UI/UX) drops the old
+// mentor link instead of leaving it behind. Returns the count of pairs created.
 export async function derivePairings(
   tx: Tx,
   projectId: string,
@@ -72,14 +71,6 @@ export async function derivePairings(
     bucketFor(em.domainId).mentors.push(em.userId);
   }
 
-  const existing = await tx.mentorshipPair.findMany({
-    where: { projectId, termId },
-    select: { menteeUserId: true, mentorUserId: true, domainId: true },
-  });
-  const seen = new Set(
-    existing.map((p) => `${p.menteeUserId}|${p.mentorUserId}|${p.domainId}`),
-  );
-
   const toCreate: {
     menteeUserId: string;
     mentorUserId: string;
@@ -91,15 +82,60 @@ export async function derivePairings(
     if (mentors.length === 0) continue;
     for (const menteeUserId of mentees) {
       for (const mentorUserId of mentors) {
-        const key = `${menteeUserId}|${mentorUserId}|${domainId}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
         toCreate.push({ menteeUserId, mentorUserId, projectId, termId, domainId });
       }
     }
   }
 
+  // Clear prior pairs for this project+term so re-finalize reflects the current
+  // roster (domain chips / mentor badges), not leftover links from earlier runs.
+  await tx.mentorshipPair.deleteMany({ where: { projectId, termId } });
+
   if (toCreate.length === 0) return 0;
   await tx.mentorshipPair.createMany({ data: toCreate });
   return toCreate.length;
+}
+
+export type DomainMissingMentor = {
+  domainId: string;
+  menteeUserIds: string[];
+};
+
+// Domains where mentorship pairing cannot run: zero mentors and more than one
+// mentee. Solo mentee domains are fine (nothing to pair with). External mentors
+// and role overrides count. Used by finalize to surface a level/role gap.
+export function findDomainsMissingMentors(
+  assignments: { userId: string; domainId: string; level: "P1" | "P2" | "P3" }[],
+  opts?: {
+    roleOverride?: Map<string, boolean>;
+    externalMentors?: { userId: string; domainId: string }[];
+  },
+): DomainMissingMentor[] {
+  const override = opts?.roleOverride;
+  const byDomain = new Map<string, { mentees: string[]; mentors: string[] }>();
+  const bucketFor = (domainId: string) => {
+    let bucket = byDomain.get(domainId);
+    if (!bucket) {
+      bucket = { mentees: [], mentors: [] };
+      byDomain.set(domainId, bucket);
+    }
+    return bucket;
+  };
+  for (const a of assignments) {
+    const bucket = bucketFor(a.domainId);
+    const isMentor = override?.get(a.userId) ?? a.level === "P3";
+    if (isMentor) bucket.mentors.push(a.userId);
+    else bucket.mentees.push(a.userId);
+  }
+  for (const em of opts?.externalMentors ?? []) {
+    bucketFor(em.domainId).mentors.push(em.userId);
+  }
+
+  const gaps: DomainMissingMentor[] = [];
+  for (const [domainId, { mentees, mentors }] of byDomain) {
+    if (mentors.length > 0) continue;
+    if (mentees.length <= 1) continue;
+    gaps.push({ domainId, menteeUserIds: mentees });
+  }
+  return gaps;
 }

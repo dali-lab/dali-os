@@ -18,27 +18,23 @@ import { Button, buttonClasses } from "~/components/ui/Button";
 import { Tooltip } from "~/components/ui/IconButton";
 import type { Question } from "~/types";
 import type { loader } from "~/forms/routes/forms.edit.$formId";
+import { useUserTimeZone } from "~/hooks/useUserTimeZone";
+import { formatInTimeZone } from "~/lib/timezone";
 
-function formatDateTime(iso: string) {
-  const d = new Date(iso);
+function formatDateTime(iso: string, tz: string) {
   return (
-    d.toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    }) +
+    formatInTimeZone(iso, tz, { month: "short", day: "numeric", year: "numeric" }) +
     " at " +
-    d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
+    formatInTimeZone(iso, tz, { hour: "numeric", minute: "2-digit" })
   );
 }
 
 // Compact one-line form for the narrow versions sidebar, e.g. "May 24, 11:49 AM".
-function formatDateShort(iso: string) {
-  const d = new Date(iso);
+function formatDateShort(iso: string, tz: string) {
   return (
-    d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) +
+    formatInTimeZone(iso, tz, { month: "short", day: "numeric" }) +
     ", " +
-    d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
+    formatInTimeZone(iso, tz, { hour: "numeric", minute: "2-digit" })
   );
 }
 
@@ -55,6 +51,7 @@ function formatDateShort(iso: string) {
 //                         are read-only and are what publishing serves.
 export function FormDetail() {
   const { form, terms, usages, groups } = useLoaderData<typeof loader>();
+  const tz = useUserTimeZone();
   // A dedicated fetcher for saves so the builder's buttons can reflect
   // request state ("Saving…"/"Saved ✓"). The submitted intent tells us which
   // button is in flight; fetcher.state + a brief post-success window drive the
@@ -334,7 +331,7 @@ export function FormDetail() {
                     <div className="mt-2 space-y-1 text-xs text-muted-foreground">
                       <div className="flex items-center gap-1.5">
                         <Clock className="w-3 h-3 flex-shrink-0" />
-                        <span className="truncate">{formatDateShort(version.createdAt)}</span>
+                        <span className="truncate">{formatDateShort(version.createdAt, tz)}</span>
                       </div>
                       <div className="flex items-center gap-1.5">
                         <UserIcon className="w-3 h-3 flex-shrink-0" />
@@ -420,7 +417,7 @@ export function FormDetail() {
                   </h2>
                   <p className="text-sm text-muted-foreground mt-1">
                     Created by {selectedVersion.createdByName} on{" "}
-                    {formatDateTime(selectedVersion.createdAt)}
+                    {formatDateTime(selectedVersion.createdAt, tz)}
                   </p>
                 </div>
                 <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">

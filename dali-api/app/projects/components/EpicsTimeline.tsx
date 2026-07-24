@@ -8,6 +8,13 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
+import {
+  DAY,
+  dayOffset,
+  daySpan,
+  localTodayUtcDay,
+  utcDayOf,
+} from "../lib/timeline-days";
 
 export type EpicStatus = "Backlog" | "Open" | "InProgress" | "Done" | "Cancelled";
 export type SprintStatus = "Planned" | "Active" | "Closed";
@@ -81,7 +88,6 @@ const EPIC_DOT: Record<EpicStatus, string> = {
   Cancelled: "bg-destructive",
 };
 
-const DAY = 86_400_000;
 const LABEL_W = 176; // px — fixed left column for row titles (w-44)
 const PX_PER_DAY = 22;
 const EPIC_BAR_H = 26;
@@ -89,18 +95,23 @@ const SPRINT_BAR_H = 14;
 const BAR_GAP = 4;
 const ROW_PAD_Y = 10;
 
-function startOfDay(t: number): number {
-  const d = new Date(t);
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
-}
-
+// All timeline dates are UTC-midnight instants and every printed label is
+// the UTC calendar date, so formatting pins timeZone: "UTC" — otherwise a
+// US-timezone viewer sees "Jul 19" for a bar that occupies the Jul 20 column.
 function fmtDay(d: Date): string {
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return d.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
 }
 
 function fmtMonth(d: Date): string {
-  return d.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  return d.toLocaleDateString(undefined, {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
 }
 
 function rowHeight(sprintCount: number): number {
@@ -195,12 +206,15 @@ function HoverBar({
   title,
   rows,
   children,
+  onClick,
 }: {
   className: string;
   style: CSSProperties;
   title: string;
   rows: { label: string; value: string }[];
   children?: ReactNode;
+  // When set, the bar becomes a button that opens the epic/sprint detail.
+  onClick?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
@@ -208,10 +222,23 @@ function HoverBar({
     <>
       <div
         ref={setAnchorEl}
-        className={className}
+        className={`${className}${onClick ? " cursor-pointer" : ""}`}
         style={style}
         onMouseEnter={() => setOpen(true)}
         onMouseLeave={() => setOpen(false)}
+        {...(onClick
+          ? {
+              role: "button" as const,
+              tabIndex: 0,
+              onClick,
+              onKeyDown: (e: { key: string; preventDefault: () => void }) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onClick();
+                }
+              },
+            }
+          : {})}
       >
         {children}
       </div>
@@ -220,25 +247,40 @@ function HoverBar({
   );
 }
 
-export function EpicsTimeline({ epics }: { epics: TimelineEpic[] }) {
+export function EpicsTimeline({
+  epics,
+  taskCounts,
+  onEpicClick,
+  onSprintClick,
+}: {
+  epics: TimelineEpic[];
+  // Optional per-epic task progress keyed by epic id (Cancelled tasks
+  // excluded), shown in the epic hover card.
+  taskCounts?: Record<string, { done: number; total: number }>;
+  // When set, epic/sprint bars become clickable (open the detail modal).
+  onEpicClick?: (epicId: string) => void;
+  onSprintClick?: (epicId: string, sprintId: string) => void;
+}) {
   const bounds = useMemo(() => {
-    const times: number[] = [startOfDay(Date.now())];
+    // All day math is in UTC days (see ../lib/timeline-days): dates arrive
+    // as UTC-midnight instants, and the header/labels print UTC dates.
+    const times: number[] = [localTodayUtcDay()];
     for (const e of epics) {
-      if (e.startsAt) times.push(new Date(e.startsAt).getTime());
-      if (e.endsAt) times.push(new Date(e.endsAt).getTime());
+      if (e.startsAt) times.push(utcDayOf(e.startsAt));
+      if (e.endsAt) times.push(utcDayOf(e.endsAt));
       for (const s of e.sprints) {
-        times.push(new Date(s.startsAt).getTime());
-        times.push(new Date(s.endsAt).getTime());
+        times.push(utcDayOf(s.startsAt));
+        times.push(utcDayOf(s.endsAt));
       }
     }
     if (times.length === 0) return null;
 
     const lo = new Date(Math.min(...times));
     const hi = new Date(Math.max(...times));
-    const minD = new Date(lo.getFullYear(), lo.getMonth() - 3, 1);
-    const maxD = new Date(hi.getFullYear(), hi.getMonth() + 4, 1);
-    const min = startOfDay(minD.getTime());
-    const max = startOfDay(maxD.getTime());
+    // Pad to whole months on either side. Date.UTC handles month overflow
+    // and already lands on a UTC midnight.
+    const min = Date.UTC(lo.getUTCFullYear(), lo.getUTCMonth() - 3, 1);
+    const max = Date.UTC(hi.getUTCFullYear(), hi.getUTCMonth() + 4, 1);
     const days = Math.max(Math.round((max - min) / DAY), 1);
     return { min, max, days, width: days * PX_PER_DAY };
   }, [epics]);
@@ -246,12 +288,14 @@ export function EpicsTimeline({ epics }: { epics: TimelineEpic[] }) {
   const days = useMemo(() => {
     if (!bounds) return [];
     const out: { t: number; isMonthStart: boolean; isToday: boolean }[] = [];
-    const today = startOfDay(Date.now());
+    const today = localTodayUtcDay();
+    // UTC days are uniformly DAY ms (no DST), so stepping by DAY stays on
+    // exact UTC midnights.
     for (let t = bounds.min; t <= bounds.max; t += DAY) {
       const d = new Date(t);
       out.push({
         t,
-        isMonthStart: d.getDate() === 1,
+        isMonthStart: d.getUTCDate() === 1,
         isToday: t === today,
       });
     }
@@ -278,20 +322,16 @@ export function EpicsTimeline({ epics }: { epics: TimelineEpic[] }) {
   }, [bounds, days]);
 
   function x(iso: string): number {
-    return ((startOfDay(new Date(iso).getTime()) - bounds!.min) / DAY) * PX_PER_DAY;
+    return dayOffset(iso, bounds!.min) * PX_PER_DAY;
   }
   function w(startIso: string, endIso: string): number {
-    const a = startOfDay(new Date(startIso).getTime());
-    const b = startOfDay(new Date(endIso).getTime());
-    return Math.max(((b - a) / DAY + 1) * PX_PER_DAY, PX_PER_DAY);
+    return Math.max(daySpan(startIso, endIso) * PX_PER_DAY, PX_PER_DAY);
   }
 
-  const MIN_ROWS = 8;
-  const fillerRows = Math.max(MIN_ROWS - epics.length, 0);
-  const FILLER_H = 48;
+  const today = localTodayUtcDay();
   const todayLeft =
-    bounds && startOfDay(Date.now()) >= bounds.min && startOfDay(Date.now()) <= bounds.max
-      ? ((startOfDay(Date.now()) - bounds.min) / DAY) * PX_PER_DAY
+    bounds && today >= bounds.min && today <= bounds.max
+      ? ((today - bounds.min) / DAY) * PX_PER_DAY
       : null;
 
   const scrollerRef = useRef<HTMLDivElement>(null);
@@ -301,14 +341,10 @@ export function EpicsTimeline({ epics }: { epics: TimelineEpic[] }) {
     if (todayLeft != null) anchors.push(todayLeft);
     for (const e of epics) {
       if (e.startsAt) {
-        anchors.push(
-          ((startOfDay(new Date(e.startsAt).getTime()) - bounds.min) / DAY) * PX_PER_DAY,
-        );
+        anchors.push(dayOffset(e.startsAt, bounds.min) * PX_PER_DAY);
       }
       for (const s of e.sprints) {
-        anchors.push(
-          ((startOfDay(new Date(s.startsAt).getTime()) - bounds.min) / DAY) * PX_PER_DAY,
-        );
+        anchors.push(dayOffset(s.startsAt, bounds.min) * PX_PER_DAY);
       }
     }
     const anchor = anchors.length ? Math.min(...anchors) : 0;
@@ -372,7 +408,7 @@ export function EpicsTimeline({ epics }: { epics: TimelineEpic[] }) {
                           width: PX_PER_DAY,
                         }}
                       >
-                        {new Date(d.t).getDate()}
+                        {new Date(d.t).getUTCDate()}
                       </div>
                     ))}
                   </div>
@@ -415,6 +451,7 @@ export function EpicsTimeline({ epics }: { epics: TimelineEpic[] }) {
                 e.startsAt && e.endsAt
                   ? `${fmtDay(new Date(e.startsAt))}–${fmtDay(new Date(e.endsAt))}`
                   : "—";
+              const counts = taskCounts?.[e.id];
 
               return (
                 <div
@@ -447,18 +484,27 @@ export function EpicsTimeline({ epics }: { epics: TimelineEpic[] }) {
                         {/* Parent epic bar — solid coral so it stays visible
                             above the thinner sprint stack. */}
                         <HoverBar
-                          className={`absolute rounded-md shadow-sm ${EPIC_BAR[e.status]} flex items-center gap-1.5 px-1.5 cursor-default min-w-[22px]`}
+                          className={`absolute rounded-md shadow-sm ${EPIC_BAR[e.status]} flex items-center gap-1.5 px-1.5 min-w-[22px]`}
                           style={{
                             left: x(e.startsAt!),
                             width: w(e.startsAt!, e.endsAt!),
                             top: ROW_PAD_Y,
                             height: EPIC_BAR_H,
                           }}
+                          onClick={onEpicClick ? () => onEpicClick(e.id) : undefined}
                           title={e.title}
                           rows={[
                             { label: "Status", value: EPIC_LABEL[e.status] },
                             { label: "Dates", value: epicDateRange },
                             { label: "Sprints", value: String(e.sprintCount) },
+                            ...(counts && counts.total > 0
+                              ? [
+                                  {
+                                    label: "Tasks",
+                                    value: `${counts.done}/${counts.total} done`,
+                                  },
+                                ]
+                              : []),
                           ]}
                         >
                           <span
@@ -478,13 +524,18 @@ export function EpicsTimeline({ epics }: { epics: TimelineEpic[] }) {
                           return (
                             <HoverBar
                               key={s.id}
-                              className={`absolute rounded-sm shadow-sm ${SPRINT_BAR[s.status]} cursor-default`}
+                              className={`absolute rounded-sm shadow-sm ${SPRINT_BAR[s.status]}`}
                               style={{
                                 left: x(s.startsAt),
                                 width: w(s.startsAt, s.endsAt),
                                 top,
                                 height: SPRINT_BAR_H,
                               }}
+                              onClick={
+                                onSprintClick
+                                  ? () => onSprintClick(e.id, s.id)
+                                  : undefined
+                              }
                               title={s.name}
                               rows={[
                                 { label: "Status", value: SPRINT_LABEL[s.status] },
@@ -509,20 +560,6 @@ export function EpicsTimeline({ epics }: { epics: TimelineEpic[] }) {
                 </div>
               );
             })}
-
-            {Array.from({ length: fillerRows }).map((_, i) => (
-              <div
-                key={`filler-${i}`}
-                className="relative flex items-center border-b border-border/20"
-                style={{ height: FILLER_H }}
-                aria-hidden
-              >
-                <div
-                  className="flex-shrink-0 border-r border-border"
-                  style={{ width: LABEL_W }}
-                />
-              </div>
-            ))}
           </div>
         </div>
       </div>

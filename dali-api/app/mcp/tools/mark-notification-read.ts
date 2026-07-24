@@ -51,13 +51,21 @@ export async function runMarkNotificationRead(
 ): Promise<MarkNotificationReadResult> {
   const existing = await prisma.notification.findUnique({
     where: { id: input.notificationId },
-    select: { recipientUserId: true, readAt: true, scheduledMeetingId: true },
+    select: {
+      recipientUserId: true,
+      readAt: true,
+      kind: true,
+      scheduledMeetingId: true,
+    },
   });
   if (!existing) throw new NotificationNotFoundError(input.notificationId);
   if (existing.recipientUserId !== callerId) throw new NotificationForbiddenError();
 
   // Mirror api.notifications.$id.read.ts: meeting invites only clear via RSVP.
-  if (existing.scheduledMeetingId) return { ok: true, skipped: "meeting-invite" };
+  // Meeting reminders also have scheduledMeetingId but are dismissible.
+  if (existing.kind === "MeetingInvite" && existing.scheduledMeetingId) {
+    return { ok: true, skipped: "meeting-invite" };
+  }
 
   if (existing.readAt) return { ok: true, alreadyRead: true };
   await prisma.notification.update({

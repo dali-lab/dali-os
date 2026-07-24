@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { usePresence, type Peer } from "./PresenceProvider";
 import { initialsFromName } from "./util";
@@ -215,6 +215,28 @@ function HoverCard({
   const meTag = peer.isMe ? " (you)" : "";
   const idleTag = peer.idle ? " · idle" : "";
 
+  // Clamp the centered card inside the viewport: the presence bar usually
+  // sits near the right edge of the page, where a chip-centered card would
+  // run off-screen. Measured on open (the card unmounts when closed) and
+  // applied as an extra translateX on top of the -50% centering.
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const [shiftX, setShiftX] = useState(0);
+  useLayoutEffect(() => {
+    if (!open) {
+      setShiftX(0);
+      return;
+    }
+    const el = cardRef.current;
+    if (!el) return;
+    const margin = 8;
+    const rect = el.getBoundingClientRect();
+    if (rect.right > window.innerWidth - margin) {
+      setShiftX(window.innerWidth - margin - rect.right);
+    } else if (rect.left < margin) {
+      setShiftX(margin - rect.left);
+    }
+  }, [open]);
+
   // Unmount when closed so the invisible card doesn't intercept clicks on
   // anything below it (the prior implementation kept pointer-events-auto on
   // the inner div even at opacity-0, which could absorb a click meant for
@@ -223,8 +245,10 @@ function HoverCard({
 
   return (
     <div
+      ref={cardRef}
       role="tooltip"
-      className="absolute left-1/2 top-full z-20 mt-2 -translate-x-1/2 transition-opacity"
+      className="absolute left-1/2 top-full z-20 mt-2 transition-opacity"
+      style={{ transform: `translateX(calc(-50% + ${shiftX}px))` }}
       onPointerEnter={onPointerEnter}
       onPointerLeave={onPointerLeave}
     >

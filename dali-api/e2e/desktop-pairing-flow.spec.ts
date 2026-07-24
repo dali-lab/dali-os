@@ -165,6 +165,6 @@ test('desktop pairing: /link unauthenticated banner + manual-entry fallback', as
   // No code → manual-entry form.
   await page.goto('/link');
   await expect(
-    page.getByRole('heading', { name: /Link a desktop device/i }),
+    page.getByRole('heading', { name: /Link a device or app/i }),
   ).toBeVisible();
 });

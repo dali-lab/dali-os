@@ -1,6 +1,6 @@
 [package]
 name = "dali-os-desktop"
-version = "0.1.2"
+version = "0.1.3"
 description = "DALI OS desktop shell"
 authors = ["DALI Lab"]
 edition = "2021"
@@ -23,21 +23,36 @@ tauri-plugin-autostart = "2"
 tauri-plugin-window-state = "2"
 tauri-plugin-opener = "2"
 
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 tokio = { version = "1", features = ["rt-multi-thread", "time", "macros", "sync"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 url = "2"
+futures-util = "0.3"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3", features = ["apple-native"] }
+# UNUserNotificationCenter (bundled builds): relaunch-surviving clicks, action
+# buttons, Notification Center cleanup. objc2/block2 versions match what tauri
+# already pulls in.
+objc2 = "0.6"
+objc2-foundation = "0.3"
+objc2-user-notifications = "0.3"
+block2 = "0.6"
+# Unbundled-dev fallback (`tauri dev` can't use the UN framework). Already in
+# the tree under tauri-plugin-notification.
+mac-notification-sys = "0.6"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { version = "3", features = ["linux-native"] }
+# XDG notifications with actions; already in the tree under the plugin.
+notify-rust = "4"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { version = "3", features = ["windows-native"] }
+# WinRT toasts with activation callbacks; already in the tree under the plugin.
+tauri-winrt-notification = "0.7"
 
 [profile.release]
 codegen-units = 1

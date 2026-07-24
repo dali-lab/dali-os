@@ -1,4 +1,4 @@
-import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3'
+import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { createPresignedPost, type PresignedPost } from '@aws-sdk/s3-presigned-post'
 import { MAX_UPLOAD_BYTES } from './file-validation'
@@ -52,11 +52,61 @@ export async function getUploadPost(
   })
 }
 
-// Generate a presigned URL for reading a private file.
-export async function getDownloadUrl(key: string, expiresIn = 3600) {
+// Server-side direct upload (MCP tool path — no browser to hand a presigned
+// POST to). Same uploads/ scoping contract as the presign route; callers
+// enforce size/type limits before invoking.
+export async function putObject(
+  key: string,
+  body: Uint8Array,
+  contentType: string,
+): Promise<void> {
   if (!isS3Configured()) {
     throw new Error("AWS S3 is not configured")
   }
-  const command = new GetObjectCommand({ Bucket: BUCKET, Key: key })
+  await s3.send(
+    new PutObjectCommand({ Bucket: BUCKET, Key: key, Body: body, ContentType: contentType }),
+  )
+}
+
+// Generate a presigned URL for reading a private file.
+//
+// `options` may be a number (legacy `expiresIn`) or an options object. Setting
+// `contentType` / `inline` overrides the response headers on the presigned URL
+// (`response-content-type` / `response-content-disposition`). This matters for
+// inline previews: the browser renders a file by these headers, so an object
+// stored with a wrong or missing Content-Type (common for server-generated
+// PDFs) would otherwise fail to load in an <iframe> even though we know its
+// real type. Forcing the type we have on record — and `inline` disposition —
+// makes the preview render regardless of how the bytes were stored.
+type DownloadUrlOptions = {
+  expiresIn?: number
+  contentType?: string
+  fileName?: string
+  inline?: boolean
+}
+
+export async function getDownloadUrl(
+  key: string,
+  options: number | DownloadUrlOptions = {},
+) {
+  if (!isS3Configured()) {
+    throw new Error("AWS S3 is not configured")
+  }
+  const { expiresIn = 3600, contentType, fileName, inline } =
+    typeof options === "number" ? { expiresIn: options } : options
+
+  const disposition = inline
+    ? "inline"
+    : fileName
+      ? // Strip quotes/control chars so the filename can't break out of the header.
+        `attachment; filename="${fileName.replace(/["\r\n]/g, "")}"`
+      : undefined
+
+  const command = new GetObjectCommand({
+    Bucket: BUCKET,
+    Key: key,
+    ...(contentType ? { ResponseContentType: contentType } : {}),
+    ...(disposition ? { ResponseContentDisposition: disposition } : {}),
+  })
   return getSignedUrl(s3, command, { expiresIn })
 }

@@ -29,10 +29,21 @@ function dueSprint(overrides: Record<string, unknown> = {}) {
   };
 }
 
+// The job queries sprints twice per tick — Active-past-endsAt (close pass)
+// then Planned-past-startsAt (activation pass). Dispatch on the where clause.
+function mockDueSprints({
+  closeDue = [] as Record<string, unknown>[],
+  startDue = [] as { id: string }[],
+} = {}) {
+  mockPrisma.sprint.findMany.mockImplementation(({ where }) =>
+    Promise.resolve(where.status === "Active" ? closeDue : startDue),
+  );
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   process.env.NOTIFY_SLACK_DM_OVERRIDE = "1"; // non-prod test env
-  mockPrisma.sprint.findMany.mockResolvedValue([dueSprint()]);
+  mockDueSprints({ closeDue: [dueSprint()] });
   mockPrisma.sprint.updateMany.mockResolvedValue({ count: 1 });
   mockPrisma.sprint.findFirst.mockResolvedValue(null);
   mockPrisma.task.findMany.mockResolvedValue([
@@ -99,9 +110,9 @@ describe("sprint-lifecycle", () => {
   });
 
   it("skips the Slack post when the project has no channel", async () => {
-    mockPrisma.sprint.findMany.mockResolvedValue([
-      dueSprint({ project: { name: "DALI OS", slackChannelId: null } }),
-    ]);
+    mockDueSprints({
+      closeDue: [dueSprint({ project: { name: "DALI OS", slackChannelId: null } })],
+    });
 
     const result = await runSprintLifecycle({
       now: NOW,
@@ -127,10 +138,9 @@ describe("sprint-lifecycle", () => {
   });
 
   it("keeps closing the rest of the batch when one close-out fails", async () => {
-    mockPrisma.sprint.findMany.mockResolvedValue([
-      dueSprint(),
-      dueSprint({ id: "s9", name: "Sprint 9" }),
-    ]);
+    mockDueSprints({
+      closeDue: [dueSprint(), dueSprint({ id: "s9", name: "Sprint 9" })],
+    });
     mockPrisma.task.findMany
       .mockRejectedValueOnce(new Error("boom"))
       .mockResolvedValue([]);
@@ -143,5 +153,55 @@ describe("sprint-lifecycle", () => {
 
     expect(result.items).toBe(1);
     expect(result.note).toContain("1 close-out(s) failed");
+  });
+
+  it("activates every Planned sprint past startsAt — parallel sprints allowed", async () => {
+    mockDueSprints({ startDue: [{ id: "a1" }, { id: "a2" }] });
+
+    const result = await runSprintLifecycle({
+      now: NOW,
+      lastSuccessAt: null,
+      settings: {},
+    });
+
+    expect(mockPrisma.sprint.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { status: "Planned", startsAt: { lte: NOW } },
+      }),
+    );
+    for (const id of ["a1", "a2"]) {
+      expect(mockPrisma.sprint.updateMany).toHaveBeenCalledWith({
+        where: { id, status: "Planned" },
+        data: { status: "Active" },
+      });
+    }
+    expect(result.items).toBe(2);
+    // Activation is silent — the close-out summary is the only channel post.
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+
+  it("skips activating a sprint another machine already claimed", async () => {
+    mockDueSprints({ startDue: [{ id: "a1" }] });
+    mockPrisma.sprint.updateMany.mockResolvedValue({ count: 0 });
+
+    const result = await runSprintLifecycle({
+      now: NOW,
+      lastSuccessAt: null,
+      settings: {},
+    });
+
+    expect(result.items).toBe(0);
+  });
+
+  it("counts closes and activations together in one tick", async () => {
+    mockDueSprints({ closeDue: [dueSprint()], startDue: [{ id: "a1" }] });
+
+    const result = await runSprintLifecycle({
+      now: NOW,
+      lastSuccessAt: null,
+      settings: {},
+    });
+
+    expect(result.items).toBe(2);
   });
 });

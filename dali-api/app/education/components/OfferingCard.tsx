@@ -1,7 +1,10 @@
 import { Link } from "react-router";
 import { Card } from "~/components/ui/Card";
+import { Avatar } from "~/components/ui/Avatar";
 import { cn } from "~/lib/cn";
 import { formatDateShort } from "~/lib/display";
+import { useUserTimeZone } from "~/hooks/useUserTimeZone";
+import { APPLICATION_TZ } from "~/lib/timezone";
 
 export type OfferingCardData = {
   id: string;
@@ -16,6 +19,7 @@ export type OfferingCardData = {
   endsAt: string | Date;
   sessionCount: number;
   instructorNames: string[];
+  instructors: { userId: string; name: string; photoUrl: string | null }[];
   approvedCount: number;
 };
 
@@ -76,16 +80,19 @@ export function MyStatusChip({ status }: { status: string | null }) {
   );
 }
 
-export function registrationWindowLabel(o: {
-  registrationOpensAt: string | Date;
-  registrationClosesAt: string | Date;
-}): string {
+export function registrationWindowLabel(
+  o: {
+    registrationOpensAt: string | Date;
+    registrationClosesAt: string | Date;
+  },
+  tz: string = APPLICATION_TZ,
+): string {
   const now = new Date();
   const opens = new Date(o.registrationOpensAt);
   const closes = new Date(o.registrationClosesAt);
-  if (now < opens) return `Registration opens ${formatDateShort(opens)}`;
+  if (now < opens) return `Registration opens ${formatDateShort(opens, tz)}`;
   if (now > closes) return "Registration closed";
-  return `Registration open until ${formatDateShort(closes)}`;
+  return `Registration open until ${formatDateShort(closes, tz)}`;
 }
 
 export function OfferingCard({
@@ -103,6 +110,7 @@ export function OfferingCard({
   pendingCount?: number;
   openAssignments?: number;
 }) {
+  const tz = useUserTimeZone();
   const seatsLeft = Math.max(0, offering.capacity - offering.approvedCount);
   return (
     <Link to={to} className="block group">
@@ -128,19 +136,32 @@ export function OfferingCard({
           {offering.title}
         </h3>
         <p className="mt-1 text-xs text-muted-foreground">
-          {formatDateShort(offering.startsAt)} – {formatDateShort(offering.endsAt)}
+          {formatDateShort(offering.startsAt, tz)} – {formatDateShort(offering.endsAt, tz)}
           {" · "}
           {offering.sessionCount} session{offering.sessionCount === 1 ? "" : "s"}
         </p>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          {registrationWindowLabel(offering)}
+          {registrationWindowLabel(offering, tz)}
           {" · "}
           {seatsLeft > 0 ? `${seatsLeft} of ${offering.capacity} seats left` : "Full — waitlist open"}
         </p>
-        {offering.instructorNames.length > 0 && (
-          <p className="mt-2 text-xs text-foreground">
-            Taught by {offering.instructorNames.join(", ")}
-          </p>
+        {offering.instructors.length > 0 && (
+          <div className="mt-2 flex items-center gap-2">
+            <div className="flex -space-x-1.5">
+              {offering.instructors.map((i) => (
+                <Avatar
+                  key={i.userId}
+                  photoUrl={i.photoUrl}
+                  name={i.name}
+                  size="xs"
+                  className="ring-2 ring-card"
+                />
+              ))}
+            </div>
+            <p className="text-xs text-foreground">
+              Taught by {offering.instructors.map((i) => i.name).join(", ")}
+            </p>
+          </div>
         )}
       </Card>
     </Link>

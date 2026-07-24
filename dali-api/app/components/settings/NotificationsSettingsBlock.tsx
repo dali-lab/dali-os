@@ -52,6 +52,7 @@ export type NotificationsSettingsData = {
   prefs: {
     eventType: string;
     inApp: boolean;
+    desktop: boolean;
     slackDm: boolean;
     digestFrequency: string;
   }[];
@@ -61,6 +62,8 @@ export type NotificationsSettingsData = {
     weeklyHour: number;
     weeklyWeekday: number;
   };
+  // Admin-only events (e.g. member promotions) are shown only to admins.
+  isAdmin: boolean;
 };
 
 type SaveResult = { ok: boolean; error: string | null };
@@ -69,6 +72,7 @@ export function NotificationsSettingsBlock({
   prefs,
   slackConnected,
   digestSchedule,
+  isAdmin,
 }: NotificationsSettingsData) {
   const fetcher = useFetcher<SaveResult>();
   const busy = fetcher.state !== "idle";
@@ -81,6 +85,7 @@ export function NotificationsSettingsBlock({
     return {
       def,
       inApp: def.lockedInApp ? true : (row?.inApp ?? def.defaults.inApp),
+      desktop: row?.desktop ?? def.defaults.desktop,
       slackDm: row?.slackDm ?? def.defaults.slackDm,
       email: (row?.digestFrequency ?? def.defaults.email) as DigestValue,
     };
@@ -88,15 +93,20 @@ export function NotificationsSettingsBlock({
 
   const byArea = AREA_ORDER.map((area) => ({
     area,
-    events: VISIBLE_EVENTS.filter((k) => EVENT_TYPES[k].area === area),
+    events: VISIBLE_EVENTS.filter((k) => {
+      const def: EventDef = EVENT_TYPES[k];
+      return def.area === area && !(def.adminOnly && !isAdmin);
+    }),
   })).filter((g) => g.events.length > 0);
 
   return (
     <div>
       <p className="text-sm text-muted-foreground">
-        In-app notifications land in your bell and Home inbox; email can arrive
-        instantly or batched into a daily ({hourLabel(digestSchedule.dailyHour)}{" "}
-        ET) or weekly ({WEEKDAY_NAMES[digestSchedule.weeklyWeekday]}{" "}
+        In-app notifications land in your bell and Home inbox; Desktop raises a
+        native banner in the DALI OS desktop app for in-app notifications;
+        email can arrive instantly or batched into a daily (
+        {hourLabel(digestSchedule.dailyHour)} ET) or weekly (
+        {WEEKDAY_NAMES[digestSchedule.weeklyWeekday]}{" "}
         {hourLabel(digestSchedule.weeklyHour)} ET) digest; Slack DMs come from
         the DALI OS bot.
       </p>
@@ -121,18 +131,19 @@ export function NotificationsSettingsBlock({
               {area}
             </h3>
             <div className="mt-2 overflow-hidden rounded-md border border-zinc-200 bg-white">
-              <div className="grid grid-cols-[1fr_4rem_4.5rem_8rem] items-center gap-2 border-b border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-medium text-zinc-500">
+              <div className="grid grid-cols-[1fr_4rem_4.5rem_4.5rem_8rem] items-center gap-2 border-b border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-medium text-zinc-500">
                 <span />
                 <span className="text-center">In-app</span>
+                <span className="text-center">Desktop</span>
                 <span className="text-center">Slack DM</span>
                 <span className="text-center">Email</span>
               </div>
               {events.map((eventType) => {
-                const { def, inApp, slackDm, email } = effective(eventType);
+                const { def, inApp, desktop, slackDm, email } = effective(eventType);
                 return (
                   <div
                     key={eventType}
-                    className="grid grid-cols-[1fr_4rem_4.5rem_8rem] items-center gap-2 border-b border-zinc-100 px-3 py-2.5 last:border-b-0"
+                    className="grid grid-cols-[1fr_4rem_4.5rem_4.5rem_8rem] items-center gap-2 border-b border-zinc-100 px-3 py-2.5 last:border-b-0"
                   >
                     <input type="hidden" name={`${eventType}:present`} value="1" />
                     <div>
@@ -146,6 +157,15 @@ export function NotificationsSettingsBlock({
                         defaultChecked={inApp}
                         disabled={def.lockedInApp}
                         title={def.lockedInApp ? "Required — this is an action item" : undefined}
+                        className="h-4 w-4 rounded border-zinc-300 disabled:opacity-50"
+                      />
+                    </div>
+                    <div className="text-center">
+                      <input
+                        type="checkbox"
+                        name={`${eventType}:desktop`}
+                        defaultChecked={desktop}
+                        title="Native banner in the DALI OS desktop app (applies when in-app is on)"
                         className="h-4 w-4 rounded border-zinc-300 disabled:opacity-50"
                       />
                     </div>

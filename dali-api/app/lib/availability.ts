@@ -2,7 +2,7 @@ import rrulePkg from "rrule";
 import type { RRule as RRuleType } from "rrule";
 import { prisma } from "~/lib/db";
 import { fetchBusyEvents } from "~/lib/google-calendar";
-import { APPLICATION_TZ as DEFAULT_TIMEZONE, getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
+import { APPLICATION_TZ as DEFAULT_TIMEZONE, getZonedYMD, isValidTimezone, zonedDayStartUtc } from "~/lib/timezone";
 
 const { RRule, rrulestr } = rrulePkg as unknown as {
   RRule: typeof import("rrule").RRule;
@@ -255,8 +255,9 @@ export async function computeUserFreeBusy(
   windowEnd: Date,
   fallbackTimezone: string = DEFAULT_TIMEZONE,
 ): Promise<{ userId: string; free: Interval[]; busy: Interval[] }> {
-  const [settings, whRows, blocks, busyRaw] = await Promise.all([
+  const [settings, userRow, whRows, blocks, busyRaw] = await Promise.all([
     prisma.userAvailabilitySettings.findUnique({ where: { userId } }),
+    prisma.user.findUnique({ where: { id: userId }, select: { timeZone: true } }),
     prisma.workingHoursDay.findMany({ where: { userId } }),
     prisma.manualBlock.findMany({ where: { userId }, take: 500 }),
     fetchBusyEvents(userId, windowStart, windowEnd).catch(
@@ -271,7 +272,11 @@ export async function computeUserFreeBusy(
   //   • Any persisted rows         → feature is ON → trust the saved segments
   //     verbatim (including enabled weekend days). Days the user never saved a
   //     row for stay unavailable, matching what they see in the editor.
-  const timezone = settings?.timezone ?? fallbackTimezone;
+  // Prefer the availability-settings zone (working hours depend on it); with no
+  // settings row, use the user's own display zone before the caller's fallback.
+  const timezone =
+    settings?.timezone ??
+    (isValidTimezone(userRow?.timeZone) ? userRow!.timeZone! : fallbackTimezone);
   const hasPersisted = whRows.length > 0;
   const workingHours: WorkingHoursDayInput[] = hasPersisted
     ? whRows.map((r) => ({

@@ -163,6 +163,14 @@ export function FinalizeModal({
     });
   }
 
+  function selectAll() {
+    setSelected(new Set(AUTOMATIONS.filter((a) => a.configured).map((a) => a.id)));
+  }
+
+  function unselectAll() {
+    setSelected(new Set());
+  }
+
   async function run(ids: Automation[]) {
     if (ids.length === 0) {
       setError("Select at least one automation.");
@@ -249,6 +257,25 @@ export function FinalizeModal({
           </label>
         </div>
       )}
+
+      <div className="flex items-center justify-end gap-3 mb-2">
+        <button
+          type="button"
+          disabled={running || selected.size === AUTOMATIONS.filter((a) => a.configured).length}
+          onClick={selectAll}
+          className="text-xs font-medium text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:hover:text-muted-foreground transition-colors"
+        >
+          Select all
+        </button>
+        <button
+          type="button"
+          disabled={running || selected.size === 0}
+          onClick={unselectAll}
+          className="text-xs font-medium text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:hover:text-muted-foreground transition-colors"
+        >
+          Unselect all
+        </button>
+      </div>
 
       <ul className="flex flex-col gap-2">
         {AUTOMATIONS.map((a) => {
@@ -372,21 +399,17 @@ export function FinalizeModal({
         </div>
 
         <div className="flex gap-2">
-          <button
-            type="button"
-            disabled={running || savingFields}
-            onClick={() => run([...selected])}
-            className="px-3 py-1.5 text-sm font-medium rounded-md border border-border hover:bg-muted disabled:opacity-60 transition-colors"
-          >
-            {running ? "Running…" : "Run selected"}
-          </button>
           <Button
             variant="primary"
             size="sm"
-            disabled={running || savingFields}
-            onClick={() => run(AUTOMATIONS.filter((a) => a.configured).map((a) => a.id))}
+            disabled={running || savingFields || selected.size === 0}
+            onClick={() => run([...selected])}
           >
-            {running ? "Running…" : "Run all"}
+            {running
+              ? "Running…"
+              : selected.size === AUTOMATIONS.filter((a) => a.configured).length
+                ? "Finalize"
+                : `Finalize (${selected.size})`}
           </Button>
         </div>
       </div>

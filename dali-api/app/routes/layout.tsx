@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import { Outlet, redirect, useLoaderData, useLocation, useMatches, useNavigate, useSearchParams, type ShouldRevalidateFunctionArgs } from 'react-router'
+import { Outlet, redirect, useLoaderData, useLocation, useMatches, useNavigate, useNavigationType, useSearchParams, type ShouldRevalidateFunctionArgs } from 'react-router'
 import { cn } from '~/lib/cn'
 import { Layout } from '~/components/Layout'
 import { Breadcrumbs } from '~/components/Breadcrumbs'
 import { PageDocButton } from '~/components/page-docs/PageDocButton'
 import { LaunchWelcome } from '~/components/LaunchWelcome'
+import { TimeZonePrompt } from '~/components/TimeZonePrompt'
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { getUserRoles, isLabMentor } from '~/lib/roles'
 import { getActiveCycle } from '~/hiring/lib/cycles'
@@ -13,6 +14,8 @@ import { resolvePhotoUrl } from '~/lib/photo'
 import { recordPageView } from '~/lib/analytics'
 import { isTablessRequest } from '~/lib/tabless'
 import { isFocusRequest } from '~/lib/focus-mode'
+import { isValidTimezone, resolveUserTimeZone } from '~/lib/timezone'
+import { readDismissedTimeZone } from '~/lib/tz-prompt'
 import type { Route } from './+types/layout'
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -35,6 +38,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       where: { id: auth.user.sub },
       select: {
         photoUrl: true,
+        timeZone: true,
         calendarLinks: {
           where: { provider: "Google", enabled: true },
           select: { id: true },
@@ -107,6 +111,14 @@ export async function loader({ request }: Route.LoaderArgs) {
   // of tabless; also cookie-backed so there's no flash of the sidebar.
   const focus = isFocusRequest(request)
 
+  // Per-user display timezone, threaded to every descendant via
+  // useUserTimeZone() so client formatting matches the server (hydration-safe).
+  // `explicit` distinguishes "never set" (→ silent auto-detect) from "set to
+  // ET"; `dismissedZone` suppresses the change-prompt for a zone the user kept.
+  const userTimeZone = resolveUserTimeZone(me)
+  const userTimeZoneIsExplicit = isValidTimezone(me?.timeZone)
+  const tzDismissedZone = readDismissedTimeZone(request)
+
   // Pageview is fire-and-forget — never blocks the response.
   recordPageView({
     request,
@@ -114,7 +126,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     sessionId: auth.sessionId,
   })
 
-  return { user: auth.user, photoUrl, hasCalendarLink, shouldShowTour, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, isEmbedded, tabless, focus }
+  return { user: auth.user, photoUrl, hasCalendarLink, shouldShowTour, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone }
 }
 
 // Layout data (roles, avatar, hiring access) changes rarely, but default
@@ -123,6 +135,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 const LAYOUT_MUTATING_ACTION_PREFIXES = [
   '/settings',
   '/api/tour',
+  '/api/timezone',
   '/onboarding',
   '/api/hiring/cycles',
   '/logout',
@@ -140,9 +153,10 @@ export function shouldRevalidate({ formAction, currentUrl, nextUrl, defaultShoul
 }
 
 export default function AppLayoutRoute() {
-  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, isLabMentor: isLabMentorFlag, isEmbedded, tabless, focus } = useLoaderData<typeof loader>()
+  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, isLabMentor: isLabMentorFlag, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone } = useLoaderData<typeof loader>()
   const [searchParams] = useSearchParams()
   const location = useLocation()
+  const navigationType = useNavigationType()
   const matches = useMatches()
   const navigate = useNavigate()
   const hasAreaSubnav = matches.some(
@@ -244,14 +258,22 @@ export default function AppLayoutRoute() {
 
     // Restore on entering this location. rAF waits for the new route's content
     // to paint so the target offset exists; fall back to top when unseen.
+    // A REPLACE navigation is an in-place URL update on the same page — opening
+    // a task drawer (`?task=`) or toggling a board filter, both via
+    // `setSearchParams({ replace: true })`. React Router mints a fresh
+    // location.key for it, so restoring/resetting here would yank the current
+    // view to the top (the reported taskboard jump); leave scroll untouched and
+    // only (re)attach the recorder below. POP restores; PUSH lands at top.
     let raf = 0;
-    try {
-      const saved = window.sessionStorage.getItem(key);
-      raf = window.requestAnimationFrame(() => {
-        window.scrollTo(0, saved ? parseInt(saved, 10) || 0 : 0);
-      });
-    } catch {
-      // sessionStorage disabled — nothing to restore.
+    if (navigationType !== "REPLACE") {
+      try {
+        const saved = window.sessionStorage.getItem(key);
+        raf = window.requestAnimationFrame(() => {
+          window.scrollTo(0, saved ? parseInt(saved, 10) || 0 : 0);
+        });
+      } catch {
+        // sessionStorage disabled — nothing to restore.
+      }
     }
 
     // Continuously record this entry's scroll while it's the active location,
@@ -269,7 +291,7 @@ export default function AppLayoutRoute() {
       onScroll(); // capture final position for this entry before it changes
       window.removeEventListener("scroll", onScroll);
     };
-  }, [location.key]);
+  }, [location.key, navigationType]);
 
   // Where every routed page actually renders — inside a TabWorkspace iframe
   // (tab mode) or directly in the shell's main column (tabless mode). The
@@ -301,6 +323,7 @@ export default function AppLayoutRoute() {
         {tabless ? <div className="flex-1 overflow-x-hidden">{pageContent}</div> : undefined}
       </Layout>
       <LaunchWelcome firstName={user.firstName || user.email.split('@')[0]} hasCalendarLink={hasCalendarLink} shouldShowTour={shouldShowTour} tabless={tabless} />
+      <TimeZonePrompt userTimeZone={userTimeZone} userTimeZoneIsExplicit={userTimeZoneIsExplicit} dismissedZone={tzDismissedZone} />
     </>
   )
 }
