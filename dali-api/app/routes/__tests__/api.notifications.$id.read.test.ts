@@ -8,7 +8,7 @@ vi.mock("~/lib/auth", () => ({
 }));
 vi.mock("~/lib/db");
 vi.mock("~/members/lib/welcome.server", () => ({
-  ONBOARDING_LINK: "/onboarding",
+  ONBOARDING_EVENT_TYPE: "member.onboarding",
 }));
 
 import { requireAuth } from "~/lib/auth";
@@ -122,7 +122,7 @@ describe("POST /api/notifications/:id/read intent=unread", () => {
       readAt: new Date(),
       scheduledMeetingId: null,
       kind: "SystemAnnouncement",
-      link: "/onboarding",
+      eventType: "member.onboarding",
     });
     const res = await action({
       request: unreadReq("n1"),
@@ -131,6 +131,25 @@ describe("POST /api/notifications/:id/read intent=unread", () => {
     const json = await res.json();
     expect(json).toMatchObject({ ok: true, skipped: "onboarding" });
     expect(mockPrisma.notification.update).not.toHaveBeenCalled();
+  });
+
+  it("allows unread for an onboarding reminder (not the welcome todo)", async () => {
+    mockPrisma.notification.findUnique.mockResolvedValue({
+      recipientUserId: USER_ID,
+      readAt: new Date(),
+      scheduledMeetingId: null,
+      kind: "SystemAnnouncement",
+      eventType: "member.onboarding.reminder",
+    });
+    const res = await action({
+      request: unreadReq("n1"),
+      params: { id: "n1" },
+    } as any);
+    expect(res.status).toBe(200);
+    expect(mockPrisma.notification.update).toHaveBeenCalledWith({
+      where: { id: "n1" },
+      data: { readAt: null },
+    });
   });
 
   it("is a no-op when the row is already unread", async () => {

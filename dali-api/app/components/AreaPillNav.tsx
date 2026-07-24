@@ -23,14 +23,17 @@ export type UnderlineTabButton = {
 };
 
 const underlineTabBarClass = cn(
-  "flex items-stretch gap-0.5 flex-wrap border-b border-border mb-6 sm:mb-8",
+  // nowrap + horizontal scroll: long area pill rows stay on one line instead of
+  // wrapping under empty page space when a parent max-width (or narrow viewport)
+  // is tighter than the tab set.
+  "flex items-stretch gap-0.5 flex-nowrap overflow-x-auto border-b border-border mb-6 sm:mb-8",
   // Bleed to the iframe edges; tab items carry their own px-3 (matches workspace tabs).
   "-mx-3 sm:-mx-6 lg:-mx-10",
 );
 
 function underlineTabItemClass(active: boolean) {
   return cn(
-    "inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold font-heading border-b-2 -mb-px transition-colors",
+    "inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold font-heading border-b-2 -mb-px transition-colors shrink-0",
     active
       ? "border-accent-coral text-accent-coral"
       : "border-transparent text-muted-foreground hover:text-foreground",
