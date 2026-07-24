@@ -531,7 +531,17 @@ function MembersTable({ rows, status }: { rows: MemberRow[]; status: MemberStatu
               className="border-t border-border hover:bg-muted/20 cursor-pointer"
             >
               <td className="px-4 py-2 text-foreground">
-                {m.firstName} {m.lastName}
+                <div className="flex items-center gap-2.5">
+                  <Avatar
+                    photoUrl={m.photoUrl}
+                    name={fullName(m) || "Member"}
+                    size="sm"
+                    className="flex-shrink-0"
+                  />
+                  <span>
+                    {m.firstName} {m.lastName}
+                  </span>
+                </div>
               </td>
               <td className="px-4 py-2 text-muted-foreground">{m.email ?? "—"}</td>
               <td className="px-4 py-2">
