@@ -62,6 +62,8 @@ export type NotificationsSettingsData = {
     weeklyHour: number;
     weeklyWeekday: number;
   };
+  // Admin-only events (e.g. member promotions) are shown only to admins.
+  isAdmin: boolean;
 };
 
 type SaveResult = { ok: boolean; error: string | null };
@@ -70,6 +72,7 @@ export function NotificationsSettingsBlock({
   prefs,
   slackConnected,
   digestSchedule,
+  isAdmin,
 }: NotificationsSettingsData) {
   const fetcher = useFetcher<SaveResult>();
   const busy = fetcher.state !== "idle";
@@ -90,7 +93,10 @@ export function NotificationsSettingsBlock({
 
   const byArea = AREA_ORDER.map((area) => ({
     area,
-    events: VISIBLE_EVENTS.filter((k) => EVENT_TYPES[k].area === area),
+    events: VISIBLE_EVENTS.filter((k) => {
+      const def: EventDef = EVENT_TYPES[k];
+      return def.area === area && !(def.adminOnly && !isAdmin);
+    }),
   })).filter((g) => g.events.length > 0);
 
   return (

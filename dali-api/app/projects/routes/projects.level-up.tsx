@@ -6,6 +6,7 @@ import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { parseFormDataJson } from "~/lib/safe-json";
 import { canManageStaffing, canViewStaffing, currentTerm } from "~/lib/roles";
 import { prisma } from "~/lib/db";
+import { applyEligibilityWithNotify } from "~/admin-console/lib/eligibility.server";
 import { ensureStaffingCycle } from "../lib/staffing-cycle";
 import {
   getSlotBinding,
@@ -375,20 +376,11 @@ export async function action({ request }: Route.ActionArgs) {
     if (!targetUserId || !domainId || !isLevel(targetLevel))
       return Response.json({ error: "Invalid parameters." }, { status: 400 });
 
-    await prisma.domainEligibility.upsert({
-      where: { userId_domainId: { userId: targetUserId, domainId } },
-      create: {
-        userId: targetUserId,
-        domainId,
-        level: targetLevel,
-        promotedAt: new Date(),
-        promotedBy: auth.user.sub,
-      },
-      update: {
-        level: targetLevel,
-        promotedAt: new Date(),
-        promotedBy: auth.user.sub,
-      },
+    await applyEligibilityWithNotify({
+      userId: targetUserId,
+      domainId,
+      level: targetLevel,
+      actorId: auth.user.sub,
     });
     return Response.json({ ok: true });
   }

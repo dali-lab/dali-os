@@ -2,7 +2,7 @@ import { prisma } from "~/lib/db";
 import { cycleSortKeyRange } from "~/lib/core-cycle";
 import type { AssignmentType } from "~/generated/prisma/client";
 
-function getAdminUserIdsFromEnv(): string[] {
+export function getAdminUserIdsFromEnv(): string[] {
   return (process.env.ADMIN_USER_IDS ?? "").split(",").filter(Boolean);
 }
 

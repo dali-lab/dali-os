@@ -7,6 +7,7 @@ import { coreCycleTermIds } from "~/lib/core-cycle";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import { logAuditEvent } from "~/lib/audit";
+import { notifyAdminsOfPromotion } from "~/lib/promotion-notify.server";
 
 // Phase 2: PATCH body is a desired-set of legacy role labels. We translate:
 //   - "Admin"      → AdminMembership row (created/deleted)
@@ -121,6 +122,16 @@ export async function action({ request, params }: Route.ActionArgs) {
     metadata: { before, after: roles, targetUserId: userId },
     request,
   });
+
+  // A newly-granted Hiring Lead (Core) is a pay-affecting promotion — tell
+  // admins (issue #1001). Admin itself is access-only, so it isn't notified.
+  if (wantHiringLead && !coreBefore) {
+    void notifyAdminsOfPromotion({
+      userId,
+      actorId: auth.user.sub,
+      summary: "joined Core as Hiring Lead",
+    }).catch((err) => console.error("promotion notify (core) failed", err));
+  }
 
   const user = await prisma.user.findUnique({
     where: { id: userId },
