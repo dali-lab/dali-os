@@ -4,6 +4,7 @@ import {
   DragOverlay,
   PointerSensor,
   closestCorners,
+  pointerWithin,
   useDraggable,
   useDroppable,
   useSensor,
@@ -72,10 +73,28 @@ export type KanbanBoardProps<TCard> = {
   layout?: "row" | "grid";
   /** Activation distance for the pointer sensor (disambiguates click vs drag). */
   activationDistance?: number;
-  /** Collision strategy. Defaults to closestCorners for sortable boards. */
+  /** Collision strategy. Sortable boards default to pointerFirstCollision. */
   collisionDetection?: CollisionDetection;
   error?: string | null;
   emptyLabel?: ReactNode;
+};
+
+// Default drop-target resolution for sortable multi-column boards: go by the
+// POINTER, not the dragged card's corners. closestCorners averages distance over
+// all four corners, which mis-ranks a column that flex-stretches to match a busy
+// neighbor while staying empty — its far-away bottom corners lose every collision
+// to the small, pointer-aligned cards packed in the column beside it, so a card
+// dropped over the empty column silently resolves to (and saves into) the
+// neighbor. That's the "task dropped on In review lands in In progress / Done and
+// vanishes from In review" bug: In review sits empty between the two busiest
+// columns. pointerWithin targets whatever is directly under the pointer — the
+// empty column, or a card when hovering one so within-column reorder still
+// resolves an index — and we fall back to closestCorners only when the pointer is
+// outside every droppable (a fast drag through the inter-column gutter or off the
+// board edge) so the drop still lands somewhere sensible.
+export const pointerFirstCollision: CollisionDetection = (args) => {
+  const pointerCollisions = pointerWithin(args);
+  return pointerCollisions.length > 0 ? pointerCollisions : closestCorners(args);
 };
 
 // The unified board primitive: owns the DndContext (with a fixed id so SSR and
@@ -141,7 +160,9 @@ export function KanbanBoard<TCard>({
       <DndContext
         id={id}
         sensors={sensors}
-        collisionDetection={collisionDetection ?? (sortable ? closestCorners : undefined)}
+        collisionDetection={
+          collisionDetection ?? (sortable ? pointerFirstCollision : undefined)
+        }
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
