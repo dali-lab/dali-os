@@ -34,7 +34,7 @@ import {
 import { CalendarActionSchema, validateTimeEntryRange } from "~/lib/calendar-schemas";
 import { syncManualBlockTimeEntry } from "~/lib/time-entry-sync";
 import { fetchBusyEvents, listCalendarsForLink } from "~/lib/google-calendar";
-import { APPLICATION_TZ as DEFAULT_TIMEZONE, getZonedHourFraction, getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
+import { getZonedHourFraction, getZonedYMD, resolveUserTimeZone, zonedDayStartUtc } from "~/lib/timezone";
 import type { Route } from "./+types/calendar";
 import { UnderlineTabButtons } from "~/components/AreaPillNav";
 import { Tooltip } from "~/components/ui/IconButton";
@@ -244,6 +244,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const [
     settings,
+    userRow,
     whRows,
     blocks,
     links,
@@ -255,6 +256,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     canSetSelfCheckIn,
   ] = await Promise.all([
       prisma.userAvailabilitySettings.findUnique({ where: { userId } }),
+      prisma.user.findUnique({ where: { id: userId }, select: { timeZone: true } }),
       prisma.workingHoursDay.findMany({ where: { userId } }),
       prisma.manualBlock.findMany({
         where: { userId },
@@ -310,7 +312,9 @@ export async function loader({ request }: Route.LoaderArgs) {
       canViewForms(userId),
     ]);
 
-  const timezone = settings?.timezone ?? DEFAULT_TIMEZONE;
+  // Working hours are interpreted in the availability-settings zone when set;
+  // otherwise fall back to the viewer's own display zone, not a hardcoded ET.
+  const timezone = settings?.timezone ?? resolveUserTimeZone(userRow);
   const bufferMin = settings?.defaultEventBufferMin ?? DEFAULT_BUFFER_MIN;
 
   // Group persisted rows by day-of-week (multiple segments allowed per day).

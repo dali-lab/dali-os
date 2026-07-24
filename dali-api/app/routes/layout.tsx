@@ -5,6 +5,7 @@ import { Layout } from '~/components/Layout'
 import { Breadcrumbs } from '~/components/Breadcrumbs'
 import { PageDocButton } from '~/components/page-docs/PageDocButton'
 import { LaunchWelcome } from '~/components/LaunchWelcome'
+import { TimeZonePrompt } from '~/components/TimeZonePrompt'
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { getUserRoles, isLabMentor } from '~/lib/roles'
 import { getActiveCycle } from '~/hiring/lib/cycles'
@@ -13,6 +14,8 @@ import { resolvePhotoUrl } from '~/lib/photo'
 import { recordPageView } from '~/lib/analytics'
 import { isTablessRequest } from '~/lib/tabless'
 import { isFocusRequest } from '~/lib/focus-mode'
+import { isValidTimezone, resolveUserTimeZone } from '~/lib/timezone'
+import { readDismissedTimeZone } from '~/lib/tz-prompt'
 import type { Route } from './+types/layout'
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -35,6 +38,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       where: { id: auth.user.sub },
       select: {
         photoUrl: true,
+        timeZone: true,
         calendarLinks: {
           where: { provider: "Google", enabled: true },
           select: { id: true },
@@ -107,6 +111,14 @@ export async function loader({ request }: Route.LoaderArgs) {
   // of tabless; also cookie-backed so there's no flash of the sidebar.
   const focus = isFocusRequest(request)
 
+  // Per-user display timezone, threaded to every descendant via
+  // useUserTimeZone() so client formatting matches the server (hydration-safe).
+  // `explicit` distinguishes "never set" (→ silent auto-detect) from "set to
+  // ET"; `dismissedZone` suppresses the change-prompt for a zone the user kept.
+  const userTimeZone = resolveUserTimeZone(me)
+  const userTimeZoneIsExplicit = isValidTimezone(me?.timeZone)
+  const tzDismissedZone = readDismissedTimeZone(request)
+
   // Pageview is fire-and-forget — never blocks the response.
   recordPageView({
     request,
@@ -114,7 +126,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     sessionId: auth.sessionId,
   })
 
-  return { user: auth.user, photoUrl, hasCalendarLink, shouldShowTour, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, isEmbedded, tabless, focus }
+  return { user: auth.user, photoUrl, hasCalendarLink, shouldShowTour, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone }
 }
 
 // Layout data (roles, avatar, hiring access) changes rarely, but default
@@ -123,6 +135,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 const LAYOUT_MUTATING_ACTION_PREFIXES = [
   '/settings',
   '/api/tour',
+  '/api/timezone',
   '/onboarding',
   '/api/hiring/cycles',
   '/logout',
@@ -140,7 +153,7 @@ export function shouldRevalidate({ formAction, currentUrl, nextUrl, defaultShoul
 }
 
 export default function AppLayoutRoute() {
-  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, isLabMentor: isLabMentorFlag, isEmbedded, tabless, focus } = useLoaderData<typeof loader>()
+  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, isLabMentor: isLabMentorFlag, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone } = useLoaderData<typeof loader>()
   const [searchParams] = useSearchParams()
   const location = useLocation()
   const navigationType = useNavigationType()
@@ -310,6 +323,7 @@ export default function AppLayoutRoute() {
         {tabless ? <div className="flex-1 overflow-x-hidden">{pageContent}</div> : undefined}
       </Layout>
       <LaunchWelcome firstName={user.firstName || user.email.split('@')[0]} hasCalendarLink={hasCalendarLink} shouldShowTour={shouldShowTour} tabless={tabless} />
+      <TimeZonePrompt userTimeZone={userTimeZone} userTimeZoneIsExplicit={userTimeZoneIsExplicit} dismissedZone={tzDismissedZone} />
     </>
   )
 }

@@ -1,4 +1,5 @@
 import { formatDateShort } from "~/lib/display";
+import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { TypeBadge, MyStatusChip } from "./OfferingCard";
 
 // "Past DALI education" panel on the hiring application views: what this
@@ -20,6 +21,7 @@ export type EngagementRow = {
 };
 
 export function EducationEngagementPanel({ entries }: { entries: EngagementRow[] }) {
+  const tz = useUserTimeZone();
   if (entries.length === 0) return null;
   return (
     <section className="bg-card border border-border rounded-lg">
@@ -40,7 +42,7 @@ export function EducationEngagementPanel({ entries }: { entries: EngagementRow[]
               <span className="text-sm font-semibold text-foreground">{e.title}</span>
               <MyStatusChip status={e.status} />
               <span className="text-xs text-muted-foreground">
-                {formatDateShort(e.startsAt)} – {formatDateShort(e.endsAt)}
+                {formatDateShort(e.startsAt, tz)} – {formatDateShort(e.endsAt, tz)}
               </span>
               {e.certificateIssuedAt && (
                 <span className="inline-flex items-center rounded-full bg-accent-teal/10 text-accent-teal px-2 py-0.5 text-[11px] font-semibold">

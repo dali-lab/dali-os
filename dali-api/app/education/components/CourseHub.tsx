@@ -2,6 +2,7 @@ import { Link, Form, useSearchParams } from "react-router";
 import { useState } from "react";
 import { Button, buttonClasses } from "~/components/ui/Button";
 import { formatDateTime } from "~/lib/display";
+import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { cn } from "~/lib/cn";
 
 // The enrolled course hub, shared by the member surface and the portal
@@ -69,6 +70,7 @@ const ATTENDANCE_STYLE: Record<string, string> = {
 
 export function CourseHub({ data, basePath }: { data: HubData; basePath: string }) {
   const [searchParams, setSearchParams] = useSearchParams();
+  const tz = useUserTimeZone();
   const tab = searchParams.get("tab") ?? "overview";
 
   // Assignments awaiting this student's submission (past-due ones can't be
@@ -150,7 +152,7 @@ export function CourseHub({ data, basePath }: { data: HubData; basePath: string 
                 {data.announcements.map((a) => (
                   <li key={a.id} className="bg-card border border-border rounded-lg p-4">
                     <p className="text-xs text-muted-foreground">
-                      {a.authorName} · {formatDateTime(a.sentAt)}
+                      {a.authorName} · {formatDateTime(a.sentAt, tz)}
                     </p>
                     <p className="text-sm text-foreground whitespace-pre-wrap mt-1">
                       {a.body}
@@ -187,7 +189,7 @@ export function CourseHub({ data, basePath }: { data: HubData; basePath: string 
                   )}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {formatDateTime(s.datetime)}
+                  {formatDateTime(s.datetime, tz)}
                   {s.location ? ` · ${s.location}` : ""}
                 </p>
               </div>
@@ -261,7 +263,7 @@ export function CourseHub({ data, basePath }: { data: HubData; basePath: string 
                 </Link>
                 <p className="text-xs text-muted-foreground">
                   {a.sessionSequence != null && `Session ${a.sessionSequence} · `}
-                  {a.dueAt ? `Due ${formatDateTime(a.dueAt)}` : "No due date"}
+                  {a.dueAt ? `Due ${formatDateTime(a.dueAt, tz)}` : "No due date"}
                 </p>
               </div>
               {a.mySubmittedAt ? (
@@ -357,6 +359,7 @@ function PostBody({
   currentUserId: string;
   isManager: boolean;
 }) {
+  const tz = useUserTimeZone();
   return (
     <div>
       <p className="text-xs text-muted-foreground flex items-center gap-2">
@@ -366,7 +369,7 @@ function PostBody({
             Instructor
           </span>
         )}
-        {formatDateTime(post.createdAt)}
+        {formatDateTime(post.createdAt, tz)}
         {(post.authorId === currentUserId || isManager) && (
           <Form
             method="post"

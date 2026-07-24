@@ -26,6 +26,7 @@ import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { PresenceBar } from "~/components/collab/PresenceBar";
 import { buttonClasses } from "~/components/ui/Button";
 import type { Level } from "~/admin-console/lib/eligibility";
+import { APPLICATION_TZ, formatZoneLabel } from "~/lib/timezone";
 import type {
   ProfileMember,
   ProfilePageData,
@@ -435,9 +436,9 @@ function PersonalSection({
                 type="email"
                 defaultValue={member.personalEmail ?? ""}
               />
-              <FieldInput
+              <TimeZoneField
                 name="timeZone"
-                label="Time zone (IANA, e.g. America/New_York)"
+                label="Time zone"
                 defaultValue={member.timeZone ?? ""}
               />
               <FieldInput
@@ -528,7 +529,10 @@ function PersonalSection({
               <Detail label="Phone" value={member.phoneNumber} />
               <Detail label="NetID" value={member.netId} />
               <Detail label="Personal email" value={member.personalEmail} />
-              <Detail label="Time zone" value={member.timeZone} />
+              <Detail
+                label="Time zone"
+                value={member.timeZone ? formatZoneLabel(member.timeZone) : null}
+              />
               <div>
                 <dt className="text-xs text-muted-foreground mb-1">GitHub</dt>
                 <dd className="text-sm text-foreground">
@@ -1141,6 +1145,54 @@ function FieldInput({
         required={required}
         className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
       />
+    </label>
+  );
+}
+
+// Full IANA zone list from the runtime's ICU data — identical in Node (SSR) and
+// the browser, so the rendered <option> set is stable across hydration. Falls
+// back to the app zone if the runtime predates Intl.supportedValuesOf.
+function timeZoneOptions(): string[] {
+  const supportedValuesOf = (
+    Intl as unknown as { supportedValuesOf?: (key: string) => string[] }
+  ).supportedValuesOf;
+  try {
+    const zones = supportedValuesOf?.("timeZone");
+    if (zones && zones.length) return zones;
+  } catch {
+    // fall through to the single-zone fallback
+  }
+  return [APPLICATION_TZ];
+}
+
+function TimeZoneField({
+  name,
+  label,
+  defaultValue,
+}: {
+  name: string;
+  label: string;
+  defaultValue: string;
+}) {
+  const zones = timeZoneOptions();
+  // A stored value outside the canonical list (legacy/rare) still shows selected.
+  const options =
+    defaultValue && !zones.includes(defaultValue) ? [defaultValue, ...zones] : zones;
+  return (
+    <label className="flex flex-col gap-1 text-xs">
+      <span className="text-muted-foreground">{label}</span>
+      <select
+        name={name}
+        defaultValue={defaultValue}
+        className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+      >
+        <option value="">Not set</option>
+        {options.map((z) => (
+          <option key={z} value={z}>
+            {z.replace(/_/g, " ")}
+          </option>
+        ))}
+      </select>
     </label>
   );
 }
