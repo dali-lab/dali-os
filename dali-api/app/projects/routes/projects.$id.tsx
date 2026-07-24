@@ -24,6 +24,7 @@ import { ensureProjectGroup } from "~/lib/groups";
 import { ensureMeetingNotesFolder } from "~/lib/pages";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { formatDateShort, formatDateTime, fullName, UNKNOWN_LABEL } from "~/lib/display";
+import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { USER_NAME_SELECT } from "~/lib/prisma-shapes";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { Avatar } from "~/components/ui/Avatar";
@@ -2437,6 +2438,7 @@ function OverviewTab({
   currentTerm: LoaderData["currentTerm"];
 }) {
   const [showFutureChallenges, setShowFutureChallenges] = useState(false);
+  const tz = useUserTimeZone();
 
   // The current term's per-domain challenge, read-only on Overview. Edited in
   // the Scope settings popup. Only non-empty cells for the current term show.
@@ -2576,7 +2578,7 @@ function OverviewTab({
                   {m.title}
                 </span>
                 <span className="text-xs text-muted-foreground flex-shrink-0">
-                  {formatDateTime(m.startsAt)}
+                  {formatDateTime(m.startsAt, tz)}
                 </span>
               </Link>
             ))}
@@ -2698,6 +2700,7 @@ function PartnersSection({
   canManage: boolean;
 }) {
   const [linking, setLinking] = useState(false);
+  const tz = useUserTimeZone();
 
   return (
     <section className="bg-card border border-border rounded-lg p-4">
@@ -2777,11 +2780,11 @@ function PartnersSection({
                       their record (partner-end), active ones show their start. */}
                   {p.endedAt ? (
                     <span className="text-[10px] px-1.5 py-0.5 rounded border border-border bg-muted/50 text-muted-foreground">
-                      Ended {formatDateShort(p.endedAt)}
+                      Ended {formatDateShort(p.endedAt, tz)}
                     </span>
                   ) : p.active && p.startedAt ? (
                     <span className="text-xs text-muted-foreground">
-                      since {formatDateShort(p.startedAt)}
+                      since {formatDateShort(p.startedAt, tz)}
                     </span>
                   ) : null}
                 </div>

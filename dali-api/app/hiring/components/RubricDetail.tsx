@@ -10,9 +10,11 @@ import {
 import type { loader } from '~/hiring/routes/rubrics.$id'
 import type { RubricCriterion } from '~/types'
 import { formatDateTime } from '~/lib/display'
+import { useUserTimeZone } from '~/hooks/useUserTimeZone'
 
 export function RubricDetail() {
   const { rubric } = useLoaderData<typeof loader>()
+  const tz = useUserTimeZone()
 
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(
     rubric.versions.length ? rubric.versions[rubric.versions.length - 1].id : null,
@@ -122,7 +124,7 @@ export function RubricDetail() {
                       </div>
                       <div className="flex items-center text-xs text-muted-foreground mt-2 gap-1">
                         <Clock className="w-3 h-3" />
-                        {formatDateTime(version.createdAt)}
+                        {formatDateTime(version.createdAt, tz)}
                       </div>
                       <div className="flex items-center text-xs text-muted-foreground mt-1 gap-1">
                         <UserIcon className="w-3 h-3" />
@@ -261,7 +263,7 @@ export function RubricDetail() {
                   <div className="flex items-center gap-4 text-sm text-muted-foreground">
                     <span className="flex items-center gap-1">
                       <Clock className="w-4 h-4" />
-                      {formatDateTime(selectedVersion.createdAt)}
+                      {formatDateTime(selectedVersion.createdAt, tz)}
                     </span>
                     <span className="flex items-center gap-1">
                       <UserIcon className="w-4 h-4" />

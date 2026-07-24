@@ -2,7 +2,7 @@ import type { Route } from "./+types/api.timesheets.export";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { APPLICATION_TZ, zonedDayStartUtc } from "~/lib/timezone";
+import { resolveUserTimeZone, zonedDayStartUtc } from "~/lib/timezone";
 import { getRoleLabel } from "~/lib/roles";
 
 // Export the caller's Timesheet-tab entries in the shape the JobX browser
@@ -39,7 +39,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       : new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
   const to = toParam && !isNaN(Date.parse(toParam)) ? new Date(toParam) : now;
 
-  const [entries, settings] = await Promise.all([
+  const [entries, settings, userRow] = await Promise.all([
     prisma.timeEntry.findMany({
       where: { userId, date: { gte: from, lte: to } },
       orderBy: { date: "asc" },
@@ -55,6 +55,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       },
     }),
     prisma.userAvailabilitySettings.findUnique({ where: { userId }, select: { timezone: true } }),
+    prisma.user.findUnique({ where: { id: userId }, select: { timeZone: true } }),
   ]);
 
   if (entries.length === 0) {
@@ -64,7 +65,9 @@ export async function loader({ request }: Route.LoaderArgs) {
     );
   }
 
-  const timezone = settings?.timezone ?? APPLICATION_TZ;
+  // Working hours are interpreted in the availability-settings zone when set;
+  // otherwise fall back to the user's own display zone rather than a hardcoded ET.
+  const timezone = settings?.timezone ?? resolveUserTimeZone(userRow);
 
   const byKey = new Map<string, { label: string; entries: typeof entries }>();
   for (const e of entries) {

@@ -9,6 +9,7 @@ import { requireAuth } from "~/lib/auth";
 import { isCore, isAdmin } from "~/lib/roles";
 import { resolveTermFilter } from "~/lib/terms";
 import { fullName, formatDateShort, formatDateTime } from "~/lib/display";
+import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import {
   ClipboardCheck,
   ChevronDown,
@@ -124,6 +125,7 @@ type Attendee = {
 
 export default function AdminAttendancePage() {
   const { terms, selected, viewerIsAdmin, events } = useLoaderData<typeof loader>();
+  const tz = useUserTimeZone();
   const [openId, setOpenId] = useState<string | null>(events[0]?.id ?? null);
 
   return (
@@ -201,7 +203,7 @@ export default function AdminAttendancePage() {
                     <p className="text-xs text-muted-foreground mt-1">
                       {[
                         event.startsAt
-                          ? formatDateShort(new Date(event.startsAt))
+                          ? formatDateShort(new Date(event.startsAt), tz)
                           : "No start time",
                         event.projectName ?? "No project",
                         `Organizer ${event.organizerName}`,
@@ -292,6 +294,7 @@ function RosterColumn({
   attendees: Attendee[];
   empty: string;
 }) {
+  const tz = useUserTimeZone();
   return (
     <div className="min-w-0">
       <div className="px-4 py-2.5 flex items-center gap-2 border-b border-border/80">
@@ -320,7 +323,7 @@ function RosterColumn({
               <span className="text-foreground truncate">{a.name}</span>
               {a.present && a.markedAt && (
                 <span className="text-[11px] text-muted-foreground tabular-nums flex-shrink-0">
-                  {formatDateTime(a.markedAt)}
+                  {formatDateTime(a.markedAt, tz)}
                 </span>
               )}
             </li>

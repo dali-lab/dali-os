@@ -3,6 +3,7 @@ import { Button, buttonClasses } from "~/components/ui/Button";
 import { CollaborativeEditor } from "~/components/CollaborativeEditor";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { formatDateTime } from "~/lib/display";
+import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { toDatetimeLocal } from "./OfferingFields";
 
 // Manager-side course content tabs: Materials (offering-workspace pages),
@@ -111,6 +112,7 @@ export function ManageAssignments({
   collabToken: string | null;
   userName: string;
 }) {
+  const tz = useUserTimeZone();
   return (
     <div className="flex flex-col gap-4 max-w-2xl">
       {assignments.map((a) => (
@@ -120,7 +122,7 @@ export function ManageAssignments({
               <span className="text-sm font-semibold text-foreground">{a.title}</span>
               <span className="ml-2 text-xs text-muted-foreground">
                 {a.sessionSequence != null && `Session ${a.sessionSequence} · `}
-                {a.dueAt ? `Due ${formatDateTime(a.dueAt)}` : "No due date"}
+                {a.dueAt ? `Due ${formatDateTime(a.dueAt, tz)}` : "No due date"}
               </span>
             </div>
             <Link
@@ -248,6 +250,7 @@ export function ManageAnnouncements({
 }: {
   announcements: { id: string; body: string; sentAt: string | Date; authorName: string }[];
 }) {
+  const tz = useUserTimeZone();
   return (
     <div className="flex flex-col gap-4 max-w-2xl">
       <Form method="post" className="bg-card border border-border rounded-lg p-4">
@@ -274,7 +277,7 @@ export function ManageAnnouncements({
       {announcements.map((a) => (
         <div key={a.id} className="bg-card border border-border rounded-lg p-4">
           <p className="text-xs text-muted-foreground">
-            {a.authorName} · {formatDateTime(a.sentAt)}
+            {a.authorName} · {formatDateTime(a.sentAt, tz)}
           </p>
           <p className="text-sm text-foreground whitespace-pre-wrap mt-1">{a.body}</p>
         </div>

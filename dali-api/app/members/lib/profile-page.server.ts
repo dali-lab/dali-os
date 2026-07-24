@@ -27,6 +27,8 @@ import {
 } from "~/admin-console/lib/eligibility.server";
 import { NEW_MEMBER_PROFILE_FORM_NAME } from "~/members/lib/profile-form-interpreter";
 import { normalizeHandle } from "~/lib/handle";
+import { isValidTimezone } from "~/lib/timezone";
+import { syncAvailabilityTimezone } from "~/lib/timezone-preference.server";
 import { getEducationProfile } from "~/education/lib/engagement.server";
 import {
   mentorshipPairWhere,
@@ -466,6 +468,10 @@ export async function runProfileAction({
     return { error: "Personal email looks malformed." };
   }
 
+  if (typeof data.timeZone === "string" && !isValidTimezone(data.timeZone)) {
+    return { error: "That timezone isn't a recognized IANA zone." };
+  }
+
   const classYearRaw = (form.get("classYear") as string | null)?.trim() ?? "";
   if (classYearRaw === "") {
     data.classYear = null;
@@ -509,6 +515,12 @@ export async function runProfileAction({
     }
     throw e;
   }
+
+  // Keep the calendar/working-hours zone in step with the display zone.
+  if (typeof data.timeZone === "string") {
+    await syncAvailabilityTimezone(targetId, data.timeZone);
+  }
+
   return redirect(redirectPathFor(request, targetId));
 }
 
