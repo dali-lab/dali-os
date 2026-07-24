@@ -180,6 +180,14 @@ export const EVENT_TYPES = {
     lockedInApp: true,
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
+  "member.onboarding.reminder": {
+    kind: "SystemAnnouncement",
+    area: "Onboarding",
+    label: "Onboarding reminders",
+    description:
+      "In-app nudges from Core when an onboarding step is still incomplete. Email reminders are sent separately and never paired with an in-app ping.",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
   "form.submission": {
     kind: "General",
     area: "Forms",

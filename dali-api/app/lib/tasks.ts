@@ -2,7 +2,7 @@ import type { Prisma } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db";
 import { getActiveCycle } from "~/hiring/lib/cycles";
 import { isInternToFullEligible } from "~/hiring/lib/intern-eligibility";
-import { ONBOARDING_LINK } from "~/members/lib/welcome.server";
+import { ONBOARDING_EVENT_TYPE } from "~/members/lib/welcome.server";
 import { fullName } from "~/lib/display";
 
 // A "task" (todo) is any unread notification — every NotificationKind counts.
@@ -209,6 +209,7 @@ export async function listOpenTasks(userId: string): Promise<Task[]> {
       select: {
         id: true,
         kind: true,
+        eventType: true,
         title: true,
         body: true,
         link: true,
@@ -281,8 +282,7 @@ export async function listOpenTasks(userId: string): Promise<Task[]> {
     // (see submitMemberForm), so it must NOT offer a manual Confirm.
     // Meeting reminders carry scheduledMeetingId but clear by Confirm / mark-
     // read, not RSVP — only invites are self-clearing via the meeting link.
-    const isOnboarding =
-      n.kind === "SystemAnnouncement" && n.link === ONBOARDING_LINK;
+    const isOnboarding = n.eventType === ONBOARDING_EVENT_TYPE;
     const isMeetingInvite =
       n.kind === "MeetingInvite" && !!n.scheduledMeetingId;
     const hasAction = isMeetingInvite || !!formLink || isOnboarding;

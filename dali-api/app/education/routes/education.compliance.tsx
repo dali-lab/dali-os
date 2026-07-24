@@ -74,10 +74,11 @@ export default function CECompliance() {
   const nonCompliant = rows.filter((r) => !r.compliant).length;
 
   return (
-    <div className="flex flex-col gap-4 max-w-3xl">
+    <div className="flex flex-col gap-4">
       <AreaPillNav
         items={educationPills({ canManage: true, isCore: true, active: "compliance" })}
       />
+      <div className="flex flex-col gap-4 max-w-3xl">
       <header className="flex items-start justify-between gap-4">
         <div>
           <h1 className="font-heading text-2xl font-bold text-foreground">
@@ -173,6 +174,7 @@ export default function CECompliance() {
           </li>
         ))}
       </ul>
+      </div>
     </div>
   );
 }

@@ -5,7 +5,7 @@ import { withCors, handlePreflight } from "~/lib/cors";
 import { listOpenTasks, listNotificationHistory } from "~/lib/tasks";
 import { listMyNotifications, annotateDesktopFeed } from "~/lib/notifications";
 import { publishNotificationChange } from "~/lib/notify-stream.server";
-import { ONBOARDING_LINK } from "~/members/lib/welcome.server";
+import { ONBOARDING_EVENT_TYPE } from "~/members/lib/welcome.server";
 
 // Query params that switch the loader into history mode. Their presence (not
 // their value) flips the payload, so the legacy poller — which sends none — is
@@ -104,7 +104,7 @@ export async function action({ request }: Route.ActionArgs) {
       readAt: null,
       NOT: [
         { kind: "MeetingInvite", scheduledMeetingId: { not: null } },
-        { kind: "SystemAnnouncement", link: ONBOARDING_LINK },
+        { eventType: ONBOARDING_EVENT_TYPE },
       ],
     },
     data: { readAt: new Date() },
