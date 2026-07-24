@@ -8,6 +8,11 @@ import {
   X as XIcon,
   Check,
   Search,
+  ListTodo,
+  FolderKanban,
+  UsersRound,
+  GraduationCap,
+  Workflow,
 } from "lucide-react";
 import { Modal } from "./Modal";
 
@@ -76,78 +81,178 @@ function findInSidebar(predicate: (el: HTMLButtonElement) => boolean): HTMLEleme
   return null;
 }
 
-function findByExactText(text: string) {
-  return findInSidebar((btn) => (btn.textContent || "").trim() === text);
+function findByLabel(label: string) {
+  // Sidebar buttons render their label as visible text when expanded and as a
+  // `title` attribute when collapsed. Prefix-match rather than exact-match:
+  // My Tasks appends a count badge to its text ("My Tasks3") and collapsed
+  // titles may carry suffixes ("My Tasks (3)").
+  return findInSidebar((btn) => {
+    if ((btn.textContent || "").trim().startsWith(label)) return true;
+    return (btn.getAttribute("title") || "").startsWith(label);
+  });
 }
 
-// Two-step post-onboarding tour: walk a freshly-onboarded member through
-// (1) linking their Google Calendar so the lab can see their availability,
-// and (2) their profile page so they know where to update their details.
-// Step 1 is omitted if the member already has a Google calendar linked, so
-// a returning user who linked elsewhere only sees the profile step.
+// Post-onboarding tour: walk a freshly-onboarded member through the sidebar
+// areas every member has — My Tasks, Calendar, Projects, People, Education,
+// Lab Processes, their profile — closing with the command palette. Role-gated
+// surfaces (Hiring, Forms, Mentorship, Admin) are deliberately excluded: a
+// fresh member doesn't have them yet. Each click-driven step spotlights the
+// sidebar item and advances when the workspace reports the matching URL.
 function buildSteps(opts: { hasCalendarLink: boolean }): TourStep[] {
-  const steps: TourStep[] = [];
-
-  if (!opts.hasCalendarLink) {
-    steps.push({
-      icon: <CalendarDays className="w-4 h-4" />,
-      eyebrow: "Calendar",
+  return [
+    {
+      icon: <ListTodo className="w-4 h-4" />,
+      eyebrow: "My Tasks",
       cta: (
         <>
-          Open <strong>Calendar</strong> from the sidebar.
+          Open <strong>My Tasks</strong> at the top of the sidebar.
         </>
       ),
       arrived: (
         <>
-          Connect your <strong>Google Calendar</strong> so the lab can see
-          your availability for scheduling.
+          Anything waiting on you — assigned tasks, forms to fill out, meeting
+          invites to RSVP — lands here. The badge shows how many are open.
+        </>
+      ),
+      matches: (p) => p.startsWith("/notifications"),
+      findTarget: () => findByLabel("My Tasks"),
+    },
+    {
+      icon: <CalendarDays className="w-4 h-4" />,
+      eyebrow: "Calendar",
+      cta: (
+        <>
+          Next, open <strong>Calendar</strong>.
+        </>
+      ),
+      arrived: opts.hasCalendarLink ? (
+        <>
+          Set your availability, schedule meetings with other members, and log
+          hours on your timesheet — all from here.
+        </>
+      ) : (
+        <>
+          Set your availability and schedule meetings with other members here.
+          Connect your <strong>Google Calendar</strong> so the lab can see when
+          you&apos;re free.
         </>
       ),
       matches: (p) => p.startsWith("/calendar"),
-      findTarget: () => findByExactText("Calendar"),
-      arrivedAction: {
-        label: "Connect Google Calendar",
-        onClick: () => {
-          window.location.href = "/oauth/calendar/google/start";
-        },
-      },
-    });
-  }
-
-  steps.push({
-    icon: <UserCircle2 className="w-4 h-4" />,
-    eyebrow: "Profile",
-    cta: (
-      <>
-        Open your <strong>profile</strong> from the bottom of the sidebar.
-      </>
-    ),
-    arrived: (
-      <>
-        Review your details and add anything that&apos;s missing — you can
-        come back here anytime to edit.
-      </>
-    ),
-    matches: (p) => p.startsWith("/profile"),
-    findTarget: () =>
-      findInSidebar((btn) => btn.getAttribute("aria-label") === "Open profile"),
-  });
-
-  // Info-only closer (no findTarget/matches → advances on Next): teach the
-  // command palette, which is otherwise easy to miss.
-  steps.push({
-    icon: <Search className="w-4 h-4" />,
-    eyebrow: "Search",
-    cta: (
-      <>
-        One more thing: press <strong>⌘K</strong> (<strong>Ctrl&nbsp;K</strong>{" "}
-        on Windows) anytime — or click <strong>Search</strong> at the top of the
-        sidebar — to jump to any person, project, or doc, or run a quick command.
-      </>
-    ),
-  });
-
-  return steps;
+      findTarget: () => findByLabel("Calendar"),
+      arrivedAction: opts.hasCalendarLink
+        ? undefined
+        : {
+            label: "Connect Google Calendar",
+            onClick: () => {
+              window.location.href = "/oauth/calendar/google/start";
+            },
+          },
+    },
+    {
+      icon: <FolderKanban className="w-4 h-4" />,
+      eyebrow: "Projects",
+      cta: (
+        <>
+          Open <strong>Projects</strong>.
+        </>
+      ),
+      arrived: (
+        <>
+          Every lab project lives here — teams, sprints, and tasks. Once
+          you&apos;re staffed, your project&apos;s workspace is where your
+          term&apos;s work happens.
+        </>
+      ),
+      matches: (p) => p.startsWith("/projects"),
+      findTarget: () => findByLabel("Projects"),
+    },
+    {
+      icon: <UsersRound className="w-4 h-4" />,
+      eyebrow: "People",
+      cta: (
+        <>
+          Open <strong>People</strong>.
+        </>
+      ),
+      arrived: (
+        <>
+          The lab directory — look up anyone, see their roles and domains, and
+          find who to ask about what.
+        </>
+      ),
+      // Exact match: /members/<id> pages are profiles, matched by the Profile
+      // step below.
+      matches: (p) => p === "/members",
+      findTarget: () => findByLabel("People"),
+    },
+    {
+      icon: <GraduationCap className="w-4 h-4" />,
+      eyebrow: "Education",
+      cta: (
+        <>
+          Open <strong>Education</strong>.
+        </>
+      ),
+      arrived: (
+        <>
+          Miniseries and workshops — browse the catalog, sign up, and keep
+          track of anything you&apos;re enrolled in.
+        </>
+      ),
+      matches: (p) => p.startsWith("/education"),
+      findTarget: () => findByLabel("Education"),
+    },
+    {
+      icon: <Workflow className="w-4 h-4" />,
+      eyebrow: "Lab Processes",
+      cta: (
+        <>
+          Open <strong>Lab Processes</strong>.
+        </>
+      ),
+      arrived: (
+        <>
+          The term at a glance — week-by-week milestones for how the lab runs,
+          from kickoff to handoff.
+        </>
+      ),
+      matches: (p) => p.startsWith("/internal-processes"),
+      findTarget: () => findByLabel("Lab Processes"),
+    },
+    {
+      icon: <UserCircle2 className="w-4 h-4" />,
+      eyebrow: "Profile",
+      cta: (
+        <>
+          Open your <strong>profile</strong> from the bottom of the sidebar.
+        </>
+      ),
+      arrived: (
+        <>
+          Review your details and add anything that&apos;s missing — you can
+          come back here anytime to edit.
+        </>
+      ),
+      // The /profile route server-redirects to /members/<id>, and the
+      // workspace reports the post-redirect URL — match both.
+      matches: (p) => p.startsWith("/profile") || /^\/members\/[^/]+/.test(p),
+      findTarget: () =>
+        findInSidebar((btn) => btn.getAttribute("aria-label") === "Open profile"),
+    },
+    // Info-only closer (no findTarget/matches → advances on Next): teach the
+    // command palette, which is otherwise easy to miss.
+    {
+      icon: <Search className="w-4 h-4" />,
+      eyebrow: "Search",
+      cta: (
+        <>
+          One more thing: press <strong>⌘K</strong> (<strong>Ctrl&nbsp;K</strong>{" "}
+          on Windows) anytime — or click <strong>Search</strong> at the top of the
+          sidebar — to jump to any person, project, or doc, or run a quick command.
+        </>
+      ),
+    },
+  ];
 }
 
 function readPhase(): Phase {
@@ -268,8 +373,9 @@ export function LaunchWelcome({
   tabless?: boolean;
 }) {
   const routerLocation = useLocation();
-  // Steps are stable for a given user within a session; the calendar step is
-  // included only when they haven't linked a calendar yet.
+  // Steps are stable for a given user within a session; the calendar step
+  // only offers the "connect Google Calendar" action when they haven't
+  // linked one yet.
   const steps = useRef(buildSteps({ hasCalendarLink })).current;
   const [phase, setPhase] = useState<Phase>("done");
   const [step, setStep] = useState(0);
@@ -323,10 +429,10 @@ export function LaunchWelcome({
   // (sidebar not laid out yet, calendar iframe still loading, etc.).
   // Info-only steps (no findTarget) never show a spotlight.
   //
-  // For steps that have no URL `matches` (e.g. the in-page Schedule Meeting
-  // pill), there's no dali:tabNavigated to advance on, so we attach a DOM
-  // click listener to the resolved target instead. Clicking the spotlit
-  // element flips the step to "arrived" the same way a URL change would.
+  // For steps that have a findTarget but no URL `matches`, there's no
+  // dali:tabNavigated to advance on, so we attach a DOM click listener to the
+  // resolved target instead. Clicking the spotlit element flips the step to
+  // "arrived" the same way a URL change would.
   useEffect(() => {
     if (phase !== "card") return;
     if (step >= steps.length) return;
@@ -360,8 +466,8 @@ export function LaunchWelcome({
 
   // Pulse the card's primary action button. For click-driven steps this is
   // the Next button after the user arrives at the matched page. For info-only
-  // steps (e.g. MCP) the primary action is shown immediately, so pulse it
-  // from the start. Refs alone don't trigger re-renders, so we copy the
+  // steps (e.g. the ⌘K closer) the primary action is shown immediately, so
+  // pulse it from the start. Refs alone don't trigger re-renders, so we copy the
   // current DOM node into state once it's in the tree.
   useEffect(() => {
     if (phase !== "card") {
@@ -483,8 +589,8 @@ export function LaunchWelcome({
               Welcome to DALI OS
             </h2>
             <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
-              Hi {firstName}. DALI OS is the home of everything DALI.
-              Want a quick tour?
+              Hi {firstName}. DALI OS is the home of everything DALI — projects,
+              education, people, and more. Want a quick tour of the main areas?
             </p>
           </div>
           <div className="flex items-center justify-end gap-2 pt-2">
@@ -547,7 +653,7 @@ export function LaunchWelcome({
                 current!.icon
               )}
               {isFinal
-                ? "Launch party"
+                ? "All set"
                 : arrived
                   ? "You're here"
                   : current!.eyebrow}
@@ -564,7 +670,11 @@ export function LaunchWelcome({
 
           <div className="text-sm text-foreground leading-relaxed">
             {isFinal ? (
-              <>Welcome to DALI OS!</>
+              <>
+                That&apos;s the tour! <strong>Home</strong> ties it together —
+                your week, open tasks, and lab events. Re-run this anytime from{" "}
+                <strong>Help</strong>.
+              </>
             ) : arrived ? (
               current!.arrived
             ) : (
