@@ -22,7 +22,7 @@ import {
   type Level,
 } from "~/admin-console/lib/eligibility";
 import {
-  addOrUpdateEligibility,
+  applyEligibilityWithNotify,
   removeEligibility,
 } from "~/admin-console/lib/eligibility.server";
 import { NEW_MEMBER_PROFILE_FORM_NAME } from "~/members/lib/profile-form-interpreter";
@@ -418,7 +418,7 @@ export async function runProfileAction({
     if (!domainId || !level) {
       return { error: "Pick a domain and a level." };
     }
-    await addOrUpdateEligibility({
+    await applyEligibilityWithNotify({
       userId: targetId,
       domainId,
       level,

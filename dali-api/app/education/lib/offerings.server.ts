@@ -1,6 +1,7 @@
 import { prisma } from "~/lib/db";
 import { currentTerm, isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
+import { notifyAdminsOfPromotion } from "~/lib/promotion-notify.server";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { manageableOfferingIds, isOfferingManager } from "./access.server";
 import { createOfferingApplicationForm } from "./application-form.server";
@@ -540,6 +541,14 @@ export async function runOfferingAction(
         .filter(Boolean);
       const term = await currentTerm();
       if (!term) return bad("No current term configured", 500);
+      const priorInstructorIds = new Set(
+        (
+          await prisma.instructorAssignment.findMany({
+            where: { offeringId },
+            select: { userId: true },
+          })
+        ).map((i) => i.userId),
+      );
       await prisma.$transaction([
         prisma.instructorAssignment.deleteMany({ where: { offeringId } }),
         prisma.instructorAssignment.createMany({
@@ -553,6 +562,16 @@ export async function runOfferingAction(
         targetId: offeringId,
         metadata: { userIds },
       });
+      // Becoming an instructor is a pay-affecting promotion — tell admins about
+      // newly-added instructors (issue #1001). Removals are intentionally silent.
+      for (const userId of userIds) {
+        if (priorInstructorIds.has(userId)) continue;
+        void notifyAdminsOfPromotion({
+          userId,
+          actorId,
+          summary: `was made an instructor for ${offering.title}`,
+        }).catch((err) => console.error("promotion notify (instructor) failed", err));
+      }
       return { ok: true, id: offeringId };
     }
   }

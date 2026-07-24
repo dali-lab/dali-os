@@ -8,6 +8,7 @@ import { requireAuth, forbidden } from "~/lib/auth";
 import { isAdmin, isCore, isAdminViaEnv, currentTerm } from "~/lib/roles";
 import { LAB_MEMBER_WHERE, MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { coreCycleTermIds } from "~/lib/core-cycle";
+import { notifyAdminsOfPromotion } from "~/lib/promotion-notify.server";
 import { Users, Check } from "lucide-react";
 import {
   AdminToggle,
@@ -140,6 +141,15 @@ export async function action({ request }: Route.ActionArgs) {
       await prisma.coreAssignment.createMany({
         data: missing.map((termId) => ({ userId, termId, leadTitle })),
       });
+    }
+    // A new Core title for the current term is a pay-affecting promotion — tell
+    // admins (issue #1001). Skip when they already held this title this term.
+    if (!alreadyCovered.has(term.id)) {
+      void notifyAdminsOfPromotion({
+        userId,
+        actorId: auth.user.sub,
+        summary: leadTitle ? `joined Core as ${leadTitle}` : "joined Core",
+      }).catch((err) => console.error("promotion notify (core) failed", err));
     }
     return null;
   }

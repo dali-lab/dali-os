@@ -42,6 +42,9 @@ export type EventDef = {
   // Loses its value if seen late (meeting starting, spontaneous lab event).
   // The desktop app surfaces these with sound and pins them in its tray.
   timeSensitive?: boolean;
+  // Only admins ever receive this event, so its settings row is shown only to
+  // admins (and the save action ignores it for non-admins).
+  adminOnly?: boolean;
   // `desktop` gates the native banner the desktop app raises for an in-app
   // row — it is a sub-preference of inApp (no row, no banner), resolved at
   // feed-read time so a preference change applies to unseen rows too.
@@ -238,6 +241,15 @@ export const EVENT_TYPES = {
     label: "Certificates",
     description: "When you're issued a certificate of completion.",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
+  },
+  "member.promotion": {
+    kind: "General",
+    area: "Staffing",
+    label: "Member promotions",
+    description:
+      "When a member is promoted to a new pay level, made an instructor, or added to Core.",
+    adminOnly: true,
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
   // Fallback stamped on rows that predate the registry (schema column
   // default). Never emitted by code; hidden from the settings page.

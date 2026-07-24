@@ -1,5 +1,6 @@
 import { prisma } from "~/lib/db";
 import type { Level } from "./eligibility";
+import { notifyAdminsOfLevelAdvance } from "~/lib/promotion-notify.server";
 
 // Server-only writers for DomainEligibility used by:
 //   - admin-console/domains (per-domain Members cluster)
@@ -31,6 +32,33 @@ export async function addOrUpdateEligibility(args: {
       promotedBy: args.actorId,
     },
   });
+}
+
+// Like addOrUpdateEligibility, but notifies admins when the change is a genuine
+// pay-level *advancement* (issue #1001). Reads the prior level before the
+// upsert so a brand-new eligibility (initial grant) stays silent. Use this at
+// the advancement editors (Level Up, per-domain Members, profile Domains &
+// Levels); the hiring/auto-promote path keeps addOrUpdateEligibility so a new
+// hire's first P1 doesn't notify.
+export async function applyEligibilityWithNotify(args: {
+  userId: string;
+  domainId: string;
+  level: Level;
+  actorId: string;
+}) {
+  const prior = await prisma.domainEligibility.findUnique({
+    where: { userId_domainId: { userId: args.userId, domainId: args.domainId } },
+    select: { level: true },
+  });
+  const row = await addOrUpdateEligibility(args);
+  void notifyAdminsOfLevelAdvance({
+    userId: args.userId,
+    domainId: args.domainId,
+    from: prior?.level ?? null,
+    to: args.level,
+    actorId: args.actorId,
+  }).catch((err) => console.error("promotion notify (eligibility) failed", err));
+  return row;
 }
 
 export async function removeEligibility(args: { id: string }) {

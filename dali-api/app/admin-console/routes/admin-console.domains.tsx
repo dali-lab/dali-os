@@ -11,7 +11,7 @@ import { LAB_MEMBER_WHERE, MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { describeDomainUsage, DOMAIN_USAGE_COUNT_SELECT } from "./api.domains.$domainId";
 import { ALLOWED_LEVELS, parseLevel, type Level } from "~/admin-console/lib/eligibility";
 import {
-  addOrUpdateEligibility,
+  applyEligibilityWithNotify,
   removeEligibility,
 } from "~/admin-console/lib/eligibility.server";
 import { ChevronDown, Trash2, Plus, X } from "lucide-react";
@@ -211,7 +211,7 @@ export async function action({ request }: Route.ActionArgs) {
     if (!userId || !domainId || !level) {
       return Response.json({ error: "userId, domainId, and level are required" }, { status: 400 });
     }
-    await addOrUpdateEligibility({ userId, domainId, level, actorId: auth.user.sub });
+    await applyEligibilityWithNotify({ userId, domainId, level, actorId: auth.user.sub });
     return null;
   }
 

@@ -21,6 +21,8 @@ import {
 } from "~/lib/google-workspace";
 import { logAuditEvent } from "~/lib/audit";
 import { notify } from "~/lib/notify.server";
+import { notifyAdminsOfPromotion, isLevelAdvance } from "~/lib/promotion-notify.server";
+import type { Level } from "~/lib/level";
 import { dedupeLiveAssignments } from "../lib/staffing-board";
 import { publishCycleChange } from "../lib/staffing-events.server";
 import { derivePairings, findDomainsMissingMentors } from "../lib/mentorship-pairings";
@@ -229,7 +231,27 @@ export async function action({ request }: Route.ActionArgs) {
       let mentorsPromoted = 0;
       let mentorshipGaps: { domainId: string; menteeUserIds: string[] }[] = [];
       const promoteMentors = body.promoteMentors === true;
+      // Capture each (user, domain)'s pre-upsert eligibility level so we can
+      // tell admins about genuine pay-level advancements after the tx commits
+      // (issue #1001). First-seen prior wins; later writes update the target.
+      const eligBumps = new Map<
+        string,
+        { userId: string; domainId: string; from: Level | null; to: Level }
+      >();
       await prisma.$transaction(async (tx) => {
+        const recordElig = async (userId: string, domainId: string, to: Level) => {
+          const key = `${userId}:${domainId}`;
+          const existing = eligBumps.get(key);
+          if (existing) {
+            existing.to = to;
+            return;
+          }
+          const cur = await tx.domainEligibility.findUnique({
+            where: { userId_domainId: { userId, domainId } },
+            select: { level: true },
+          });
+          eligBumps.set(key, { userId, domainId, from: cur?.level ?? null, to });
+        };
         for (const a of target) {
           if (a.status !== "Confirmed") {
             await tx.staffingAssignment.update({ where: { id: a.id }, data: { status: "Confirmed" } });
@@ -254,6 +276,7 @@ export async function action({ request }: Route.ActionArgs) {
           });
           // Eligibility is monotonic (only goes up); but the staffing lead
           // is the authority here, so mirror the assigned level.
+          await recordElig(a.userId, a.domainId, a.level);
           await tx.domainEligibility.upsert({
             where: { userId_domainId: { userId: a.userId, domainId: a.domainId } },
             update: { level: a.level, promotedBy: auth.user.sub },
@@ -305,6 +328,7 @@ export async function action({ request }: Route.ActionArgs) {
             });
             const promoted = new Set<string>();
             for (const r of belowP3) {
+              await recordElig(r.userId, r.domainId, "P3");
               await tx.domainEligibility.upsert({
                 where: { userId_domainId: { userId: r.userId, domainId: r.domainId } },
                 update: { level: "P3", promotedBy: auth.user.sub },
@@ -376,6 +400,19 @@ export async function action({ request }: Route.ActionArgs) {
           })),
         }).catch((err) =>
           console.error(`staffing finalize ${project.id}: notify failed`, err),
+        );
+      }
+
+      // Tell admins about genuine pay-level advancements this run applied —
+      // staffing-lead level bumps and mentor→P3 promotions (issue #1001).
+      for (const b of eligBumps.values()) {
+        if (!isLevelAdvance(b.from, b.to)) continue;
+        void notifyAdminsOfPromotion({
+          userId: b.userId,
+          actorId: auth.user.sub,
+          summary: `was promoted to ${b.to} in ${domainNameById.get(b.domainId) ?? "a domain"}`,
+        }).catch((err) =>
+          console.error(`staffing finalize ${project.id}: promotion notify failed`, err),
         );
       }
 
