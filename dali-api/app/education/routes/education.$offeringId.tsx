@@ -20,6 +20,7 @@ import {
 import { buttonClasses } from "~/components/ui/Button";
 import { prisma } from "~/lib/db";
 import { formatDateTime, formatDateShort } from "~/lib/display";
+import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 
 export const meta: Route.MetaFunction = ({ data }) => [
   { title: `${data?.offering.title ?? "Offering"} · DALI OS` },
@@ -99,6 +100,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 export default function OfferingDetail() {
   const { offering, descriptionHtml, myStatus, isManager, canApply } =
     useLoaderData<typeof loader>();
+  const tz = useUserTimeZone();
   const seatsLeft = Math.max(0, offering.capacity - offering.approvedCount);
 
   return (
@@ -165,9 +167,9 @@ export default function OfferingDetail() {
           </div>
         </div>
         <p className="text-sm text-muted-foreground mt-1">
-          {formatDateShort(offering.startsAt)} – {formatDateShort(offering.endsAt)}
+          {formatDateShort(offering.startsAt, tz)} – {formatDateShort(offering.endsAt, tz)}
           {" · "}
-          {registrationWindowLabel(offering)}
+          {registrationWindowLabel(offering, tz)}
           {" · "}
           {seatsLeft > 0
             ? `${seatsLeft} of ${offering.capacity} seats left`
@@ -205,7 +207,7 @@ export default function OfferingDetail() {
                     Session {s.sequence}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {formatDateTime(s.datetime)}
+                    {formatDateTime(s.datetime, tz)}
                     {s.location ? ` · ${s.location}` : ""}
                   </p>
                 </div>

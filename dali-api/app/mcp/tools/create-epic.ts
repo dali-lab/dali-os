@@ -1,14 +1,15 @@
-// MCP `create_epic` — Core-only. Mirrors api.projects.$id.epics.
+// MCP `create_epic` — Core or project member. Mirrors api.projects.$id.epics.
 
 import { prisma } from "~/lib/db";
-import { isCore } from "~/lib/roles";
+import { canEditProject } from "./access";
 
 const EPIC_STATUSES = ["Backlog", "Open", "InProgress", "Done", "Cancelled"] as const;
 type EpicStatus = (typeof EPIC_STATUSES)[number];
 
 export const CREATE_EPIC_TOOL = {
   name: "create_epic",
-  description: "Create an epic on a project. Core-only.",
+  description:
+    "Create an epic on a project. Requires Core or project-member access.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -57,7 +58,7 @@ function parseDate(v: string | undefined): Date | null | "invalid" {
 }
 
 export async function runCreateEpic(callerId: string, input: Input) {
-  if (!(await isCore(callerId))) {
+  if (!(await canEditProject(callerId, input.projectId))) {
     throw new CreateEpicError("Forbidden", 403);
   }
 

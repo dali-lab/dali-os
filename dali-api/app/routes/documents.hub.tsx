@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { redirect, useLoaderData, useRevalidator } from "react-router";
+import {
+  redirect,
+  useLoaderData,
+  useRevalidator,
+  useSearchParams,
+} from "react-router";
 import type { Route } from "./+types/documents.hub";
 import {
+  Archive,
   ChevronDown,
   ChevronRight,
   FileText,
@@ -11,22 +17,27 @@ import {
   Plus,
   Search,
   Tag as TagIcon,
-  Trash2,
   X,
 } from "lucide-react";
 import { prisma } from "~/lib/db";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
-import { isCore, isLabMember } from "~/lib/roles";
+import { isCore, isLabMember, currentTerm } from "~/lib/roles";
 import { Tooltip } from "~/components/ui/IconButton";
+import type { ProjectStatus } from "~/generated/prisma/client";
 
 export const meta: Route.MetaFunction = () => [{ title: "Documents · DALI OS" }];
 
 // The lab-wide Documents hub. Aggregates the Lab-workspace document tree (the
-// dedicated home for lab-wide docs) plus the viewer's project-hub documents,
-// so everything is filterable/searchable in one place. Lab docs are fully
-// managed here (create/delete/pin — any lab member); project docs are read +
-// pin only (their create/delete stays in the project hub). Tags are applied in
-// each document's editor; here they only drive the filter bar.
+// dedicated home for lab-wide docs) plus the viewer's project documents, so
+// everything is filterable/searchable in one place. Lab docs are fully managed
+// here (create/archive/pin — any lab member); project docs are read + pin only
+// (their create/archive stays in the project hub). Tags are applied in each
+// document's editor; here they only drive the filter bar.
+//
+// Project list defaults to Active + current-term (same as the projects hub
+// term view). `?projects=all` includes Paused/Archived and non-current-term
+// projects so older workspaces stay reachable. Archived *pages* (archivedAt)
+// stay hidden either way.
 
 type DocTagOut = { id: string; label: string; slug: string; color: string | null };
 
@@ -49,7 +60,15 @@ type WorkspaceOut = {
   label: string;
   kind: "lab" | "project";
   canManage: boolean;
+  // Present for project workspaces — drives the Archived badge in All view.
+  projectStatus?: ProjectStatus;
 };
+
+type ProjectFilter = "active" | "all";
+
+function parseProjectFilter(raw: string | null): ProjectFilter {
+  return raw === "all" ? "all" : "active";
+}
 
 const pageSelect = {
   id: true,
@@ -70,13 +89,19 @@ export async function loader({ request }: Route.LoaderArgs) {
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) return partnerRedirect;
 
-  const [member, core] = await Promise.all([
+  const url = new URL(request.url);
+  const projectFilter = parseProjectFilter(url.searchParams.get("projects"));
+
+  const [member, core, term] = await Promise.all([
     isLabMember(auth.user.sub),
     isCore(auth.user.sub),
+    currentTerm(),
   ]);
 
-  // Lab-wide pages + the projects whose docs the viewer may see (Core sees all
-  // non-archived projects; everyone else sees the projects they're staffed on).
+  // Lab-wide pages + projects whose docs the viewer may see (Core sees all;
+  // everyone else sees projects they're staffed on). Active (default) matches
+  // the projects hub term view — current-term Active only. All drops the
+  // status/term gates so archived + older-term projects stay reachable.
   const [labPages, projects] = await Promise.all([
     prisma.page.findMany({
       where: { workspaceType: "Lab", workspaceId: null, archivedAt: null },
@@ -85,11 +110,16 @@ export async function loader({ request }: Route.LoaderArgs) {
     }),
     prisma.project.findMany({
       where: {
-        status: { not: "Archived" },
+        ...(projectFilter === "active"
+          ? {
+              status: "Active" as const,
+              ...(term ? { projectTerms: { some: { termId: term.id } } } : {}),
+            }
+          : {}),
         ...(core ? {} : { assignments: { some: { userId: auth.user.sub } } }),
       },
-      orderBy: { name: "asc" },
-      select: { id: true, name: true },
+      orderBy: [{ status: "asc" }, { name: "asc" }],
+      select: { id: true, name: true, status: true },
     }),
   ]);
 
@@ -108,7 +138,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     select: { id: true, label: true, slug: true, color: true },
   });
 
-  const projectNameById = new Map(projects.map((p) => [p.id, p.name]));
+  const projectById = new Map(projects.map((p) => [p.id, p]));
   const toDto = (
     p: (typeof labPages)[number] & { workspaceId?: string | null },
     workspaceKey: string,
@@ -133,16 +163,24 @@ export async function loader({ request }: Route.LoaderArgs) {
   const docs: DocOut[] = [
     ...labPages.map((p) => toDto(p, "lab", "Lab-wide", "lab")),
     ...projectPages.map((p) =>
-      toDto(p, p.workspaceId!, projectNameById.get(p.workspaceId!) ?? "Project", "project"),
+      toDto(p, p.workspaceId!, projectById.get(p.workspaceId!)?.name ?? "Project", "project"),
     ),
   ];
 
   const workspaces: WorkspaceOut[] = [
     { key: "lab", label: "Lab-wide", kind: "lab", canManage: member },
-    ...projects.map((p): WorkspaceOut => ({ key: p.id, label: p.name, kind: "project", canManage: true })),
+    ...projects.map(
+      (p): WorkspaceOut => ({
+        key: p.id,
+        label: p.name,
+        kind: "project",
+        canManage: true,
+        projectStatus: p.status,
+      }),
+    ),
   ];
 
-  return { docs, workspaces, allTags };
+  return { docs, workspaces, allTags, projectFilter };
 }
 
 // Open a document as a split-screen tab beside the hub. This page renders
@@ -176,10 +214,11 @@ function TagChip({ tag }: { tag: DocTagOut }) {
 }
 
 export default function DocumentsHub() {
-  const { docs, workspaces, allTags } = useLoaderData() as Exclude<
+  const { docs, workspaces, allTags, projectFilter } = useLoaderData() as Exclude<
     Awaited<ReturnType<typeof loader>>,
     Response
   >;
+  const [, setSearchParams] = useSearchParams();
   const revalidator = useRevalidator();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -190,6 +229,18 @@ export default function DocumentsHub() {
     () => new Set(docs.filter((d) => d.kind === "Folder").map((d) => d.id)),
   );
   const [collapsedWorkspaces, setCollapsedWorkspaces] = useState<Set<string>>(() => new Set());
+
+  function setProjectFilter(next: ProjectFilter) {
+    setSearchParams(
+      (prev) => {
+        const params = new URLSearchParams(prev);
+        if (next === "active") params.delete("projects");
+        else params.set("projects", "all");
+        return params;
+      },
+      { replace: true },
+    );
+  }
 
   // A rename happens in the doc's own split-screen tab (separate loader). The
   // shell relays `dali:documentTitleChanged` to open tabs — revalidate so the
@@ -272,8 +323,8 @@ export default function DocumentsHub() {
       revalidator.revalidate();
     }
   }
-  async function deleteDocument(id: string, title: string, isFolder: boolean) {
-    if (!window.confirm(`Delete ${isFolder ? "folder" : "document"} "${title}"?`)) return;
+  async function archiveDocument(id: string, title: string, isFolder: boolean) {
+    if (!window.confirm(`Archive ${isFolder ? "folder" : "document"} "${title}"?`)) return;
     const b = await post(`/api/documents/${id}`, undefined, "DELETE");
     if (b) revalidator.revalidate();
   }
@@ -354,7 +405,7 @@ export default function DocumentsHub() {
     parentId?: string | null;
   }) {
     const canManage = canManageByWorkspace.get(doc.workspaceKey) ?? false;
-    const canDelete = canManage && doc.workspaceKind === "lab" && !doc.isSystem;
+    const canArchive = canManage && doc.workspaceKind === "lab" && !doc.isSystem;
     const draggable = canManage && doc.workspaceKind === "lab";
     return (
       <div
@@ -424,16 +475,16 @@ export default function DocumentsHub() {
               </button>
             </Tooltip>
           )}
-          {canDelete && (
-            <Tooltip label="Delete document">
+          {canArchive && (
+            <Tooltip label="Archive document">
               <button
                 type="button"
                 disabled={busy}
-                onClick={() => void deleteDocument(doc.id, doc.title, false)}
-                aria-label="Delete document"
-                className="text-destructive hover:text-destructive/80 disabled:opacity-60"
+                onClick={() => void archiveDocument(doc.id, doc.title, false)}
+                aria-label="Archive document"
+                className="text-muted-foreground hover:text-foreground disabled:opacity-60"
               >
-                <Trash2 className="w-3.5 h-3.5" />
+                <Archive className="w-3.5 h-3.5" />
               </button>
             </Tooltip>
           )}
@@ -444,7 +495,7 @@ export default function DocumentsHub() {
 
   function FolderRow({ doc, canManage }: { doc: DocOut; canManage: boolean }) {
     const children = childrenByParent.get(doc.id) ?? [];
-    const canDelete = canManage && doc.workspaceKind === "lab" && !doc.isSystem;
+    const canArchive = canManage && doc.workspaceKind === "lab" && !doc.isSystem;
     const isDropZone = canManage && doc.workspaceKind === "lab";
     const dropActive = dropTarget === doc.id;
     return (
@@ -522,20 +573,20 @@ export default function DocumentsHub() {
                   </button>
                 </Tooltip>
               )}
-              {canDelete && (
+              {canArchive && (
                 <button
                   type="button"
                   disabled={busy || children.length > 0}
                   title={
                     children.length > 0
-                      ? "Move or delete the documents inside this folder first"
-                      : "Delete folder"
+                      ? "Move or archive the documents inside this folder first"
+                      : "Archive folder"
                   }
-                  aria-label="Delete folder"
-                  onClick={() => void deleteDocument(doc.id, doc.title, true)}
-                  className="p-1 rounded text-destructive hover:text-destructive/80 disabled:opacity-60"
+                  aria-label="Archive folder"
+                  onClick={() => void archiveDocument(doc.id, doc.title, true)}
+                  className="p-1 rounded text-muted-foreground hover:text-foreground disabled:opacity-60"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
+                  <Archive className="w-3.5 h-3.5" />
                 </button>
               )}
             </div>
@@ -587,6 +638,11 @@ export default function DocumentsHub() {
               <span className="text-[10px] uppercase tracking-wide text-muted-foreground/70 flex-shrink-0">
                 Project
               </span>
+              {workspace.projectStatus && workspace.projectStatus !== "Active" && (
+                <span className="text-[10px] uppercase tracking-wide text-muted-foreground border border-border rounded px-1.5 py-0.5 flex-shrink-0">
+                  {workspace.projectStatus}
+                </span>
+              )}
             </button>
           </div>
         )}
@@ -675,6 +731,26 @@ export default function DocumentsHub() {
               placeholder="Search documents…"
               className="w-full rounded-md border border-border bg-background pl-9 pr-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/40"
             />
+          </div>
+          <div className="inline-flex rounded-md border border-border bg-card p-0.5 text-sm">
+            {([
+              ["active", "Active"],
+              ["all", "All"],
+            ] as const).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setProjectFilter(value)}
+                aria-pressed={projectFilter === value}
+                className={`px-3 py-1 rounded font-medium transition-colors ${
+                  projectFilter === value
+                    ? "bg-accent-coral/10 text-accent-coral"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
           <div className="inline-flex rounded-md border border-border bg-card p-0.5 text-sm">
             {([

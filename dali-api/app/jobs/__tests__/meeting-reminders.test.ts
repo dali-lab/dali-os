@@ -34,6 +34,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   mockPrisma.scheduledMeeting.findMany.mockResolvedValue([meeting()]);
   mockPrisma.notification.findMany.mockResolvedValue([]); // no Declined RSVPs
+  mockPrisma.user.findMany.mockResolvedValue([]); // recipient-timezone lookup
   mockPrisma.meetingReminderLog = {
     create: vi.fn().mockResolvedValue({}),
   } as never;

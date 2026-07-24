@@ -34,7 +34,7 @@ import {
 import { CalendarActionSchema, validateTimeEntryRange } from "~/lib/calendar-schemas";
 import { syncManualBlockTimeEntry } from "~/lib/time-entry-sync";
 import { fetchBusyEvents, listCalendarsForLink } from "~/lib/google-calendar";
-import { APPLICATION_TZ as DEFAULT_TIMEZONE, getZonedHourFraction, getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
+import { getZonedHourFraction, getZonedYMD, resolveUserTimeZone, zonedDayStartUtc } from "~/lib/timezone";
 import type { Route } from "./+types/calendar";
 import { UnderlineTabButtons } from "~/components/AreaPillNav";
 import { Tooltip } from "~/components/ui/IconButton";
@@ -244,6 +244,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const [
     settings,
+    userRow,
     whRows,
     blocks,
     links,
@@ -255,6 +256,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     canSetSelfCheckIn,
   ] = await Promise.all([
       prisma.userAvailabilitySettings.findUnique({ where: { userId } }),
+      prisma.user.findUnique({ where: { id: userId }, select: { timeZone: true } }),
       prisma.workingHoursDay.findMany({ where: { userId } }),
       prisma.manualBlock.findMany({
         where: { userId },
@@ -310,7 +312,9 @@ export async function loader({ request }: Route.LoaderArgs) {
       canViewForms(userId),
     ]);
 
-  const timezone = settings?.timezone ?? DEFAULT_TIMEZONE;
+  // Working hours are interpreted in the availability-settings zone when set;
+  // otherwise fall back to the viewer's own display zone, not a hardcoded ET.
+  const timezone = settings?.timezone ?? resolveUserTimeZone(userRow);
   const bufferMin = settings?.defaultEventBufferMin ?? DEFAULT_BUFFER_MIN;
 
   // Group persisted rows by day-of-week (multiple segments allowed per day).
@@ -806,9 +810,6 @@ export async function action({ request }: Route.ActionArgs) {
       if (!existing || existing.userId !== userId) {
         return Response.json({ error: "Not found" }, { status: 404 });
       }
-      if (existing.source !== "Manual") {
-        return Response.json({ error: "Only manual entries can be edited" }, { status: 400 });
-      }
       const assignmentType =
         input.assignmentType === undefined ? existing.assignmentType : input.assignmentType;
       const roleRefId = input.roleRefId === undefined ? existing.roleRefId : input.roleRefId;
@@ -837,15 +838,52 @@ export async function action({ request }: Route.ActionArgs) {
       });
       if (rangeError) return Response.json({ error: rangeError }, { status: 400 });
 
+      const note = input.note === undefined ? existing.note : input.note;
+      const date = input.date ? new Date(input.date) : existing.date;
+
+      // Block-sourced rows mirror a ManualBlock on Availability — keep that
+      // block's title/time/role in lockstep so the two views don't diverge.
+      if (existing.source === "Block" && existing.manualBlockId) {
+        if (!startTime || !endTime) {
+          return Response.json({ error: "Block entries need a start and end time" }, { status: 400 });
+        }
+        if (!assignmentType || !roleRefId) {
+          return Response.json({ error: "A role is required" }, { status: 400 });
+        }
+        await prisma.manualBlock.update({
+          where: { id: existing.manualBlockId },
+          data: {
+            title: note?.trim() || "Work",
+            startTime,
+            endTime,
+            isWork: true,
+            assignmentType,
+            roleRefId,
+          },
+        });
+        const sync = await syncManualBlockTimeEntry({
+          manualBlockId: existing.manualBlockId,
+          userId,
+          isWork: true,
+          assignmentType,
+          roleRefId,
+          title: note?.trim() || "Work",
+          startTime,
+          endTime,
+        });
+        if (!sync.ok) return Response.json({ error: sync.error }, { status: 400 });
+        return null;
+      }
+
       await prisma.timeEntry.update({
         where: { id: input.id },
         data: {
-          date: input.date ? new Date(input.date) : existing.date,
+          date,
           hours,
           assignmentType,
           roleRefId,
           projectId,
-          note: input.note === undefined ? existing.note : input.note,
+          note,
           startTime,
           endTime,
         },
@@ -858,8 +896,16 @@ export async function action({ request }: Route.ActionArgs) {
       if (!existing || existing.userId !== userId) {
         return Response.json({ error: "Not found" }, { status: 404 });
       }
-      if (existing.source !== "Manual") {
-        return Response.json({ error: "Only manual entries can be deleted" }, { status: 400 });
+      // Block rows own a ManualBlock — remove both so Availability doesn't keep
+      // a work block that no longer has hours on the timesheet.
+      if (existing.source === "Block" && existing.manualBlockId) {
+        await prisma.$transaction([
+          prisma.timeEntry.deleteMany({
+            where: { manualBlockId: existing.manualBlockId, userId },
+          }),
+          prisma.manualBlock.delete({ where: { id: existing.manualBlockId } }),
+        ]);
+        return null;
       }
       await prisma.timeEntry.delete({ where: { id: input.id } });
       return null;
@@ -2949,8 +2995,8 @@ function TimesheetWeekGrid({ data }: { data: LoaderData }) {
   //
   // Below: this user's TimeEntry rows — timed ones at their real time; untimed
   // ones (e.g. attendance on a meeting with no confirmed start time yet) at a
-  // nominal 9am slot so every entry is still visible somewhere. Manual entries
-  // are clickable to edit/delete; Meeting entries open their note in a new tab.
+  // nominal 9am slot so every entry is still visible somewhere. Every entry is
+  // clickable to edit role/time/note via the same TimesheetEditPopover.
   const eventsByDay: Record<number, EventBlock[]> = {};
   // One filter chip per role bucket actually present among this week's
   // entries (plus "Unassigned"), so every visible block always has a
@@ -2996,19 +3042,10 @@ function TimesheetWeekGrid({ data }: { data: LoaderData }) {
       startIso,
       endIso,
       {
-        label: t.source === "Meeting" ? "Meeting" : t.note || "Time entry",
+        label: t.source === "Meeting" ? t.note || "Meeting" : t.note || "Time entry",
         className: color.className,
         borderClassName: color.borderClassName,
-        // Only Manual entries are editable here — the server rejects edits to
-        // the others (they'd desync from their source), so instead of a dead
-        // click they explain where their hours actually come from.
-        description:
-          t.source === "Meeting"
-            ? "Logged from meeting attendance. Edit it via that meeting note's attendance checklist."
-            : t.source === "Block"
-              ? "Logged from a calendar block marked as work. Edit it in My Availability."
-              : undefined,
-        onClick: t.source === "Manual" ? () => openEdit(t, startIso, endIso) : undefined,
+        onClick: () => openEdit(t, startIso, endIso),
       },
       eventsByDay,
     );
@@ -3029,8 +3066,8 @@ function TimesheetWeekGrid({ data }: { data: LoaderData }) {
         refreshing={revalidator.state !== "idle"}
       />
       <p className="px-1 pb-2 text-[11px] text-muted-foreground">
-        Drag a range to log time, or click an entry to edit/delete it. Only logged work shows
-        here — see My Availability for your full calendar.
+        Drag a range to log time, or click any block to edit role, time, or note. See My
+        Availability for your full calendar.
       </p>
       <RoleFilterRow
         buckets={Array.from(roleBuckets.values())}
@@ -3293,8 +3330,8 @@ function TimesheetDragPopover({
   );
 }
 
-// Opened by clicking an existing Manual TimeEntry block on the Timesheet week
-// grid. Same shape as TimesheetDragPopover but pre-filled, with Save (update)
+// Opened by clicking any TimeEntry on the Timesheet week grid (Manual, Block,
+// or Meeting). Same shape as TimesheetDragPopover but pre-filled, with Save
 // and Delete instead of Add.
 function TimesheetEditPopover({
   entry,
@@ -3351,13 +3388,13 @@ function TimesheetEditPopover({
     setError(null);
     try {
       const body = new FormData();
+      const role = parseRoleOptionKey(roleKey);
       body.set("intent", "update-time-entry");
       body.set("id", entry.id);
       body.set("startTime", new Date(start).toISOString());
       body.set("endTime", new Date(end).toISOString());
       body.set("date", start.slice(0, 10));
       body.set("hours", String(hours));
-      const role = parseRoleOptionKey(roleKey);
       body.set("assignmentType", role?.assignmentType ?? "");
       body.set("roleRefId", role?.roleRefId ?? "");
       body.set("note", note.trim());
@@ -4988,7 +5025,7 @@ function WeekGridEvent({ e }: { e: EventBlock }) {
     <div
       className={`absolute left-0 right-0 ${bufferBefore === 0 ? "rounded-t-md" : ""} ${
         bufferAfter === 0 ? "rounded-b-md" : ""
-      } ${border} ${bufferBg} overflow-hidden ${clickable ? "cursor-pointer" : hasDetails ? "cursor-help" : ""}`}
+      } ${border} ${bufferBg} overflow-hidden ${clickable ? "cursor-pointer" : ""}`}
       style={{
         top: (e.startHour - bufferBefore - HOURS[0]) * HOUR_PX,
         height: totalHours * HOUR_PX,

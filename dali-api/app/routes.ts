@@ -289,6 +289,7 @@ export default [
   route("api/groups", "admin-console/routes/api.groups.ts"),
   route("api/groups/:groupId", "admin-console/routes/api.groups.$groupId.ts"),
   route("api/tour/complete", "routes/api.tour.complete.ts"),
+  route("api/timezone/update", "routes/api.timezone.update.ts"),
   route("api/notifications", "routes/api.notifications.ts"),
   route("api/notifications/stream", "routes/api.notifications.stream.ts"),
   route("api/notifications/send", "admin-console/routes/api.notifications.send.ts"),
@@ -340,6 +341,10 @@ export default [
 
   // Project task board
   route("api/projects/:id/tasks", "projects/routes/api.projects.$id.tasks.ts"),
+  route(
+    "api/projects/:id/tasks/archive",
+    "projects/routes/api.projects.$id.tasks.archive.ts",
+  ),
   route("api/tasks/:id/move", "projects/routes/api.tasks.$id.move.ts"),
   route("api/tasks/:id/comments", "projects/routes/api.tasks.$id.comments.ts"),
   route("api/tasks/:id/github", "projects/routes/api.tasks.$id.github.ts"),

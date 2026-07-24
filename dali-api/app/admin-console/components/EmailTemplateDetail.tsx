@@ -8,6 +8,7 @@ import {
   lintTemplate,
 } from '~/hiring/lib/email-variables'
 import { formatDateTime, fullName, UNKNOWN_LABEL } from '~/lib/display'
+import { useUserTimeZone } from '~/hooks/useUserTimeZone'
 
 function VariableReferencePanel() {
   return (
@@ -50,6 +51,7 @@ function LintWarnings({ unknown, field }: { unknown: string[]; field: string }) 
 
 export function EmailTemplateDetail() {
   const { template } = useLoaderData<typeof loader>()
+  const tz = useUserTimeZone()
 
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(
     template.versions[0]?.id ?? null,
@@ -162,7 +164,7 @@ export function EmailTemplateDetail() {
                   <span className="font-medium">v{v.versionNumber}</span>
                   <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
                     <Clock className="w-3 h-3" />
-                    {formatDateTime(v.createdAt)}
+                    {formatDateTime(v.createdAt, tz)}
                   </span>
                 </div>
                 <p className="text-xs text-muted-foreground mt-1 inline-flex items-center gap-1 truncate">

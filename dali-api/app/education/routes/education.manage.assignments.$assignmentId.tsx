@@ -13,6 +13,7 @@ import {
 } from "~/education/lib/assignments.server";
 import { Button } from "~/components/ui/Button";
 import { formatDateTime } from "~/lib/display";
+import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 
 export const meta: Route.MetaFunction = ({ data }) => [
   { title: `Grade ${data?.assignment.title ?? "Assignment"} · DALI OS` },
@@ -78,6 +79,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
 export default function GradeAssignment() {
   const { offeringId, assignment, submissions } = useLoaderData<typeof loader>();
+  const tz = useUserTimeZone();
 
   return (
     <div className="flex flex-col gap-4 max-w-3xl">
@@ -95,7 +97,7 @@ export default function GradeAssignment() {
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
           {assignment.dueAt
-            ? `Due ${formatDateTime(assignment.dueAt)}`
+            ? `Due ${formatDateTime(assignment.dueAt, tz)}`
             : "No due date"}
           {" · "}
           {submissions.length} submission{submissions.length === 1 ? "" : "s"}
@@ -112,8 +114,8 @@ export default function GradeAssignment() {
                 {`${s.student.firstName} ${s.student.lastName}`.trim()}
               </p>
               <p className="text-xs text-muted-foreground">
-                {s.submittedAt ? `Submitted ${formatDateTime(s.submittedAt)}` : "Not submitted"}
-                {s.gradedAt ? ` · Graded ${formatDateTime(s.gradedAt)}` : ""}
+                {s.submittedAt ? `Submitted ${formatDateTime(s.submittedAt, tz)}` : "Not submitted"}
+                {s.gradedAt ? ` · Graded ${formatDateTime(s.gradedAt, tz)}` : ""}
               </p>
             </div>
 

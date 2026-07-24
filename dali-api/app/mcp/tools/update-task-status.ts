@@ -3,13 +3,13 @@
 // drag-to-end of board).
 //
 // Permission: the web board endpoint (`api.tasks.$id.move.ts`) gates moves to
-// Core only. For MCP we additionally allow a task's own assignees to update
-// status — the "list my tasks, mark mine done" flow is the primary value
-// here. Anyone else (incl. non-Core members not assigned to the task) is
-// rejected. Requires the `mcp:write` scope.
+// project editors (Core or a project member). MCP matches that and additionally
+// allows a task's own assignees to update status — the "list my tasks, mark
+// mine done" flow — even when they aren't otherwise project editors. Anyone
+// else is rejected. Requires the `mcp:write` scope.
 
 import { prisma } from "~/lib/db";
-import { isCore } from "~/lib/roles";
+import { canEditProject } from "./access";
 import {
   TASK_STATUSES,
   type TaskStatus,
@@ -19,7 +19,7 @@ import {
 export const UPDATE_TASK_STATUS_TOOL = {
   name: "update_task_status",
   description:
-    "Move a project task to a different status column (e.g. mark a task Done). Allowed for the task's assignees and for Core members.",
+    "Move a project task to a different status column (e.g. mark a task Done). Allowed for the task's assignees and for project editors (Core or project members).",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -67,8 +67,9 @@ export async function runUpdateTaskStatus(callerId: string, input: Input) {
   if (!task) throw new UpdateTaskStatusError("Task not found", 404);
 
   const isAssignee = task.assignees.some((a) => a.userId === callerId);
-  const callerIsCore = isAssignee ? false : await isCore(callerId);
-  if (!isAssignee && !callerIsCore) {
+  const allowed =
+    isAssignee || (await canEditProject(callerId, task.projectId));
+  if (!allowed) {
     throw new UpdateTaskStatusError("Forbidden", 403);
   }
 

@@ -6,6 +6,7 @@ import { getClientIp } from "~/lib/request-meta";
 import { logAuditEvent } from "~/lib/audit";
 import { upsertUserFromCas } from "~/lib/user-provisioning";
 import { getApiBaseUrl } from "~/lib/app-env";
+import { syncAndRecomputeMembershipStatus } from "~/lib/membership-status";
 
 export async function action() {
   return new Response("Method not allowed", { status: 405 });
@@ -104,6 +105,11 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   const { user } = await upsertUserFromCas(casUser);
+
+  // Fire-and-forget: refresh Dartmouth signals (throttled ≤1/day) and
+  // recompute membership status. CAS just set the netId, so this is the ideal
+  // moment to sync. Never blocks or fails the login.
+  void syncAndRecomputeMembershipStatus(user.id);
 
   const session = await issueSession({
     userId: user.id,

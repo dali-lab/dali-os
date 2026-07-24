@@ -1,14 +1,15 @@
-// MCP `create_story` — Core-only. Mirrors api.epics.$id.stories.
+// MCP `create_story` — Core or project member. Mirrors api.epics.$id.stories.
 
 import { prisma } from "~/lib/db";
-import { isCore } from "~/lib/roles";
+import { canEditProject } from "./access";
 
 const STORY_STATUSES = ["Todo", "InProgress", "Done"] as const;
 type StoryStatus = (typeof STORY_STATUSES)[number];
 
 export const CREATE_STORY_TOOL = {
   name: "create_story",
-  description: "Create a user story under an epic. Core-only.",
+  description:
+    "Create a user story under an epic. Requires Core or project-member access.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -42,18 +43,18 @@ export class CreateStoryError extends Error {
 }
 
 export async function runCreateStory(callerId: string, input: Input) {
-  if (!(await isCore(callerId))) {
-    throw new CreateStoryError("Forbidden", 403);
-  }
-
   const title = input.title.trim();
   if (!title) throw new CreateStoryError("Title is required", 400);
 
   const epic = await prisma.epic.findUnique({
     where: { id: input.epicId },
-    select: { id: true },
+    select: { id: true, projectId: true },
   });
   if (!epic) throw new CreateStoryError("Epic not found", 404);
+
+  if (!(await canEditProject(callerId, epic.projectId))) {
+    throw new CreateStoryError("Forbidden", 403);
+  }
 
   const last = await prisma.userStory.findFirst({
     where: { epicId: input.epicId },

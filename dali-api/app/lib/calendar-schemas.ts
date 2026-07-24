@@ -122,10 +122,9 @@ export const ToggleSubCalendarSchema = z.object({
   enabled: z.boolean(),
 });
 
-// Manual Timesheet-tab entries only — Meeting-sourced and Block-sourced
-// TimeEntry rows are managed exclusively by the attendance-toggle route
-// (app/calendar/routes/api.scheduled-meetings.$id.attendance.ts) and the
-// manual-block action handlers, respectively.
+// Timesheet-tab entries. Meeting / Block rows are also created by attendance
+// and manual-block sync, but the timesheet edit popover can update or delete
+// any owned TimeEntry (Block updates also mirror the linked ManualBlock).
 export const AddTimeEntrySchema = z.object({
   intent: z.literal("add-time-entry"),
   date: isoString,

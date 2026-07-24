@@ -3,6 +3,7 @@ import { useSubmit, useActionData, useNavigation } from "react-router";
 import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
 import { Button } from "~/components/ui/Button";
 import { formatDateTime } from "~/lib/display";
+import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 
 // Student-side assignment view: instructions (server-rendered), text/file
 // submission with resubmit, and returned grade/feedback. Files go straight to
@@ -34,6 +35,7 @@ export function AssignmentWorkArea({
   submission: SubmissionView;
   canSubmit: boolean;
 }) {
+  const tz = useUserTimeZone();
   const [text, setText] = useState(submission?.textContent ?? "");
   const [files, setFiles] = useState<{ key: string; name: string }[]>(
     submission?.files ?? [],
@@ -113,7 +115,7 @@ export function AssignmentWorkArea({
           <p className="text-xs font-semibold text-accent-teal">
             Instructor feedback
             {submission.grade ? ` · ${submission.grade}` : ""}
-            {submission.gradedAt ? ` · ${formatDateTime(submission.gradedAt)}` : ""}
+            {submission.gradedAt ? ` · ${formatDateTime(submission.gradedAt, tz)}` : ""}
           </p>
           <p className="text-sm text-foreground whitespace-pre-wrap mt-1">
             {submission.feedbackText}
@@ -128,7 +130,7 @@ export function AssignmentWorkArea({
           </h2>
           {submission?.submittedAt && (
             <span className="text-xs text-muted-foreground">
-              Submitted {formatDateTime(submission.submittedAt)}
+              Submitted {formatDateTime(submission.submittedAt, tz)}
             </span>
           )}
         </div>

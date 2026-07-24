@@ -10,6 +10,7 @@ import { prisma } from "~/lib/db";
 import { issueSession } from "~/lib/session";
 import { setSessionCookie } from "~/lib/cookies";
 import { getClientIp } from "~/lib/request-meta";
+import { syncAndRecomputeMembershipStatus } from "~/lib/membership-status";
 import { getApiBaseUrl, getFrontendUrl } from "~/lib/app-env";
 
 export async function action() {
@@ -61,6 +62,9 @@ export async function loader({ request }: Route.LoaderArgs) {
       linkUserId: session.linkUserId ?? undefined,
     });
     finalUser = result.user;
+    // Fire-and-forget membership-status sync (throttled ≤1/day); CAS just set
+    // the netId. Never blocks the OAuth flow.
+    void syncAndRecomputeMembershipStatus(finalUser.id);
   } catch {
     const params = new URLSearchParams({
       error: "server_error",

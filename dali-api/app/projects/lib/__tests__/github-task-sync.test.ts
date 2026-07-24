@@ -157,6 +157,53 @@ describe("createIssueForTask", () => {
     expect(body).toContain("<!-- dalios:missing-assignees:");
   });
 
+  it("returns the mirror fields on success", async () => {
+    const { client, issues } = fakeOctokit();
+    __setGitHubClientForTests(client);
+    issues.create.mockResolvedValue({
+      data: { number: 12, html_url: "https://github.com/o/r/issues/12" },
+    });
+
+    mockPrisma.task.findUnique.mockResolvedValue({
+      id: "t4",
+      projectId: "p1",
+      title: "x",
+      status: "Todo",
+      githubRepo: null,
+      githubIssueNumber: null,
+      assignees: [],
+    });
+
+    const result = await createIssueForTask("t4", "o/r");
+
+    expect(result).toEqual({
+      githubRepo: "o/r",
+      githubIssueNumber: 12,
+      githubIssueUrl: "https://github.com/o/r/issues/12",
+    });
+  });
+
+  it("returns null (and doesn't link) when the GitHub create fails", async () => {
+    const { client, issues } = fakeOctokit();
+    __setGitHubClientForTests(client);
+    issues.create.mockRejectedValue(new Error("boom"));
+
+    mockPrisma.task.findUnique.mockResolvedValue({
+      id: "t5",
+      projectId: "p1",
+      title: "x",
+      status: "Todo",
+      githubRepo: null,
+      githubIssueNumber: null,
+      assignees: [],
+    });
+
+    const result = await createIssueForTask("t5", "o/r");
+
+    expect(result).toBeNull();
+    expect(mockPrisma.task.update).not.toHaveBeenCalled();
+  });
+
   it("skips when the task already has a linked issue (re-fire safety)", async () => {
     const { client, issues } = fakeOctokit();
     __setGitHubClientForTests(client);

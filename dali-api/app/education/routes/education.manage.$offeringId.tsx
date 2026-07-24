@@ -57,6 +57,7 @@ import { OfferingFields, toDatetimeLocal } from "~/education/components/Offering
 import { CollaborativeEditor } from "~/components/CollaborativeEditor";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { formatDateTime } from "~/lib/display";
+import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { cn } from "~/lib/cn";
 
 export const meta: Route.MetaFunction = ({ data }) => [
@@ -388,6 +389,7 @@ export default function ManageOffering() {
     collabToken,
     userName,
   } = useLoaderData<typeof loader>();
+  const tz = useUserTimeZone();
   const actionData = useActionData<{
     error?: string;
     closeOut?: { issued: number; alreadyIssued: number; ineligible: number };
@@ -709,7 +711,7 @@ export default function ManageOffering() {
                     <p className="text-sm font-semibold text-foreground">
                       Session {s.sequence}
                       <span className="ml-2 font-normal text-muted-foreground text-xs">
-                        {formatDateTime(s.datetime)}
+                        {formatDateTime(s.datetime, tz)}
                       </span>
                     </p>
                     <Form
@@ -825,7 +827,7 @@ export default function ManageOffering() {
                     )}
                   </div>
                   <span className="text-xs text-muted-foreground shrink-0">
-                    {formatDateTime(a.submittedAt)}
+                    {formatDateTime(a.submittedAt, tz)}
                   </span>
                 </summary>
                 <div className="mt-3 pt-3 border-t border-border flex flex-col gap-4">
@@ -935,7 +937,7 @@ export default function ManageOffering() {
                 >
                   {offering.sessions.map((s) => (
                     <option key={s.id} value={s.id}>
-                      Session {s.sequence} — {formatDateTime(s.datetime)}
+                      Session {s.sequence} — {formatDateTime(s.datetime, tz)}
                     </option>
                   ))}
                 </select>
@@ -1015,7 +1017,7 @@ export default function ManageOffering() {
             >
               {offering.sessions.map((s) => (
                 <option key={s.id} value={s.id}>
-                  Session {s.sequence} — {formatDateTime(s.datetime)}
+                  Session {s.sequence} — {formatDateTime(s.datetime, tz)}
                 </option>
               ))}
             </select>

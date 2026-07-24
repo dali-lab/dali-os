@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-const { issuesGet } = vi.hoisted(() => ({ issuesGet: vi.fn() }));
+const { issuesGet, createIssueForTask } = vi.hoisted(() => ({
+  issuesGet: vi.fn(),
+  createIssueForTask: vi.fn(),
+}));
 
 vi.mock("~/lib/auth", () => ({ requireProjectEditAccess: vi.fn() }));
 vi.mock("~/lib/db");
@@ -16,6 +19,12 @@ vi.mock("~/lib/github", () => ({
   },
   isNotFound: (err: unknown) => (err as { status?: number } | null)?.status === 404,
 }));
+// Keep the real normalizeRepo (pure); stub createIssueForTask so the create
+// path doesn't reach the GitHub API.
+vi.mock("~/projects/lib/github-task-sync", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/projects/lib/github-task-sync")>();
+  return { ...actual, createIssueForTask };
+});
 
 import { requireProjectEditAccess } from "~/lib/auth";
 import { prisma } from "~/lib/db";
@@ -147,6 +156,49 @@ describe("POST /api/tasks/:id/github", () => {
       githubIssueNumber: 42,
       githubIssueUrl: "https://github.com/dali/app/issues/42",
     });
+  });
+});
+
+describe("POST /api/tasks/:id/github (create mode)", () => {
+  it("creates a new issue when no issueNumber is given", async () => {
+    createIssueForTask.mockResolvedValue({
+      githubRepo: "dali/app",
+      githubIssueNumber: 15,
+      githubIssueUrl: "https://github.com/dali/app/issues/15",
+    });
+    const res = await post({ repo: "dali/app" });
+    expect(res.status).toBe(200);
+    expect(createIssueForTask).toHaveBeenCalledWith(TASK_ID, "dali/app");
+    // Create mode never verifies an existing issue.
+    expect(issuesGet).not.toHaveBeenCalled();
+    expect(await res.json()).toEqual({
+      ok: true,
+      githubRepo: "dali/app",
+      githubIssueNumber: 15,
+      githubIssueUrl: "https://github.com/dali/app/issues/15",
+    });
+  });
+
+  it("502s when issue creation fails", async () => {
+    createIssueForTask.mockResolvedValue(null);
+    const res = await post({ repo: "dali/app" });
+    expect(res.status).toBe(502);
+    expect(await res.json()).toMatchObject({
+      error: expect.stringContaining("create"),
+    });
+  });
+
+  it("rejects a repo not in the project's repoUrls before creating", async () => {
+    const res = await post({ repo: "dali/other" });
+    expect(res.status).toBe(400);
+    expect(createIssueForTask).not.toHaveBeenCalled();
+  });
+
+  it("rejects create when the task is already linked", async () => {
+    mockTask({ githubIssueNumber: 7 });
+    const res = await post({ repo: "dali/app" });
+    expect(res.status).toBe(400);
+    expect(createIssueForTask).not.toHaveBeenCalled();
   });
 });
 

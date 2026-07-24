@@ -101,6 +101,8 @@ describe("runTaskDueReminders", () => {
     mockPrisma.taskReminder.createMany.mockResolvedValue({ count: 0 });
     mockPrisma.taskReminder.findMany.mockResolvedValue([]);
     mockPrisma.taskReminder.update.mockResolvedValue({});
+    // Recipient-timezone lookup for the per-recipient reminder body.
+    mockPrisma.user.findMany.mockResolvedValue([]);
     mockNotify.mockResolvedValue({ inApp: 1, emailed: 0, slackDmed: 1 });
   });
 

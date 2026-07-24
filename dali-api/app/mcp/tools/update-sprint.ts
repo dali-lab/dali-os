@@ -1,14 +1,14 @@
-// MCP `update_sprint` — Core-only. Mirrors api.sprints.$id POST. Omit a field
-// to leave it unchanged. Use `set_sprint_status` for status (kept separate for
-// symmetry with `update_task_status`).
+// MCP `update_sprint` — Core or project member. Mirrors api.sprints.$id POST.
+// Omit a field to leave it unchanged. Use `set_sprint_status` for status (kept
+// separate for symmetry with `update_task_status`).
 
 import { prisma } from "~/lib/db";
-import { isCore } from "~/lib/roles";
+import { canEditProject } from "./access";
 
 export const UPDATE_SPRINT_TOOL = {
   name: "update_sprint",
   description:
-    "Edit sprint fields (name, dates, epic link). Core-only. Status changes go through `set_sprint_status`.",
+    "Edit sprint fields (name, dates, epic link). Requires Core or project-member access. Status changes go through `set_sprint_status`.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -40,15 +40,15 @@ export class UpdateSprintError extends Error {
 }
 
 export async function runUpdateSprint(callerId: string, input: Input) {
-  if (!(await isCore(callerId))) {
-    throw new UpdateSprintError("Forbidden", 403);
-  }
-
   const sprint = await prisma.sprint.findUnique({
     where: { id: input.sprintId },
-    select: { id: true, startsAt: true, endsAt: true },
+    select: { id: true, projectId: true, startsAt: true, endsAt: true },
   });
   if (!sprint) throw new UpdateSprintError("Sprint not found", 404);
+
+  if (!(await canEditProject(callerId, sprint.projectId))) {
+    throw new UpdateSprintError("Forbidden", 403);
+  }
 
   const data: {
     name?: string;

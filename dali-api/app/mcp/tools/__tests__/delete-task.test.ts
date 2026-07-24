@@ -3,11 +3,11 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db");
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
-  return { ...real, isCore: vi.fn() };
+  return { ...real, isCore: vi.fn(), isProjectMember: vi.fn() };
 });
 
 import { prisma } from "~/lib/db";
-import { isCore } from "~/lib/roles";
+import { isCore, isProjectMember } from "~/lib/roles";
 import { runDeleteTask, DELETE_TASK_TOOL, DeleteTaskError } from "~/mcp/tools/delete-task";
 
 const mockPrisma = prisma as unknown as {
@@ -22,8 +22,10 @@ describe("delete_task", () => {
     expect(DELETE_TASK_TOOL.requiredScope).toBe("mcp:write");
   });
 
-  it("rejects non-Core", async () => {
+  it("rejects callers without project edit access", async () => {
     vi.mocked(isCore).mockResolvedValue(false);
+    vi.mocked(isProjectMember).mockResolvedValue(false);
+    mockPrisma.task.findUnique.mockResolvedValue({ id: "t1", projectId: "p1" });
     await expect(runDeleteTask("u1", { taskId: "t1" })).rejects.toMatchObject({ status: 403 });
   });
 
@@ -33,9 +35,9 @@ describe("delete_task", () => {
     await expect(runDeleteTask("u1", { taskId: "x" })).rejects.toBeInstanceOf(DeleteTaskError);
   });
 
-  it("deletes when Core and task exists", async () => {
+  it("deletes when caller can edit and task exists", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
-    mockPrisma.task.findUnique.mockResolvedValue({ id: "t1" });
+    mockPrisma.task.findUnique.mockResolvedValue({ id: "t1", projectId: "p1" });
     mockPrisma.$transaction.mockResolvedValue([]);
     const out = await runDeleteTask("u1", { taskId: "t1" });
     expect(out).toEqual({ ok: true, taskId: "t1" });

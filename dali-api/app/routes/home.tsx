@@ -14,13 +14,9 @@ import { prisma } from "~/lib/db";
 import { listOpenTasks, type Task } from "~/lib/tasks";
 import { listedFormsFor, type ListedForm } from "~/forms/lib/public-form";
 import { fetchGeneralCalendarEvents } from "~/lib/general-calendar";
-import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
+import { getZonedYMD, resolveUserTimeZone, zonedDayStartUtc } from "~/lib/timezone";
 import { RsvpButtons, notifyTasksChanged } from "~/components/RsvpButtons";
 import type { Route } from "./+types/home";
-
-// The home week calendar is rendered in this fixed lab timezone, matching the
-// /calendar route's default.
-const HOME_TZ = "America/New_York";
 
 type HomeNotification = {
   id: string;
@@ -41,10 +37,15 @@ export async function loader({ request }: Route.LoaderArgs) {
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) return partnerRedirect;
 
-  // Current week (Sunday→following Sunday) in the lab timezone, used both to
+  // Current week (Sunday→following Sunday) in the viewer's timezone, used both to
   // build the day columns and to window the calendar fetch.
+  const me = await prisma.user.findUnique({
+    where: { id: auth.user.sub },
+    select: { timeZone: true },
+  });
+  const tz = resolveUserTimeZone(me);
   const now = new Date();
-  const ymd = getZonedYMD(now, HOME_TZ);
+  const ymd = getZonedYMD(now, tz);
   const todayMidnightUtc = new Date(Date.UTC(ymd.year, ymd.month - 1, ymd.day));
   const dow = todayMidnightUtc.getUTCDay();
   const sundayUtc = new Date(todayMidnightUtc.getTime() - dow * 86_400_000);
@@ -52,14 +53,14 @@ export async function loader({ request }: Route.LoaderArgs) {
     sundayUtc.getUTCFullYear(),
     sundayUtc.getUTCMonth() + 1,
     sundayUtc.getUTCDate(),
-    HOME_TZ,
+    tz,
   );
   const nextSundayUtc = new Date(sundayUtc.getTime() + 7 * 86_400_000);
   const weekEnd = zonedDayStartUtc(
     nextSundayUtc.getUTCFullYear(),
     nextSundayUtc.getUTCMonth() + 1,
     nextSundayUtc.getUTCDate(),
-    HOME_TZ,
+    tz,
   );
 
   const [items, tasks, rawEvents, formsForYou, assignedTasks] = await Promise.all([
@@ -147,15 +148,15 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Day columns (Sun..Sat) with the calendar date number shown in each header.
   const weekDays: WeekDayDTO[] = Array.from({ length: 7 }).map((_, i) => {
     const dayUtc = new Date(weekStart.getTime() + i * 86_400_000);
-    const dy = getZonedYMD(dayUtc, HOME_TZ);
+    const dy = getZonedYMD(dayUtc, tz);
     return { num: dy.day };
   });
 
   const weekEvents: HomeWeekEvent[] = [];
   for (const ev of rawEvents) {
     if (ev.allDay) continue; // all-day events don't map onto the hour grid
-    const e = getZonedYMD(ev.start, HOME_TZ);
-    const dayMidnight = zonedDayStartUtc(e.year, e.month, e.day, HOME_TZ);
+    const e = getZonedYMD(ev.start, tz);
+    const dayMidnight = zonedDayStartUtc(e.year, e.month, e.day, tz);
     const colIdx = Math.round((dayMidnight.getTime() - weekStart.getTime()) / 86_400_000);
     if (colIdx < 0 || colIdx > 6) continue;
     const startHour = (ev.start.getTime() - dayMidnight.getTime()) / 3_600_000;

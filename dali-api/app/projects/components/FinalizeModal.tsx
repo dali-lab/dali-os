@@ -21,7 +21,7 @@ const AUTOMATIONS: {
     id: "assignments",
     label: "Propagate assignments",
     description:
-      "Confirm proposed staffing rows and write ProjectAssignment, DomainEligibility, and MentorshipPair links (P3 or Mentor-badge mentors paired to same-domain mentees). Edit domain·level chips on each card if a domain has mentees but no mentor.",
+      "Confirm proposed staffing rows and write canonical ProjectAssignment + DomainEligibility.",
     configured: true,
   },
   {
@@ -91,12 +91,9 @@ export function FinalizeModal({
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(
-          `/api/staffing/mentor-role?cycleId=${encodeURIComponent(cycleId)}&projectId=${encodeURIComponent(projectId)}`,
-          {
-            credentials: "include",
-          },
-        );
+        const res = await fetch(`/api/staffing/mentor-role?cycleId=${encodeURIComponent(cycleId)}`, {
+          credentials: "include",
+        });
         if (!res.ok) return;
         const d = (await res.json()) as {
           nonP3Mentors: { userId: string; firstName: string; lastName: string }[];
@@ -113,7 +110,7 @@ export function FinalizeModal({
     return () => {
       cancelled = true;
     };
-  }, [open, cycleId, projectId]);
+  }, [open, cycleId]);
 
   // Persist the channel name + GitHub slug to the Project WITHOUT running
   // automations (keeps the project details page in sync). Cancel reverts edits.

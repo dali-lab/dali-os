@@ -1,7 +1,7 @@
-// MCP `update_epic` — Core-only. Mirrors api.epics.$id POST.
+// MCP `update_epic` — Core or project member. Mirrors api.epics.$id POST.
 
 import { prisma } from "~/lib/db";
-import { isCore } from "~/lib/roles";
+import { canEditProject } from "./access";
 
 const EPIC_STATUSES = ["Backlog", "Open", "InProgress", "Done", "Cancelled"] as const;
 type EpicStatus = (typeof EPIC_STATUSES)[number];
@@ -9,7 +9,7 @@ type EpicStatus = (typeof EPIC_STATUSES)[number];
 export const UPDATE_EPIC_TOOL = {
   name: "update_epic",
   description:
-    "Edit an epic's fields (title, description, status, dates, target term). Core-only. Empty string clears nullable fields.",
+    "Edit an epic's fields (title, description, status, dates, target term). Requires Core or project-member access. Empty string clears nullable fields.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -48,15 +48,15 @@ export class UpdateEpicError extends Error {
 }
 
 export async function runUpdateEpic(callerId: string, input: Input) {
-  if (!(await isCore(callerId))) {
-    throw new UpdateEpicError("Forbidden", 403);
-  }
-
   const epic = await prisma.epic.findUnique({
     where: { id: input.epicId },
-    select: { id: true, startsAt: true, endsAt: true },
+    select: { id: true, projectId: true, startsAt: true, endsAt: true },
   });
   if (!epic) throw new UpdateEpicError("Epic not found", 404);
+
+  if (!(await canEditProject(callerId, epic.projectId))) {
+    throw new UpdateEpicError("Forbidden", 403);
+  }
 
   const data: {
     title?: string;
