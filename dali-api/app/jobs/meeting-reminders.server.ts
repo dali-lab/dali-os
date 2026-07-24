@@ -12,7 +12,7 @@
 import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
 import { expandOccurrences } from "~/lib/meeting-occurrences";
-import { formatApplicationDateTime } from "~/lib/timezone";
+import { APPLICATION_TZ, formatInstantWithZoneLabel, resolveUserTimeZone } from "~/lib/timezone";
 import type { JobContext, JobResult } from "~/jobs/registry";
 
 const MINUTE_MS = 60_000;
@@ -64,6 +64,17 @@ export async function runMeetingReminders({ now, settings }: JobContext): Promis
     });
     const declined = new Set(declinedRows.map((r) => r.recipientUserId));
 
+    // Resolve each recipient's display zone once so the reminder body reads in
+    // their own local time (with a zone label), not a hardcoded ET.
+    const recipientIds = Array.from(
+      new Set([meeting.organizerId, ...meeting.participantUserIds]),
+    );
+    const tzRows = await prisma.user.findMany({
+      where: { id: { in: recipientIds } },
+      select: { id: true, timeZone: true },
+    });
+    const tzByUser = new Map(tzRows.map((r) => [r.id, resolveUserTimeZone(r)]));
+
     for (const occ of occurrences) {
       const recipients = new Set([meeting.organizerId, ...meeting.participantUserIds]);
       for (const userId of recipients) {
@@ -90,7 +101,7 @@ export async function runMeetingReminders({ now, settings }: JobContext): Promis
             message: {
               kind: "MeetingReminder",
               title: `Starting soon: ${meeting.title}`,
-              body: `Starts ${formatApplicationDateTime(occ.start)}.`,
+              body: `Starts ${formatInstantWithZoneLabel(occ.start, tzByUser.get(userId) ?? APPLICATION_TZ)}.`,
               link: `/calendar?meeting=${meeting.id}`,
               scheduledMeetingId: meeting.id,
               // Stamp the occurrence start so past reminders drop off Tasks

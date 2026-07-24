@@ -8,6 +8,7 @@ import {
 import { collabDocToProseMirror } from "~/collab/export";
 import { AssignmentWorkArea } from "~/education/components/AssignmentWorkArea";
 import { formatDateTime } from "~/lib/display";
+import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { prisma } from "~/lib/db";
 
 export const meta: Route.MetaFunction = ({ data }) => [
@@ -114,6 +115,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 export default function MemberAssignment() {
   const { offeringId, assignment, submission, canSubmit } =
     useLoaderData<typeof loader>();
+  const tz = useUserTimeZone();
 
   return (
     <div className="flex flex-col gap-4">
@@ -127,7 +129,7 @@ export default function MemberAssignment() {
           {assignment.title}
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          {assignment.dueAt ? `Due ${formatDateTime(assignment.dueAt)}` : "No due date"}
+          {assignment.dueAt ? `Due ${formatDateTime(assignment.dueAt, tz)}` : "No due date"}
         </p>
       </header>
       <AssignmentWorkArea

@@ -1,3 +1,5 @@
+import { APPLICATION_TZ, formatInTimeZone } from "~/lib/timezone";
+
 /** "Jane Smith" -> "JS"; "Jane" -> "JA"; "" -> "?". */
 export function initialsFromName(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -69,13 +71,17 @@ export function displayEmail(user: {
   return "";
 }
 
-export function formatDateTime(iso: string | Date): string {
+// Timestamp formatters take an explicit IANA `timeZone` so the server (UTC on
+// Fly) and the client render byte-identical strings — no SSR hydration mismatch.
+// Client callers pass useUserTimeZone(); server callers pass
+// resolveUserTimeZone(user). Omitting it falls back to the lab zone (ET) rather
+// than the host-local zone, which would be hydration-fragile.
+export function formatDateTime(iso: string | Date, timeZone: string = APPLICATION_TZ): string {
   const d = new Date(iso);
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
-    + " at " + d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  return formatInTimeZone(d, timeZone, { month: "short", day: "numeric", year: "numeric" })
+    + " at " + formatInTimeZone(d, timeZone, { hour: "numeric", minute: "2-digit" });
 }
 
-export function formatDateShort(iso: string | Date): string {
-  const d = new Date(iso);
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+export function formatDateShort(iso: string | Date, timeZone: string = APPLICATION_TZ): string {
+  return formatInTimeZone(iso, timeZone, { month: "short", day: "numeric", year: "numeric" });
 }

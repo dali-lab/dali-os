@@ -18,6 +18,8 @@ import {
   type NotificationState,
 } from "~/lib/tasks";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
+import { useUserTimeZone } from "~/hooks/useUserTimeZone";
+import { formatInTimeZone, getZonedYMD, zonedDayLabel } from "~/lib/timezone";
 import { RsvpButtons } from "~/components/RsvpButtons";
 import { TASKS_CHANGED_EVENT } from "~/components/NotificationBell";
 import type { Route } from "./+types/notifications";
@@ -77,24 +79,20 @@ function StateBadge({ state }: { state: NotificationState }) {
 }
 
 // Group history rows into Today / Yesterday / <date> buckets, preserving the
-// newest-first order the server returns.
-function dayLabel(iso: string): string {
-  const d = new Date(iso);
+// newest-first order the server returns. The day boundary is computed in the
+// viewer's timezone so an 11pm-ET item doesn't read "Yesterday" to a PT user.
+function dayLabel(iso: string, tz: string): string {
   const now = new Date();
-  const startOf = (x: Date) =>
-    new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-  const diffDays = Math.round((startOf(now) - startOf(d)) / 86_400_000);
-  if (diffDays === 0) return "Today";
-  if (diffDays === 1) return "Yesterday";
-  return d.toLocaleDateString(undefined, {
+  const sameYear = getZonedYMD(new Date(iso), tz).year === getZonedYMD(now, tz).year;
+  return zonedDayLabel(iso, now, tz, {
     month: "long",
     day: "numeric",
-    year: now.getFullYear() === d.getFullYear() ? undefined : "numeric",
+    year: sameYear ? undefined : "numeric",
   });
 }
 
-function timeLabel(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, {
+function timeLabel(iso: string, tz: string): string {
+  return formatInTimeZone(iso, tz, {
     month: "short",
     day: "numeric",
     hour: "numeric",
@@ -210,6 +208,7 @@ function HistoryTab({
   const [cursor, setCursor] = useState(initial.nextCursor);
   const [counts, setCounts] = useState(initial.counts);
   const [loading, setLoading] = useState(false);
+  const tz = useUserTimeZone();
 
   // Debounce the search box so typing doesn't fire a request per keystroke.
   useEffect(() => {
@@ -286,13 +285,13 @@ function HistoryTab({
   const groups = useMemo(() => {
     const out: { label: string; rows: NotificationHistoryItem[] }[] = [];
     for (const item of items) {
-      const label = dayLabel(item.sentAt);
+      const label = dayLabel(item.sentAt, tz);
       const last = out[out.length - 1];
       if (last && last.label === label) last.rows.push(item);
       else out.push({ label, rows: [item] });
     }
     return out;
-  }, [items]);
+  }, [items, tz]);
 
   const tabs: { key: "all" | "open" | "cleared"; label: string }[] = [
     { key: "all", label: "All" },
@@ -362,8 +361,8 @@ function HistoryTab({
                       )}
                       <p className="text-[11px] text-muted-foreground mt-1">
                         {n.sender ? `${n.sender} · ` : ""}
-                        sent {timeLabel(n.sentAt)}
-                        {n.clearedAt ? ` · cleared ${timeLabel(n.clearedAt)}` : ""}
+                        sent {timeLabel(n.sentAt, tz)}
+                        {n.clearedAt ? ` · cleared ${timeLabel(n.clearedAt, tz)}` : ""}
                       </p>
                       {n.canRsvp ? <RsvpButtons notificationId={n.id} /> : null}
                     </div>

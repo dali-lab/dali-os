@@ -7,7 +7,8 @@ import { hiringPills } from "~/hiring/components/hiringPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import { PipelinePanel } from "~/hiring/components/analytics/PipelinePanel";
 import { buttonClasses } from "~/components/ui/Button";
-import { formatInterviewDate, formatInterviewTimeRange } from "~/hiring/lib/interview-time";
+import { formatInterviewDateInZone, formatInterviewTimeRangeInZone } from "~/hiring/lib/interview-time";
+import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { cn } from "~/lib/cn";
 
 export const handle = { areaPills: true };
@@ -77,6 +78,7 @@ function HealthRow({ count, label, detail }: { count: number; label: string; det
 
 export default function HiringHub() {
   const hub = useLoaderData<typeof loader>();
+  const tz = useUserTimeZone();
   // The confidentiality card serves reviewers/interviewers; Core/DomainLead
   // get the same prompt in-place from the pipeline section's gate.
   const showConfidentialityCard =
@@ -179,10 +181,11 @@ export default function HiringHub() {
                       {iv.applicantName}
                       <span className="text-muted-foreground">
                         {" "}
-                        · {formatInterviewDate(new Date(iv.startTime))} ·{" "}
-                        {formatInterviewTimeRange(
+                        · {formatInterviewDateInZone(new Date(iv.startTime), tz)} ·{" "}
+                        {formatInterviewTimeRangeInZone(
                           new Date(iv.startTime),
                           new Date(iv.endTime),
+                          tz,
                         )}
                         {iv.location ? ` · ${iv.location}` : ""}
                       </span>

@@ -14,7 +14,8 @@ import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
 import { InterviewSlotPicker } from "~/hiring/components/InterviewSlotPicker";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 import { Confetti } from "~/components/Confetti";
-import { formatInterviewDate, formatInterviewTimeRange } from "~/hiring/lib/interview-time";
+import { formatInterviewDate, formatInterviewTimeRangeDual } from "~/hiring/lib/interview-time";
+import { resolveUserTimeZone } from "~/lib/timezone";
 import { APPLICATIONS_FROM_EMAIL } from "~/lib/app-env";
 import { Button } from "~/components/ui/Button";
 
@@ -26,6 +27,15 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
 
+  // The applicant's own zone, used to show interview times as a dual (ET anchor
+  // + their local time). Null/unset resolves to ET, so those applicants see the
+  // ET-only rendering — the safe default for in-person Dartmouth interviews.
+  const viewer = await prisma.user.findUnique({
+    where: { id: auth.user.sub },
+    select: { timeZone: true },
+  });
+  const viewerTimeZone = resolveUserTimeZone(viewer);
+
   const emptyResult = {
     cycleName: null as string | null,
     cycleId: null as string | null,
@@ -36,6 +46,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     slotDurationMinutes: 30,
     hasApplication: false,
     applicationStatus: null as string | null,
+    viewerTimeZone,
   };
 
   // Try the active cycle first (same as reviewer/interviewer dashboards).
@@ -143,6 +154,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       slotDurationMinutes: config?.slotDurationMinutes ?? 30,
       hasApplication: !!application,
       applicationStatus: appStatus,
+      viewerTimeZone,
     };
 }
 
@@ -166,11 +178,15 @@ interface TimeSlot {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function apiSlotToTimeSlot(slot: { startTime: string; endTime: string }, index: number): TimeSlot {
+function apiSlotToTimeSlot(
+  slot: { startTime: string; endTime: string },
+  index: number,
+  viewerTz: string,
+): TimeSlot {
   return {
     id: `slot-${index}`,
     date: formatInterviewDate(slot.startTime),
-    time: formatInterviewTimeRange(slot.startTime, slot.endTime),
+    time: formatInterviewTimeRangeDual(slot.startTime, slot.endTime, viewerTz),
     isoStart: slot.startTime,
     isoEnd: slot.endTime,
   };
@@ -455,11 +471,13 @@ function InvitedToInterviewView({
   domainApp,
   cycleId,
   cycleName,
+  viewerTimeZone,
   onBooked,
 }: {
   domainApp: DomainAppData;
   cycleId: string;
   cycleName: string;
+  viewerTimeZone: string;
   onBooked: () => void;
 }) {
   const [slots, setSlots] = useState<TimeSlot[]>([]);
@@ -476,7 +494,7 @@ function InvitedToInterviewView({
     })
       .then(r => r.ok ? r.json() : [])
       .then((apiSlots: { startTime: string; endTime: string }[]) => {
-        setSlots(apiSlots.map(apiSlotToTimeSlot));
+        setSlots(apiSlots.map((s, i) => apiSlotToTimeSlot(s, i, viewerTimeZone)));
       })
       .catch(() => {})
       .finally(() => setLoadingSlots(false));
@@ -505,7 +523,7 @@ function InvitedToInterviewView({
         const slotsRes = await fetch(`/api/hiring/cycles/${cycleId}/available-slots?domainId=${domainApp.domainId}&mode=in-person`, { credentials: "include" });
         if (slotsRes.ok) {
           const freshSlots = await slotsRes.json();
-          setSlots(freshSlots.map(apiSlotToTimeSlot));
+          setSlots(freshSlots.map((s: { startTime: string; endTime: string }, i: number) => apiSlotToTimeSlot(s, i, viewerTimeZone)));
           setSelectedSlot(null);
         }
       }
@@ -580,6 +598,7 @@ function InterviewScheduledView({
   cycleId,
   cycleName,
   slotDurationMinutes,
+  viewerTimeZone,
   onCancelled,
   onRescheduled,
 }: {
@@ -587,11 +606,12 @@ function InterviewScheduledView({
   cycleId: string;
   cycleName: string;
   slotDurationMinutes: number;
+  viewerTimeZone: string;
   onCancelled: () => void;
   onRescheduled: () => void;
 }) {
   const interview = domainApp.interview!;
-  const slot = apiSlotToTimeSlot(interview, 0);
+  const slot = apiSlotToTimeSlot(interview, 0, viewerTimeZone);
   const [rescheduling, setRescheduling] = useState(false);
   const [rescheduleSlots, setRescheduleSlots] = useState<TimeSlot[]>([]);
   const [loadingRescheduleSlots, setLoadingRescheduleSlots] = useState(false);
@@ -610,7 +630,7 @@ function InterviewScheduledView({
       .then(r => r.ok ? r.json() : [])
       .then((apiSlots: { startTime: string; endTime: string }[]) => {
         setRescheduleSlots(
-          apiSlots.map(apiSlotToTimeSlot).filter(s => s.isoStart !== slot.isoStart),
+          apiSlots.map((s: { startTime: string; endTime: string }, i: number) => apiSlotToTimeSlot(s, i, viewerTimeZone)).filter((s: TimeSlot) => s.isoStart !== slot.isoStart),
         );
       })
       .catch(() => {})
@@ -666,7 +686,7 @@ function InterviewScheduledView({
         if (slotsRes.ok) {
           const freshSlots = await slotsRes.json();
           setRescheduleSlots(
-            freshSlots.map(apiSlotToTimeSlot).filter((s: TimeSlot) => s.isoStart !== slot.isoStart),
+            freshSlots.map((s: { startTime: string; endTime: string }, i: number) => apiSlotToTimeSlot(s, i, viewerTimeZone)).filter((s: TimeSlot) => s.isoStart !== slot.isoStart),
           );
           setSelectedRescheduleSlotId(null);
         }
@@ -930,12 +950,14 @@ function DomainApplicationCard({
   cycleId,
   cycleName,
   slotDurationMinutes,
+  viewerTimeZone,
   onRevalidate,
 }: {
   da: DomainAppData;
   cycleId: string;
   cycleName: string;
   slotDurationMinutes: number;
+  viewerTimeZone: string;
   onRevalidate: () => void;
 }) {
   const stage = da.inferredStatus;
@@ -966,7 +988,7 @@ function DomainApplicationCard({
           {stage === "Pending" && <PendingView cycleName={cycleName} />}
           {stage === "Rejected" && <RejectedView cycleName={cycleName} />}
           {stage === "InvitedToInterview" && (
-            <InvitedToInterviewView domainApp={da} cycleId={cycleId} cycleName={cycleName} onBooked={onRevalidate} />
+            <InvitedToInterviewView domainApp={da} cycleId={cycleId} cycleName={cycleName} viewerTimeZone={viewerTimeZone} onBooked={onRevalidate} />
           )}
           {stage === "InterviewScheduled" && (
             <InterviewScheduledView
@@ -974,6 +996,7 @@ function DomainApplicationCard({
               cycleId={cycleId}
               cycleName={cycleName}
               slotDurationMinutes={slotDurationMinutes}
+              viewerTimeZone={viewerTimeZone}
               onCancelled={onRevalidate}
               onRescheduled={onRevalidate}
             />
@@ -1002,6 +1025,7 @@ export default function Portal() {
     slotDurationMinutes,
     hasApplication,
     applicationStatus,
+    viewerTimeZone,
   } = data;
 
   const revalidator = useRevalidator();
@@ -1125,6 +1149,7 @@ export default function Portal() {
                 cycleId={cycleId}
                 cycleName={cycleName}
                 slotDurationMinutes={slotDurationMinutes}
+                viewerTimeZone={viewerTimeZone}
                 onRevalidate={handleRevalidate}
               />
             ))}

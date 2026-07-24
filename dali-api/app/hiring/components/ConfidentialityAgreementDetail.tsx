@@ -5,11 +5,13 @@ import type { loader } from "~/hiring/routes/confidentiality-agreements.$id";
 import { RichTextEditor } from "~/components/RichTextEditor";
 import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
 import { formatDateTime, fullName, UNKNOWN_LABEL } from "~/lib/display";
+import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 
 const EMPTY_DOC = { type: "doc", content: [{ type: "paragraph" }] };
 
 export function ConfidentialityAgreementDetail() {
   const { agreement, canEdit } = useLoaderData<typeof loader>();
+  const tz = useUserTimeZone();
 
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(
     agreement.versions[0]?.id ?? null,
@@ -131,7 +133,7 @@ export function ConfidentialityAgreementDetail() {
                   <span className="font-medium">v{v.versionNumber}</span>
                   <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
                     <Clock className="w-3 h-3" />
-                    {formatDateTime(v.createdAt)}
+                    {formatDateTime(v.createdAt, tz)}
                   </span>
                 </div>
                 <p className="text-xs text-muted-foreground mt-1 inline-flex items-center gap-1 truncate">
