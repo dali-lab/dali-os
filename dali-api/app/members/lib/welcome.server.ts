@@ -1,8 +1,18 @@
 import { prisma } from "~/lib/db";
-import { notify } from "~/lib/notify.server";
+import { notify, renderNotificationEmail } from "~/lib/notify.server";
+import { sendEmail } from "~/lib/gmail";
+import { getSenderRefreshToken } from "~/lib/gmail-integration";
+import { getAppEnv, getFrontendUrl } from "~/lib/app-env";
+import { slackConfigured, sendDm } from "~/slack/lib/slack-client";
 
-// The onboarding task points here; also used as the dedupe/clear key.
+// Deep-link for the welcome todo and Core reminders.
 export const ONBOARDING_LINK = "/onboarding";
+
+// Preference / lock key for the persistent welcome todo. Reminders use
+// `member.onboarding.reminder` so they stay dismissible and don't inherit the
+// "can't mark read" lock that applies only to this event.
+export const ONBOARDING_EVENT_TYPE = "member.onboarding" as const;
+export const ONBOARDING_REMINDER_EVENT_TYPE = "member.onboarding.reminder" as const;
 
 // Welcome a newly-promoted member by dropping a persistent "finish onboarding"
 // todo notification (links to /onboarding). Best-effort — a failure here must
@@ -17,13 +27,15 @@ export const ONBOARDING_LINK = "/onboarding";
 // open onboarding todo, so a re-release won't spam them.
 
 // Mark a member's onboarding task read so it drops out of their task list. Call
-// this when onboarding is finished (onboardedAt set). Idempotent.
+// this when onboarding is finished (onboardedAt set). Also clears unread Core
+// reminders for the same flow. Idempotent.
 export async function clearOnboardingTask(userId: string): Promise<void> {
   await prisma.notification.updateMany({
     where: {
       recipientUserId: userId,
-      kind: "SystemAnnouncement",
-      link: ONBOARDING_LINK,
+      eventType: {
+        in: [ONBOARDING_EVENT_TYPE, ONBOARDING_REMINDER_EVENT_TYPE],
+      },
       readAt: null,
     },
     data: { readAt: new Date() },
@@ -50,14 +62,13 @@ export async function sendWelcome(args: {
   const existing = await prisma.notification.findFirst({
     where: {
       recipientUserId: args.userId,
-      kind: "SystemAnnouncement",
-      link: ONBOARDING_LINK,
+      eventType: ONBOARDING_EVENT_TYPE,
     },
     select: { id: true },
   });
   if (!existing) {
     await notify({
-      eventType: "member.onboarding",
+      eventType: ONBOARDING_EVENT_TYPE,
       createdByUserId: args.actorId,
       message: {
         title: "Welcome to DALI — finish onboarding",
@@ -71,6 +82,164 @@ export async function sendWelcome(args: {
   }
 
   return { notified };
+}
+
+export type OnboardingReminderStep = "email" | "slack" | "figma" | "profile";
+
+/** Exactly one channel — never in-app + email/Slack together. */
+export type OnboardingRemindVia =
+  | "inApp"
+  | "emailDali"
+  | "emailDartmouth"
+  | "slack";
+
+const REMIND_VIA_VALUES = [
+  "inApp",
+  "emailDali",
+  "emailDartmouth",
+  "slack",
+] as const;
+
+export function isOnboardingRemindVia(v: string): v is OnboardingRemindVia {
+  return (REMIND_VIA_VALUES as readonly string[]).includes(v);
+}
+
+const REMINDER_COPY: Record<
+  OnboardingReminderStep,
+  { title: string; body: string; link: string | null }
+> = {
+  email: {
+    title: "Onboarding reminder: DALI email",
+    body: "Your DALI email isn't set up yet. Check for an invite, or reach out to Core if you still can't sign in.",
+    link: ONBOARDING_LINK,
+  },
+  slack: {
+    title: "Onboarding reminder: Slack",
+    body: "You're not in the DALI Slack workspace yet. A teammate will add you — reply to Core if you're still waiting.",
+    link: ONBOARDING_LINK,
+  },
+  figma: {
+    title: "Onboarding reminder: Figma",
+    body: "You haven't been added to Figma yet. Core will invite you — ping them if it's been a while.",
+    link: ONBOARDING_LINK,
+  },
+  profile: {
+    title: "Onboarding reminder: profile form",
+    body: "Finish your member profile so we can complete your onboarding.",
+    link: ONBOARDING_LINK,
+  },
+};
+
+/**
+ * One-shot Core nudge for members still incomplete on a board column.
+ * `via` picks a single channel: DALI OS in-app, Slack DM, or email to either
+ * the DALI or Dartmouth address — never more than one channel at a time.
+ */
+export async function sendOnboardingReminders(args: {
+  actorId: string;
+  step: OnboardingReminderStep;
+  userIds: string[];
+  via: OnboardingRemindVia;
+}): Promise<{ count: number; skipped: number }> {
+  const unique = [...new Set(args.userIds.filter(Boolean))];
+  if (unique.length === 0) return { count: 0, skipped: 0 };
+
+  const copy = REMINDER_COPY[args.step];
+  const base = getFrontendUrl().replace(/\/$/, "");
+  const absLink = copy.link
+    ? `${base}${copy.link.startsWith("/") ? "" : "/"}${copy.link}`
+    : null;
+
+  if (args.via === "inApp") {
+    await notify({
+      eventType: ONBOARDING_REMINDER_EVENT_TYPE,
+      createdByUserId: args.actorId,
+      message: {
+        title: copy.title,
+        body: copy.body,
+        link: copy.link,
+        isTodo: true,
+      },
+      recipients: unique.map((userId) => ({ userId })),
+    });
+    return { count: unique.length, skipped: 0 };
+  }
+
+  if (args.via === "slack") {
+    if (!slackConfigured()) {
+      throw new Error("Slack is not configured");
+    }
+    // Same prod gate as notify(): staging DBs mirror prod Slack ids.
+    if (getAppEnv() !== "prod" && process.env.NOTIFY_SLACK_DM_OVERRIDE !== "1") {
+      throw new Error(
+        "Slack DMs are production-only (set NOTIFY_SLACK_DM_OVERRIDE=1 to test)",
+      );
+    }
+
+    const users = await prisma.user.findMany({
+      where: { id: { in: unique } },
+      select: { id: true, slackUserId: true },
+    });
+
+    const text = [
+      `*${copy.title}*`,
+      copy.body,
+      absLink,
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+
+    let count = 0;
+    let skipped = 0;
+    for (const u of users) {
+      if (!u.slackUserId) {
+        skipped++;
+        continue;
+      }
+      await sendDm(u.slackUserId, text);
+      count++;
+    }
+    return { count, skipped };
+  }
+
+  const users = await prisma.user.findMany({
+    where: { id: { in: unique } },
+    select: {
+      id: true,
+      firstName: true,
+      daliEmail: true,
+      dartmouthEmail: true,
+    },
+  });
+
+  const refreshToken = await getSenderRefreshToken("General").catch(() => null);
+  if (!refreshToken) {
+    throw new Error("Email sender is not configured");
+  }
+
+  let count = 0;
+  let skipped = 0;
+  for (const u of users) {
+    const to = args.via === "emailDali" ? u.daliEmail : u.dartmouthEmail;
+    if (!to) {
+      skipped++;
+      continue;
+    }
+    await sendEmail({
+      refreshToken,
+      to,
+      subject: copy.title,
+      html: renderNotificationEmail({
+        firstName: u.firstName,
+        title: copy.title,
+        body: copy.body,
+        link: absLink,
+      }),
+    });
+    count++;
+  }
+
+  return { count, skipped };
 }
 
 // Onboarding block appended to the Accepted decision email so a new member gets

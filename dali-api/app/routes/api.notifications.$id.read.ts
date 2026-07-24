@@ -3,7 +3,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { publishNotificationChange } from "~/lib/notify-stream.server";
-import { ONBOARDING_LINK } from "~/members/lib/welcome.server";
+import { ONBOARDING_EVENT_TYPE } from "~/members/lib/welcome.server";
 
 export async function action({ request, params }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
@@ -45,7 +45,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       readAt: true,
       scheduledMeetingId: true,
       kind: true,
-      link: true,
+      eventType: true,
     },
   });
   if (!existing) {
@@ -59,6 +59,9 @@ export async function action({ request, params }: Route.ActionArgs) {
   // also carry scheduledMeetingId but are dismissible like any other ping.
   const isMeetingInvite =
     existing.kind === "MeetingInvite" && !!existing.scheduledMeetingId;
+  // Welcome onboarding todo only — Core reminders share the /onboarding link
+  // but use a different eventType and stay dismissible.
+  const isOnboardingTodo = existing.eventType === ONBOARDING_EVENT_TYPE;
 
   // Re-open path: flip readAt back to null so the row returns to Open in
   // History + the Tasks list. Self-clearing rows (meeting invites / onboarding)
@@ -68,7 +71,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (isMeetingInvite) {
       return withCors(request, Response.json({ ok: true, skipped: "meeting-invite" }));
     }
-    if (existing.kind === "SystemAnnouncement" && existing.link === ONBOARDING_LINK) {
+    if (isOnboardingTodo) {
       return withCors(request, Response.json({ ok: true, skipped: "onboarding" }));
     }
     if (!existing.readAt) {
@@ -92,7 +95,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   // The onboarding task is the same: opening /onboarding must not dismiss it.
   // It clears only when onboarding is actually finished (clearOnboardingTask,
   // from the /onboarding "Finish" action), so it persists across visits.
-  if (existing.kind === "SystemAnnouncement" && existing.link === ONBOARDING_LINK) {
+  if (isOnboardingTodo) {
     return withCors(request, Response.json({ ok: true, skipped: "onboarding" }));
   }
 
