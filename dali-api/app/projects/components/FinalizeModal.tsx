@@ -166,6 +166,14 @@ export function FinalizeModal({
     });
   }
 
+  function selectAll() {
+    setSelected(new Set(AUTOMATIONS.filter((a) => a.configured).map((a) => a.id)));
+  }
+
+  function unselectAll() {
+    setSelected(new Set());
+  }
+
   async function run(ids: Automation[]) {
     if (ids.length === 0) {
       setError("Select at least one automation.");
@@ -252,6 +260,25 @@ export function FinalizeModal({
           </label>
         </div>
       )}
+
+      <div className="flex items-center justify-end gap-3 mb-2">
+        <button
+          type="button"
+          disabled={running || selected.size === AUTOMATIONS.filter((a) => a.configured).length}
+          onClick={selectAll}
+          className="text-xs font-medium text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:hover:text-muted-foreground transition-colors"
+        >
+          Select all
+        </button>
+        <button
+          type="button"
+          disabled={running || selected.size === 0}
+          onClick={unselectAll}
+          className="text-xs font-medium text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:hover:text-muted-foreground transition-colors"
+        >
+          Unselect all
+        </button>
+      </div>
 
       <ul className="flex flex-col gap-2">
         {AUTOMATIONS.map((a) => {

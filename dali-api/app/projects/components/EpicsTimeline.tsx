@@ -328,9 +328,6 @@ export function EpicsTimeline({
     return Math.max(daySpan(startIso, endIso) * PX_PER_DAY, PX_PER_DAY);
   }
 
-  const MIN_ROWS = 8;
-  const fillerRows = Math.max(MIN_ROWS - epics.length, 0);
-  const FILLER_H = 48;
   const today = localTodayUtcDay();
   const todayLeft =
     bounds && today >= bounds.min && today <= bounds.max
@@ -563,20 +560,6 @@ export function EpicsTimeline({
                 </div>
               );
             })}
-
-            {Array.from({ length: fillerRows }).map((_, i) => (
-              <div
-                key={`filler-${i}`}
-                className="relative flex items-center border-b border-border/20"
-                style={{ height: FILLER_H }}
-                aria-hidden
-              >
-                <div
-                  className="flex-shrink-0 border-r border-border"
-                  style={{ width: LABEL_W }}
-                />
-              </div>
-            ))}
           </div>
         </div>
       </div>
