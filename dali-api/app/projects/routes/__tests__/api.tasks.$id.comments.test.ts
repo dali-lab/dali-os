@@ -84,7 +84,7 @@ describe("GET /api/tasks/:id/comments", () => {
           id: "c1",
           body: "first",
           createdAt: "2026-07-19T09:00:00.000Z",
-          author: { id: "u2", name: "Grace Hopper" },
+          author: { id: "u2", name: "Grace Hopper", photoUrl: null },
         },
       ],
     });
@@ -144,7 +144,7 @@ describe("POST /api/tasks/:id/comments", () => {
       id: "comment-1",
       body: "hello",
       createdAt: "2026-07-20T12:00:00.000Z",
-      author: { id: CALLER, name: "Ada Lovelace" },
+      author: { id: CALLER, name: "Ada Lovelace", photoUrl: null },
     });
   });
 

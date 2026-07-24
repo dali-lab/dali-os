@@ -1,6 +1,7 @@
 import type { Prisma } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db";
 import { LAB_MEMBER_WHERE } from "~/lib/prisma-shapes";
+import { resolvePhotoUrl } from "~/lib/photo";
 import type { UserRoles } from "~/lib/roles";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { TASK_STATUS_LABELS } from "~/projects/lib/task-board";
@@ -87,10 +88,17 @@ async function searchPeople(q: string, like: Like): Promise<SearchResult[]> {
       ...LAB_MEMBER_WHERE,
       OR: [{ firstName: like }, { lastName: like }, { daliEmail: like }, { dartmouthEmail: like }],
     },
-    select: { id: true, firstName: true, lastName: true, daliEmail: true, dartmouthEmail: true },
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      daliEmail: true,
+      dartmouthEmail: true,
+      photoUrl: true,
+    },
     take: RAW_TAKE,
   });
-  return rankResults(
+  const ranked = rankResults(
     rows.map((u) => {
       const name = `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || "Member";
       const email = u.daliEmail ?? u.dartmouthEmail ?? undefined;
@@ -100,6 +108,15 @@ async function searchPeople(q: string, like: Like): Promise<SearchResult[]> {
       };
     }),
     q,
+  );
+  // Resolve avatars only for the ranked survivors (≤ PER_CATEGORY_CAP), not the
+  // full over-fetch — keeps per-keystroke work tiny.
+  const rawPhotoById = new Map(rows.map((u) => [u.id, u.photoUrl]));
+  return Promise.all(
+    ranked.map(async (result) => ({
+      ...result,
+      photoUrl: await resolvePhotoUrl(rawPhotoById.get(result.id)),
+    })),
   );
 }
 

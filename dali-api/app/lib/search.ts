@@ -25,6 +25,8 @@ export interface SearchResult {
   title: string;
   subtitle?: string;
   url: string;
+  /** Resolved avatar URL for `person` results (null → initials fallback). */
+  photoUrl?: string | null;
 }
 
 export const MIN_QUERY_LENGTH = 2;

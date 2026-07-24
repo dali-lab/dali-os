@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import {
   Form,
-  Link,
   redirect,
   useActionData,
   useLoaderData,
@@ -21,7 +20,6 @@ import { RolePills } from "~/components/ui/RolePills";
 import { buttonClasses } from "~/components/ui/Button";
 import { LAB_MEMBER_WHERE, MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { resolvePhotoUrl } from "~/lib/photo";
-import { ViewToggle, useViewPreference } from "~/components/ViewToggle";
 import { TermFilter } from "~/components/TermFilter";
 import { resolveTermFilter } from "~/lib/terms";
 import { deriveCoreTitles } from "~/lib/core-titles";
@@ -266,7 +264,6 @@ export default function MembersList() {
   const actionData = useActionData<typeof action>();
   const [creating, setCreating] = useState(false);
   const [query, setQuery] = useState("");
-  const [view, setView] = useViewPreference("dali:view:members", "list");
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -365,7 +362,6 @@ export default function MembersList() {
         />
         {status === "active" && <TermFilter terms={terms} selected={selectedTerm} />}
         <DomainFilter domains={domains} selected={selectedDomain} />
-        <ViewToggle value={view} onChange={setView} />
         <span className="text-xs text-muted-foreground ml-auto">
           {filtered.length}{" "}
           {status === "alumni"
@@ -389,10 +385,8 @@ export default function MembersList() {
               ? "No members match this search."
               : "No members match these filters."}
         </div>
-      ) : view === "list" ? (
-        <MembersTable rows={filtered} status={status} />
       ) : (
-        <MembersCards rows={filtered} />
+        <MembersTable rows={filtered} status={status} />
       )}
     </div>
   );
@@ -531,7 +525,17 @@ function MembersTable({ rows, status }: { rows: MemberRow[]; status: MemberStatu
               className="border-t border-border hover:bg-muted/20 cursor-pointer"
             >
               <td className="px-4 py-2 text-foreground">
-                {m.firstName} {m.lastName}
+                <div className="flex items-center gap-2.5">
+                  <Avatar
+                    photoUrl={m.photoUrl}
+                    name={fullName(m) || "Member"}
+                    size="sm"
+                    className="flex-shrink-0"
+                  />
+                  <span>
+                    {m.firstName} {m.lastName}
+                  </span>
+                </div>
               </td>
               <td className="px-4 py-2 text-muted-foreground">{m.email ?? "—"}</td>
               <td className="px-4 py-2">
@@ -554,53 +558,6 @@ function MembersTable({ rows, status }: { rows: MemberRow[]; status: MemberStatu
         </tbody>
       </table>
     </div>
-  );
-}
-
-function MembersCards({ rows }: { rows: MemberRow[] }) {
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 p-3">
-      {rows.map((m) => (
-        <MemberCard key={m.id} member={m} />
-      ))}
-    </div>
-  );
-}
-
-function MemberCard({ member }: { member: MemberRow }) {
-  const fullName = `${member.firstName} ${member.lastName}`.trim();
-  return (
-    <Link
-      to={`/members/${member.id}`}
-      className="border border-border rounded-md p-3 bg-background flex items-start gap-3 hover:bg-muted/10 transition-colors"
-    >
-      <Avatar photoUrl={member.photoUrl} name={fullName} size="md" className="flex-shrink-0" />
-      <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-2 flex-wrap">
-          <span className="font-semibold text-foreground truncate">{fullName}</span>
-          {member.pronouns && (
-            <span className="text-xs text-muted-foreground">{member.pronouns}</span>
-          )}
-        </div>
-        {member.classYear && (
-          <div className="text-xs text-muted-foreground">Class of {member.classYear}</div>
-        )}
-        {member.email && (
-          <div className="text-xs text-muted-foreground truncate mt-0.5">{member.email}</div>
-        )}
-        <div className="mt-2">
-          {member.coreTitles.length === 0 && member.domainRoles.length === 0 ? (
-            <span className="text-muted-foreground text-xs">—</span>
-          ) : (
-            <RolePills
-              coreTitles={member.coreTitles}
-              domainRoles={member.domainRoles}
-              size="md"
-            />
-          )}
-        </div>
-      </div>
-    </Link>
   );
 }
 

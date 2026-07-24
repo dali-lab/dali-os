@@ -10,6 +10,7 @@ import { Link } from "react-router";
 import { X } from "lucide-react";
 import { Modal } from "~/components/Modal";
 import { Button } from "~/components/ui/Button";
+import { Avatar } from "~/components/ui/Avatar";
 import { uploadFileToS3 } from "~/lib/upload-client";
 import {
   normalizeChecklist,
@@ -35,7 +36,7 @@ type CommentModel = {
   id: string;
   body: string;
   createdAt: string;
-  author: { id: string; name: string };
+  author: { id: string; name: string; photoUrl: string | null };
 };
 
 // Field values collected by the modal in create mode. The board turns these
@@ -372,7 +373,7 @@ export function TaskModal({
       id: `temp-${Date.now()}`,
       body: text,
       createdAt: new Date().toISOString(),
-      author: { id: "", name: "You" },
+      author: { id: "", name: "You", photoUrl: null },
     };
     setCommentPosting(true);
     setCommentPostError(null);
@@ -1018,7 +1019,8 @@ export function TaskModal({
                   <div className="flex flex-col gap-2 max-h-48 overflow-y-auto">
                     {comments.map((c) => (
                       <div key={c.id} className="text-sm">
-                        <div className="flex items-baseline gap-2">
+                        <div className="flex items-center gap-2">
+                          <Avatar photoUrl={c.author.photoUrl} name={c.author.name} size="xs" className="shrink-0" />
                           <span className="font-medium text-foreground">
                             {c.author.name}
                           </span>
@@ -1190,7 +1192,7 @@ function AssigneePicker({
   disabled,
   onChange,
 }: {
-  all: { id: string; name: string }[];
+  all: { id: string; name: string; photoUrl?: string | null }[];
   selected: string[];
   disabled: boolean;
   onChange: (next: string[]) => void;
@@ -1221,6 +1223,7 @@ function AssigneePicker({
             disabled={disabled}
             onChange={() => toggle(m.id)}
           />
+          <Avatar photoUrl={m.photoUrl} name={m.name} size="xs" className="shrink-0" />
           <span className="text-foreground">{m.name}</span>
         </label>
       ))}
