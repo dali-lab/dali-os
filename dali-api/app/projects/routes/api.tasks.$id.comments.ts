@@ -3,6 +3,7 @@ import { prisma } from "~/lib/db";
 import { requireMemberSession } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
+import { resolvePhotoUrl } from "~/lib/photo";
 import { notifyTaskComment } from "../lib/task-notifications.server";
 
 // GET  /api/tasks/:id/comments — list a task's comments, oldest first.
@@ -13,11 +14,11 @@ import { notifyTaskComment } from "../lib/task-notifications.server";
 
 const BODY_MAX = 10_000;
 
-function commentShape(row: {
+async function commentShape(row: {
   id: string;
   body: string;
   createdAt: Date;
-  author: { id: string; firstName: string; lastName: string };
+  author: { id: string; firstName: string; lastName: string; photoUrl: string | null };
 }) {
   return {
     id: row.id,
@@ -26,6 +27,7 @@ function commentShape(row: {
     author: {
       id: row.author.id,
       name: `${row.author.firstName} ${row.author.lastName}`.trim(),
+      photoUrl: await resolvePhotoUrl(row.author.photoUrl),
     },
   };
 }
@@ -51,10 +53,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       id: true,
       body: true,
       createdAt: true,
-      author: { select: { id: true, firstName: true, lastName: true } },
+      author: { select: { id: true, firstName: true, lastName: true, photoUrl: true } },
     },
   });
-  return withCors(request, Response.json({ comments: rows.map(commentShape) }));
+  return withCors(request, Response.json({ comments: await Promise.all(rows.map(commentShape)) }));
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -105,7 +107,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       id: true,
       body: true,
       createdAt: true,
-      author: { select: { id: true, firstName: true, lastName: true } },
+      author: { select: { id: true, firstName: true, lastName: true, photoUrl: true } },
     },
   });
 
@@ -113,5 +115,5 @@ export async function action({ request, params }: Route.ActionArgs) {
     (err) => console.error(`task ${params.id}: comment notify failed`, err),
   );
 
-  return withCors(request, Response.json(commentShape(comment)));
+  return withCors(request, Response.json(await commentShape(comment)));
 }

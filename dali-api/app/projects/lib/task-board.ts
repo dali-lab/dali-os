@@ -86,7 +86,7 @@ export type BoardEpic = {
 // Choices the TaskModal needs to populate its assignee + domain dropdowns.
 // Loader fetches once per board render and passes through to TaskBoard.
 export type TaskBoardOptions = {
-  members: { id: string; name: string }[];
+  members: { id: string; name: string; photoUrl: string | null }[];
   domains: { id: string; name: string }[];
   // Project.repoUrls — surfaced in the TaskModal's "Create GitHub issue"
   // picker. Empty array hides the picker entirely.

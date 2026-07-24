@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { prisma } from '~/lib/db'
 import { requireAuth } from "~/lib/auth";
+import { resolvePhotoUrl } from '~/lib/photo'
 import { parseSessionCookie } from '~/lib/cookies'
 import { getPresenceUser } from '~/lib/presence-user'
 import { requirePageSignedOrRedirect } from '~/hiring/lib/confidentiality'
@@ -147,11 +148,19 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     challengeQuestions,
     interview.domainApplication.answers as Record<string, string>,
   )
+  // Resolve each reviewer's avatar to a ready src (raw photoUrl is an S3 key).
+  const reviewsWithPhotos = await Promise.all(
+    interview.domainApplication.reviews.map(async (r: any) => ({
+      ...r,
+      reviewerPhotoUrl: await resolvePhotoUrl(r.cycleReviewer?.user?.photoUrl),
+    })),
+  )
   const interviewWithPresignedAnswers = {
     ...interview,
     domainApplication: {
       ...interview.domainApplication,
       answers: presignedChallengeAnswers,
+      reviews: reviewsWithPhotos,
       application: {
         ...interview.domainApplication.application,
         answers: presignedGeneralAnswers,
@@ -496,6 +505,7 @@ export default function InterviewDetailPage() {
                     >
                       <ReviewSummary
                         reviewerName={reviewerName}
+                        reviewerPhotoUrl={review.reviewerPhotoUrl}
                         submittedAt={review.submittedAt}
                         overallRecommendation={review.overallRecommendation}
                         scores={review.scores}

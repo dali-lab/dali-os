@@ -6,6 +6,8 @@ import { requireAuth } from "~/lib/auth";
 import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
 import { presignAnswers } from "~/hiring/lib/presign";
 import { ChevronDown } from "lucide-react";
+import { resolvePhotoUrl } from "~/lib/photo";
+import { Avatar } from "~/components/ui/Avatar";
 import { ApplicationViewer } from "~/hiring/components/ApplicationViewer";
 import { ReviewSummary } from "~/hiring/components/ReviewSummary";
 import { DetailCard } from "~/hiring/components/DetailCard";
@@ -97,7 +99,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       reviews: {
         include: {
           cycleReviewer: {
-            include: { user: { select: { firstName: true, lastName: true } } },
+            include: { user: { select: { firstName: true, lastName: true, photoUrl: true } } },
           },
         },
         orderBy: { createdAt: "asc" },
@@ -223,11 +225,20 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     da.answers as Record<string, string>,
   );
 
+  // Resolve reviewer avatars (raw photoUrl is an S3 key) for the review cards.
+  const reviewsWithPhotos = await Promise.all(
+    (da.reviews ?? []).map(async (r: any) => ({
+      ...r,
+      reviewerPhotoUrl: await resolvePhotoUrl(r.cycleReviewer?.user?.photoUrl),
+    })),
+  );
+
   return {
       domainApplication: {
         ...da,
         answers: presignedChallengeAnswers,
         interviews: interviewsWithNotes,
+        reviews: reviewsWithPhotos,
       },
       application: { ...da.application, answers: presignedGeneralAnswers },
       inferredStatus,
@@ -391,6 +402,7 @@ function ReviewCard({
     <div className="px-4 py-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
+          <Avatar photoUrl={review.reviewerPhotoUrl} name={name} size="sm" className="shrink-0" />
           <span className="text-sm font-medium text-foreground">{name}</span>
           {isSubmitted ? (
             <span className="text-xs text-green-700 bg-green-100 px-1.5 py-0.5 rounded font-medium">Submitted</span>

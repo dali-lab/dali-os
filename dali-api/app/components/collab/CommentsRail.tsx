@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, Trash2, RotateCcw, MessageSquare } from "lucide-react";
 import { MentionTextInput } from "~/components/editor/MentionTextInput";
+import { Avatar } from "~/components/ui/Avatar";
 
 export type Comment = {
   id: string;
   parentId: string | null;
   author: string;
   authorId: string;
+  authorPhotoUrl?: string | null;
   body: string;
   anchor: { from: string; to: string } | null;
   resolved: boolean;
@@ -325,7 +327,10 @@ export function CommentsRail({
                 className={`block w-full text-left ${t.root.anchor && onFocusAnchor ? "hover:bg-muted/50 rounded" : ""}`}
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium text-foreground">{t.root.author}</span>
+                  <span className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+                    <Avatar photoUrl={t.root.authorPhotoUrl} name={t.root.author} size="xs" className="shrink-0" />
+                    {t.root.author}
+                  </span>
                   <span className="text-[10px] text-muted-foreground">
                     <VersionChip comment={t.root} versionLabels={versionLabels} />
                     {formatCommentDate(t.root.createdAt)}
@@ -340,7 +345,10 @@ export function CommentsRail({
               {t.replies.map((r) => (
                 <div key={r.id} data-comment-id={r.id} className="ml-3 mt-1.5 pl-2 border-l border-border">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium text-foreground">{r.author}</span>
+                    <span className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+                      <Avatar photoUrl={r.authorPhotoUrl} name={r.author} size="xs" className="shrink-0" />
+                      {r.author}
+                    </span>
                     <span className="text-[10px] text-muted-foreground">
                       <VersionChip comment={r} versionLabels={versionLabels} />
                       {formatCommentDate(r.createdAt)}

@@ -2,24 +2,29 @@ import { prisma } from "~/lib/db";
 import { isCore, isDomainLead, isProjectMember, isLabMember } from "~/lib/roles";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
+import { resolvePhotoUrl } from "~/lib/photo";
 
-/** Hydrate author IDs into `{ id, name }` objects in a single IN query. */
+/** Hydrate author IDs into `{ id, name, photoUrl }` objects in a single IN
+ * query. `photoUrl` is resolved to a ready avatar src (null → initials). */
 export async function hydrateAuthors(
   authorIds: string[],
-): Promise<{ id: string; name: string }[]> {
+): Promise<{ id: string; name: string; photoUrl: string | null }[]> {
   if (authorIds.length === 0) return [];
   const users = await prisma.user.findMany({
     where: { id: { in: authorIds } },
-    select: { id: true, firstName: true, lastName: true },
+    select: { id: true, firstName: true, lastName: true, photoUrl: true },
   });
   const byId = new Map(users.map((u) => [u.id, u]));
-  return authorIds.map((id) => {
-    const u = byId.get(id);
-    return {
-      id,
-      name: u ? [u.firstName, u.lastName].filter(Boolean).join(" ") : "Unknown",
-    };
-  });
+  return Promise.all(
+    authorIds.map(async (id) => {
+      const u = byId.get(id);
+      return {
+        id,
+        name: u ? [u.firstName, u.lastName].filter(Boolean).join(" ") : "Unknown",
+        photoUrl: await resolvePhotoUrl(u?.photoUrl),
+      };
+    }),
+  );
 }
 
 /**

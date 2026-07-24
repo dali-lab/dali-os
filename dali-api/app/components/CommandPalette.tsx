@@ -32,6 +32,7 @@ import {
   CornerDownLeft,
 } from "lucide-react";
 import { Modal } from "~/components/Modal";
+import { Avatar } from "~/components/ui/Avatar";
 import { setTablessPreference } from "~/lib/tabless";
 import { setFocusPreference } from "~/lib/focus-mode";
 import type { SearchResult, SearchResultType } from "~/lib/search";
@@ -65,6 +66,9 @@ interface PaletteItem {
   title: string;
   subtitle?: string;
   icon: LucideIcon;
+  /** Present for entity results; drives the avatar-vs-icon leading slot. */
+  type?: SearchResultType;
+  photoUrl?: string | null;
   action: PaletteAction;
 }
 
@@ -309,6 +313,7 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles, onOpe
                 const idx = runningIdx;
                 const active = idx === selectedIndex;
                 const Icon = item.icon;
+                const isPerson = item.type === "person";
                 return (
                   <button
                     key={item.id}
@@ -322,10 +327,14 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles, onOpe
                       active ? "bg-accent-coral/10 text-foreground" : "text-foreground/80 hover:bg-muted/50"
                     }`}
                   >
-                    <Icon
-                      className={`w-4 h-4 shrink-0 ${active ? "text-accent-coral" : "text-muted-foreground"}`}
-                      aria-hidden
-                    />
+                    {isPerson ? (
+                      <Avatar photoUrl={item.photoUrl} name={item.title} size="xs" className="shrink-0" />
+                    ) : (
+                      <Icon
+                        className={`w-4 h-4 shrink-0 ${active ? "text-accent-coral" : "text-muted-foreground"}`}
+                        aria-hidden
+                      />
+                    )}
                     <span className="truncate flex-1">{item.title}</span>
                     {item.subtitle && (
                       <span className="truncate text-xs text-muted-foreground max-w-[40%]">
@@ -356,6 +365,8 @@ function resultItem(r: SearchResult): PaletteItem {
     title: r.title,
     subtitle: r.subtitle,
     icon: TYPE_META[r.type].icon,
+    type: r.type,
+    photoUrl: r.photoUrl,
     action: { kind: "navigate", url: r.url, label: r.title },
   };
 }

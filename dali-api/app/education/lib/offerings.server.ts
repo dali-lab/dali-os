@@ -1,6 +1,7 @@
 import { prisma } from "~/lib/db";
 import { currentTerm, isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
+import { resolvePhotoUrl } from "~/lib/photo";
 import { manageableOfferingIds, isOfferingManager } from "./access.server";
 import { createOfferingApplicationForm } from "./application-form.server";
 import type { OfferingStatus, OfferingType } from "~/generated/prisma/client";
@@ -11,7 +12,7 @@ const offeringListInclude = {
   instructors: {
     select: {
       userId: true,
-      user: { select: { firstName: true, lastName: true } },
+      user: { select: { firstName: true, lastName: true, photoUrl: true } },
     },
   },
   sessions: {
@@ -83,12 +84,14 @@ export async function listCatalog(userId?: string) {
     }
   }
 
-  return offerings.map((o) => ({
-    ...shapeOffering(o),
-    approvedCount: counts.get(o.id) ?? 0,
-    myStatus: mineByOffering.get(o.id) ?? null,
-    openAssignments: openByOffering.get(o.id) ?? 0,
-  }));
+  return resolveInstructorPhotos(
+    offerings.map((o) => ({
+      ...shapeOffering(o),
+      approvedCount: counts.get(o.id) ?? 0,
+      myStatus: mineByOffering.get(o.id) ?? null,
+      openAssignments: openByOffering.get(o.id) ?? 0,
+    })),
+  );
 }
 
 /** Offerings the user can manage, all statuses. Core sees everything. */
@@ -107,11 +110,13 @@ export async function listManageable(userId: string) {
     _count: { _all: true },
   });
   const pendingByOffering = new Map(pending.map((p) => [p.offeringId, p._count._all]));
-  return offerings.map((o) => ({
-    ...shapeOffering(o),
-    approvedCount: counts.get(o.id) ?? 0,
-    pendingCount: pendingByOffering.get(o.id) ?? 0,
-  }));
+  return resolveInstructorPhotos(
+    offerings.map((o) => ({
+      ...shapeOffering(o),
+      approvedCount: counts.get(o.id) ?? 0,
+      pendingCount: pendingByOffering.get(o.id) ?? 0,
+    })),
+  );
 }
 
 export async function getOfferingDetail(offeringId: string) {
@@ -129,14 +134,17 @@ export async function getOfferingDetail(offeringId: string) {
   });
   if (!offering) return null;
   const counts = await approvedCounts([offering.id]);
+  const instructors = await Promise.all(
+    offering.instructors.map(async (i) => ({
+      userId: i.userId,
+      name: `${i.user.firstName} ${i.user.lastName}`.trim(),
+      photoUrl: await resolvePhotoUrl(i.user.photoUrl),
+    })),
+  );
   return {
     ...offering,
     approvedCount: counts.get(offering.id) ?? 0,
-    instructors: offering.instructors.map((i) => ({
-      userId: i.userId,
-      name: `${i.user.firstName} ${i.user.lastName}`.trim(),
-      photoUrl: i.user.photoUrl,
-    })),
+    instructors,
   };
 }
 
@@ -161,7 +169,10 @@ function shapeOffering(o: {
   registrationClosesAt: Date;
   startsAt: Date;
   endsAt: Date;
-  instructors: { userId: string; user: { firstName: string; lastName: string } }[];
+  instructors: {
+    userId: string;
+    user: { firstName: string; lastName: string; photoUrl: string | null };
+  }[];
   sessions: { id: string; datetime: Date }[];
 }) {
   return {
@@ -176,10 +187,45 @@ function shapeOffering(o: {
     startsAt: o.startsAt,
     endsAt: o.endsAt,
     sessionCount: o.sessions.length,
+    // Kept as plain strings for the cert/PDF servers that render names only.
     instructorNames: o.instructors.map((i) =>
       `${i.user.firstName} ${i.user.lastName}`.trim(),
     ),
+    // `photoUrl` here is the raw stored value — resolveInstructorPhotos() swaps
+    // it for a ready avatar src page-wide (de-duped) before it reaches a card.
+    instructors: o.instructors.map((i) => ({
+      userId: i.userId,
+      name: `${i.user.firstName} ${i.user.lastName}`.trim(),
+      photoUrl: i.user.photoUrl,
+    })),
   };
+}
+
+// Resolve every distinct instructor avatar across a page of offerings once,
+// then swap the raw keys for ready srcs. Instructors repeat heavily across a
+// term's catalog, so de-duping by userId keeps this to a handful of presigns
+// rather than one per (offering × instructor).
+async function resolveInstructorPhotos<
+  T extends { instructors: { userId: string; photoUrl: string | null }[] },
+>(offerings: T[]): Promise<T[]> {
+  const rawByUser = new Map<string, string | null>();
+  for (const o of offerings) {
+    for (const i of o.instructors) rawByUser.set(i.userId, i.photoUrl);
+  }
+  const resolved = new Map(
+    await Promise.all(
+      [...rawByUser].map(
+        async ([userId, raw]) => [userId, await resolvePhotoUrl(raw)] as const,
+      ),
+    ),
+  );
+  return offerings.map((o) => ({
+    ...o,
+    instructors: o.instructors.map((i) => ({
+      ...i,
+      photoUrl: resolved.get(i.userId) ?? null,
+    })),
+  }));
 }
 
 // ─── Registration-window helper ──────────────────────────────────────────────

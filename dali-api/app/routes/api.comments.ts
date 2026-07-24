@@ -143,12 +143,14 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const authors = await hydrateAuthors([...new Set(rows.map((r) => r.authorId))]);
   const nameById = new Map(authors.map((a) => [a.id, a.name]));
+  const photoById = new Map(authors.map((a) => [a.id, a.photoUrl]));
 
   const comments = rows.map((r) => ({
     id: r.id,
     parentId: r.parentId,
     author: nameById.get(r.authorId) ?? "Unknown",
     authorId: r.authorId,
+    authorPhotoUrl: photoById.get(r.authorId) ?? null,
     body: r.body,
     anchor: r.anchor as { from: string; to: string } | null,
     resolved: r.resolvedAt !== null,

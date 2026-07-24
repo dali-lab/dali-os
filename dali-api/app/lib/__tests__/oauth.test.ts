@@ -359,15 +359,29 @@ describe("exchangeGoogleCode", () => {
       email_verified: true,
       given_name: "Jane",
       family_name: "Doe",
+      picture: "https://lh3.googleusercontent.com/a/jane",
     });
     const result = await exchangeGoogleCode("code", "http://localhost/callback");
     expect(result).toEqual({
       email: "user@dali.dartmouth.edu",
       firstName: "Jane",
       lastName: "Doe",
+      photoUrl: "https://lh3.googleusercontent.com/a/jane",
       accessToken: "acc",
       refreshToken: "ref",
       expiresIn: 3600,
     });
+  });
+
+  it("returns photoUrl: null when Google omits the picture claim", async () => {
+    mockFetch({ id_token: "tok" });
+    mockGetPayload.mockReturnValue({
+      email: "user@dali.dartmouth.edu",
+      email_verified: true,
+      given_name: "Jane",
+      family_name: "Doe",
+    });
+    const result = await exchangeGoogleCode("code", "http://localhost/callback");
+    expect(result.photoUrl).toBeNull();
   });
 });

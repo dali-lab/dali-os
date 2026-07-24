@@ -3,6 +3,7 @@ import type { Route } from "./+types/applications.$domainApplicationId";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { getUserRoles } from "~/lib/roles";
+import { resolvePhotoUrl } from "~/lib/photo";
 import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
 import { presignAnswers } from "~/hiring/lib/presign";
 import { ApplicationViewer } from "~/hiring/components/ApplicationViewer";
@@ -164,7 +165,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         overallRecommendation: true,
         annotations: true,
         submittedAt: true,
-        submittedBy: { select: { firstName: true, lastName: true } },
+        submittedBy: { select: { firstName: true, lastName: true, photoUrl: true } },
       },
     }),
     prisma.interview.findMany({
@@ -235,18 +236,21 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           updatedAt: Date;
         }>),
   ]);
-  const reviews = reviewRows.map((r) => ({
-    id: r.id,
-    reviewerName:
-      [r.submittedBy?.firstName, r.submittedBy?.lastName].filter(Boolean).join(" ").trim() ||
-      "Reviewer",
-    scores: r.scores as Record<string, number>,
-    feedback: r.feedback,
-    rejectionRationale: r.rejectionRationale,
-    overallRecommendation: r.overallRecommendation,
-    annotations: (r.annotations as object[]) ?? [],
-    submittedAt: r.submittedAt ? r.submittedAt.toISOString() : null,
-  }));
+  const reviews = await Promise.all(
+    reviewRows.map(async (r) => ({
+      id: r.id,
+      reviewerName:
+        [r.submittedBy?.firstName, r.submittedBy?.lastName].filter(Boolean).join(" ").trim() ||
+        "Reviewer",
+      reviewerPhotoUrl: await resolvePhotoUrl(r.submittedBy?.photoUrl),
+      scores: r.scores as Record<string, number>,
+      feedback: r.feedback,
+      rejectionRationale: r.rejectionRationale,
+      overallRecommendation: r.overallRecommendation,
+      annotations: (r.annotations as object[]) ?? [],
+      submittedAt: r.submittedAt ? r.submittedAt.toISOString() : null,
+    })),
+  );
 
   // Interview notes live in CollabDocumentVersion (Yjs/Tiptap), not in the
   // legacy InterviewNoteVersion table. There are two doc kinds per interview:
@@ -505,6 +509,8 @@ export default function ApplicationReadOnlyDetail() {
 
                 {selected && (
                   <ReviewSummary
+                    reviewerName={selected.reviewerName}
+                    reviewerPhotoUrl={selected.reviewerPhotoUrl}
                     overallRecommendation={selected.overallRecommendation}
                     scores={selected.scores}
                     criteria={Object.fromEntries(

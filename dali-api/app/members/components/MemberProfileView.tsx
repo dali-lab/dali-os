@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { EditableSection } from "~/components/EditableSection";
 import { ProfilePhotoAvatar } from "~/components/ProfilePhotoAvatar";
+import { Avatar } from "~/components/ui/Avatar";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { PresenceBar } from "~/components/collab/PresenceBar";
 import { buttonClasses } from "~/components/ui/Button";
@@ -1264,15 +1265,23 @@ function MentorshipPanel({
       ) : (
         <ul className="divide-y divide-border">
           {data.pairs.map((p) => (
-            <li key={p.id} className="py-2 text-sm flex flex-col">
-              <span className="font-medium text-foreground">
-                {p.role === "mentor"
-                  ? `Mentoring ${p.counterpart.firstName} ${p.counterpart.lastName}`
-                  : `Mentee of ${p.counterpart.firstName} ${p.counterpart.lastName}`}
-              </span>
-              <span className="text-xs text-muted-foreground">
-                {p.projectName} · {p.domainCode} · {p.termCode}
-              </span>
+            <li key={p.id} className="py-2 text-sm flex items-center gap-3">
+              <Avatar
+                photoUrl={p.counterpart.photoUrl}
+                name={`${p.counterpart.firstName} ${p.counterpart.lastName}`}
+                size="sm"
+                className="shrink-0"
+              />
+              <div className="flex flex-col min-w-0">
+                <span className="font-medium text-foreground truncate">
+                  {p.role === "mentor"
+                    ? `Mentoring ${p.counterpart.firstName} ${p.counterpart.lastName}`
+                    : `Mentee of ${p.counterpart.firstName} ${p.counterpart.lastName}`}
+                </span>
+                <span className="text-xs text-muted-foreground truncate">
+                  {p.projectName} · {p.domainCode} · {p.termCode}
+                </span>
+              </div>
             </li>
           ))}
         </ul>

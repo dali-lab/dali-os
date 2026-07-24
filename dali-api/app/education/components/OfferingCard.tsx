@@ -1,5 +1,6 @@
 import { Link } from "react-router";
 import { Card } from "~/components/ui/Card";
+import { Avatar } from "~/components/ui/Avatar";
 import { cn } from "~/lib/cn";
 import { formatDateShort } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
@@ -18,6 +19,7 @@ export type OfferingCardData = {
   endsAt: string | Date;
   sessionCount: number;
   instructorNames: string[];
+  instructors: { userId: string; name: string; photoUrl: string | null }[];
   approvedCount: number;
 };
 
@@ -143,10 +145,23 @@ export function OfferingCard({
           {" · "}
           {seatsLeft > 0 ? `${seatsLeft} of ${offering.capacity} seats left` : "Full — waitlist open"}
         </p>
-        {offering.instructorNames.length > 0 && (
-          <p className="mt-2 text-xs text-foreground">
-            Taught by {offering.instructorNames.join(", ")}
-          </p>
+        {offering.instructors.length > 0 && (
+          <div className="mt-2 flex items-center gap-2">
+            <div className="flex -space-x-1.5">
+              {offering.instructors.map((i) => (
+                <Avatar
+                  key={i.userId}
+                  photoUrl={i.photoUrl}
+                  name={i.name}
+                  size="xs"
+                  className="ring-2 ring-card"
+                />
+              ))}
+            </div>
+            <p className="text-xs text-foreground">
+              Taught by {offering.instructors.map((i) => i.name).join(", ")}
+            </p>
+          </div>
         )}
       </Card>
     </Link>

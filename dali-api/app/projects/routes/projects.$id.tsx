@@ -720,7 +720,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const sprintFilterOrder = { Active: 0, Planned: 1, Closed: 2 } as const;
   const boardOptions: TaskBoardOptions = {
     members: [...memberMap.entries()]
-      .map(([id, name]) => ({ id, name }))
+      .map(([id, name]) => ({ id, name, photoUrl: photoByUserId.get(id) ?? null }))
       .sort((a, b) => a.name.localeCompare(b.name)),
     domains: allDomains.map((d) => ({ id: d.id, name: d.displayName })),
     repoUrls: project.repoUrls,
