@@ -47,15 +47,16 @@ export function PageDocButton({ suppressWhenPills = false }: { suppressWhenPills
 
   return (
     <>
-      {/* Reads as a right-aligned peer of the section tabs: same Dosis
-          (font-heading) type + muted color as the pills, no underline since
-          it's an action, not a nav destination. */}
+      {/* Right-aligned peer of the section tabs, but deliberately louder than
+          the nav pills: a coral CTA pill with a slow recurring glow
+          (guide-pulse) so first-time visitors notice the page has a guide.
+          Same Dosis (font-heading) type as the pills. */}
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="ml-auto inline-flex shrink-0 items-center gap-1.5 text-sm font-semibold font-heading text-muted-foreground transition-colors hover:text-foreground"
+        className="guide-pulse ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full bg-accent-coral/10 px-3 py-1.5 text-sm font-semibold font-heading text-accent-coral ring-1 ring-inset ring-accent-coral/30 transition-colors hover:bg-accent-coral/20 hover:ring-accent-coral/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-coral"
       >
-        <BookOpen className="h-4 w-4" aria-hidden />
+        <BookOpen className="h-4 w-4 shrink-0" aria-hidden />
         Guide
       </button>
       {open && (

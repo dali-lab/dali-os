@@ -51,33 +51,76 @@ const STORY_DOT: Record<PartnerProjectStory["status"], string> = {
 const sprintState = (s: PartnerProjectSprint): PartnerWorkState =>
   s.status === "Active" ? "current" : s.status === "Planned" ? "planned" : "past";
 
-// Scope: what the epic delivers. Done stories read as struck-through history.
+const STORY_PRIORITY_TONE: Record<
+  NonNullable<PartnerProjectStory["priority"]>,
+  string
+> = {
+  Must: "text-accent-coral font-semibold",
+  Should: "text-foreground",
+  Could: "text-muted-foreground",
+  Wont: "text-muted-foreground line-through",
+};
+
+// Scope: the product requirements the epic delivers, as a read-only table with
+// every column partners can see (success metric, acceptance criteria, etc.).
 function StoryList({ stories }: { stories: PartnerProjectStory[] }) {
   if (stories.length === 0) return null;
   const done = stories.filter((s) => s.status === "Done").length;
   return (
     <div>
       <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-2">
-        Stories · {done}/{stories.length} done
+        Requirements · {done}/{stories.length} done
       </p>
-      <ul className="flex flex-col gap-1.5">
-        {stories.map((story) => (
-          <li key={story.id} className="flex items-center gap-2 text-sm">
-            <span
-              className={`inline-block h-2.5 w-2.5 rounded-full flex-shrink-0 ${STORY_DOT[story.status]}`}
-            />
-            <span
-              className={`min-w-0 truncate ${
-                story.status === "Done"
-                  ? "text-muted-foreground line-through"
-                  : "text-foreground"
-              }`}
-            >
-              {story.title}
-            </span>
-          </li>
-        ))}
-      </ul>
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-sm">
+          <thead>
+            <tr className="border-b border-border text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              <th className="py-1.5 pr-3">Requirement</th>
+              <th className="py-1.5 px-3">Category</th>
+              <th className="py-1.5 px-3">Priority</th>
+              <th className="py-1.5 px-3">Success metric</th>
+              <th className="py-1.5 px-3">Acceptance criteria</th>
+              <th className="py-1.5 pl-3">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {stories.map((story) => (
+              <tr key={story.id} className="border-b border-border/60 align-top">
+                <td
+                  className={`min-w-[160px] py-2 pr-3 ${
+                    story.status === "Done"
+                      ? "text-muted-foreground line-through"
+                      : "text-foreground"
+                  }`}
+                >
+                  {story.title}
+                </td>
+                <td className="py-2 px-3 text-muted-foreground">
+                  {story.category ?? "—"}
+                </td>
+                <td className="py-2 px-3">
+                  {story.priority ? (
+                    <span className={`text-xs ${STORY_PRIORITY_TONE[story.priority]}`}>
+                      {story.priority}
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
+                </td>
+                <td className="max-w-[220px] whitespace-pre-wrap py-2 px-3 text-muted-foreground">
+                  {story.successMetric ?? "—"}
+                </td>
+                <td className="max-w-[220px] whitespace-pre-wrap py-2 px-3 text-muted-foreground">
+                  {story.acceptanceCriteria ?? "—"}
+                </td>
+                <td className="whitespace-nowrap py-2 pl-3 text-[11px] text-muted-foreground">
+                  {story.status}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

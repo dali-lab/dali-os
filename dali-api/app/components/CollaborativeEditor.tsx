@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useEditor, EditorContent, type Editor } from "@tiptap/react";
-import { Extension } from "@tiptap/core";
+import { Extension, Node as TiptapNode, mergeAttributes } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
+import { TextStyle, Color } from "@tiptap/extension-text-style";
 import {
   History,
   Bold,
@@ -16,6 +17,11 @@ import {
   ListOrdered,
   Quote,
   Image as ImageIcon,
+  Baseline,
+  AlignJustify,
+  ChevronDown,
+  Check,
+  ListCollapse,
 } from "lucide-react";
 import * as Y from "yjs";
 import { HocuspocusProvider } from "@hocuspocus/provider";
@@ -28,7 +34,7 @@ import {
   relativePositionToAbsolutePosition,
 } from "y-prosemirror";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
-import { Plugin, PluginKey } from "@tiptap/pm/state";
+import { Plugin, PluginKey, type EditorState, type Transaction } from "@tiptap/pm/state";
 import { IndexeddbPersistence } from "y-indexeddb";
 import {
   ACTIVITY_THROTTLE_MS,
@@ -282,6 +288,316 @@ function decodeAbsolute(
 // they convert typed syntax into real formatting as you type, same as
 // Notion/Google Docs. This toolbar is the mouse-driven equivalent for the
 // same set of marks/nodes, so formatting doesn't require knowing the syntax.
+// ─── Block-level line spacing ───────────────────────────────────────────────
+// The bundled @tiptap LineHeight sets its value on the inline textStyle mark,
+// which doesn't change actual block line spacing. We instead store an optional
+// `lineHeight` attribute directly on paragraph/heading nodes and set it across
+// the selected blocks. It defaults to null, so this is an additive change to
+// the collaborative schema — existing docs parse unchanged.
+const LINE_SPACING_TYPES = ["paragraph", "heading"];
+
+declare module "@tiptap/core" {
+  interface Commands<ReturnType> {
+    lineSpacing: {
+      setLineHeight: (lineHeight: string) => ReturnType;
+      unsetLineHeight: () => ReturnType;
+    };
+  }
+}
+
+const LineSpacing = Extension.create({
+  name: "lineSpacing",
+  addGlobalAttributes() {
+    return [
+      {
+        types: LINE_SPACING_TYPES,
+        attributes: {
+          lineHeight: {
+            default: null,
+            parseHTML: (element) => element.style.lineHeight || null,
+            renderHTML: (attributes) =>
+              attributes.lineHeight
+                ? { style: `line-height: ${attributes.lineHeight}` }
+                : {},
+          },
+        },
+      },
+    ];
+  },
+  addCommands() {
+    const apply =
+      (lineHeight: string | null) =>
+      ({ tr, state, dispatch }: { tr: Transaction; state: EditorState; dispatch?: (tr: Transaction) => void }) => {
+        const { from, to } = state.selection;
+        let changed = false;
+        state.doc.nodesBetween(from, to, (node, pos) => {
+          if (LINE_SPACING_TYPES.includes(node.type.name)) {
+            tr.setNodeMarkup(pos, undefined, { ...node.attrs, lineHeight });
+            changed = true;
+          }
+        });
+        if (changed && dispatch) dispatch(tr);
+        return changed;
+      };
+    return {
+      setLineHeight: (lineHeight: string) => apply(lineHeight),
+      unsetLineHeight: () => apply(null),
+    };
+  },
+});
+
+// ─── Collapsible "toggle" block (Notion-style dropdown) ─────────────────────
+// A container node holding block content that visually collapses via an `open`
+// attribute. The content always stays in the document (collapse is display-only)
+// so collaborative sync isn't affected by open/closed state. Additive to the
+// schema — existing docs have no toggle blocks.
+declare module "@tiptap/core" {
+  interface Commands<ReturnType> {
+    toggleBlock: {
+      setToggleBlock: () => ReturnType;
+    };
+  }
+}
+
+const ToggleBlock = TiptapNode.create({
+  name: "toggleBlock",
+  group: "block",
+  content: "block+",
+  defining: true,
+  addAttributes() {
+    return {
+      open: {
+        default: true,
+        parseHTML: (el) => (el as HTMLElement).getAttribute("data-open") !== "false",
+        renderHTML: (attrs) => ({ "data-open": attrs.open ? "true" : "false" }),
+      },
+    };
+  },
+  parseHTML() {
+    return [{ tag: "div[data-type='toggle-block']" }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return [
+      "div",
+      mergeAttributes(HTMLAttributes, { "data-type": "toggle-block" }),
+      0,
+    ];
+  },
+  addNodeView() {
+    return ({ node, editor, getPos }) => {
+      const dom = document.createElement("div");
+      dom.className = "toggle-block";
+      const header = document.createElement("div");
+      header.className = "toggle-block__header";
+      header.contentEditable = "false";
+      const chevron = document.createElement("span");
+      chevron.className = "toggle-block__chevron";
+      chevron.textContent = "▶";
+      const label = document.createElement("span");
+      label.className = "toggle-block__label";
+      label.textContent = "Toggle";
+      header.appendChild(chevron);
+      header.appendChild(label);
+      const content = document.createElement("div");
+      content.className = "toggle-block__content";
+
+      const apply = (open: boolean) => {
+        dom.dataset.open = open ? "true" : "false";
+        content.style.display = open ? "" : "none";
+      };
+      apply(node.attrs.open as boolean);
+
+      header.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        if (typeof getPos !== "function") return;
+        const pos = getPos();
+        if (pos == null) return;
+        const cur = editor.state.doc.nodeAt(pos);
+        const next = !(cur?.attrs.open ?? true);
+        editor
+          .chain()
+          .command(({ tr }) => {
+            tr.setNodeAttribute(pos, "open", next);
+            return true;
+          })
+          .run();
+      });
+
+      dom.appendChild(header);
+      dom.appendChild(content);
+      return {
+        dom,
+        contentDOM: content,
+        update: (updated) => {
+          if (updated.type.name !== "toggleBlock") return false;
+          apply(updated.attrs.open as boolean);
+          return true;
+        },
+      };
+    };
+  },
+  addCommands() {
+    return {
+      setToggleBlock:
+        () =>
+        ({ commands }) =>
+          commands.wrapIn(this.name),
+    };
+  },
+});
+
+// Curated text colors for the picker. Concrete hex (not CSS vars) so the value
+// survives copy/paste and HTML export as a plain inline style.
+const TEXT_COLORS: { label: string; value: string }[] = [
+  { label: "Coral", value: "#FF8B81" },
+  { label: "Teal", value: "#12B5A5" },
+  { label: "Blue", value: "#3B7DD8" },
+  { label: "Purple", value: "#8B5CF6" },
+  { label: "Green", value: "#3F9B57" },
+  { label: "Amber", value: "#E0A32E" },
+  { label: "Red", value: "#DC4C4C" },
+  { label: "Slate", value: "#5B6472" },
+];
+
+const LINE_SPACINGS: { label: string; value: string | null }[] = [
+  { label: "Default", value: null },
+  { label: "Single", value: "1" },
+  { label: "1.5", value: "1.5" },
+  { label: "Double", value: "2" },
+];
+
+// Small toolbar dropdown: a trigger that toggles a popover panel, closing on
+// outside click. Shared by the color + line-spacing controls.
+function ToolbarPopover({
+  title,
+  trigger,
+  children,
+}: {
+  title: string;
+  trigger: ReactNode;
+  children: (close: () => void) => ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        title={title}
+        aria-label={title}
+        aria-haspopup="true"
+        aria-expanded={open}
+        onMouseDown={(e) => {
+          e.preventDefault();
+          setOpen((o) => !o);
+        }}
+        className={`inline-flex items-center gap-0.5 rounded p-1.5 transition-colors ${
+          open
+            ? "bg-muted text-foreground"
+            : "text-muted-foreground hover:text-foreground hover:bg-muted"
+        }`}
+      >
+        {trigger}
+        <ChevronDown size={11} aria-hidden />
+      </button>
+      {open && (
+        <div className="absolute left-0 z-20 mt-1 rounded-md border border-border bg-card p-2 shadow-brand-2">
+          {children(() => setOpen(false))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ColorControl({ editor }: { editor: Editor }) {
+  const current = (editor.getAttributes("textStyle").color as string | undefined) ?? null;
+  return (
+    <ToolbarPopover
+      title="Text color"
+      trigger={<Baseline size={15} style={current ? { color: current } : undefined} />}
+    >
+      {(close) => (
+        <div className="w-max">
+          <div className="grid grid-cols-4 gap-1">
+            {TEXT_COLORS.map((c) => (
+              <button
+                key={c.value}
+                type="button"
+                title={c.label}
+                aria-label={c.label}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  editor.chain().focus().setColor(c.value).run();
+                  close();
+                }}
+                className="flex h-6 w-6 items-center justify-center rounded-full border border-black/10"
+                style={{ backgroundColor: c.value }}
+              >
+                {current === c.value && <Check size={12} className="text-white" />}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              editor.chain().focus().unsetColor().run();
+              close();
+            }}
+            className="mt-2 w-full rounded px-2 py-1 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            Default color
+          </button>
+        </div>
+      )}
+    </ToolbarPopover>
+  );
+}
+
+function LineSpacingControl({ editor }: { editor: Editor }) {
+  const current =
+    (editor.getAttributes("paragraph").lineHeight as string | undefined) ??
+    (editor.getAttributes("heading").lineHeight as string | undefined) ??
+    null;
+  return (
+    <ToolbarPopover title="Line spacing" trigger={<AlignJustify size={15} />}>
+      {(close) => (
+        <div className="min-w-[7rem]">
+          {LINE_SPACINGS.map((s) => {
+            const active = (s.value ?? null) === current;
+            return (
+              <button
+                key={s.label}
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  if (s.value) editor.chain().focus().setLineHeight(s.value).run();
+                  else editor.chain().focus().unsetLineHeight().run();
+                  close();
+                }}
+                className={`flex w-full items-center justify-between gap-3 rounded px-2 py-1 text-sm transition-colors ${
+                  active ? "text-accent-coral" : "text-foreground hover:bg-muted"
+                }`}
+              >
+                {s.label}
+                {active && <Check size={13} aria-hidden />}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </ToolbarPopover>
+  );
+}
+
 type ToolbarAction = {
   label: string;
   icon: typeof Bold;
@@ -414,6 +730,21 @@ function EditorToolbar({
             <Icon size={15} />
           </button>
         ))}
+        <span className="mx-0.5 h-5 w-px bg-border" aria-hidden />
+        <ColorControl editor={editor} />
+        <LineSpacingControl editor={editor} />
+        <button
+          type="button"
+          title="Toggle list (collapsible section)"
+          aria-label="Toggle list"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            editor.chain().focus().setToggleBlock().run();
+          }}
+          className="rounded p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <ListCollapse size={15} />
+        </button>
         {showImageButton && (
           <>
             <button
@@ -608,6 +939,10 @@ function CollaborativeEditorInner({
         undoRedo: false,
       }),
       Placeholder.configure({ placeholder }),
+      TextStyle,
+      Color,
+      LineSpacing,
+      ToggleBlock,
       TabKeymap,
       ...(enableMentions ? [mentionEditorExtension(searchMentionableUsers)] : []),
       ...(enableImages ? imageEditorExtensions() : []),
