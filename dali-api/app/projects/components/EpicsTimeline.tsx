@@ -247,9 +247,12 @@ function HoverBar({
   );
 }
 
+export type SprintDependencyEdge = { sprintId: string; dependsOnSprintId: string };
+
 export function EpicsTimeline({
   epics,
   taskCounts,
+  sprintDependencies = [],
   onEpicClick,
   onSprintClick,
 }: {
@@ -257,6 +260,10 @@ export function EpicsTimeline({
   // Optional per-epic task progress keyed by epic id (Cancelled tasks
   // excluded), shown in the epic hover card.
   taskCounts?: Record<string, { done: number; total: number }>;
+  // Directed "depends on" edges (sprintId waits on dependsOnSprintId), drawn as
+  // arrows between sprint bars. Edges touching an unscheduled sprint (whose
+  // epic has no dates, so no bar is rendered) are skipped.
+  sprintDependencies?: SprintDependencyEdge[];
   // When set, epic/sprint bars become clickable (open the detail modal).
   onEpicClick?: (epicId: string) => void;
   onSprintClick?: (epicId: string, sprintId: string) => void;
@@ -333,6 +340,29 @@ export function EpicsTimeline({
     bounds && today >= bounds.min && today <= bounds.max
       ? ((today - bounds.min) / DAY) * PX_PER_DAY
       : null;
+
+  // Absolute positions of each rendered sprint bar within the timeline body,
+  // used to draw the dependency arrows. Mirrors the row/stack layout math in
+  // the render below (rowHeight per epic + per-sprint `top`). Only scheduled
+  // sprints (epic has dates → bar rendered) get an entry.
+  const depGeometry = useMemo(() => {
+    const pos = new Map<string, { sx: number; ex: number; cy: number }>();
+    if (!bounds) return { pos, height: 0 };
+    let y = 0;
+    for (const e of epics) {
+      if (e.startsAt && e.endsAt) {
+        e.sprints.forEach((s, i) => {
+          const top = ROW_PAD_Y + EPIC_BAR_H + BAR_GAP + i * (SPRINT_BAR_H + 3);
+          const sx = dayOffset(s.startsAt, bounds.min) * PX_PER_DAY;
+          const ex =
+            sx + Math.max(daySpan(s.startsAt, s.endsAt) * PX_PER_DAY, PX_PER_DAY);
+          pos.set(s.id, { sx, ex, cy: y + top + SPRINT_BAR_H / 2 });
+        });
+      }
+      y += rowHeight(e.sprints.length);
+    }
+    return { pos, height: y };
+  }, [epics, bounds]);
 
   const scrollerRef = useRef<HTMLDivElement>(null);
   const initialScroll = useMemo(() => {
@@ -444,6 +474,55 @@ export function EpicsTimeline({
               </div>
             )}
 
+            {/* Dependency arrows. z-20 lifts them above the sprint bars (which
+                are auto-z), and pointer-events-none keeps the bars clickable.
+                A backward edge (dependent starts before its blocker ends) still
+                draws — the bezier simply loops leftward. */}
+            {bounds && sprintDependencies.length > 0 && depGeometry.pos.size > 0 && (
+              <svg
+                className="pointer-events-none absolute top-0 z-20 overflow-visible"
+                style={{ left: LABEL_W, width: bounds.width, height: depGeometry.height }}
+                width={bounds.width}
+                height={depGeometry.height}
+                aria-hidden
+              >
+                <defs>
+                  <marker
+                    id="sprint-dep-arrow"
+                    viewBox="0 0 8 8"
+                    refX="6.5"
+                    refY="4"
+                    markerWidth="6"
+                    markerHeight="6"
+                    orient="auto"
+                  >
+                    <path d="M0,0 L8,4 L0,8 z" fill="#FF8B81" />
+                  </marker>
+                </defs>
+                {sprintDependencies.map((d) => {
+                  const from = depGeometry.pos.get(d.dependsOnSprintId);
+                  const to = depGeometry.pos.get(d.sprintId);
+                  if (!from || !to) return null;
+                  const x1 = from.ex;
+                  const y1 = from.cy;
+                  const x2 = to.sx;
+                  const y2 = to.cy;
+                  const dx = Math.max(18, Math.abs(x2 - x1) / 2);
+                  return (
+                    <path
+                      key={`${d.dependsOnSprintId}->${d.sprintId}`}
+                      d={`M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`}
+                      fill="none"
+                      stroke="#FF8B81"
+                      strokeWidth={1.5}
+                      strokeOpacity={0.85}
+                      markerEnd="url(#sprint-dep-arrow)"
+                    />
+                  );
+                })}
+              </svg>
+            )}
+
             {epics.map((e) => {
               const h = rowHeight(e.sprints.length);
               const has = !!(e.startsAt && e.endsAt && bounds);
@@ -524,7 +603,7 @@ export function EpicsTimeline({
                           return (
                             <HoverBar
                               key={s.id}
-                              className={`absolute rounded-sm shadow-sm ${SPRINT_BAR[s.status]}`}
+                              className={`absolute flex items-center overflow-hidden rounded-sm shadow-sm ${SPRINT_BAR[s.status]}`}
                               style={{
                                 left: x(s.startsAt),
                                 width: w(s.startsAt, s.endsAt),
@@ -544,7 +623,15 @@ export function EpicsTimeline({
                                   value: `${fmtDay(new Date(s.startsAt))}–${fmtDay(new Date(s.endsAt))}`,
                                 },
                               ]}
-                            />
+                            >
+                              {/* Name printed on the bar itself; white + soft
+                                  shadow keeps it legible on every fill, and it
+                                  clips (rather than wraps) when the sprint is
+                                  too short to fit — the full name stays on hover. */}
+                              <span className="pointer-events-none block w-full truncate px-1.5 text-[10px] font-medium leading-none text-white [text-shadow:0_1px_1.5px_rgba(0,0,0,0.4)]">
+                                {s.name}
+                              </span>
+                            </HoverBar>
                           );
                         })}
                       </>

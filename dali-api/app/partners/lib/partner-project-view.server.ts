@@ -22,6 +22,10 @@ export type PartnerProjectStory = {
   id: string;
   title: string;
   status: "Todo" | "InProgress" | "Done";
+  successMetric: string | null;
+  acceptanceCriteria: string | null;
+  category: string | null;
+  priority: "Must" | "Should" | "Could" | "Wont" | null;
 };
 
 export type PartnerProjectEpic = {
@@ -169,7 +173,15 @@ export async function loadPartnerProjectView(
           endsAt: true,
           stories: {
             orderBy: { position: "asc" },
-            select: { id: true, title: true, status: true },
+            select: {
+              id: true,
+              title: true,
+              status: true,
+              successMetric: true,
+              acceptanceCriteria: true,
+              category: true,
+              priority: true,
+            },
           },
           sprints: { orderBy: { startsAt: "asc" }, select: sprintSelect },
         },

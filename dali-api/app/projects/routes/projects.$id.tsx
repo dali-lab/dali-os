@@ -43,6 +43,7 @@ import { ProjectMentorshipTab } from "~/mentorship/components/ProjectMentorshipT
 import {
   type TimelineEpic,
   type EpicStatus,
+  type SprintDependencyEdge,
 } from "../components/EpicsTimeline";
 import {
   EpicSprintManager,
@@ -244,7 +245,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           descriptionDocId: true,
           stories: {
             orderBy: { position: "asc" },
-            select: { id: true, title: true, notes: true, status: true },
+            select: {
+              id: true,
+              title: true,
+              notes: true,
+              status: true,
+              successMetric: true,
+              acceptanceCriteria: true,
+              category: true,
+              priority: true,
+            },
           },
         },
       },
@@ -257,6 +267,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           endsAt: true,
           status: true,
           epicId: true,
+          // Edges where this sprint is the dependent (waits on another).
+          dependencies: { select: { dependsOnSprintId: true } },
         },
       },
       tasks: {
@@ -474,6 +486,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       title: s.title,
       notes: s.notes,
       status: s.status as EditableEpic["stories"][number]["status"],
+      successMetric: s.successMetric,
+      acceptanceCriteria: s.acceptanceCriteria,
+      category: s.category,
+      priority: s.priority,
     })),
   }));
 
@@ -484,7 +500,17 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     endsAt: s.endsAt.toISOString(),
     status: s.status as EditableSprint["status"],
     epicId: s.epicId,
+    dependsOn: s.dependencies.map((d) => d.dependsOnSprintId),
   }));
+
+  // Flat directed dependency edges (sprintId waits on dependsOnSprintId), drawn
+  // as arrows on the timeline.
+  const sprintDependencies = project.sprints.flatMap((s) =>
+    s.dependencies.map((d) => ({
+      sprintId: s.id,
+      dependsOnSprintId: d.dependsOnSprintId,
+    })),
+  );
 
   const tasks: TaskCardModel[] = project.tasks.map((t) => ({
     id: t.id,
@@ -932,6 +958,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     epics,
     editableEpics,
     sprints,
+    sprintDependencies,
     tasks,
     boardOptions,
     taskCountsByEpic,
@@ -1254,6 +1281,7 @@ export default function ProjectDetail() {
     epics,
     editableEpics,
     sprints,
+    sprintDependencies,
     tasks,
     boardOptions,
     taskCountsByEpic,
@@ -1423,6 +1451,7 @@ export default function ProjectDetail() {
           epics={epics}
           editableEpics={editableEpics}
           sprints={sprints}
+          sprintDependencies={sprintDependencies}
           terms={plannedTerms}
           taskCountsByEpic={taskCountsByEpic}
           canEdit={canEdit}
@@ -3637,6 +3666,7 @@ function PlanningTab({
   epics,
   editableEpics,
   sprints,
+  sprintDependencies,
   terms,
   taskCountsByEpic,
   canEdit,
@@ -3647,6 +3677,7 @@ function PlanningTab({
   epics: TimelineEpic[];
   editableEpics: EditableEpic[];
   sprints: EditableSprint[];
+  sprintDependencies: SprintDependencyEdge[];
   terms: { id: string; code: string }[];
   taskCountsByEpic: Record<string, { done: number; total: number }>;
   canEdit: boolean;
@@ -3680,6 +3711,7 @@ function PlanningTab({
         userName={userName}
         view={timeline ? "timeline" : "list"}
         timelineEpics={epics}
+        sprintDependencies={sprintDependencies}
         viewToggle={
           <div
             className="inline-flex items-center border border-border rounded-md overflow-hidden"
