@@ -306,6 +306,11 @@ export default [
   route("api/scheduled-meetings/:id/cancel", "calendar/routes/api.scheduled-meetings.$id.cancel.ts"),
   route("api/scheduled-meetings/:id/attendance", "calendar/routes/api.scheduled-meetings.$id.attendance.ts"),
   route("api/scheduled-meetings/:id/check-in", "calendar/routes/api.scheduled-meetings.$id.check-in.ts"),
+  // Organizer/Core PDF of the self-check-in QR (print / project at the event).
+  route(
+    "api/scheduled-meetings/:id/check-in-qr.pdf",
+    "calendar/routes/api.scheduled-meetings.$id.check-in-qr.pdf.ts",
+  ),
   route("api/calendar/group-availability", "calendar/routes/api.calendar.group-availability.ts"),
   // JobX browser extension export — see jobx-extension/README.md.
   route("api/timesheets/export", "routes/api.timesheets.export.ts"),
