@@ -1948,8 +1948,9 @@ function WeekToolbar({
   );
 }
 
-// Visible hour rows: 8am through 9pm (the grid body bottom edge is 10pm).
-const HOURS = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21];
+// Visible hour rows: the full day, midnight through 11pm (grid bottom edge is
+// midnight). Every downstream bound derives from HOURS[0] / last+1.
+const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const HOUR_PX = 54;
 // Grid is snapped/subdivided into 10-minute cells.
 const SUBDIVISIONS_PER_HOUR = 6; // 60 / 10
