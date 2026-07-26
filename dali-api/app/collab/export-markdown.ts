@@ -117,6 +117,23 @@ function renderBlock(node: PMNode, depth: number): string {
     }
     case "toggleSummary":
       return renderInline(node.content);
+    case "callout": {
+      const emoji = typeof node.attrs?.emoji === "string" ? node.attrs.emoji : "💡";
+      const inner = renderBlocks(node.content, depth).trimEnd();
+      return (
+        inner
+          .split("\n")
+          .map((line, i) => (i === 0 ? `> ${emoji} ${line}` : `> ${line}`))
+          .join("\n") + "\n\n"
+      );
+    }
+    case "taskList":
+      return renderTaskList(node.content, depth);
+    case "taskItem":
+      // Reached only outside a taskList (defensive) — render its text.
+      return renderInline((node.content?.[0]?.content) ?? node.content);
+    case "table":
+      return renderTable(node.content);
     case "text":
       return applyMarks(node.text ?? "", node.marks);
     default:
@@ -158,6 +175,49 @@ function renderList(items: PMNode[] | undefined, depth: number, ordered: boolean
       out += `${sub}\n`;
     }
   });
+  return out + "\n";
+}
+
+function renderTaskList(items: PMNode[] | undefined, depth: number): string {
+  if (!items) return "";
+  const indent = "  ".repeat(depth);
+  let out = "";
+  for (const item of items) {
+    if (item.type !== "taskItem") continue;
+    const box = item.attrs?.checked === true ? "[x]" : "[ ]";
+    const children = item.content ?? [];
+    const first =
+      children[0]?.type === "paragraph" ? renderInline(children[0].content) : "";
+    out += `${indent}- ${box} ${first}\n`;
+    // Nested task lists (TaskItem nested: true) indent under the parent.
+    for (const child of children.slice(1)) {
+      if (child.type === "taskList") out += renderTaskList(child.content, depth + 1);
+    }
+  }
+  return out + "\n";
+}
+
+// Flatten a table cell to a single line of inline text (GFM cells can't hold
+// block structure). Pipes and newlines are escaped/collapsed so they don't
+// break the table.
+function cellText(cell: PMNode): string {
+  const paras = (cell.content ?? []).map((b) =>
+    b.type === "paragraph" ? renderInline(b.content) : renderInline(b.content),
+  );
+  return paras.join(" ").replace(/\|/g, "\\|").replace(/\n+/g, " ").trim();
+}
+
+function renderTable(rows: PMNode[] | undefined): string {
+  const grid = (rows ?? [])
+    .filter((r) => r.type === "tableRow")
+    .map((r) => (r.content ?? []).map(cellText));
+  if (grid.length === 0) return "";
+  const cols = Math.max(...grid.map((r) => r.length));
+  const pad = (r: string[]) => [...r, ...Array(cols - r.length).fill("")];
+  const header = pad(grid[0]!);
+  let out = `| ${header.join(" | ")} |\n`;
+  out += `| ${header.map(() => "---").join(" | ")} |\n`;
+  for (const row of grid.slice(1)) out += `| ${pad(row).join(" | ")} |\n`;
   return out + "\n";
 }
 

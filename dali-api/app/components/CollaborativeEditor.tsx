@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useEditor, EditorContent, type Editor } from "@tiptap/react";
+import { BubbleMenu } from "@tiptap/react/menus";
+import { DragHandle } from "@tiptap/extension-drag-handle-react";
 import { Extension, Node as TiptapNode, mergeAttributes } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -25,6 +27,8 @@ import {
   ChevronDown,
   Check,
   ListCollapse,
+  GripVertical,
+  Plus,
 } from "lucide-react";
 import * as Y from "yjs";
 import { HocuspocusProvider } from "@hocuspocus/provider";
@@ -52,6 +56,9 @@ import { VersionHistoryPanel } from "./collab/VersionHistoryPanel";
 import { EDITOR_CONTENT_CLASS, EditorShell } from "./editor/shared";
 import { mentionEditorExtension, searchMentionableUsers } from "./editor/mention";
 import { imageEditorExtensions, uploadEditorImage, IMAGE_UPLOAD_ACCEPT } from "./editor/image";
+import { richBlockExtensions } from "./editor/blocks";
+import { slashCommandExtension } from "./editor/slash-menu";
+import { BubbleToolbar } from "./editor/BubbleToolbar";
 
 interface CollaborativeEditorProps {
   documentName: string;
@@ -95,6 +102,16 @@ interface CollaborativeEditorProps {
    * stays consistent.
    */
   enableImages?: boolean;
+
+  /**
+   * Enable rich block content + Notion-style editing affordances: tables, task
+   * lists, callouts, a "/" slash-insert menu, a selection bubble toolbar, and
+   * block drag handles. Off by default. Adds `table`/`taskList`/`taskItem`/
+   * `callout` nodes to the collab room's schema — additive, but (like
+   * enableMentions/enableImages) all clients on the room must run with it on, so
+   * only turn it on for a surface where every client ships together.
+   */
+  enableRichBlocks?: boolean;
 
   /**
    * When set (arriving from a mention notification), once the doc syncs the
@@ -1070,6 +1087,7 @@ function CollaborativeEditorInner({
   inlineComments,
   enableMentions = false,
   enableImages = false,
+  enableRichBlocks = false,
   focusMentionUserId,
   onBeginEdit,
   onWordCountChange,
@@ -1114,6 +1132,7 @@ function CollaborativeEditorInner({
       TabKeymap,
       ...(enableMentions ? [mentionEditorExtension(searchMentionableUsers)] : []),
       ...(enableImages ? imageEditorExtensions() : []),
+      ...(enableRichBlocks ? [...richBlockExtensions(), slashCommandExtension()] : []),
       createCollabExtension(entry.fragment, entry.provider),
       ...(inlineComments?.enabled
         ? [
@@ -1526,6 +1545,24 @@ function CollaborativeEditorInner({
     };
   }, [editor, presenceEnabled, reportFocus]);
 
+  // The block the drag handle is currently anchored to — target for the "+"
+  // insert-below button.
+  const hoveredPosRef = useRef<number | null>(null);
+  const insertBlockBelow = useCallback(() => {
+    if (!editor) return;
+    const pos = hoveredPosRef.current;
+    if (pos == null) return;
+    const node = editor.state.doc.nodeAt(pos);
+    if (!node) return;
+    const end = pos + node.nodeSize;
+    editor
+      .chain()
+      .insertContentAt(end, { type: "paragraph" })
+      .setTextSelection(end + 1)
+      .focus()
+      .run();
+  }, [editor]);
+
   return (
     <EditorShell
       ref={containerRef}
@@ -1557,7 +1594,9 @@ function CollaborativeEditorInner({
           onClose={() => setHistoryOpen(false)}
         />
       )}
-      {inlineComments?.enabled && commentBtn && (
+      {/* Standalone comment button — only when there's no bubble toolbar to
+          host the comment action (rich-blocks folds commenting into the bubble). */}
+      {inlineComments?.enabled && commentBtn && !(enableRichBlocks && !disabled) && (
         <button
           type="button"
           onMouseDown={(e) => {
@@ -1570,6 +1609,44 @@ function CollaborativeEditorInner({
         >
           💬 Comment
         </button>
+      )}
+      {editor && !disabled && enableRichBlocks && (
+        <>
+          <BubbleMenu editor={editor} className="z-30">
+            <BubbleToolbar
+              editor={editor}
+              onComment={inlineComments?.enabled ? requestCommentOnSelection : undefined}
+            />
+          </BubbleMenu>
+          <DragHandle
+            editor={editor}
+            onNodeChange={({ pos }) => {
+              hoveredPosRef.current = pos;
+            }}
+          >
+            <div className="flex items-center gap-0.5 pr-1">
+              <button
+                type="button"
+                title="Add block below"
+                onMouseDown={(e) => {
+                  // Don't let the drag plugin treat this click as a drag start.
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onClick={insertBlockBelow}
+                className="flex h-6 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <Plus size={15} />
+              </button>
+              <span
+                title="Drag to move"
+                className="flex h-6 w-5 cursor-grab items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <GripVertical size={15} />
+              </span>
+            </div>
+          </DragHandle>
+        </>
       )}
       <div onClick={handleEditorContentClick}>
         <EditorContent editor={editor} />
