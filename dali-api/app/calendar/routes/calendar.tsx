@@ -5008,6 +5008,22 @@ function CalendarEventDetailPopover({
   );
 }
 
+// Pick dark or light ink for a solid fill by its perceived luminance, so
+// custom event colors (which arrive as arbitrary hex — light Google "Banana"
+// through dark "Blueberry") stay readable instead of always getting white text.
+// Falls back to white for anything we can't parse as a hex color.
+function readableTextColor(bg: string): string {
+  const hex = bg.trim().replace(/^#/, "");
+  const full = hex.length === 3 ? hex.replace(/(.)/g, "$1$1") : hex;
+  if (full.length !== 6 || /[^0-9a-f]/i.test(full)) return "#ffffff";
+  const r = parseInt(full.slice(0, 2), 16);
+  const g = parseInt(full.slice(2, 4), 16);
+  const b = parseInt(full.slice(4, 6), 16);
+  // Rec. 601 luma; above ~0.6 the fill reads as light → switch to dark ink.
+  const luma = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luma > 0.6 ? "#1e2733" : "#ffffff";
+}
+
 function WeekGridEvent({ e }: { e: EventBlock }) {
   const [detailOpen, setDetailOpen] = useState(false);
   const [anchorEl, setAnchorEl] = useState<HTMLDivElement | null>(null);
@@ -5047,8 +5063,6 @@ function WeekGridEvent({ e }: { e: EventBlock }) {
         className={`absolute left-0 right-0 ${bufferBefore === 0 ? "rounded-t-md" : ""} ${
           bufferAfter === 0 ? "rounded-b-md" : ""
         } px-1.5 py-1 text-xs font-semibold leading-tight overflow-hidden transition-shadow shadow-[inset_3px_0_0_0_rgba(0,0,0,0.18),0_1px_2px_-1px_rgba(0,0,0,0.15)] ${e.className} ${
-          e.bgColor ? "text-white" : ""
-        } ${
           clickable
             ? "hover:ring-2 hover:ring-inset hover:ring-white/60 hover:shadow-[inset_3px_0_0_0_rgba(0,0,0,0.18),0_2px_5px_-1px_rgba(0,0,0,0.25)]"
             : ""
@@ -5056,7 +5070,9 @@ function WeekGridEvent({ e }: { e: EventBlock }) {
         style={{
           top: bufferBefore * HOUR_PX,
           height: bodyHeight,
-          ...(e.bgColor ? { backgroundColor: e.bgColor } : {}),
+          ...(e.bgColor
+            ? { backgroundColor: e.bgColor, color: readableTextColor(e.bgColor) }
+            : {}),
         }}
         onMouseEnter={hasDetails && !isMeeting ? () => setDetailOpen(true) : undefined}
         onMouseLeave={hasDetails && !isMeeting ? () => setDetailOpen(false) : undefined}
