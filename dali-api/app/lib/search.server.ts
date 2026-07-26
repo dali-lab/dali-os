@@ -70,12 +70,19 @@ export async function runSearch(opts: {
 function simpleResults(
   type: SearchResultType,
   subtitle: string,
-  rows: { id: string; label: string | null }[],
+  rows: { id: string; label: string | null; iconEmoji?: string | null }[],
   q: string,
 ): SearchResult[] {
   return rankResults(
     rows.map((r) => ({
-      result: { type, id: r.id, title: r.label || "Untitled", subtitle, url: buildUrl[type](r.id) },
+      result: {
+        type,
+        id: r.id,
+        title: r.label || "Untitled",
+        subtitle,
+        url: buildUrl[type](r.id),
+        iconEmoji: r.iconEmoji,
+      },
       text: [r.label || ""],
     })),
     q,
@@ -234,10 +241,15 @@ async function searchDocuments(q: string, like: Like): Promise<SearchResult[]> {
   // editing is gated), so title search matches that existing view surface.
   const rows = await prisma.page.findMany({
     where: { archivedAt: null, title: like },
-    select: { id: true, title: true },
+    select: { id: true, title: true, iconEmoji: true },
     take: RAW_TAKE,
   });
-  return simpleResults("document", "Document", rows.map((r) => ({ id: r.id, label: r.title })), q);
+  return simpleResults(
+    "document",
+    "Document",
+    rows.map((r) => ({ id: r.id, label: r.title, iconEmoji: r.iconEmoji })),
+    q,
+  );
 }
 
 async function searchForms(q: string, like: Like): Promise<SearchResult[]> {
