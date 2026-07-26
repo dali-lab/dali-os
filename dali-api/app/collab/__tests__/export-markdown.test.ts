@@ -208,6 +208,29 @@ describe("renderMarkdown", () => {
     expect(md).toContain("| 1 | 2 |");
   });
 
+  it("escapes backslashes and pipes in table cells", () => {
+    const md = renderMarkdown(
+      doc([
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [
+                { type: "tableCell", content: [{ type: "paragraph", content: [{ type: "text", text: "a|b" }] }] },
+                { type: "tableCell", content: [{ type: "paragraph", content: [{ type: "text", text: "c\\d" }] }] },
+              ],
+            },
+          ],
+        },
+      ]),
+    );
+    // Pipe escaped so it can't split the cell; backslash escaped first so "\|"
+    // never collapses into an unescaped delimiter.
+    expect(md).toContain("a\\|b");
+    expect(md).toContain("c\\\\d");
+  });
+
   it("renders empty doc as trailing newline only", () => {
     const md = renderMarkdown(doc([]));
     expect(md).toBe("\n");

@@ -197,14 +197,24 @@ function renderTaskList(items: PMNode[] | undefined, depth: number): string {
   return out + "\n";
 }
 
-// Flatten a table cell to a single line of inline text (GFM cells can't hold
-// block structure). Pipes and newlines are escaped/collapsed so they don't
-// break the table.
+// Concatenate all text in a node subtree (marks/structure dropped).
+function nodeText(node: PMNode): string {
+  if (node.type === "text") return node.text ?? "";
+  return (node.content ?? []).map(nodeText).join("");
+}
+
+// Flatten a table cell to a single line of plain text (GFM cells can't hold
+// block structure). Escape backslashes FIRST, then pipes — order matters so a
+// literal "\" before a "|" can't produce an unescaped cell delimiter — and
+// collapse newlines. Marks are intentionally dropped: cells stay plain text.
+// (Escaping raw text once here, rather than post-processing renderInline's
+// already-escaped output, avoids double-escaping backslashes.)
 function cellText(cell: PMNode): string {
-  const paras = (cell.content ?? []).map((b) =>
-    b.type === "paragraph" ? renderInline(b.content) : renderInline(b.content),
-  );
-  return paras.join(" ").replace(/\|/g, "\\|").replace(/\n+/g, " ").trim();
+  return nodeText(cell)
+    .replace(/\\/g, "\\\\")
+    .replace(/\|/g, "\\|")
+    .replace(/\n+/g, " ")
+    .trim();
 }
 
 function renderTable(rows: PMNode[] | undefined): string {
