@@ -738,16 +738,30 @@ function WeekCalendarPanel({
                   const top = Math.max(0, (e.startHour - HOURS[0]) * HOUR_PX);
                   const rawHeight = e.duration * HOUR_PX;
                   const maxHeight = HOURS.length * HOUR_PX - top;
+                  const height = Math.min(rawHeight, maxHeight);
+                  const start = formatBlockTime(e.startHour);
+                  const end = formatBlockTime(e.startHour + e.duration);
                   return (
                     <div
                       key={i}
-                      className={`absolute left-0 right-0 mx-0.5 px-1 py-0.5 rounded-sm text-[10px] font-medium overflow-hidden ${
+                      // Inset left edge gives the flat tint some depth and mirrors
+                      // the /calendar blocks, so home reads as the same system.
+                      className={`absolute left-0 right-0 mx-0.5 px-1.5 py-0.5 rounded-sm overflow-hidden shadow-[inset_3px_0_0_0_rgba(0,0,0,0.16)] ${
                         EVENT_FILLS[i % EVENT_FILLS.length]
                       }`}
-                      style={{ top, height: Math.min(rawHeight, maxHeight) }}
-                      title={e.label}
+                      style={{ top, height }}
+                      title={`${e.label} · ${start} – ${end}`}
                     >
-                      <span className="block leading-tight break-words">{e.label}</span>
+                      <span className="block text-[10px] font-semibold leading-tight break-words">
+                        {e.label}
+                      </span>
+                      {/* Start time only once the block is tall enough for a
+                          second line — short events stay name-only. */}
+                      {height >= 26 && (
+                        <span className="block text-[9px] font-medium leading-tight opacity-70">
+                          {start}
+                        </span>
+                      )}
                     </div>
                   );
                 })}
@@ -757,6 +771,17 @@ function WeekCalendarPanel({
       </div>
     </section>
   );
+}
+
+// Format a fractional hour-of-day (e.g. 14.5) as "2:30 PM" for event blocks.
+function formatBlockTime(hour: number) {
+  const h24 = Math.floor(hour);
+  const mins = Math.round((hour - h24) * 60);
+  const period = h24 >= 12 ? "PM" : "AM";
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  return mins === 0
+    ? `${h12} ${period}`
+    : `${h12}:${String(mins).padStart(2, "0")} ${period}`;
 }
 
 function formatHour(h: number) {
