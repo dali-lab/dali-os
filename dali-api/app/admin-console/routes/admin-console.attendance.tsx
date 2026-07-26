@@ -1,5 +1,10 @@
 import { useState } from "react";
-import { Link, redirect, useLoaderData } from "react-router";
+import {
+  Link,
+  redirect,
+  useFetcher,
+  useLoaderData,
+} from "react-router";
 import type { Route } from "./+types/admin-console.attendance";
 import { adminPills } from "~/admin-console/adminPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
@@ -10,11 +15,13 @@ import { isCore, isAdmin } from "~/lib/roles";
 import { resolveTermFilter } from "~/lib/terms";
 import { fullName, formatDateShort, formatDateTime } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
+import { cancelScheduledMeeting } from "~/lib/scheduled-meeting";
 import {
   ClipboardCheck,
   ChevronDown,
   ChevronRight,
   ExternalLink,
+  Trash2,
   UserCheck,
   UserX,
 } from "lucide-react";
@@ -47,6 +54,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const meetings = await prisma.scheduledMeeting.findMany({
     where: {
       attendanceMode: "SelfCheckIn",
+      status: { not: "Cancelled" },
       ...(dateWhere
         ? { selectedAt: dateWhere }
         : isAll
@@ -116,6 +124,42 @@ export async function loader({ request }: Route.LoaderArgs) {
   };
 }
 
+// Soft-cancel a self-check-in event (Core). Removes it from this list; same
+// cancel path as the organizer calendar cancel, with allowCore so admins who
+// didn't create the meeting can still clear it.
+export async function action({ request }: Route.ActionArgs) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return redirect("/login");
+  if (!(await isCore(auth.user.sub))) {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const form = await request.formData();
+  if (form.get("intent") !== "delete-event") {
+    return Response.json({ error: "Unknown intent" }, { status: 400 });
+  }
+  const meetingId = String(form.get("meetingId") ?? "");
+  if (!meetingId) {
+    return Response.json({ error: "Missing meetingId" }, { status: 400 });
+  }
+
+  const meeting = await prisma.scheduledMeeting.findUnique({
+    where: { id: meetingId },
+    select: { id: true, attendanceMode: true },
+  });
+  if (!meeting || meeting.attendanceMode !== "SelfCheckIn") {
+    return Response.json({ error: "Not found" }, { status: 404 });
+  }
+
+  const result = await cancelScheduledMeeting(meetingId, auth.user.sub, {
+    allowCore: true,
+  });
+  if (!result.ok) {
+    return Response.json({ error: result.error }, { status: result.status });
+  }
+  return Response.json({ ok: true });
+}
+
 type Attendee = {
   id: string;
   name: string;
@@ -178,61 +222,68 @@ export default function AdminAttendancePage() {
                 key={event.id}
                 className="bg-card border border-border shadow-brand-1 rounded-lg overflow-hidden"
               >
-                <button
-                  type="button"
-                  onClick={() => setOpenId(open ? null : event.id)}
-                  aria-expanded={open}
-                  className="w-full text-left px-4 py-3.5 flex items-start gap-3 hover:bg-muted/30 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent-coral/40"
-                >
-                  <span className="mt-1 text-muted-foreground flex-shrink-0" aria-hidden>
-                    {open ? (
-                      <ChevronDown className="w-4 h-4" />
-                    ) : (
-                      <ChevronRight className="w-4 h-4" />
-                    )}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h2 className="font-heading font-semibold text-foreground truncate">
-                        {event.title}
-                      </h2>
-                      <span className="text-[11px] rounded-md px-2 py-0.5 bg-accent-coral/10 text-accent-coral font-medium">
-                        {event.typeLabel}
-                      </span>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {[
-                        event.startsAt
-                          ? formatDateShort(new Date(event.startsAt), tz)
-                          : "No start time",
-                        event.projectName ?? "No project",
-                        `Organizer ${event.organizerName}`,
-                      ].join(" · ")}
-                    </p>
-                    <div className="mt-2.5 flex items-center gap-3">
-                      <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden max-w-xs">
-                        <div
-                          className="h-full bg-accent-teal rounded-full transition-[width] duration-300"
-                          style={{ width: `${pct}%` }}
-                        />
+                <div className="flex items-stretch">
+                  <button
+                    type="button"
+                    onClick={() => setOpenId(open ? null : event.id)}
+                    aria-expanded={open}
+                    className="min-w-0 flex-1 text-left px-4 py-3.5 flex items-start gap-3 hover:bg-muted/30 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent-coral/40"
+                  >
+                    <span className="mt-1 text-muted-foreground flex-shrink-0" aria-hidden>
+                      {open ? (
+                        <ChevronDown className="w-4 h-4" />
+                      ) : (
+                        <ChevronRight className="w-4 h-4" />
+                      )}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h2 className="font-heading font-semibold text-foreground truncate">
+                          {event.title}
+                        </h2>
+                        <span className="text-[11px] rounded-md px-2 py-0.5 bg-accent-coral/10 text-accent-coral font-medium">
+                          {event.typeLabel}
+                        </span>
                       </div>
-                      <span className="text-xs text-muted-foreground tabular-nums flex-shrink-0">
-                        {event.checkedIn}/{event.invited} checked in
-                      </span>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {[
+                          event.startsAt
+                            ? formatDateShort(new Date(event.startsAt), tz)
+                            : "No start time",
+                          event.projectName ?? "No project",
+                          `Organizer ${event.organizerName}`,
+                        ].join(" · ")}
+                      </p>
+                      <div className="mt-2.5 flex items-center gap-3">
+                        <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden max-w-xs">
+                          <div
+                            className="h-full bg-accent-teal rounded-full transition-[width] duration-300"
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                        <span className="text-xs text-muted-foreground tabular-nums flex-shrink-0">
+                          {event.checkedIn}/{event.invited} checked in
+                        </span>
+                      </div>
                     </div>
+                  </button>
+                  <div className="flex items-start gap-0.5 pr-3 pt-3.5 flex-shrink-0">
+                    {event.notePageId && (
+                      <Link
+                        to={`/documents/${event.notePageId}`}
+                        className="p-1.5 rounded-md text-muted-foreground hover:text-accent-coral hover:bg-accent-coral/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-coral/40"
+                        title="Open meeting note"
+                        aria-label="Open meeting note"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                      </Link>
+                    )}
+                    <DeleteEventButton
+                      meetingId={event.id}
+                      title={event.title}
+                    />
                   </div>
-                  {event.notePageId && (
-                    <Link
-                      to={`/documents/${event.notePageId}`}
-                      onClick={(e) => e.stopPropagation()}
-                      className="flex-shrink-0 p-1.5 rounded-md text-muted-foreground hover:text-accent-coral hover:bg-accent-coral/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-coral/40"
-                      title="Open meeting note"
-                      aria-label="Open meeting note"
-                    >
-                      <ExternalLink className="w-4 h-4" />
-                    </Link>
-                  )}
-                </button>
+                </div>
 
                 {open && (
                   <div className="border-t border-border bg-muted/15">
@@ -276,6 +327,44 @@ export default function AdminAttendancePage() {
         </ul>
       )}
     </div>
+  );
+}
+
+function DeleteEventButton({
+  meetingId,
+  title,
+}: {
+  meetingId: string;
+  title: string;
+}) {
+  const fetcher = useFetcher();
+  const busy = fetcher.state !== "idle";
+
+  return (
+    <fetcher.Form
+      method="post"
+      onSubmit={(e) => {
+        if (
+          !window.confirm(
+            `Delete attendance event "${title}"? Invitees will be notified that the meeting was cancelled.`,
+          )
+        ) {
+          e.preventDefault();
+        }
+      }}
+    >
+      <input type="hidden" name="intent" value="delete-event" />
+      <input type="hidden" name="meetingId" value={meetingId} />
+      <button
+        type="submit"
+        disabled={busy}
+        className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/40 disabled:opacity-50"
+        title="Delete event"
+        aria-label={`Delete attendance event ${title}`}
+      >
+        <Trash2 className="w-4 h-4" />
+      </button>
+    </fetcher.Form>
   );
 }
 

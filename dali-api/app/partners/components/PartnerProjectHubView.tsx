@@ -7,6 +7,7 @@ import { Avatar } from "~/components/ui/Avatar";
 import { Markdown } from "~/components/Markdown";
 import { Modal } from "~/components/Modal";
 import { PartnerBackLink } from "~/partners/components/PartnerBackLink";
+import { ProjectCoverImage } from "~/projects/components/ProjectCoverImage";
 import type {
   PartnerProjectEpic,
   PartnerProjectSprint,
@@ -406,9 +407,12 @@ export function PartnerProjectHubView({
         <div
           className={`bg-card border border-border rounded-2xl overflow-hidden ${backLink ? "mt-2" : ""}`}
         >
-          {project.imageUrl && (
-            <img src={project.imageUrl} alt="" className="w-full h-40 object-cover" />
-          )}
+          <ProjectCoverImage
+            name={project.name}
+            imageUrl={project.imageUrl}
+            className="w-full h-40 object-cover"
+            placeholderClassName="w-full h-40"
+          />
           <div className="p-5">
             <div className="flex flex-col-reverse gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">

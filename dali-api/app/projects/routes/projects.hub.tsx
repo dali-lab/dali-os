@@ -23,6 +23,7 @@ import { buttonClasses } from "~/components/ui/Button";
 import { TermFilter } from "~/components/TermFilter";
 import { resolveTermFilter } from "~/lib/terms";
 import { ALL_TERMS } from "~/lib/terms.shared";
+import { ProjectCoverImage } from "~/projects/components/ProjectCoverImage";
 
 export const handle = {
   areaPills: true,
@@ -482,13 +483,12 @@ function ProjectCard({ project }: { project: ProjectRow }) {
       to={`/projects/${project.id}`}
       className="border border-border rounded-md bg-background flex flex-col gap-2 overflow-hidden hover:bg-muted/10 transition-colors"
     >
-      {project.imageUrl && (
-        <img
-          src={project.imageUrl}
-          alt=""
-          className="w-full h-28 object-cover border-b border-border"
-        />
-      )}
+      <ProjectCoverImage
+        name={project.name}
+        imageUrl={project.imageUrl}
+        className="w-full h-28 object-cover border-b border-border"
+        placeholderClassName="w-full h-28"
+      />
       <div className="flex flex-col gap-2 p-3">
       <div className="flex items-start justify-between gap-2">
         <span className="font-semibold text-foreground truncate">{project.name}</span>

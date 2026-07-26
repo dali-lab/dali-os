@@ -11,6 +11,7 @@ import { createGoogleCalendarEvent, type GoogleAttendee } from "~/lib/google-cal
 import { primaryEmail, formatDateShort } from "~/lib/display";
 import { buildIcs } from "~/lib/ics";
 import { createProjectPage, createLabMeetingPage, ensureMeetingNotesFolder } from "~/lib/pages";
+import { isCore } from "~/lib/roles";
 import type { ScheduledMeeting, MeetingType, AttendanceMode } from "~/generated/prisma/client";
 
 function meetingUid(meetingId: string): string {
@@ -386,16 +387,18 @@ export type CancelScheduledMeetingResult =
   | { ok: false; error: string; status: number };
 
 /**
- * Cancel a meeting. Only the organizer may cancel. Flipping the status to
- * Cancelled is all that's needed to pull the invite out of every recipient's
- * todos, tasks, attention banner, and notification bell — those surfaces filter
- * on `scheduledMeeting.status !== "Cancelled"` rather than fanning out deletes.
- * The Google Calendar event (if any) is left in place; deleting it would need a
- * new google-calendar helper and is out of scope here.
+ * Cancel a meeting. The organizer may cancel; Core can also cancel (used by
+ * Admin → Attendance to remove a self-check-in event from the list). Flipping
+ * the status to Cancelled is all that's needed to pull the invite out of every
+ * recipient's todos, tasks, attention banner, and notification bell — those
+ * surfaces filter on `scheduledMeeting.status !== "Cancelled"` rather than
+ * fanning out deletes. The Google Calendar event (if any) is left in place;
+ * deleting it would need a new google-calendar helper and is out of scope here.
  */
 export async function cancelScheduledMeeting(
   meetingId: string,
   actorUserId: string,
+  opts?: { allowCore?: boolean },
 ): Promise<CancelScheduledMeetingResult> {
   const meeting = await prisma.scheduledMeeting.findUnique({
     where: { id: meetingId },
@@ -414,7 +417,9 @@ export async function cancelScheduledMeeting(
   });
   if (!meeting) return { ok: false, error: "Not found", status: 404 };
   if (meeting.organizerId !== actorUserId) {
-    return { ok: false, error: "Only the organizer can cancel", status: 403 };
+    if (!opts?.allowCore || !(await isCore(actorUserId))) {
+      return { ok: false, error: "Only the organizer can cancel", status: 403 };
+    }
   }
   if (meeting.status === "Cancelled") return { ok: true, alreadyCancelled: true };
 
