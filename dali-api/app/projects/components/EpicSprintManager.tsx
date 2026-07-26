@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useRevalidator } from "react-router";
-import { X, GripVertical, Check, Trash2, Pencil, Maximize2 } from "lucide-react";
+import { X, GripVertical, Trash2, Pencil, Maximize2 } from "lucide-react";
 import { Tooltip } from "~/components/ui/IconButton";
 import {
   DndContext,
@@ -779,6 +779,56 @@ function SortableEpicRow({
   );
 }
 
+// One shared action style for the "+ New …" / "Edit" controls that sit in each
+// detail section header, so they read as one padded control instead of a row
+// of cramped underline links jammed against the content above.
+const SECTION_ADD_CLASS =
+  "inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-accent-coral hover:bg-accent-coral/10 transition-colors";
+const SECTION_EDIT_CLASS =
+  "inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors flex-shrink-0";
+
+// One shared footer for every inline edit form (epic / sprint / story) so
+// Save and Cancel always land in the same place and read the same. Delete,
+// when present, pulls to the far left, away from the confirm/cancel pair.
+function FormActions({
+  busy,
+  submitLabel = "Save",
+  onCancel,
+  onDelete,
+  deleteLabel = "Delete",
+}: {
+  busy: boolean;
+  submitLabel?: string;
+  onCancel: () => void;
+  onDelete?: () => void;
+  deleteLabel?: string;
+}) {
+  return (
+    <div className="flex items-center justify-end gap-2 pt-1">
+      {onDelete && (
+        <button
+          type="button"
+          onClick={onDelete}
+          disabled={busy}
+          className="mr-auto text-xs font-medium text-destructive hover:text-destructive/80 disabled:opacity-60"
+        >
+          {deleteLabel}
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={onCancel}
+        className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors"
+      >
+        Cancel
+      </button>
+      <Button type="submit" variant="primary" size="sm" disabled={busy}>
+        {submitLabel}
+      </Button>
+    </div>
+  );
+}
+
 function EpicDetail({
   projectId,
   epic,
@@ -897,7 +947,7 @@ function EpicDetail({
   const canEditContent = canManage && editing;
 
   return (
-    <div className="flex flex-col gap-4 max-h-[80vh] overflow-y-auto">
+    <div className="flex flex-col gap-5 max-h-[80vh] overflow-y-auto">
       {/* Modal header */}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
@@ -1039,8 +1089,9 @@ function EpicDetail({
               <button
                 type="button"
                 onClick={() => setEditEpicOpen(true)}
-                className="text-xs text-muted-foreground hover:text-foreground flex-shrink-0"
+                className={SECTION_EDIT_CLASS}
               >
+                <Pencil className="w-3 h-3" aria-hidden />
                 Edit details
               </button>
             )}
@@ -1055,7 +1106,7 @@ function EpicDetail({
           while provisioning is in flight, falls back to a quiet placeholder
           so the modal isn't empty. */}
       <section className="bg-card border border-border rounded-lg p-4">
-        <h3 className="text-sm font-semibold text-foreground mb-2">Description</h3>
+        <h3 className="text-sm font-semibold text-foreground mb-3">Description</h3>
         {descriptionDocId && collabToken ? (
           <PresenceProvider
             pageId={`epic:${descriptionDocId}`}
@@ -1091,7 +1142,7 @@ function EpicDetail({
             <button
               type="button"
               onClick={() => setNewStoryOpen(true)}
-              className="text-xs font-medium text-accent-coral hover:underline"
+              className={SECTION_ADD_CLASS}
             >
               + New story
             </button>
@@ -1243,7 +1294,7 @@ function EpicDetail({
                 setSprintsOpen(true);
                 setNewSprintOpen(true);
               }}
-              className="text-xs font-medium text-accent-coral hover:underline"
+              className={SECTION_ADD_CLASS}
             >
               + New sprint
             </button>
@@ -1459,25 +1510,13 @@ function EpicForm({
         </div>
       </div>
 
-      <div className="flex gap-1.5">
-        <Button
-          type="submit"
-          variant="primary"
-          size="sm"
-          disabled={busy}
-        >
-          {/* Creating a new epic hands off to the detail modal to add
-              sprints/stories, so "Next" signals there's more after this. */}
-          {initial ? "Save" : "Next"}
-        </Button>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors"
-        >
-          Cancel
-        </button>
-      </div>
+      {/* Creating a new epic hands off to the detail modal to add
+          sprints/stories, so "Next" signals there's more after this. */}
+      <FormActions
+        busy={busy}
+        submitLabel={initial ? "Save" : "Next"}
+        onCancel={onCancel}
+      />
     </form>
   );
 }
@@ -1596,9 +1635,9 @@ function SprintForm({
           ...(showDeps ? { dependsOn } : {}),
         });
       }}
-      className="flex items-end gap-2 mb-3"
+      className="flex flex-col gap-2 mb-3"
     >
-      <div className="flex flex-wrap items-end gap-2 flex-1 min-w-0">
+      <div className="flex flex-wrap items-end gap-2">
       <label className="flex flex-col gap-1 text-xs flex-1 min-w-[160px]">
         <span className="text-muted-foreground">Name</span>
         <input
@@ -1666,38 +1705,12 @@ function SprintForm({
         </label>
       )}
       </div>
-      <div className="flex items-center gap-1 flex-shrink-0">
-        <button
-          type="submit"
-          disabled={busy}
-          title="Save"
-          aria-label="Save"
-          className="p-1.5 rounded text-accent-coral hover:bg-accent-coral/10 disabled:opacity-60"
-        >
-          <Check className="w-4 h-4" />
-        </button>
-        {onDelete && (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={onDelete}
-            title="Delete sprint"
-            aria-label="Delete sprint"
-            className="p-1.5 rounded text-destructive hover:bg-destructive/10 disabled:opacity-60"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={onCancel}
-          title="Cancel"
-          aria-label="Cancel"
-          className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
-        >
-          <X className="w-4 h-4" />
-        </button>
-      </div>
+      <FormActions
+        busy={busy}
+        onCancel={onCancel}
+        onDelete={onDelete}
+        deleteLabel="Delete sprint"
+      />
     </form>
   );
 }
@@ -1828,23 +1841,7 @@ function StoryForm({
           className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
         />
       </label>
-      <div className="flex gap-1.5">
-        <Button
-          type="submit"
-          variant="primary"
-          size="sm"
-          disabled={busy}
-        >
-          Save
-        </Button>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors"
-        >
-          Cancel
-        </button>
-      </div>
+      <FormActions busy={busy} onCancel={onCancel} />
     </form>
   );
 }
