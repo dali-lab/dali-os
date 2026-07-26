@@ -39,9 +39,6 @@ import {
   ySyncPluginKey,
   yCursorPlugin,
   yUndoPlugin,
-  yUndoPluginKey,
-  undo as yUndo,
-  redo as yRedo,
   absolutePositionToRelativePosition,
   relativePositionToAbsolutePosition,
 } from "y-prosemirror";
@@ -240,6 +237,7 @@ function buildSelection(user: AwarenessUser) {
 function createCollabExtension(
   fragment: Y.XmlFragment,
   provider: HocuspocusProvider,
+  undoManager: Y.UndoManager,
 ) {
   return Extension.create({
     name: "yCollab",
@@ -250,7 +248,10 @@ function createCollabExtension(
           cursorBuilder: buildCursor as any,
           selectionBuilder: buildSelection as any,
         }),
-        yUndoPlugin(),
+        // Pass our own UndoManager so undo/redo (keymap + toolbar buttons) call
+        // it directly by reference — no PluginKey.getState() indirection, which
+        // the production bundle can break if y-prosemirror gets inlined twice.
+        yUndoPlugin({ undoManager }),
       ];
     },
     // StarterKit's own history is disabled (undoRedo: false) because it would
@@ -259,16 +260,16 @@ function createCollabExtension(
     // native contentEditable undo never fires — that would desync the doc.
     addKeyboardShortcuts() {
       return {
-        "Mod-z": ({ editor }) => {
-          yUndo(editor.state);
+        "Mod-z": () => {
+          undoManager.undo();
           return true;
         },
-        "Mod-y": ({ editor }) => {
-          yRedo(editor.state);
+        "Mod-y": () => {
+          undoManager.redo();
           return true;
         },
-        "Mod-Shift-z": ({ editor }) => {
-          yRedo(editor.state);
+        "Mod-Shift-z": () => {
+          undoManager.redo();
           return true;
         },
       };
@@ -595,15 +596,19 @@ const ToggleBlock = TiptapNode.create({
 
 // Curated text colors for the picker. Concrete hex (not CSS vars) so the value
 // survives copy/paste and HTML export as a plain inline style.
+// DALI brand hues at text-legible shades. The raw brand accents (soft coral,
+// pale yellow/green) fail contrast as body text, so these are deeper, saturated
+// versions tuned to read on BOTH the light and dark theme. Concrete hex (not CSS
+// vars) so the value survives copy/paste and HTML export as a plain inline style.
 const TEXT_COLORS: { label: string; value: string }[] = [
-  { label: "Coral", value: "#FF8B81" },
-  { label: "Teal", value: "#12B5A5" },
-  { label: "Blue", value: "#3B7DD8" },
-  { label: "Purple", value: "#8B5CF6" },
-  { label: "Green", value: "#3F9B57" },
-  { label: "Amber", value: "#E0A32E" },
-  { label: "Red", value: "#DC4C4C" },
-  { label: "Slate", value: "#5B6472" },
+  { label: "Coral", value: "#D6473E" },
+  { label: "Teal", value: "#0E9C93" },
+  { label: "Amber", value: "#B7791F" },
+  { label: "Green", value: "#4E9A3F" },
+  { label: "Blue", value: "#2A6F97" },
+  { label: "Purple", value: "#7C5CD6" },
+  { label: "Pink", value: "#C64F93" },
+  { label: "Gray", value: "#64748B" },
 ];
 
 // Highlight (text background) swatches. Soft tints so dark body text stays
@@ -705,6 +710,27 @@ function ColorControl({ editor }: { editor: Editor }) {
               </button>
             ))}
           </div>
+          <label className="mt-2 flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-xs text-muted-foreground hover:text-foreground">
+            <span
+              className="relative flex h-6 w-6 items-center justify-center overflow-hidden rounded-full border border-black/10"
+              style={{
+                background:
+                  "conic-gradient(red, orange, yellow, lime, cyan, blue, magenta, red)",
+              }}
+            >
+              {/* Native picker for any hue. Can't preventDefault (that would
+                  block the OS dialog); the editor blurs to the dialog, but
+                  chain().focus() restores the stored selection before setColor. */}
+              <input
+                type="color"
+                value={current ?? "#000000"}
+                onChange={(e) => editor.chain().focus().setColor(e.target.value).run()}
+                aria-label="Custom text color"
+                className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+              />
+            </span>
+            Custom…
+          </label>
           <button
             type="button"
             onMouseDown={(e) => {
@@ -712,7 +738,7 @@ function ColorControl({ editor }: { editor: Editor }) {
               editor.chain().focus().unsetColor().run();
               close();
             }}
-            className="mt-2 w-full rounded px-2 py-1 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="mt-1 w-full rounded px-2 py-1 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
           >
             Default color
           </button>
@@ -881,25 +907,34 @@ const TOOLBAR_ACTIONS: ToolbarAction[] = [
 
 function EditorToolbar({
   editor,
+  undoManager,
   onOpenHistory,
   showImageButton = false,
 }: {
   editor: Editor;
+  undoManager: Y.UndoManager;
   onOpenHistory: () => void;
   showImageButton?: boolean;
 }) {
   // Tiptap doesn't trigger a React re-render on its own; re-render on every
   // transaction so the active-button highlighting (bold/heading/etc. state)
-  // tracks the current selection.
+  // tracks the current selection, and on undo-stack changes so the undo/redo
+  // buttons enable/disable live.
   const [, setTick] = useState(0);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   useEffect(() => {
     const rerender = () => setTick((t) => t + 1);
     editor.on("transaction", rerender);
+    undoManager.on("stack-item-added", rerender);
+    undoManager.on("stack-item-popped", rerender);
+    undoManager.on("stack-cleared", rerender);
     return () => {
       editor.off("transaction", rerender);
+      undoManager.off("stack-item-added", rerender);
+      undoManager.off("stack-item-popped", rerender);
+      undoManager.off("stack-cleared", rerender);
     };
-  }, [editor]);
+  }, [editor, undoManager]);
 
   async function onImagePicked(files: FileList | null) {
     for (const file of Array.from(files ?? [])) {
@@ -917,11 +952,11 @@ function EditorToolbar({
     if (imageInputRef.current) imageInputRef.current.value = "";
   }
 
-  // Yjs undo manager state — this component re-renders on every transaction, so
-  // canUndo/canRedo track the live stacks.
-  const undoManager = yUndoPluginKey.getState(editor.state)?.undoManager;
-  const canUndo = undoManager?.canUndo?.() ?? false;
-  const canRedo = undoManager?.canRedo?.() ?? false;
+  // Undo/redo driven by our own UndoManager reference (no PluginKey.getState —
+  // that indirection is what breaks in the production bundle). Re-renders above
+  // keep canUndo/canRedo live.
+  const canUndo = undoManager.canUndo();
+  const canRedo = undoManager.canRedo();
 
   return (
     <div className="flex items-center justify-between gap-1 border-b border-border px-1.5 py-1">
@@ -933,7 +968,8 @@ function EditorToolbar({
           disabled={!canUndo}
           onMouseDown={(e) => {
             e.preventDefault();
-            yUndo(editor.state);
+            undoManager.undo();
+            editor.commands.focus();
           }}
           className="p-1.5 rounded transition-colors text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
         >
@@ -946,7 +982,8 @@ function EditorToolbar({
           disabled={!canRedo}
           onMouseDown={(e) => {
             e.preventDefault();
-            yRedo(editor.state);
+            undoManager.redo();
+            editor.commands.focus();
           }}
           className="p-1.5 rounded transition-colors text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
         >
@@ -1036,6 +1073,7 @@ interface DocEntry {
   provider: HocuspocusProvider;
   fragment: Y.XmlFragment;
   persistence: IndexeddbPersistence;
+  undoManager: Y.UndoManager;
   refCount: number;
   disposeTimer: ReturnType<typeof setTimeout> | null;
 }
@@ -1073,11 +1111,20 @@ function acquireDoc(documentName: string, token: string): DocEntry {
   });
 
   const fragment = ydoc.getXmlFragment("default");
+  // One UndoManager per doc, created here so undo/redo hold a direct reference
+  // to it. trackedOrigins = ySyncPluginKey — the origin y-prosemirror stamps on
+  // local ProseMirror edits — so undo only affects this client's own changes,
+  // not collaborators'. captureTransaction mirrors yUndoPlugin's default.
+  const undoManager = new Y.UndoManager(fragment, {
+    trackedOrigins: new Set([ySyncPluginKey]),
+    captureTransaction: (tr) => tr.meta.get("addToHistory") !== false,
+  });
   entry = {
     ydoc,
     provider,
     fragment,
     persistence,
+    undoManager,
     refCount: 1,
     disposeTimer: null,
   };
@@ -1096,6 +1143,7 @@ function releaseDoc(documentName: string) {
     const current = docCache.get(key);
     if (!current || current.refCount > 0) return;
     console.log(`[collab:${documentName}] disposing`);
+    current.undoManager.destroy();
     current.provider.destroy();
     current.persistence.destroy();
     current.ydoc.destroy();
@@ -1200,7 +1248,7 @@ function CollaborativeEditorInner({
       ...(enableMentions ? [mentionEditorExtension(searchMentionableUsers)] : []),
       ...(enableImages ? imageEditorExtensions() : []),
       ...(enableRichBlocks ? [...richBlockExtensions(), slashCommandExtension()] : []),
-      createCollabExtension(entry.fragment, entry.provider),
+      createCollabExtension(entry.fragment, entry.provider, entry.undoManager),
       ...(inlineComments?.enabled
         ? [
             createCommentDecorationExtension(
@@ -1673,6 +1721,7 @@ function CollaborativeEditorInner({
       {editor && !disabled ? (
         <EditorToolbar
           editor={editor}
+          undoManager={entry.undoManager}
           onOpenHistory={() => setHistoryOpen(true)}
           showImageButton={enableImages}
         />
