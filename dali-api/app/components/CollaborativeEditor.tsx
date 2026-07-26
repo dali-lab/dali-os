@@ -114,6 +114,14 @@ interface CollaborativeEditorProps {
   enableRichBlocks?: boolean;
 
   /**
+   * Drop the bordered "card" chrome (border, rounded corners, card background,
+   * focus ring) so the editor reads as the page itself rather than a box on it.
+   * Used by the full-page document surface. The toolbar keeps its own bottom
+   * border as a subtle separator.
+   */
+  chromeless?: boolean;
+
+  /**
    * When set (arriving from a mention notification), once the doc syncs the
    * editor scrolls to the first mention node tagging this user id and briefly
    * flashes it. No-op if that user isn't mentioned.
@@ -1088,6 +1096,7 @@ function CollaborativeEditorInner({
   enableMentions = false,
   enableImages = false,
   enableRichBlocks = false,
+  chromeless = false,
   focusMentionUserId,
   onBeginEdit,
   onWordCountChange,
@@ -1147,7 +1156,9 @@ function CollaborativeEditorInner({
     editable: !disabled,
     editorProps: {
       attributes: {
-        class: EDITOR_CONTENT_CLASS,
+        // Extra left padding when rich blocks are on, so the drag handle / "+"
+        // sit in a gutter beside the text instead of overhanging the edge.
+        class: enableRichBlocks ? `${EDITOR_CONTENT_CLASS} pl-10` : EDITOR_CONTENT_CLASS,
       },
     },
   });
@@ -1546,8 +1557,14 @@ function CollaborativeEditorInner({
   }, [editor, presenceEnabled, reportFocus]);
 
   // The block the drag handle is currently anchored to — target for the "+"
-  // insert-below button.
+  // insert-below button. onNodeChange MUST be stable: DragHandle re-runs its
+  // plugin registration when its props change, and re-registering a plugin
+  // reconfigures the editor, which resets the "/" suggestion plugin's state
+  // (making the slash menu flash open then close on the next re-render).
   const hoveredPosRef = useRef<number | null>(null);
+  const onDragNodeChange = useCallback(({ pos }: { pos: number }) => {
+    hoveredPosRef.current = pos;
+  }, []);
   const insertBlockBelow = useCallback(() => {
     if (!editor) return;
     const pos = hoveredPosRef.current;
@@ -1569,6 +1586,7 @@ function CollaborativeEditorInner({
       relative
       disabled={disabled}
       muted={disabled && !onBeginEdit}
+      chromeless={chromeless}
       className={className}
     >
       {editor && !disabled ? (
@@ -1618,12 +1636,7 @@ function CollaborativeEditorInner({
               onComment={inlineComments?.enabled ? requestCommentOnSelection : undefined}
             />
           </BubbleMenu>
-          <DragHandle
-            editor={editor}
-            onNodeChange={({ pos }) => {
-              hoveredPosRef.current = pos;
-            }}
-          >
+          <DragHandle editor={editor} onNodeChange={onDragNodeChange}>
             <div className="flex items-center gap-0.5 pr-1">
               <button
                 type="button"
