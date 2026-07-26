@@ -6,11 +6,12 @@ export interface Hire {
   label: string;
 }
 
-/** One logged block of work. Times are ISO instants; note is what was written. */
+/** One logged block of work. Times are ISO instants; `description` is the note
+ *  text the export sends (DALI's export maps TimeEntry.note → description). */
 export interface LoggedEntry {
   startAt: string;
   endAt: string;
-  note: string;
+  description: string;
   projectLabel: string;
 }
 

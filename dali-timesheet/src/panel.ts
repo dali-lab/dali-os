@@ -280,8 +280,8 @@ export class Panel {
             h("span", { class: "date" }, fmtDate(entry.startAt)),
             h("span", { class: "time" }, `${fmtTime(entry.startAt)} – ${fmtTime(entry.endAt)}`),
           ),
-          entry.note.trim()
-            ? h("span", { class: "note" }, entry.note)
+          (entry.description ?? "").trim()
+            ? h("span", { class: "note" }, entry.description)
             : h("span", { class: "note empty" }, "No note"),
         ),
       ),

@@ -101,7 +101,7 @@ function fillOne(entry: LoggedEntry): FillOutcome {
   if (!timesSet) return { date: dateKey, status: "error", detail: "Couldn't set the time fields" };
 
   chooseOption(field("PayCodes1"), "1");
-  const note = entry.note.trim();
+  const note = (entry.description ?? "").trim();
   if (note) writeNote(prefix, suffix, note);
 
   const save = document.getElementById(field("AddButton"));
