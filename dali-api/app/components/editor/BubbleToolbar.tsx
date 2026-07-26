@@ -5,16 +5,16 @@ import {
   Underline as UnderlineIcon,
   Strikethrough,
   Code,
-  Highlighter,
   Link2,
   MessageSquarePlus,
 } from "lucide-react";
+import { ColorControl, HighlightControl } from "./formatting-controls";
 
 // Compact formatting bar shown floating over a text selection (rendered inside
-// <BubbleMenu>). Complements the fixed toolbar for quick, in-context styling.
+// <BubbleMenu>). Complements the fixed toolbar for quick, in-context styling —
+// the color/highlight pickers are the same controls the fixed toolbar uses.
 // When onComment is provided, a comment action is folded in so the standalone
 // comment button isn't needed.
-const DEFAULT_HIGHLIGHT = "#FEF3C7";
 
 export function BubbleToolbar({
   editor,
@@ -102,18 +102,9 @@ export function BubbleToolbar({
       >
         <Code size={15} />
       </button>
-      <button
-        type="button"
-        title="Highlight"
-        onMouseDown={(e) => {
-          e.preventDefault();
-          if (editor.isActive("highlight")) editor.chain().focus().unsetHighlight().run();
-          else editor.chain().focus().setHighlight({ color: DEFAULT_HIGHLIGHT }).run();
-        }}
-        className={btn(editor.isActive("highlight"))}
-      >
-        <Highlighter size={15} />
-      </button>
+      <span className="mx-0.5 h-5 w-px bg-border" aria-hidden />
+      <ColorControl editor={editor} />
+      <HighlightControl editor={editor} />
       <span className="mx-0.5 h-5 w-px bg-border" aria-hidden />
       <button
         type="button"
