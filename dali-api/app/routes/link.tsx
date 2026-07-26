@@ -66,15 +66,19 @@ export async function action({ request }: Route.ActionArgs) {
   return redirect("/link");
 }
 
+// The two SSO choices in the unauthenticated view share one card style.
+const SSO_BUTTON =
+  "w-full rounded-lg border border-border px-4 py-3 text-left text-sm font-semibold text-foreground hover:bg-muted transition-colors";
+
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-zinc-50 flex items-center justify-center px-4 py-10">
+    <div className="min-h-screen bg-background flex items-center justify-center px-4 py-10">
       <div className="w-full max-w-md">
         <img src="/logo-blue.svg" alt="DALI Lab" className="mx-auto h-12 w-auto" />
-        <div className="mt-6 rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm">
+        <div className="mt-6 rounded-2xl border border-border bg-card p-8 shadow-brand-1">
           {children}
         </div>
-        <p className="mt-6 text-center text-xs text-zinc-400">
+        <p className="mt-6 text-center text-xs text-muted-foreground">
           Manage paired devices under Settings → Your devices.
         </p>
       </div>
@@ -84,7 +88,7 @@ function Shell({ children }: { children: React.ReactNode }) {
 
 function CodeChip({ code }: { code: string }) {
   return (
-    <span className="rounded-md bg-zinc-100 px-2.5 py-1 font-mono text-lg font-semibold tracking-widest text-zinc-900">
+    <span className="rounded-md bg-muted px-2.5 py-1 font-mono text-lg font-semibold tracking-widest text-foreground">
       {code}
     </span>
   );
@@ -96,8 +100,8 @@ export default function LinkPage({ loaderData }: Route.ComponentProps) {
   if (data.view === "approved") {
     return (
       <Shell>
-        <h1 className="text-xl font-semibold text-zinc-900">✅ Device approved</h1>
-        <p className="mt-3 text-sm text-zinc-600">
+        <h1 className="text-xl font-semibold text-foreground">✅ Device approved</h1>
+        <p className="mt-3 text-sm text-muted-foreground">
           Head back to the app you were linking — it'll finish signing in
           automatically. You can close this tab.
         </p>
@@ -108,8 +112,8 @@ export default function LinkPage({ loaderData }: Route.ComponentProps) {
   if (data.view === "cancelled") {
     return (
       <Shell>
-        <h1 className="text-xl font-semibold text-zinc-900">Pairing cancelled</h1>
-        <p className="mt-3 text-sm text-zinc-600">
+        <h1 className="text-xl font-semibold text-foreground">Pairing cancelled</h1>
+        <p className="mt-3 text-sm text-muted-foreground">
           No device was linked to your account. You can close this tab.
         </p>
       </Shell>
@@ -119,8 +123,8 @@ export default function LinkPage({ loaderData }: Route.ComponentProps) {
   if (data.view === "expired") {
     return (
       <Shell>
-        <h1 className="text-xl font-semibold text-zinc-900">This pairing request expired</h1>
-        <p className="mt-3 text-sm text-zinc-600">
+        <h1 className="text-xl font-semibold text-foreground">This pairing request expired</h1>
+        <p className="mt-3 text-sm text-muted-foreground">
           For your security, pairing codes expire after a few minutes. Start
           sign-in again in the app you're linking to get a fresh code.
         </p>
@@ -131,8 +135,8 @@ export default function LinkPage({ loaderData }: Route.ComponentProps) {
   if (data.view === "already_used") {
     return (
       <Shell>
-        <h1 className="text-xl font-semibold text-zinc-900">This request was already used</h1>
-        <p className="mt-3 text-sm text-zinc-600">
+        <h1 className="text-xl font-semibold text-foreground">This request was already used</h1>
+        <p className="mt-3 text-sm text-muted-foreground">
           This pairing code has already approved a device. If that wasn't you, go
           to <strong>Settings → Your devices</strong> and revoke any device you
           don't recognize.
@@ -144,8 +148,8 @@ export default function LinkPage({ loaderData }: Route.ComponentProps) {
   if (data.view === "not_found") {
     return (
       <Shell>
-        <h1 className="text-xl font-semibold text-zinc-900">Pairing code not found</h1>
-        <p className="mt-3 text-sm text-zinc-600">
+        <h1 className="text-xl font-semibold text-foreground">Pairing code not found</h1>
+        <p className="mt-3 text-sm text-muted-foreground">
           We couldn't find that pairing code. Start sign-in again in the app
           you're linking to get a fresh code, then enter it here.
         </p>
@@ -156,8 +160,8 @@ export default function LinkPage({ loaderData }: Route.ComponentProps) {
   if (data.view === "no_code") {
     return (
       <Shell>
-        <h1 className="text-xl font-semibold text-zinc-900">Link a device or app</h1>
-        <p className="mt-3 text-sm text-zinc-600">
+        <h1 className="text-xl font-semibold text-foreground">Link a device or app</h1>
+        <p className="mt-3 text-sm text-muted-foreground">
           Enter the code shown in the app you're linking (DALI OS Desktop or the
           Relay extension).
         </p>
@@ -166,7 +170,7 @@ export default function LinkPage({ loaderData }: Route.ComponentProps) {
             name="code"
             autoFocus
             placeholder="WXYZ-1234"
-            className="flex-1 rounded-md border border-zinc-300 px-3 py-2 font-mono uppercase tracking-widest placeholder:tracking-normal focus:border-zinc-500 focus:outline-none"
+            className="flex-1 rounded-md border border-border px-3 py-2 font-mono uppercase tracking-widest placeholder:tracking-normal focus:border-accent-coral focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
           />
           <button
             type="submit"
@@ -176,7 +180,7 @@ export default function LinkPage({ loaderData }: Route.ComponentProps) {
           </button>
         </Form>
         {!data.signedIn && (
-          <p className="mt-4 text-xs text-zinc-500">
+          <p className="mt-4 text-xs text-muted-foreground">
             Don't have the code? Start sign-in in the app you're linking first.
           </p>
         )}
@@ -187,35 +191,29 @@ export default function LinkPage({ loaderData }: Route.ComponentProps) {
   if (data.view === "pending_unauthenticated") {
     return (
       <Shell>
-        <div className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <div className="rounded-lg border border-border bg-muted px-4 py-3 text-sm text-foreground">
           <strong>Sign in to approve a device.</strong> You're linking an app to
           your account. Sign in to continue, then you'll confirm the device.
         </div>
-        <p className="mt-4 text-sm text-zinc-600">
+        <p className="mt-4 text-sm text-muted-foreground">
           Pairing code <CodeChip code={data.userCode} /> — after signing in,
           return to this page to approve.
         </p>
         <div className="mt-5 flex flex-col gap-3">
           <Form method="post" action="/login">
             <input type="hidden" name="provider" value="google" />
-            <button
-              type="submit"
-              className="w-full rounded-lg border border-zinc-300 px-4 py-3 text-left text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
-            >
+            <button type="submit" className={SSO_BUTTON}>
               Current Member
-              <span className="block text-xs font-normal text-zinc-500">
+              <span className="block text-xs font-normal text-muted-foreground">
                 @dali.dartmouth.edu Google account
               </span>
             </button>
           </Form>
           <Form method="post" action="/login">
             <input type="hidden" name="provider" value="cas" />
-            <button
-              type="submit"
-              className="w-full rounded-lg border border-zinc-300 px-4 py-3 text-left text-sm font-semibold text-zinc-900 hover:bg-zinc-50"
-            >
+            <button type="submit" className={SSO_BUTTON}>
               Applicant
-              <span className="block text-xs font-normal text-zinc-500">
+              <span className="block text-xs font-normal text-muted-foreground">
                 Dartmouth single sign-on
               </span>
             </button>
@@ -228,31 +226,34 @@ export default function LinkPage({ loaderData }: Route.ComponentProps) {
   // pending_authenticated
   return (
     <Shell>
-      <h1 className="text-xl font-semibold text-zinc-900">Approve this device?</h1>
-      <p className="mt-2 text-sm text-zinc-600">
+      <h1 className="text-xl font-semibold text-foreground">Approve this device?</h1>
+      <p className="mt-2 text-sm text-muted-foreground">
         This app wants to sign in to your account.
       </p>
       <dl className="mt-4 space-y-2 text-sm">
         <div className="flex items-center justify-between gap-3">
-          <dt className="text-zinc-500">Device</dt>
-          <dd className="font-medium text-zinc-900">{data.deviceLabel}</dd>
+          <dt className="text-muted-foreground">Device</dt>
+          <dd className="font-medium text-foreground">{data.deviceLabel}</dd>
         </div>
         <div className="flex items-center justify-between gap-3">
-          <dt className="text-zinc-500">Pairing code</dt>
+          <dt className="text-muted-foreground">Pairing code</dt>
           <dd>
             <CodeChip code={data.userCode} />
           </dd>
         </div>
       </dl>
-      <p className="mt-4 rounded-lg bg-amber-50 px-4 py-3 text-xs text-amber-900">
+      {/* Security caution gets a coral-tinted callout (the brand's attention
+          color) so it stands out in both themes, rather than a fixed light
+          amber panel that clashed with the dark card. */}
+      <p className="mt-4 rounded-lg border border-accent-coral/30 bg-accent-coral/10 px-4 py-3 text-xs text-foreground">
         ⚠️ Confirm this code matches the one shown in the app. Only approve if{" "}
         <em>you</em> just started sign-in from this app on this computer.
         Approving keeps it signed in to your account until you sign out or
         revoke it.
       </p>
-      <p className="mt-3 text-xs text-zinc-500">
+      <p className="mt-3 text-xs text-muted-foreground">
         Approving as <strong>{data.email}</strong> —{" "}
-        <Link to="/logout" className="underline hover:text-zinc-700">
+        <Link to="/logout" className="underline hover:text-foreground">
           not you? Switch account
         </Link>
       </p>
@@ -270,7 +271,7 @@ export default function LinkPage({ loaderData }: Route.ComponentProps) {
           type="submit"
           name="intent"
           value="cancel"
-          className="rounded-lg border border-zinc-300 px-4 py-2.5 text-sm font-semibold text-zinc-700 hover:bg-zinc-50"
+          className="rounded-lg border border-border px-4 py-2.5 text-sm font-semibold text-foreground hover:bg-muted transition-colors"
         >
           Cancel
         </button>
