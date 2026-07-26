@@ -90,6 +90,11 @@ select, input, textarea { font: inherit; font-size: 12px; padding: 8px 10px; bor
 .list { display: flex; flex-direction: column; gap: 8px; }
 .entry { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
 .entry .date { font-weight: 700; font-size: 12px; color: var(--navy); }
+.entry.is-added { opacity: 0.7; }
+.entry-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.tag { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.tag.added { background: #E6F7F6; color: var(--teal-deep); }
+.tag.warn { background: #FDECD8; color: #B45309; }
 .entry-times { display: flex; align-items: center; gap: 6px; }
 .entry-times .t { flex: 1; min-width: 0; }
 .entry-times .dash { color: var(--muted); flex: 0 0 auto; }

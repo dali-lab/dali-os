@@ -126,3 +126,37 @@ export function commitRow(prefix: string, suffix: string): boolean {
   (save as HTMLElement).click();
   return true;
 }
+
+// ── Compare pulled entries against what's already saved on the page ──────────
+// "added"    = a saved row matches this date AND start/end → skip on fill.
+// "override" = a saved row exists on this date with a different time → the
+//              pulled entry supersedes it (delete-then-add, once supported).
+// "new"      = nothing saved on that date yet → fill normally.
+export type EntryStatus = "new" | "added" | "override";
+
+const longDateLabel = (iso: string) =>
+  new Date(iso)
+    .toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })
+    .toLowerCase();
+
+const timeLabel = (iso: string) => {
+  const c = toClock(iso);
+  return `${c.hour}:${c.minute} ${c.ampm}`.toLowerCase();
+};
+
+export function classify(entries: LoggedEntry[]): EntryStatus[] {
+  // Saved entries render as "Reg Hours" rows; collect their normalized text once.
+  const savedRows = Array.from(document.querySelectorAll("tr"))
+    .map((r) => (r.textContent || "").replace(/\s+/g, " ").trim().toLowerCase())
+    .filter((t) => t.includes("reg hours"));
+
+  return entries.map((entry) => {
+    const date = longDateLabel(entry.startAt);
+    const onDate = savedRows.filter((t) => t.includes(date));
+    if (onDate.length === 0) return "new";
+    const start = timeLabel(entry.startAt);
+    const end = timeLabel(entry.endAt);
+    if (onDate.some((t) => t.includes(start) && t.includes(end))) return "added";
+    return "override";
+  });
+}

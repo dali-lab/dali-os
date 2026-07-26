@@ -8,7 +8,7 @@ import type {
   SignOutReply,
 } from "./messages";
 import type { TimesheetExport, FillOutcome, LoggedEntry } from "./types";
-import { prepareRow, commitRow, canFill } from "./jobx";
+import { prepareRow, commitRow, canFill, classify, type EntryStatus } from "./jobx";
 import { DEFAULT_LOOKBACK_DAYS } from "./config";
 
 // A fill that must survive JobX's full-page reload after each saved row. We
@@ -44,7 +44,7 @@ type State =
   | { screen: "disconnected"; error?: string }
   | { screen: "pairing"; code: string; message?: string }
   | { screen: "ready"; busy?: boolean; error?: string }
-  | { screen: "pulled"; data: TimesheetExport; switching?: boolean; error?: string }
+  | { screen: "pulled"; data: TimesheetExport; statuses: EntryStatus[]; switching?: boolean; error?: string }
   | { screen: "filling"; done: number; total: number }
   | { screen: "done"; results: FillOutcome[]; hireLabel: string };
 
@@ -208,7 +208,10 @@ export class Panel {
     });
 
     if (reply.ok) {
-      this.set({ screen: "pulled", data: reply.data });
+      // Compare against rows already saved on the JobX page (only meaningful on
+      // a timesheet page; elsewhere everything reads as new).
+      const statuses = canFill() ? classify(reply.data.entries) : reply.data.entries.map(() => "new" as const);
+      this.set({ screen: "pulled", data: reply.data, statuses });
     } else if (reply.code === "auth") {
       this.set({ screen: "disconnected", error: reply.message });
     } else {
@@ -218,15 +221,19 @@ export class Panel {
 
   private async startFill(): Promise<void> {
     if (this.state.screen !== "pulled") return;
-    const { entries, hireLabel } = this.state.data;
-    // Persist the whole batch, then drive it. Fields already reflect only this
-    // hire's entries, so the fill is role-scoped by construction.
+    const { data, statuses } = this.state;
+    // Only fill what isn't already in JobX. "added" is skipped (already there)
+    // and "override" is left for now (needs the delete step).
+    const entries = data.entries.filter((_, i) => statuses[i] === "new");
+    if (entries.length === 0) return;
+    // Persist the batch, then drive it. Fields already reflect only this hire's
+    // entries, so the fill is role-scoped by construction.
     await setQueue({
       entries,
       results: [],
       next: 0,
       total: entries.length,
-      hireLabel,
+      hireLabel: data.hireLabel,
       startedAt: Date.now(),
       active: true,
     });
@@ -355,7 +362,7 @@ export class Panel {
         break;
 
       case "pulled":
-        body.append(this.pulledView(s.data, s.switching, s.error));
+        body.append(this.pulledView(s.data, s.statuses, s.switching, s.error));
         break;
 
       case "filling":
@@ -380,7 +387,12 @@ export class Panel {
     return body;
   }
 
-  private pulledView(data: TimesheetExport, switching?: boolean, error?: string): DocumentFragment {
+  private pulledView(
+    data: TimesheetExport,
+    statuses: EntryStatus[],
+    switching?: boolean,
+    error?: string,
+  ): DocumentFragment {
     const frag = document.createDocumentFragment();
 
     // Role picker — the fill only ever touches the selected role's timesheet.
@@ -401,6 +413,10 @@ export class Panel {
 
     if (error) frag.append(h("div", { class: "err" }, error));
 
+    const newCount = statuses.filter((s) => s === "new").length;
+    const addedCount = statuses.filter((s) => s === "added").length;
+    const overrideCount = statuses.filter((s) => s === "override").length;
+
     frag.append(
       h(
         "div",
@@ -411,17 +427,35 @@ export class Panel {
       ),
     );
 
+    if (addedCount || overrideCount) {
+      const parts: string[] = [];
+      if (addedCount) parts.push(`${addedCount} already in JobX`);
+      if (overrideCount) parts.push(`${overrideCount} differ — replace in JobX`);
+      frag.append(h("p", { class: "muted" }, parts.join(" · ")));
+    }
+
     // Entries are editable in place before filling: adjust the start/end time or
     // the note and the change is used by the fill. Fields are uncontrolled so
-    // typing never re-renders (which would drop focus).
+    // typing never re-renders (which would drop focus). A status tag marks rows
+    // already saved in JobX (skipped) or that differ from a saved row.
     const list = h(
       "div",
       { class: "list" },
-      ...data.entries.map((entry) =>
-        h(
+      ...data.entries.map((entry, i) => {
+        const status = statuses[i] ?? "new";
+        return h(
           "div",
-          { class: "entry" },
-          h("span", { class: "date" }, fmtDate(entry.startAt)),
+          { class: status === "added" ? "entry is-added" : "entry" },
+          h(
+            "div",
+            { class: "entry-head" },
+            h("span", { class: "date" }, fmtDate(entry.startAt)),
+            status === "added"
+              ? h("span", { class: "tag added" }, "Added")
+              : status === "override"
+                ? h("span", { class: "tag warn" }, "Replaces existing")
+                : null,
+          ),
           h(
             "div",
             { class: "entry-times" },
@@ -454,16 +488,20 @@ export class Panel {
               entry.description = (e.target as HTMLTextAreaElement).value;
             },
           }),
-        ),
-      ),
+        );
+      }),
     );
     frag.append(list);
 
     frag.append(
       h(
         "button",
-        { class: "btn block", onclick: () => void this.startFill(), ...(data.entries.length === 0 ? { disabled: "true" } : {}) },
-        `Fill ${data.entries.length} into JobX`,
+        { class: "btn block", onclick: () => void this.startFill(), ...(newCount === 0 ? { disabled: "true" } : {}) },
+        newCount === 0
+          ? addedCount
+            ? "All already in JobX"
+            : "Nothing to fill"
+          : `Fill ${newCount} into JobX`,
       ),
     );
     return frag;
