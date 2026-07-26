@@ -110,6 +110,61 @@ describe("renderNodes (ProseMirror JSON → HTML)", () => {
     ];
     expect(renderNodes(nodes)).toBe("<details><summary>Toggle</summary><p>legacy</p></details>");
   });
+
+  it("renders a callout with its emoji marker and body", () => {
+    const nodes: PMNode[] = [
+      {
+        type: "callout",
+        attrs: { emoji: "⚠️" },
+        content: [{ type: "paragraph", content: [{ type: "text", text: "heads up" }] }],
+      },
+    ];
+    const html = renderNodes(nodes);
+    expect(html).toContain("⚠️");
+    expect(html).toContain("<p>heads up</p>");
+  });
+
+  it("renders a task list with checkbox glyphs", () => {
+    const nodes: PMNode[] = [
+      {
+        type: "taskList",
+        content: [
+          { type: "taskItem", attrs: { checked: true }, content: [{ type: "paragraph", content: [{ type: "text", text: "done" }] }] },
+          { type: "taskItem", attrs: { checked: false }, content: [{ type: "paragraph", content: [{ type: "text", text: "todo" }] }] },
+        ],
+      },
+    ];
+    const html = renderNodes(nodes);
+    expect(html).toContain("☑ <p>done</p>");
+    expect(html).toContain("☐ <p>todo</p>");
+  });
+
+  it("renders a table with header and body cells", () => {
+    const nodes: PMNode[] = [
+      {
+        type: "table",
+        content: [
+          {
+            type: "tableRow",
+            content: [
+              { type: "tableHeader", content: [{ type: "paragraph", content: [{ type: "text", text: "A" }] }] },
+              { type: "tableHeader", content: [{ type: "paragraph", content: [{ type: "text", text: "B" }] }] },
+            ],
+          },
+          {
+            type: "tableRow",
+            content: [
+              { type: "tableCell", content: [{ type: "paragraph", content: [{ type: "text", text: "1" }] }] },
+              { type: "tableCell", content: [{ type: "paragraph", content: [{ type: "text", text: "2" }] }] },
+            ],
+          },
+        ],
+      },
+    ];
+    expect(renderNodes(nodes)).toBe(
+      "<table><tr><th><p>A</p></th><th><p>B</p></th></tr><tr><td><p>1</p></td><td><p>2</p></td></tr></table>",
+    );
+  });
 });
 
 describe("buildExportHtml", () => {

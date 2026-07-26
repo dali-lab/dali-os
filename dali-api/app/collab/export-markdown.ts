@@ -117,6 +117,23 @@ function renderBlock(node: PMNode, depth: number): string {
     }
     case "toggleSummary":
       return renderInline(node.content);
+    case "callout": {
+      const emoji = typeof node.attrs?.emoji === "string" ? node.attrs.emoji : "💡";
+      const inner = renderBlocks(node.content, depth).trimEnd();
+      return (
+        inner
+          .split("\n")
+          .map((line, i) => (i === 0 ? `> ${emoji} ${line}` : `> ${line}`))
+          .join("\n") + "\n\n"
+      );
+    }
+    case "taskList":
+      return renderTaskList(node.content, depth);
+    case "taskItem":
+      // Reached only outside a taskList (defensive) — render its text.
+      return renderInline((node.content?.[0]?.content) ?? node.content);
+    case "table":
+      return renderTable(node.content);
     case "text":
       return applyMarks(node.text ?? "", node.marks);
     default:
@@ -158,6 +175,59 @@ function renderList(items: PMNode[] | undefined, depth: number, ordered: boolean
       out += `${sub}\n`;
     }
   });
+  return out + "\n";
+}
+
+function renderTaskList(items: PMNode[] | undefined, depth: number): string {
+  if (!items) return "";
+  const indent = "  ".repeat(depth);
+  let out = "";
+  for (const item of items) {
+    if (item.type !== "taskItem") continue;
+    const box = item.attrs?.checked === true ? "[x]" : "[ ]";
+    const children = item.content ?? [];
+    const first =
+      children[0]?.type === "paragraph" ? renderInline(children[0].content) : "";
+    out += `${indent}- ${box} ${first}\n`;
+    // Nested task lists (TaskItem nested: true) indent under the parent.
+    for (const child of children.slice(1)) {
+      if (child.type === "taskList") out += renderTaskList(child.content, depth + 1);
+    }
+  }
+  return out + "\n";
+}
+
+// Concatenate all text in a node subtree (marks/structure dropped).
+function nodeText(node: PMNode): string {
+  if (node.type === "text") return node.text ?? "";
+  return (node.content ?? []).map(nodeText).join("");
+}
+
+// Flatten a table cell to a single line of plain text (GFM cells can't hold
+// block structure). Escape backslashes FIRST, then pipes — order matters so a
+// literal "\" before a "|" can't produce an unescaped cell delimiter — and
+// collapse newlines. Marks are intentionally dropped: cells stay plain text.
+// (Escaping raw text once here, rather than post-processing renderInline's
+// already-escaped output, avoids double-escaping backslashes.)
+function cellText(cell: PMNode): string {
+  return nodeText(cell)
+    .replace(/\\/g, "\\\\")
+    .replace(/\|/g, "\\|")
+    .replace(/\n+/g, " ")
+    .trim();
+}
+
+function renderTable(rows: PMNode[] | undefined): string {
+  const grid = (rows ?? [])
+    .filter((r) => r.type === "tableRow")
+    .map((r) => (r.content ?? []).map(cellText));
+  if (grid.length === 0) return "";
+  const cols = Math.max(...grid.map((r) => r.length));
+  const pad = (r: string[]) => [...r, ...Array(cols - r.length).fill("")];
+  const header = pad(grid[0]!);
+  let out = `| ${header.join(" | ")} |\n`;
+  out += `| ${header.map(() => "---").join(" | ")} |\n`;
+  for (const row of grid.slice(1)) out += `| ${pad(row).join(" | ")} |\n`;
   return out + "\n";
 }
 
