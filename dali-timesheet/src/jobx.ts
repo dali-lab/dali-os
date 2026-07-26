@@ -144,6 +144,53 @@ const timeLabel = (iso: string) => {
   return `${c.hour}:${c.minute} ${c.ampm}`.toLowerCase();
 };
 
+// ── Deleting a saved row (for override / "replace existing") ─────────────────
+// Heuristic and deliberately conservative: we only look INSIDE the one saved
+// "Reg Hours" row for this date, and only click something that self-identifies
+// as a delete control — so a wrong guess can't reach an unrelated element. If
+// there's more than one saved row on the date, we refuse (ambiguous) rather
+// than risk deleting the wrong one.
+export type FindDeleteResult =
+  | { ok: true; el: HTMLElement }
+  | { ok: false; status: "skipped" | "error"; detail: string };
+
+function looksLikeDelete(el: Element): boolean {
+  const hay = [
+    el.getAttribute("id"),
+    el.getAttribute("name"),
+    el.getAttribute("title"),
+    el.getAttribute("alt"),
+    el.getAttribute("aria-label"),
+    el.getAttribute("href"),
+    el.getAttribute("onclick"),
+    (el as HTMLInputElement).value,
+    (el as HTMLImageElement).src,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return /delete|remove|trash/.test(hay);
+}
+
+export function findSavedRowDelete(entry: LoggedEntry): FindDeleteResult {
+  const date = longDateLabel(entry.startAt);
+  const rows = Array.from(document.querySelectorAll("tr")).filter((r) => {
+    const t = (r.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
+    return t.includes("reg hours") && t.includes(date);
+  });
+  if (rows.length === 0) return { ok: false, status: "skipped", detail: "No saved row to replace" };
+  if (rows.length > 1) {
+    return { ok: false, status: "error", detail: "Multiple saved rows on this date — delete manually" };
+  }
+  const control = Array.from(rows[0].querySelectorAll<HTMLElement>("a, button, input, img")).find(
+    looksLikeDelete,
+  );
+  if (!control) return { ok: false, status: "error", detail: "Couldn't find a delete control in the row" };
+  // An <img> delete icon usually sits inside the real clickable target.
+  const el = control.tagName === "IMG" ? ((control.closest("a, button, [onclick]") as HTMLElement) ?? control) : control;
+  return { ok: true, el };
+}
+
 export function classify(entries: LoggedEntry[]): EntryStatus[] {
   // Saved entries render as "Reg Hours" rows; collect their normalized text once.
   const savedRows = Array.from(document.querySelectorAll("tr"))

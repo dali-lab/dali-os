@@ -8,14 +8,21 @@ import type {
   SignOutReply,
 } from "./messages";
 import type { TimesheetExport, FillOutcome, LoggedEntry } from "./types";
-import { prepareRow, commitRow, canFill, classify, type EntryStatus } from "./jobx";
+import { prepareRow, commitRow, canFill, classify, findSavedRowDelete, type EntryStatus } from "./jobx";
 import { DEFAULT_LOOKBACK_DAYS } from "./config";
 
 // A fill that must survive JobX's full-page reload after each saved row. We
 // persist remaining entries to chrome.storage.local; after every reload the
 // freshly re-injected panel reads this and fills the next entry, until done.
+// A "replace" item is filled in two page loads: delete the old row, then (after
+// the reload) add the new one. `deleted` records that the delete step is done.
+interface FillItem {
+  entry: LoggedEntry;
+  replace: boolean;
+  deleted: boolean;
+}
 interface FillQueue {
-  entries: LoggedEntry[];
+  items: FillItem[];
   results: FillOutcome[];
   next: number;
   total: number;
@@ -222,29 +229,31 @@ export class Panel {
   private async startFill(): Promise<void> {
     if (this.state.screen !== "pulled") return;
     const { data, statuses } = this.state;
-    // Only fill what isn't already in JobX. "added" is skipped (already there)
-    // and "override" is left for now (needs the delete step).
-    const entries = data.entries.filter((_, i) => statuses[i] === "new");
-    if (entries.length === 0) return;
-    // Persist the batch, then drive it. Fields already reflect only this hire's
-    // entries, so the fill is role-scoped by construction.
+    // Skip "added" (already in JobX); "new" is added; "override" is deleted then
+    // re-added. Fields already reflect only this hire's entries, so it stays
+    // role-scoped.
+    const items: FillItem[] = data.entries
+      .map((entry, i) => ({ entry, status: statuses[i] ?? "new" }))
+      .filter((x) => x.status !== "added")
+      .map((x) => ({ entry: x.entry, replace: x.status === "override", deleted: false }));
+    if (items.length === 0) return;
     await setQueue({
-      entries,
+      items,
       results: [],
       next: 0,
-      total: entries.length,
+      total: items.length,
       hireLabel: data.hireLabel,
       startedAt: Date.now(),
       active: true,
     });
-    this.set({ screen: "filling", done: 0, total: entries.length });
+    this.set({ screen: "filling", done: 0, total: items.length });
     void this.drive();
   }
 
-  // Fill entries one at a time. A committed row reloads the page (JobX postback),
-  // which re-injects the panel and calls drive() again via init() — so each call
-  // fills until it commits one row (then returns to wait for the reload) or runs
-  // out. Skipped/errored rows don't reload, so we keep going within the tick.
+  // Process one item at a time across JobX's reloads. Each action that commits
+  // (delete or add) reloads the page; the re-injected panel calls drive() again
+  // via init(). A "replace" item takes two passes: delete the old row, then (on
+  // the reload) add the new one. Non-navigating outcomes continue in this tick.
   private async drive(): Promise<void> {
     const queue = await getQueue();
     if (!queue || !queue.active) return;
@@ -255,27 +264,50 @@ export class Panel {
       return;
     }
     if (!canFill()) {
-      // Not on a fillable timesheet page yet; show progress and wait.
       this.set({ screen: "filling", done: queue.next, total: queue.total });
       return;
     }
 
     while (queue.next < queue.total) {
-      const entry = queue.entries[queue.next];
-      const prep = prepareRow(entry);
+      const item = queue.items[queue.next];
+      const dateLabel = fmtDate(item.entry.startAt);
+      this.set({ screen: "filling", done: queue.next, total: queue.total });
+
+      // Phase 1: delete the old row for a replace, then wait for the reload.
+      if (item.replace && !item.deleted) {
+        const found = findSavedRowDelete(item.entry);
+        if (found.ok) {
+          item.deleted = true;
+          await setQueue(queue); // persist before the delete navigates
+          found.el.click(); // → reload → resume this item in the add phase
+          return;
+        }
+        // Nothing to delete after all: if it's simply gone, fall through to add;
+        // if ambiguous/error, record and skip.
+        if (found.status === "skipped") {
+          item.deleted = true; // treat as already-removed; proceed to add
+        } else {
+          queue.results.push({ date: dateLabel, status: found.status, detail: found.detail });
+          queue.next += 1;
+          await setQueue(queue);
+          continue;
+        }
+      }
+
+      // Phase 2: add the entry (new, or replace after its delete).
+      const prep = prepareRow(item.entry);
       queue.results.push(
         prep.ok
-          ? { date: prep.dateKey, status: "filled" }
-          : { date: prep.dateKey, status: prep.status, detail: prep.detail },
+          ? { date: dateLabel, status: "filled" }
+          : { date: dateLabel, status: prep.status, detail: prep.detail },
       );
       queue.next += 1;
-      this.set({ screen: "filling", done: queue.next, total: queue.total });
       if (prep.ok) {
-        await setQueue(queue); // persist BEFORE the Add click navigates
-        commitRow(prep.prefix, prep.suffix); // → full reload → resumes on next load
+        await setQueue(queue); // persist before the Add navigates
+        commitRow(prep.prefix, prep.suffix); // → reload → resumes next item
         return;
       }
-      await setQueue(queue); // skipped/error: no reload, continue the loop
+      await setQueue(queue); // skipped/error: no reload, continue
     }
 
     await removeQueue();
@@ -430,7 +462,7 @@ export class Panel {
     if (addedCount || overrideCount) {
       const parts: string[] = [];
       if (addedCount) parts.push(`${addedCount} already in JobX`);
-      if (overrideCount) parts.push(`${overrideCount} differ — replace in JobX`);
+      if (overrideCount) parts.push(`${overrideCount} will replace existing`);
       frag.append(h("p", { class: "muted" }, parts.join(" · ")));
     }
 
@@ -493,15 +525,16 @@ export class Panel {
     );
     frag.append(list);
 
+    const fillable = newCount + overrideCount;
     frag.append(
       h(
         "button",
-        { class: "btn block", onclick: () => void this.startFill(), ...(newCount === 0 ? { disabled: "true" } : {}) },
-        newCount === 0
+        { class: "btn block", onclick: () => void this.startFill(), ...(fillable === 0 ? { disabled: "true" } : {}) },
+        fillable === 0
           ? addedCount
             ? "All already in JobX"
             : "Nothing to fill"
-          : `Fill ${newCount} into JobX`,
+          : `Fill ${fillable} into JobX`,
       ),
     );
     return frag;
