@@ -295,7 +295,7 @@ export function EpicSprintManager({
         onClose={() => setNewEpicOpen(false)}
         labelledBy="new-epic-title"
         disableEscape={busy}
-        containerClassName="bg-card rounded-2xl shadow-xl max-w-2xl w-full p-5 sm:p-6 my-auto"
+        containerClassName="bg-card rounded-2xl shadow-xl max-w-5xl w-full p-5 sm:p-6 my-auto"
       >
         <div className="flex items-center justify-between gap-2 mb-4">
           <h2 id="new-epic-title" className="font-heading text-lg font-semibold text-foreground">
@@ -340,7 +340,7 @@ export function EpicSprintManager({
         onClose={closeEpic}
         labelledBy="epic-detail-title"
         disableEscape={busy}
-        containerClassName="bg-card rounded-2xl shadow-xl max-w-2xl w-full p-5 sm:p-6 my-auto"
+        containerClassName="bg-card rounded-2xl shadow-xl max-w-5xl w-full p-5 sm:p-6 my-auto"
       >
         {activeEpic && (
           <EpicDetail
@@ -722,16 +722,13 @@ export function EpicSprintManager({
                     </span>
                   </div>
                   {canManage && (
-                    <Tooltip label="Edit sprint">
-                      <button
-                        type="button"
-                        onClick={() => setEditSprintId(sprint.id)}
-                        aria-label="Edit sprint"
-                        className="text-muted-foreground hover:text-foreground flex-shrink-0"
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
-                    </Tooltip>
+                    <button
+                      type="button"
+                      onClick={() => setEditSprintId(sprint.id)}
+                      className="text-xs font-medium text-muted-foreground hover:text-foreground px-2 py-1 rounded-md hover:bg-muted flex-shrink-0"
+                    >
+                      Edit
+                    </button>
                   )}
                 </div>
               ),
@@ -933,12 +930,14 @@ function EpicDetail({
         </div>
         <div className="flex items-center gap-3 flex-shrink-0">
           {canManage && !editing && (
-            <Tooltip label="Edit epic">
+            <Tooltip label="Edit">
               <button
                 type="button"
                 onClick={() => {
+                  // Enter edit mode for description / stories / sprints. Epic
+                  // status/dates stay behind "Edit details" so story edits aren't
+                  // nested under a second epic form.
                   setEditing(true);
-                  setEditEpicOpen(true);
                 }}
                 aria-label="Edit epic"
                 className="text-muted-foreground hover:text-accent-coral"
@@ -946,6 +945,23 @@ function EpicDetail({
                 <Pencil className="w-4 h-4" />
               </button>
             </Tooltip>
+          )}
+          {canManage && editing && (
+            <button
+              type="button"
+              onClick={() => {
+                setEditing(false);
+                setEditEpicOpen(false);
+                setEditStoryId(null);
+                setNewStoryOpen(false);
+                setEditSprintId(null);
+                setNewSprintOpen(false);
+                setDraftTitle(epic.title);
+              }}
+              className="text-xs font-medium text-muted-foreground hover:text-foreground px-2 py-1 rounded-md hover:bg-muted"
+            >
+              Done
+            </button>
           )}
           {canManage && (
             <Tooltip label="Delete epic">
@@ -1083,7 +1099,10 @@ function EpicDetail({
         )}
       </section>
 
-      {/* User stories */}
+      {/* User stories — card list (not a cramped multi-column table). Notes
+          and criteria live in their own blocks so long text doesn't jam into
+          the requirement cell. Editing uses the same edit mode as the header
+          pencil; each story expands inline rather than a nested table-row form. */}
       <section className="bg-card border border-border rounded-lg p-4">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-semibold text-foreground">User stories</h3>
@@ -1099,122 +1118,131 @@ function EpicDetail({
         </div>
 
         {newStoryOpen && (
-          <StoryForm
-            busy={busy}
-            onCancel={() => setNewStoryOpen(false)}
-            onSubmit={(values) =>
-              run(async () => {
-                await api(`/api/epics/${epic.id}/stories`, "POST", values);
-                setNewStoryOpen(false);
-              })
-            }
-          />
+          <div className="mb-3 rounded-lg border border-border bg-muted/20 p-3">
+            <StoryForm
+              busy={busy}
+              onCancel={() => setNewStoryOpen(false)}
+              onSubmit={(values) =>
+                run(async () => {
+                  await api(`/api/epics/${epic.id}/stories`, "POST", values);
+                  setNewStoryOpen(false);
+                })
+              }
+            />
+          </div>
         )}
 
         {epic.stories.length === 0 && !newStoryOpen ? (
           <p className="text-sm text-muted-foreground italic">No user stories yet.</p>
         ) : (
-          // Product-requirement table: each story is a requirement, with its
-          // success metric / acceptance criteria / category / priority as
-          // columns. Editing swaps the row for the full StoryForm.
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-border text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                  <th className="py-1.5 pr-3">Requirement</th>
-                  <th className="py-1.5 px-3">Category</th>
-                  <th className="py-1.5 px-3">Priority</th>
-                  <th className="py-1.5 px-3">Success metric</th>
-                  <th className="py-1.5 px-3">Acceptance criteria</th>
-                  <th className="py-1.5 px-3">Status</th>
-                  {canEditContent && <th className="w-px py-1.5 pl-3" />}
-                </tr>
-              </thead>
-              <tbody>
-                {epic.stories.map((story) =>
-                  editStoryId === story.id ? (
-                    <tr key={story.id}>
-                      <td colSpan={canEditContent ? 7 : 6} className="py-2">
-                        <StoryForm
-                          busy={busy}
-                          initial={story}
-                          onCancel={() => setEditStoryId(null)}
-                          onSubmit={(values) =>
-                            run(async () => {
-                              await api(`/api/stories/${story.id}`, "POST", values);
-                              setEditStoryId(null);
-                            })
-                          }
-                        />
-                      </td>
-                    </tr>
-                  ) : (
-                    <tr key={story.id} className="border-b border-border/60 align-top">
-                      <td className="min-w-[160px] py-2 pr-3">
-                        <span className="text-foreground">{story.title}</span>
-                        {story.notes && (
-                          <p className="mt-0.5 whitespace-pre-wrap text-[11px] text-muted-foreground">
-                            {story.notes}
-                          </p>
+          <ul className="flex flex-col gap-3">
+            {epic.stories.map((story) =>
+              editStoryId === story.id ? (
+                <li
+                  key={story.id}
+                  className="rounded-lg border border-accent-coral/40 bg-muted/20 p-3"
+                >
+                  <StoryForm
+                    busy={busy}
+                    initial={story}
+                    onCancel={() => setEditStoryId(null)}
+                    onSubmit={(values) =>
+                      run(async () => {
+                        await api(`/api/stories/${story.id}`, "POST", values);
+                        setEditStoryId(null);
+                      })
+                    }
+                  />
+                </li>
+              ) : (
+                <li
+                  key={story.id}
+                  className="rounded-lg border border-border bg-background p-3 sm:p-4"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-foreground leading-snug">
+                        {story.title}
+                      </p>
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                        <span className="text-[11px] px-1.5 py-0.5 rounded-full border border-border bg-muted/30 text-muted-foreground">
+                          {story.status}
+                        </span>
+                        {story.category && (
+                          <span className="text-[11px] px-1.5 py-0.5 rounded-full border border-border text-muted-foreground">
+                            {story.category}
+                          </span>
                         )}
-                      </td>
-                      <td className="py-2 px-3 text-muted-foreground">
-                        {story.category ?? "—"}
-                      </td>
-                      <td className="py-2 px-3">
-                        {story.priority ? (
-                          <span className={`text-xs ${STORY_PRIORITY_TONE[story.priority]}`}>
+                        {story.priority && (
+                          <span
+                            className={`text-[11px] px-1.5 py-0.5 rounded-full border border-border ${STORY_PRIORITY_TONE[story.priority]}`}
+                          >
                             {story.priority}
                           </span>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
                         )}
-                      </td>
-                      <td className="max-w-[220px] whitespace-pre-wrap py-2 px-3 text-muted-foreground">
-                        {story.successMetric ?? "—"}
-                      </td>
-                      <td className="max-w-[220px] whitespace-pre-wrap py-2 px-3 text-muted-foreground">
-                        {story.acceptanceCriteria ?? "—"}
-                      </td>
-                      <td className="whitespace-nowrap py-2 px-3 text-[11px] text-muted-foreground">
-                        {story.status}
-                      </td>
-                      {canEditContent && (
-                        <td className="whitespace-nowrap py-2 pl-3">
-                          <div className="flex items-center gap-2">
-                            <Tooltip label="Edit story">
-                              <button
-                                type="button"
-                                onClick={() => setEditStoryId(story.id)}
-                                aria-label="Edit story"
-                                className="text-muted-foreground hover:text-foreground"
-                              >
-                                <Pencil className="w-3.5 h-3.5" />
-                              </button>
-                            </Tooltip>
-                            <Tooltip label="Delete story">
-                              <button
-                                type="button"
-                                disabled={busy}
-                                onClick={() => {
-                                  if (!window.confirm(`Delete story "${story.title}"?`)) return;
-                                  run(() => api(`/api/stories/${story.id}`, "DELETE"));
-                                }}
-                                aria-label="Delete story"
-                                className="text-destructive hover:text-destructive/80 disabled:opacity-60"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </Tooltip>
-                          </div>
-                        </td>
+                      </div>
+                    </div>
+                    {canEditContent && (
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setEditStoryId(story.id)}
+                          className="text-xs font-medium text-muted-foreground hover:text-foreground px-2 py-1 rounded-md hover:bg-muted"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => {
+                            if (!window.confirm(`Delete story "${story.title}"?`)) return;
+                            run(() => api(`/api/stories/${story.id}`, "DELETE"));
+                          }}
+                          className="text-xs font-medium text-destructive hover:text-destructive/80 px-2 py-1 rounded-md hover:bg-destructive/10 disabled:opacity-60"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  {(story.successMetric || story.acceptanceCriteria || story.notes) && (
+                    <dl className="mt-3 grid gap-2 sm:grid-cols-2 text-xs">
+                      {story.successMetric && (
+                        <div className="min-w-0 sm:col-span-1">
+                          <dt className="font-medium uppercase tracking-wide text-[10px] text-muted-foreground">
+                            Success metric
+                          </dt>
+                          <dd className="mt-0.5 whitespace-pre-wrap text-foreground/90">
+                            {story.successMetric}
+                          </dd>
+                        </div>
                       )}
-                    </tr>
-                  ),
-                )}
-              </tbody>
-            </table>
-          </div>
+                      {story.acceptanceCriteria && (
+                        <div className="min-w-0 sm:col-span-1">
+                          <dt className="font-medium uppercase tracking-wide text-[10px] text-muted-foreground">
+                            Acceptance criteria
+                          </dt>
+                          <dd className="mt-0.5 whitespace-pre-wrap text-foreground/90">
+                            {story.acceptanceCriteria}
+                          </dd>
+                        </div>
+                      )}
+                      {story.notes && (
+                        <div className="min-w-0 sm:col-span-2">
+                          <dt className="font-medium uppercase tracking-wide text-[10px] text-muted-foreground">
+                            Notes
+                          </dt>
+                          <dd className="mt-0.5 whitespace-pre-wrap text-muted-foreground line-clamp-4">
+                            {story.notes}
+                          </dd>
+                        </div>
+                      )}
+                    </dl>
+                  )}
+                </li>
+              ),
+            )}
+          </ul>
         )}
       </section>
 
@@ -1316,16 +1344,13 @@ function EpicDetail({
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <span className="text-[11px] text-muted-foreground">{sprint.status}</span>
                     {canEditContent && (
-                      <Tooltip label="Edit sprint">
-                        <button
-                          type="button"
-                          onClick={() => setEditSprintId(sprint.id)}
-                          aria-label="Edit sprint"
-                          className="text-muted-foreground hover:text-foreground"
-                        >
-                          <Pencil className="w-3.5 h-3.5" />
-                        </button>
-                      </Tooltip>
+                      <button
+                        type="button"
+                        onClick={() => setEditSprintId(sprint.id)}
+                        className="text-xs font-medium text-muted-foreground hover:text-foreground px-2 py-1 rounded-md hover:bg-muted"
+                      >
+                        Edit
+                      </button>
                     )}
                   </div>
                 </div>
