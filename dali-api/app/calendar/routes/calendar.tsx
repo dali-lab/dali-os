@@ -1948,8 +1948,9 @@ function WeekToolbar({
   );
 }
 
-// Visible hour rows: 8am through 9pm (the grid body bottom edge is 10pm).
-const HOURS = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21];
+// Visible hour rows: the full day, midnight through 11pm (grid bottom edge is
+// midnight). Every downstream bound derives from HOURS[0] / last+1.
+const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const HOUR_PX = 54;
 // Grid is snapped/subdivided into 10-minute cells.
 const SUBDIVISIONS_PER_HOUR = 6; // 60 / 10
@@ -2774,7 +2775,7 @@ function TimesheetView({ data }: { data: LoaderData }) {
           : !roleKey
             ? "Pick a role to log this time against."
             : null;
-  const canSubmit = hasRoles && !rangeError && !adding;
+  const canSubmit = hasRoles && !rangeError && !adding && note.trim() !== "";
   const serverError = addFetcher.data?.error ?? null;
 
   return (
@@ -2856,13 +2857,13 @@ function TimesheetView({ data }: { data: LoaderData }) {
             />
             <label className="text-xs text-muted-foreground flex flex-col gap-1">
               Note
-              <input
-                type="text"
+              <textarea
                 name="note"
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
-                placeholder="Optional"
-                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
+                rows={2}
+                placeholder="What did you work on?"
+                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground resize-y min-h-[2.25rem]"
               />
             </label>
             <div className="flex items-center gap-1.5">
@@ -3168,7 +3169,7 @@ function TimesheetDragPopover({
   const hours = startEndValid
     ? Math.round(((new Date(end).getTime() - new Date(start).getTime()) / 3_600_000) * 100) / 100
     : 0;
-  const canSubmit = startEndValid && hours > 0 && !!roleKey && !submitting;
+  const canSubmit = startEndValid && hours > 0 && !!roleKey && !submitting && note.trim() !== "";
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -3296,14 +3297,15 @@ function TimesheetDragPopover({
 
         <div>
           <label htmlFor="ts-drag-note" className="block text-sm font-medium text-foreground mb-1">
-            Note <span className="text-muted-foreground font-normal">(optional)</span>
+            Note
           </label>
-          <input
+          <textarea
             id="ts-drag-note"
-            type="text"
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            className="w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground"
+            rows={3}
+            placeholder="What did you work on?"
+            className="w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground resize-y min-h-[4.5rem]"
           />
         </div>
 
@@ -3371,7 +3373,7 @@ function TimesheetEditPopover({
     ? Math.round(((new Date(end).getTime() - new Date(start).getTime()) / 3_600_000) * 100) / 100
     : 0;
   const busy = submitting || deleting;
-  const canSubmit = startEndValid && hours > 0 && !!roleKey && !busy;
+  const canSubmit = startEndValid && hours > 0 && !!roleKey && !busy && note.trim() !== "";
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -3524,14 +3526,15 @@ function TimesheetEditPopover({
 
         <div>
           <label htmlFor="ts-edit-note" className="block text-sm font-medium text-foreground mb-1">
-            Note <span className="text-muted-foreground font-normal">(optional)</span>
+            Note
           </label>
-          <input
+          <textarea
             id="ts-edit-note"
-            type="text"
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            className="w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground"
+            rows={3}
+            placeholder="What did you work on?"
+            className="w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground resize-y min-h-[4.5rem]"
           />
         </div>
 
@@ -5005,6 +5008,22 @@ function CalendarEventDetailPopover({
   );
 }
 
+// Pick dark or light ink for a solid fill by its perceived luminance, so
+// custom event colors (which arrive as arbitrary hex — light Google "Banana"
+// through dark "Blueberry") stay readable instead of always getting white text.
+// Falls back to white for anything we can't parse as a hex color.
+function readableTextColor(bg: string): string {
+  const hex = bg.trim().replace(/^#/, "");
+  const full = hex.length === 3 ? hex.replace(/(.)/g, "$1$1") : hex;
+  if (full.length !== 6 || /[^0-9a-f]/i.test(full)) return "#ffffff";
+  const r = parseInt(full.slice(0, 2), 16);
+  const g = parseInt(full.slice(2, 4), 16);
+  const b = parseInt(full.slice(4, 6), 16);
+  // Rec. 601 luma; above ~0.6 the fill reads as light → switch to dark ink.
+  const luma = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luma > 0.6 ? "#1e2733" : "#ffffff";
+}
+
 function WeekGridEvent({ e }: { e: EventBlock }) {
   const [detailOpen, setDetailOpen] = useState(false);
   const [anchorEl, setAnchorEl] = useState<HTMLDivElement | null>(null);
@@ -5044,8 +5063,6 @@ function WeekGridEvent({ e }: { e: EventBlock }) {
         className={`absolute left-0 right-0 ${bufferBefore === 0 ? "rounded-t-md" : ""} ${
           bufferAfter === 0 ? "rounded-b-md" : ""
         } px-1.5 py-1 text-xs font-semibold leading-tight overflow-hidden transition-shadow shadow-[inset_3px_0_0_0_rgba(0,0,0,0.18),0_1px_2px_-1px_rgba(0,0,0,0.15)] ${e.className} ${
-          e.bgColor ? "text-white" : ""
-        } ${
           clickable
             ? "hover:ring-2 hover:ring-inset hover:ring-white/60 hover:shadow-[inset_3px_0_0_0_rgba(0,0,0,0.18),0_2px_5px_-1px_rgba(0,0,0,0.25)]"
             : ""
@@ -5053,7 +5070,9 @@ function WeekGridEvent({ e }: { e: EventBlock }) {
         style={{
           top: bufferBefore * HOUR_PX,
           height: bodyHeight,
-          ...(e.bgColor ? { backgroundColor: e.bgColor } : {}),
+          ...(e.bgColor
+            ? { backgroundColor: e.bgColor, color: readableTextColor(e.bgColor) }
+            : {}),
         }}
         onMouseEnter={hasDetails && !isMeeting ? () => setDetailOpen(true) : undefined}
         onMouseLeave={hasDetails && !isMeeting ? () => setDetailOpen(false) : undefined}

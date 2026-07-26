@@ -1,0 +1,17 @@
+{
+  "name": "dali-timesheet",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DALI OS companion that fills your JobX timesheet from your logged hours.",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.268",
+    "esbuild": "^0.28.1",
+    "typescript": "^5.6.0"
+  }
+}
