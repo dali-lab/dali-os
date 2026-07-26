@@ -44,6 +44,7 @@ import {
 } from "y-prosemirror";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { Plugin, PluginKey, TextSelection, type EditorState, type Transaction } from "@tiptap/pm/state";
+import { Fragment } from "@tiptap/pm/model";
 import { IndexeddbPersistence } from "y-indexeddb";
 import {
   ACTIVITY_THROTTLE_MS,
@@ -566,30 +567,33 @@ const ToggleBlock = TiptapNode.create({
   },
   addCommands() {
     return {
+      // Single-transaction wrap: replace the selected block(s) with a toggle
+      // whose first child is an empty summary followed by the original content,
+      // then drop the caret into the summary. Done in one command (no nested
+      // chain().run(), which Tiptap warns against and which was leaving the
+      // summary uncreated → no title + misplaced caret).
       setToggleBlock:
         () =>
-        ({ chain, state }) =>
-          chain()
-            .wrapIn(this.name)
-            .command(({ tr, dispatch }) => {
-              if (!dispatch) return true;
-              // Find the toggle we just wrapped around the selection and seed an
-              // empty summary as its first child, then drop the caret into it so
-              // the user types the title first.
-              const { $from } = tr.selection;
-              let depth = $from.depth;
-              while (depth > 0 && $from.node(depth).type.name !== "toggleBlock") depth--;
-              if (depth === 0) return true;
-              const toggle = $from.node(depth);
-              if (toggle.firstChild?.type.name === "toggleSummary") return true;
-              const summary = state.schema.nodes.toggleSummary.createAndFill();
-              if (!summary) return true;
-              const insertAt = $from.before(depth) + 1;
-              tr.insert(insertAt, summary);
-              tr.setSelection(TextSelection.create(tr.doc, insertAt + 1));
-              return true;
-            })
-            .run(),
+        ({ state, tr, dispatch }) => {
+          const { schema, selection } = state;
+          const range = selection.$from.blockRange(selection.$to);
+          if (!range) return false;
+          const summary = schema.nodes.toggleSummary.createAndFill();
+          if (!summary) return false;
+          const body = state.doc.slice(range.start, range.end).content;
+          const toggle = schema.nodes.toggleBlock.create(
+            { open: true },
+            Fragment.from(summary).append(body),
+          );
+          if (dispatch) {
+            tr.replaceRangeWith(range.start, range.end, toggle);
+            // Caret inside the empty summary: +1 into the toggle, +1 into summary.
+            const caret = tr.mapping.map(range.start) + 2;
+            tr.setSelection(TextSelection.create(tr.doc, caret));
+            tr.scrollIntoView();
+          }
+          return true;
+        },
     };
   },
 });
