@@ -37,6 +37,8 @@ import {
   ySyncPluginKey,
   yCursorPlugin,
   yUndoPlugin,
+  undo as yUndo,
+  redo as yRedo,
   absolutePositionToRelativePosition,
   relativePositionToAbsolutePosition,
 } from "y-prosemirror";
@@ -247,6 +249,26 @@ function createCollabExtension(
         }),
         yUndoPlugin(),
       ];
+    },
+    // StarterKit's own history is disabled (undoRedo: false) because it would
+    // fight Yjs. Bind undo/redo to the Yjs UndoManager (per-user: it only undoes
+    // this client's edits, not collaborators'). Always return true so the browser's
+    // native contentEditable undo never fires — that would desync the doc.
+    addKeyboardShortcuts() {
+      return {
+        "Mod-z": ({ editor }) => {
+          yUndo(editor.state);
+          return true;
+        },
+        "Mod-y": ({ editor }) => {
+          yRedo(editor.state);
+          return true;
+        },
+        "Mod-Shift-z": ({ editor }) => {
+          yRedo(editor.state);
+          return true;
+        },
+      };
     },
   });
 }
