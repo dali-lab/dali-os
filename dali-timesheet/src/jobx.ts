@@ -110,7 +110,50 @@ function fillOne(entry: LoggedEntry): FillOutcome {
   return { date: dateKey, status: "filled" };
 }
 
-/** Fill a role-scoped batch, one row at a time. */
-export function fillEntries(entries: LoggedEntry[]): FillOutcome[] {
-  return entries.map(fillOne);
+// Clicking a row's Add button fires an ASP.NET postback. If we fire the next
+// one before that finishes, JobX drops the overlapping request and only the
+// first entry actually saves. So we wait for the DOM to settle after each Add:
+// arm a quiet timer once mutations stop, with a floor (so we don't resolve
+// before the postback even starts) and a hard cap (so a chatty page can't hang
+// the batch).
+function settle(minMs = 500, quietMs = 500, maxMs = 4000): Promise<void> {
+  return new Promise((resolve) => {
+    let finished = false;
+    let quiet: ReturnType<typeof setTimeout> | undefined;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      observer.disconnect();
+      if (quiet) clearTimeout(quiet);
+      clearTimeout(cap);
+      resolve();
+    };
+    const arm = () => {
+      if (quiet) clearTimeout(quiet);
+      quiet = setTimeout(finish, quietMs);
+    };
+    const observer = new MutationObserver(arm);
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+    const cap = setTimeout(finish, maxMs);
+    setTimeout(arm, minMs);
+  });
+}
+
+/** Fill a role-scoped batch sequentially, waiting for each Add's postback to
+ *  land before the next. `onProgress(done, total)` fires before each entry. */
+export async function fillEntries(
+  entries: LoggedEntry[],
+  onProgress?: (done: number, total: number) => void,
+): Promise<FillOutcome[]> {
+  const results: FillOutcome[] = [];
+  let done = 0;
+  for (const entry of entries) {
+    onProgress?.(done, entries.length);
+    const outcome = fillOne(entry);
+    results.push(outcome);
+    done += 1;
+    if (outcome.status === "filled" && done < entries.length) await settle();
+  }
+  onProgress?.(entries.length, entries.length);
+  return results;
 }

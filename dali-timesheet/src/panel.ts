@@ -17,7 +17,7 @@ type State =
   | { screen: "pairing"; code: string; message?: string }
   | { screen: "ready"; busy?: boolean; error?: string }
   | { screen: "pulled"; data: TimesheetExport; switching?: boolean; error?: string }
-  | { screen: "filling" }
+  | { screen: "filling"; done: number; total: number }
   | { screen: "done"; results: FillOutcome[]; hireLabel: string };
 
 // Tiny hyperscript so the rest reads declaratively without a framework.
@@ -147,14 +147,19 @@ export class Panel {
     }
   }
 
-  private fill(): void {
+  private async fill(): Promise<void> {
     if (this.state.screen !== "pulled") return;
-    const { data } = this.state;
-    this.set({ screen: "filling" });
+    const { entries, hireLabel } = {
+      entries: this.state.data.entries,
+      hireLabel: this.state.data.hireLabel,
+    };
+    this.set({ screen: "filling", done: 0, total: entries.length });
     // Fields already reflect only this hire's entries, so the fill is
     // role-scoped by construction — nothing else lands on the wrong timesheet.
-    const results = fillEntries(data.entries);
-    this.set({ screen: "done", results, hireLabel: data.hireLabel });
+    const results = await fillEntries(entries, (done, total) => {
+      if (this.state.screen === "filling") this.set({ screen: "filling", done, total });
+    });
+    this.set({ screen: "done", results, hireLabel });
   }
 
   private async signOut(): Promise<void> {
@@ -241,7 +246,18 @@ export class Panel {
         break;
 
       case "filling":
-        body.append(h("div", { class: "center" }, h("span", { class: "spin" }), h("p", { class: "muted" }, "Filling your JobX timesheet…")));
+        body.append(
+          h(
+            "div",
+            { class: "center" },
+            h("span", { class: "spin" }),
+            h(
+              "p",
+              { class: "muted" },
+              s.total ? `Filling ${Math.min(s.done + 1, s.total)} of ${s.total}…` : "Filling…",
+            ),
+          ),
+        );
         break;
 
       case "done":
@@ -333,7 +349,7 @@ export class Panel {
     frag.append(
       h(
         "button",
-        { class: "btn block", onclick: () => this.fill(), ...(data.entries.length === 0 ? { disabled: "true" } : {}) },
+        { class: "btn block", onclick: () => void this.fill(), ...(data.entries.length === 0 ? { disabled: "true" } : {}) },
         `Fill ${data.entries.length} into JobX`,
       ),
     );
