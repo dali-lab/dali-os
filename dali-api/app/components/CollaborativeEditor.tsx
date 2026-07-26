@@ -1156,9 +1156,22 @@ function CollaborativeEditorInner({
     editable: !disabled,
     editorProps: {
       attributes: {
-        // Extra left padding when rich blocks are on, so the drag handle / "+"
-        // sit in a gutter beside the text instead of overhanging the edge.
-        class: enableRichBlocks ? `${EDITOR_CONTENT_CLASS} pl-10` : EDITOR_CONTENT_CLASS,
+        // Compose the content class so the *typable* ProseMirror element carries
+        // the height, not the outer shell: chromeless (full-page doc) fills the
+        // viewport so the whole area is a click/type target and the placeholder
+        // anchors at the top; boxed editors keep the compact min-height. Extra
+        // left padding when rich blocks are on gives the drag handle / "+" a
+        // gutter beside the text. Swapping the single min-height class (rather
+        // than stacking two) avoids a Tailwind precedence conflict.
+        class: [
+          EDITOR_CONTENT_CLASS.replace(
+            "min-h-[6rem]",
+            chromeless ? "min-h-[60vh]" : "min-h-[6rem]",
+          ),
+          enableRichBlocks ? "pl-10" : "",
+        ]
+          .filter(Boolean)
+          .join(" "),
       },
     },
   });
@@ -1565,19 +1578,29 @@ function CollaborativeEditorInner({
   const onDragNodeChange = useCallback(({ pos }: { pos: number }) => {
     hoveredPosRef.current = pos;
   }, []);
-  const insertBlockBelow = useCallback(() => {
+  // "+" opens the slash menu (Notion behavior). Insert a "/" at the right spot
+  // and the existing suggestion plugin pops the menu; the chosen command's
+  // deleteRange removes the "/". Reuse the hovered block: type into it if it's
+  // an empty paragraph, otherwise start a fresh block below.
+  const openSlashMenu = useCallback(() => {
     if (!editor) return;
     const pos = hoveredPosRef.current;
     if (pos == null) return;
     const node = editor.state.doc.nodeAt(pos);
     if (!node) return;
-    const end = pos + node.nodeSize;
-    editor
-      .chain()
-      .insertContentAt(end, { type: "paragraph" })
-      .setTextSelection(end + 1)
-      .focus()
-      .run();
+    const isEmptyPara = node.type.name === "paragraph" && node.content.size === 0;
+    if (isEmptyPara) {
+      editor.chain().focus().setTextSelection(pos + 1).insertContent("/").run();
+    } else {
+      const end = pos + node.nodeSize;
+      editor
+        .chain()
+        .focus()
+        .insertContentAt(end, { type: "paragraph" })
+        .setTextSelection(end + 1)
+        .insertContent("/")
+        .run();
+    }
   }, [editor]);
 
   return (
@@ -1640,13 +1663,13 @@ function CollaborativeEditorInner({
             <div className="flex items-center gap-0.5 pr-1">
               <button
                 type="button"
-                title="Add block below"
+                title="Insert block (or press /)"
                 onMouseDown={(e) => {
                   // Don't let the drag plugin treat this click as a drag start.
                   e.preventDefault();
                   e.stopPropagation();
                 }}
-                onClick={insertBlockBelow}
+                onClick={openSlashMenu}
                 className="flex h-6 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
               >
                 <Plus size={15} />

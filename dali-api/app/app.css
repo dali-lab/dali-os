@@ -434,6 +434,18 @@ select:not(:disabled) {
   display: none;
 }
 
+/* Editor placeholder: @tiptap/extension-placeholder only sets data-placeholder +
+   the is-editor-empty class; the visible text is up to the app. Scope to the
+   empty document's first block so it never leaks into empty table cells,
+   callout bodies, or toggle summaries. */
+.ProseMirror > .is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--color-muted-foreground);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
 /* ── Callout block ─────────────────────────────────────────────────────── */
 .callout {
   display: flex;

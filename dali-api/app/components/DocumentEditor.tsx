@@ -270,8 +270,7 @@ export function DocumentEditor({
             enableRichBlocks
             chromeless
             focusMentionUserId={focusMentionUserId}
-            placeholder="Start writing…"
-            className="min-h-[60vh]"
+            placeholder="Write something, or press '/' for commands"
             inlineComments={{
               enabled: true,
               anchors,
