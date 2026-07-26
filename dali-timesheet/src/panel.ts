@@ -7,9 +7,37 @@ import type {
   PullReply,
   SignOutReply,
 } from "./messages";
-import type { TimesheetExport, FillOutcome } from "./types";
-import { fillEntries } from "./jobx";
+import type { TimesheetExport, FillOutcome, LoggedEntry } from "./types";
+import { prepareRow, commitRow, canFill } from "./jobx";
 import { DEFAULT_LOOKBACK_DAYS } from "./config";
+
+// A fill that must survive JobX's full-page reload after each saved row. We
+// persist remaining entries to chrome.storage.local; after every reload the
+// freshly re-injected panel reads this and fills the next entry, until done.
+interface FillQueue {
+  entries: LoggedEntry[];
+  results: FillOutcome[];
+  next: number;
+  total: number;
+  hireLabel: string;
+  startedAt: number;
+  active: boolean;
+}
+const QUEUE_KEY = "fill_queue";
+const QUEUE_MAX_AGE_MS = 5 * 60_000;
+
+async function getQueue(): Promise<FillQueue | null> {
+  const stored = await chrome.storage.local.get(QUEUE_KEY);
+  const queue = stored[QUEUE_KEY] as FillQueue | undefined;
+  if (!queue) return null;
+  if (Date.now() - queue.startedAt > QUEUE_MAX_AGE_MS) {
+    await chrome.storage.local.remove(QUEUE_KEY);
+    return null;
+  }
+  return queue;
+}
+const setQueue = (queue: FillQueue) => chrome.storage.local.set({ [QUEUE_KEY]: queue });
+const removeQueue = () => chrome.storage.local.remove(QUEUE_KEY);
 
 type State =
   | { screen: "loading" }
@@ -118,6 +146,13 @@ export class Panel {
   }
 
   private async init(): Promise<void> {
+    // A fill in progress (resumed after JobX reloaded the page) takes priority.
+    const queue = await getQueue();
+    if (queue && queue.active) {
+      this.set({ screen: "filling", done: queue.next, total: queue.total });
+      void this.drive();
+      return;
+    }
     const status = await sendToWorker<StatusReply>({ kind: "status" });
     this.set(status.paired ? { screen: "ready" } : { screen: "disconnected" });
   }
@@ -181,19 +216,63 @@ export class Panel {
     }
   }
 
-  private async fill(): Promise<void> {
+  private async startFill(): Promise<void> {
     if (this.state.screen !== "pulled") return;
-    const { entries, hireLabel } = {
-      entries: this.state.data.entries,
-      hireLabel: this.state.data.hireLabel,
-    };
-    this.set({ screen: "filling", done: 0, total: entries.length });
-    // Fields already reflect only this hire's entries, so the fill is
-    // role-scoped by construction — nothing else lands on the wrong timesheet.
-    const results = await fillEntries(entries, (done, total) => {
-      if (this.state.screen === "filling") this.set({ screen: "filling", done, total });
+    const { entries, hireLabel } = this.state.data;
+    // Persist the whole batch, then drive it. Fields already reflect only this
+    // hire's entries, so the fill is role-scoped by construction.
+    await setQueue({
+      entries,
+      results: [],
+      next: 0,
+      total: entries.length,
+      hireLabel,
+      startedAt: Date.now(),
+      active: true,
     });
-    this.set({ screen: "done", results, hireLabel });
+    this.set({ screen: "filling", done: 0, total: entries.length });
+    void this.drive();
+  }
+
+  // Fill entries one at a time. A committed row reloads the page (JobX postback),
+  // which re-injects the panel and calls drive() again via init() — so each call
+  // fills until it commits one row (then returns to wait for the reload) or runs
+  // out. Skipped/errored rows don't reload, so we keep going within the tick.
+  private async drive(): Promise<void> {
+    const queue = await getQueue();
+    if (!queue || !queue.active) return;
+
+    if (queue.next >= queue.total) {
+      await removeQueue();
+      this.set({ screen: "done", results: queue.results, hireLabel: queue.hireLabel });
+      return;
+    }
+    if (!canFill()) {
+      // Not on a fillable timesheet page yet; show progress and wait.
+      this.set({ screen: "filling", done: queue.next, total: queue.total });
+      return;
+    }
+
+    while (queue.next < queue.total) {
+      const entry = queue.entries[queue.next];
+      const prep = prepareRow(entry);
+      queue.results.push(
+        prep.ok
+          ? { date: prep.dateKey, status: "filled" }
+          : { date: prep.dateKey, status: prep.status, detail: prep.detail },
+      );
+      queue.next += 1;
+      this.set({ screen: "filling", done: queue.next, total: queue.total });
+      if (prep.ok) {
+        await setQueue(queue); // persist BEFORE the Add click navigates
+        commitRow(prep.prefix, prep.suffix); // → full reload → resumes on next load
+        return;
+      }
+      await setQueue(queue); // skipped/error: no reload, continue the loop
+    }
+
+    await removeQueue();
+    this.set({ screen: "done", results: queue.results, hireLabel: queue.hireLabel });
   }
 
   private async signOut(): Promise<void> {
@@ -383,7 +462,7 @@ export class Panel {
     frag.append(
       h(
         "button",
-        { class: "btn block", onclick: () => void this.fill(), ...(data.entries.length === 0 ? { disabled: "true" } : {}) },
+        { class: "btn block", onclick: () => void this.startFill(), ...(data.entries.length === 0 ? { disabled: "true" } : {}) },
         `Fill ${data.entries.length} into JobX`,
       ),
     );

@@ -1,4 +1,4 @@
-import type { LoggedEntry, FillOutcome } from "./types";
+import type { LoggedEntry } from "./types";
 
 // Writes logged entries into JobX's quick-add timesheet grid. The grid pairs an
 // `addQuickentry` row (a hidden `..._QuickDate_<suffix>` marker plus Start/End/
@@ -81,10 +81,22 @@ function writeNote(prefix: string, suffix: string, note: string): void {
   }
 }
 
-function fillOne(entry: LoggedEntry): FillOutcome {
+// Is the quick-add grid present, i.e. can we fill on this page right now?
+export function canFill(): boolean {
+  return !!document.querySelector("[id*='QuickDate']");
+}
+
+export type PrepResult =
+  | { ok: true; dateKey: string; prefix: string; suffix: string }
+  | { ok: false; dateKey: string; status: "skipped" | "error"; detail: string };
+
+// Populate a row's time/note/pay-code fields WITHOUT clicking Add. Split from
+// the commit so the caller can persist the queue before JobX's postback reloads
+// the page (clicking Add navigates, which would race an unsaved queue write).
+export function prepareRow(entry: LoggedEntry): PrepResult {
   const dateKey = localDateKey(entry.startAt);
   const row = locateRow(dateKey);
-  if (!row) return { date: dateKey, status: "skipped", detail: "No timesheet row for this date" };
+  if (!row) return { ok: false, dateKey, status: "skipped", detail: "No timesheet row for this date" };
 
   const { prefix, suffix } = row;
   const start = toClock(entry.startAt);
@@ -98,62 +110,19 @@ function fillOne(entry: LoggedEntry): FillOutcome {
     chooseOption(field("EndHour1"), end.hour) &&
     chooseOption(field("EndMinute1"), end.minute) &&
     chooseOption(field("EndAmPm1"), end.ampm);
-  if (!timesSet) return { date: dateKey, status: "error", detail: "Couldn't set the time fields" };
+  if (!timesSet) return { ok: false, dateKey, status: "error", detail: "Couldn't set the time fields" };
 
   chooseOption(field("PayCodes1"), "1");
   const note = (entry.description ?? "").trim();
   if (note) writeNote(prefix, suffix, note);
+  return { ok: true, dateKey, prefix, suffix };
+}
 
-  const save = document.getElementById(field("AddButton"));
-  if (!save) return { date: dateKey, status: "error", detail: "Add button not found" };
+// Click a prepared row's Add button. This fires JobX's full-page postback, so
+// the queue must already be persisted before calling it.
+export function commitRow(prefix: string, suffix: string): boolean {
+  const save = document.getElementById(`${prefix}_AddButton_${suffix}`);
+  if (!save) return false;
   (save as HTMLElement).click();
-  return { date: dateKey, status: "filled" };
-}
-
-// Clicking a row's Add button fires an ASP.NET postback. If we fire the next
-// one before that finishes, JobX drops the overlapping request and only the
-// first entry actually saves. So we wait for the DOM to settle after each Add:
-// arm a quiet timer once mutations stop, with a floor (so we don't resolve
-// before the postback even starts) and a hard cap (so a chatty page can't hang
-// the batch).
-function settle(minMs = 500, quietMs = 500, maxMs = 4000): Promise<void> {
-  return new Promise((resolve) => {
-    let finished = false;
-    let quiet: ReturnType<typeof setTimeout> | undefined;
-    const finish = () => {
-      if (finished) return;
-      finished = true;
-      observer.disconnect();
-      if (quiet) clearTimeout(quiet);
-      clearTimeout(cap);
-      resolve();
-    };
-    const arm = () => {
-      if (quiet) clearTimeout(quiet);
-      quiet = setTimeout(finish, quietMs);
-    };
-    const observer = new MutationObserver(arm);
-    observer.observe(document.body, { childList: true, subtree: true, attributes: true });
-    const cap = setTimeout(finish, maxMs);
-    setTimeout(arm, minMs);
-  });
-}
-
-/** Fill a role-scoped batch sequentially, waiting for each Add's postback to
- *  land before the next. `onProgress(done, total)` fires before each entry. */
-export async function fillEntries(
-  entries: LoggedEntry[],
-  onProgress?: (done: number, total: number) => void,
-): Promise<FillOutcome[]> {
-  const results: FillOutcome[] = [];
-  let done = 0;
-  for (const entry of entries) {
-    onProgress?.(done, entries.length);
-    const outcome = fillOne(entry);
-    results.push(outcome);
-    done += 1;
-    if (outcome.status === "filled" && done < entries.length) await settle();
-  }
-  onProgress?.(entries.length, entries.length);
-  return results;
+  return true;
 }
