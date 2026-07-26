@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useEditor, EditorContent, type Editor } from "@tiptap/react";
+import { BubbleMenu } from "@tiptap/react/menus";
+import { DragHandle } from "@tiptap/extension-drag-handle-react";
 import { Extension, Node as TiptapNode, mergeAttributes } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -25,6 +27,10 @@ import {
   ChevronDown,
   Check,
   ListCollapse,
+  GripVertical,
+  Plus,
+  Undo2,
+  Redo2,
 } from "lucide-react";
 import * as Y from "yjs";
 import { HocuspocusProvider } from "@hocuspocus/provider";
@@ -52,6 +58,9 @@ import { VersionHistoryPanel } from "./collab/VersionHistoryPanel";
 import { EDITOR_CONTENT_CLASS, EditorShell } from "./editor/shared";
 import { mentionEditorExtension, searchMentionableUsers } from "./editor/mention";
 import { imageEditorExtensions, uploadEditorImage, IMAGE_UPLOAD_ACCEPT } from "./editor/image";
+import { richBlockExtensions } from "./editor/blocks";
+import { slashCommandExtension } from "./editor/slash-menu";
+import { BubbleToolbar } from "./editor/BubbleToolbar";
 
 interface CollaborativeEditorProps {
   documentName: string;
@@ -95,6 +104,24 @@ interface CollaborativeEditorProps {
    * stays consistent.
    */
   enableImages?: boolean;
+
+  /**
+   * Enable rich block content + Notion-style editing affordances: tables, task
+   * lists, callouts, a "/" slash-insert menu, a selection bubble toolbar, and
+   * block drag handles. Off by default. Adds `table`/`taskList`/`taskItem`/
+   * `callout` nodes to the collab room's schema — additive, but (like
+   * enableMentions/enableImages) all clients on the room must run with it on, so
+   * only turn it on for a surface where every client ships together.
+   */
+  enableRichBlocks?: boolean;
+
+  /**
+   * Drop the bordered "card" chrome (border, rounded corners, card background,
+   * focus ring) so the editor reads as the page itself rather than a box on it.
+   * Used by the full-page document surface. The toolbar keeps its own bottom
+   * border as a subtle separator.
+   */
+  chromeless?: boolean;
 
   /**
    * When set (arriving from a mention notification), once the doc syncs the
@@ -210,6 +237,7 @@ function buildSelection(user: AwarenessUser) {
 function createCollabExtension(
   fragment: Y.XmlFragment,
   provider: HocuspocusProvider,
+  undoManager: Y.UndoManager,
 ) {
   return Extension.create({
     name: "yCollab",
@@ -220,8 +248,31 @@ function createCollabExtension(
           cursorBuilder: buildCursor as any,
           selectionBuilder: buildSelection as any,
         }),
-        yUndoPlugin(),
+        // Pass our own UndoManager so undo/redo (keymap + toolbar buttons) call
+        // it directly by reference — no PluginKey.getState() indirection, which
+        // the production bundle can break if y-prosemirror gets inlined twice.
+        yUndoPlugin({ undoManager }),
       ];
+    },
+    // StarterKit's own history is disabled (undoRedo: false) because it would
+    // fight Yjs. Bind undo/redo to the Yjs UndoManager (per-user: it only undoes
+    // this client's edits, not collaborators'). Always return true so the browser's
+    // native contentEditable undo never fires — that would desync the doc.
+    addKeyboardShortcuts() {
+      return {
+        "Mod-z": () => {
+          undoManager.undo();
+          return true;
+        },
+        "Mod-y": () => {
+          undoManager.redo();
+          return true;
+        },
+        "Mod-Shift-z": () => {
+          undoManager.redo();
+          return true;
+        },
+      };
     },
   });
 }
@@ -545,15 +596,19 @@ const ToggleBlock = TiptapNode.create({
 
 // Curated text colors for the picker. Concrete hex (not CSS vars) so the value
 // survives copy/paste and HTML export as a plain inline style.
+// DALI brand hues at text-legible shades. The raw brand accents (soft coral,
+// pale yellow/green) fail contrast as body text, so these are deeper, saturated
+// versions tuned to read on BOTH the light and dark theme. Concrete hex (not CSS
+// vars) so the value survives copy/paste and HTML export as a plain inline style.
 const TEXT_COLORS: { label: string; value: string }[] = [
-  { label: "Coral", value: "#FF8B81" },
-  { label: "Teal", value: "#12B5A5" },
-  { label: "Blue", value: "#3B7DD8" },
-  { label: "Purple", value: "#8B5CF6" },
-  { label: "Green", value: "#3F9B57" },
-  { label: "Amber", value: "#E0A32E" },
-  { label: "Red", value: "#DC4C4C" },
-  { label: "Slate", value: "#5B6472" },
+  { label: "Coral", value: "#D6473E" },
+  { label: "Teal", value: "#0E9C93" },
+  { label: "Amber", value: "#B7791F" },
+  { label: "Green", value: "#4E9A3F" },
+  { label: "Blue", value: "#2A6F97" },
+  { label: "Purple", value: "#7C5CD6" },
+  { label: "Pink", value: "#C64F93" },
+  { label: "Gray", value: "#64748B" },
 ];
 
 // Highlight (text background) swatches. Soft tints so dark body text stays
@@ -655,6 +710,27 @@ function ColorControl({ editor }: { editor: Editor }) {
               </button>
             ))}
           </div>
+          <label className="mt-2 flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-xs text-muted-foreground hover:text-foreground">
+            <span
+              className="relative flex h-6 w-6 items-center justify-center overflow-hidden rounded-full border border-black/10"
+              style={{
+                background:
+                  "conic-gradient(red, orange, yellow, lime, cyan, blue, magenta, red)",
+              }}
+            >
+              {/* Native picker for any hue. Can't preventDefault (that would
+                  block the OS dialog); the editor blurs to the dialog, but
+                  chain().focus() restores the stored selection before setColor. */}
+              <input
+                type="color"
+                value={current ?? "#000000"}
+                onChange={(e) => editor.chain().focus().setColor(e.target.value).run()}
+                aria-label="Custom text color"
+                className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+              />
+            </span>
+            Custom…
+          </label>
           <button
             type="button"
             onMouseDown={(e) => {
@@ -662,7 +738,7 @@ function ColorControl({ editor }: { editor: Editor }) {
               editor.chain().focus().unsetColor().run();
               close();
             }}
-            className="mt-2 w-full rounded px-2 py-1 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="mt-1 w-full rounded px-2 py-1 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
           >
             Default color
           </button>
@@ -831,25 +907,34 @@ const TOOLBAR_ACTIONS: ToolbarAction[] = [
 
 function EditorToolbar({
   editor,
+  undoManager,
   onOpenHistory,
   showImageButton = false,
 }: {
   editor: Editor;
+  undoManager: Y.UndoManager;
   onOpenHistory: () => void;
   showImageButton?: boolean;
 }) {
   // Tiptap doesn't trigger a React re-render on its own; re-render on every
   // transaction so the active-button highlighting (bold/heading/etc. state)
-  // tracks the current selection.
+  // tracks the current selection, and on undo-stack changes so the undo/redo
+  // buttons enable/disable live.
   const [, setTick] = useState(0);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   useEffect(() => {
     const rerender = () => setTick((t) => t + 1);
     editor.on("transaction", rerender);
+    undoManager.on("stack-item-added", rerender);
+    undoManager.on("stack-item-popped", rerender);
+    undoManager.on("stack-cleared", rerender);
     return () => {
       editor.off("transaction", rerender);
+      undoManager.off("stack-item-added", rerender);
+      undoManager.off("stack-item-popped", rerender);
+      undoManager.off("stack-cleared", rerender);
     };
-  }, [editor]);
+  }, [editor, undoManager]);
 
   async function onImagePicked(files: FileList | null) {
     for (const file of Array.from(files ?? [])) {
@@ -867,9 +952,44 @@ function EditorToolbar({
     if (imageInputRef.current) imageInputRef.current.value = "";
   }
 
+  // Undo/redo driven by our own UndoManager reference (no PluginKey.getState —
+  // that indirection is what breaks in the production bundle). Re-renders above
+  // keep canUndo/canRedo live.
+  const canUndo = undoManager.canUndo();
+  const canRedo = undoManager.canRedo();
+
   return (
     <div className="flex items-center justify-between gap-1 border-b border-border px-1.5 py-1">
       <div className="flex flex-wrap items-center gap-0.5">
+        <button
+          type="button"
+          title="Undo (⌘Z)"
+          aria-label="Undo"
+          disabled={!canUndo}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            undoManager.undo();
+            editor.commands.focus();
+          }}
+          className="p-1.5 rounded transition-colors text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
+        >
+          <Undo2 size={15} />
+        </button>
+        <button
+          type="button"
+          title="Redo (⌘⇧Z)"
+          aria-label="Redo"
+          disabled={!canRedo}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            undoManager.redo();
+            editor.commands.focus();
+          }}
+          className="p-1.5 rounded transition-colors text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
+        >
+          <Redo2 size={15} />
+        </button>
+        <span className="mx-0.5 h-5 w-px bg-border" aria-hidden />
         {TOOLBAR_ACTIONS.map(({ label, icon: Icon, isActive, run }) => (
           <button
             key={label}
@@ -953,6 +1073,7 @@ interface DocEntry {
   provider: HocuspocusProvider;
   fragment: Y.XmlFragment;
   persistence: IndexeddbPersistence;
+  undoManager: Y.UndoManager;
   refCount: number;
   disposeTimer: ReturnType<typeof setTimeout> | null;
 }
@@ -990,11 +1111,20 @@ function acquireDoc(documentName: string, token: string): DocEntry {
   });
 
   const fragment = ydoc.getXmlFragment("default");
+  // One UndoManager per doc, created here so undo/redo hold a direct reference
+  // to it. trackedOrigins = ySyncPluginKey — the origin y-prosemirror stamps on
+  // local ProseMirror edits — so undo only affects this client's own changes,
+  // not collaborators'. captureTransaction mirrors yUndoPlugin's default.
+  const undoManager = new Y.UndoManager(fragment, {
+    trackedOrigins: new Set([ySyncPluginKey]),
+    captureTransaction: (tr) => tr.meta.get("addToHistory") !== false,
+  });
   entry = {
     ydoc,
     provider,
     fragment,
     persistence,
+    undoManager,
     refCount: 1,
     disposeTimer: null,
   };
@@ -1013,6 +1143,7 @@ function releaseDoc(documentName: string) {
     const current = docCache.get(key);
     if (!current || current.refCount > 0) return;
     console.log(`[collab:${documentName}] disposing`);
+    current.undoManager.destroy();
     current.provider.destroy();
     current.persistence.destroy();
     current.ydoc.destroy();
@@ -1070,6 +1201,8 @@ function CollaborativeEditorInner({
   inlineComments,
   enableMentions = false,
   enableImages = false,
+  enableRichBlocks = false,
+  chromeless = false,
   focusMentionUserId,
   onBeginEdit,
   onWordCountChange,
@@ -1114,7 +1247,8 @@ function CollaborativeEditorInner({
       TabKeymap,
       ...(enableMentions ? [mentionEditorExtension(searchMentionableUsers)] : []),
       ...(enableImages ? imageEditorExtensions() : []),
-      createCollabExtension(entry.fragment, entry.provider),
+      ...(enableRichBlocks ? [...richBlockExtensions(), slashCommandExtension()] : []),
+      createCollabExtension(entry.fragment, entry.provider, entry.undoManager),
       ...(inlineComments?.enabled
         ? [
             createCommentDecorationExtension(
@@ -1128,7 +1262,22 @@ function CollaborativeEditorInner({
     editable: !disabled,
     editorProps: {
       attributes: {
-        class: EDITOR_CONTENT_CLASS,
+        // Compose the content class so the *typable* ProseMirror element carries
+        // the height, not the outer shell: chromeless (full-page doc) fills the
+        // viewport so the whole area is a click/type target and the placeholder
+        // anchors at the top; boxed editors keep the compact min-height. Extra
+        // left padding when rich blocks are on gives the drag handle / "+" a
+        // gutter beside the text. Swapping the single min-height class (rather
+        // than stacking two) avoids a Tailwind precedence conflict.
+        class: [
+          EDITOR_CONTENT_CLASS.replace(
+            "min-h-[6rem]",
+            chromeless ? "min-h-[60vh]" : "min-h-[6rem]",
+          ),
+          enableRichBlocks ? "pl-10" : "",
+        ]
+          .filter(Boolean)
+          .join(" "),
       },
     },
   });
@@ -1526,17 +1675,53 @@ function CollaborativeEditorInner({
     };
   }, [editor, presenceEnabled, reportFocus]);
 
+  // The block the drag handle is currently anchored to — target for the "+"
+  // insert-below button. onNodeChange MUST be stable: DragHandle re-runs its
+  // plugin registration when its props change, and re-registering a plugin
+  // reconfigures the editor, which resets the "/" suggestion plugin's state
+  // (making the slash menu flash open then close on the next re-render).
+  const hoveredPosRef = useRef<number | null>(null);
+  const onDragNodeChange = useCallback(({ pos }: { pos: number }) => {
+    hoveredPosRef.current = pos;
+  }, []);
+  // "+" opens the slash menu (Notion behavior). Insert a "/" at the right spot
+  // and the existing suggestion plugin pops the menu; the chosen command's
+  // deleteRange removes the "/". Reuse the hovered block: type into it if it's
+  // an empty paragraph, otherwise start a fresh block below.
+  const openSlashMenu = useCallback(() => {
+    if (!editor) return;
+    const pos = hoveredPosRef.current;
+    if (pos == null) return;
+    const node = editor.state.doc.nodeAt(pos);
+    if (!node) return;
+    const isEmptyPara = node.type.name === "paragraph" && node.content.size === 0;
+    if (isEmptyPara) {
+      editor.chain().focus().setTextSelection(pos + 1).insertContent("/").run();
+    } else {
+      const end = pos + node.nodeSize;
+      editor
+        .chain()
+        .focus()
+        .insertContentAt(end, { type: "paragraph" })
+        .setTextSelection(end + 1)
+        .insertContent("/")
+        .run();
+    }
+  }, [editor]);
+
   return (
     <EditorShell
       ref={containerRef}
       relative
       disabled={disabled}
       muted={disabled && !onBeginEdit}
+      chromeless={chromeless}
       className={className}
     >
       {editor && !disabled ? (
         <EditorToolbar
           editor={editor}
+          undoManager={entry.undoManager}
           onOpenHistory={() => setHistoryOpen(true)}
           showImageButton={enableImages}
         />
@@ -1557,7 +1742,9 @@ function CollaborativeEditorInner({
           onClose={() => setHistoryOpen(false)}
         />
       )}
-      {inlineComments?.enabled && commentBtn && (
+      {/* Standalone comment button — only when there's no bubble toolbar to
+          host the comment action (rich-blocks folds commenting into the bubble). */}
+      {inlineComments?.enabled && commentBtn && !(enableRichBlocks && !disabled) && (
         <button
           type="button"
           onMouseDown={(e) => {
@@ -1570,6 +1757,39 @@ function CollaborativeEditorInner({
         >
           💬 Comment
         </button>
+      )}
+      {editor && !disabled && enableRichBlocks && (
+        <>
+          <BubbleMenu editor={editor} className="z-30">
+            <BubbleToolbar
+              editor={editor}
+              onComment={inlineComments?.enabled ? requestCommentOnSelection : undefined}
+            />
+          </BubbleMenu>
+          <DragHandle editor={editor} onNodeChange={onDragNodeChange}>
+            <div className="flex items-center gap-0.5 pr-1">
+              <button
+                type="button"
+                title="Insert block (or press /)"
+                onMouseDown={(e) => {
+                  // Don't let the drag plugin treat this click as a drag start.
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onClick={openSlashMenu}
+                className="flex h-6 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <Plus size={15} />
+              </button>
+              <span
+                title="Drag to move"
+                className="flex h-6 w-5 cursor-grab items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <GripVertical size={15} />
+              </span>
+            </div>
+          </DragHandle>
+        </>
       )}
       <div onClick={handleEditorContentClick}>
         <EditorContent editor={editor} />

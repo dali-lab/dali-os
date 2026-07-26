@@ -111,6 +111,27 @@ function renderNode(node: PMNode): string {
     case "toggleSummary":
       // Only reached if a summary appears outside a toggle (defensive).
       return renderNodes(node.content);
+    case "callout": {
+      const emoji = typeof node.attrs?.emoji === "string" ? node.attrs.emoji : "💡";
+      // Inline styles (not a class) so the export survives html-to-docx too.
+      return `<div style="display:flex;gap:8px;padding:8px 12px;margin:8px 0;border:1px solid #ddd;border-radius:6px;background:#f7f7f7;"><span>${escapeHtml(
+        emoji,
+      )}</span><div>${renderNodes(node.content)}</div></div>`;
+    }
+    case "taskList":
+      return `<ul style="list-style:none;padding-left:0;">${renderNodes(node.content)}</ul>`;
+    case "taskItem": {
+      const checked = node.attrs?.checked === true;
+      return `<li>${checked ? "☑" : "☐"} ${renderNodes(node.content)}</li>`;
+    }
+    case "table":
+      return `<table>${renderNodes(node.content)}</table>`;
+    case "tableRow":
+      return `<tr>${renderNodes(node.content)}</tr>`;
+    case "tableHeader":
+      return `<th>${renderNodes(node.content)}</th>`;
+    case "tableCell":
+      return `<td>${renderNodes(node.content)}</td>`;
     default:
       // Unknown block: render its children so content is never dropped.
       return renderNodes(node.content);
@@ -142,6 +163,9 @@ export function buildExportHtml(title: string, bodyHtml: string): string {
   mark { padding: 0 2px; border-radius: 2px; }
   details { margin: 8px 0; }
   summary { font-weight: 600; cursor: pointer; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+  th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; vertical-align: top; }
+  th { background: #f2f2f2; font-weight: 600; }
 </style>
 </head>
 <body>

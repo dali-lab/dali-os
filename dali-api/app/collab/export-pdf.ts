@@ -129,6 +129,35 @@ function renderBlock(doc: PDFKit.PDFDocument, node: PMNode, listPrefix?: string)
       doc.moveDown(0.3);
       break;
     }
+    case "callout":
+      // Render like a blockquote (italic, gray) — pdfkit's core fonts have no
+      // emoji glyph, so the marker is dropped rather than rendered as tofu.
+      doc.font("Times-Italic").fillColor("#555");
+      (node.content ?? []).forEach((child) => renderBlock(doc, child));
+      doc.fillColor("#1a1a1a");
+      doc.moveDown(0.3);
+      break;
+    case "taskList":
+      (node.content ?? []).forEach((item) => {
+        if (item.type !== "taskItem") return;
+        const box = item.attrs?.checked === true ? "[x]  " : "[ ]  ";
+        (item.content ?? []).forEach((child, i) =>
+          renderBlock(doc, child, i === 0 ? box : undefined),
+        );
+      });
+      doc.moveDown(0.3);
+      break;
+    case "table":
+      doc.font("Times-Roman").fontSize(11).fillColor("#1a1a1a");
+      (node.content ?? []).forEach((row) => {
+        if (row.type !== "tableRow") return;
+        const cells = (row.content ?? []).map((cell) =>
+          collectRuns(cell).map((r) => r.text).join("").replace(/\s+/g, " ").trim(),
+        );
+        doc.text(cells.join("   |   "));
+      });
+      doc.moveDown(0.5);
+      break;
     default:
       (node.content ?? []).forEach((child) => renderBlock(doc, child, listPrefix));
   }

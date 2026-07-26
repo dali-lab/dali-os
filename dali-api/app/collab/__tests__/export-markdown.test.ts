@@ -150,6 +150,87 @@ describe("renderMarkdown", () => {
     expect(md).toContain("legacy body");
   });
 
+  it("renders a callout as an emoji-prefixed blockquote", () => {
+    const md = renderMarkdown(
+      doc([
+        {
+          type: "callout",
+          attrs: { emoji: "💡" },
+          content: [{ type: "paragraph", content: [{ type: "text", text: "note text" }] }],
+        },
+      ]),
+    );
+    expect(md).toContain("> 💡 note text");
+  });
+
+  it("renders a task list with GFM checkboxes", () => {
+    const md = renderMarkdown(
+      doc([
+        {
+          type: "taskList",
+          content: [
+            { type: "taskItem", attrs: { checked: true }, content: [{ type: "paragraph", content: [{ type: "text", text: "done" }] }] },
+            { type: "taskItem", attrs: { checked: false }, content: [{ type: "paragraph", content: [{ type: "text", text: "todo" }] }] },
+          ],
+        },
+      ]),
+    );
+    expect(md).toContain("- [x] done");
+    expect(md).toContain("- [ ] todo");
+  });
+
+  it("renders a table as a GFM pipe table", () => {
+    const md = renderMarkdown(
+      doc([
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [
+                { type: "tableHeader", content: [{ type: "paragraph", content: [{ type: "text", text: "A" }] }] },
+                { type: "tableHeader", content: [{ type: "paragraph", content: [{ type: "text", text: "B" }] }] },
+              ],
+            },
+            {
+              type: "tableRow",
+              content: [
+                { type: "tableCell", content: [{ type: "paragraph", content: [{ type: "text", text: "1" }] }] },
+                { type: "tableCell", content: [{ type: "paragraph", content: [{ type: "text", text: "2" }] }] },
+              ],
+            },
+          ],
+        },
+      ]),
+    );
+    expect(md).toContain("| A | B |");
+    expect(md).toContain("| --- | --- |");
+    expect(md).toContain("| 1 | 2 |");
+  });
+
+  it("escapes backslashes and pipes in table cells", () => {
+    const md = renderMarkdown(
+      doc([
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [
+                { type: "tableCell", content: [{ type: "paragraph", content: [{ type: "text", text: "a|b" }] }] },
+                { type: "tableCell", content: [{ type: "paragraph", content: [{ type: "text", text: "c\\d" }] }] },
+              ],
+            },
+          ],
+        },
+      ]),
+    );
+    // Pipe escaped so it can't split the cell; backslash escaped first so "\|"
+    // never collapses into an unescaped delimiter.
+    expect(md).toContain("a\\|b");
+    expect(md).toContain("c\\\\d");
+  });
+
   it("renders empty doc as trailing newline only", () => {
     const md = renderMarkdown(doc([]));
     expect(md).toBe("\n");
