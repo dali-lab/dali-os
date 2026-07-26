@@ -41,6 +41,14 @@ function applyMarks(text: string, marks: PMNode["marks"]): string {
       case "underline":
         html = `<u>${html}</u>`;
         break;
+      case "highlight": {
+        const color =
+          typeof mark.attrs?.color === "string" ? escapeHtml(mark.attrs.color) : "";
+        html = color
+          ? `<mark style="background-color:${color}">${html}</mark>`
+          : `<mark>${html}</mark>`;
+        break;
+      }
       case "link": {
         const href = typeof mark.attrs?.href === "string" ? escapeHtml(mark.attrs.href) : "#";
         html = `<a href="${href}">${html}</a>`;
@@ -89,6 +97,20 @@ function renderNode(node: PMNode): string {
       const alt = typeof node.attrs?.alt === "string" ? escapeHtml(node.attrs.alt) : "";
       return src ? `<img src="${src}" alt="${alt}" />` : "";
     }
+    case "toggleBlock": {
+      // First child may be a toggleSummary; the rest is the collapsible body.
+      // Render as native <details> so it round-trips and stays interactive in
+      // exported HTML / GitHub markdown previews.
+      const children = node.content ?? [];
+      const hasSummary = children[0]?.type === "toggleSummary";
+      const summaryHtml = hasSummary ? renderNodes(children[0]!.content) : "Toggle";
+      const bodyHtml = renderNodes(hasSummary ? children.slice(1) : children);
+      const open = node.attrs?.open !== false ? " open" : "";
+      return `<details${open}><summary>${summaryHtml || "Toggle"}</summary>${bodyHtml}</details>`;
+    }
+    case "toggleSummary":
+      // Only reached if a summary appears outside a toggle (defensive).
+      return renderNodes(node.content);
     default:
       // Unknown block: render its children so content is never dropped.
       return renderNodes(node.content);
@@ -117,6 +139,9 @@ export function buildExportHtml(title: string, bodyHtml: string): string {
   hr { border: none; border-top: 1px solid #ddd; margin: 24px 0; }
   a { color: #1155cc; }
   img { max-width: 100%; height: auto; border-radius: 6px; margin: 12px 0; }
+  mark { padding: 0 2px; border-radius: 2px; }
+  details { margin: 8px 0; }
+  summary { font-weight: 600; cursor: pointer; }
 </style>
 </head>
 <body>

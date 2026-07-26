@@ -1,12 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRevalidator } from "react-router";
 import { FileDown, Check, RotateCcw, Trash2 } from "lucide-react";
-import { CollaborativeEditor, type CommentAnchor } from "./CollaborativeEditor";
+import { CollaborativeEditor, type CommentAnchor, type EditorApi, type TocHeading } from "./CollaborativeEditor";
 import { PresenceProvider } from "./collab/PresenceProvider";
 import { PresenceBar } from "./collab/PresenceBar";
 import { CommentsRail, formatCommentDate, type Comment, type ThreadActions } from "./collab/CommentsRail";
 import { TagPicker, type DocTag } from "./TagPicker";
 import { MentionTextInput } from "./editor/MentionTextInput";
+import { useEditMode, EditModeToggle } from "./EditModeToggle";
+import { PageIconPicker } from "./editor/PageIconPicker";
+import { PageCover } from "./editor/PageCover";
+import { DocToc } from "./editor/DocToc";
+import { relativeTime } from "~/lib/relative-time";
 
 // Reusable, abstract document surface: a Notion-style large title, a
 // collaborative rich-text body, lab tags, inline + doc-level comments, and
@@ -28,6 +33,11 @@ export function DocumentEditor({
   canEdit,
   tags,
   allTags,
+  iconEmoji: initialIcon = null,
+  coverImageUrl: initialCover = null,
+  createdByName,
+  lastEditedByName,
+  updatedAt,
   focusMentionUserId,
   focusCommentId,
 }: {
@@ -41,6 +51,11 @@ export function DocumentEditor({
   canEdit: boolean;
   tags: DocTag[];
   allTags: DocTag[];
+  iconEmoji?: string | null;
+  coverImageUrl?: string | null;
+  createdByName?: string | null;
+  lastEditedByName?: string | null;
+  updatedAt?: string | null;
   // When set (arriving from a mention notification), scroll to + flash this
   // user's mention in the body once it syncs.
   focusMentionUserId?: string;
@@ -49,9 +64,35 @@ export function DocumentEditor({
   focusCommentId?: string;
 }) {
   const revalidator = useRevalidator();
+  // Read/edit gate: docs open in a clean reading view even for editors; the
+  // header toggle or the first click/keystroke in the body flips to edit.
+  const { editing, editMode, setEditMode } = useEditMode(canEdit);
   const [title, setTitle] = useState(initialTitle);
   const [savingTitle, setSavingTitle] = useState(false);
   const [pendingAnchor, setPendingAnchor] = useState<CommentAnchor | null>(null);
+
+  // Page chrome — optimistic local state, persisted via the documents API.
+  const [iconEmoji, setIconEmoji] = useState<string | null>(initialIcon);
+  const [coverImageUrl, setCoverImageUrl] = useState<string | null>(initialCover);
+  const [wordCount, setWordCount] = useState(0);
+  const [headings, setHeadings] = useState<TocHeading[]>([]);
+  const editorApiRef = useRef<EditorApi | null>(null);
+
+  async function savePageMeta(patch: { iconEmoji?: string | null; coverImageUrl?: string | null }) {
+    if (patch.iconEmoji !== undefined) setIconEmoji(patch.iconEmoji);
+    if (patch.coverImageUrl !== undefined) setCoverImageUrl(patch.coverImageUrl);
+    try {
+      await fetch(`/api/documents/${pageId}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      revalidator.revalidate();
+    } catch (err) {
+      console.error("[document] failed to save page metadata", err);
+    }
+  }
 
   // Bridge between the comments rail (owns the data) and the editor (needs the
   // anchors to highlight + a way to refetch after a new inline comment).
@@ -133,33 +174,59 @@ export function DocumentEditor({
     );
   }
 
+  const metaSegments = [
+    createdByName ? `Created by ${createdByName}` : null,
+    lastEditedByName || createdByName
+      ? `Last edited by ${lastEditedByName ?? createdByName}`
+      : null,
+    updatedAt ? relativeTime(updatedAt) : null,
+    `${wordCount} ${wordCount === 1 ? "word" : "words"}`,
+  ].filter(Boolean);
+
   const body = (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
       <div className="min-w-0">
+        <PageCover
+          coverImageUrl={coverImageUrl}
+          editing={editing}
+          onChange={(url) => savePageMeta({ coverImageUrl: url })}
+        />
         {/* Notion-style title — large, bold, borderless; doubles as the doc
             title (Page.title). */}
         <div className="mb-3">
-          <input
-            value={title}
-            onChange={(e) => onTitleChange(e.target.value)}
-            disabled={!canEdit}
-            placeholder="Untitled"
-            aria-label="Document title"
-            className="w-full font-heading text-3xl font-bold text-foreground bg-transparent border-none focus:outline-none placeholder:text-muted-foreground/50 disabled:opacity-100"
-          />
+          <div className="flex items-center gap-3">
+            <PageIconPicker
+              iconEmoji={iconEmoji}
+              editing={editing}
+              onChange={(e) => savePageMeta({ iconEmoji: e })}
+            />
+            <input
+              value={title}
+              onChange={(e) => onTitleChange(e.target.value)}
+              disabled={!editing}
+              placeholder="Untitled"
+              aria-label="Document title"
+              className="w-full font-heading text-3xl font-bold text-foreground bg-transparent border-none focus:outline-none placeholder:text-muted-foreground/50 disabled:opacity-100"
+            />
+          </div>
           <div className="mt-2 flex items-center justify-between gap-3 flex-wrap">
             <TagPicker
               targetType="doc"
               targetId={pageId}
               applied={tags}
               allTags={allTags}
-              canEdit={canEdit}
-              canCreate={canEdit}
+              canEdit={editing}
+              canCreate={editing}
               onChange={() => revalidator.revalidate()}
             />
             <div className="flex items-center gap-2 text-xs">
               {savingTitle && <span className="text-muted-foreground">Saving…</span>}
+              <DocToc
+                headings={headings}
+                onJump={(ordinal) => editorApiRef.current?.scrollToHeading(ordinal)}
+              />
               <PresenceBar />
+              <EditModeToggle canEdit={canEdit} editMode={editMode} setEditMode={setEditMode} />
               <a
                 href={`/documents/${pageId}/export?format=pdf`}
                 className="inline-flex items-center gap-1 px-2 py-1 rounded border border-border hover:bg-muted text-muted-foreground hover:text-foreground"
@@ -172,8 +239,17 @@ export function DocumentEditor({
               >
                 <FileDown className="w-3.5 h-3.5" /> Word
               </a>
+              <a
+                href={`/documents/${pageId}/export?format=md`}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded border border-border hover:bg-muted text-muted-foreground hover:text-foreground"
+              >
+                <FileDown className="w-3.5 h-3.5" /> Markdown
+              </a>
             </div>
           </div>
+          {metaSegments.length > 0 && (
+            <p className="mt-1.5 text-xs text-muted-foreground">{metaSegments.join(" · ")}</p>
+          )}
         </div>
 
         {collabToken ? (
@@ -182,7 +258,13 @@ export function DocumentEditor({
             documentName={`doc:${pageId}:body`}
             token={collabToken}
             userName={userName}
-            disabled={!canEdit}
+            disabled={!editing}
+            onBeginEdit={canEdit ? () => setEditMode(true) : undefined}
+            onWordCountChange={setWordCount}
+            onHeadingsChange={setHeadings}
+            onReady={(api) => {
+              editorApiRef.current = api;
+            }}
             enableMentions
             enableImages
             focusMentionUserId={focusMentionUserId}

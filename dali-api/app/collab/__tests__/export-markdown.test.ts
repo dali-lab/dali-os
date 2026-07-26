@@ -102,6 +102,54 @@ describe("renderMarkdown", () => {
     expect(md.trim().startsWith("> quoted")).toBe(true);
   });
 
+  it("renders underline and highlight marks as HTML passthrough", () => {
+    const md = renderMarkdown(
+      doc([
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "under", marks: [{ type: "underline" }] },
+            { type: "text", text: " and " },
+            { type: "text", text: "mark", marks: [{ type: "highlight" }] },
+          ],
+        },
+      ]),
+    );
+    expect(md).toContain("<u>under</u>");
+    expect(md).toContain("<mark>mark</mark>");
+  });
+
+  it("renders a toggle block as <details> with its summary + body", () => {
+    const md = renderMarkdown(
+      doc([
+        {
+          type: "toggleBlock",
+          attrs: { open: true },
+          content: [
+            { type: "toggleSummary", content: [{ type: "text", text: "Details" }] },
+            { type: "paragraph", content: [{ type: "text", text: "hidden body" }] },
+          ],
+        },
+      ]),
+    );
+    expect(md).toContain("<summary>Details</summary>");
+    expect(md).toContain("hidden body");
+  });
+
+  it("falls back to a Toggle label when a toggle has no summary (legacy)", () => {
+    const md = renderMarkdown(
+      doc([
+        {
+          type: "toggleBlock",
+          attrs: { open: true },
+          content: [{ type: "paragraph", content: [{ type: "text", text: "legacy body" }] }],
+        },
+      ]),
+    );
+    expect(md).toContain("<summary>Toggle</summary>");
+    expect(md).toContain("legacy body");
+  });
+
   it("renders empty doc as trailing newline only", () => {
     const md = renderMarkdown(doc([]));
     expect(md).toBe("\n");
