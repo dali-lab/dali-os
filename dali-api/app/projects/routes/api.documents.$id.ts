@@ -5,19 +5,33 @@ import { requireProjectEditAccess, requireMemberSession } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent } from "~/lib/audit";
 
-// POST   /api/documents/:id — rename. Body: { title }
+// POST   /api/documents/:id — partial update. Body: any of
+//                             { title?, iconEmoji?, coverImageUrl? }.
 // DELETE /api/documents/:id — archive (sets archivedAt; archived pages drop
 //                             out of the hub / workspace list by default).
 //
 // Documents are FreeForm Pages. Project-scoped pages use the project-edit gate
 // (isCore === Admin || Core, or a project assignee); Lab-scoped pages (the
 // lab-wide Documents area) use the lab-member gate — the lab's members are the
-// Lab workspace's members, mirroring project membership.
+// Lab workspace's members, mirroring project membership. EducationOffering
+// pages are not handled here (they keep their existing behavior); parity is a
+// follow-up.
 
-type Body = { title: string };
+type Body = { title?: string; iconEmoji?: string | null; coverImageUrl?: string | null };
+
+function isNullableString(v: unknown): v is string | null {
+  return v === null || typeof v === "string";
+}
 
 function isBody(x: unknown): x is Body {
-  return !!x && typeof x === "object" && typeof (x as Record<string, unknown>).title === "string";
+  if (!x || typeof x !== "object") return false;
+  const b = x as Record<string, unknown>;
+  const okTitle = b.title === undefined || typeof b.title === "string";
+  const okIcon = b.iconEmoji === undefined || isNullableString(b.iconEmoji);
+  const okCover = b.coverImageUrl === undefined || isNullableString(b.coverImageUrl);
+  const hasOne =
+    b.title !== undefined || b.iconEmoji !== undefined || b.coverImageUrl !== undefined;
+  return okTitle && okIcon && okCover && hasOne;
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -92,14 +106,29 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Invalid body" }, { status: 400 }));
   }
 
-  const title = body.title.trim();
-  if (!title) {
-    return withCors(request, Response.json({ error: "Title is required" }, { status: 400 }));
+  const data: {
+    title?: string;
+    iconEmoji?: string | null;
+    coverImageUrl?: string | null;
+    lastEditedById: string;
+  } = { lastEditedById: auth.user.sub };
+
+  if (body.title !== undefined) {
+    const title = body.title.trim();
+    if (!title) {
+      return withCors(request, Response.json({ error: "Title is required" }, { status: 400 }));
+    }
+    data.title = title;
+  }
+  if (body.iconEmoji !== undefined) {
+    const icon = typeof body.iconEmoji === "string" ? body.iconEmoji.trim() : "";
+    data.iconEmoji = icon || null;
+  }
+  if (body.coverImageUrl !== undefined) {
+    const cover = typeof body.coverImageUrl === "string" ? body.coverImageUrl.trim() : "";
+    data.coverImageUrl = cover || null;
   }
 
-  await prisma.page.update({
-    where: { id: pageId },
-    data: { title, lastEditedById: auth.user.sub },
-  });
+  await prisma.page.update({ where: { id: pageId }, data });
   return withCors(request, Response.json({ ok: true }));
 }

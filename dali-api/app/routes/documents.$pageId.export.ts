@@ -8,13 +8,14 @@ import {
   buildExportHtml,
 } from "~/collab/export";
 import { renderProseMirrorToPdf } from "~/collab/export-pdf";
+import { renderMarkdown } from "~/collab/export-markdown";
 
-// GET /documents/:pageId/export?format=pdf|docx
+// GET /documents/:pageId/export?format=pdf|docx|md
 //
 // Server-renders the document to PDF (pdfkit — pure JS, runs under --omit=dev
-// on the Alpine runtime) or Word .docx (html-to-docx). The body is decoded
-// from the persisted Yjs snapshot (see app/collab/export.ts). Same read gate as
-// the document page (live Project page + isCore).
+// on the Alpine runtime), Word .docx (html-to-docx), or Markdown. The body is
+// decoded from the persisted Yjs snapshot (see app/collab/export.ts). Same read
+// gate as the document page (live Project page + isCore).
 
 function safeFilename(title: string): string {
   return title.replace(/[^A-Za-z0-9 ._-]/g, "").trim().replace(/\s+/g, "_") || "document";
@@ -27,7 +28,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (await isPartnerAccount(auth)) return new Response("Forbidden", { status: 403 });
 
   const url = new URL(request.url);
-  const format = url.searchParams.get("format") === "docx" ? "docx" : "pdf";
+  const rawFormat = url.searchParams.get("format");
+  const format = rawFormat === "docx" ? "docx" : rawFormat === "md" ? "md" : "pdf";
 
   const page = await prisma.page.findUnique({
     where: { id: params.pageId },
@@ -41,6 +43,18 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
 
   const filename = safeFilename(page.title);
+
+  if (format === "md") {
+    const json = await collabDocToProseMirror(`doc:${page.id}:body`);
+    const body = json.content?.length ? renderMarkdown(json) : "";
+    const markdown = `# ${page.title}\n\n${body}`;
+    return new Response(markdown, {
+      headers: {
+        "Content-Type": "text/markdown; charset=utf-8",
+        "Content-Disposition": `attachment; filename="${filename}.md"`,
+      },
+    });
+  }
 
   if (format === "docx") {
     const bodyHtml = await collabDocToHtml(`doc:${page.id}:body`);

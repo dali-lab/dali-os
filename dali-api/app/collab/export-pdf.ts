@@ -7,7 +7,7 @@ import type { PMNode } from "./export-html";
 // consistent. Covers the StarterKit node/mark set; unknown nodes recurse into
 // their children so content is never dropped.
 
-type Run = { text: string; bold?: boolean; italic?: boolean; link?: string };
+type Run = { text: string; bold?: boolean; italic?: boolean; underline?: boolean; link?: string };
 
 function collectRuns(node: PMNode, inherited: Partial<Run> = {}): Run[] {
   if (node.type === "text") {
@@ -17,6 +17,7 @@ function collectRuns(node: PMNode, inherited: Partial<Run> = {}): Run[] {
         text: node.text ?? "",
         bold: inherited.bold || marks.some((m) => m.type === "bold"),
         italic: inherited.italic || marks.some((m) => m.type === "italic"),
+        underline: inherited.underline || marks.some((m) => m.type === "underline"),
         link:
           (marks.find((m) => m.type === "link")?.attrs?.href as string | undefined) ??
           inherited.link,
@@ -47,7 +48,7 @@ function writeInline(doc: PDFKit.PDFDocument, runs: Run[], fontSize: number) {
     doc.text(run.text, {
       continued: !isLast,
       link: run.link ?? undefined,
-      underline: !!run.link,
+      underline: run.underline || !!run.link,
     });
   });
   doc.fillColor("#1a1a1a");
@@ -112,6 +113,20 @@ function renderBlock(doc: PDFKit.PDFDocument, node: PMNode, listPrefix?: string)
       doc.text(alt ? `[Image: ${alt}]` : "[Image]");
       doc.fillColor("#1a1a1a");
       doc.moveDown(0.5);
+      break;
+    }
+    case "toggleBlock": {
+      // Print the summary as a bold line, then the (always-expanded) body.
+      const children = node.content ?? [];
+      const hasSummary = children[0]?.type === "toggleSummary";
+      const summaryText = hasSummary
+        ? collectRuns(children[0]!).map((r) => r.text).join("")
+        : "";
+      doc.font("Helvetica-Bold").fontSize(12).fillColor("#1a1a1a");
+      doc.text(summaryText || "Toggle");
+      doc.moveDown(0.2);
+      (hasSummary ? children.slice(1) : children).forEach((child) => renderBlock(doc, child));
+      doc.moveDown(0.3);
       break;
     }
     default:

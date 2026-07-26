@@ -68,6 +68,48 @@ describe("renderNodes (ProseMirror JSON → HTML)", () => {
     ];
     expect(renderNodes(nodes)).toContain("kept");
   });
+
+  it("renders underline and highlight marks", () => {
+    const nodes: PMNode[] = [
+      {
+        type: "paragraph",
+        content: [
+          { type: "text", text: "u", marks: [{ type: "underline" }] },
+          { type: "text", text: "h", marks: [{ type: "highlight", attrs: { color: "#FEF3C7" } }] },
+        ],
+      },
+    ];
+    const html = renderNodes(nodes);
+    expect(html).toContain("<u>u</u>");
+    expect(html).toContain('<mark style="background-color:#FEF3C7">h</mark>');
+  });
+
+  it("renders a toggle block as an open <details> with summary + body", () => {
+    const nodes: PMNode[] = [
+      {
+        type: "toggleBlock",
+        attrs: { open: true },
+        content: [
+          { type: "toggleSummary", content: [{ type: "text", text: "Summary" }] },
+          { type: "paragraph", content: [{ type: "text", text: "body" }] },
+        ],
+      },
+    ];
+    expect(renderNodes(nodes)).toBe(
+      "<details open><summary>Summary</summary><p>body</p></details>",
+    );
+  });
+
+  it("renders a summary-less (legacy) toggle with a Toggle label", () => {
+    const nodes: PMNode[] = [
+      {
+        type: "toggleBlock",
+        attrs: { open: false },
+        content: [{ type: "paragraph", content: [{ type: "text", text: "legacy" }] }],
+      },
+    ];
+    expect(renderNodes(nodes)).toBe("<details><summary>Toggle</summary><p>legacy</p></details>");
+  });
 });
 
 describe("buildExportHtml", () => {

@@ -24,6 +24,15 @@ function applyMarks(text: string, marks: PMNode["marks"]): string {
       case "strike":
         out = `~~${out}~~`;
         break;
+      case "underline":
+        // Markdown has no underline — pass through as HTML (renders in GitHub
+        // and most markdown viewers).
+        out = `<u>${out}</u>`;
+        break;
+      case "highlight":
+        // Markdown has no highlight — pass through as HTML <mark>.
+        out = `<mark>${out}</mark>`;
+        break;
       case "code":
         // Inline code: don't double-escape — backticks need to be the raw text.
         out = `\`${text}\``;
@@ -96,6 +105,18 @@ function renderBlock(node: PMNode, depth: number): string {
       const alt = typeof node.attrs?.alt === "string" ? node.attrs.alt : "";
       return `![${alt}](${src})\n\n`;
     }
+    case "toggleBlock": {
+      // First child may be a toggleSummary; the rest is the collapsible body.
+      // Emit as <details> HTML so it renders (collapsibly) on GitHub and keeps
+      // the summary + body readable in plain markdown.
+      const children = node.content ?? [];
+      const hasSummary = children[0]?.type === "toggleSummary";
+      const summary = hasSummary ? renderInline(children[0]!.content) : "Toggle";
+      const body = renderBlocks(hasSummary ? children.slice(1) : children, depth).trimEnd();
+      return `<details><summary>${summary || "Toggle"}</summary>\n\n${body}\n\n</details>\n\n`;
+    }
+    case "toggleSummary":
+      return renderInline(node.content);
     case "text":
       return applyMarks(node.text ?? "", node.marks);
     default:
