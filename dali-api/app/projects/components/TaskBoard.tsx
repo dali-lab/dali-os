@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRevalidator, useSearchParams } from "react-router";
 import { Button } from "~/components/ui/Button";
 import type { DragEndEvent } from "@dnd-kit/core";
-import { Archive, Github, Paperclip, X } from "lucide-react";
+import { Archive, Eye, EyeOff, Github, Paperclip, X } from "lucide-react";
 import { Confetti } from "~/components/Confetti";
 import { Modal } from "~/components/Modal";
 import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
@@ -48,6 +48,13 @@ const NO_EPIC = "none";
 // current-term scoping).
 const ALL_TERMS = "all";
 
+// Columns that may be collapsed away when empty via the "Hide empty" toggle.
+// Deliberately only the low-traffic ends of the flow — hiding an empty
+// active column (Todo/In progress/Done) would remove a drop target you
+// actually drag into, whereas an empty Backlog/Cancelled is just wasted width.
+const COLLAPSIBLE_EMPTY_STATUSES: TaskStatus[] = ["Backlog", "Cancelled"];
+const HIDE_EMPTY_KEY = "taskboard:hideEmptyCols";
+
 export function TaskBoard({
   projectId,
   initialTasks,
@@ -66,6 +73,24 @@ export function TaskBoard({
   const [showArchived, setShowArchived] = useState(false);
   const [archiving, setArchiving] = useState(false);
   const [celebrate, setCelebrate] = useState(false);
+  // View density preference (per-browser, not shared): collapse empty
+  // Backlog/Cancelled columns so they stop eating horizontal space. Defaults
+  // to on; a toggle reveals them and the choice persists in localStorage.
+  const [hideEmptyCols, setHideEmptyCols] = useState(true);
+  useEffect(() => {
+    setHideEmptyCols(window.localStorage.getItem(HIDE_EMPTY_KEY) !== "0");
+  }, []);
+  const toggleHideEmpty = useCallback(() => {
+    setHideEmptyCols((v) => {
+      const next = !v;
+      try {
+        window.localStorage.setItem(HIDE_EMPTY_KEY, next ? "1" : "0");
+      } catch {
+        /* private-mode / storage-disabled: fall back to in-memory only */
+      }
+      return next;
+    });
+  }, []);
   const revalidator = useRevalidator();
 
   // Pull fresh board state after each successful mutation (so GitHub issue
@@ -405,7 +430,21 @@ export function TaskBoard({
     }
   }
 
-  const columns: KanbanColumn<TaskCardModel>[] = TASK_STATUSES.map((status) => ({
+  // How many collapsible columns are currently empty (drives the toggle's
+  // visibility + its "Show empty (N)" count). Uses the filtered board so it
+  // reflects what's actually on screen under the active epic/sprint/term slice.
+  const collapsibleEmptyCount = COLLAPSIBLE_EMPTY_STATUSES.filter(
+    (s) => (board[s]?.length ?? 0) === 0,
+  ).length;
+
+  const columns: KanbanColumn<TaskCardModel>[] = TASK_STATUSES.filter(
+    (status) =>
+      !(
+        hideEmptyCols &&
+        COLLAPSIBLE_EMPTY_STATUSES.includes(status) &&
+        (board[status]?.length ?? 0) === 0
+      ),
+  ).map((status) => ({
     id: status,
     title: TASK_STATUS_LABELS[status],
     cards: board[status] ?? [],
@@ -490,24 +529,48 @@ export function TaskBoard({
             ))}
           </div>
         )}
-        {canManage && (
+        {(canManage || collapsibleEmptyCount > 0) && (
           <div className="flex items-center gap-2 ml-auto">
-            <Button variant="primary" size="sm" onClick={() => setIsCreating(true)}>
-              + Add task
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => void runArchive()}
-              disabled={archiving}
-            >
-              <Archive className="w-3.5 h-3.5" />
-              {archiving ? "Archiving…" : "Archive"}
-            </Button>
-            <Button variant="secondary" size="sm" onClick={() => setShowArchived(true)}>
-              <Archive className="w-3.5 h-3.5" />
-              Archived
-            </Button>
+            {collapsibleEmptyCount > 0 && (
+              <button
+                type="button"
+                onClick={toggleHideEmpty}
+                aria-pressed={hideEmptyCols}
+                title={
+                  hideEmptyCols
+                    ? "Show empty Backlog / Cancelled columns"
+                    : "Hide empty Backlog / Cancelled columns"
+                }
+                className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border border-border text-muted-foreground hover:bg-muted/30 transition-colors"
+              >
+                {hideEmptyCols ? (
+                  <Eye className="w-3.5 h-3.5" aria-hidden />
+                ) : (
+                  <EyeOff className="w-3.5 h-3.5" aria-hidden />
+                )}
+                {hideEmptyCols ? `Show empty (${collapsibleEmptyCount})` : "Hide empty"}
+              </button>
+            )}
+            {canManage && (
+              <>
+                <Button variant="primary" size="sm" onClick={() => setIsCreating(true)}>
+                  + Add task
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => void runArchive()}
+                  disabled={archiving}
+                >
+                  <Archive className="w-3.5 h-3.5" />
+                  {archiving ? "Archiving…" : "Archive"}
+                </Button>
+                <Button variant="secondary" size="sm" onClick={() => setShowArchived(true)}>
+                  <Archive className="w-3.5 h-3.5" />
+                  Archived
+                </Button>
+              </>
+            )}
           </div>
         )}
       </div>

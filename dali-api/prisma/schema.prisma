@@ -2477,12 +2477,27 @@ model UserStory {
   status   UserStoryStatus @default(Todo)
   position Int             @default(0)
 
+  // Product-requirement columns surfaced in the epic's prod-req table (internal
+  // + partner views). All optional so existing stories migrate without
+  // backfill; category is freeform text, priority is MoSCoW.
+  successMetric      String?
+  acceptanceCriteria String?
+  category           String?
+  priority           StoryPriority?
+
   epic Epic @relation(fields: [epicId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([epicId])
+}
+
+enum StoryPriority {
+  Must
+  Should
+  Could
+  Wont
 }
 
 enum UserStoryStatus {
@@ -2509,7 +2524,30 @@ model Sprint {
   epic    Epic?   @relation(fields: [epicId], references: [id])
   tasks   Task[]
 
+  // Timeline dependency edges. `dependencies` are the rows where this sprint is
+  // the dependent (the sprints it waits on); `blocking` are rows where it is
+  // the predecessor (sprints that wait on it). Both sides are same-project —
+  // enforced in the API, not the schema.
+  dependencies SprintDependency[] @relation("SprintDependent")
+  blocking     SprintDependency[] @relation("SprintBlocker")
+
   @@index([projectId, status])
+}
+
+// A directed "must finish before" edge between two sprints, drawn as an arrow
+// on the epics timeline. `sprintId` depends on (waits for) `dependsOnSprintId`.
+model SprintDependency {
+  id                String @id @default(cuid())
+  sprintId          String
+  dependsOnSprintId String
+
+  sprint          Sprint @relation("SprintDependent", fields: [sprintId], references: [id], onDelete: Cascade)
+  dependsOnSprint Sprint @relation("SprintBlocker", fields: [dependsOnSprintId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([sprintId, dependsOnSprintId])
+  @@index([dependsOnSprintId])
 }
 
 enum SprintStatus {

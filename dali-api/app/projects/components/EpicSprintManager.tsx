@@ -16,13 +16,21 @@ import { Modal } from "~/components/Modal";
 import { Button } from "~/components/ui/Button";
 import { CollaborativeEditor } from "~/components/CollaborativeEditor";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
-import { EpicsTimeline, type TimelineEpic } from "./EpicsTimeline";
+import { EpicsTimeline, type TimelineEpic, type SprintDependencyEdge } from "./EpicsTimeline";
+
+// MoSCoW priority for a product requirement (story). Null = unset.
+export type StoryPriority = "Must" | "Should" | "Could" | "Wont";
 
 export type EditableStory = {
   id: string;
   title: string;
   notes: string | null;
   status: "Todo" | "InProgress" | "Done";
+  // Product-requirement columns (see the prod-req table view).
+  successMetric: string | null;
+  acceptanceCriteria: string | null;
+  category: string | null;
+  priority: StoryPriority | null;
 };
 
 export type EditableEpic = {
@@ -57,10 +65,19 @@ export type EditableSprint = {
   endsAt: string;
   status: "Planned" | "Active" | "Closed";
   epicId: string | null;
+  // Ids of sprints this one depends on (waits for), edited in the sprint form.
+  dependsOn: string[];
 };
 
 const EPIC_STATUSES = ["Backlog", "Open", "InProgress", "Done", "Cancelled"] as const;
 const SPRINT_STATUSES = ["Planned", "Active", "Closed"] as const;
+const STORY_PRIORITIES: StoryPriority[] = ["Must", "Should", "Could", "Wont"];
+const STORY_PRIORITY_TONE: Record<StoryPriority, string> = {
+  Must: "text-accent-coral font-semibold",
+  Should: "text-foreground",
+  Could: "text-muted-foreground",
+  Wont: "text-muted-foreground line-through",
+};
 
 type Props = {
   projectId: string;
@@ -85,6 +102,8 @@ type Props = {
   view?: "list" | "timeline";
   // TimelineEpic shape for the timeline body (only read when view=timeline).
   timelineEpics?: TimelineEpic[];
+  // Sprint dependency edges, drawn as arrows on the timeline.
+  sprintDependencies?: SprintDependencyEdge[];
   // The list/timeline view switch, rendered on the toolbar row (right side),
   // with the "Add epic" button on the left of the same line.
   viewToggle?: ReactNode;
@@ -126,6 +145,7 @@ export function EpicSprintManager({
   userName,
   view = "list",
   timelineEpics = [],
+  sprintDependencies = [],
   viewToggle,
 }: Props) {
   const revalidator = useRevalidator();
@@ -350,6 +370,7 @@ export function EpicSprintManager({
           <EpicsTimeline
             epics={timelineEpics}
             taskCounts={taskCounts}
+            sprintDependencies={sprintDependencies}
             onEpicClick={canManage ? (id) => openEpic(id) : undefined}
             onSprintClick={
               canManage
@@ -657,6 +678,7 @@ export function EpicSprintManager({
                     busy={busy}
                     initial={sprint}
                     epics={epics}
+                    sprintOptions={sprints}
                     onCancel={() => setEditSprintId(null)}
                     onSubmit={(values) =>
                       run(async () => {
@@ -1092,69 +1114,106 @@ function EpicDetail({
         {epic.stories.length === 0 && !newStoryOpen ? (
           <p className="text-sm text-muted-foreground italic">No user stories yet.</p>
         ) : (
-          <div className="flex flex-col divide-y divide-border">
-            {epic.stories.map((story) =>
-              editStoryId === story.id ? (
-                <div key={story.id} className="py-2">
-                  <StoryForm
-                    busy={busy}
-                    initial={story}
-                    onCancel={() => setEditStoryId(null)}
-                    onSubmit={(values) =>
-                      run(async () => {
-                        await api(`/api/stories/${story.id}`, "POST", values);
-                        setEditStoryId(null);
-                      })
-                    }
-                  />
-                </div>
-              ) : (
-                <div
-                  key={story.id}
-                  className="py-2 flex items-start justify-between gap-3 text-sm"
-                >
-                  <div className="min-w-0">
-                    <span className="text-foreground">{story.title}</span>
-                    {story.notes && (
-                      <p className="text-[11px] text-muted-foreground whitespace-pre-wrap mt-0.5">
-                        {story.notes}
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-3 flex-shrink-0">
-                    <span className="text-[11px] text-muted-foreground">{story.status}</span>
-                    {canEditContent && (
-                      <>
-                        <Tooltip label="Edit story">
-                          <button
-                            type="button"
-                            onClick={() => setEditStoryId(story.id)}
-                            aria-label="Edit story"
-                            className="text-muted-foreground hover:text-foreground"
-                          >
-                            <Pencil className="w-3.5 h-3.5" />
-                          </button>
-                        </Tooltip>
-                        <Tooltip label="Delete story">
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={() => {
-                              if (!window.confirm(`Delete story "${story.title}"?`)) return;
-                              run(() => api(`/api/stories/${story.id}`, "DELETE"));
-                            }}
-                            aria-label="Delete story"
-                            className="text-destructive hover:text-destructive/80 disabled:opacity-60"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </Tooltip>
-                      </>
-                    )}
-                  </div>
-                </div>
-              ),
-            )}
+          // Product-requirement table: each story is a requirement, with its
+          // success metric / acceptance criteria / category / priority as
+          // columns. Editing swaps the row for the full StoryForm.
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  <th className="py-1.5 pr-3">Requirement</th>
+                  <th className="py-1.5 px-3">Category</th>
+                  <th className="py-1.5 px-3">Priority</th>
+                  <th className="py-1.5 px-3">Success metric</th>
+                  <th className="py-1.5 px-3">Acceptance criteria</th>
+                  <th className="py-1.5 px-3">Status</th>
+                  {canEditContent && <th className="w-px py-1.5 pl-3" />}
+                </tr>
+              </thead>
+              <tbody>
+                {epic.stories.map((story) =>
+                  editStoryId === story.id ? (
+                    <tr key={story.id}>
+                      <td colSpan={canEditContent ? 7 : 6} className="py-2">
+                        <StoryForm
+                          busy={busy}
+                          initial={story}
+                          onCancel={() => setEditStoryId(null)}
+                          onSubmit={(values) =>
+                            run(async () => {
+                              await api(`/api/stories/${story.id}`, "POST", values);
+                              setEditStoryId(null);
+                            })
+                          }
+                        />
+                      </td>
+                    </tr>
+                  ) : (
+                    <tr key={story.id} className="border-b border-border/60 align-top">
+                      <td className="min-w-[160px] py-2 pr-3">
+                        <span className="text-foreground">{story.title}</span>
+                        {story.notes && (
+                          <p className="mt-0.5 whitespace-pre-wrap text-[11px] text-muted-foreground">
+                            {story.notes}
+                          </p>
+                        )}
+                      </td>
+                      <td className="py-2 px-3 text-muted-foreground">
+                        {story.category ?? "—"}
+                      </td>
+                      <td className="py-2 px-3">
+                        {story.priority ? (
+                          <span className={`text-xs ${STORY_PRIORITY_TONE[story.priority]}`}>
+                            {story.priority}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
+                      <td className="max-w-[220px] whitespace-pre-wrap py-2 px-3 text-muted-foreground">
+                        {story.successMetric ?? "—"}
+                      </td>
+                      <td className="max-w-[220px] whitespace-pre-wrap py-2 px-3 text-muted-foreground">
+                        {story.acceptanceCriteria ?? "—"}
+                      </td>
+                      <td className="whitespace-nowrap py-2 px-3 text-[11px] text-muted-foreground">
+                        {story.status}
+                      </td>
+                      {canEditContent && (
+                        <td className="whitespace-nowrap py-2 pl-3">
+                          <div className="flex items-center gap-2">
+                            <Tooltip label="Edit story">
+                              <button
+                                type="button"
+                                onClick={() => setEditStoryId(story.id)}
+                                aria-label="Edit story"
+                                className="text-muted-foreground hover:text-foreground"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                            </Tooltip>
+                            <Tooltip label="Delete story">
+                              <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() => {
+                                  if (!window.confirm(`Delete story "${story.title}"?`)) return;
+                                  run(() => api(`/api/stories/${story.id}`, "DELETE"));
+                                }}
+                                aria-label="Delete story"
+                                className="text-destructive hover:text-destructive/80 disabled:opacity-60"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </Tooltip>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  ),
+                )}
+              </tbody>
+            </table>
           </div>
         )}
       </section>
@@ -1221,6 +1280,7 @@ function EpicDetail({
                   <SprintForm
                     busy={busy}
                     initial={sprint}
+                    sprintOptions={sprints}
                     onCancel={() => setEditSprintId(null)}
                     onSubmit={(values) =>
                       run(async () => {
@@ -1422,10 +1482,67 @@ function EpicForm({
   );
 }
 
+// Multi-select popover of other sprints this one depends on. Checkbox list so
+// several can be picked; closes on outside click.
+function DependsOnField({
+  options,
+  value,
+  onChange,
+}: {
+  options: EditableSprint[];
+  value: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+  const toggle = (id: string) =>
+    onChange(value.includes(id) ? value.filter((v) => v !== id) : [...value, id]);
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="min-w-[120px] rounded-md border border-border bg-background px-2 py-1.5 text-left text-sm text-foreground"
+      >
+        {value.length === 0
+          ? "None"
+          : `${value.length} sprint${value.length === 1 ? "" : "s"}`}
+      </button>
+      {open && (
+        <div className="absolute z-20 mt-1 max-h-48 w-56 overflow-y-auto rounded-md border border-border bg-card p-1 shadow-brand-2">
+          {options.map((s) => (
+            <label
+              key={s.id}
+              className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm hover:bg-muted"
+            >
+              <input
+                type="checkbox"
+                checked={value.includes(s.id)}
+                onChange={() => toggle(s.id)}
+                className="accent-accent-coral"
+              />
+              <span className="truncate">{s.name}</span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SprintForm({
   initial,
   busy,
   epics,
+  sprintOptions,
   onSubmit,
   onCancel,
   onDelete,
@@ -1436,12 +1553,16 @@ function SprintForm({
   // and includes `epicId` in the submitted values (null = no epic). Omitted
   // inside the epic detail modal, where the epic is implied by context.
   epics?: { id: string; title: string }[];
+  // Other sprints selectable as dependencies (the current sprint is filtered
+  // out). Only meaningful when editing an existing sprint.
+  sprintOptions?: EditableSprint[];
   onSubmit: (values: {
     name: string;
     startsAt: string;
     endsAt: string;
     status: string;
     epicId?: string | null;
+    dependsOn?: string[];
   }) => void;
   onCancel: () => void;
   onDelete?: () => void;
@@ -1454,6 +1575,11 @@ function SprintForm({
   const [status, setStatus] = useState(initial?.status ?? "Planned");
   // "" = no epic; only meaningful when the picker is shown.
   const [epicId, setEpicId] = useState(initial?.epicId ?? "");
+  const [dependsOn, setDependsOn] = useState<string[]>(initial?.dependsOn ?? []);
+  // Depends-on picker only applies to an existing sprint (needs an id to attach
+  // edges to) with other sprints available to point at.
+  const depChoices = (sprintOptions ?? []).filter((s) => s.id !== initial?.id);
+  const showDeps = !!initial && depChoices.length > 0;
 
   return (
     <form
@@ -1467,6 +1593,7 @@ function SprintForm({
           endsAt: new Date(endsAt).toISOString(),
           status,
           ...(epics ? { epicId: epicId || null } : {}),
+          ...(showDeps ? { dependsOn } : {}),
         });
       }}
       className="flex items-end gap-2 mb-3"
@@ -1532,6 +1659,12 @@ function SprintForm({
           </select>
         </label>
       )}
+      {showDeps && (
+        <label className="flex flex-col gap-1 text-xs">
+          <span className="text-muted-foreground">Depends on</span>
+          <DependsOnField options={depChoices} value={dependsOn} onChange={setDependsOn} />
+        </label>
+      )}
       </div>
       <div className="flex items-center gap-1 flex-shrink-0">
         <button
@@ -1583,22 +1716,36 @@ function StoryForm({
     title: string;
     notes: string | null;
     status: string;
+    successMetric: string | null;
+    acceptanceCriteria: string | null;
+    category: string | null;
+    priority: StoryPriority | null;
   }) => void;
   onCancel: () => void;
 }) {
   const [title, setTitle] = useState(initial?.title ?? "");
   const [notes, setNotes] = useState(initial?.notes ?? "");
   const [status, setStatus] = useState(initial?.status ?? "Todo");
+  const [successMetric, setSuccessMetric] = useState(initial?.successMetric ?? "");
+  const [acceptanceCriteria, setAcceptanceCriteria] = useState(
+    initial?.acceptanceCriteria ?? "",
+  );
+  const [category, setCategory] = useState(initial?.category ?? "");
+  const [priority, setPriority] = useState<StoryPriority | "">(initial?.priority ?? "");
 
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
+        const clean = (v: string) => (v.trim() ? v.trim() : null);
         onSubmit({
           title,
-          // Empty → null clears the notes.
-          notes: notes.trim() ? notes.trim() : null,
+          notes: clean(notes),
           status,
+          successMetric: clean(successMetric),
+          acceptanceCriteria: clean(acceptanceCriteria),
+          category: clean(category),
+          priority: priority || null,
         });
       }}
       className="flex flex-col gap-2 mb-3"
@@ -1629,13 +1776,55 @@ function StoryForm({
             ))}
           </select>
         </label>
+        <label className="flex flex-col gap-1 text-xs">
+          <span className="text-muted-foreground">Category</span>
+          <input
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            placeholder="e.g. Functional"
+            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-xs">
+          <span className="text-muted-foreground">Priority</span>
+          <select
+            value={priority}
+            onChange={(e) => setPriority(e.target.value as StoryPriority | "")}
+            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
+          >
+            <option value="">—</option>
+            {STORY_PRIORITIES.map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
       <label className="flex flex-col gap-1 text-xs">
-        <span className="text-muted-foreground">Notes / acceptance (optional)</span>
+        <span className="text-muted-foreground">Success metric (optional)</span>
+        <textarea
+          value={successMetric}
+          onChange={(e) => setSuccessMetric(e.target.value)}
+          rows={2}
+          className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+        />
+      </label>
+      <label className="flex flex-col gap-1 text-xs">
+        <span className="text-muted-foreground">Acceptance criteria (optional)</span>
+        <textarea
+          value={acceptanceCriteria}
+          onChange={(e) => setAcceptanceCriteria(e.target.value)}
+          rows={2}
+          className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+        />
+      </label>
+      <label className="flex flex-col gap-1 text-xs">
+        <span className="text-muted-foreground">Notes (optional)</span>
         <textarea
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
-          rows={3}
+          rows={2}
           className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
         />
       </label>

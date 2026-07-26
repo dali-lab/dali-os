@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.sprints.$id";
-import { prisma } from "~/lib/db";
+import { prisma, Prisma } from "~/lib/db";
 import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 
@@ -22,6 +22,8 @@ type EditBody = {
   endsAt?: string;
   status?: string;
   epicId?: string | null;
+  // Full replacement set of sprint ids this sprint depends on (waits for).
+  dependsOn?: string[];
 };
 
 function isEditBody(x: unknown): x is EditBody {
@@ -32,6 +34,12 @@ function isEditBody(x: unknown): x is EditBody {
   if (o.endsAt !== undefined && typeof o.endsAt !== "string") return false;
   if (o.status !== undefined && typeof o.status !== "string") return false;
   if (o.epicId !== undefined && o.epicId !== null && typeof o.epicId !== "string") return false;
+  if (
+    o.dependsOn !== undefined &&
+    (!Array.isArray(o.dependsOn) || o.dependsOn.some((v) => typeof v !== "string"))
+  ) {
+    return false;
+  }
   return true;
 }
 
@@ -121,6 +129,37 @@ export async function action({ request, params }: Route.ActionArgs) {
     );
   }
 
-  await prisma.sprint.update({ where: { id: sprintId }, data });
+  const ops: Prisma.PrismaPromise<unknown>[] = [];
+  if (Object.keys(data).length > 0) {
+    ops.push(prisma.sprint.update({ where: { id: sprintId }, data }));
+  }
+
+  // Dependency set is a full replacement. Self-edges are dropped; every target
+  // must be another sprint in the same project. (Cycles aren't blocked — the
+  // arrows are advisory, and the unique index dedupes repeats.)
+  if (body.dependsOn !== undefined) {
+    const ids = [...new Set(body.dependsOn)].filter((x) => x && x !== sprintId);
+    if (ids.length > 0) {
+      const valid = await prisma.sprint.count({
+        where: { id: { in: ids }, projectId: sprint.projectId },
+      });
+      if (valid !== ids.length) {
+        return withCors(
+          request,
+          Response.json({ error: "Invalid dependency target" }, { status: 400 }),
+        );
+      }
+    }
+    ops.push(
+      prisma.sprintDependency.deleteMany({ where: { sprintId } }),
+      ...ids.map((depId) =>
+        prisma.sprintDependency.create({
+          data: { sprintId, dependsOnSprintId: depId },
+        }),
+      ),
+    );
+  }
+
+  if (ops.length > 0) await prisma.$transaction(ops);
   return withCors(request, Response.json({ ok: true }));
 }
