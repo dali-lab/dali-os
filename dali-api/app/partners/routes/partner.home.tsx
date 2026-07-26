@@ -4,6 +4,7 @@ import { prisma } from "~/lib/db";
 import { requirePartner } from "~/partners/lib/partner-auth.server";
 import { partnerProjectsWhere } from "~/partners/lib/partner-access";
 import { resolvePhotoUrl } from "~/lib/photo";
+import { ProjectCoverImage } from "~/projects/components/ProjectCoverImage";
 import {
   PARTNER_APPLICATION_STATUS_LABELS,
   PARTNER_APPLICATION_STATUS_PILL,
@@ -84,13 +85,12 @@ export default function PartnerHome() {
                 to={`/partner/projects/${p.id}`}
                 className="bg-card border border-border rounded-2xl overflow-hidden hover:border-accent-coral transition group"
               >
-                {p.imageUrl && (
-                  <img
-                    src={p.imageUrl}
-                    alt=""
-                    className="w-full h-32 object-cover"
-                  />
-                )}
+                <ProjectCoverImage
+                  name={p.name}
+                  imageUrl={p.imageUrl}
+                  className="w-full h-32 object-cover"
+                  placeholderClassName="w-full h-32"
+                />
                 <div className="p-4">
                   <span className="font-heading font-semibold text-dark-blue group-hover:text-accent-coral transition">
                     {p.name}
