@@ -45,6 +45,8 @@ export const PANEL_CSS = `
   background: linear-gradient(180deg, #1E5779 0%, #17475F 100%);
   border-bottom: 2px solid var(--coral);
   color: #fff;
+  cursor: move;
+  user-select: none;
 }
 .head .mark {
   width: 24px; height: 24px; border-radius: 7px;
@@ -59,6 +61,7 @@ export const PANEL_CSS = `
 .head .close {
   margin-left: auto; background: rgba(255,255,255,0.2); color: #fff;
   width: 24px; height: 24px; border-radius: 7px; font-weight: 700; line-height: 1;
+  cursor: pointer;
 }
 .body {
   padding: 16px; overflow-y: auto;

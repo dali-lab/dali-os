@@ -34,6 +34,7 @@ function h<K extends keyof HTMLElementTagNameMap>(
     else if (key === "onclick") node.addEventListener("click", value as EventListener);
     else if (key === "onchange") node.addEventListener("change", value as EventListener);
     else if (key === "oninput") node.addEventListener("input", value as EventListener);
+    else if (key === "onmousedown") node.addEventListener("mousedown", value as EventListener);
     else if (value != null && value !== false) node.setAttribute(key, String(value));
   }
   for (const child of children) {
@@ -66,6 +67,7 @@ export class Panel {
   private mount: HTMLElement;
   private state: State = { screen: "loading" };
   private pollTimer: ReturnType<typeof setInterval> | null = null;
+  private dragOffset: { x: number; y: number } | null = null;
 
   constructor() {
     this.host = h("div", { id: "dali-timesheet-panel-host" });
@@ -81,6 +83,38 @@ export class Panel {
   }
   toggle(): void {
     this.host.style.display = this.hidden ? "" : "none";
+  }
+
+  // Drag the panel by its header. The host is right-anchored to start; on the
+  // first drag we switch to left/top so it can move freely, clamped to the
+  // viewport. Document-level listeners keep tracking even if the pointer
+  // outruns the header.
+  private startDrag(e: MouseEvent): void {
+    if ((e.target as HTMLElement).closest(".close")) return; // let close click through
+    e.preventDefault();
+    const rect = this.host.getBoundingClientRect();
+    this.host.style.left = `${rect.left}px`;
+    this.host.style.top = `${rect.top}px`;
+    this.host.style.right = "auto";
+    this.dragOffset = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    const move = (ev: MouseEvent) => this.onDrag(ev);
+    const up = () => {
+      this.dragOffset = null;
+      document.removeEventListener("mousemove", move);
+      document.removeEventListener("mouseup", up);
+    };
+    document.addEventListener("mousemove", move);
+    document.addEventListener("mouseup", up);
+  }
+
+  private onDrag(e: MouseEvent): void {
+    if (!this.dragOffset) return;
+    const maxX = Math.max(4, window.innerWidth - this.host.offsetWidth - 4);
+    const maxY = Math.max(4, window.innerHeight - this.host.offsetHeight - 4);
+    const x = Math.min(Math.max(4, e.clientX - this.dragOffset.x), maxX);
+    const y = Math.min(Math.max(4, e.clientY - this.dragOffset.y), maxY);
+    this.host.style.left = `${x}px`;
+    this.host.style.top = `${y}px`;
   }
 
   private async init(): Promise<void> {
@@ -184,7 +218,7 @@ export class Panel {
   private header(): HTMLElement {
     return h(
       "div",
-      { class: "head" },
+      { class: "head", onmousedown: (e: MouseEvent) => this.startDrag(e) },
       h("span", { class: "mark" }, "D"),
       h("h1", {}, "DALI Timesheet"),
       h("button", { class: "close", title: "Hide", onclick: () => this.toggle() }, "×"),
