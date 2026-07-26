@@ -30,8 +30,10 @@ function h<K extends keyof HTMLElementTagNameMap>(
   const node = document.createElement(tag);
   for (const [key, value] of Object.entries(props)) {
     if (key === "class") node.className = String(value);
+    else if (key === "value") (node as unknown as { value: string }).value = String(value);
     else if (key === "onclick") node.addEventListener("click", value as EventListener);
     else if (key === "onchange") node.addEventListener("change", value as EventListener);
+    else if (key === "oninput") node.addEventListener("input", value as EventListener);
     else if (value != null && value !== false) node.setAttribute(key, String(value));
   }
   for (const child of children) {
@@ -43,9 +45,21 @@ function h<K extends keyof HTMLElementTagNameMap>(
 
 const fmtDate = (iso: string) =>
   new Date(iso).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
-const fmtTime = (iso: string) =>
-  new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 const isoDay = (d: Date) => d.toISOString().slice(0, 10);
+
+// A time <input> gives "HH:MM"; keep the entry's original calendar day and just
+// move the local clock time. Blank/invalid input leaves the value untouched.
+const hhmm = (iso: string) => {
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+};
+const withTime = (iso: string, value: string): string => {
+  const [hh, mm] = value.split(":").map(Number);
+  if (Number.isNaN(hh) || Number.isNaN(mm)) return iso;
+  const d = new Date(iso);
+  d.setHours(hh, mm, 0, 0);
+  return d.toISOString();
+};
 
 export class Panel {
   private host: HTMLElement;
@@ -264,9 +278,13 @@ export class Panel {
         { class: "row" },
         h("span", { class: "pill" }, `${data.entries.length} ${data.entries.length === 1 ? "entry" : "entries"}`),
         switching ? h("span", { class: "spin" }) : h("span", { class: "muted" }, `→ ${data.hireLabel}`),
+        h("button", { class: "link refresh", onclick: () => void this.pull(data.hireKey) }, "Refresh"),
       ),
     );
 
+    // Entries are editable in place before filling: adjust the start/end time or
+    // the note and the change is used by the fill. Fields are uncontrolled so
+    // typing never re-renders (which would drop focus).
     const list = h(
       "div",
       { class: "list" },
@@ -274,15 +292,39 @@ export class Panel {
         h(
           "div",
           { class: "entry" },
+          h("span", { class: "date" }, fmtDate(entry.startAt)),
           h(
             "div",
-            { class: "top" },
-            h("span", { class: "date" }, fmtDate(entry.startAt)),
-            h("span", { class: "time" }, `${fmtTime(entry.startAt)} – ${fmtTime(entry.endAt)}`),
+            { class: "entry-times" },
+            h("input", {
+              type: "time",
+              class: "t",
+              value: hhmm(entry.startAt),
+              onchange: (e: Event) => {
+                const v = (e.target as HTMLInputElement).value;
+                if (v) entry.startAt = withTime(entry.startAt, v);
+              },
+            }),
+            h("span", { class: "dash" }, "–"),
+            h("input", {
+              type: "time",
+              class: "t",
+              value: hhmm(entry.endAt),
+              onchange: (e: Event) => {
+                const v = (e.target as HTMLInputElement).value;
+                if (v) entry.endAt = withTime(entry.endAt, v);
+              },
+            }),
           ),
-          (entry.description ?? "").trim()
-            ? h("span", { class: "note" }, entry.description)
-            : h("span", { class: "note empty" }, "No note"),
+          h("textarea", {
+            class: "entry-note",
+            rows: "2",
+            placeholder: "Note",
+            value: entry.description ?? "",
+            oninput: (e: Event) => {
+              entry.description = (e.target as HTMLTextAreaElement).value;
+            },
+          }),
         ),
       ),
     );
