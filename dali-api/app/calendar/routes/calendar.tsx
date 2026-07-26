@@ -2774,7 +2774,7 @@ function TimesheetView({ data }: { data: LoaderData }) {
           : !roleKey
             ? "Pick a role to log this time against."
             : null;
-  const canSubmit = hasRoles && !rangeError && !adding;
+  const canSubmit = hasRoles && !rangeError && !adding && note.trim() !== "";
   const serverError = addFetcher.data?.error ?? null;
 
   return (
@@ -2856,13 +2856,13 @@ function TimesheetView({ data }: { data: LoaderData }) {
             />
             <label className="text-xs text-muted-foreground flex flex-col gap-1">
               Note
-              <input
-                type="text"
+              <textarea
                 name="note"
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
-                placeholder="Optional"
-                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
+                rows={2}
+                placeholder="What did you work on?"
+                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground resize-y min-h-[2.25rem]"
               />
             </label>
             <div className="flex items-center gap-1.5">
@@ -3168,7 +3168,7 @@ function TimesheetDragPopover({
   const hours = startEndValid
     ? Math.round(((new Date(end).getTime() - new Date(start).getTime()) / 3_600_000) * 100) / 100
     : 0;
-  const canSubmit = startEndValid && hours > 0 && !!roleKey && !submitting;
+  const canSubmit = startEndValid && hours > 0 && !!roleKey && !submitting && note.trim() !== "";
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -3296,14 +3296,15 @@ function TimesheetDragPopover({
 
         <div>
           <label htmlFor="ts-drag-note" className="block text-sm font-medium text-foreground mb-1">
-            Note <span className="text-muted-foreground font-normal">(optional)</span>
+            Note
           </label>
-          <input
+          <textarea
             id="ts-drag-note"
-            type="text"
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            className="w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground"
+            rows={3}
+            placeholder="What did you work on?"
+            className="w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground resize-y min-h-[4.5rem]"
           />
         </div>
 
@@ -3371,7 +3372,7 @@ function TimesheetEditPopover({
     ? Math.round(((new Date(end).getTime() - new Date(start).getTime()) / 3_600_000) * 100) / 100
     : 0;
   const busy = submitting || deleting;
-  const canSubmit = startEndValid && hours > 0 && !!roleKey && !busy;
+  const canSubmit = startEndValid && hours > 0 && !!roleKey && !busy && note.trim() !== "";
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -3524,14 +3525,15 @@ function TimesheetEditPopover({
 
         <div>
           <label htmlFor="ts-edit-note" className="block text-sm font-medium text-foreground mb-1">
-            Note <span className="text-muted-foreground font-normal">(optional)</span>
+            Note
           </label>
-          <input
+          <textarea
             id="ts-edit-note"
-            type="text"
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            className="w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground"
+            rows={3}
+            placeholder="What did you work on?"
+            className="w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground resize-y min-h-[4.5rem]"
           />
         </div>
 
