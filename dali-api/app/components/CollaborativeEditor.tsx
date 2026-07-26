@@ -29,6 +29,8 @@ import {
   ListCollapse,
   GripVertical,
   Plus,
+  Undo2,
+  Redo2,
 } from "lucide-react";
 import * as Y from "yjs";
 import { HocuspocusProvider } from "@hocuspocus/provider";
@@ -37,6 +39,7 @@ import {
   ySyncPluginKey,
   yCursorPlugin,
   yUndoPlugin,
+  yUndoPluginKey,
   undo as yUndo,
   redo as yRedo,
   absolutePositionToRelativePosition,
@@ -914,9 +917,42 @@ function EditorToolbar({
     if (imageInputRef.current) imageInputRef.current.value = "";
   }
 
+  // Yjs undo manager state — this component re-renders on every transaction, so
+  // canUndo/canRedo track the live stacks.
+  const undoManager = yUndoPluginKey.getState(editor.state)?.undoManager;
+  const canUndo = undoManager?.canUndo?.() ?? false;
+  const canRedo = undoManager?.canRedo?.() ?? false;
+
   return (
     <div className="flex items-center justify-between gap-1 border-b border-border px-1.5 py-1">
       <div className="flex flex-wrap items-center gap-0.5">
+        <button
+          type="button"
+          title="Undo (⌘Z)"
+          aria-label="Undo"
+          disabled={!canUndo}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            yUndo(editor.state);
+          }}
+          className="p-1.5 rounded transition-colors text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
+        >
+          <Undo2 size={15} />
+        </button>
+        <button
+          type="button"
+          title="Redo (⌘⇧Z)"
+          aria-label="Redo"
+          disabled={!canRedo}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            yRedo(editor.state);
+          }}
+          className="p-1.5 rounded transition-colors text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
+        >
+          <Redo2 size={15} />
+        </button>
+        <span className="mx-0.5 h-5 w-px bg-border" aria-hidden />
         {TOOLBAR_ACTIONS.map(({ label, icon: Icon, isActive, run }) => (
           <button
             key={label}
