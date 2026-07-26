@@ -40,12 +40,15 @@ export const PANEL_CSS = `
   align-items: center;
   gap: 10px;
   padding: 13px 16px;
-  background: linear-gradient(180deg, #FFA991 0%, #FF8B81 100%);
+  /* Navy chrome grounds the panel and keeps coral reserved for actions in the
+     body; the coral keyline is the one "Sunrise" accent. */
+  background: linear-gradient(180deg, #1E5779 0%, #17475F 100%);
+  border-bottom: 2px solid var(--coral);
   color: #fff;
 }
 .head .mark {
   width: 24px; height: 24px; border-radius: 7px;
-  background: rgba(255,255,255,0.22);
+  background: var(--coral);
   display: grid; place-items: center;
   font-weight: 800; font-size: 13px;
 }
