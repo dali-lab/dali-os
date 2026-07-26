@@ -4,10 +4,12 @@ import { Extension, Node as TiptapNode, mergeAttributes } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import { TextStyle, Color } from "@tiptap/extension-text-style";
+import Highlight from "@tiptap/extension-highlight";
 import {
   History,
   Bold,
   Italic,
+  Underline as UnderlineIcon,
   Strikethrough,
   Code,
   Heading1,
@@ -18,6 +20,7 @@ import {
   Quote,
   Image as ImageIcon,
   Baseline,
+  Highlighter,
   AlignJustify,
   ChevronDown,
   Check,
@@ -34,7 +37,7 @@ import {
   relativePositionToAbsolutePosition,
 } from "y-prosemirror";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
-import { Plugin, PluginKey, type EditorState, type Transaction } from "@tiptap/pm/state";
+import { Plugin, PluginKey, TextSelection, type EditorState, type Transaction } from "@tiptap/pm/state";
 import { IndexeddbPersistence } from "y-indexeddb";
 import {
   ACTIVITY_THROTTLE_MS,
@@ -99,9 +102,36 @@ interface CollaborativeEditorProps {
    * flashes it. No-op if that user isn't mentioned.
    */
   focusMentionUserId?: string;
+
+  /**
+   * Read/edit mode: when the editor is `disabled` (read mode) but the viewer
+   * *could* edit, passing this makes the body a clean reading view that flips
+   * to edit on the first click/keystroke. The host wires this to its edit-mode
+   * state (e.g. setEditMode(true)). When set, the read-mode body is rendered
+   * without the dimmed "no access" styling.
+   */
+  onBeginEdit?: () => void;
+
+  /** Fired (throttled) with the live body word count as content changes. */
+  onWordCountChange?: (count: number) => void;
+
+  /** Fired (throttled) with the H1–H3 outline as content changes (for a ToC). */
+  onHeadingsChange?: (headings: TocHeading[]) => void;
+
+  /** Handed an imperative API once the editor mounts (e.g. scroll to a heading). */
+  onReady?: (api: EditorApi) => void;
 }
 
 export type CommentAnchor = { from: string; to: string };
+
+// One entry in the document outline. `ordinal` is the heading's 0-based index
+// among all H1–H3 headings, used to re-resolve its live position on click
+// (positions shift as the doc changes, so we never cache a raw pos).
+export type TocHeading = { level: number; text: string; ordinal: number };
+
+export type EditorApi = {
+  scrollToHeading: (ordinal: number) => void;
+};
 
 export type InlineCommentOpts = {
   enabled: boolean;
@@ -347,10 +377,18 @@ const LineSpacing = Extension.create({
 });
 
 // ─── Collapsible "toggle" block (Notion-style dropdown) ─────────────────────
-// A container node holding block content that visually collapses via an `open`
-// attribute. The content always stays in the document (collapse is display-only)
-// so collaborative sync isn't affected by open/closed state. Additive to the
-// schema — existing docs have no toggle blocks.
+// A container node whose first child is an editable summary line and whose
+// remaining children are block content that visually collapses via an `open`
+// attribute. Collapse is display-only (the body stays in the document) so
+// collaborative sync isn't affected by open/closed state.
+//
+// The content model is `toggleSummary? block+` — the summary is *optional* on
+// purpose: toggle blocks created before this change live in production Yjs docs
+// with only `block+` content, and an optional first child means ProseMirror
+// never auto-inserts a summary into them on load. That avoids every client
+// racing to mutate the shared doc (which would risk duplicate inserts). New
+// toggles seed an empty summary via setToggleBlock; legacy ones simply show the
+// "Toggle" placeholder until a user adds one.
 declare module "@tiptap/core" {
   interface Commands<ReturnType> {
     toggleBlock: {
@@ -359,10 +397,45 @@ declare module "@tiptap/core" {
   }
 }
 
+// Editable one-line title for a toggle. `inline*` so it holds rich text but no
+// block content; `isolating` keeps Enter/Backspace from merging it into the
+// body region; not in the `block` group so it can only ever be a toggle's first
+// child, never a free-floating block.
+const ToggleSummary = TiptapNode.create({
+  name: "toggleSummary",
+  content: "inline*",
+  defining: true,
+  selectable: false,
+  isolating: true,
+  parseHTML() {
+    return [{ tag: "summary" }, { tag: "div[data-type='toggle-summary']" }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return [
+      "div",
+      mergeAttributes(HTMLAttributes, { "data-type": "toggle-summary" }),
+      0,
+    ];
+  },
+  addKeyboardShortcuts() {
+    return {
+      // Enter in the summary jumps into the body instead of splitting the
+      // summary into a second line (Notion behavior). The body's first block
+      // always exists (block+), so its content start is right after the summary.
+      Enter: ({ editor }) => {
+        const { $from, empty } = editor.state.selection;
+        if (!empty || $from.parent.type.name !== "toggleSummary") return false;
+        const afterSummary = $from.after();
+        return editor.chain().setTextSelection(afterSummary + 1).scrollIntoView().run();
+      },
+    };
+  },
+});
+
 const ToggleBlock = TiptapNode.create({
   name: "toggleBlock",
   group: "block",
-  content: "block+",
+  content: "toggleSummary? block+",
   defining: true,
   addAttributes() {
     return {
@@ -374,7 +447,7 @@ const ToggleBlock = TiptapNode.create({
     };
   },
   parseHTML() {
-    return [{ tag: "div[data-type='toggle-block']" }];
+    return [{ tag: "div[data-type='toggle-block']" }, { tag: "details" }];
   },
   renderHTML({ HTMLAttributes }) {
     return [
@@ -387,28 +460,32 @@ const ToggleBlock = TiptapNode.create({
     return ({ node, editor, getPos }) => {
       const dom = document.createElement("div");
       dom.className = "toggle-block";
-      const header = document.createElement("div");
-      header.className = "toggle-block__header";
-      header.contentEditable = "false";
-      const chevron = document.createElement("span");
+      // Chevron sits outside contentDOM (a nodeView has exactly one contentDOM,
+      // which must hold the node's content). CSS positions it in the gutter.
+      const chevron = document.createElement("button");
+      chevron.type = "button";
       chevron.className = "toggle-block__chevron";
+      chevron.contentEditable = "false";
+      chevron.setAttribute("aria-label", "Collapse or expand section");
       chevron.textContent = "▶";
-      const label = document.createElement("span");
-      label.className = "toggle-block__label";
-      label.textContent = "Toggle";
-      header.appendChild(chevron);
-      header.appendChild(label);
       const content = document.createElement("div");
       content.className = "toggle-block__content";
 
-      const apply = (open: boolean) => {
-        dom.dataset.open = open ? "true" : "false";
-        content.style.display = open ? "" : "none";
+      // data-open drives collapse; data-summary-empty drives the "Toggle"
+      // placeholder over an empty (or absent, for legacy nodes) summary. Both
+      // are CSS-only so open/close and empty state never touch the document.
+      const sync = (n: typeof node) => {
+        dom.dataset.open = n.attrs.open ? "true" : "false";
+        const summary = n.firstChild;
+        const summaryEmpty =
+          !summary || summary.type.name !== "toggleSummary" || summary.content.size === 0;
+        dom.dataset.summaryEmpty = summaryEmpty ? "true" : "false";
       };
-      apply(node.attrs.open as boolean);
+      sync(node);
 
-      header.addEventListener("mousedown", (e) => {
+      chevron.addEventListener("mousedown", (e) => {
         e.preventDefault();
+        e.stopPropagation();
         if (typeof getPos !== "function") return;
         const pos = getPos();
         if (pos == null) return;
@@ -423,14 +500,14 @@ const ToggleBlock = TiptapNode.create({
           .run();
       });
 
-      dom.appendChild(header);
+      dom.appendChild(chevron);
       dom.appendChild(content);
       return {
         dom,
         contentDOM: content,
         update: (updated) => {
           if (updated.type.name !== "toggleBlock") return false;
-          apply(updated.attrs.open as boolean);
+          sync(updated);
           return true;
         },
       };
@@ -440,8 +517,28 @@ const ToggleBlock = TiptapNode.create({
     return {
       setToggleBlock:
         () =>
-        ({ commands }) =>
-          commands.wrapIn(this.name),
+        ({ chain, state }) =>
+          chain()
+            .wrapIn(this.name)
+            .command(({ tr, dispatch }) => {
+              if (!dispatch) return true;
+              // Find the toggle we just wrapped around the selection and seed an
+              // empty summary as its first child, then drop the caret into it so
+              // the user types the title first.
+              const { $from } = tr.selection;
+              let depth = $from.depth;
+              while (depth > 0 && $from.node(depth).type.name !== "toggleBlock") depth--;
+              if (depth === 0) return true;
+              const toggle = $from.node(depth);
+              if (toggle.firstChild?.type.name === "toggleSummary") return true;
+              const summary = state.schema.nodes.toggleSummary.createAndFill();
+              if (!summary) return true;
+              const insertAt = $from.before(depth) + 1;
+              tr.insert(insertAt, summary);
+              tr.setSelection(TextSelection.create(tr.doc, insertAt + 1));
+              return true;
+            })
+            .run(),
     };
   },
 });
@@ -457,6 +554,19 @@ const TEXT_COLORS: { label: string; value: string }[] = [
   { label: "Amber", value: "#E0A32E" },
   { label: "Red", value: "#DC4C4C" },
   { label: "Slate", value: "#5B6472" },
+];
+
+// Highlight (text background) swatches. Soft tints so dark body text stays
+// readable on top; concrete hex so the value survives copy/paste + HTML export.
+const HIGHLIGHT_COLORS: { label: string; value: string }[] = [
+  { label: "Yellow", value: "#FEF3C7" },
+  { label: "Green", value: "#D1FAE5" },
+  { label: "Blue", value: "#DBEAFE" },
+  { label: "Purple", value: "#EDE9FE" },
+  { label: "Pink", value: "#FCE7F3" },
+  { label: "Orange", value: "#FFEDD5" },
+  { label: "Red", value: "#FEE2E2" },
+  { label: "Gray", value: "#E5E7EB" },
 ];
 
 const LINE_SPACINGS: { label: string; value: string | null }[] = [
@@ -562,6 +672,51 @@ function ColorControl({ editor }: { editor: Editor }) {
   );
 }
 
+function HighlightControl({ editor }: { editor: Editor }) {
+  const current = (editor.getAttributes("highlight").color as string | undefined) ?? null;
+  return (
+    <ToolbarPopover
+      title="Highlight"
+      trigger={<Highlighter size={15} style={current ? { color: current } : undefined} />}
+    >
+      {(close) => (
+        <div className="w-max">
+          <div className="grid grid-cols-4 gap-1">
+            {HIGHLIGHT_COLORS.map((c) => (
+              <button
+                key={c.value}
+                type="button"
+                title={c.label}
+                aria-label={c.label}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  editor.chain().focus().setHighlight({ color: c.value }).run();
+                  close();
+                }}
+                className="flex h-6 w-6 items-center justify-center rounded-full border border-black/10"
+                style={{ backgroundColor: c.value }}
+              >
+                {current === c.value && <Check size={12} className="text-black/70" />}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              editor.chain().focus().unsetHighlight().run();
+              close();
+            }}
+            className="mt-2 w-full rounded px-2 py-1 text-left text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            No highlight
+          </button>
+        </div>
+      )}
+    </ToolbarPopover>
+  );
+}
+
 function LineSpacingControl({ editor }: { editor: Editor }) {
   const current =
     (editor.getAttributes("paragraph").lineHeight as string | undefined) ??
@@ -617,6 +772,12 @@ const TOOLBAR_ACTIONS: ToolbarAction[] = [
     icon: Italic,
     isActive: (e) => e.isActive("italic"),
     run: (e) => e.chain().focus().toggleItalic().run(),
+  },
+  {
+    label: "Underline",
+    icon: UnderlineIcon,
+    isActive: (e) => e.isActive("underline"),
+    run: (e) => e.chain().focus().toggleUnderline().run(),
   },
   {
     label: "Strikethrough",
@@ -732,6 +893,7 @@ function EditorToolbar({
         ))}
         <span className="mx-0.5 h-5 w-px bg-border" aria-hidden />
         <ColorControl editor={editor} />
+        <HighlightControl editor={editor} />
         <LineSpacingControl editor={editor} />
         <button
           type="button"
@@ -909,6 +1071,10 @@ function CollaborativeEditorInner({
   enableMentions = false,
   enableImages = false,
   focusMentionUserId,
+  onBeginEdit,
+  onWordCountChange,
+  onHeadingsChange,
+  onReady,
   entry,
 }: CollaborativeEditorProps & { entry: DocEntry }) {
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -941,7 +1107,9 @@ function CollaborativeEditorInner({
       Placeholder.configure({ placeholder }),
       TextStyle,
       Color,
+      Highlight.configure({ multicolor: true }),
       LineSpacing,
+      ToggleSummary,
       ToggleBlock,
       TabKeymap,
       ...(enableMentions ? [mentionEditorExtension(searchMentionableUsers)] : []),
@@ -1011,9 +1179,136 @@ function CollaborativeEditorInner({
     };
   }, [editor, focusMentionUserId]);
 
+  // Read/edit mode. When `disabled` flips true→false (the host switched the
+  // doc into edit mode) we focus the editor, placing the caret where the user
+  // clicked in read mode if we captured it (pendingClickRef). ProseMirror's
+  // `editable` flag only gates *user* input, so setEditable + programmatic
+  // focus/selection is safe from an effect.
+  const pendingClickRef = useRef<{ x: number; y: number } | null>(null);
+  const prevDisabledRef = useRef(disabled);
   useEffect(() => {
-    if (editor) editor.setEditable(!disabled);
+    if (!editor) return;
+    editor.setEditable(!disabled);
+    const justEnabled = prevDisabledRef.current && !disabled;
+    prevDisabledRef.current = disabled;
+    if (!justEnabled) return;
+    const click = pendingClickRef.current;
+    pendingClickRef.current = null;
+    // Run after the contenteditable flip lands so posAtCoords/focus resolve.
+    requestAnimationFrame(() => {
+      const at = click
+        ? editor.view.posAtCoords({ left: click.x, top: click.y })
+        : null;
+      if (at) editor.chain().focus().setTextSelection(at.pos).run();
+      else editor.commands.focus();
+    });
   }, [editor, disabled]);
+
+  // Auto-switch to edit mode on the first interaction while in read mode. Only
+  // active when the host opted in via onBeginEdit (a viewer who could edit).
+  // mousedown fires before any keystroke and records the click point so the
+  // caret can land there once editing is enabled; we don't preventDefault so
+  // the browser's native selection still tracks the click.
+  const onBeginEditRef = useRef(onBeginEdit);
+  onBeginEditRef.current = onBeginEdit;
+  useEffect(() => {
+    if (!editor || !disabled || !onBeginEdit) return;
+    const dom = editor.view.dom;
+    const onMouseDown = (e: MouseEvent) => {
+      pendingClickRef.current = { x: e.clientX, y: e.clientY };
+      onBeginEditRef.current?.();
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      // A printable key or Enter while read-only would be swallowed during the
+      // async editable flip, so arm edit mode and consume this one keystroke.
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key.length === 1 || e.key === "Enter") {
+        e.preventDefault();
+        onBeginEditRef.current?.();
+      }
+    };
+    dom.addEventListener("mousedown", onMouseDown);
+    dom.addEventListener("keydown", onKeyDown);
+    return () => {
+      dom.removeEventListener("mousedown", onMouseDown);
+      dom.removeEventListener("keydown", onKeyDown);
+    };
+  }, [editor, disabled, onBeginEdit]);
+
+  // Live document outline + word count, recomputed (throttled) as the body
+  // changes — including remote collab edits, which arrive as transactions that
+  // fire "update". Both callbacks are optional so non-doc editors pay nothing.
+  const onWordCountRef = useRef(onWordCountChange);
+  const onHeadingsRef = useRef(onHeadingsChange);
+  onWordCountRef.current = onWordCountChange;
+  onHeadingsRef.current = onHeadingsChange;
+  useEffect(() => {
+    if (!editor || (!onWordCountChange && !onHeadingsChange)) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const compute = () => {
+      onWordCountRef.current?.(
+        editor.getText().trim() ? editor.getText().trim().split(/\s+/).length : 0,
+      );
+      if (onHeadingsRef.current) {
+        const headings: TocHeading[] = [];
+        editor.state.doc.descendants((node) => {
+          if (node.type.name === "heading" && Number(node.attrs.level) <= 3) {
+            headings.push({
+              level: Number(node.attrs.level),
+              text: node.textContent,
+              ordinal: headings.length,
+            });
+          }
+          return undefined;
+        });
+        onHeadingsRef.current(headings);
+      }
+    };
+    const schedule = () => {
+      if (timer) return;
+      timer = setTimeout(() => {
+        timer = null;
+        compute();
+      }, 400);
+    };
+    compute();
+    editor.on("update", schedule);
+    return () => {
+      if (timer) clearTimeout(timer);
+      editor.off("update", schedule);
+    };
+  }, [editor, onWordCountChange, onHeadingsChange]);
+
+  // Imperative API for the host (e.g. click a ToC entry → scroll to that
+  // heading). Positions shift under live collab, so we re-resolve the ordinal-th
+  // heading against the current doc rather than caching a raw position.
+  const onReadyRefApi = useRef(onReady);
+  onReadyRefApi.current = onReady;
+  useEffect(() => {
+    if (!editor) return;
+    onReadyRefApi.current?.({
+      scrollToHeading: (ordinal: number) => {
+        let seen = -1;
+        let targetPos = -1;
+        editor.state.doc.descendants((node, pos) => {
+          if (targetPos >= 0) return false;
+          if (node.type.name === "heading" && Number(node.attrs.level) <= 3) {
+            seen++;
+            if (seen === ordinal) {
+              targetPos = pos;
+              return false;
+            }
+          }
+          return undefined;
+        });
+        if (targetPos < 0) return;
+        const dom = editor.view.nodeDOM(targetPos);
+        if (dom instanceof HTMLElement) {
+          dom.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      },
+    });
+  }, [editor]);
 
   // Inline comments: recompute decorations when the anchor list changes, show a
   // floating Comment button on non-empty selections, and expose focusAnchor.
@@ -1236,6 +1531,7 @@ function CollaborativeEditorInner({
       ref={containerRef}
       relative
       disabled={disabled}
+      muted={disabled && !onBeginEdit}
       className={className}
     >
       {editor && !disabled ? (

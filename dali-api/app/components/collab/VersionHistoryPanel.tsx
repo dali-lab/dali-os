@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { Modal } from "~/components/Modal";
+import { relativeTime } from "~/lib/relative-time";
 
 interface Author {
   id: string;
@@ -27,19 +28,6 @@ interface VersionHistoryPanelProps {
 }
 
 const POLL_INTERVAL_MS = 30_000;
-
-const RTF = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
-function relativeTime(iso: string): string {
-  const diffMs = Date.now() - new Date(iso).getTime();
-  const diffSec = Math.round(diffMs / 1000);
-  if (diffSec < 60) return RTF.format(-diffSec, "second");
-  const diffMin = Math.round(diffSec / 60);
-  if (diffMin < 60) return RTF.format(-diffMin, "minute");
-  const diffHr = Math.round(diffMin / 60);
-  if (diffHr < 24) return RTF.format(-diffHr, "hour");
-  const diffDay = Math.round(diffHr / 24);
-  return RTF.format(-diffDay, "day");
-}
 
 function authorLabel(authors: Author[]): string {
   if (authors.length === 0) return "Unknown editor";

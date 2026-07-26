@@ -65,6 +65,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       workspaceId: true,
       archivedAt: true,
       meetingNoteId: true,
+      iconEmoji: true,
+      coverImageUrl: true,
+      updatedAt: true,
+      createdBy: { select: { firstName: true, lastName: true } },
+      lastEditedBy: { select: { firstName: true, lastName: true } },
       tags: { select: { tag: { select: { id: true, label: true, slug: true, color: true } } } },
     },
   });
@@ -202,6 +207,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     workspaceType: page.workspaceType,
     hubName,
     hubHref,
+    iconEmoji: page.iconEmoji,
+    coverImageUrl: page.coverImageUrl,
+    createdByName: page.createdBy ? fullName(page.createdBy) : null,
+    lastEditedByName: page.lastEditedBy ? fullName(page.lastEditedBy) : null,
+    updatedAt: page.updatedAt.toISOString(),
     tags: page.tags.map((t) => t.tag).sort((a, b) => a.label.localeCompare(b.label)),
     allTags,
     canEdit,
@@ -226,6 +236,11 @@ export default function DocumentPage() {
     currentUserId,
     photoUrl,
     subtitle,
+    iconEmoji,
+    coverImageUrl,
+    createdByName,
+    lastEditedByName,
+    updatedAt,
     attendance,
   } = useLoaderData() as Exclude<Awaited<ReturnType<typeof loader>>, Response>;
 
@@ -267,6 +282,11 @@ export default function DocumentPage() {
         canEdit={canEdit}
         tags={tags}
         allTags={allTags}
+        iconEmoji={iconEmoji}
+        coverImageUrl={coverImageUrl}
+        createdByName={createdByName}
+        lastEditedByName={lastEditedByName}
+        updatedAt={updatedAt}
         focusMentionUserId={focusMentionUserId}
         focusCommentId={focusCommentId}
       />

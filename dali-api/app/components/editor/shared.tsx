@@ -57,6 +57,10 @@ function isEmptyNode(node: unknown): boolean {
 
 interface EditorShellProps {
   disabled?: boolean;
+  // Dimmed "no access" appearance. Defaults to `disabled` for back-compat, but
+  // an interactive read view (disabled body that flips to edit on click) passes
+  // `muted={false}` so the reading surface stays crisp and legible.
+  muted?: boolean;
   className?: string;
   relative?: boolean; // CollaborativeEditor needs position:relative for its overlay buttons
   children: ReactNode;
@@ -64,14 +68,14 @@ interface EditorShellProps {
 
 export const EditorShell = forwardRef<HTMLDivElement, EditorShellProps>(
   function EditorShell(
-    { disabled = false, className, relative = false, children },
+    { disabled = false, muted = disabled, className, relative = false, children },
     ref,
   ) {
     return (
       <div
         ref={ref}
         className={`${relative ? "relative " : ""}rounded-lg border bg-card ${
-          disabled
+          muted
             ? "border-border bg-muted/50 opacity-75"
             : "border-gray-300 focus-within:ring-2 focus-within:ring-accent-coral focus-within:border-transparent"
         } ${className ?? ""}`}
