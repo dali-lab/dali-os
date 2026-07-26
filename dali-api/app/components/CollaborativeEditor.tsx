@@ -232,13 +232,30 @@ function buildSelection(user: AwarenessUser) {
   };
 }
 
+// Find y-prosemirror's undo plugin state by duck-typing over the live plugin
+// list, rather than `yUndoPluginKey.getState(state)`. The production bundle can
+// inline y-prosemirror's key module twice, so a top-level `import {
+// yUndoPluginKey }` (and `ySyncPluginKey`) may be a DIFFERENT instance than the
+// one the registered plugins use internally — making getState() return null and
+// a self-built UndoManager's trackedOrigins never match the write origin. Both
+// silently break undo in prod (but not dev, where ESM gives a single instance).
+// Iterating the actual plugins sidesteps the whole key-identity problem.
+function getCollabUndoManager(state: EditorState): Y.UndoManager | null {
+  for (const plugin of state.plugins) {
+    const pluginState = plugin.getState(state) as { undoManager?: Y.UndoManager } | undefined;
+    if (pluginState && typeof pluginState.undoManager?.undo === "function") {
+      return pluginState.undoManager;
+    }
+  }
+  return null;
+}
+
 // Wraps the raw y-prosemirror plugins directly. The official Tiptap
 // collaboration wrappers (@tiptap/y-tiptap) use a different plugin key than
 // y-prosemirror, which breaks the cursor extension.
 function createCollabExtension(
   fragment: Y.XmlFragment,
   provider: HocuspocusProvider,
-  undoManager: Y.UndoManager,
 ) {
   return Extension.create({
     name: "yCollab",
@@ -249,10 +266,10 @@ function createCollabExtension(
           cursorBuilder: buildCursor as any,
           selectionBuilder: buildSelection as any,
         }),
-        // Pass our own UndoManager so undo/redo (keymap + toolbar buttons) call
-        // it directly by reference — no PluginKey.getState() indirection, which
-        // the production bundle can break if y-prosemirror gets inlined twice.
-        yUndoPlugin({ undoManager }),
+        // yUndoPlugin() builds its own UndoManager whose trackedOrigins uses the
+        // SAME (internal) ySyncPluginKey the sync plugin writes with — so it
+        // actually captures local edits. We reach it via getCollabUndoManager.
+        yUndoPlugin(),
       ];
     },
     // StarterKit's own history is disabled (undoRedo: false) because it would
@@ -261,16 +278,16 @@ function createCollabExtension(
     // native contentEditable undo never fires — that would desync the doc.
     addKeyboardShortcuts() {
       return {
-        "Mod-z": () => {
-          undoManager.undo();
+        "Mod-z": ({ editor }) => {
+          getCollabUndoManager(editor.state)?.undo();
           return true;
         },
-        "Mod-y": () => {
-          undoManager.redo();
+        "Mod-y": ({ editor }) => {
+          getCollabUndoManager(editor.state)?.redo();
           return true;
         },
-        "Mod-Shift-z": () => {
-          undoManager.redo();
+        "Mod-Shift-z": ({ editor }) => {
+          getCollabUndoManager(editor.state)?.redo();
           return true;
         },
       };
@@ -917,34 +934,26 @@ const TOOLBAR_ACTIONS: ToolbarAction[] = [
 
 function EditorToolbar({
   editor,
-  undoManager,
   onOpenHistory,
   showImageButton = false,
 }: {
   editor: Editor;
-  undoManager: Y.UndoManager;
   onOpenHistory: () => void;
   showImageButton?: boolean;
 }) {
   // Tiptap doesn't trigger a React re-render on its own; re-render on every
   // transaction so the active-button highlighting (bold/heading/etc. state)
-  // tracks the current selection, and on undo-stack changes so the undo/redo
-  // buttons enable/disable live.
+  // tracks the current selection and the undo/redo buttons enable/disable live
+  // (undo/redo/typing all dispatch transactions).
   const [, setTick] = useState(0);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   useEffect(() => {
     const rerender = () => setTick((t) => t + 1);
     editor.on("transaction", rerender);
-    undoManager.on("stack-item-added", rerender);
-    undoManager.on("stack-item-popped", rerender);
-    undoManager.on("stack-cleared", rerender);
     return () => {
       editor.off("transaction", rerender);
-      undoManager.off("stack-item-added", rerender);
-      undoManager.off("stack-item-popped", rerender);
-      undoManager.off("stack-cleared", rerender);
     };
-  }, [editor, undoManager]);
+  }, [editor]);
 
   async function onImagePicked(files: FileList | null) {
     for (const file of Array.from(files ?? [])) {
@@ -962,11 +971,11 @@ function EditorToolbar({
     if (imageInputRef.current) imageInputRef.current.value = "";
   }
 
-  // Undo/redo driven by our own UndoManager reference (no PluginKey.getState —
-  // that indirection is what breaks in the production bundle). Re-renders above
-  // keep canUndo/canRedo live.
-  const canUndo = undoManager.canUndo();
-  const canRedo = undoManager.canRedo();
+  // Undo/redo via the live plugin's own UndoManager (found by iteration, immune
+  // to the prod-bundle key duplication). Re-renders above keep the state live.
+  const undoManager = getCollabUndoManager(editor.state);
+  const canUndo = undoManager?.canUndo() ?? false;
+  const canRedo = undoManager?.canRedo() ?? false;
 
   return (
     <div className="flex items-center justify-between gap-1 border-b border-border px-1.5 py-1">
@@ -978,7 +987,7 @@ function EditorToolbar({
           disabled={!canUndo}
           onMouseDown={(e) => {
             e.preventDefault();
-            undoManager.undo();
+            getCollabUndoManager(editor.state)?.undo();
             editor.commands.focus();
           }}
           className="p-1.5 rounded transition-colors text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
@@ -992,7 +1001,7 @@ function EditorToolbar({
           disabled={!canRedo}
           onMouseDown={(e) => {
             e.preventDefault();
-            undoManager.redo();
+            getCollabUndoManager(editor.state)?.redo();
             editor.commands.focus();
           }}
           className="p-1.5 rounded transition-colors text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
@@ -1083,7 +1092,6 @@ interface DocEntry {
   provider: HocuspocusProvider;
   fragment: Y.XmlFragment;
   persistence: IndexeddbPersistence;
-  undoManager: Y.UndoManager;
   refCount: number;
   disposeTimer: ReturnType<typeof setTimeout> | null;
 }
@@ -1121,20 +1129,11 @@ function acquireDoc(documentName: string, token: string): DocEntry {
   });
 
   const fragment = ydoc.getXmlFragment("default");
-  // One UndoManager per doc, created here so undo/redo hold a direct reference
-  // to it. trackedOrigins = ySyncPluginKey — the origin y-prosemirror stamps on
-  // local ProseMirror edits — so undo only affects this client's own changes,
-  // not collaborators'. captureTransaction mirrors yUndoPlugin's default.
-  const undoManager = new Y.UndoManager(fragment, {
-    trackedOrigins: new Set([ySyncPluginKey]),
-    captureTransaction: (tr) => tr.meta.get("addToHistory") !== false,
-  });
   entry = {
     ydoc,
     provider,
     fragment,
     persistence,
-    undoManager,
     refCount: 1,
     disposeTimer: null,
   };
@@ -1153,7 +1152,6 @@ function releaseDoc(documentName: string) {
     const current = docCache.get(key);
     if (!current || current.refCount > 0) return;
     console.log(`[collab:${documentName}] disposing`);
-    current.undoManager.destroy();
     current.provider.destroy();
     current.persistence.destroy();
     current.ydoc.destroy();
@@ -1258,7 +1256,7 @@ function CollaborativeEditorInner({
       ...(enableMentions ? [mentionEditorExtension(searchMentionableUsers)] : []),
       ...(enableImages ? imageEditorExtensions() : []),
       ...(enableRichBlocks ? [...richBlockExtensions(), slashCommandExtension()] : []),
-      createCollabExtension(entry.fragment, entry.provider, entry.undoManager),
+      createCollabExtension(entry.fragment, entry.provider),
       ...(inlineComments?.enabled
         ? [
             createCommentDecorationExtension(
@@ -1731,7 +1729,6 @@ function CollaborativeEditorInner({
       {editor && !disabled ? (
         <EditorToolbar
           editor={editor}
-          undoManager={entry.undoManager}
           onOpenHistory={() => setHistoryOpen(true)}
           showImageButton={enableImages}
         />
