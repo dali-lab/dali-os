@@ -569,27 +569,33 @@ const ToggleBlock = TiptapNode.create({
     return {
       // Single-transaction wrap: replace the selected block(s) with a toggle
       // whose first child is an empty summary followed by the original content,
-      // then drop the caret into the summary. Done in one command (no nested
-      // chain().run(), which Tiptap warns against and which was leaving the
-      // summary uncreated → no title + misplaced caret).
+      // then drop the caret into the summary.
+      //
+      // Read from `tr` (its selection + doc), NOT `state`: when this runs inside
+      // a chain — e.g. the slash menu / "+" do `deleteRange(range).setToggleBlock()`
+      // to remove the "/" — `state` is the ORIGINAL editor state while `tr`
+      // already has the earlier steps applied. Using `state` left the caret off
+      // by the deleted "/", so the title came up blank and uneditable.
       setToggleBlock:
         () =>
         ({ state, tr, dispatch }) => {
-          const { schema, selection } = state;
-          const range = selection.$from.blockRange(selection.$to);
+          const { schema } = state;
+          const { $from, $to } = tr.selection;
+          const range = $from.blockRange($to);
           if (!range) return false;
           const summary = schema.nodes.toggleSummary.createAndFill();
           if (!summary) return false;
-          const body = state.doc.slice(range.start, range.end).content;
+          const body = tr.doc.slice(range.start, range.end).content;
           const toggle = schema.nodes.toggleBlock.create(
             { open: true },
             Fragment.from(summary).append(body),
           );
           if (dispatch) {
             tr.replaceRangeWith(range.start, range.end, toggle);
-            // Caret inside the empty summary: +1 into the toggle, +1 into summary.
-            const caret = tr.mapping.map(range.start) + 2;
-            tr.setSelection(TextSelection.create(tr.doc, caret));
+            // The toggle is inserted at range.start; the summary's content is two
+            // tokens in (toggle open + summary open). Positions are in tr's space,
+            // so no extra mapping.
+            tr.setSelection(TextSelection.create(tr.doc, range.start + 2));
             tr.scrollIntoView();
           }
           return true;
