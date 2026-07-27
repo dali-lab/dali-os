@@ -27,6 +27,8 @@ export interface SearchResult {
   url: string;
   /** Resolved avatar URL for `person` results (null → initials fallback). */
   photoUrl?: string | null;
+  /** Custom page emoji for `document` results (pages only; files fall back to the type icon). */
+  iconEmoji?: string | null;
 }
 
 export const MIN_QUERY_LENGTH = 2;
