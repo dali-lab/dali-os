@@ -69,7 +69,8 @@ interface PaletteItem {
   /** Present for entity results; drives the avatar-vs-icon leading slot. */
   type?: SearchResultType;
   photoUrl?: string | null;
-  /** Custom page emoji for `document` results; shown instead of the type icon when set. */
+  /** Custom emoji for entity results (project + page/document icons); shown
+   *  instead of the type glyph when set. */
   iconEmoji?: string | null;
   action: PaletteAction;
 }

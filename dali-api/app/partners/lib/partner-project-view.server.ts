@@ -45,6 +45,7 @@ export type PartnerProjectViewData = {
   project: {
     id: string;
     name: string;
+    iconEmoji: string | null;
     description: string | null;
     imageUrl: string | null;
     terms: string[];
@@ -109,6 +110,7 @@ export async function loadPartnerProjectView(
     select: {
       id: true,
       name: true,
+      iconEmoji: true,
       description: true,
       status: true,
       imageUrl: true,
@@ -338,6 +340,7 @@ export async function loadPartnerProjectView(
     project: {
       id: project.id,
       name: project.name,
+      iconEmoji: project.iconEmoji,
       description: project.description,
       imageUrl: await resolvePhotoUrl(project.imageUrl),
       terms: [...project.projectTerms]

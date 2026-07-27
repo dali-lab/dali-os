@@ -69,7 +69,7 @@ export type ProfilePageData = {
   projectAssignments: Array<{
     id: string;
     level: string;
-    project: { id: string; name: string };
+    project: { id: string; name: string; iconEmoji: string | null };
     domain: { name: string };
   }>;
   pendingReviews: number;
@@ -243,7 +243,7 @@ export async function loadProfilePage({
           select: {
             id: true,
             level: true,
-            project: { select: { id: true, name: true } },
+            project: { select: { id: true, name: true, iconEmoji: true } },
             domain: { select: { name: true } },
           },
         })
