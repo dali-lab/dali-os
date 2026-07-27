@@ -8,6 +8,7 @@ import { Markdown } from "~/components/Markdown";
 import { Modal } from "~/components/Modal";
 import { PartnerBackLink } from "~/partners/components/PartnerBackLink";
 import { ProjectCoverImage } from "~/projects/components/ProjectCoverImage";
+import { ProjectIcon } from "~/components/ProjectIcon";
 import type {
   PartnerProjectEpic,
   PartnerProjectSprint,
@@ -416,8 +417,9 @@ export function PartnerProjectHubView({
           <div className="p-5">
             <div className="flex flex-col-reverse gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
-                <h1 className="font-heading text-3xl font-bold text-dark-blue">
-                  {project.name}
+                <h1 className="flex items-center gap-2 font-heading text-3xl font-bold text-dark-blue">
+                  <ProjectIcon iconEmoji={project.iconEmoji} size="lg" />
+                  <span className="min-w-0 truncate">{project.name}</span>
                 </h1>
                 <p className="text-sm text-muted-foreground mt-1">
                   {[

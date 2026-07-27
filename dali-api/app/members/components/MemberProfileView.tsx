@@ -21,6 +21,7 @@ import {
   X,
 } from "lucide-react";
 import { EditableSection } from "~/components/EditableSection";
+import { ProjectIcon } from "~/components/ProjectIcon";
 import { ProfilePhotoAvatar } from "~/components/ProfilePhotoAvatar";
 import { Avatar } from "~/components/ui/Avatar";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
@@ -657,8 +658,9 @@ function ActivitySection({
                   to={`/projects/${a.project.id}`}
                   className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border border-border hover:bg-muted transition-colors"
                 >
-                  <span className="text-sm font-medium text-foreground truncate">
-                    {a.project.name}
+                  <span className="flex items-center gap-1.5 min-w-0 text-sm font-medium text-foreground">
+                    <ProjectIcon iconEmoji={a.project.iconEmoji} />
+                    <span className="truncate">{a.project.name}</span>
                   </span>
                   <span className="text-xs text-muted-foreground whitespace-nowrap">
                     {a.domain.name} · {a.level}

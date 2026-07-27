@@ -24,6 +24,8 @@ import { TermFilter } from "~/components/TermFilter";
 import { resolveTermFilter } from "~/lib/terms";
 import { ALL_TERMS } from "~/lib/terms.shared";
 import { ProjectCoverImage } from "~/projects/components/ProjectCoverImage";
+import { ProjectIcon } from "~/components/ProjectIcon";
+import { ProjectIconPicker } from "~/projects/components/ProjectIconPicker";
 
 export const handle = {
   areaPills: true,
@@ -43,6 +45,7 @@ type ProjectPartnerOut = {
 type ProjectRow = {
   id: string;
   name: string;
+  iconEmoji: string | null;
   status: ProjectStatus;
   firstTermCode: string | null;
   imageUrl: string | null;
@@ -70,6 +73,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     select: {
       id: true,
       name: true,
+      iconEmoji: true,
       status: true,
       imageUrl: true,
       // Start term is derived as the earliest term in the set. Fetch ascending
@@ -91,6 +95,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       return {
         id: p.id,
         name: p.name,
+        iconEmoji: p.iconEmoji,
         status: p.status,
         firstTermCode: startTerm?.code ?? null,
         // Uploaded images are stored as S3 keys; presign for display.
@@ -151,6 +156,7 @@ export async function action({ request }: Route.ActionArgs) {
   const form = await request.formData();
   const name = (form.get("name") as string | null)?.trim() ?? "";
   const description = (form.get("description") as string | null)?.trim() ?? "";
+  const iconEmoji = (form.get("iconEmoji") as string | null)?.trim() ?? "";
   const status = (form.get("status") as string | null) ?? "Active";
   // The create form's term picker seeds the project's first term. The term set
   // is then editable on the detail page; the start term is derived as the
@@ -185,6 +191,7 @@ export async function action({ request }: Route.ActionArgs) {
       // project page). Enables the roster→team sync without a manual step.
       githubTeamSlug: githubTeamSlug(name) || null,
       description: description === "" ? null : description,
+      iconEmoji: iconEmoji === "" ? null : iconEmoji,
       status: status as ProjectStatus,
       // Seed the initial term into the project's term set (if chosen).
       ...(initialTermId
@@ -216,6 +223,7 @@ export default function ProjectsListPage() {
   const actionData = useActionData<typeof action>();
   const [searchParams, setSearchParams] = useSearchParams();
   const [creating, setCreating] = useState(false);
+  const [newIconEmoji, setNewIconEmoji] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [mineOnly, setMineOnly] = useState(false);
   const [view, setView] = useViewPreference("dali:view:projects", "list");
@@ -243,7 +251,10 @@ export default function ProjectsListPage() {
         {canEdit && !creating && (
           <button
             type="button"
-            onClick={() => setCreating(true)}
+            onClick={() => {
+              setNewIconEmoji(null);
+              setCreating(true);
+            }}
             className={buttonClasses("primary", "sm")}
           >
             + New project
@@ -264,18 +275,22 @@ export default function ProjectsListPage() {
           className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3"
         >
           <h2 className="text-sm font-semibold text-foreground">New project</h2>
+          <input type="hidden" name="iconEmoji" value={newIconEmoji ?? ""} />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="flex flex-col gap-1 text-xs sm:col-span-2">
               <span className="text-muted-foreground">
                 Name<span className="text-destructive"> *</span>
               </span>
-              <input
-                name="name"
-                autoFocus
-                required
-                placeholder="Project name"
-                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-              />
+              <div className="flex items-center gap-2">
+                <ProjectIconPicker iconEmoji={newIconEmoji} editing onChange={setNewIconEmoji} />
+                <input
+                  name="name"
+                  autoFocus
+                  required
+                  placeholder="Project name"
+                  className="flex-1 px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                />
+              </div>
             </label>
             <label className="flex flex-col gap-1 text-xs sm:col-span-2">
               <span className="text-muted-foreground">Description</span>
@@ -332,7 +347,10 @@ export default function ProjectsListPage() {
           <div className="flex justify-end gap-2">
             <button
               type="button"
-              onClick={() => setCreating(false)}
+              onClick={() => {
+                setNewIconEmoji(null);
+                setCreating(false);
+              }}
               className={buttonClasses("ghost", "sm")}
             >
               Cancel
@@ -436,6 +454,7 @@ function ProjectsTable({ rows }: { rows: ProjectRow[] }) {
               <td className="px-4 py-2">
                 <div className="flex items-center gap-3 min-w-0">
                   <ProjectThumb project={p} />
+                  <ProjectIcon iconEmoji={p.iconEmoji} />
                   {/* A real anchor so cmd/ctrl/middle-click opens a browser
                       tab; a plain click defers to the row's embed-aware
                       handler (same behavior as clicking anywhere else). */}
@@ -491,7 +510,10 @@ function ProjectCard({ project }: { project: ProjectRow }) {
       />
       <div className="flex flex-col gap-2 p-3">
       <div className="flex items-start justify-between gap-2">
-        <span className="font-semibold text-foreground truncate">{project.name}</span>
+        <span className="flex items-center gap-1.5 min-w-0 font-semibold text-foreground">
+          <ProjectIcon iconEmoji={project.iconEmoji} />
+          <span className="truncate">{project.name}</span>
+        </span>
         <StatusPill status={project.status} />
       </div>
       {project.firstTermCode && (

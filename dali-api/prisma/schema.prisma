@@ -2250,6 +2250,11 @@ model Project {
   // Project hero image, shown on the hub, partner, and public views.
   imageUrl String?
 
+  // Notion-style project icon: a single emoji shown before the project name
+  // across the hub, detail header, search, and profile surfaces. Null → a
+  // neutral fallback glyph. Mirrors Page.iconEmoji.
+  iconEmoji String?
+
   // Git repositories for this project (URLs). Empty by default.
   repoUrls String[] @default([])
 

@@ -69,6 +69,8 @@ interface PaletteItem {
   /** Present for entity results; drives the avatar-vs-icon leading slot. */
   type?: SearchResultType;
   photoUrl?: string | null;
+  /** Custom emoji for `project` results; shown instead of the type glyph. */
+  iconEmoji?: string | null;
   action: PaletteAction;
 }
 
@@ -329,6 +331,13 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles, onOpe
                   >
                     {isPerson ? (
                       <Avatar photoUrl={item.photoUrl} name={item.title} size="xs" className="shrink-0" />
+                    ) : item.iconEmoji ? (
+                      <span
+                        className="flex h-4 w-4 shrink-0 items-center justify-center text-sm leading-none"
+                        aria-hidden
+                      >
+                        {item.iconEmoji}
+                      </span>
                     ) : (
                       <Icon
                         className={`w-4 h-4 shrink-0 ${active ? "text-accent-coral" : "text-muted-foreground"}`}
@@ -367,6 +376,7 @@ function resultItem(r: SearchResult): PaletteItem {
     icon: TYPE_META[r.type].icon,
     type: r.type,
     photoUrl: r.photoUrl,
+    iconEmoji: r.iconEmoji,
     action: { kind: "navigate", url: r.url, label: r.title },
   };
 }

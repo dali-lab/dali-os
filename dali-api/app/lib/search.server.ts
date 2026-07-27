@@ -126,7 +126,7 @@ async function searchProjects(q: string, like: Like): Promise<SearchResult[]> {
   // what it's called), so it must feed the ranker as a scored field.
   const rows = await prisma.project.findMany({
     where: { status: { not: "Archived" }, OR: [{ name: like }, { description: like }] },
-    select: { id: true, name: true, description: true },
+    select: { id: true, name: true, description: true, iconEmoji: true },
     take: RAW_TAKE,
   });
   return rankResults(
@@ -137,6 +137,7 @@ async function searchProjects(q: string, like: Like): Promise<SearchResult[]> {
         title: p.name,
         subtitle: "Project",
         url: buildUrl.project(p.id),
+        iconEmoji: p.iconEmoji,
       },
       text: [p.name, p.description ?? ""],
     })),

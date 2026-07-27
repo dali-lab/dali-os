@@ -29,6 +29,8 @@ import { USER_NAME_SELECT } from "~/lib/prisma-shapes";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { Avatar } from "~/components/ui/Avatar";
 import { ProjectImageBanner } from "../components/ProjectImageBanner";
+import { ProjectIcon } from "~/components/ProjectIcon";
+import { ProjectIconPicker } from "../components/ProjectIconPicker";
 import { Markdown } from "~/components/Markdown";
 import { parseSessionCookie } from "~/lib/cookies";
 import { isCore, isProjectMember, canManageStaffing, currentTerm, isLabMentor } from "~/lib/roles";
@@ -175,6 +177,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       calendarEmail: true,
       teamGroupEmail: true,
       imageUrl: true,
+      iconEmoji: true,
       repoUrls: true,
       deploymentUrl: true,
       githubTeamSlug: true,
@@ -908,6 +911,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     project: {
       id: project.id,
       name: project.name,
+      iconEmoji: project.iconEmoji,
       description: project.description,
       status: project.status,
       calendarEmail: project.calendarEmail,
@@ -1064,17 +1068,18 @@ export async function action({ request, params }: Route.ActionArgs) {
     return "error" in result ? result : redirect(`/projects/${params.id}`);
   }
 
-  // Header form: name + status only.
+  // Header form: name + status + icon.
   if (intent === "header") {
     const name = (form.get("name") as string | null)?.trim() ?? "";
     const status = (form.get("status") as string | null) ?? "";
+    const iconRaw = (form.get("iconEmoji") as string | null)?.trim() ?? "";
     if (!name) return { error: "Project name is required." };
     if (!STATUSES.includes(status as ProjectStatus)) {
       return { error: "Invalid status." };
     }
     await prisma.project.update({
       where: { id: params.id },
-      data: { name, status: status as ProjectStatus },
+      data: { name, status: status as ProjectStatus, iconEmoji: iconRaw || null },
     });
     await ensureProjectGroup(params.id, name);
     return redirect(`/projects/${params.id}`);
@@ -1502,6 +1507,7 @@ function ProjectHeader({
   const formRef = useRef<HTMLFormElement | null>(null);
   const [editing, setEditing] = useState(false);
   const [resetKey, setResetKey] = useState(0);
+  const [iconEmoji, setIconEmoji] = useState(project.iconEmoji);
 
   // Actual terms vs the expected span: when they differ, show "N of M" so a
   // partially-scheduled project reads as such. termCount is the expected target.
@@ -1542,6 +1548,8 @@ function ProjectHeader({
                 className="flex items-center gap-2 flex-wrap"
               >
                 <input type="hidden" name="intent" value="header" />
+                <input type="hidden" name="iconEmoji" value={iconEmoji ?? ""} />
+                <ProjectIconPicker iconEmoji={iconEmoji} editing onChange={setIconEmoji} />
                 <input
                   name="name"
                   defaultValue={project.name}
@@ -1564,6 +1572,7 @@ function ProjectHeader({
               </Form>
             ) : (
               <>
+                <ProjectIcon iconEmoji={project.iconEmoji} size="lg" />
                 <h1 className="font-heading text-2xl font-bold text-foreground">
                   {project.name}
                 </h1>
@@ -1597,6 +1606,7 @@ function ProjectHeader({
                     <button
                       type="button"
                       onClick={() => {
+                        setIconEmoji(project.iconEmoji);
                         setResetKey((k) => k + 1);
                         setEditing(false);
                       }}
