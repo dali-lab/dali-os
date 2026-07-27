@@ -26,14 +26,19 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const member = await prisma.dALIMember.findUnique({
     where: { userId: auth.user.sub },
-    select: { onboardedAt: true },
+    select: {
+      onboardedAt: true,
+      // Full-time staff skip the student onboarding flow.
+      user: { select: { adminMembership: { select: { isStaff: true } } } },
+    },
   });
   // Only un-onboarded members belong here. Non-members (applicants) go to the
-  // applicant portal; already-onboarded members go home. (deriveAuthType never
-  // returns "applicant" — the prior type check here was dead code; the
+  // applicant portal; already-onboarded members and staff go home. (deriveAuthType
+  // never returns "applicant" — the prior type check here was dead code; the
   // DALIMember row is the real member/non-member signal.)
   if (!member) return redirect("/portal");
-  if (member.onboardedAt !== null) return redirect("/");
+  if (member.onboardedAt !== null || member.user.adminMembership?.isStaff === true)
+    return redirect("/");
 
   // Resolve the onboarding form's token, then load it the same way the fill
   // route does so we render an identical form inline (no redirect).

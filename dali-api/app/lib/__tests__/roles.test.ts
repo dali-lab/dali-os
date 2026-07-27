@@ -6,6 +6,7 @@ import { prisma } from "~/lib/db";
 import {
   hasCycleAccess,
   isInstructor,
+  isStaff,
   canViewForms,
   canViewStaffing,
   getActiveCoreCycleTermIds,
@@ -156,6 +157,23 @@ describe("isInstructor", () => {
   it("returns false with no InstructorAssignment row", async () => {
     setRoleFlags({ instructor: false });
     expect(await isInstructor("user-x")).toBe(false);
+  });
+});
+
+describe("isStaff (full-time staff — the AdminMembership.isStaff subset)", () => {
+  it("true when the AdminMembership row is flagged isStaff", async () => {
+    mockPrisma.adminMembership.findUnique.mockResolvedValue({ isStaff: true });
+    expect(await isStaff("u1")).toBe(true);
+  });
+
+  it("false for an Admin who is not staff (student-admin)", async () => {
+    mockPrisma.adminMembership.findUnique.mockResolvedValue({ isStaff: false });
+    expect(await isStaff("u1")).toBe(false);
+  });
+
+  it("false when there is no AdminMembership row", async () => {
+    mockPrisma.adminMembership.findUnique.mockResolvedValue(null);
+    expect(await isStaff("u1")).toBe(false);
   });
 });
 

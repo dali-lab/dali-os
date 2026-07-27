@@ -82,6 +82,12 @@ model User {
   // "Student" in the affiliations array. Lingers after graduation, so
   // currently-enrolled is the compound: isStudent AND NOT isAlum.
   dartmouthIsStudent      Boolean?
+  // Raw department_class from the People API: an undergrad class year ("'27")
+  // or a grad/professional program code ("TH" Thayer, "GR" Guarini, "DM"
+  // Geisel, "TU27" Tuck). A program code means currently enrolled in that
+  // school, so a student who ALSO carries "Alum" (a prior Dartmouth degree) is
+  // Active, not Alumni — see resolveMembershipStatus.
+  dartmouthDepartmentClass String?
   dartmouthPeopleSyncedAt DateTime?
 
   pronouns       String?
@@ -2173,8 +2179,12 @@ model InstructorAssignment {
   @@index([offeringId, termId])
 }
 
-// Permanent (until revoked). Maps to the lab's full-time staff. Admin is a
-// superset of Core. CSV "Staff" entries map directly here.
+// Permanent (until revoked). The admin-access marker. Admin is a superset of
+// Core. Both students (elected leads) and full-time staff can hold Admin.
+// `isStaff` marks the strict subset who are full-time staff — professional
+// employees for whom the student lifecycle (CE compliance, graduation,
+// onboarding) does not apply. Living on this row enforces "staff ⊂ admin":
+// there is no way to be staff without the row that grants admin.
 model AdminMembership {
   id        String   @id @default(cuid())
   userId    String   @unique
@@ -2182,6 +2192,8 @@ model AdminMembership {
   // Free-form: the userId of the actor who granted Admin. Not an FK so audit
   // history survives user deletion.
   grantedBy String?
+  // Full-time staff: exempt from student checklist items and shown as Staff.
+  isStaff   Boolean  @default(false)
 
   user User @relation(fields: [userId], references: [id])
 }

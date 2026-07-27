@@ -100,7 +100,10 @@ describe("GET /login loader routing", () => {
     // The regression: type derives to "dartmouth" (no daliEmail) but the
     // DALIMember row exists, so they must NOT be bounced to /portal.
     authedAs("member-unprovisioned");
-    mockMemberFind.mockResolvedValue({ onboardedAt: null } as any);
+    mockMemberFind.mockResolvedValue({
+      onboardedAt: null,
+      user: { adminMembership: null },
+    } as any);
     const res = (await loader({ request: loaderRequest() } as any)) as Response;
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe("/onboarding");
@@ -108,7 +111,21 @@ describe("GET /login loader routing", () => {
 
   it("sends an onboarded member to the home dashboard", async () => {
     authedAs("member-done");
-    mockMemberFind.mockResolvedValue({ onboardedAt: new Date() } as any);
+    mockMemberFind.mockResolvedValue({
+      onboardedAt: new Date(),
+      user: { adminMembership: null },
+    } as any);
+    const res = (await loader({ request: loaderRequest() } as any)) as Response;
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/");
+  });
+
+  it("sends a not-yet-onboarded staff member straight to the dashboard (skips onboarding)", async () => {
+    authedAs("member-staff");
+    mockMemberFind.mockResolvedValue({
+      onboardedAt: null,
+      user: { adminMembership: { isStaff: true } },
+    } as any);
     const res = (await loader({ request: loaderRequest() } as any)) as Response;
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe("/");

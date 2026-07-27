@@ -13,6 +13,7 @@ import {
   refreshDartmouthSignals,
   type RefreshOptions,
 } from "~/lib/dartmouth-refresh";
+import { isGraduateProgramClass } from "~/lib/dartmouth-people";
 
 // Dartmouth Commencement is mid-June. June 15 is the conservative cutoff for
 // treating a classYear as graduated in the no-API fallback path.
@@ -27,24 +28,42 @@ export type StatusInputs = {
   dartmouthIsAlum: boolean | null;
   dartmouthIsStudent: boolean | null;
   dartmouthAffiliation: string | null;
+  dartmouthDepartmentClass: string | null;
 };
 
 /**
  * Pure resolver: map a member's inputs to their status. Ordered so the
  * strongest, most authoritative signal wins.
  *
- *   override            → the manual pin (BE dual-degree, staff, corrections)
- *   Alum / IDM ALUMNI   → Alumni  (degree conferred)
- *   graduatedAt < now   → Alumni  (off-cycle / manual)
- *   Student (¬Alum)     → Active  (+1 guard: genuinely enrolled, beats classYear)
- *   classYear past      → Alumni  (no-API fallback)
- *   else                → Active
+ *   override             → the manual pin (BE dual-degree, staff, corrections)
+ *   Student in grad pgm  → Active  (enrolled Thayer/Guarini/Geisel/Tuck; the
+ *                                   "Alum" they also carry is a prior degree)
+ *   Alum / IDM ALUMNI    → Alumni  (degree conferred)
+ *   graduatedAt < now    → Alumni  (off-cycle / manual)
+ *   Student (¬Alum)      → Active  (+1 guard: genuinely enrolled, beats classYear)
+ *   classYear past       → Alumni  (no-API fallback)
+ *   else                 → Active
  */
 export function resolveMembershipStatus(
   u: StatusInputs,
   now: Date,
 ): MembershipStatus {
   if (u.membershipStatusOverride != null) return u.membershipStatusOverride;
+
+  // A currently-enrolled graduate/professional student (Thayer/Guarini/Geisel/
+  // Tuck — a program-code department_class, not an undergrad class year) is
+  // Active even though they carry "Alum" from a PRIOR Dartmouth degree: their
+  // enrollment is current, the Alum tag is historical. Must precede the
+  // Alum/ALUMNI check, which would otherwise graduate them. Guarded on the IDM
+  // code not yet being "ALUMNI" — that flip is the authoritative "has left
+  // Dartmouth entirely" signal and still wins.
+  if (
+    u.dartmouthIsStudent === true &&
+    u.dartmouthAffiliation !== "ALUMNI" &&
+    isGraduateProgramClass(u.dartmouthDepartmentClass)
+  ) {
+    return "Active";
+  }
 
   if (u.dartmouthIsAlum === true || u.dartmouthAffiliation === "ALUMNI") {
     return "Alumni";
@@ -84,6 +103,7 @@ export async function recomputeMembershipStatus(
       dartmouthIsAlum: true,
       dartmouthIsStudent: true,
       dartmouthAffiliation: true,
+      dartmouthDepartmentClass: true,
       daliMember: { select: { id: true } },
     },
   });

@@ -26,6 +26,7 @@ const MEMBER: UserRoles = {
   isInstructor: false,
   isInterviewer: false,
   isAlumni: false,
+  isStaff: false,
   canViewForms: false,
   canViewStaffing: false,
 };

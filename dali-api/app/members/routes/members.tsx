@@ -10,6 +10,7 @@ import {
 import type { Route } from "./+types/members";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { isCore, canViewForms } from "~/lib/roles";
+import { graduateProgramLabel } from "~/lib/dartmouth-people";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { prisma } from "~/lib/db";
 import { promoteToMember } from "~/members/lib/membership.server";
@@ -37,7 +38,12 @@ type MemberRow = {
   email: string | null;
   pronouns: string | null;
   classYear: number | null;
+  // Grad/professional school label ("Thayer" etc.) shown in place of a class
+  // year for enrolled grad students; null for undergrads and employees.
+  gradProgram: string | null;
   photoUrl: string | null;
+  // Full-time staff (AdminMembership.isStaff) — shown as a Staff badge.
+  isStaff: boolean;
   coreTitles: string[];
   // Each domain the member is eligible for, with their level — rendered as
   // pills in the Roles column. Same source as the staffing boards.
@@ -71,6 +77,9 @@ export async function loader({ request }: Route.LoaderArgs) {
           OR: [
             { coreAssignments: { some: { termId } } },
             { projectAssignments: { some: { termId } } },
+            // Full-time staff have no term assignments but are always current —
+            // keep them visible in the default (Active) directory view.
+            { adminMembership: { isStaff: true } },
           ],
         };
 
@@ -112,7 +121,9 @@ export async function loader({ request }: Route.LoaderArgs) {
       dartmouthEmail: true,
       pronouns: true,
       classYear: true,
+      dartmouthDepartmentClass: true,
       photoUrl: true,
+      adminMembership: { select: { isStaff: true } },
       coreAssignments: { select: { leadTitle: true } },
       domainEligibilities: {
         select: {
@@ -130,7 +141,9 @@ export async function loader({ request }: Route.LoaderArgs) {
     email: primaryEmail(u),
     pronouns: u.pronouns,
     classYear: u.classYear,
+    gradProgram: graduateProgramLabel(u.dartmouthDepartmentClass),
     photoUrl: await resolvePhotoUrl(u.photoUrl),
+    isStaff: u.adminMembership?.isStaff === true,
     // Core pills: one per distinct lead title (deduped across terms — a
     // "Hiring Lead" who held the title for three terms shows one chip). A Core
     // member with assignments but no title set still gets a plain "Core" pill
@@ -535,13 +548,20 @@ function MembersTable({ rows, status }: { rows: MemberRow[]; status: MemberStatu
                   <span>
                     {m.firstName} {m.lastName}
                   </span>
+                  {m.isStaff && (
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-accent-teal/15 text-accent-teal flex-shrink-0">
+                      Staff
+                    </span>
+                  )}
                 </div>
               </td>
               <td className="px-4 py-2 text-muted-foreground">{m.email ?? "—"}</td>
               <td className="px-4 py-2">
                 {showClass ? (
                   <span className="text-muted-foreground">
-                    {m.classYear ? `Class of ${m.classYear}` : "—"}
+                    {m.classYear
+                      ? `Class of ${m.classYear}`
+                      : (m.gradProgram ?? "—")}
                   </span>
                 ) : m.coreTitles.length === 0 && m.domainRoles.length === 0 ? (
                   <span className="text-muted-foreground text-xs">—</span>

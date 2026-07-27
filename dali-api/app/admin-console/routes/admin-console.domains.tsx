@@ -41,7 +41,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     prisma.user.findMany({
       where: { ...LAB_MEMBER_WHERE },
       include: {
-        adminMembership: { select: { id: true } },
+        adminMembership: { select: { id: true, isStaff: true } },
         coreAssignments: { select: { id: true, termId: true, leadTitle: true } },
         domainLeadAssignmentsAsUser: { include: { domain: true } },
       },
@@ -84,6 +84,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       daliEmail: u.daliEmail,
       isLabMember: true,
       isAdmin: isAdminUser,
+      isStaff: u.adminMembership?.isStaff === true,
       isCore: isAdminUser || currentCore.length > 0,
       coreAssignments: currentCore.map((a) => ({ id: a.id, leadTitle: a.leadTitle })),
       domainLeadAssignments: u.domainLeadAssignmentsAsUser.map((a) => ({

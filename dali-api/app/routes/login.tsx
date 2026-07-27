@@ -27,10 +27,15 @@ export async function loader({ request }: Route.LoaderArgs) {
     // member app; only genuine non-members fall through to /portal.
     const member = await prisma.dALIMember.findUnique({
       where: { userId: auth.user.sub },
-      select: { onboardedAt: true },
+      select: {
+        onboardedAt: true,
+        // Full-time staff skip the student onboarding flow.
+        user: { select: { adminMembership: { select: { isStaff: true } } } },
+      },
     });
     if (member) {
-      return redirect(member.onboardedAt ? "/" : "/onboarding");
+      const isStaff = member.user.adminMembership?.isStaff === true;
+      return redirect(member.onboardedAt || isStaff ? "/" : "/onboarding");
     }
     // Signed-in partners land in their portal, not the applicant one.
     const partnerUser = await prisma.partnerUser.findUnique({

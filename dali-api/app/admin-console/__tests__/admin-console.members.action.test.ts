@@ -35,6 +35,7 @@ const TERM_ID = "term-1";
 const mockPrisma = prisma as unknown as {
   adminMembership: {
     upsert: ReturnType<typeof vi.fn>;
+    updateMany: ReturnType<typeof vi.fn>;
     deleteMany: ReturnType<typeof vi.fn>;
   };
   coreAssignment: {
@@ -55,6 +56,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   (mockPrisma as any).adminMembership = {
     upsert: vi.fn(),
+    updateMany: vi.fn(),
     deleteMany: vi.fn(),
   };
   (mockPrisma as any).coreAssignment = {
@@ -227,5 +229,47 @@ describe("admin-console.members action — set-admin (Admin-only)", () => {
       update: {},
       create: { userId: USER_ID, grantedBy: ADMIN_ID },
     });
+  });
+});
+
+describe("admin-console.members action — set-staff (Admin-only)", () => {
+  it("rejects Core callers with 403", async () => {
+    asCore();
+    const res = await action({
+      request: postForm({ intent: "set-staff", userId: USER_ID, value: "true" }),
+      params: {},
+      context: {},
+    } as any);
+    expect((res as Response).status).toBe(403);
+    expect(mockPrisma.adminMembership.upsert).not.toHaveBeenCalled();
+    expect(mockPrisma.adminMembership.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("marks Staff by upserting the AdminMembership with isStaff (staff ⊂ admin)", async () => {
+    asAdmin();
+    await action({
+      request: postForm({ intent: "set-staff", userId: USER_ID, value: "true" }),
+      params: {},
+      context: {},
+    } as any);
+    expect(mockPrisma.adminMembership.upsert).toHaveBeenCalledWith({
+      where: { userId: USER_ID },
+      update: { isStaff: true },
+      create: { userId: USER_ID, grantedBy: ADMIN_ID, isStaff: true },
+    });
+  });
+
+  it("un-marks Staff by clearing the flag but leaving Admin intact", async () => {
+    asAdmin();
+    await action({
+      request: postForm({ intent: "set-staff", userId: USER_ID, value: "false" }),
+      params: {},
+      context: {},
+    } as any);
+    expect(mockPrisma.adminMembership.updateMany).toHaveBeenCalledWith({
+      where: { userId: USER_ID },
+      data: { isStaff: false },
+    });
+    expect(mockPrisma.adminMembership.deleteMany).not.toHaveBeenCalled();
   });
 });

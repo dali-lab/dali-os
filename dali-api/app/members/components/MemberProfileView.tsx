@@ -44,6 +44,8 @@ export function MemberProfileView({
   const {
     member,
     roleLabels,
+    isStaff,
+    isAlumni,
     termCode,
     projectAssignments,
     pendingReviews,
@@ -125,6 +127,25 @@ export function MemberProfileView({
           </p>
           {member.handle && (
             <p className="text-sm text-accent-coral">@{member.handle}</p>
+          )}
+          {(isStaff || isAlumni || member.gradProgram) && (
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              {isStaff && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-accent-teal/15 text-accent-teal">
+                  Staff
+                </span>
+              )}
+              {isAlumni && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-muted text-muted-foreground">
+                  Alumni
+                </span>
+              )}
+              {member.gradProgram && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-accent-green/15 text-accent-green">
+                  {member.gradProgram}
+                </span>
+              )}
+            </div>
           )}
           {isSelf && (
             <a

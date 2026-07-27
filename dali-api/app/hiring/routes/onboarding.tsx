@@ -129,6 +129,7 @@ async function loadOnboardingRows(args: {
                   slackUserId: true,
                   figmaInvitedAt: true,
                   daliMember: { select: { onboardedAt: true } },
+                  adminMembership: { select: { isStaff: true } },
                 },
               },
             },
@@ -144,6 +145,9 @@ async function loadOnboardingRows(args: {
   const rawRows: Array<Omit<OnboardingRow, "photoUrl"> & { rawPhotoUrl: string | null }> = [];
   for (const d of decisions) {
     const u = d.domainApplication.application.user;
+    // Full-time staff aren't new-hire onboarding cases — skip them so a
+    // staffer who once applied doesn't surface a stale onboarding checklist.
+    if (u.adminMembership?.isStaff === true) continue;
     const dom = d.domainApplication.domain;
     const cycle = d.domainApplication.application.applicationCycle;
     const domainKey = dom.code ?? dom.name;

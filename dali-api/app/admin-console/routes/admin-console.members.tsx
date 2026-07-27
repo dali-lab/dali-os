@@ -12,6 +12,7 @@ import { notifyAdminsOfPromotion } from "~/lib/promotion-notify.server";
 import { Users, Check } from "lucide-react";
 import {
   AdminToggle,
+  StaffToggle,
   CorePicker,
   DomainLeadPicker,
   type Member,
@@ -41,7 +42,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       where: { ...LAB_MEMBER_WHERE },
       include: {
         daliMember: { select: { id: true } },
-        adminMembership: { select: { id: true } },
+        adminMembership: { select: { id: true, isStaff: true } },
         coreAssignments: { select: { id: true, termId: true, leadTitle: true } },
         domainLeadAssignmentsAsUser: { include: { domain: true } },
       },
@@ -67,6 +68,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       daliEmail: u.daliEmail,
       isLabMember: u.daliMember !== null,
       isAdmin: isAdminUser,
+      isStaff: u.adminMembership?.isStaff === true,
       isCore: isAdminUser || currentCore.length > 0,
       coreAssignments: currentCore.map((a) => ({ id: a.id, leadTitle: a.leadTitle })),
       domainLeadAssignments: u.domainLeadAssignmentsAsUser.map((a) => ({
@@ -106,6 +108,29 @@ export async function action({ request }: Route.ActionArgs) {
       });
     } else {
       await prisma.adminMembership.deleteMany({ where: { userId } });
+    }
+    return null;
+  }
+
+  // Staff ⊂ Admin: marking Staff upserts the AdminMembership with isStaff=true
+  // (granting Admin in the same action); un-marking clears the flag but keeps
+  // Admin. Admin-gated, like set-admin.
+  if (intent === "set-staff") {
+    if (!(await isAdmin(auth.user.sub)))
+      return forbidden(request);
+    const userId = formData.get("userId") as string;
+    const value = formData.get("value") === "true";
+    if (value) {
+      await prisma.adminMembership.upsert({
+        where: { userId },
+        update: { isStaff: true },
+        create: { userId, grantedBy: auth.user.sub, isStaff: true },
+      });
+    } else {
+      await prisma.adminMembership.updateMany({
+        where: { userId },
+        data: { isStaff: false },
+      });
     }
     return null;
   }
@@ -263,13 +288,14 @@ export default function AdminConsoleMembers() {
       </div>
 
       <div className="bg-card border border-border rounded-lg overflow-x-auto">
-        <table className="w-full text-sm min-w-[760px]">
+        <table className="w-full text-sm min-w-[860px]">
           <thead>
             <tr className="border-b border-border bg-muted/50">
               <th className="text-left px-4 py-3 font-medium text-muted-foreground">Name</th>
               <th className="text-left px-4 py-3 font-medium text-muted-foreground">DALI Email</th>
               <th className="text-left px-4 py-3 font-medium text-muted-foreground">Lab Member</th>
               <th className="text-left px-4 py-3 font-medium text-muted-foreground">Admin</th>
+              <th className="text-left px-4 py-3 font-medium text-muted-foreground">Staff</th>
               <th className="text-left px-4 py-3 font-medium text-muted-foreground">Core</th>
               <th className="text-left px-4 py-3 font-medium text-muted-foreground">Domain Lead</th>
             </tr>
@@ -277,7 +303,7 @@ export default function AdminConsoleMembers() {
           <tbody className="divide-y divide-border">
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground/70">
+                <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground/70">
                   <span className="sr-only">Table empty: </span>No members found.
                 </td>
               </tr>
@@ -299,6 +325,9 @@ export default function AdminConsoleMembers() {
                 </td>
                 <td className="px-4 py-3">
                   <AdminToggle member={member} disabled={!viewerIsAdmin} />
+                </td>
+                <td className="px-4 py-3">
+                  <StaffToggle member={member} disabled={!viewerIsAdmin} />
                 </td>
                 <td className="px-4 py-3">
                   <CorePicker member={member} />

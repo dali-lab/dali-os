@@ -161,8 +161,15 @@ export async function creditHistory(userId: string) {
  * the Core end-of-term compliance view. Display-only.
  */
 export async function complianceForTerm(termId: string) {
+  // Full-time staff are exempt from the ≥1-credit-per-term policy — drop them
+  // from the roster so they're never surfaced as non-compliant. Scoped here
+  // rather than in the shared currentTermMemberWhere() (staff should stay in
+  // calendar/announcement pickers).
   const members = await prisma.user.findMany({
-    where: await currentTermMemberWhere(),
+    where: {
+      ...(await currentTermMemberWhere()),
+      NOT: { adminMembership: { isStaff: true } },
+    },
     select: { id: true, firstName: true, lastName: true },
     orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
   });

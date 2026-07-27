@@ -7,6 +7,8 @@ vi.mock("~/lib/dartmouth-jwt", () => ({
 import {
   peopleByNetId,
   parseDepartmentClass,
+  isGraduateProgramClass,
+  graduateProgramLabel,
 } from "~/lib/dartmouth-people";
 
 describe("parseDepartmentClass", () => {
@@ -25,6 +27,45 @@ describe("parseDepartmentClass", () => {
     expect(parseDepartmentClass("")).toBeNull();
     expect(parseDepartmentClass(null)).toBeNull();
     expect(parseDepartmentClass(undefined)).toBeNull();
+  });
+});
+
+describe("isGraduateProgramClass", () => {
+  it("is true for grad/professional program codes", () => {
+    expect(isGraduateProgramClass("TH")).toBe(true); // Thayer
+    expect(isGraduateProgramClass("GR")).toBe(true); // Guarini
+    expect(isGraduateProgramClass("DM")).toBe(true); // Geisel
+    expect(isGraduateProgramClass("TU27")).toBe(true); // Tuck (embedded year)
+  });
+
+  it("is false for undergrad class years", () => {
+    expect(isGraduateProgramClass("'27")).toBe(false);
+    expect(isGraduateProgramClass("'26")).toBe(false);
+    expect(isGraduateProgramClass(" '25 ")).toBe(false);
+  });
+
+  it("is false for empty / missing values", () => {
+    expect(isGraduateProgramClass("")).toBe(false);
+    expect(isGraduateProgramClass(null)).toBe(false);
+    expect(isGraduateProgramClass(undefined)).toBe(false);
+  });
+});
+
+describe("graduateProgramLabel", () => {
+  it("maps known program codes (incl. embedded year) to school labels", () => {
+    expect(graduateProgramLabel("TH")).toBe("Thayer");
+    expect(graduateProgramLabel("GR")).toBe("Guarini");
+    expect(graduateProgramLabel("DM")).toBe("Geisel");
+    expect(graduateProgramLabel("TU27")).toBe("Tuck");
+  });
+
+  it("returns null for class years, unknown codes, employees, and empty", () => {
+    expect(graduateProgramLabel("'27")).toBeNull();
+    expect(graduateProgramLabel("XYZ")).toBeNull();
+    expect(graduateProgramLabel("Computer Science")).toBeNull();
+    expect(graduateProgramLabel("")).toBeNull();
+    expect(graduateProgramLabel(null)).toBeNull();
+    expect(graduateProgramLabel(undefined)).toBeNull();
   });
 });
 
@@ -70,6 +111,7 @@ describe("peopleByNetId", () => {
       isAlum: false,
       isStudent: true,
       classYear: 2027,
+      departmentClass: "'27",
     });
   });
 
@@ -84,6 +126,7 @@ describe("peopleByNetId", () => {
       isAlum: false,
       isStudent: true,
       classYear: 2026,
+      departmentClass: "'26",
     });
   });
 
@@ -98,6 +141,22 @@ describe("peopleByNetId", () => {
       isAlum: true,
       isStudent: true,
       classYear: 2026,
+      departmentClass: "'26",
+    });
+  });
+
+  it("enrolled grad student: Alum + Student with a program-code department_class", async () => {
+    mockPerson({
+      dartmouth_affiliation: "DART",
+      affiliations: [{ name: "Alum" }, { name: "Student" }],
+      department_class: "GR",
+    });
+    expect(await peopleByNetId("gradstudent")).toEqual({
+      dartmouthAffiliation: "DART",
+      isAlum: true,
+      isStudent: true,
+      classYear: null,
+      departmentClass: "GR",
     });
   });
 
@@ -112,6 +171,7 @@ describe("peopleByNetId", () => {
       isAlum: true,
       isStudent: false,
       classYear: 2020,
+      departmentClass: "'20",
     });
   });
 
@@ -126,6 +186,7 @@ describe("peopleByNetId", () => {
       isAlum: false,
       isStudent: false,
       classYear: null,
+      departmentClass: "Computer Science",
     });
   });
 
@@ -136,6 +197,7 @@ describe("peopleByNetId", () => {
       isAlum: false,
       isStudent: false,
       classYear: null,
+      departmentClass: null,
     });
   });
 
