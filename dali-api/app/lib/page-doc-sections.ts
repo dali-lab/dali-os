@@ -37,7 +37,6 @@ export function parseStoredSections(raw: unknown): StoredPageDocSection[] {
 
 /** Prefer stored sections; otherwise synthesize one Overview from legacy fields. */
 export function resolveSections(doc: {
-  title: string;
   body: unknown;
   videoKey: string | null;
   sections: unknown;

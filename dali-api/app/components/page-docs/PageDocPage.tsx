@@ -8,8 +8,8 @@ import {
   Plus,
   ChevronUp,
   ChevronDown,
+  X,
 } from "lucide-react";
-import { Modal, ModalHeader } from "~/components/Modal";
 import { RichTextEditor } from "~/components/RichTextEditor";
 import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
 import { CommentsRail } from "~/components/collab/CommentsRail";
@@ -55,13 +55,11 @@ type DraftSection = {
   videoLabel: string | null;
 };
 
-const CONTAINER_CLASS =
-  "bg-card rounded-2xl shadow-brand-2 max-w-5xl w-full p-5 sm:p-6 my-auto max-h-[90vh] overflow-y-auto";
 const SECTION_LABEL_CLASS =
   "text-xs font-semibold uppercase tracking-wide text-muted-foreground";
 const EMPTY_CLASS = "py-2 text-sm text-muted-foreground";
 
-const TITLE_ID = "page-doc-modal-title";
+const TITLE_ID = "page-doc-page-title";
 
 function newClientSectionId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -81,7 +79,7 @@ function toDraftSections(sections: SectionData[]): DraftSection[] {
   }));
 }
 
-export function PageDocModal({
+export function PageDocPage({
   docKey,
   fallbackTitle,
   path,
@@ -246,18 +244,30 @@ export function PageDocModal({
     ) : null;
 
   return (
-    <Modal open onClose={onClose} labelledBy={TITLE_ID} containerClassName={CONTAINER_CLASS}>
-      <ModalHeader
-        titleId={TITLE_ID}
-        title={editing ? draftTitle || fallbackTitle : (data?.doc.title ?? fallbackTitle)}
-        subtitle={
-          data?.maintainer
-            ? `Maintained by ${data.maintainer.name}${data.maintainer.handle ? ` · @${data.maintainer.handle}` : ""}`
-            : "No maintainer assigned yet"
-        }
-        onClose={onClose}
-        actions={headerActions}
-      />
+    <div className="flex min-h-[70vh] flex-col gap-5" aria-labelledby={TITLE_ID}>
+      <header className="flex items-start justify-between gap-4 border-b border-border pb-4">
+        <div className="min-w-0">
+          <h1 id={TITLE_ID} className="font-heading text-xl font-bold text-foreground sm:text-2xl">
+            {editing ? draftTitle || fallbackTitle : (data?.doc.title ?? fallbackTitle)}
+          </h1>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {data?.maintainer
+              ? `Maintained by ${data.maintainer.name}${data.maintainer.handle ? ` · @${data.maintainer.handle}` : ""}`
+              : "No maintainer assigned yet"}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {headerActions}
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close guide"
+            className="text-muted-foreground/70 hover:text-foreground rounded p-1 hover:bg-muted"
+          >
+            <X className="w-5 h-5" aria-hidden />
+          </button>
+        </div>
+      </header>
 
       {status === "loading" && (
         <div className="flex items-center justify-center py-12 text-muted-foreground">
@@ -369,8 +379,7 @@ export function PageDocModal({
 
           {saveError && <p className="text-sm text-destructive">{saveError}</p>}
 
-          <section className="flex flex-col gap-2">
-            <h3 className={SECTION_LABEL_CLASS}>FAQ</h3>
+          <section className="flex flex-col gap-2 border-t border-border pt-5">
             <CommentsRail
               targetType="pagedoc"
               targetId={data.doc.id}
@@ -383,7 +392,7 @@ export function PageDocModal({
           </section>
         </div>
       )}
-    </Modal>
+    </div>
   );
 }
 
