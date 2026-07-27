@@ -7,9 +7,9 @@
 // (e.g. after a crashed lease) never re-archives an already-archived task,
 // and a single bounded updateMany keeps per-tick work well under the lease.
 //
-// The project board's Archive button reuses `archiveIdleTasks` scoped to one
-// project so operators can run the same sweep without waiting for the weekly
-// job.
+// The project board's Archive button uses `archiveTerminalTasks` (no idle
+// threshold) so managers clear Done/Cancelled off the board immediately;
+// the weekly job keeps the age-gated sweep via `archiveIdleTasks`.
 
 import { prisma } from "~/lib/db";
 import { jobByName, resolveJobSettings } from "~/jobs/registry";
@@ -33,6 +33,23 @@ export async function archiveIdleTasks(opts: {
       // updatedAt is bumped on any field edit, so this is "no activity since".
       updatedAt: { lt: cutoff },
       ...(opts.projectId ? { projectId: opts.projectId } : {}),
+    },
+    data: { archivedAt: opts.now },
+  });
+
+  return count;
+}
+
+/** Archive every live Done/Cancelled task on a project, regardless of idle age. */
+export async function archiveTerminalTasks(opts: {
+  now: Date;
+  projectId: string;
+}): Promise<number> {
+  const { count } = await prisma.task.updateMany({
+    where: {
+      projectId: opts.projectId,
+      archivedAt: null,
+      status: { in: [...ARCHIVABLE_STATUSES] },
     },
     data: { archivedAt: opts.now },
   });
