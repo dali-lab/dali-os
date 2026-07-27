@@ -11,6 +11,7 @@ import { DocumentEditor } from "~/components/DocumentEditor";
 import { AttendanceChecklist, type AttendanceRow } from "~/components/AttendanceChecklist";
 import { CheckInPanel } from "~/components/CheckInPanel";
 import { ProjectIcon } from "~/components/ProjectIcon";
+import { PageIcon } from "~/components/PageIcon";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const t = (data as { title?: string } | undefined)?.title;
@@ -32,6 +33,7 @@ export const handle = {
     const d = data as
       | {
           title?: string
+          iconEmoji?: string | null
           hubName?: string
           hubHref?: string
           hubIconEmoji?: string | null
@@ -55,12 +57,16 @@ export const handle = {
             <ProjectIcon iconEmoji={d.hubIconEmoji} />
           ),
       },
-      { label: d.title },
+      // The leaf carries the page's own icon (emoji, or the neutral doc glyph).
+      { label: d.title, icon: <PageIcon iconEmoji={d.iconEmoji} /> },
     ];
   },
   breadcrumb: (data: unknown) => {
-    const d = data as { title?: string } | undefined;
-    return d?.title ?? null;
+    const d = data as { title?: string; iconEmoji?: string | null } | undefined;
+    if (!d?.title) return null;
+    // Lab pages have no workspace trail — still show the page's own icon on the
+    // leaf so it matches the document header.
+    return [{ label: d.title, icon: <PageIcon iconEmoji={d.iconEmoji} /> }];
   },
 };
 
