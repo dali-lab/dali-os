@@ -13,6 +13,7 @@ import {
 } from "../lib/staffing-board";
 import { CheckCircle2, UserPlus } from "lucide-react";
 import { Button } from "~/components/ui/Button";
+import { ProjectIcon } from "~/components/ProjectIcon";
 import { MemberCard, MemberCardPreview } from "./MemberCard";
 import { RoleBadge } from "./RoleBadge";
 import { BidModal } from "./BidModal";
@@ -28,6 +29,7 @@ type ProjectMeta = {
   id: string;
   name: string;
   status: "Active" | "Paused" | "Archived";
+  iconEmoji?: string | null;
   // Pre-fill the Finalize modal's editable fields (shared with the project page).
   githubTeamSlug?: string | null;
   slackChannelName?: string | null;
@@ -566,7 +568,12 @@ export function StaffingBoard({
       const cards = [...(board[p.id] ?? []), ...(externalCardsByProject.get(p.id) ?? [])];
       return {
         id: p.id,
-        title: p.name,
+        title: (
+          <span className="flex items-center gap-1.5 min-w-0">
+            <ProjectIcon iconEmoji={p.iconEmoji} />
+            <span className="truncate">{p.name}</span>
+          </span>
+        ),
         subtitle: columnSubtitle(
           `${board[p.id]?.length ?? 0} assigned`,
           demandByProject[p.id],

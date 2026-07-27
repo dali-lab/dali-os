@@ -10,6 +10,8 @@ import { getPresenceUser } from "~/lib/presence-user";
 import { DocumentEditor } from "~/components/DocumentEditor";
 import { AttendanceChecklist, type AttendanceRow } from "~/components/AttendanceChecklist";
 import { CheckInPanel } from "~/components/CheckInPanel";
+import { ProjectIcon } from "~/components/ProjectIcon";
+import { PageIcon } from "~/components/PageIcon";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const t = (data as { title?: string } | undefined)?.title;
@@ -31,8 +33,10 @@ export const handle = {
     const d = data as
       | {
           title?: string
+          iconEmoji?: string | null
           hubName?: string
           hubHref?: string
+          hubIconEmoji?: string | null
           workspaceType?: string
         }
       | undefined;
@@ -41,11 +45,28 @@ export const handle = {
       d.workspaceType === "EducationOffering"
         ? { label: "Education", to: "/education" }
         : { label: "Projects", to: "/projects" };
-    return [root, { label: d.hubName, to: d.hubHref }, { label: d.title }];
+    return [
+      root,
+      {
+        label: d.hubName,
+        to: d.hubHref,
+        // Project docs carry the project's emoji (or its neutral fallback glyph);
+        // Education offerings have no project icon.
+        icon:
+          d.workspaceType === "EducationOffering" ? undefined : (
+            <ProjectIcon iconEmoji={d.hubIconEmoji} />
+          ),
+      },
+      // The leaf carries the page's own icon (emoji, or the neutral doc glyph).
+      { label: d.title, icon: <PageIcon iconEmoji={d.iconEmoji} /> },
+    ];
   },
   breadcrumb: (data: unknown) => {
-    const d = data as { title?: string } | undefined;
-    return d?.title ?? null;
+    const d = data as { title?: string; iconEmoji?: string | null } | undefined;
+    if (!d?.title) return null;
+    // Lab pages have no workspace trail — still show the page's own icon on the
+    // leaf so it matches the document header.
+    return [{ label: d.title, icon: <PageIcon iconEmoji={d.iconEmoji} /> }];
   },
 };
 
@@ -114,14 +135,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // pages have no workspaceId and stay null — they fall back to a plain title.
   let hubName: string | null = null;
   let hubHref: string | null = null;
+  let hubIconEmoji: string | null = null;
   if (page.workspaceType === "Project" && page.workspaceId) {
     const project = await prisma.project.findUnique({
       where: { id: page.workspaceId },
-      select: { name: true },
+      select: { name: true, iconEmoji: true },
     });
     if (project) {
       hubName = project.name;
       hubHref = `/projects/${page.workspaceId}`;
+      hubIconEmoji = project.iconEmoji;
     }
   } else if (page.workspaceType === "EducationOffering" && page.workspaceId) {
     const offering = await prisma.educationOffering.findUnique({
@@ -213,6 +236,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     workspaceType: page.workspaceType,
     hubName,
     hubHref,
+    hubIconEmoji,
     iconEmoji: page.iconEmoji,
     coverImageUrl: page.coverImageUrl,
     createdByName: page.createdBy ? fullName(page.createdBy) : null,

@@ -11,6 +11,7 @@ import { hydrateAuthors } from "~/lib/collabAuth";
 import { formatBytes, uploadFileToS3 } from "~/lib/upload-client";
 import { CommentsRail } from "~/components/collab/CommentsRail";
 import { TagPicker } from "~/components/TagPicker";
+import { ProjectIcon } from "~/components/ProjectIcon";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const t = (data as { title?: string } | undefined)?.title;
@@ -27,12 +28,16 @@ export const handle = {
   // prefix says "Documents" but their home is Projects — declare the full trail.
   breadcrumbTrail: (data: unknown) => {
     const d = data as
-      | { projectId?: string; projectName?: string; title?: string }
+      | { projectId?: string; projectName?: string; projectIconEmoji?: string | null; title?: string }
       | undefined;
     if (!d?.projectId || !d.projectName) return null;
     return [
       { label: "Projects", to: "/projects" },
-      { label: d.projectName, to: `/projects/${d.projectId}` },
+      {
+        label: d.projectName,
+        to: `/projects/${d.projectId}`,
+        icon: <ProjectIcon iconEmoji={d.projectIconEmoji} />,
+      },
       { label: d.title ?? "File" },
     ];
   },
@@ -51,7 +56,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       id: true,
       title: true,
       projectId: true,
-      project: { select: { name: true } },
+      project: { select: { name: true, iconEmoji: true } },
       currentVersionId: true,
       archivedAt: true,
       tags: { select: { tag: { select: { id: true, label: true, slug: true, color: true } } } },
@@ -115,6 +120,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     fileId: file.id,
     projectId: file.projectId,
     projectName: file.project.name,
+    projectIconEmoji: file.project.iconEmoji,
     title: file.title,
     tags: file.tags.map((t) => t.tag).sort((a, b) => a.label.localeCompare(b.label)),
     allTags,

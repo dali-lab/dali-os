@@ -9,6 +9,7 @@ import {
 } from "react-router";
 import { Building2, FolderKanban, Mail, Users, Unlink } from "lucide-react";
 import { Tooltip } from "~/components/ui/IconButton";
+import { ProjectIcon } from "~/components/ProjectIcon";
 import type { Route } from "./+types/partners.$orgId";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
@@ -78,7 +79,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           id: true,
           startedAt: true,
           endedAt: true,
-          project: { select: { id: true, name: true, status: true } },
+          project: { select: { id: true, name: true, status: true, iconEmoji: true } },
         },
       },
       applications: {
@@ -749,6 +750,7 @@ export default function PartnerOrgDetail() {
             {org.projects.map((pp) => (
               <li key={pp.id} className="py-2.5 flex flex-col gap-2">
                 <div className="flex items-center gap-3">
+                  <ProjectIcon iconEmoji={pp.project.iconEmoji} />
                   <div className="min-w-0 flex-1">
                     <Link
                       to={`/projects/${pp.project.id}`}
