@@ -104,7 +104,8 @@ export function TaskBoard({
     return () => window.removeEventListener("focus", refresh);
   }, [refresh]);
 
-  // Same idle Done/Cancelled sweep as the weekly job, scoped to this project.
+  // Archive every live Done/Cancelled task on this project immediately
+  // (the weekly job still uses the idle-day threshold lab-wide).
   const runArchive = useCallback(async () => {
     if (archiving) return;
     setArchiving(true);
@@ -708,8 +709,8 @@ function ArchivedTasksModal({
       )}
       {tasks !== null && tasks.length === 0 && (
         <p className="text-sm text-muted-foreground">
-          No archived tasks yet. Done/Cancelled tasks are archived automatically
-          once they've been idle past the threshold.
+          No archived tasks yet. Use Archive on the board to clear Done/Cancelled
+          tasks now, or wait for the weekly auto-archive of idle ones.
         </p>
       )}
 
