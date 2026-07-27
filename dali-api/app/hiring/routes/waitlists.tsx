@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Link, redirect, useFetcher, useLoaderData } from "react-router";
 import { Check, X } from "lucide-react";
 import { Tooltip } from "~/components/ui/IconButton";
+import { useDialog } from "~/components/ui/dialog";
 import type { Route } from "./+types/waitlists";
 import { requireAuth } from "~/lib/auth";
 import { getUserRoles } from "~/lib/roles";
@@ -196,6 +197,7 @@ function DomainSection({
 }
 
 function WaitlistRow({ entry }: { entry: WaitlistEntry }) {
+  const dialog = useDialog();
   const acceptFetcher = useFetcher();
   const removeFetcher = useFetcher();
   const busy =
@@ -210,11 +212,14 @@ function WaitlistRow({ entry }: { entry: WaitlistEntry }) {
       ? ((removeFetcher.data as any).error as string)
       : null;
 
-  const onAccept = () => {
+  const onAccept = async () => {
     if (
-      !window.confirm(
-        `Accept ${fullName(entry)} off the waitlist? This will promote them to a member, provision their DALI account, and send the acceptance email.`,
-      )
+      !(await dialog.confirm({
+        title: `Accept ${fullName(entry)} off the waitlist?`,
+        description:
+          "This will promote them to a member, provision their DALI account, and send the acceptance email.",
+        confirmLabel: "Accept",
+      }))
     )
       return;
     acceptFetcher.submit(
@@ -227,11 +232,15 @@ function WaitlistRow({ entry }: { entry: WaitlistEntry }) {
     );
   };
 
-  const onRemove = () => {
+  const onRemove = async () => {
     if (
-      !window.confirm(
-        `Remove ${fullName(entry)} from the waitlist? No email will be sent. The applicant's other waitlist entries (if any) are unaffected.`,
-      )
+      !(await dialog.confirm({
+        title: `Remove ${fullName(entry)} from the waitlist?`,
+        description:
+          "No email will be sent. The applicant's other waitlist entries (if any) are unaffected.",
+        confirmLabel: "Remove",
+        tone: "destructive",
+      }))
     )
       return;
     removeFetcher.submit(

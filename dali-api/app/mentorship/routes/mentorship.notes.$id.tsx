@@ -7,6 +7,7 @@ import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
 import { RichTextEditor } from "~/components/RichTextEditor";
 import { Tooltip } from "~/components/ui/IconButton";
+import { useDialog } from "~/components/ui/dialog";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import { canViewMentorship, canViewMentorNote } from "../lib/visibility";
 import { mentorshipPills } from "../components/mentorshipPills";
@@ -112,6 +113,7 @@ const VIBE_ICON = { Good: Smile, Ok: Meh, Bad: Frown } as const;
 
 export default function MentorNoteEditor() {
   const data = useLoaderData() as LoaderData;
+  const dialog = useDialog();
   const [value, setValue] = useState<unknown>(data.contentJson);
   const [vibe, setVibe] = useState<Vibe | null>(data.vibe);
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">(
@@ -164,7 +166,15 @@ export default function MentorNoteEditor() {
   }, [value, data.id, data.canEdit]);
 
   async function handleDelete() {
-    if (!confirm("Delete this note? This cannot be undone.")) return;
+    if (
+      !(await dialog.confirm({
+        title: "Delete this note?",
+        description: "This cannot be undone.",
+        confirmLabel: "Delete",
+        tone: "destructive",
+      }))
+    )
+      return;
     const res = await fetch(`/api/mentorship/notes/${data.id}`, {
       method: "DELETE",
     });

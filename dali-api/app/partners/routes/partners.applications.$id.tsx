@@ -28,6 +28,7 @@ import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { EditModeToggle, useEditMode } from "~/components/EditModeToggle";
 import { RichTextEditor } from "~/components/RichTextEditor";
 import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
+import { useDialog, useConfirmSubmit } from "~/components/ui/dialog";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const a = (data as { application?: { title: string } } | undefined)
@@ -392,6 +393,7 @@ function Header({
 }) {
   const [editing, setEditing] = useState(false);
   const submit = useSubmit();
+  const confirmSubmit = useConfirmSubmit();
 
   return (
     <header className="flex flex-col gap-2">
@@ -492,15 +494,12 @@ function Header({
       {canEdit && !application.resultingProjectId && (
         <Form
           method="post"
-          onSubmit={(e) => {
-            if (
-              !window.confirm(
-                "Create a project from this application? It will carry over the partner, start term, and per-domain role requests, and the two will be linked.",
-              )
-            ) {
-              e.preventDefault();
-            }
-          }}
+          onSubmit={confirmSubmit({
+            title: "Create a project from this application?",
+            description:
+              "It will carry over the partner, start term, and per-domain role requests, and the two will be linked.",
+            confirmLabel: "Create project",
+          })}
         >
           <input type="hidden" name="intent" value="promote" />
           <button
@@ -680,6 +679,7 @@ function DomainScopeBlock({
   canEdit: boolean;
 }) {
   const revalidator = useRevalidator();
+  const dialog = useDialog();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -856,11 +856,13 @@ function DomainScopeBlock({
                       <button
                         type="button"
                         disabled={busy}
-                        onClick={() => {
+                        onClick={async () => {
                           if (
-                            !window.confirm(
-                              `Remove ${d.domainName} from this application?`,
-                            )
+                            !(await dialog.confirm({
+                              title: `Remove ${d.domainName} from this application?`,
+                              confirmLabel: "Remove",
+                              tone: "destructive",
+                            }))
                           )
                             return;
                           run(() =>

@@ -52,6 +52,7 @@ import type {
 import { prisma } from "~/lib/db";
 import { parseSessionCookie } from "~/lib/cookies";
 import { Button, buttonClasses } from "~/components/ui/Button";
+import { useConfirmSubmit } from "~/components/ui/dialog";
 import { TypeBadge, StatusBadge, MyStatusChip } from "~/education/components/OfferingCard";
 import { OfferingFields, toDatetimeLocal } from "~/education/components/OfferingFields";
 import { CollaborativeEditor } from "~/components/CollaborativeEditor";
@@ -390,6 +391,7 @@ export default function ManageOffering() {
     userName,
   } = useLoaderData<typeof loader>();
   const tz = useUserTimeZone();
+  const confirmSubmit = useConfirmSubmit();
   const actionData = useActionData<{
     error?: string;
     closeOut?: { issued: number; alreadyIssued: number; ineligible: number };
@@ -431,15 +433,12 @@ export default function ManageOffering() {
           </Link>
           <Form
             method="post"
-            onSubmit={(e) => {
-              if (
-                !confirm(
-                  "Close out this course? Certificates are issued to every approved student meeting the attendance threshold, and each gets an email. Re-running only issues missing certificates.",
-                )
-              ) {
-                e.preventDefault();
-              }
-            }}
+            onSubmit={confirmSubmit({
+              title: "Close out this course?",
+              description:
+                "Certificates are issued to every approved student meeting the attendance threshold, and each gets an email. Re-running only issues missing certificates.",
+              confirmLabel: "Close out",
+            })}
           >
             <input type="hidden" name="intent" value="close-out-offering" />
             <Button type="submit" variant="secondary" size="sm">
@@ -679,11 +678,12 @@ export default function ManageOffering() {
           {core && offering.status === "Draft" && (
             <Form
               method="post"
-              onSubmit={(e) => {
-                if (!confirm("Delete this draft offering? This can't be undone.")) {
-                  e.preventDefault();
-                }
-              }}
+              onSubmit={confirmSubmit({
+                title: "Delete this draft offering?",
+                description: "This can't be undone.",
+                confirmLabel: "Delete",
+                tone: "destructive",
+              })}
             >
               <input type="hidden" name="intent" value="delete-offering" />
               <Button type="submit" variant="destructive" size="sm">
@@ -716,9 +716,11 @@ export default function ManageOffering() {
                     </p>
                     <Form
                       method="post"
-                      onSubmit={(e) => {
-                        if (!confirm("Delete this session?")) e.preventDefault();
-                      }}
+                      onSubmit={confirmSubmit({
+                        title: "Delete this session?",
+                        confirmLabel: "Delete",
+                        tone: "destructive",
+                      })}
                     >
                       <input type="hidden" name="intent" value="delete-session" />
                       <input type="hidden" name="sessionId" value={s.id} />

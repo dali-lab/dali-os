@@ -16,6 +16,8 @@ import {
 } from "~/components/AnalyticsErrorReporter";
 import { NavigationProgress } from "~/components/NavigationProgress";
 import { ThemeSync } from "~/components/ThemeSync";
+import { DialogProvider } from "~/components/ui/dialog";
+import { ToastProvider } from "~/components/ui/toast";
 import { THEME_BOOT_SRC } from "~/lib/theme";
 
 export const links: Route.LinksFunction = () => [
@@ -77,7 +79,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
       <body>
         <ThemeSync />
         <NavigationProgress />
-        {children}
+        <ToastProvider>
+          <DialogProvider>{children}</DialogProvider>
+        </ToastProvider>
         <AnalyticsErrorReporter />
         <ScrollRestoration />
         <Scripts />

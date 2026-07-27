@@ -5,6 +5,7 @@ import { prisma } from "~/lib/db";
 import { logAuditEvent } from "~/lib/audit";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { PhotoUploadField } from "~/components/PhotoUploadField";
+import { useConfirmSubmit } from "~/components/ui/dialog";
 import { requirePartner } from "~/partners/lib/partner-auth.server";
 import {
   createPartnerInvite,
@@ -176,6 +177,7 @@ export default function PartnerSettings({ actionData }: Route.ComponentProps) {
     useLoaderData<typeof loader>();
   const navigation = useNavigation();
   const submitting = navigation.state === "submitting";
+  const confirmSubmit = useConfirmSubmit();
   const [inviting, setInviting] = useState(false);
   const error = actionData && "error" in actionData ? actionData.error : null;
   const invited = actionData && "invited" in actionData;
@@ -321,11 +323,12 @@ export default function PartnerSettings({ actionData }: Route.ComponentProps) {
                 {org.primaryContactId !== m.id && m.id !== me.partnerUserId && (
                   <Form
                     method="post"
-                    onSubmit={(e) => {
-                      if (!confirm(`Remove ${name} from ${org.name}? They'll lose access to the portal.`)) {
-                        e.preventDefault();
-                      }
-                    }}
+                    onSubmit={confirmSubmit({
+                      title: `Remove ${name} from ${org.name}?`,
+                      description: "They'll lose access to the portal.",
+                      confirmLabel: "Remove",
+                      tone: "destructive",
+                    })}
                   >
                     <input type="hidden" name="intent" value="remove-member" />
                     <input type="hidden" name="partnerUserId" value={m.id} />

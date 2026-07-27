@@ -9,6 +9,7 @@ import {
   MessageSquarePlus,
 } from "lucide-react";
 import { ColorControl, HighlightControl } from "./formatting-controls";
+import { useDialog } from "~/components/ui/dialog";
 
 // Compact formatting bar shown floating over a text selection (rendered inside
 // <BubbleMenu>). Complements the fixed toolbar for quick, in-context styling —
@@ -23,6 +24,7 @@ export function BubbleToolbar({
   editor: Editor;
   onComment?: () => void;
 }) {
+  const dialog = useDialog();
   const btn = (active: boolean) =>
     `flex h-7 w-7 items-center justify-center rounded transition-colors ${
       active
@@ -30,13 +32,19 @@ export function BubbleToolbar({
         : "text-muted-foreground hover:bg-muted hover:text-foreground"
     }`;
 
-  const toggleLink = () => {
+  const toggleLink = async () => {
     if (editor.isActive("link")) {
       editor.chain().focus().unsetLink().run();
       return;
     }
     const prev = (editor.getAttributes("link").href as string | undefined) ?? "";
-    const url = window.prompt("Link URL", prev);
+    const url = await dialog.prompt({
+      title: "Add link",
+      label: "URL",
+      placeholder: "https://…",
+      defaultValue: prev,
+      confirmLabel: "Save",
+    });
     if (url === null) return;
     if (url === "") {
       editor.chain().focus().unsetLink().run();
