@@ -11,6 +11,13 @@
 //      Re-pulled every run until "Alum" posts: a grace-period grad flips to
 //      Alumni the day it lands, a genuine +1 keeps showing Student and stays
 //      Active. No timeout, no guess.
+//   B2. Grad-program backfill — an enrolled grad/professional student cached as
+//      Alumni whose department_class has never been cached (Alumni + Student +
+//      null department_class). Introduced when the department_class column was
+//      added: term-fresh rows are skipped by A and excluded by B (they ARE
+//      Alum), so without this they never pick up the program-code signal that
+//      flips them to Active. Self-limiting — once department_class caches they
+//      no longer match. Also catches a future alum who returns for grad school.
 //   C. DB-only recompute — recompute every member from already-cached signals,
 //      applying the formula as the clock advances (classYear / graduatedAt
 //      crossings) with no API cost. Also backfills status on first run.
@@ -66,6 +73,14 @@ export async function runMembershipStatusSync({
           dartmouthIsStudent: true,
           NOT: { dartmouthIsAlum: true },
           classYear: { lte: cutoff },
+        },
+        // B2: enrolled grad student cached as Alumni with no department_class
+        // yet — re-pull so the program-code signal lands and they flip to
+        // Active. Self-limiting once department_class caches.
+        {
+          membershipStatus: "Alumni" as const,
+          dartmouthIsStudent: true,
+          dartmouthDepartmentClass: null,
         },
       ],
     },
