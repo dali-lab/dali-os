@@ -441,7 +441,7 @@ function SectionSidebar({
               }`}
             >
               {editing ? (
-                <div className="flex items-start gap-0.5 p-1">
+                <div className="flex items-center gap-0.5 p-1">
                   <input
                     value={s.title}
                     onFocus={() => onSelect(s.id)}
@@ -640,6 +640,7 @@ function MaintainerPicker({
   const [results, setResults] = useState<MentionUser[]>([]);
   const [selectedLabel, setSelectedLabel] = useState<string | null>(currentLabel);
   const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -652,8 +653,17 @@ function MaintainerPicker({
     };
   }, [query, open]);
 
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (!containerRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [open]);
+
   return (
-    <div className="relative">
+    <div ref={containerRef} className="relative">
       <div className="flex items-center gap-2">
         <UserCog className="h-4 w-4 text-muted-foreground" aria-hidden />
         <input

@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { useLocation, useMatches, useSearchParams } from "react-router";
-import { BookOpen, X } from "lucide-react";
+import { BookOpen } from "lucide-react";
 import type { DocHandle } from "~/components/Breadcrumbs";
 
 const PageDocPage = lazy(() =>
@@ -100,23 +100,19 @@ export function PageDocButton({ suppressWhenPills = false }: { suppressWhenPills
   );
 
   if (!docKey) return null;
-  // While the guide is open the route outlet (and its AreaPillNav) is replaced —
-  // keep a Close control in the layout breadcrumb row even on pill pages.
-  if (suppressWhenPills && hasAreaPills && !open) return null;
+  // The open guide renders its own Close (X) in the page header, so this CTA
+  // only ever opens.
+  if (open) return null;
+  if (suppressWhenPills && hasAreaPills) return null;
 
   return (
     <button
       type="button"
-      onClick={() => setOpen(!open)}
+      onClick={() => setOpen(true)}
       className="guide-pulse ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full bg-accent-coral/10 px-3 py-1.5 text-sm font-semibold font-heading text-accent-coral ring-1 ring-inset ring-accent-coral/30 transition-colors hover:bg-accent-coral/20 hover:ring-accent-coral/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-coral"
-      aria-pressed={open}
     >
-      {open ? (
-        <X className="h-4 w-4 shrink-0" aria-hidden />
-      ) : (
-        <BookOpen className="h-4 w-4 shrink-0" aria-hidden />
-      )}
-      {open ? "Close" : "Guide"}
+      <BookOpen className="h-4 w-4 shrink-0" aria-hidden />
+      Guide
     </button>
   );
 }
