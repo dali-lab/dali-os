@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Pencil, Upload, Trash2, Loader2, UserCog, X } from "lucide-react";
+import {
+  Pencil,
+  Upload,
+  Trash2,
+  Loader2,
+  UserCog,
+  Plus,
+  ChevronUp,
+  ChevronDown,
+} from "lucide-react";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { RichTextEditor } from "~/components/RichTextEditor";
 import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
@@ -12,21 +21,65 @@ import { Tooltip } from "~/components/ui/IconButton";
 
 type Maintainer = { id: string; name: string; handle: string | null };
 
+type SectionData = {
+  id: string;
+  title: string;
+  body: unknown;
+  videoUrl: string | null;
+  hasVideo: boolean;
+};
+
 type DocData = {
-  doc: { id: string; title: string; body: unknown; videoUrl: string | null; hasVideo: boolean };
+  doc: {
+    id: string;
+    title: string;
+    body: unknown;
+    videoUrl: string | null;
+    hasVideo: boolean;
+    sections: SectionData[];
+  };
   maintainer: Maintainer | null;
   canEdit: boolean;
   canAssignMaintainer: boolean;
   currentUserId: string;
 };
 
+/** Draft section while editing. videoKeyChange: undefined = leave, null = remove, string = new. */
+type DraftSection = {
+  id: string;
+  title: string;
+  body: unknown;
+  hasVideo: boolean;
+  videoUrl: string | null;
+  videoKeyChange?: string | null;
+  videoLabel: string | null;
+};
+
 const CONTAINER_CLASS =
-  "bg-card rounded-2xl shadow-brand-2 max-w-4xl w-full p-5 sm:p-6 my-auto max-h-[90vh] overflow-y-auto";
+  "bg-card rounded-2xl shadow-brand-2 max-w-5xl w-full p-5 sm:p-6 my-auto max-h-[90vh] overflow-y-auto";
 const SECTION_LABEL_CLASS =
   "text-xs font-semibold uppercase tracking-wide text-muted-foreground";
 const EMPTY_CLASS = "py-2 text-sm text-muted-foreground";
 
 const TITLE_ID = "page-doc-modal-title";
+
+function newClientSectionId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return `sec_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
+  }
+  return `sec_${Math.random().toString(16).slice(2, 18)}`;
+}
+
+function toDraftSections(sections: SectionData[]): DraftSection[] {
+  return sections.map((s) => ({
+    id: s.id,
+    title: s.title,
+    body: s.body,
+    hasVideo: s.hasVideo,
+    videoUrl: s.videoUrl,
+    videoLabel: s.hasVideo ? "Current video" : null,
+  }));
+}
 
 export function PageDocModal({
   docKey,
@@ -44,6 +97,16 @@ export function PageDocModal({
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [data, setData] = useState<DocData | null>(null);
   const [editing, setEditing] = useState(false);
+  const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
+
+  // Edit draft state lives here so Cancel/Save can sit in the shared header.
+  const [draftTitle, setDraftTitle] = useState("");
+  const [draftSections, setDraftSections] = useState<DraftSection[]>([]);
+  const [maintainerId, setMaintainerId] = useState<string | null>(null);
+  const [maintainerLabel, setMaintainerLabel] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -55,7 +118,13 @@ export function PageDocModal({
         setStatus("error");
         return;
       }
-      setData((await res.json()) as DocData);
+      const next = (await res.json()) as DocData;
+      setData(next);
+      setActiveSectionId((prev) => {
+        const ids = next.doc.sections.map((s) => s.id);
+        if (prev && ids.includes(prev)) return prev;
+        return ids[0] ?? null;
+      });
       setStatus("ready");
     } catch {
       setStatus("error");
@@ -66,34 +135,129 @@ export function PageDocModal({
     void load();
   }, [load]);
 
-  return (
-    <Modal open onClose={onClose} labelledBy={TITLE_ID} containerClassName={CONTAINER_CLASS}>
-      {editing ? (
-        <div className="flex items-start justify-end mb-4">
-          <h2 id={TITLE_ID} className="sr-only">
-            Edit {data?.doc.title ?? fallbackTitle}
-          </h2>
+  function startEditing() {
+    if (!data) return;
+    setDraftTitle(data.doc.title);
+    setDraftSections(toDraftSections(data.doc.sections));
+    setMaintainerId(data.maintainer?.id ?? null);
+    setMaintainerLabel(data.maintainer?.name ?? null);
+    setSaveError(null);
+    setEditing(true);
+    const ids = data.doc.sections.map((s) => s.id);
+    if (!activeSectionId || !ids.includes(activeSectionId)) {
+      setActiveSectionId(ids[0] ?? null);
+    }
+  }
+
+  function cancelEditing() {
+    setEditing(false);
+    setSaveError(null);
+    setUploading(false);
+  }
+
+  async function save() {
+    if (!data) return;
+    const title = draftTitle.trim();
+    if (!title) {
+      setSaveError("Title is required.");
+      return;
+    }
+    if (draftSections.length === 0) {
+      setSaveError("Add at least one section.");
+      return;
+    }
+    if (draftSections.some((s) => !s.title.trim())) {
+      setSaveError("Every section needs a title.");
+      return;
+    }
+
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const sections = draftSections.map((s) => {
+        const row: Record<string, unknown> = {
+          id: s.id,
+          title: s.title.trim(),
+          body: s.body,
+        };
+        if (s.videoKeyChange !== undefined) row.videoKey = s.videoKeyChange;
+        return row;
+      });
+      const payload: Record<string, unknown> = { title, sections, path };
+      if (data.canAssignMaintainer) payload.maintainerId = maintainerId;
+
+      const res = await fetch(`/api/page-docs/${encodeURIComponent(docKey)}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const b = (await res.json().catch(() => ({}))) as { error?: string };
+        setSaveError(b.error ?? "Couldn't save changes.");
+        return;
+      }
+      setEditing(false);
+      await load();
+    } catch {
+      setSaveError("Couldn't save changes.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const sections = editing ? draftSections : (data?.doc.sections ?? []);
+  const active =
+    sections.find((s) => s.id === activeSectionId) ?? sections[0] ?? null;
+
+  const headerActions =
+    status === "ready" && data?.canEdit ? (
+      editing ? (
+        <>
           <button
             type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="text-muted-foreground/70 hover:text-foreground rounded p-1 hover:bg-muted"
+            onClick={cancelEditing}
+            disabled={saving}
+            className="px-2.5 py-1 text-sm rounded-md text-foreground/80 hover:bg-muted disabled:opacity-50"
           >
-            <X className="w-5 h-5" aria-hidden />
+            Cancel
           </button>
-        </div>
+          <button
+            type="button"
+            onClick={() => void save()}
+            disabled={saving || uploading || !draftTitle.trim()}
+            className={buttonClasses("primary", "sm")}
+          >
+            {saving ? "Saving…" : "Save"}
+          </button>
+        </>
       ) : (
-        <ModalHeader
-          titleId={TITLE_ID}
-          title={data?.doc.title ?? fallbackTitle}
-          subtitle={
-            data?.maintainer
-              ? `Maintained by ${data.maintainer.name}${data.maintainer.handle ? ` · @${data.maintainer.handle}` : ""}`
-              : "No maintainer assigned yet"
-          }
-          onClose={onClose}
-        />
-      )}
+        <Tooltip label="Edit guide">
+          <button
+            type="button"
+            onClick={startEditing}
+            aria-label="Edit guide"
+            className="inline-flex items-center justify-center rounded-md border border-border p-1.5 text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+          >
+            <Pencil className="h-3.5 w-3.5" aria-hidden />
+          </button>
+        </Tooltip>
+      )
+    ) : null;
+
+  return (
+    <Modal open onClose={onClose} labelledBy={TITLE_ID} containerClassName={CONTAINER_CLASS}>
+      <ModalHeader
+        titleId={TITLE_ID}
+        title={editing ? draftTitle || fallbackTitle : (data?.doc.title ?? fallbackTitle)}
+        subtitle={
+          data?.maintainer
+            ? `Maintained by ${data.maintainer.name}${data.maintainer.handle ? ` · @${data.maintainer.handle}` : ""}`
+            : "No maintainer assigned yet"
+        }
+        onClose={onClose}
+        actions={headerActions}
+      />
 
       {status === "loading" && (
         <div className="flex items-center justify-center py-12 text-muted-foreground">
@@ -107,35 +271,103 @@ export function PageDocModal({
 
       {status === "ready" && data && (
         <div className="flex flex-col gap-5">
-          {data.canEdit && !editing && (
-            <div className="flex justify-end">
-              <Tooltip label="Edit guide">
-                <button
-                  type="button"
-                  onClick={() => setEditing(true)}
-                  aria-label="Edit guide"
-                  className="inline-flex items-center justify-center rounded-md border border-border p-1.5 text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-                >
-                  <Pencil className="h-3.5 w-3.5" aria-hidden />
-                </button>
-              </Tooltip>
+          {editing && (
+            <div className="flex flex-col gap-3 rounded-lg border border-border bg-muted/20 p-3">
+              <label className="flex flex-col gap-1">
+                <span className={SECTION_LABEL_CLASS}>Guide title</span>
+                <input
+                  value={draftTitle}
+                  onChange={(e) => setDraftTitle(e.target.value)}
+                  className="rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                />
+              </label>
+              {data.canAssignMaintainer && (
+                <div className="flex flex-col gap-1">
+                  <span className={SECTION_LABEL_CLASS}>Maintainer</span>
+                  <MaintainerPicker
+                    currentLabel={maintainerLabel}
+                    onSelect={(u) => {
+                      setMaintainerId(u?.id ?? null);
+                      setMaintainerLabel(u?.name ?? null);
+                    }}
+                  />
+                </div>
+              )}
             </div>
           )}
 
-          {editing ? (
-            <EditPanel
-              data={data}
-              path={path}
-              docKey={docKey}
-              onSaved={async () => {
-                setEditing(false);
-                await load();
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+            <SectionSidebar
+              sections={sections.map((s) => ({ id: s.id, title: s.title }))}
+              activeId={active?.id ?? null}
+              editing={editing}
+              onSelect={setActiveSectionId}
+              onAdd={() => {
+                const id = newClientSectionId();
+                setDraftSections((prev) => [
+                  ...prev,
+                  {
+                    id,
+                    title: "New section",
+                    body: null,
+                    hasVideo: false,
+                    videoUrl: null,
+                    videoLabel: null,
+                  },
+                ]);
+                setActiveSectionId(id);
               }}
-              onCancel={() => setEditing(false)}
+              onRename={(id, title) => {
+                setDraftSections((prev) =>
+                  prev.map((s) => (s.id === id ? { ...s, title } : s)),
+                );
+              }}
+              onMove={(id, dir) => {
+                setDraftSections((prev) => {
+                  const i = prev.findIndex((s) => s.id === id);
+                  if (i < 0) return prev;
+                  const j = dir === "up" ? i - 1 : i + 1;
+                  if (j < 0 || j >= prev.length) return prev;
+                  const next = [...prev];
+                  const tmp = next[i]!;
+                  next[i] = next[j]!;
+                  next[j] = tmp;
+                  return next;
+                });
+              }}
+              onDelete={(id) => {
+                setDraftSections((prev) => {
+                  if (prev.length <= 1) return prev;
+                  const next = prev.filter((s) => s.id !== id);
+                  if (activeSectionId === id) setActiveSectionId(next[0]?.id ?? null);
+                  return next;
+                });
+              }}
             />
-          ) : (
-            <ReadPanel data={data} />
-          )}
+
+            <div className="min-w-0 flex-1 flex flex-col gap-4">
+              {active ? (
+                editing ? (
+                  <SectionEditPanel
+                    section={active as DraftSection}
+                    uploading={uploading}
+                    onUploading={setUploading}
+                    onChange={(patch) => {
+                      setDraftSections((prev) =>
+                        prev.map((s) => (s.id === active.id ? { ...s, ...patch } : s)),
+                      );
+                    }}
+                  />
+                ) : (
+                  <SectionReadPanel section={active as SectionData} />
+                )
+              ) : (
+                <p className={EMPTY_CLASS}>No sections yet.</p>
+              )}
+            </div>
+          </div>
+
+          {saveError && <p className="text-sm text-destructive">{saveError}</p>}
 
           <section className="flex flex-col gap-2">
             <h3 className={SECTION_LABEL_CLASS}>FAQ</h3>
@@ -155,121 +387,169 @@ export function PageDocModal({
   );
 }
 
-function ReadPanel({ data }: { data: DocData }) {
-  const emptyBody = isEmptyDoc(data.doc.body);
+function SectionSidebar({
+  sections,
+  activeId,
+  editing,
+  onSelect,
+  onAdd,
+  onRename,
+  onMove,
+  onDelete,
+}: {
+  sections: { id: string; title: string }[];
+  activeId: string | null;
+  editing: boolean;
+  onSelect: (id: string) => void;
+  onAdd: () => void;
+  onRename: (id: string, title: string) => void;
+  onMove: (id: string, dir: "up" | "down") => void;
+  onDelete: (id: string) => void;
+}) {
   return (
-    <div className="flex flex-col gap-5">
-      {data.doc.videoUrl && (
-        <video
-          src={data.doc.videoUrl}
-          controls
-          className="w-full rounded-lg bg-black"
-        />
-      )}
+    <aside className="w-full shrink-0 sm:w-52 sm:border-r sm:border-border sm:pr-4">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h3 className={SECTION_LABEL_CLASS}>Sections</h3>
+        {editing && (
+          <button
+            type="button"
+            onClick={onAdd}
+            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-foreground hover:bg-muted"
+          >
+            <Plus className="h-3.5 w-3.5" aria-hidden />
+            Add
+          </button>
+        )}
+      </div>
+      <nav className="flex flex-row gap-1 overflow-x-auto sm:flex-col sm:overflow-visible" aria-label="Guide sections">
+        {sections.map((s, index) => {
+          const selected = s.id === activeId;
+          return (
+            <div
+              key={s.id}
+              className={`group flex min-w-[8rem] flex-col gap-1 rounded-md sm:min-w-0 ${
+                selected ? "bg-muted/70" : "hover:bg-muted/40"
+              }`}
+            >
+              {editing ? (
+                <div className="flex items-start gap-0.5 p-1">
+                  <input
+                    value={s.title}
+                    onFocus={() => onSelect(s.id)}
+                    onChange={(e) => onRename(s.id, e.target.value)}
+                    className="min-w-0 flex-1 rounded border border-transparent bg-transparent px-1.5 py-1 text-sm font-medium text-foreground focus:border-border focus:bg-background focus:outline-none"
+                    aria-label={`Section title ${index + 1}`}
+                  />
+                  <div className="flex shrink-0 flex-col">
+                    <button
+                      type="button"
+                      aria-label="Move section up"
+                      disabled={index === 0}
+                      onClick={() => onMove(s.id, "up")}
+                      className="rounded p-0.5 text-muted-foreground hover:bg-muted disabled:opacity-30"
+                    >
+                      <ChevronUp className="h-3.5 w-3.5" aria-hidden />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Move section down"
+                      disabled={index === sections.length - 1}
+                      onClick={() => onMove(s.id, "down")}
+                      className="rounded p-0.5 text-muted-foreground hover:bg-muted disabled:opacity-30"
+                    >
+                      <ChevronDown className="h-3.5 w-3.5" aria-hidden />
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label="Delete section"
+                    disabled={sections.length <= 1}
+                    onClick={() => onDelete(s.id)}
+                    className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-destructive disabled:opacity-30"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => onSelect(s.id)}
+                  className={`w-full truncate px-2.5 py-1.5 text-left text-sm ${
+                    selected ? "font-semibold text-foreground" : "text-foreground/80"
+                  }`}
+                >
+                  {s.title}
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </nav>
+    </aside>
+  );
+}
 
+function SectionReadPanel({ section }: { section: SectionData }) {
+  const emptyBody = isEmptyDoc(section.body);
+  return (
+    <div className="flex flex-col gap-4">
+      <h3 className="font-heading text-base font-semibold text-foreground">{section.title}</h3>
+      {section.videoUrl && (
+        <video src={section.videoUrl} controls className="w-full rounded-lg bg-black" />
+      )}
       {emptyBody ? (
-        <p className={EMPTY_CLASS}>No guide written yet.</p>
+        <p className={EMPTY_CLASS}>No guide written for this section yet.</p>
       ) : (
-        <RichTextViewer content={data.doc.body} enableMentions />
+        <RichTextViewer content={section.body} enableMentions />
       )}
     </div>
   );
 }
 
-function EditPanel({
-  data,
-  path,
-  docKey,
-  onSaved,
-  onCancel,
+function SectionEditPanel({
+  section,
+  uploading,
+  onUploading,
+  onChange,
 }: {
-  data: DocData;
-  path: string;
-  docKey: string;
-  onSaved: () => void | Promise<void>;
-  onCancel: () => void;
+  section: DraftSection;
+  uploading: boolean;
+  onUploading: (v: boolean) => void;
+  onChange: (patch: Partial<DraftSection>) => void;
 }) {
-  const [title, setTitle] = useState(data.doc.title);
-  const [body, setBody] = useState<unknown>(data.doc.body);
-  // videoKey: undefined = leave as-is, null = remove, string = new upload.
-  const [videoKey, setVideoKey] = useState<string | null | undefined>(undefined);
-  const [videoName, setVideoName] = useState<string | null>(data.doc.hasVideo ? "Current video" : null);
-  const [maintainerId, setMaintainerId] = useState<string | null>(data.maintainer?.id ?? null);
-  const [maintainerLabel, setMaintainerLabel] = useState<string | null>(
-    data.maintainer ? data.maintainer.name : null,
-  );
-  const [uploading, setUploading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   async function onPickVideo(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
-    setUploading(true);
+    onUploading(true);
     setError(null);
     try {
       const { s3Key } = await uploadFileToS3(file, "page-docs", "video/*");
-      setVideoKey(s3Key);
-      setVideoName(file.name);
+      onChange({
+        videoKeyChange: s3Key,
+        videoLabel: file.name,
+        hasVideo: true,
+        videoUrl: null,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
     } finally {
-      setUploading(false);
+      onUploading(false);
     }
   }
 
-  async function save() {
-    setSaving(true);
-    setError(null);
-    try {
-      const payload: Record<string, unknown> = { title: title.trim(), body, path };
-      if (videoKey !== undefined) payload.videoKey = videoKey;
-      if (data.canAssignMaintainer) payload.maintainerId = maintainerId;
-      const res = await fetch(`/api/page-docs/${encodeURIComponent(docKey)}`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) {
-        const b = (await res.json().catch(() => ({}))) as { error?: string };
-        setError(b.error ?? "Couldn't save changes.");
-        return;
-      }
-      await onSaved();
-    } catch {
-      setError("Couldn't save changes.");
-    } finally {
-      setSaving(false);
-    }
-  }
+  const showingVideo =
+    section.videoKeyChange === null
+      ? false
+      : section.videoKeyChange !== undefined
+        ? true
+        : section.hasVideo;
 
   return (
-    <div className="flex flex-col gap-5">
-      <label className="flex flex-col gap-1">
-        <span className={SECTION_LABEL_CLASS}>Title</span>
-        <input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          className="rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-        />
-      </label>
-
-      {data.canAssignMaintainer && (
-        <div className="flex flex-col gap-1">
-          <span className={SECTION_LABEL_CLASS}>Maintainer</span>
-          <MaintainerPicker
-            currentLabel={maintainerLabel}
-            onSelect={(u) => {
-              setMaintainerId(u?.id ?? null);
-              setMaintainerLabel(u?.name ?? null);
-            }}
-          />
-        </div>
-      )}
-
+    <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-1.5">
         <span className={SECTION_LABEL_CLASS}>Walkthrough video</span>
         <div className="flex flex-wrap items-center gap-2">
@@ -284,17 +564,23 @@ function EditPanel({
             ) : (
               <Upload className="h-4 w-4" aria-hidden />
             )}
-            {videoName ? "Replace video" : "Upload video"}
+            {showingVideo ? "Replace video" : "Upload video"}
           </button>
-          {videoName && (
+          {showingVideo && (
             <>
-              <span className="text-xs text-muted-foreground">{videoName}</span>
+              <span className="text-xs text-muted-foreground">
+                {section.videoLabel ?? "Current video"}
+              </span>
               <button
                 type="button"
-                onClick={() => {
-                  setVideoKey(null);
-                  setVideoName(null);
-                }}
+                onClick={() =>
+                  onChange({
+                    videoKeyChange: null,
+                    videoLabel: null,
+                    hasVideo: false,
+                    videoUrl: null,
+                  })
+                }
                 className="inline-flex items-center gap-1 text-xs text-destructive hover:underline"
               >
                 <Trash2 className="h-3.5 w-3.5" aria-hidden /> Remove
@@ -309,41 +595,25 @@ function EditPanel({
             className="hidden"
           />
         </div>
-        <span className="text-xs text-muted-foreground">
-          Up to {MAX_UPLOAD_LABEL}
-        </span>
+        <span className="text-xs text-muted-foreground">Up to {MAX_UPLOAD_LABEL}</span>
+        {section.videoUrl && section.videoKeyChange === undefined && (
+          <video src={section.videoUrl} controls className="mt-1 w-full rounded-lg bg-black" />
+        )}
       </div>
 
       <div className="flex flex-col gap-1.5">
         <span className={SECTION_LABEL_CLASS}>Guide</span>
         <RichTextEditor
-          value={body}
-          onChange={setBody}
+          key={section.id}
+          value={section.body}
+          onChange={(body) => onChange({ body })}
           enableMentions
           richToolbar
-          placeholder="Explain what this page does."
+          placeholder="Explain this section of the page."
         />
       </div>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
-
-      <div className="flex items-center justify-end gap-2">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="px-3 py-1.5 text-sm rounded-lg text-foreground/80 hover:bg-muted"
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          onClick={save}
-          disabled={saving || uploading || !title.trim()}
-          className={buttonClasses("primary", "sm")}
-        >
-          {saving ? "Saving…" : "Save guide"}
-        </button>
-      </div>
     </div>
   );
 }

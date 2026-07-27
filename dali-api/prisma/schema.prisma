@@ -1178,6 +1178,10 @@ enum DocCommentTarget {
 // RichTextEditor); the walkthrough video is an uploaded S3 object (videoKey).
 // A maintainer (assignable by Core/Admin) plus Core/Admin can edit; any lab
 // member can read it and post FAQ comments (see DocCommentTarget.pagedoc).
+//
+// `sections` is an ordered JSON array of { id, title, body, videoKey } for the
+// modal sidebar. Null/[] → treat body+videoKey as a single Overview section.
+// Legacy body/videoKey stay in sync with sections[0] when sections are saved.
 model PageDoc {
   id       String  @id @default(cuid())
   pageKey  String  @unique
@@ -1185,8 +1189,11 @@ model PageDoc {
   // ProseMirror JSON. Null until the maintainer writes the guide.
   body     Json?
   // S3 key of the uploaded walkthrough video (read via presigned URL). Null =
-  // no video yet.
+  // no video yet. Kept in sync with sections[0].videoKey for older clients.
   videoKey String?
+  // Ordered sidebar sections: [{ id, title, body, videoKey }, ...]. Null =
+  // legacy single-body docs (API synthesizes an Overview from body/videoKey).
+  sections Json?
 
   maintainerId   String?
   createdById    String?
