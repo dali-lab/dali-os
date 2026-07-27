@@ -11,6 +11,7 @@ import { hydrateAuthors } from "~/lib/collabAuth";
 import { formatBytes, uploadFileToS3 } from "~/lib/upload-client";
 import { CommentsRail } from "~/components/collab/CommentsRail";
 import { TagPicker } from "~/components/TagPicker";
+import { ProjectIcon } from "~/components/ProjectIcon";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const t = (data as { title?: string } | undefined)?.title;
@@ -32,7 +33,11 @@ export const handle = {
     if (!d?.projectId || !d.projectName) return null;
     return [
       { label: "Projects", to: "/projects" },
-      { label: d.projectName, to: `/projects/${d.projectId}`, iconEmoji: d.projectIconEmoji },
+      {
+        label: d.projectName,
+        to: `/projects/${d.projectId}`,
+        icon: <ProjectIcon iconEmoji={d.projectIconEmoji} />,
+      },
       { label: d.title ?? "File" },
     ];
   },

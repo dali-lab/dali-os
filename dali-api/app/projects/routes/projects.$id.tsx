@@ -69,8 +69,15 @@ export const meta: Route.MetaFunction = ({ data }) => {
 };
 
 export const handle = {
-  breadcrumb: (data: unknown) =>
-    (data as { project?: { name: string } } | undefined)?.project?.name,
+  breadcrumb: (data: unknown) => {
+    const p = (
+      data as { project?: { id: string; name: string; iconEmoji: string | null } } | undefined
+    )?.project;
+    if (!p) return null;
+    // Return a one-crumb sub-trail so the project's name carries its icon
+    // (emoji, or the neutral fallback glyph) — matching the hub, search, etc.
+    return [{ label: p.name, to: `/projects/${p.id}`, icon: <ProjectIcon iconEmoji={p.iconEmoji} /> }];
+  },
   headerAction: (data: unknown) => {
     const d = data as { project?: { id: string } } | undefined;
     if (!d?.project) return null;

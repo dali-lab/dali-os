@@ -10,6 +10,7 @@ import { getPresenceUser } from "~/lib/presence-user";
 import { DocumentEditor } from "~/components/DocumentEditor";
 import { AttendanceChecklist, type AttendanceRow } from "~/components/AttendanceChecklist";
 import { CheckInPanel } from "~/components/CheckInPanel";
+import { ProjectIcon } from "~/components/ProjectIcon";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const t = (data as { title?: string } | undefined)?.title;
@@ -44,7 +45,16 @@ export const handle = {
         : { label: "Projects", to: "/projects" };
     return [
       root,
-      { label: d.hubName, to: d.hubHref, iconEmoji: d.hubIconEmoji },
+      {
+        label: d.hubName,
+        to: d.hubHref,
+        // Project docs carry the project's emoji (or its neutral fallback glyph);
+        // Education offerings have no project icon.
+        icon:
+          d.workspaceType === "EducationOffering" ? undefined : (
+            <ProjectIcon iconEmoji={d.hubIconEmoji} />
+          ),
+      },
       { label: d.title },
     ];
   },
