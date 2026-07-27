@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { Link, useMatches, useLocation } from 'react-router'
 import { ChevronRight } from 'lucide-react'
 
-export type Crumb = { label: string; to?: string }
+export type Crumb = { label: string; to?: string; iconEmoji?: string | null }
 
 // A route opts into a dynamic leaf crumb by exporting:
 //   export const handle = { breadcrumb: (data) => data.application.applicantName }
@@ -192,7 +192,7 @@ export function Breadcrumbs() {
   if (fullTrail) {
     fullTrail.forEach((c, i) => {
       const leaf = i === fullTrail!.length - 1
-      crumbs.push({ label: c.label, to: leaf ? undefined : c.to })
+      crumbs.push({ label: c.label, to: leaf ? undefined : c.to, iconEmoji: c.iconEmoji })
     })
   }
   let afterDroppedId = false
@@ -255,6 +255,11 @@ export function Breadcrumbs() {
         {crumbs.map((c, i) => (
           <span key={i} className="flex items-center gap-1">
             {i > 0 && <ChevronRight className="w-3.5 h-3.5 opacity-50" />}
+            {c.iconEmoji && (
+              <span className="text-sm leading-none" aria-hidden>
+                {c.iconEmoji}
+              </span>
+            )}
             {c.to ? (
               <Link to={c.to} className="hover:text-foreground transition-colors">
                 {c.label}

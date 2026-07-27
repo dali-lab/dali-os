@@ -12,6 +12,7 @@ import {
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { listOpenTasks, type Task } from "~/lib/tasks";
+import { ProjectIcon } from "~/components/ProjectIcon";
 import { listedFormsFor, type ListedForm } from "~/forms/lib/public-form";
 import { fetchGeneralCalendarEvents } from "~/lib/general-calendar";
 import { getZonedYMD, resolveUserTimeZone, zonedDayStartUtc } from "~/lib/timezone";
@@ -119,7 +120,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         dueAt: true,
         priority: true,
         projectId: true,
-        project: { select: { name: true } },
+        project: { select: { name: true, iconEmoji: true } },
       },
     }),
   ]);
@@ -129,6 +130,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     title: t.title,
     projectId: t.projectId,
     projectName: t.project.name,
+    projectIconEmoji: t.project.iconEmoji,
     dueAt: t.dueAt ? t.dueAt.toISOString() : null,
     priority: t.priority,
   }));
@@ -172,6 +174,7 @@ type MyProjectTask = {
   title: string;
   projectId: string;
   projectName: string;
+  projectIconEmoji: string | null;
   dueAt: string | null;
   priority: "Low" | "Normal" | "High" | "Urgent";
 };
@@ -274,8 +277,9 @@ function MyTasksPanel({ tasks }: { tasks: MyProjectTask[] }) {
               className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm hover:bg-muted/50 transition-colors"
             >
               <span className="truncate text-foreground">{t.title}</span>
-              <span className="truncate text-xs text-muted-foreground flex-shrink-0 max-w-[30%]">
-                {t.projectName}
+              <span className="flex items-center gap-1 truncate text-xs text-muted-foreground flex-shrink-0 max-w-[30%]">
+                <ProjectIcon iconEmoji={t.projectIconEmoji} />
+                <span className="truncate">{t.projectName}</span>
               </span>
               <span className="ml-auto flex items-center gap-1.5 flex-shrink-0">
                 {/* Low/Normal are the unremarkable default — only flag work

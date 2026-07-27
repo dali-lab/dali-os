@@ -24,6 +24,7 @@ import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { isCore, isLabMember, currentTerm } from "~/lib/roles";
 import { Tooltip } from "~/components/ui/IconButton";
 import { PageIcon } from "~/components/PageIcon";
+import { ProjectIcon } from "~/components/ProjectIcon";
 import type { ProjectStatus } from "~/generated/prisma/client";
 
 export const meta: Route.MetaFunction = () => [{ title: "Documents · DALI OS" }];
@@ -64,6 +65,8 @@ type WorkspaceOut = {
   canManage: boolean;
   // Present for project workspaces — drives the Archived badge in All view.
   projectStatus?: ProjectStatus;
+  // Project's custom emoji, shown before its name in the group header.
+  projectIconEmoji?: string | null;
 };
 
 type ProjectFilter = "active" | "all";
@@ -122,7 +125,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         ...(core ? {} : { assignments: { some: { userId: auth.user.sub } } }),
       },
       orderBy: [{ status: "asc" }, { name: "asc" }],
-      select: { id: true, name: true, status: true },
+      select: { id: true, name: true, status: true, iconEmoji: true },
     }),
   ]);
 
@@ -180,6 +183,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         kind: "project",
         canManage: true,
         projectStatus: p.status,
+        projectIconEmoji: p.iconEmoji,
       }),
     ),
   ];
@@ -637,7 +641,7 @@ export default function DocumentsHub() {
               ) : (
                 <ChevronDown className="w-4 h-4 flex-shrink-0 text-muted-foreground" />
               )}
-              <Folder className="w-4 h-4 flex-shrink-0" />
+              <ProjectIcon iconEmoji={workspace.projectIconEmoji} />
               <span className="truncate">{workspace.label}</span>
               <span className="text-[10px] uppercase tracking-wide text-muted-foreground/70 flex-shrink-0">
                 Project

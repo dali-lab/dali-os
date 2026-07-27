@@ -33,6 +33,7 @@ export const handle = {
           title?: string
           hubName?: string
           hubHref?: string
+          hubIconEmoji?: string | null
           workspaceType?: string
         }
       | undefined;
@@ -41,7 +42,11 @@ export const handle = {
       d.workspaceType === "EducationOffering"
         ? { label: "Education", to: "/education" }
         : { label: "Projects", to: "/projects" };
-    return [root, { label: d.hubName, to: d.hubHref }, { label: d.title }];
+    return [
+      root,
+      { label: d.hubName, to: d.hubHref, iconEmoji: d.hubIconEmoji },
+      { label: d.title },
+    ];
   },
   breadcrumb: (data: unknown) => {
     const d = data as { title?: string } | undefined;
@@ -108,14 +113,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // pages have no workspaceId and stay null — they fall back to a plain title.
   let hubName: string | null = null;
   let hubHref: string | null = null;
+  let hubIconEmoji: string | null = null;
   if (page.workspaceType === "Project" && page.workspaceId) {
     const project = await prisma.project.findUnique({
       where: { id: page.workspaceId },
-      select: { name: true },
+      select: { name: true, iconEmoji: true },
     });
     if (project) {
       hubName = project.name;
       hubHref = `/projects/${page.workspaceId}`;
+      hubIconEmoji = project.iconEmoji;
     }
   } else if (page.workspaceType === "EducationOffering" && page.workspaceId) {
     const offering = await prisma.educationOffering.findUnique({
@@ -207,6 +214,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     workspaceType: page.workspaceType,
     hubName,
     hubHref,
+    hubIconEmoji,
     iconEmoji: page.iconEmoji,
     coverImageUrl: page.coverImageUrl,
     createdByName: page.createdBy ? fullName(page.createdBy) : null,
