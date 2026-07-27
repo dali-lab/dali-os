@@ -41,6 +41,13 @@ export interface UserRoles {
    * guards land in a follow-up, where this flag will gate them.
    */
   isAlumni: boolean;
+  /**
+   * Full-time staff — the strict subset of Admins who are professional
+   * employees. Exempt from the student checklist (CE compliance, graduation,
+   * onboarding). Backed by `AdminMembership.isStaff`, so `isStaff` always
+   * implies `isAdmin`.
+   */
+  isStaff: boolean;
   /** Forms & Groups: Core, Admin, or Instructor. */
   canViewForms: boolean;
   /** Staffing, Intent to Work, Bids, Applications: Core or Admin. */
@@ -58,7 +65,7 @@ export async function getUserRoles(userId: string): Promise<UserRoles> {
 
   const [member, admin, core, domainLead, instructor, interviewer, userRow] = await Promise.all([
     prisma.dALIMember.findUnique({ where: { userId }, select: { id: true } }),
-    prisma.adminMembership.findUnique({ where: { userId }, select: { id: true } }),
+    prisma.adminMembership.findUnique({ where: { userId }, select: { id: true, isStaff: true } }),
     // Core access tracks the active election cycle (Spring N → Winter N+1,
     // with the prior cycle overlapping during Spring elections). An empty
     // Term table → no rows can match → treated as no Core access.
@@ -93,6 +100,7 @@ export async function getUserRoles(userId: string): Promise<UserRoles> {
     isInstructor: isInstructorVal,
     isInterviewer: interviewer !== null,
     isAlumni: userRow?.membershipStatus === "Alumni",
+    isStaff: admin?.isStaff === true,
     canViewForms: isAdminVal || isCoreVal || isInstructorVal,
     canViewStaffing: isAdminVal || isCoreVal,
   };
@@ -325,7 +333,7 @@ export async function isCore(userId: string): Promise<boolean> {
   return core !== null;
 }
 
-/** Admin: full-time staff. */
+/** Admin: elevated access (student leads or full-time staff). */
 export async function isAdmin(userId: string): Promise<boolean> {
   const envIds = getAdminUserIdsFromEnv();
   if (envIds.includes(userId)) return true;
@@ -334,6 +342,20 @@ export async function isAdmin(userId: string): Promise<boolean> {
     select: { id: true },
   });
   return row !== null;
+}
+
+/**
+ * Staff: the strict subset of Admins who are full-time professional employees.
+ * Exempt from the student checklist (CE compliance, graduation, onboarding).
+ * Reads `AdminMembership.isStaff`, so a true result always implies `isAdmin`.
+ * Env-only admins have no row and are therefore never staff.
+ */
+export async function isStaff(userId: string): Promise<boolean> {
+  const row = await prisma.adminMembership.findUnique({
+    where: { userId },
+    select: { isStaff: true },
+  });
+  return row?.isStaff === true;
 }
 
 /** Instructor: has at least one InstructorAssignment (any term). */

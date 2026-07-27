@@ -39,6 +39,11 @@ export type DartmouthPeopleResult = {
   /** Parsed from department_class when it is a class year ("'27" → 2027);
    * null for employees/unparseable. Class identity, not grad year. */
   classYear: number | null;
+  /** Raw department_class: an undergrad class year ("'27"), a grad/professional
+   * program code ("TH" Thayer, "GR" Guarini, "DM" Geisel, "TU27" Tuck), or a
+   * department name (employees). Persisted so the resolver can tell an enrolled
+   * grad student (program code) from a graduated undergrad (class year). */
+  departmentClass: string | null;
 };
 
 // Parse the apostrophe-prefixed two-digit class year format ("'27" → 2027).
@@ -55,6 +60,42 @@ export function parseDepartmentClass(
   // both sides because Dartmouth currently lists no one outside this band,
   // and we'd rather be wrong by a century once than miss a real grad.
   return n >= 90 ? 1900 + n : 2000 + n;
+}
+
+// A department_class carrying a letter is a graduate/professional PROGRAM code
+// ("TH" Thayer, "GR" Guarini, "DM" Geisel, "TU27" Tuck) rather than an
+// undergraduate class year ("'27"). A student in one of these programs is
+// CURRENTLY ENROLLED; an "Alum" affiliation they ALSO carry is a prior
+// Dartmouth degree, not graduation from the program they are in now. Callers
+// gate on the "Student" affiliation, so employee department strings — which
+// also land in this field — never reach this test in a status decision.
+export function isGraduateProgramClass(
+  raw: string | undefined | null,
+): boolean {
+  if (!raw) return false;
+  if (parseDepartmentClass(raw) != null) return false; // undergrad class year
+  return /[A-Za-z]/.test(raw);
+}
+
+// Display label for a grad/professional program code, keyed by its letter
+// prefix (department_class can carry a year: "TU27" → Tuck). Null for undergrad
+// class years, unknown codes, and employee department names — callers show a
+// class year or "—" instead. Kept intentionally conservative: only the four
+// Dartmouth graduate/professional schools map, so an unrecognized string never
+// surfaces a cryptic code to members.
+const GRAD_PROGRAM_LABELS: Record<string, string> = {
+  TH: "Thayer",
+  GR: "Guarini",
+  DM: "Geisel",
+  TU: "Tuck",
+};
+
+export function graduateProgramLabel(
+  raw: string | undefined | null,
+): string | null {
+  if (!isGraduateProgramClass(raw)) return null;
+  const prefix = raw!.trim().match(/^[A-Za-z]+/)?.[0].toUpperCase();
+  return (prefix && GRAD_PROGRAM_LABELS[prefix]) ?? null;
 }
 
 type RawPerson = {
@@ -93,5 +134,6 @@ export async function peopleByNetId(
     isAlum: names.includes("Alum"),
     isStudent: names.includes("Student"),
     classYear: parseDepartmentClass(body.department_class),
+    departmentClass: body.department_class ?? null,
   };
 }

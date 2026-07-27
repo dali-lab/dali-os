@@ -23,6 +23,7 @@ const base: StatusInputs = {
   dartmouthIsAlum: null,
   dartmouthIsStudent: null,
   dartmouthAffiliation: null,
+  dartmouthDepartmentClass: null,
 };
 
 const resolve = (over: Partial<StatusInputs>) =>
@@ -89,6 +90,41 @@ describe("resolveMembershipStatus", () => {
     expect(resolve({ dartmouthIsAlum: true, dartmouthIsStudent: true })).toBe(
       "Alumni",
     );
+  });
+
+  it("enrolled grad student (Alum + Student + program-code dept) => Active", () => {
+    // Thayer/Guarini/Geisel/Tuck student who holds Alum from a prior degree.
+    for (const dept of ["TH", "GR", "DM", "TU27"]) {
+      expect(
+        resolve({
+          dartmouthIsAlum: true,
+          dartmouthIsStudent: true,
+          dartmouthDepartmentClass: dept,
+        }),
+      ).toBe("Active");
+    }
+  });
+
+  it("fresh undergrad grad (Alum + Student + class-year dept) => Alumni", () => {
+    // A class-year department_class is NOT a program code, so the grad-student
+    // branch does not fire and Alum graduates them.
+    expect(
+      resolve({
+        dartmouthIsAlum: true,
+        dartmouthIsStudent: true,
+        dartmouthDepartmentClass: "'26",
+      }),
+    ).toBe("Alumni");
+  });
+
+  it("IDM ALUMNI beats a program-code department_class (truly departed) => Alumni", () => {
+    expect(
+      resolve({
+        dartmouthAffiliation: "ALUMNI",
+        dartmouthIsStudent: true,
+        dartmouthDepartmentClass: "GR",
+      }),
+    ).toBe("Alumni");
   });
 
   it("classYear past Commencement with no API signals => Alumni (fallback)", () => {

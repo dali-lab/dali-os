@@ -7,6 +7,7 @@ import { redirect } from "react-router";
 import { prisma } from "~/lib/db";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { resolvePhotoUrl } from "~/lib/photo";
+import { graduateProgramLabel } from "~/lib/dartmouth-people";
 import { parseSessionCookie } from "~/lib/cookies";
 import { getPresenceUser } from "~/lib/presence-user";
 import {
@@ -44,6 +45,9 @@ export type ProfileMember = {
   personalEmail: string | null;
   pronouns: string | null;
   classYear: number | null;
+  /** Grad/professional school label ("Thayer" | "Guarini" | "Geisel" | "Tuck")
+   *  for enrolled grad students; null for undergrads and employees. */
+  gradProgram: string | null;
   major: string | null;
   hometown: string | null;
   linkedinUrl: string | null;
@@ -65,6 +69,11 @@ export type ProfileMember = {
 export type ProfilePageData = {
   member: ProfileMember;
   roleLabels: string[];
+  /** Full-time staff (AdminMembership.isStaff). Shown as a Staff badge. */
+  isStaff: boolean;
+  /** Graduated former member (stored membershipStatus). Shown as an Alumni
+   *  badge — independent of isStaff, so an alum-turned-staff shows both. */
+  isAlumni: boolean;
   termCode: string | null;
   projectAssignments: Array<{
     id: string;
@@ -199,6 +208,7 @@ export async function loadProfilePage({
       personalEmail: true,
       pronouns: true,
       classYear: true,
+      dartmouthDepartmentClass: true,
       major: true,
       hometown: true,
       linkedinUrl: true,
@@ -358,9 +368,14 @@ export async function loadProfilePage({
 
   const collabToken = parseSessionCookie(request);
 
+  // Convert the raw People-API code to a label server-side; only the label
+  // (gradProgram) crosses the wire, not the underlying department_class.
+  const { dartmouthDepartmentClass, ...memberFields } = member;
+
   return {
     member: {
-      ...member,
+      ...memberFields,
+      gradProgram: graduateProgramLabel(dartmouthDepartmentClass),
       birthday: member.birthday ? member.birthday.toISOString() : null,
       domainEligibilities: member.domainEligibilities.map((e) => ({
         id: e.id,
@@ -369,6 +384,8 @@ export async function loadProfilePage({
       })),
     },
     roleLabels,
+    isStaff: roles.isStaff,
+    isAlumni: roles.isAlumni,
     termCode: term?.code ?? null,
     projectAssignments,
     pendingReviews,

@@ -92,6 +92,7 @@ export async function runMembershipStatusSync({
       dartmouthIsAlum: true,
       dartmouthIsStudent: true,
       dartmouthAffiliation: true,
+      dartmouthDepartmentClass: true,
     },
   });
 

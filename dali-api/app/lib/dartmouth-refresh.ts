@@ -64,6 +64,7 @@ export async function refreshDartmouthSignals(
       updates.dartmouthAffiliation = people.dartmouthAffiliation;
       updates.dartmouthIsAlum = people.isAlum;
       updates.dartmouthIsStudent = people.isStudent;
+      updates.dartmouthDepartmentClass = people.departmentClass;
 
       // Populate classYear only when absent — user / Notion input wins and is
       // never clobbered. department_class is class identity ("'25" for a +1),

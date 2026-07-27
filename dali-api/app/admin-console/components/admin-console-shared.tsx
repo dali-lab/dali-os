@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useFetcher } from "react-router";
-import { Shield, ChevronDown, X, Check, Plus } from "lucide-react";
+import { Shield, ChevronDown, X, Check, Plus, Briefcase } from "lucide-react";
 import { fullName } from "~/lib/display";
 
 // Phase 2 reshape: Member is rooted at User. Role flags derive from typed
@@ -35,6 +35,8 @@ export interface Member {
   isLabMember: boolean;
   // Presence = Admin (AdminMembership row exists).
   isAdmin: boolean;
+  // Full-time staff — the AdminMembership.isStaff subset. Implies isAdmin.
+  isStaff: boolean;
   // Convenience: has any current-term CoreAssignment. Derive from
   // coreAssignments rather than passing as a separate field where possible.
   isCore: boolean;
@@ -229,6 +231,38 @@ export function AdminToggle({ member, disabled }: { member: Member; disabled?: b
       >
         {isAdminMember ? <Check className="w-3 h-3" /> : <Shield className="w-3 h-3" />}
         {isAdminMember ? "Admin" : "Set Admin"}
+      </button>
+    </fetcher.Form>
+  );
+}
+
+// Staff is a strict subset of Admin: marking Staff also grants Admin (the
+// action upserts the AdminMembership with isStaff=true). Un-marking clears the
+// flag but leaves Admin intact. Admin-gated, same as AdminToggle.
+export function StaffToggle({ member, disabled }: { member: Member; disabled?: boolean }) {
+  const fetcher = useFetcher();
+  const submittedValue = fetcher.formData?.get("value");
+  const isStaffMember = submittedValue != null
+    ? submittedValue === "true"
+    : member.isStaff;
+
+  return (
+    <fetcher.Form method="post">
+      <input type="hidden" name="intent" value="set-staff" />
+      <input type="hidden" name="userId" value={member.id} />
+      <input type="hidden" name="value" value={String(!isStaffMember)} />
+      <button
+        type="submit"
+        disabled={disabled}
+        title={disabled ? "Only Admins can mark Staff." : "Staff are exempt from student checklist items and gain Admin access."}
+        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+          isStaffMember
+            ? "bg-accent-teal/15 text-accent-teal hover:bg-accent-teal/25"
+            : "bg-muted text-muted-foreground hover:bg-muted"
+        } disabled:opacity-60 disabled:cursor-not-allowed`}
+      >
+        {isStaffMember ? <Check className="w-3 h-3" /> : <Briefcase className="w-3 h-3" />}
+        {isStaffMember ? "Staff" : "Set Staff"}
       </button>
     </fetcher.Form>
   );
