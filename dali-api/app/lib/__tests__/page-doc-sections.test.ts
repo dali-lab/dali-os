@@ -8,7 +8,6 @@ import {
 describe("page-doc-sections", () => {
   it("synthesizes Overview from legacy body/videoKey when sections empty", () => {
     const sections = resolveSections({
-      title: "Projects",
       body: { type: "doc", content: [] },
       videoKey: "page-docs/abc.mp4",
       sections: null,
@@ -23,7 +22,6 @@ describe("page-doc-sections", () => {
 
   it("prefers stored sections over legacy fields", () => {
     const sections = resolveSections({
-      title: "Projects",
       body: null,
       videoKey: "legacy",
       sections: [

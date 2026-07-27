@@ -293,7 +293,7 @@ export function CommentsRail({
             value={draft}
             onChange={setDraft}
             rows={2}
-            placeholder="Add a comment…  (@ to mention)"
+            placeholder="Add a comment…"
             className="w-full px-2 py-1 text-sm border border-border rounded bg-background focus:outline-none focus:ring-1 focus:ring-accent-coral/40"
           />
           <div className="flex justify-end">
