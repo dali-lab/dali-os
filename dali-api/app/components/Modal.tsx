@@ -140,6 +140,8 @@ export interface ModalHeaderProps {
   closeLabel?: string;
   /** Hide the standardized close button (rare; e.g. blocking flows). */
   hideClose?: boolean;
+  /** Extra controls rendered immediately before the close button (e.g. Edit / Save). */
+  actions?: ReactNode;
   className?: string;
 }
 
@@ -150,26 +152,30 @@ export function ModalHeader({
   onClose,
   closeLabel = "Close",
   hideClose = false,
+  actions,
   className = "",
 }: ModalHeaderProps) {
   return (
     <div className={`flex items-start justify-between gap-4 mb-4 ${className}`}>
-      <div>
+      <div className="min-w-0">
         <h2 id={titleId} className="font-heading text-lg font-bold text-foreground">
           {title}
         </h2>
         {subtitle && <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>}
       </div>
-      {!hideClose && (
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label={closeLabel}
-          className="text-muted-foreground/70 hover:text-foreground rounded p-1 hover:bg-muted"
-        >
-          <X className="w-5 h-5" aria-hidden />
-        </button>
-      )}
+      <div className="flex shrink-0 items-center gap-1.5">
+        {actions}
+        {!hideClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label={closeLabel}
+            className="text-muted-foreground/70 hover:text-foreground rounded p-1 hover:bg-muted"
+          >
+            <X className="w-5 h-5" aria-hidden />
+          </button>
+        )}
+      </div>
     </div>
   );
 }

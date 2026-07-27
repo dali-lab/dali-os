@@ -8,6 +8,11 @@ import { getDownloadUrl, isS3Configured } from "~/lib/s3";
 import { notify } from "~/lib/notify.server";
 import { extractMentionUserIds, notifyMentions, pageDocLink } from "~/lib/mentions";
 import { fullName } from "~/lib/display";
+import {
+  mergeSectionsPayload,
+  resolveSections,
+  type StoredPageDocSection,
+} from "~/lib/page-doc-sections";
 
 // Per-page documentation guide, keyed by a stable pageKey a route declares via
 // handle.docKey. Backs the "Docs" modal.
@@ -15,14 +20,16 @@ import { fullName } from "~/lib/display";
 //   POST /api/page-docs/:key            → upsert content / maintainer
 //
 // Any lab member may read (and, via /api/comments, post FAQ comments). Editing
-// title/body/video is limited to the maintainer or Core/Admin; assigning the
-// maintainer is Core/Admin only.
+// title/body/video/sections is limited to the maintainer or Core/Admin;
+// assigning the maintainer is Core/Admin only.
 
 const UpdateSchema = z.object({
   // Present only for the field being changed — undefined means "leave as is".
   title: z.string().trim().min(1).max(200).optional(),
+  // Legacy single-body fields (still accepted). Prefer `sections` for new edits.
   body: z.unknown().optional(),
   videoKey: z.string().max(500).nullable().optional(),
+  sections: z.array(z.unknown()).optional(),
   maintainerId: z.string().nullable().optional(),
   // The page's current path, used to deep-link mention/maintainer notifications
   // back to the guide (with ?doc=1 so the modal auto-opens).
@@ -33,6 +40,18 @@ async function resolveVideoUrl(videoKey: string | null): Promise<string | null> 
   if (!videoKey) return null;
   if (!isS3Configured()) return null;
   return getDownloadUrl(videoKey);
+}
+
+async function serializeSections(sections: StoredPageDocSection[]) {
+  return Promise.all(
+    sections.map(async (s) => ({
+      id: s.id,
+      title: s.title,
+      body: s.body,
+      videoUrl: await resolveVideoUrl(s.videoKey),
+      hasVideo: s.videoKey !== null,
+    })),
+  );
 }
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -57,6 +76,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       title: true,
       body: true,
       videoKey: true,
+      sections: true,
       maintainerId: true,
       maintainer: { select: { id: true, firstName: true, lastName: true, handle: true } },
     },
@@ -64,14 +84,19 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const core = await isCore(userId);
   const canEdit = core || doc.maintainerId === userId;
+  const sections = resolveSections(doc);
+  const serialized = await serializeSections(sections);
+  const primary = serialized[0]!;
 
   return Response.json({
     doc: {
       id: doc.id,
       title: doc.title,
-      body: doc.body,
-      videoUrl: await resolveVideoUrl(doc.videoKey),
-      hasVideo: doc.videoKey !== null,
+      // Legacy single-field mirrors of the first section (older clients / FAQ).
+      body: primary.body,
+      videoUrl: primary.videoUrl,
+      hasVideo: primary.hasVideo,
+      sections: serialized,
     },
     maintainer: doc.maintainer
       ? {
@@ -103,7 +128,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const pageKey = params.key;
   const existing = await prisma.pageDoc.findUnique({
     where: { pageKey },
-    select: { id: true, body: true, maintainerId: true },
+    select: { id: true, body: true, videoKey: true, sections: true, maintainerId: true },
   });
   if (!existing) {
     return Response.json({ error: "Guide not found" }, { status: 404 });
@@ -115,7 +140,8 @@ export async function action({ request, params }: Route.ActionArgs) {
   const changingContent =
     payload.title !== undefined ||
     payload.body !== undefined ||
-    payload.videoKey !== undefined;
+    payload.videoKey !== undefined ||
+    payload.sections !== undefined;
   const changingMaintainer =
     payload.maintainerId !== undefined && payload.maintainerId !== existing.maintainerId;
 
@@ -139,17 +165,50 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
   }
 
+  const priorSections = resolveSections(existing);
+  let nextSections: StoredPageDocSection[] | undefined;
+
+  if (payload.sections !== undefined) {
+    const merged = mergeSectionsPayload(payload.sections, priorSections);
+    if ("error" in merged) {
+      return Response.json({ error: merged.error }, { status: 400 });
+    }
+    nextSections = merged;
+  } else if (payload.body !== undefined || payload.videoKey !== undefined) {
+    // Legacy single-section edit: patch the first section only.
+    const [first, ...rest] = priorSections;
+    const head = first ?? {
+      id: "overview",
+      title: "Overview",
+      body: null,
+      videoKey: null,
+    };
+    nextSections = [
+      {
+        ...head,
+        body: payload.body !== undefined ? payload.body : head.body,
+        videoKey: payload.videoKey !== undefined ? payload.videoKey : head.videoKey,
+      },
+      ...rest,
+    ];
+  }
+
   const data: {
     title?: string;
     body?: unknown;
     videoKey?: string | null;
+    sections?: StoredPageDocSection[];
     maintainerId?: string | null;
     lastEditedById: string;
   } = { lastEditedById: userId };
   if (payload.title !== undefined) data.title = payload.title;
-  if (payload.body !== undefined) data.body = payload.body;
-  if (payload.videoKey !== undefined) data.videoKey = payload.videoKey;
   if (changingMaintainer) data.maintainerId = payload.maintainerId ?? null;
+  if (nextSections) {
+    data.sections = nextSections;
+    // Keep legacy columns aligned with the first section.
+    data.body = nextSections[0]?.body ?? null;
+    data.videoKey = nextSections[0]?.videoKey ?? null;
+  }
 
   const updated = await prisma.pageDoc.update({
     where: { id: existing.id },
@@ -157,13 +216,19 @@ export async function action({ request, params }: Route.ActionArgs) {
     select: { id: true, title: true },
   });
 
-  // Notify newly-mentioned users when the body changes (diff against prior).
-  if (payload.body !== undefined) {
-    const before = new Set(extractMentionUserIds(existing.body));
-    const added = extractMentionUserIds(payload.body).filter((id) => !before.has(id));
-    if (added.length > 0) {
+  // Notify newly-mentioned users across all section bodies (diff against prior).
+  if (nextSections) {
+    const before = new Set(
+      priorSections.flatMap((s) => extractMentionUserIds(s.body)),
+    );
+    const added = nextSections
+      .flatMap((s) => extractMentionUserIds(s.body))
+      .filter((id) => !before.has(id));
+    // Dedupe in case the same handle appears in multiple sections.
+    const uniqueAdded = [...new Set(added)];
+    if (uniqueAdded.length > 0) {
       void notifyMentions({
-        recipientUserIds: added,
+        recipientUserIds: uniqueAdded,
         actorId: userId,
         link: pageDocLink(payload.path),
         title: `You were mentioned in: ${updated.title}`,
@@ -179,7 +244,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       createdByUserId: userId,
       message: {
         title: `You're now the maintainer of: ${updated.title}`,
-        body: "You can edit this page's guide — video, walkthrough, and FAQ.",
+        body: "You can edit this page's guide — sections, video, walkthrough, and FAQ.",
         link: pageDocLink(payload.path),
       },
       recipients: [{ userId: payload.maintainerId }],
