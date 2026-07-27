@@ -9,7 +9,12 @@ import type { Route } from "./+types/calendar.check-in.$id";
 export const meta: Route.MetaFunction = () => [{ title: "Check in · DALI OS" }];
 
 export const handle = {
-  breadcrumb: () => "Check in",
+  // Leaf only — "check-in" is dropped as a structural segment in Breadcrumbs
+  // (there is no /calendar/check-in index; linking it 404'd as a duplicate crumb).
+  breadcrumb: (data: unknown) => {
+    const d = data as { meetingLabel?: string } | undefined;
+    return d?.meetingLabel || "Check in";
+  },
 };
 
 // Standalone self-check-in surface for meetings that don't have a meeting
