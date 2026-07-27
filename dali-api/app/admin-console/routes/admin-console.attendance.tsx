@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Link,
   redirect,
@@ -9,6 +9,7 @@ import type { Route } from "./+types/admin-console.attendance";
 import { adminPills } from "~/admin-console/adminPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import { TermFilter } from "~/components/TermFilter";
+import { Tooltip } from "~/components/ui/IconButton";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore, isAdmin } from "~/lib/roles";
@@ -21,6 +22,7 @@ import {
   ChevronDown,
   ChevronRight,
   ExternalLink,
+  Search,
   Trash2,
   UserCheck,
   UserX,
@@ -170,10 +172,95 @@ type Attendee = {
   markedAt: string | null;
 };
 
+type AttendanceEvent = {
+  id: string;
+  title: string;
+  typeLabel: string;
+  startsAt: string | null;
+  projectName: string | null;
+  projectId: string | null;
+  notePageId: string | null;
+  organizerName: string;
+  invited: number;
+  checkedIn: number;
+  attendees: Attendee[];
+};
+
+type SortKey =
+  | "date-desc"
+  | "date-asc"
+  | "title-asc"
+  | "title-desc"
+  | "rate-desc"
+  | "rate-asc";
+
+const SORT_OPTIONS: { value: SortKey; label: string }[] = [
+  { value: "date-desc", label: "Date · newest" },
+  { value: "date-asc", label: "Date · oldest" },
+  { value: "title-asc", label: "Title · A–Z" },
+  { value: "title-desc", label: "Title · Z–A" },
+  { value: "rate-desc", label: "Check-in rate · high" },
+  { value: "rate-asc", label: "Check-in rate · low" },
+];
+
+function checkInRate(event: AttendanceEvent): number {
+  return event.invited > 0 ? event.checkedIn / event.invited : -1;
+}
+
+function sortEvents(events: AttendanceEvent[], sort: SortKey): AttendanceEvent[] {
+  const copy = [...events];
+  copy.sort((a, b) => {
+    switch (sort) {
+      case "date-asc": {
+        const at = a.startsAt ? Date.parse(a.startsAt) : Number.POSITIVE_INFINITY;
+        const bt = b.startsAt ? Date.parse(b.startsAt) : Number.POSITIVE_INFINITY;
+        return at - bt || a.title.localeCompare(b.title);
+      }
+      case "date-desc": {
+        const at = a.startsAt ? Date.parse(a.startsAt) : Number.NEGATIVE_INFINITY;
+        const bt = b.startsAt ? Date.parse(b.startsAt) : Number.NEGATIVE_INFINITY;
+        return bt - at || a.title.localeCompare(b.title);
+      }
+      case "title-asc":
+        return a.title.localeCompare(b.title);
+      case "title-desc":
+        return b.title.localeCompare(a.title);
+      case "rate-desc":
+        return checkInRate(b) - checkInRate(a) || a.title.localeCompare(b.title);
+      case "rate-asc":
+        return checkInRate(a) - checkInRate(b) || a.title.localeCompare(b.title);
+      default:
+        return 0;
+    }
+  });
+  return copy;
+}
+
 export default function AdminAttendancePage() {
   const { terms, selected, viewerIsAdmin, events } = useLoaderData<typeof loader>();
   const tz = useUserTimeZone();
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<SortKey>("date-desc");
   const [openId, setOpenId] = useState<string | null>(events[0]?.id ?? null);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const matched = !q
+      ? events
+      : events.filter((event) => {
+          const haystack = [
+            event.title,
+            event.typeLabel,
+            event.projectName ?? "",
+            event.organizerName,
+            ...event.attendees.map((a) => a.name),
+          ]
+            .join(" ")
+            .toLowerCase();
+          return haystack.includes(q);
+        });
+    return sortEvents(matched, sort);
+  }, [events, query, sort]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -193,8 +280,41 @@ export default function AdminAttendancePage() {
             Who was invited to QR check-in events, and who actually checked in.
           </p>
         </div>
-        <TermFilter terms={terms} selected={selected} />
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="sr-only" htmlFor="attendance-sort">
+            Sort by
+          </label>
+          <select
+            id="attendance-sort"
+            value={sort}
+            onChange={(e) => setSort(e.target.value as SortKey)}
+            aria-label="Sort by"
+            className="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground sm:w-48"
+          >
+            {SORT_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+          <TermFilter terms={terms} selected={selected} />
+        </div>
       </header>
+
+      <div className="relative">
+        <Search
+          className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+          aria-hidden
+        />
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search by event, organizer, project, or attendee…"
+          aria-label="Search attendance events"
+          className="w-full pl-9 pr-3 py-2 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+        />
+      </div>
 
       {events.length === 0 ? (
         <div className="bg-card border border-border shadow-brand-1 rounded-lg p-10 text-center">
@@ -210,9 +330,13 @@ export default function AdminAttendancePage() {
             people or groups to invite under Participants — a project is optional.
           </p>
         </div>
+      ) : filtered.length === 0 ? (
+        <div className="bg-card border border-border shadow-brand-1 rounded-lg px-4 py-8 text-center text-sm text-muted-foreground">
+          No events match this search.
+        </div>
       ) : (
         <ul className="flex flex-col gap-3">
-          {events.map((event) => {
+          {filtered.map((event) => {
             const open = openId === event.id;
             const pct =
               event.invited > 0
@@ -274,23 +398,25 @@ export default function AdminAttendancePage() {
                     {/* Prefer the dedicated check-in surface — it always exists for
                         SelfCheckIn meetings. The meeting-note document can be
                         archived/missing and used to 404 from this icon. */}
-                    <Link
-                      to={`/calendar/check-in/${event.id}`}
-                      className="p-1.5 rounded-md text-muted-foreground hover:text-accent-coral hover:bg-accent-coral/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-coral/40"
-                      title="Open check-in / QR"
-                      aria-label="Open check-in / QR"
-                    >
-                      <ExternalLink className="w-4 h-4" />
-                    </Link>
-                    {event.notePageId && (
+                    <Tooltip label="Open check-in / QR" side="bottom">
                       <Link
-                        to={`/documents/${event.notePageId}`}
+                        to={`/calendar/check-in/${event.id}`}
                         className="p-1.5 rounded-md text-muted-foreground hover:text-accent-coral hover:bg-accent-coral/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-coral/40"
-                        title="Open meeting note"
-                        aria-label="Open meeting note"
+                        aria-label="Open check-in / QR"
                       >
-                        <ClipboardCheck className="w-4 h-4" />
+                        <ExternalLink className="w-4 h-4" />
                       </Link>
+                    </Tooltip>
+                    {event.notePageId && (
+                      <Tooltip label="Open meeting note" side="bottom">
+                        <Link
+                          to={`/documents/${event.notePageId}`}
+                          className="p-1.5 rounded-md text-muted-foreground hover:text-accent-coral hover:bg-accent-coral/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-coral/40"
+                          aria-label="Open meeting note"
+                        >
+                          <ClipboardCheck className="w-4 h-4" />
+                        </Link>
+                      </Tooltip>
                     )}
                     <DeleteEventButton
                       meetingId={event.id}
@@ -355,30 +481,31 @@ function DeleteEventButton({
   const busy = fetcher.state !== "idle";
 
   return (
-    <fetcher.Form
-      method="post"
-      onSubmit={(e) => {
-        if (
-          !window.confirm(
-            `Delete attendance event "${title}"? Invitees will be notified that the meeting was cancelled.`,
-          )
-        ) {
-          e.preventDefault();
-        }
-      }}
-    >
-      <input type="hidden" name="intent" value="delete-event" />
-      <input type="hidden" name="meetingId" value={meetingId} />
-      <button
-        type="submit"
-        disabled={busy}
-        className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/40 disabled:opacity-50"
-        title="Delete event"
-        aria-label={`Delete attendance event ${title}`}
+    <Tooltip label="Delete event" side="bottom">
+      <fetcher.Form
+        method="post"
+        onSubmit={(e) => {
+          if (
+            !window.confirm(
+              `Delete attendance event "${title}"? Invitees will be notified that the meeting was cancelled.`,
+            )
+          ) {
+            e.preventDefault();
+          }
+        }}
       >
-        <Trash2 className="w-4 h-4" />
-      </button>
-    </fetcher.Form>
+        <input type="hidden" name="intent" value="delete-event" />
+        <input type="hidden" name="meetingId" value={meetingId} />
+        <button
+          type="submit"
+          disabled={busy}
+          className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/40 disabled:opacity-50"
+          aria-label={`Delete attendance event ${title}`}
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </fetcher.Form>
+    </Tooltip>
   );
 }
 
