@@ -7,6 +7,7 @@ import {
   fileMatchesAccept,
 } from "~/lib/file-validation";
 import { PhotoCropModal } from "~/components/PhotoCropModal";
+import { useDialog } from "~/components/ui/dialog";
 
 const ACCEPT = "image/png,image/jpeg,image/webp,image/gif";
 
@@ -31,6 +32,7 @@ export function ProjectImageBanner({
   initialPreviewUrl: string | null;
   canEdit: boolean;
 }) {
+  const dialog = useDialog();
   const fetcher = useFetcher();
   const fileRef = useRef<HTMLInputElement>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(initialPreviewUrl ?? null);
@@ -144,8 +146,15 @@ export function ProjectImageBanner({
     }
   }
 
-  function handleRemove() {
-    if (!window.confirm("Remove the project image? The default banner will show instead.")) {
+  async function handleRemove() {
+    if (
+      !(await dialog.confirm({
+        title: "Remove the project image?",
+        description: "The default banner will show instead.",
+        confirmLabel: "Remove",
+        tone: "destructive",
+      }))
+    ) {
       return;
     }
     setError(null);

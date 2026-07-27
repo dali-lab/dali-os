@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useFetcher } from "react-router";
 import { Trash2, StickyNote } from "lucide-react";
 import { Card } from "~/components/ui/Card";
+import { useConfirmSubmit } from "~/components/ui/dialog";
 import { formatUsd } from "~/lib/money";
 import { cn } from "~/lib/cn";
 import { PROJECT_TYPES } from "~/admin-console/lib/budget.shared";
@@ -365,16 +366,18 @@ function NoteEditor({
 
 function DeleteButton({ entryId }: { entryId: string }) {
   const fetcher = useFetcher();
+  const confirmSubmit = useConfirmSubmit();
   return (
     <fetcher.Form
       method="post"
       action={BUDGET_ROUTE}
       className="inline"
-      onSubmit={(e) => {
-        if (!confirm("Delete this budget line? Expense will still show as an unbudgeted row.")) {
-          e.preventDefault();
-        }
-      }}
+      onSubmit={confirmSubmit({
+        title: "Delete this budget line?",
+        description: "Expense will still show as an unbudgeted row.",
+        confirmLabel: "Delete",
+        tone: "destructive",
+      })}
     >
       <input type="hidden" name="intent" value="delete-entry" />
       <input type="hidden" name="entryId" value={entryId} />

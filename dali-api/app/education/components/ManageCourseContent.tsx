@@ -1,5 +1,6 @@
 import { Form, Link } from "react-router";
 import { Button, buttonClasses } from "~/components/ui/Button";
+import { useConfirmSubmit } from "~/components/ui/dialog";
 import { CollaborativeEditor } from "~/components/CollaborativeEditor";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { formatDateTime } from "~/lib/display";
@@ -113,6 +114,7 @@ export function ManageAssignments({
   userName: string;
 }) {
   const tz = useUserTimeZone();
+  const confirmSubmit = useConfirmSubmit();
   return (
     <div className="flex flex-col gap-4 max-w-2xl">
       {assignments.map((a) => (
@@ -190,9 +192,11 @@ export function ManageAssignments({
             {a._count.submissions === 0 && (
               <Form
                 method="post"
-                onSubmit={(e) => {
-                  if (!confirm("Delete this assignment?")) e.preventDefault();
-                }}
+                onSubmit={confirmSubmit({
+                  title: "Delete this assignment?",
+                  confirmLabel: "Delete",
+                  tone: "destructive",
+                })}
               >
                 <input type="hidden" name="intent" value="delete-assignment" />
                 <input type="hidden" name="assignmentId" value={a.id} />

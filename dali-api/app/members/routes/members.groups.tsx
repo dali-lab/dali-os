@@ -11,6 +11,7 @@ import { Avatar } from "~/components/ui/Avatar";
 import { RolePills } from "~/components/ui/RolePills";
 import { deriveCoreTitles } from "~/lib/core-titles";
 import { Modal, ModalHeader } from "~/components/Modal";
+import { useConfirmSubmit } from "~/components/ui/dialog";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import {
   Users,
@@ -607,6 +608,7 @@ function GroupCard({
   membersById: Map<string, MemberCardData>;
 }) {
   const fetcher = useFetcher();
+  const confirmSubmit = useConfirmSubmit();
   const [expanded, setExpanded] = useState(false);
   const [addingMember, setAddingMember] = useState(false);
   const [query, setQuery] = useState("");
@@ -689,9 +691,11 @@ function GroupCard({
             </fetcher.Form>
             <fetcher.Form
               method="post"
-              onSubmit={(e) => {
-                if (!confirm(`Delete group "${group.name}"?`)) e.preventDefault();
-              }}
+              onSubmit={confirmSubmit({
+                title: `Delete group "${group.name}"?`,
+                confirmLabel: "Delete",
+                tone: "destructive",
+              })}
             >
               <input type="hidden" name="intent" value="delete-group" />
               <input type="hidden" name="groupId" value={group.id} />

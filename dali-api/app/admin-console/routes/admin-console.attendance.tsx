@@ -10,6 +10,7 @@ import { adminPills } from "~/admin-console/adminPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import { TermFilter } from "~/components/TermFilter";
 import { Tooltip } from "~/components/ui/IconButton";
+import { useConfirmSubmit } from "~/components/ui/dialog";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore, isAdmin } from "~/lib/roles";
@@ -478,21 +479,20 @@ function DeleteEventButton({
   title: string;
 }) {
   const fetcher = useFetcher();
+  const confirmSubmit = useConfirmSubmit();
   const busy = fetcher.state !== "idle";
 
   return (
     <Tooltip label="Delete event" side="bottom">
       <fetcher.Form
         method="post"
-        onSubmit={(e) => {
-          if (
-            !window.confirm(
-              `Delete attendance event "${title}"? Invitees will be notified that the meeting was cancelled.`,
-            )
-          ) {
-            e.preventDefault();
-          }
-        }}
+        onSubmit={confirmSubmit({
+          title: `Delete attendance event "${title}"?`,
+          description:
+            "Invitees will be notified that the meeting was cancelled.",
+          confirmLabel: "Delete",
+          tone: "destructive",
+        })}
       >
         <input type="hidden" name="intent" value="delete-event" />
         <input type="hidden" name="meetingId" value={meetingId} />

@@ -96,8 +96,9 @@ test.describe('portal RSVP, waitlist, and auto-promotion', () => {
     // Alice withdraws — Carol should be promoted automatically.
     await loginAs({ netId: 'f007al1' });
     await page.goto(`/portal/education/${WORKSHOP_ID}`);
-    page.once('dialog', (dialog) => void dialog.accept());
+    // Withdraw confirmation is now an in-app dialog, not a native confirm.
     await page.getByRole('button', { name: 'Withdraw' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Withdraw' }).click();
     await expect(page.getByText('Withdrawn', { exact: true })).toBeVisible();
 
     await loginAs({ netId: 'f007ca3' });

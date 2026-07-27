@@ -102,7 +102,8 @@ test.describe('internal Organizations pages (Core)', () => {
     });
 
     try {
-      page.on('dialog', (d) => d.accept());
+      // Confirmations are in-app dialogs (useConfirmSubmit) — accept each by
+      // clicking the dialog's action button.
 
       // Move: Tuck → Hood.
       await page.goto('/partners/partner-tuck-school?embed=1');
@@ -110,6 +111,7 @@ test.describe('internal Organizations pages (Core)', () => {
       await row.getByRole('button', { name: 'Move', exact: true }).click();
       await row.locator('select[name="targetOrgId"]').selectOption({ label: 'Hood Museum of Art' });
       await row.getByRole('button', { name: 'Move', exact: true }).last().click();
+      await page.getByRole('dialog').getByRole('button', { name: 'Move', exact: true }).click();
       await expect(page.getByText('Movey Tester')).not.toBeVisible();
       await page.goto('/partners/partner-hood-museum?embed=1');
       await expect(page.getByText('Movey Tester')).toBeVisible();
@@ -119,11 +121,13 @@ test.describe('internal Organizations pages (Core)', () => {
         .locator('li', { hasText: 'Movey Tester' })
         .getByRole('button', { name: 'Remove' })
         .click();
+      await page.getByRole('dialog').getByRole('button', { name: 'Remove', exact: true }).click();
       await expect(page.getByText('Movey Tester')).not.toBeVisible();
 
       // Delete the empty org — lands back on the org list without it.
       await page.goto(`/partners/${emptyOrgId}?embed=1`);
       await page.getByRole('button', { name: 'Delete organization' }).click();
+      await page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true }).click();
       await expect(
         page.getByRole('heading', { name: 'Partners' }),
       ).toBeVisible();

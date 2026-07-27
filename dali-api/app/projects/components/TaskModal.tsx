@@ -11,6 +11,7 @@ import { X } from "lucide-react";
 import { Modal } from "~/components/Modal";
 import { Button } from "~/components/ui/Button";
 import { Avatar } from "~/components/ui/Avatar";
+import { useDialog } from "~/components/ui/dialog";
 import { uploadFileToS3 } from "~/lib/upload-client";
 import {
   normalizeChecklist,
@@ -93,6 +94,7 @@ export function TaskModal({
   // up after a link/unlink/upload (artifacts bypass the onPatch path).
   onArtifactsChanged?: () => void;
 }) {
+  const dialog = useDialog();
   const isCreate = !task;
   const [title, setTitle] = useState(task?.title ?? "");
   const [description, setDescription] = useState(task?.description ?? "");
@@ -288,8 +290,16 @@ export function TaskModal({
 
   // Close guard for X / backdrop / Escape / Cancel: unsaved edits need an
   // explicit confirm before they're thrown away.
-  function guardedClose() {
-    if (isDirty() && !window.confirm("Discard unsaved changes?")) return;
+  async function guardedClose() {
+    if (
+      isDirty() &&
+      !(await dialog.confirm({
+        title: "Discard unsaved changes?",
+        confirmLabel: "Discard",
+        tone: "destructive",
+      }))
+    )
+      return;
     onClose();
   }
 

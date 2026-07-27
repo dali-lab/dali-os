@@ -9,6 +9,7 @@ import {
 } from "react-router";
 import { Building2, FolderKanban, Mail, Users, Unlink } from "lucide-react";
 import { Tooltip } from "~/components/ui/IconButton";
+import { useConfirmSubmit } from "~/components/ui/dialog";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import type { Route } from "./+types/partners.$orgId";
 import { requireAuth } from "~/lib/auth";
@@ -387,6 +388,7 @@ export default function PartnerOrgDetail() {
     useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const submit = useSubmit();
+  const confirmSubmit = useConfirmSubmit();
   const detailsFormRef = useRef<HTMLFormElement>(null);
   const [inviting, setInviting] = useState(false);
   const [linking, setLinking] = useState(false);
@@ -606,11 +608,12 @@ export default function PartnerOrgDetail() {
                   {canEdit && (
                     <Form
                       method="post"
-                      onSubmit={(e) => {
-                        if (!confirm(`Remove ${memberName(m.user)} from ${org.name}? They lose portal access immediately.`)) {
-                          e.preventDefault();
-                        }
-                      }}
+                      onSubmit={confirmSubmit({
+                        title: `Remove ${memberName(m.user)} from ${org.name}?`,
+                        description: "They lose portal access immediately.",
+                        confirmLabel: "Remove",
+                        tone: "destructive",
+                      })}
                     >
                       <input type="hidden" name="intent" value="member-remove" />
                       <input type="hidden" name="partnerUserId" value={m.id} />
@@ -627,11 +630,11 @@ export default function PartnerOrgDetail() {
                   <Form
                     method="post"
                     className="flex items-center gap-2 bg-muted/20 rounded-lg p-2.5"
-                    onSubmit={(e) => {
-                      if (!confirm(`Move ${memberName(m.user)} to the selected organization? Their portal access switches immediately.`)) {
-                        e.preventDefault();
-                      }
-                    }}
+                    onSubmit={confirmSubmit({
+                      title: `Move ${memberName(m.user)} to the selected organization?`,
+                      description: "Their portal access switches immediately.",
+                      confirmLabel: "Move",
+                    })}
                   >
                     <input type="hidden" name="intent" value="member-move" />
                     <input type="hidden" name="partnerUserId" value={m.id} />
@@ -800,11 +803,13 @@ export default function PartnerOrgDetail() {
                     {!pp.endedAt && (
                       <Form
                         method="post"
-                        onSubmit={(e) => {
-                          if (!confirm(`End the partnership on ${pp.project.name}? The partner loses live access to it; the record stays.`)) {
-                            e.preventDefault();
-                          }
-                        }}
+                        onSubmit={confirmSubmit({
+                          title: `End the partnership on ${pp.project.name}?`,
+                          description:
+                            "The partner loses live access to it; the record stays.",
+                          confirmLabel: "End partnership",
+                          tone: "destructive",
+                        })}
                       >
                         <input type="hidden" name="intent" value="project-end" />
                         <input type="hidden" name="projectPartnerId" value={pp.id} />
@@ -818,11 +823,13 @@ export default function PartnerOrgDetail() {
                     )}
                     <Form
                       method="post"
-                      onSubmit={(e) => {
-                        if (!confirm(`Unlink ${pp.project.name}? This deletes the partnership record — prefer “End partnership” to keep history.`)) {
-                          e.preventDefault();
-                        }
-                      }}
+                      onSubmit={confirmSubmit({
+                        title: `Unlink ${pp.project.name}?`,
+                        description:
+                          "This deletes the partnership record — prefer “End partnership” to keep history.",
+                        confirmLabel: "Unlink",
+                        tone: "destructive",
+                      })}
                     >
                       <input type="hidden" name="intent" value="project-unlink" />
                       <input type="hidden" name="projectPartnerId" value={pp.id} />
@@ -884,11 +891,12 @@ export default function PartnerOrgDetail() {
           </div>
           <Form
             method="post"
-            onSubmit={(e) => {
-              if (!confirm(`Delete ${org.name}? This can't be undone.`)) {
-                e.preventDefault();
-              }
-            }}
+            onSubmit={confirmSubmit({
+              title: `Delete ${org.name}?`,
+              description: "This can't be undone.",
+              confirmLabel: "Delete",
+              tone: "destructive",
+            })}
           >
             <input type="hidden" name="intent" value="org-delete" />
             <button

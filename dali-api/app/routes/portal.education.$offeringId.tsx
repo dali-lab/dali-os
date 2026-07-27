@@ -14,6 +14,7 @@ import {
   registrationWindowLabel,
 } from "~/education/components/OfferingCard";
 import { buttonClasses } from "~/components/ui/Button";
+import { useConfirmSubmit } from "~/components/ui/dialog";
 import { formatDateTime, formatDateShort } from "~/lib/display";
 
 export const meta: Route.MetaFunction = ({ data }) => [
@@ -85,6 +86,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 export default function PortalOfferingDetail() {
   const { offering, descriptionHtml, myStatus, canApply } =
     useLoaderData<typeof loader>();
+  const confirmSubmit = useConfirmSubmit();
   const seatsLeft = Math.max(0, offering.capacity - offering.approvedCount);
 
   return (
@@ -124,9 +126,11 @@ export default function PortalOfferingDetail() {
               myStatus === "Waitlisted") && (
               <Form
                 method="post"
-                onSubmit={(e) => {
-                  if (!confirm("Withdraw from this offering?")) e.preventDefault();
-                }}
+                onSubmit={confirmSubmit({
+                  title: "Withdraw from this offering?",
+                  confirmLabel: "Withdraw",
+                  tone: "destructive",
+                })}
               >
                 <input type="hidden" name="intent" value="withdraw" />
                 <button type="submit" className={buttonClasses("ghost", "sm")}>

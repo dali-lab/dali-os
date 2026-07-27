@@ -19,6 +19,7 @@ import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
 import { Modal } from "~/components/Modal";
 import { ChallengePreviewModal } from "~/hiring/components/ChallengePreviewModal";
 import { Tooltip } from "~/components/ui/IconButton";
+import { useToast } from "~/components/ui/toast";
 import { CycleSelector } from "~/hiring/components/CycleSelector";
 import {
   summarizeDecisionPills,
@@ -1616,6 +1617,7 @@ function ReviewerSection({ cycleId, domainId, initialReviewers }: {
   domainId: string;
   initialReviewers: any[];
 }) {
+  const toast = useToast();
   const [reviewers, setReviewers] = useState(initialReviewers);
   const [members, setMembers] = useState<any[]>([]);
   const [selectedMemberId, setSelectedMemberId] = useState('');
@@ -1659,11 +1661,11 @@ function ReviewerSection({ cycleId, domainId, initialReviewers }: {
       } else {
         const err = await res.json().catch(() => ({}));
         console.error("Failed to remove reviewer:", res.status, err);
-        alert(`Failed to remove reviewer: ${err.error ?? res.statusText}`);
+        toast.error(`Failed to remove reviewer: ${err.error ?? res.statusText}`);
       }
     } catch (e) {
       console.error("Failed to remove reviewer:", e);
-      alert(`Failed to remove reviewer: ${e instanceof Error ? e.message : String(e)}`);
+      toast.error(`Failed to remove reviewer: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
@@ -1810,6 +1812,7 @@ function InterviewerSection({ cycleId, domainId, initialInterviewers }: {
   domainId: string;
   initialInterviewers: any[];
 }) {
+  const toast = useToast();
   const [interviewers, setInterviewers] = useState(initialInterviewers);
   const [members, setMembers] = useState<any[]>([]);
   const [selectedMemberId, setSelectedMemberId] = useState("");
@@ -1854,11 +1857,11 @@ function InterviewerSection({ cycleId, domainId, initialInterviewers }: {
       } else {
         const err = await res.json().catch(() => ({}));
         console.error("Failed to remove interviewer:", res.status, err);
-        alert(`Failed to remove interviewer: ${err.error ?? res.statusText}`);
+        toast.error(`Failed to remove interviewer: ${err.error ?? res.statusText}`);
       }
     } catch (e) {
       console.error("Failed to remove interviewer:", e);
-      alert(`Failed to remove interviewer: ${e instanceof Error ? e.message : String(e)}`);
+      toast.error(`Failed to remove interviewer: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
@@ -2130,6 +2133,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
   canAssignReviewers: boolean;
   rubricCriteria: any[];
 }) {
+  const toast = useToast();
   const isUnderReview = currentStatus === "UnderReview";
   const [searchParams, setSearchParams] = useSearchParams();
   const revalidator = useRevalidator();
@@ -2147,7 +2151,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
       });
       if (!res.ok && res.status !== 409) {
         const body = await res.json().catch(() => null);
-        alert(body?.error ?? "Failed to finalize. Please try again.");
+        toast.error(body?.error ?? "Failed to finalize. Please try again.");
       }
     } finally {
       setFinalizingId(null);
@@ -2340,7 +2344,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                   revalidator.revalidate();
                 } else {
                   const body = await res.json().catch(() => ({}));
-                  alert(body.error ?? "Auto-assign failed. Check that rubrics are set and reviewers are added.");
+                  toast.error(body.error ?? "Auto-assign failed. Check that rubrics are set and reviewers are added.");
                 }
               }}
               disabled={!canAssignReviewers || cycleReviewersForDomain.length === 0}
@@ -2581,6 +2585,7 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
   editable?: boolean;
   rubricCriteria?: any[];
 }) {
+  const toast = useToast();
   const [localReviews, setLocalReviews] = useState(reviews);
   const [adding, setAdding] = useState(false);
   const [selectedReviewerId, setSelectedReviewerId] = useState("");
@@ -2614,7 +2619,7 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
       } else {
         const err = await res.json().catch(() => ({}));
         console.error("Failed to add reviewer:", res.status, err);
-        alert(`Failed to add reviewer: ${err.error ?? res.statusText}`);
+        toast.error(`Failed to add reviewer: ${err.error ?? res.statusText}`);
       }
     } catch (e) {
       console.error("Failed to add reviewer:", e);
@@ -2633,11 +2638,11 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
       } else {
         const err = await res.json().catch(() => ({}));
         console.error("Failed to remove review:", res.status, err);
-        alert(`Failed to remove reviewer: ${err.error ?? res.statusText}`);
+        toast.error(`Failed to remove reviewer: ${err.error ?? res.statusText}`);
       }
     } catch (e) {
       console.error("Failed to remove review:", e);
-      alert(`Failed to remove reviewer: ${e instanceof Error ? e.message : String(e)}`);
+      toast.error(`Failed to remove reviewer: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setRemoving(null);
     }

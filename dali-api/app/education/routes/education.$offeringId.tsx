@@ -18,6 +18,7 @@ import {
   registrationWindowLabel,
 } from "~/education/components/OfferingCard";
 import { buttonClasses } from "~/components/ui/Button";
+import { useConfirmSubmit } from "~/components/ui/dialog";
 import { prisma } from "~/lib/db";
 import { formatDateTime, formatDateShort } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
@@ -101,6 +102,7 @@ export default function OfferingDetail() {
   const { offering, descriptionHtml, myStatus, isManager, canApply } =
     useLoaderData<typeof loader>();
   const tz = useUserTimeZone();
+  const confirmSubmit = useConfirmSubmit();
   const seatsLeft = Math.max(0, offering.capacity - offering.approvedCount);
 
   return (
@@ -149,11 +151,12 @@ export default function OfferingDetail() {
               myStatus === "Waitlisted") && (
               <Form
                 method="post"
-                onSubmit={(e) => {
-                  if (!confirm("Withdraw from this offering? Your seat goes to the waitlist.")) {
-                    e.preventDefault();
-                  }
-                }}
+                onSubmit={confirmSubmit({
+                  title: "Withdraw from this offering?",
+                  description: "Your seat goes to the waitlist.",
+                  confirmLabel: "Withdraw",
+                  tone: "destructive",
+                })}
               >
                 <input type="hidden" name="intent" value="withdraw" />
                 <button

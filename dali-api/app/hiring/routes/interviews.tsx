@@ -11,6 +11,8 @@ import CalendarGrid from '~/hiring/components/CalendarGrid'
 import { zonedWallTimeUtc } from '~/lib/timezone'
 import { prisma } from '~/lib/db'
 import { requireAuth } from '~/lib/auth'
+import { useDialog } from '~/components/ui/dialog'
+import { useToast } from '~/components/ui/toast'
 import type { Route } from './+types/interviews'
 
 export const handle = { areaPills: true };
@@ -112,6 +114,8 @@ export async function loader({ request }: Route.LoaderArgs) {
 export default function InterviewsDashboard() {
   const { activeCycle, availableCycles, needsAvailabilityPrompt, pillRoles } =
     useLoaderData<typeof loader>()
+  const dialog = useDialog()
+  const toast = useToast()
 
   const areaPills = pillRoles && (
     <AreaPillNav items={hiringPills({ ...pillRoles, active: 'interviews' })} />
@@ -176,9 +180,11 @@ export default function InterviewsDashboard() {
     async (interviewId: string) => {
       if (!activeCycle) return
       if (
-        !confirm(
-          'Are you sure you want to mark yourself as unavailable for this interview?',
-        )
+        !(await dialog.confirm({
+          title: 'Mark yourself unavailable for this interview?',
+          confirmLabel: 'Mark unavailable',
+          tone: 'destructive',
+        }))
       )
         return
       setDecliningId(interviewId)
@@ -193,15 +199,15 @@ export default function InterviewsDashboard() {
         }
         const body = (await res.json().catch(() => ({}))) as { error?: string }
         if (res.status === 409) {
-          alert(
+          toast.error(
             body.error ??
               'No replacement interviewer is available. Please contact the hiring lead.',
           )
           return
         }
-        alert(`Failed to mark unavailable: ${body.error ?? res.statusText}`)
+        toast.error(`Failed to mark unavailable: ${body.error ?? res.statusText}`)
       } catch (e) {
-        alert(
+        toast.error(
           `Failed to mark unavailable: ${
             e instanceof Error ? e.message : String(e)
           }`,
@@ -210,7 +216,7 @@ export default function InterviewsDashboard() {
         setDecliningId(null)
       }
     },
-    [activeCycle?.id, loadScheduledInterviews],
+    [activeCycle?.id, loadScheduledInterviews, dialog, toast],
   )
 
   const handleSaveAvailability = useCallback(
