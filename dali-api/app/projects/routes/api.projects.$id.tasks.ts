@@ -52,9 +52,10 @@ function parseDueAt(raw: string | null | undefined): Date | null | "invalid" {
 }
 
 // GET /api/projects/:id/tasks — list a project's archived tasks
-// (auto-archived Done/Cancelled), newest-archived first. Backs the board's
-// "Archived" modal, so it stays a lazy fetch rather than bloating the project
-// loader (which only ever loads the live, non-archived board).
+// (board Archive + weekly auto-archive of Done/Cancelled), newest-archived
+// first. Backs the board's "Archived" modal, so it stays a lazy fetch rather
+// than bloating the project loader (which only ever loads the live,
+// non-archived board).
 export async function loader({ request, params }: Route.LoaderArgs) {
   const preflight = handlePreflight(request);
   if (preflight) return preflight;
