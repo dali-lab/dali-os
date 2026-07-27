@@ -79,7 +79,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
   });
   // Mirrors the doc gate in authorizeCollabDoc: live page, any workspaceType.
-  if (!page || page.archivedAt !== null) {
+  // Exception: meeting-note pages stay openable when archived — SelfCheckIn QR
+  // / admin attendance deep-link to /documents/:id, and archiving the note from
+  // the Documents hub must not break check-in for invitees.
+  if (!page) {
+    throw new Response("Not found", { status: 404 });
+  }
+  if (page.archivedAt !== null && !page.meetingNoteId) {
     throw new Response("Not found", { status: 404 });
   }
 
