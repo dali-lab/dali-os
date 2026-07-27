@@ -23,6 +23,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { isCore, isLabMember, currentTerm } from "~/lib/roles";
 import { Tooltip } from "~/components/ui/IconButton";
+import { PageIcon } from "~/components/PageIcon";
 import type { ProjectStatus } from "~/generated/prisma/client";
 
 export const meta: Route.MetaFunction = () => [{ title: "Documents · DALI OS" }];
@@ -49,6 +50,7 @@ type DocOut = {
   isSystem: boolean;
   pinned: boolean;
   pinnedAt: number | null;
+  iconEmoji: string | null;
   tags: DocTagOut[];
   workspaceKey: string;
   workspaceLabel: string;
@@ -77,6 +79,7 @@ const pageSelect = {
   parentPageId: true,
   systemKey: true,
   pinnedAt: true,
+  iconEmoji: true,
   tags: {
     select: { tag: { select: { id: true, label: true, slug: true, color: true } } },
   },
@@ -152,6 +155,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     isSystem: p.systemKey !== null,
     pinned: p.pinnedAt !== null,
     pinnedAt: p.pinnedAt?.getTime() ?? null,
+    iconEmoji: p.iconEmoji,
     tags: p.tags
       .map((t) => t.tag)
       .sort((a, b) => a.label.localeCompare(b.label)),
@@ -452,7 +456,7 @@ export default function DocumentsHub() {
           onClick={() => openDocumentTab(doc.id, doc.title)}
           className="flex items-center gap-2 min-w-0 text-left font-medium text-foreground hover:text-accent-coral"
         >
-          <FileText className="w-3.5 h-3.5 flex-shrink-0 text-muted-foreground" />
+          <PageIcon iconEmoji={doc.iconEmoji} />
           <span className="truncate">{doc.title}</span>
         </button>
         <div className="flex items-center gap-2 flex-shrink-0">

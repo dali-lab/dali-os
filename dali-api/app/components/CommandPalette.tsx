@@ -69,7 +69,8 @@ interface PaletteItem {
   /** Present for entity results; drives the avatar-vs-icon leading slot. */
   type?: SearchResultType;
   photoUrl?: string | null;
-  /** Custom emoji for `project` results; shown instead of the type glyph. */
+  /** Custom emoji for entity results (project + page/document icons); shown
+   *  instead of the type glyph when set. */
   iconEmoji?: string | null;
   action: PaletteAction;
 }
@@ -333,7 +334,7 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles, onOpe
                       <Avatar photoUrl={item.photoUrl} name={item.title} size="xs" className="shrink-0" />
                     ) : item.iconEmoji ? (
                       <span
-                        className="flex h-4 w-4 shrink-0 items-center justify-center text-sm leading-none"
+                        className="w-4 h-4 shrink-0 flex items-center justify-center text-sm leading-none"
                         aria-hidden
                       >
                         {item.iconEmoji}

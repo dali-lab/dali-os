@@ -27,7 +27,8 @@ export interface SearchResult {
   url: string;
   /** Resolved avatar URL for `person` results (null → initials fallback). */
   photoUrl?: string | null;
-  /** Custom emoji for `project` results (null → the type's default glyph). */
+  /** Custom emoji for entity results — project icons and page/document icons
+   *  (files fall back to the type icon). Null → the type's default glyph. */
   iconEmoji?: string | null;
 }
 

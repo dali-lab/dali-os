@@ -15,6 +15,7 @@ import { CalendarDays, CalendarX, ChartNoAxesGantt, Check, Handshake, History, L
 import { Modal, ModalHeader } from "~/components/Modal";
 import { Tooltip } from "~/components/ui/IconButton";
 import { EditableSection } from "~/components/EditableSection";
+import { PageIcon } from "~/components/PageIcon";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { PresenceBar } from "~/components/collab/PresenceBar";
 import { uploadFileToS3, formatBytes } from "~/lib/upload-client";
@@ -349,6 +350,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       systemKey: true,
       partnerVisible: true,
       pinnedAt: true,
+      iconEmoji: true,
     },
   });
   const childrenByParent = new Map<string, typeof pageRows>();
@@ -365,6 +367,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     isSystem: d.systemKey !== null,
     partnerVisible: d.partnerVisible,
     pinned: d.pinnedAt !== null,
+    iconEmoji: d.iconEmoji,
   });
   // Top-level docs for the main list. Pinned ones are lifted into
   // `pinnedDocuments` (rendered above), so they don't appear twice.
@@ -3148,9 +3151,10 @@ function DocumentsBlock({
         <button
           type="button"
           onClick={() => openDocumentTab(doc.id, doc.title)}
-          className="truncate text-left font-medium text-foreground hover:text-accent-coral"
+          className="flex items-center gap-2 min-w-0 text-left font-medium text-foreground hover:text-accent-coral"
         >
-          {doc.title}
+          <PageIcon iconEmoji={doc.iconEmoji} />
+          <span className="truncate">{doc.title}</span>
         </button>
         <div className="flex items-center gap-3 flex-shrink-0">
           {doc.partnerVisible && !canEdit && (
