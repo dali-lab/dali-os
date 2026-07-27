@@ -20,6 +20,7 @@ import { QuestionList } from "~/hiring/components/ApplicationAnswers";
 import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
 import { type UrlCheckState } from "~/components/form-builder/QuestionField";
 import { FormField } from "~/forms/components/FormField";
+import { useToast } from "~/components/ui/toast";
 
 export const meta: Route.MetaFunction = () => [{ title: "Apply · DALI OS" }];
 
@@ -741,6 +742,7 @@ function BackToTopButton() {
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export default function PortalApply() {
+  const toast = useToast();
   const loaderData = useLoaderData<typeof loader>() as any;
   const { cycleId, cycleName, generalChallengeVersionId, formQuestions, generalDescription, domains, isAlreadySubmitted } = loaderData;
   const [draft, setDraft] = useState(loaderData.draft);
@@ -1183,7 +1185,7 @@ export default function PortalApply() {
     if (submitFetcher.state === "idle" && submitFetcher.data) {
       setSubmitting(false);
       if (submitFetcher.data.error) {
-        alert(submitFetcher.data.error);
+        toast.error(submitFetcher.data.error);
         return;
       }
       if (submitFetcher.data.wordCountErrors) {

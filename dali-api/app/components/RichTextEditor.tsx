@@ -25,6 +25,7 @@ import {
   linkExtension,
 } from "./editor/shared";
 import { mentionEditorExtension, searchMentionableUsers } from "./editor/mention";
+import { useDialog, type DialogApi } from "~/components/ui/dialog";
 
 interface RichTextEditorProps {
   value: unknown;
@@ -105,18 +106,30 @@ export function RichTextEditor({
   );
 }
 
-// Shared link prompt used by both toolbars.
-function promptForLink(editor: Editor) {
+// Shared link prompt used by both toolbars. Callers pass the dialog API (the
+// prompt can't call the hook itself — it isn't a component). URL safety is
+// enforced inline via the prompt's validate, so the field can't be submitted
+// with a disallowed protocol.
+async function promptForLink(editor: Editor, dialog: DialogApi) {
   const previous = (editor.getAttributes("link").href as string | undefined) ?? "";
-  const input = window.prompt("Enter URL (https:// or mailto:)", previous);
+  const input = await dialog.prompt({
+    title: previous ? "Edit link" : "Add link",
+    label: "URL",
+    placeholder: "https:// or mailto:",
+    defaultValue: previous,
+    confirmLabel: "Save",
+    validate: (value) => {
+      const trimmed = value.trim();
+      if (!trimmed) return null; // empty clears the link
+      return isSafeLinkUrl(trimmed)
+        ? null
+        : "Only http(s):// and mailto: links are allowed.";
+    },
+  });
   if (input === null) return;
   const trimmed = input.trim();
   if (!trimmed) {
     editor.chain().focus().extendMarkRange("link").unsetLink().run();
-    return;
-  }
-  if (!isSafeLinkUrl(trimmed)) {
-    window.alert("Only http(s):// and mailto: links are allowed.");
     return;
   }
   editor.chain().focus().extendMarkRange("link").setLink({ href: trimmed }).run();
@@ -166,6 +179,7 @@ const FORMAT_GROUPS: ToolbarAction[][] = [
 ];
 
 function FormattingToolbar({ editor }: { editor: Editor }) {
+  const dialog = useDialog();
   // Tiptap doesn't re-render React on its own; tick on every transaction so
   // active/disabled states track the selection.
   const [, setTick] = useState(0);
@@ -219,7 +233,7 @@ function FormattingToolbar({ editor }: { editor: Editor }) {
         aria-pressed={linkActive}
         onMouseDown={(e) => {
           e.preventDefault();
-          promptForLink(editor);
+          promptForLink(editor, dialog);
         }}
         className={`rounded p-1.5 transition-colors ${
           linkActive
@@ -250,6 +264,7 @@ function FormattingToolbar({ editor }: { editor: Editor }) {
 // ─── Minimal selection-only link toolbar (default for other surfaces) ───────
 
 function Toolbar({ editor }: { editor: Editor }) {
+  const dialog = useDialog();
   const [version, setVersion] = useState(0);
   useEffect(() => {
     const rerender = () => setVersion(v => v + 1);
@@ -265,7 +280,7 @@ function Toolbar({ editor }: { editor: Editor }) {
   const hasSelection = from !== to;
   const isLinkActive = editor.isActive("link");
 
-  const setLink = () => promptForLink(editor);
+  const setLink = () => promptForLink(editor, dialog);
 
   const unsetLink = () => {
     editor.chain().focus().extendMarkRange("link").unsetLink().run();

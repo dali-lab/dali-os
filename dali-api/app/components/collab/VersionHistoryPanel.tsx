@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { Modal } from "~/components/Modal";
+import { useDialog } from "~/components/ui/dialog";
 import { relativeTime } from "~/lib/relative-time";
 
 interface Author {
@@ -37,6 +38,7 @@ function authorLabel(authors: Author[]): string {
 }
 
 export function VersionHistoryPanel({ documentName, onClose }: VersionHistoryPanelProps) {
+  const dialog = useDialog();
   const [versions, setVersions] = useState<VersionListItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -97,9 +99,11 @@ export function VersionHistoryPanel({ documentName, onClose }: VersionHistoryPan
   const handleRestore = useCallback(async () => {
     if (!selectedId) return;
     if (
-      !window.confirm(
-        "Restore this version? This will replace the current content for all viewers.",
-      )
+      !(await dialog.confirm({
+        title: "Restore this version?",
+        description: "This will replace the current content for all viewers.",
+        confirmLabel: "Restore",
+      }))
     ) {
       return;
     }
@@ -118,7 +122,7 @@ export function VersionHistoryPanel({ documentName, onClose }: VersionHistoryPan
     } finally {
       setRestoring(false);
     }
-  }, [selectedId, onClose]);
+  }, [selectedId, onClose, dialog]);
 
   return (
     <Modal

@@ -23,6 +23,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { isCore, isLabMember, currentTerm } from "~/lib/roles";
 import { Tooltip } from "~/components/ui/IconButton";
+import { useDialog } from "~/components/ui/dialog";
 import { PageIcon } from "~/components/PageIcon";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import type { ProjectStatus } from "~/generated/prisma/client";
@@ -228,6 +229,7 @@ export default function DocumentsHub() {
   >;
   const [, setSearchParams] = useSearchParams();
   const revalidator = useRevalidator();
+  const dialog = useDialog();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [query, setQuery] = useState("");
@@ -323,7 +325,7 @@ export default function DocumentsHub() {
     }
   }
   async function createLabFolder() {
-    const title = window.prompt("Folder name");
+    const title = await dialog.prompt({ title: "New folder", label: "Folder name" });
     if (!title || !title.trim()) return;
     const b = await post("/api/lab-documents", { title: title.trim(), kind: "Folder" });
     if (b?.id) {
@@ -332,7 +334,14 @@ export default function DocumentsHub() {
     }
   }
   async function archiveDocument(id: string, title: string, isFolder: boolean) {
-    if (!window.confirm(`Archive ${isFolder ? "folder" : "document"} "${title}"?`)) return;
+    if (
+      !(await dialog.confirm({
+        title: `Archive ${isFolder ? "folder" : "document"} "${title}"?`,
+        confirmLabel: "Archive",
+        tone: "destructive",
+      }))
+    )
+      return;
     const b = await post(`/api/documents/${id}`, undefined, "DELETE");
     if (b) revalidator.revalidate();
   }

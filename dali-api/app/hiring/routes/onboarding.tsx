@@ -13,6 +13,7 @@ import { isCore, getUserRoles } from "~/lib/roles";
 import { hiringPills } from "~/hiring/components/hiringPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import { IconButton } from "~/components/ui/IconButton";
+import { useDialog } from "~/components/ui/dialog";
 import { Avatar } from "~/components/ui/Avatar";
 import { prisma } from "~/lib/db";
 import { resolvePhotoUrl } from "~/lib/photo";
@@ -397,6 +398,7 @@ function RemindHeader({
     skipped?: number;
     error?: string;
   }>();
+  const dialog = useDialog();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const busy = fetcher.state !== "idle" && fetcher.formData?.get("step") === step;
@@ -434,7 +436,7 @@ function RemindHeader({
         ? `All members have ${STEP_LABELS[step]}`
         : `Remind ${incompleteCount} incomplete on ${STEP_LABELS[step]}`;
 
-  function sendVia(via: OnboardingRemindVia) {
+  async function sendVia(via: OnboardingRemindVia) {
     setMenuOpen(false);
     if (incompleteCount === 0) return;
     const label = STEP_LABELS[step];
@@ -447,11 +449,12 @@ function RemindHeader({
             ? "email (DALI)"
             : "email (Dartmouth)";
     if (
-      !window.confirm(
-        `Send a ${channel} reminder to ${incompleteCount} member${
+      !(await dialog.confirm({
+        title: `Send a ${channel} reminder to ${incompleteCount} member${
           incompleteCount === 1 ? "" : "s"
         } still missing ${label}?`,
-      )
+        confirmLabel: "Send",
+      }))
     ) {
       return;
     }

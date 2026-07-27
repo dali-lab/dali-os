@@ -14,6 +14,7 @@ import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } 
 import { CSS } from "@dnd-kit/utilities";
 import { Modal } from "~/components/Modal";
 import { Button } from "~/components/ui/Button";
+import { useDialog } from "~/components/ui/dialog";
 import { CollaborativeEditor } from "~/components/CollaborativeEditor";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { EpicsTimeline, type TimelineEpic, type SprintDependencyEdge } from "./EpicsTimeline";
@@ -148,6 +149,7 @@ export function EpicSprintManager({
   sprintDependencies = [],
   viewToggle,
 }: Props) {
+  const dialog = useDialog();
   const revalidator = useRevalidator();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -686,11 +688,14 @@ export function EpicSprintManager({
                         setEditSprintId(null);
                       })
                     }
-                    onDelete={() => {
+                    onDelete={async () => {
                       if (
-                        !window.confirm(
-                          `Delete sprint "${sprint.name}"? Its tasks move back to the backlog.`,
-                        )
+                        !(await dialog.confirm({
+                          title: `Delete sprint "${sprint.name}"?`,
+                          description: "Its tasks move back to the backlog.",
+                          confirmLabel: "Delete",
+                          tone: "destructive",
+                        }))
                       )
                         return;
                       run(async () => {
@@ -815,6 +820,7 @@ function EpicDetail({
   onClose: () => void;
   onDeleted: () => void;
 }) {
+  const dialog = useDialog();
   // The modal opens as a read view by default; "editing" switches on the
   // edit affordances (title input, details form, story/sprint editing, live
   // description). Deep flows that arrive to edit — startInEdit, a nested
@@ -968,11 +974,15 @@ function EpicDetail({
               <button
                 type="button"
                 disabled={busy}
-                onClick={() => {
+                onClick={async () => {
                   if (
-                    !window.confirm(
-                      `Delete epic "${epic.title}"? Its sprints and tasks will be unlinked; its user stories will be deleted.`,
-                    )
+                    !(await dialog.confirm({
+                      title: `Delete epic "${epic.title}"?`,
+                      description:
+                        "Its sprints and tasks will be unlinked; its user stories will be deleted.",
+                      confirmLabel: "Delete",
+                      tone: "destructive",
+                    }))
                   )
                     return;
                   run(async () => {
@@ -1194,8 +1204,15 @@ function EpicDetail({
                         <button
                           type="button"
                           disabled={busy}
-                          onClick={() => {
-                            if (!window.confirm(`Delete story "${story.title}"?`)) return;
+                          onClick={async () => {
+                            if (
+                              !(await dialog.confirm({
+                                title: `Delete story "${story.title}"?`,
+                                confirmLabel: "Delete",
+                                tone: "destructive",
+                              }))
+                            )
+                              return;
                             run(() => api(`/api/stories/${story.id}`, "DELETE"));
                           }}
                           className="text-xs font-medium text-destructive hover:text-destructive/80 px-2 py-1 rounded-md hover:bg-destructive/10 disabled:opacity-60"
@@ -1316,11 +1333,14 @@ function EpicDetail({
                         setEditSprintId(null);
                       })
                     }
-                    onDelete={() => {
+                    onDelete={async () => {
                       if (
-                        !window.confirm(
-                          `Delete sprint "${sprint.name}"? Its tasks move back to the backlog.`,
-                        )
+                        !(await dialog.confirm({
+                          title: `Delete sprint "${sprint.name}"?`,
+                          description: "Its tasks move back to the backlog.",
+                          confirmLabel: "Delete",
+                          tone: "destructive",
+                        }))
                       )
                         return;
                       run(async () => {

@@ -22,6 +22,7 @@ import { Modal, ModalHeader } from "~/components/Modal";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { ChallengePreviewModal } from "~/hiring/components/ChallengePreviewModal";
 import { Tooltip } from "~/components/ui/IconButton";
+import { useToast } from "~/components/ui/toast";
 import { Settings, Users, Calendar, AlertTriangle, Trash2, Plus, CheckCircle, ArrowRight, Circle, ChevronRight, X, LayoutDashboard, Eye, Mail } from 'lucide-react'
 import { formatVersionLabel, buildVersionNumberMap } from "~/lib/formatVersion";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
@@ -1174,6 +1175,7 @@ function CoverageHeatmap({ coverage }: { coverage: CoverageData | null }) {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function HiringLeadCycleDetails() {
+  const toast = useToast()
   const { id: cycleId } = useParams()
   const loaderData = useLoaderData<typeof loader>() as any
   const cycle = loaderData?.cycle
@@ -2076,7 +2078,7 @@ export default function HiringLeadCycleDetails() {
             })
             if (!res.ok) {
               const body = await res.json().catch(() => ({}))
-              alert(body.error ?? 'Failed to resend invite')
+              toast.error(body.error ?? 'Failed to resend invite')
             }
           } finally {
             setResendingInviteId(null)
@@ -2261,7 +2263,7 @@ export default function HiringLeadCycleDetails() {
                                   ))
                                 } else {
                                   const body = await res.json().catch(() => ({}))
-                                  alert(body.error ?? 'Failed to update location')
+                                  toast.error(body.error ?? 'Failed to update location')
                                 }
                               }}
                               className="text-xs border border-border rounded px-1.5 py-0.5 bg-card"
@@ -2473,7 +2475,7 @@ export default function HiringLeadCycleDetails() {
                               ))
                             } else {
                               const body = await res.json().catch(() => ({}))
-                              alert(body.error ?? 'Failed to update location')
+                              toast.error(body.error ?? 'Failed to update location')
                             }
                           }}
                           className="w-full text-xs border border-border rounded px-1.5 py-1 bg-card"

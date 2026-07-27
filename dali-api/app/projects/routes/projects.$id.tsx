@@ -13,6 +13,7 @@ import {
 } from "react-router";
 import { CalendarDays, CalendarX, ChartNoAxesGantt, Check, Handshake, History, List, Pencil, Pin, X, Settings, Folder, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink } from "lucide-react";
 import { Modal, ModalHeader } from "~/components/Modal";
+import { useDialog, useConfirmSubmit } from "~/components/ui/dialog";
 import { Tooltip } from "~/components/ui/IconButton";
 import { EditableSection } from "~/components/EditableSection";
 import { PageIcon } from "~/components/PageIcon";
@@ -2748,6 +2749,7 @@ function PartnersSection({
   linkablePartnerOrgs: LoaderData["linkablePartnerOrgs"];
   canManage: boolean;
 }) {
+  const confirmSubmit = useConfirmSubmit();
   const [linking, setLinking] = useState(false);
   const tz = useUserTimeZone();
 
@@ -2848,15 +2850,13 @@ function PartnersSection({
               {canManage && !p.endedAt && (
                 <Form
                   method="post"
-                  onSubmit={(e) => {
-                    if (
-                      !window.confirm(
-                        `End the partnership with ${p.org.name}? The record and its dates are kept — this only marks the partnership as ended today.`,
-                      )
-                    ) {
-                      e.preventDefault();
-                    }
-                  }}
+                  onSubmit={confirmSubmit({
+                    title: `End the partnership with ${p.org.name}?`,
+                    description:
+                      "The record and its dates are kept — this only marks the partnership as ended today.",
+                    confirmLabel: "End partnership",
+                    tone: "destructive",
+                  })}
                 >
                   <input type="hidden" name="intent" value="partner-end" />
                   <input type="hidden" name="projectPartnerId" value={p.id} />
@@ -2874,15 +2874,13 @@ function PartnersSection({
               {canManage && (
                 <Form
                   method="post"
-                  onSubmit={(e) => {
-                    if (
-                      !window.confirm(
-                        `Unlink ${p.org.name}? This erases the partnership record entirely — use "End partnership" instead to keep the history.`,
-                      )
-                    ) {
-                      e.preventDefault();
-                    }
-                  }}
+                  onSubmit={confirmSubmit({
+                    title: `Unlink ${p.org.name}?`,
+                    description:
+                      'This erases the partnership record entirely — use "End partnership" instead to keep the history.',
+                    confirmLabel: "Unlink",
+                    tone: "destructive",
+                  })}
                 >
                   <input type="hidden" name="intent" value="partner-unlink" />
                   <input type="hidden" name="projectPartnerId" value={p.id} />
@@ -2918,6 +2916,7 @@ function DocumentsBlock({
   canEdit: boolean;
   hasActivePartner: boolean;
 }) {
+  const dialog = useDialog();
   const revalidator = useRevalidator();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -3031,7 +3030,7 @@ function DocumentsBlock({
   }
 
   async function createFolder() {
-    const title = window.prompt("Folder name");
+    const title = await dialog.prompt({ title: "New folder", label: "Folder name" });
     if (!title || !title.trim()) return;
     setBusy(true);
     setError(null);
@@ -3054,7 +3053,14 @@ function DocumentsBlock({
   }
 
   async function deleteDocument(id: string, title: string) {
-    if (!window.confirm(`Delete document "${title}"?`)) return;
+    if (
+      !(await dialog.confirm({
+        title: `Delete document "${title}"?`,
+        confirmLabel: "Delete",
+        tone: "destructive",
+      }))
+    )
+      return;
     setBusy(true);
     setError(null);
     try {
@@ -3436,6 +3442,7 @@ function FilesBlock({
   canEdit: boolean;
   hasActivePartner: boolean;
 }) {
+  const dialog = useDialog();
   const revalidator = useRevalidator();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -3512,7 +3519,15 @@ function FilesBlock({
   }
 
   async function deleteFile(id: string, title: string) {
-    if (!window.confirm(`Delete file "${title}"? All versions will be removed.`)) return;
+    if (
+      !(await dialog.confirm({
+        title: `Delete file "${title}"?`,
+        description: "All versions will be removed.",
+        confirmLabel: "Delete",
+        tone: "destructive",
+      }))
+    )
+      return;
     setBusy(true);
     setError(null);
     try {

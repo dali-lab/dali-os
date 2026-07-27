@@ -1,6 +1,7 @@
 import { Link, Form, useSearchParams } from "react-router";
 import { useState } from "react";
 import { Button, buttonClasses } from "~/components/ui/Button";
+import { useConfirmSubmit } from "~/components/ui/dialog";
 import { formatDateTime } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { cn } from "~/lib/cn";
@@ -360,6 +361,7 @@ function PostBody({
   isManager: boolean;
 }) {
   const tz = useUserTimeZone();
+  const confirmSubmit = useConfirmSubmit();
   return (
     <div>
       <p className="text-xs text-muted-foreground flex items-center gap-2">
@@ -373,9 +375,11 @@ function PostBody({
         {(post.authorId === currentUserId || isManager) && (
           <Form
             method="post"
-            onSubmit={(e) => {
-              if (!confirm("Delete this post?")) e.preventDefault();
-            }}
+            onSubmit={confirmSubmit({
+              title: "Delete this post?",
+              confirmLabel: "Delete",
+              tone: "destructive",
+            })}
           >
             <input type="hidden" name="intent" value="delete-discussion" />
             <input type="hidden" name="postId" value={post.id} />
