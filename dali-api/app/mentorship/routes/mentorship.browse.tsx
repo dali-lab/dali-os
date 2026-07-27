@@ -25,7 +25,6 @@ import {
   buildGrid,
   type MentorGridResult,
 } from "../lib/mentor-grid.server";
-import { VIBES, VIBE_META } from "../lib/vibe";
 
 export const meta: Route.MetaFunction = () => [
   { title: "Notes · DALI OS" },
@@ -36,6 +35,9 @@ export const handle = { areaPills: true };
 
 type FilterOption = { id: string; label: string };
 
+// Status filter values for the notes grid ("" = any).
+const STATUS_MISSING = "missing";
+
 type LoaderData = {
   filters: {
     mentorId: string;
@@ -43,8 +45,8 @@ type LoaderData = {
     projectId: string;
     domainId: string;
     termId: string;
-    // Vibe ("" = any). When set, only mentee rows with at least one weekly
-    // note of this vibe are shown.
+    // "" = any. "missing" keeps only mentee rows with at least one due week
+    // that still has no note.
     status: string;
   };
   options: {
@@ -53,7 +55,7 @@ type LoaderData = {
     projects: FilterOption[];
     domains: FilterOption[];
     terms: FilterOption[];
-    // Vibe filter options (Good / Ok / Bad with user-facing labels).
+    // Note-completion filter options (e.g. Missing notes).
     statuses: FilterOption[];
   };
   grid: MentorGridResult;
@@ -165,8 +167,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       label: `${d.displayName} (${d.code})`,
     })),
     terms: terms.map((t) => ({ id: t.id, label: t.code })),
-    // Vibe filter options — the note's at-a-glance status.
-    statuses: VIBES.map((v) => ({ id: v, label: VIBE_META[v].label })),
+    statuses: [{ id: STATUS_MISSING, label: "Missing notes" }],
   };
 
   // The grid is a mentor → mentees → weeks matrix, scoped to one term. Without
@@ -181,16 +182,16 @@ export async function loader({ request }: Route.LoaderArgs) {
       })
     : { weeks: [], currentWeek: null, mentors: [], termSelected: false };
 
-  // Status (vibe) filter: keep only mentee rows with at least one weekly note
-  // of the selected vibe, and drop mentors left with no matching rows.
-  if (filters.status) {
+  // Status filter: keep only mentee rows with at least one missing (due, no
+  // note) week, and drop mentors left with no matching rows.
+  if (filters.status === STATUS_MISSING) {
     grid = {
       ...grid,
       mentors: grid.mentors
         .map((m) => ({
           ...m,
           rows: m.rows.filter((r) =>
-            r.cells.some((c) => c.vibe === filters.status),
+            r.cells.some((c) => c.state === "missing"),
           ),
         }))
         .filter((m) => m.rows.length > 0),
