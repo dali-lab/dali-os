@@ -69,7 +69,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       meetingType: true,
       meetingTypeLabel: true,
       project: { select: { id: true, name: true } },
-      notePage: { select: { id: true } },
+      notePage: { select: { id: true, archivedAt: true } },
       organizer: {
         select: { firstName: true, lastName: true, daliEmail: true },
       },
@@ -109,7 +109,10 @@ export async function loader({ request }: Route.LoaderArgs) {
         startsAt: m.selectedAt?.toISOString() ?? null,
         projectName: m.project?.name ?? null,
         projectId: m.project?.id ?? null,
-        notePageId: m.notePage?.id ?? null,
+        // Only link to a live meeting note — archived pages 404 on /documents/:id.
+        // SelfCheckIn events always have /calendar/check-in/:id as a working open target.
+        notePageId:
+          m.notePage && m.notePage.archivedAt === null ? m.notePage.id : null,
         organizerName: fullName(m.organizer) || m.organizer.daliEmail || "—",
         invited,
         checkedIn,
@@ -268,6 +271,17 @@ export default function AdminAttendancePage() {
                     </div>
                   </button>
                   <div className="flex items-start gap-0.5 pr-3 pt-3.5 flex-shrink-0">
+                    {/* Prefer the dedicated check-in surface — it always exists for
+                        SelfCheckIn meetings. The meeting-note document can be
+                        archived/missing and used to 404 from this icon. */}
+                    <Link
+                      to={`/calendar/check-in/${event.id}`}
+                      className="p-1.5 rounded-md text-muted-foreground hover:text-accent-coral hover:bg-accent-coral/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-coral/40"
+                      title="Open check-in / QR"
+                      aria-label="Open check-in / QR"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                    </Link>
                     {event.notePageId && (
                       <Link
                         to={`/documents/${event.notePageId}`}
@@ -275,7 +289,7 @@ export default function AdminAttendancePage() {
                         title="Open meeting note"
                         aria-label="Open meeting note"
                       >
-                        <ExternalLink className="w-4 h-4" />
+                        <ClipboardCheck className="w-4 h-4" />
                       </Link>
                     )}
                     <DeleteEventButton
