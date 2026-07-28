@@ -61,14 +61,13 @@ export async function loader({ request }: Route.LoaderArgs) {
   const { terms, selected, termId, isAll } = await resolveTermFilter(request);
 
   const projects = await prisma.project.findMany({
-    // A term filter scopes to Active projects that run in the selected term —
-    // i.e. the term is in the project's ProjectTerm set — since a project may
-    // span several terms. Paused/Archived are noise for a term view. "All
-    // terms" drops the filter entirely and stays the full archive view.
+    // A term filter scopes to projects that run in the selected term — i.e. the
+    // term is in the project's ProjectTerm set — since a project may span
+    // several terms. Status is deliberately not part of the filter: most of the
+    // lab's history is Archived, so excluding it made past terms read as empty.
+    // The status pill on each card carries that distinction instead.
     where:
-      isAll || !termId
-        ? undefined
-        : { projectTerms: { some: { termId } }, status: "Active" },
+      isAll || !termId ? undefined : { projectTerms: { some: { termId } } },
     orderBy: [{ status: "asc" }, { name: "asc" }],
     select: {
       id: true,
@@ -402,7 +401,7 @@ export default function ProjectsListPage() {
             // Projects exist — the default current-term filter just hides them
             // all. Say so, and offer the one-click way out.
             <>
-              No Active projects run in this term.{" "}
+              No projects run in this term.{" "}
               <button
                 type="button"
                 onClick={() => {
