@@ -48,6 +48,19 @@ function fakeOctokit(): { client: Octokit; issues: IssueOps } {
   return { client, issues };
 }
 
+// Detail/relation fields loadTask selects for the issue body. Individual tests
+// override what they need to assert on; these defaults keep buildIssueBody from
+// throwing on the fields it always reads (e.g. project.name).
+const taskDetail = {
+  description: null as string | null,
+  priority: "Normal",
+  dueAt: null as Date | null,
+  sprint: null as { name: string } | null,
+  epic: null as { title: string } | null,
+  domain: null as { displayName: string } | null,
+  project: { name: "Signup Revamp" },
+};
+
 beforeEach(() => {
   mockPrisma.task = { findUnique: vi.fn(), update: vi.fn().mockResolvedValue({}) };
 });
@@ -95,9 +108,16 @@ describe("createIssueForTask", () => {
       id: "t1",
       projectId: "p1",
       title: "Wire signup form",
+      description: "Hook the form up to the API",
+      priority: "High",
+      dueAt: new Date("2026-07-30T00:00:00Z"),
       status: "Todo",
       githubRepo: null,
       githubIssueNumber: null,
+      sprint: { name: "Sprint 3" },
+      epic: { title: "Onboarding" },
+      domain: { displayName: "Dev" },
+      project: { name: "Signup Revamp" },
       assignees: [
         { user: { firstName: "Ada", lastName: "L", githubUsername: "ada" } },
       ],
@@ -113,6 +133,17 @@ describe("createIssueForTask", () => {
         assignees: ["ada"],
       }),
     );
+    // Body carries the description, a metadata line, and the dalios backlink.
+    const createdBody = (issues.create.mock.calls[0][0] as { body: string }).body;
+    expect(createdBody).toContain("Hook the form up to the API");
+    expect(createdBody).toContain("**Priority:** High");
+    expect(createdBody).toContain("**Due:** 2026-07-30");
+    expect(createdBody).toContain("**Sprint:** Sprint 3");
+    expect(createdBody).toContain("**Epic:** Onboarding");
+    expect(createdBody).toContain("**Domain:** Dev");
+    expect(createdBody).toContain("**Project:** Signup Revamp");
+    expect(createdBody).toContain("Tracked in dalios: ");
+    expect(createdBody).toContain("/projects/p1?tab=board&task=t1");
     expect(mockPrisma.task.update).toHaveBeenCalledWith({
       where: { id: "t1" },
       data: {
@@ -134,6 +165,7 @@ describe("createIssueForTask", () => {
     });
 
     mockPrisma.task.findUnique.mockResolvedValue({
+      ...taskDetail,
       id: "t2",
       projectId: "p1",
       title: "Design hero",
@@ -165,6 +197,7 @@ describe("createIssueForTask", () => {
     });
 
     mockPrisma.task.findUnique.mockResolvedValue({
+      ...taskDetail,
       id: "t4",
       projectId: "p1",
       title: "x",
@@ -189,6 +222,7 @@ describe("createIssueForTask", () => {
     issues.create.mockRejectedValue(new Error("boom"));
 
     mockPrisma.task.findUnique.mockResolvedValue({
+      ...taskDetail,
       id: "t5",
       projectId: "p1",
       title: "x",
@@ -235,9 +269,11 @@ describe("syncIssueForTask", () => {
     });
 
     mockPrisma.task.findUnique.mockResolvedValue({
+      ...taskDetail,
       id: "t1",
       projectId: "p1",
       title: "New title",
+      description: "Refreshed details",
       status: "InProgress",
       githubRepo: "o/r",
       githubIssueNumber: 9,
@@ -248,8 +284,13 @@ describe("syncIssueForTask", () => {
 
     await syncIssueForTask("t1");
 
+    // The sync rewrites title, state, and the body (with the current description).
     expect(issues.update).toHaveBeenCalledWith(
-      expect.objectContaining({ title: "New title", state: "open" }),
+      expect.objectContaining({
+        title: "New title",
+        state: "open",
+        body: expect.stringContaining("Refreshed details"),
+      }),
     );
     // Removed the old assignee and added the new one.
     expect(issues.removeAssignees).toHaveBeenCalledWith(
