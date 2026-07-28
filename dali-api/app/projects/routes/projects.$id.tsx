@@ -6,6 +6,7 @@ import {
   useActionData,
   useFetcher,
   useLoaderData,
+  useNavigate,
   useRevalidator,
   useSearchParams,
   useSubmit,
@@ -1444,6 +1445,9 @@ export default function ProjectDetail() {
             canEdit={canEditScope}
             actionError={actionData?.error}
           />
+          {canEditScope && (
+            <DeleteProjectSection projectId={project.id} projectName={project.name} />
+          )}
         </Modal>
       )}
 
@@ -2678,6 +2682,98 @@ function OverviewTab({
         </section>
       )}
     </div>
+  );
+}
+
+// Admin/Core only. Deletion is permanent and the server refuses it once a
+// project has any history, so the affordance stays tucked inside settings and
+// asks for the project name typed back before it fires.
+function DeleteProjectSection({
+  projectId,
+  projectName,
+}: {
+  projectId: string;
+  projectName: string;
+}) {
+  const dialog = useDialog();
+  const navigate = useNavigate();
+  const [busy, setBusy] = useState(false);
+  const [blocked, setBlocked] = useState<{ label: string; count: number }[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function onDelete() {
+    setBlocked(null);
+    setError(null);
+
+    const typed = await dialog.prompt({
+      title: `Delete "${projectName}"?`,
+      description:
+        "This permanently removes the project. It can't be undone. Archiving keeps the project and its history instead.",
+      label: `Type the project name to confirm`,
+      placeholder: projectName,
+      confirmLabel: "Delete project",
+      validate: (value) =>
+        value.trim() === projectName ? null : "That doesn't match the project name.",
+    });
+    if (typed === null) return;
+
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, { method: "DELETE" });
+      if (res.ok) {
+        navigate("/projects");
+        return;
+      }
+      const body = (await res.json().catch(() => null)) as
+        | { error?: string; blocking?: { label: string; count: number }[] }
+        | null;
+      if (res.status === 409 && body?.blocking?.length) {
+        setBlocked(body.blocking);
+        return;
+      }
+      setError(body?.error ?? "Could not delete this project.");
+    } catch {
+      setError("Could not delete this project.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="mt-6 border-t border-border pt-5">
+      <h3 className="text-sm font-semibold text-destructive">Danger zone</h3>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Deleting is permanent and only possible while a project has no staffing, tasks,
+        meetings, time entries or budget records. Archive it instead to retire a project
+        that has history.
+      </p>
+
+      {blocked && (
+        <div className="mt-3 rounded-md border border-border bg-muted/40 p-3">
+          <p className="text-xs font-medium text-foreground">
+            Still attached to this project:
+          </p>
+          <ul className="mt-1.5 space-y-0.5">
+            {blocked.map((b) => (
+              <li key={b.label} className="text-xs text-muted-foreground">
+                {b.count} {b.label}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
+
+      <button
+        type="button"
+        onClick={onDelete}
+        disabled={busy}
+        className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-destructive/40 px-3 py-1.5 text-sm font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50"
+      >
+        <Trash2 className="h-4 w-4" aria-hidden />
+        {busy ? "Deleting…" : "Delete project"}
+      </button>
+    </section>
   );
 }
 
