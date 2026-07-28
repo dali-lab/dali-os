@@ -421,7 +421,10 @@ export default function ProjectPublicView() {
                   ] as const
                 ).map(([field, label, value]) => (
                   <label key={field} className="flex items-center gap-2">
-                    <span className="text-xs text-accent-coral shrink-0 w-24">{label}</span>
+                    <span className="text-xs shrink-0 w-28">
+                      <span className="text-accent-coral">{label}</span>
+                      <span className="text-muted-foreground/60"> (optional)</span>
+                    </span>
                     <input
                       name={field}
                       defaultValue={value ?? ""}
@@ -458,11 +461,15 @@ export default function ProjectPublicView() {
           {writeup && collabToken ? (
             <>
               <p className="text-xs text-muted-foreground">
-                Rendered below the card on dali.website. Paste or drag images
+                Rendered below the card on dali.website. Drag or paste images
                 anywhere in the text; type <code>/</code> for headings, lists,
                 quotes, and callouts. Saves as you type.
               </p>
-              <div className="border border-border rounded-lg p-3 bg-card">
+              {/* `chromeless` matches the full-page document surface: without
+                  it the editor draws its own bordered card, which then sits
+                  inside this one as a box in a box. One frame, and the write-up
+                  reads as page content rather than as a widget. */}
+              <div className="border border-border rounded-lg bg-card px-4 py-2">
                 <CollaborativeEditor
                   documentName={`doc:${writeup.id}:body`}
                   editorId={`doc:${writeup.id}:body`}
@@ -472,6 +479,7 @@ export default function ProjectPublicView() {
                   enableImages
                   enableRichBlocks
                   enableMentions
+                  chromeless
                   placeholder="Tell the story of this project…"
                 />
               </div>
