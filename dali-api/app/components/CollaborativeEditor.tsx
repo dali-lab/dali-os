@@ -26,6 +26,7 @@ import {
   Plus,
   Undo2,
   Redo2,
+  X,
 } from "lucide-react";
 import * as Y from "yjs";
 import { HocuspocusProvider } from "@hocuspocus/provider";
@@ -980,6 +981,12 @@ function CollaborativeEditorInner({
   entry,
 }: CollaborativeEditorProps & { entry: DocEntry }) {
   const [historyOpen, setHistoryOpen] = useState(false);
+  // Last image-upload failure, surfaced in the editor. Held in a ref-backed
+  // setter so the ProseMirror plugin (created once, outside React) can report
+  // into it without the extension list depending on changing state.
+  const [imageError, setImageError] = useState<string | null>(null);
+  const imageErrorRef = useRef(setImageError);
+  imageErrorRef.current = setImageError;
   const containerRef = useRef<HTMLDivElement | null>(null);
   // Live inline-comment anchors, read by the decoration plugin's getter.
   const anchorsRef = useRef(inlineComments?.anchors ?? []);
@@ -1015,7 +1022,9 @@ function CollaborativeEditorInner({
       ToggleBlock,
       TabKeymap,
       ...(enableMentions ? [mentionEditorExtension(searchMentionableUsers)] : []),
-      ...(enableImages ? imageEditorExtensions() : []),
+      ...(enableImages
+        ? imageEditorExtensions((m) => imageErrorRef.current(m))
+        : []),
       ...(enableRichBlocks ? [...richBlockExtensions(), slashCommandExtension()] : []),
       createCollabExtension(entry.fragment, entry.provider),
       ...(inlineComments?.enabled
@@ -1487,6 +1496,19 @@ function CollaborativeEditorInner({
       chromeless={chromeless}
       className={className}
     >
+      {imageError && (
+        <div className="flex items-start justify-between gap-2 border-b border-border bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          <span>Couldn't add the image — {imageError}</span>
+          <button
+            type="button"
+            onClick={() => setImageError(null)}
+            aria-label="Dismiss"
+            className="shrink-0 opacity-70 hover:opacity-100"
+          >
+            <X size={13} />
+          </button>
+        </div>
+      )}
       {editor && !disabled ? (
         <EditorToolbar
           editor={editor}

@@ -31,7 +31,12 @@ function imageFiles(list: FileList | undefined | null): File[] {
 // Upload sequentially, inserting as each finishes. The insert happens after an
 // async gap, so it targets the *current* state (replaceSelectionWith), not a
 // position captured before the upload — collaborators may have typed meanwhile.
-async function uploadAndInsert(view: EditorView, files: File[], dropPos?: number) {
+async function uploadAndInsert(
+  view: EditorView,
+  files: File[],
+  dropPos?: number,
+  onError?: (message: string) => void,
+) {
   let pos = dropPos;
   for (const file of files) {
     try {
@@ -46,14 +51,21 @@ async function uploadAndInsert(view: EditorView, files: File[], dropPos?: number
         view.dispatch(view.state.tr.replaceSelectionWith(node));
       }
     } catch (err) {
+      // Reported to the host, not just the console: a silently-swallowed
+      // upload looks exactly like drag-and-drop not being wired up at all.
       console.error("[editor] image upload failed", err);
+      onError?.(err instanceof Error ? err.message : "Image upload failed");
     }
   }
 }
 
 const ImagePasteDrop = Extension.create({
   name: "imagePasteDrop",
+  addOptions() {
+    return { onError: undefined as ((message: string) => void) | undefined };
+  },
   addProseMirrorPlugins() {
+    const onError = this.options.onError;
     return [
       new Plugin({
         props: {
@@ -61,7 +73,7 @@ const ImagePasteDrop = Extension.create({
             const files = imageFiles(event.clipboardData?.files);
             if (files.length === 0) return false;
             event.preventDefault();
-            void uploadAndInsert(view, files);
+            void uploadAndInsert(view, files, undefined, onError);
             return true;
           },
           handleDrop: (view, event) => {
@@ -69,7 +81,7 @@ const ImagePasteDrop = Extension.create({
             if (files.length === 0) return false;
             event.preventDefault();
             const pos = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos;
-            void uploadAndInsert(view, files, pos);
+            void uploadAndInsert(view, files, pos, onError);
             return true;
           },
         },
@@ -78,6 +90,9 @@ const ImagePasteDrop = Extension.create({
   },
 });
 
-export function imageEditorExtensions() {
-  return [Image.configure({ allowBase64: false }), ImagePasteDrop];
+export function imageEditorExtensions(onError?: (message: string) => void) {
+  return [
+    Image.configure({ allowBase64: false }),
+    ImagePasteDrop.configure({ onError }),
+  ];
 }

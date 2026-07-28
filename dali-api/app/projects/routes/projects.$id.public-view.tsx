@@ -200,12 +200,16 @@ const FIELD =
 // remove × per chip. Values post as repeated `name` fields.
 function ChipList({
   name,
+  label,
+  hint,
   values,
   canEdit,
   placeholder,
   className,
 }: {
   name: string;
+  label: string;
+  hint: string;
   values: string[];
   canEdit: boolean;
   placeholder: string;
@@ -219,7 +223,16 @@ function ChipList({
   const [nextKey, setNextKey] = useState(values.length);
 
   return (
-    <span className="inline-flex flex-wrap items-center gap-1.5">
+    <div className="flex flex-wrap items-center gap-1.5">
+      {/* Named, because four rows of bare + buttons say nothing about what
+          belongs in each. The hint is the vocabulary the public site filters
+          on, so it doubles as a prompt for consistent values. */}
+      <span className="w-16 shrink-0 text-muted-foreground" title={hint}>
+        {label}
+      </span>
+      {rows.length === 0 && (
+        <span className="text-muted-foreground/50 italic">{hint}</span>
+      )}
       {rows.map((row, i) => (
         <span key={row.key} className={`inline-flex items-center gap-0.5 ${className}`}>
           <input
@@ -252,13 +265,14 @@ function ChipList({
             setRows([...rows, { key: nextKey, value: "" }]);
             setNextKey(nextKey + 1);
           }}
-          aria-label={`Add ${placeholder}`}
+          aria-label={`Add ${label.toLowerCase()}`}
           className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-xs rounded border border-dashed border-border text-muted-foreground hover:text-foreground hover:border-solid"
         >
           <Plus className="w-3 h-3" />
+          {label}
         </button>
       )}
-    </span>
+    </div>
   );
 }
 
@@ -279,7 +293,7 @@ export default function ProjectPublicView() {
   const saving = navigation.state !== "idle";
 
   return (
-    <div className="flex flex-col gap-4 p-4 sm:p-6 max-w-3xl mx-auto w-full">
+    <div className="flex flex-col gap-4 p-4 sm:p-6 w-full">
       <header className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="font-heading text-xl font-bold text-foreground inline-flex items-center gap-2">
@@ -314,188 +328,213 @@ export default function ProjectPublicView() {
         )}
       </header>
 
-      {/* The card. Every field is the real one — what you see is the page. */}
-      <Form method="post" className="flex flex-col">
-        <input type="hidden" name="intent" value="showcase-card" />
+      {/* Card beside write-up on wide screens, stacked below. The card holds
+          its natural width rather than stretching — a hero image pulled across
+          a full desktop viewport stops looking like the card it's previewing —
+          and the extra room goes to the write-up, which is the part that
+          actually benefits from it. Sticky so it stays in view while writing. */}
+      <div className="flex flex-col xl:flex-row gap-6 items-start">
+        <Form
+          method="post"
+          className="flex flex-col w-full xl:w-[440px] xl:shrink-0 xl:sticky xl:top-6 xl:max-h-[calc(100vh-3rem)] xl:overflow-y-auto"
+        >
+          <input type="hidden" name="intent" value="showcase-card" />
 
-        <div className="border border-border rounded-lg overflow-hidden bg-card">
-          <ProjectImageBanner
-            projectId={project.id}
-            projectName={s?.displayName || project.name}
-            initialPreviewUrl={heroPreviewUrl}
-            canEdit={canEdit}
-            intent="showcase-image"
-            fieldName="heroImageUrl"
-            removeTitle="Remove the public hero image?"
-            removeDescription="The project's internal banner will be used instead."
-          />
-
-          <div className="p-5 flex flex-col gap-3">
-            <input
-              name="displayName"
-              defaultValue={s?.displayName ?? ""}
-              placeholder={project.name}
-              disabled={!canEdit}
-              aria-label="Public project name"
-              className={`${FIELD} font-semibold text-xl text-foreground w-full`}
-            />
-            <input
-              name="tagline"
-              defaultValue={s?.tagline ?? ""}
-              placeholder="One line on what this project does"
-              disabled={!canEdit}
-              aria-label="Statement"
-              className={`${FIELD} text-muted-foreground w-full`}
+          <div className="border border-border rounded-lg overflow-hidden bg-card">
+            <ProjectImageBanner
+              projectId={project.id}
+              projectName={s?.displayName || project.name}
+              initialPreviewUrl={heroPreviewUrl}
+              canEdit={canEdit}
+              intent="showcase-image"
+              fieldName="heroImageUrl"
+              removeTitle="Remove the public hero image?"
+              removeDescription="The project's internal banner will be used instead."
             />
 
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Calendar className="w-4 h-4 shrink-0" />
+            <div className="p-5 flex flex-col gap-3">
               <input
-                name="year"
-                type="number"
-                defaultValue={s?.year ?? ""}
-                placeholder="2026"
+                name="displayName"
+                defaultValue={s?.displayName ?? ""}
+                placeholder={project.name}
                 disabled={!canEdit}
-                aria-label="Year"
-                className={`${FIELD} w-20`}
+                aria-label="Public project name"
+                className={`${FIELD} font-semibold text-xl text-foreground w-full`}
               />
-            </div>
+              <input
+                name="tagline"
+                defaultValue={s?.tagline ?? ""}
+                placeholder="One line on what this project does"
+                disabled={!canEdit}
+                aria-label="Statement"
+                className={`${FIELD} text-muted-foreground w-full`}
+              />
 
-            <div className="flex flex-col gap-2 text-xs">
-              <ChipList
-                name="products"
-                values={s?.products ?? []}
-                canEdit={canEdit}
-                placeholder="Product"
-                className="px-2 py-0.5 rounded border border-border text-foreground"
-              />
-              <ChipList
-                name="sectors"
-                values={s?.sectors ?? []}
-                canEdit={canEdit}
-                placeholder="Sector"
-                className="px-2 py-0.5 rounded border border-border text-foreground"
-              />
-              <ChipList
-                name="techStack"
-                values={s?.techStack ?? []}
-                canEdit={canEdit}
-                placeholder="Tech"
-                className="px-2 py-0.5 rounded border border-border text-foreground"
-              />
-              <ChipList
-                name="partners"
-                values={s?.partners ?? []}
-                canEdit={canEdit}
-                placeholder="Partner"
-                className="px-2 py-0.5 rounded border border-border text-muted-foreground"
-              />
-            </div>
-
-            {teamMembers.length > 0 && (
-              <div className="border-t border-border pt-3 flex items-center gap-2 text-sm text-muted-foreground">
-                <Users className="w-4 h-4" />
-                <span className="line-clamp-1">
-                  {teamMembers.slice(0, 2).join(", ")}
-                  {teamMembers.length > 2 && ` +${teamMembers.length - 2} more`}
-                </span>
-                <span className="text-xs opacity-60">(from the project roster)</span>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Calendar className="w-4 h-4 shrink-0" />
+                <input
+                  name="year"
+                  type="number"
+                  defaultValue={s?.year ?? ""}
+                  placeholder="2026"
+                  disabled={!canEdit}
+                  aria-label="Year"
+                  className={`${FIELD} w-20`}
+                />
               </div>
-            )}
 
-            <div className="border-t border-border pt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
-              {(
-                [
-                  ["websiteUrl", "Website", s?.websiteUrl],
-                  ["appUrl", "App", s?.appUrl],
-                  ["blogUrl", "Student blog", s?.blogUrl],
-                  ["pressUrl", "Press", s?.pressUrl],
-                ] as const
-              ).map(([field, label, value]) => (
-                <label key={field} className="flex items-center gap-2">
-                  <span className="text-xs text-accent-coral shrink-0 w-24">{label}</span>
-                  <input
-                    name={field}
-                    defaultValue={value ?? ""}
-                    placeholder="https://…"
-                    disabled={!canEdit}
-                    className={`${FIELD} flex-1 min-w-0 text-xs`}
-                  />
-                </label>
-              ))}
+              <div className="flex flex-col gap-2 text-xs">
+                <ChipList
+                  name="products"
+                  label="Product"
+                  hint="Mobile, Web, XR, Animation…"
+                  values={s?.products ?? []}
+                  canEdit={canEdit}
+                  placeholder="Product"
+                  className="px-2 py-0.5 rounded border border-border text-foreground"
+                />
+                <ChipList
+                  name="sectors"
+                  label="Sector"
+                  hint="Health, Education, Sustainability…"
+                  values={s?.sectors ?? []}
+                  canEdit={canEdit}
+                  placeholder="Sector"
+                  className="px-2 py-0.5 rounded border border-border text-foreground"
+                />
+                <ChipList
+                  name="techStack"
+                  label="Tech"
+                  hint="React Native, Firebase, Unity3D…"
+                  values={s?.techStack ?? []}
+                  canEdit={canEdit}
+                  placeholder="Tech"
+                  className="px-2 py-0.5 rounded border border-border text-foreground"
+                />
+                <ChipList
+                  name="partners"
+                  label="Partner"
+                  hint="Startup, Student Founder, Nonprofit…"
+                  values={s?.partners ?? []}
+                  canEdit={canEdit}
+                  placeholder="Partner"
+                  className="px-2 py-0.5 rounded border border-border text-muted-foreground"
+                />
+              </div>
+
+              {teamMembers.length > 0 && (
+                <div className="border-t border-border pt-3 flex items-center gap-2 text-sm text-muted-foreground">
+                  <Users className="w-4 h-4" />
+                  <span className="line-clamp-1">
+                    {teamMembers.slice(0, 2).join(", ")}
+                    {teamMembers.length > 2 && ` +${teamMembers.length - 2} more`}
+                  </span>
+                  <span className="text-xs opacity-60">(from the project roster)</span>
+                </div>
+              )}
+
+              <div className="border-t border-border pt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                {(
+                  [
+                    ["websiteUrl", "Website", s?.websiteUrl],
+                    ["appUrl", "App", s?.appUrl],
+                    ["blogUrl", "Student blog", s?.blogUrl],
+                    ["pressUrl", "Press", s?.pressUrl],
+                  ] as const
+                ).map(([field, label, value]) => (
+                  <label key={field} className="flex items-center gap-2">
+                    <span className="text-xs shrink-0 w-28">
+                      <span className="text-accent-coral">{label}</span>
+                      <span className="text-muted-foreground/60"> (optional)</span>
+                    </span>
+                    <input
+                      name={field}
+                      defaultValue={value ?? ""}
+                      placeholder="https://…"
+                      disabled={!canEdit}
+                      className={`${FIELD} flex-1 min-w-0 text-xs`}
+                    />
+                  </label>
+                ))}
+              </div>
             </div>
           </div>
-        </div>
 
-        {canEdit && (
-          <div className="flex items-center gap-2 pt-3">
-            <button
-              type="submit"
-              disabled={saving}
-              className="px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors disabled:opacity-60"
-            >
-              {saving ? "Saving…" : "Save card"}
-            </button>
-            <span className="text-xs text-muted-foreground">
-              The hero image saves on upload; everything else saves here.
-            </span>
-          </div>
-        )}
-      </Form>
-
-      {/* Write-up. The same collab editor the Documents tab uses, so images
-          paste and drop in anywhere and the order is whatever you type. */}
-      <section className="flex flex-col gap-2 pt-2">
-        <h2 className="font-heading font-semibold text-foreground">Write-up</h2>
-        {writeup && collabToken ? (
-          <>
-            <p className="text-xs text-muted-foreground">
-              Rendered below the card on dali.website. Paste or drag images
-              anywhere in the text; type <code>/</code> for headings, lists,
-              quotes, and callouts. Saves as you type.
-            </p>
-            <div className="border border-border rounded-lg p-3 bg-card">
-              <CollaborativeEditor
-                documentName={`doc:${writeup.id}:body`}
-                editorId={`doc:${writeup.id}:body`}
-                token={collabToken}
-                userName={userName}
-                disabled={!canEdit}
-                enableImages
-                enableRichBlocks
-                enableMentions
-                placeholder="Tell the story of this project…"
-              />
+          {canEdit && (
+            <div className="flex items-center gap-2 pt-3">
+              <button
+                type="submit"
+                disabled={saving}
+                className="px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors disabled:opacity-60"
+              >
+                {saving ? "Saving…" : "Save card"}
+              </button>
+              <span className="text-xs text-muted-foreground">
+                The hero image saves on upload; everything else saves here.
+              </span>
             </div>
-          </>
-        ) : writeup ? (
-          // Session cookie missing (an expired tab): the editor can't connect,
-          // so say so rather than mounting one that silently won't sync.
-          <p className="text-sm text-muted-foreground border border-border rounded-lg p-4">
-            Reload the page to edit the write-up — your session needs refreshing.
-          </p>
-        ) : (
-          <div className="border border-dashed border-border rounded-lg p-6 text-center flex flex-col items-center gap-3">
-            <p className="text-sm text-muted-foreground max-w-md">
-              No write-up yet. The card above is all a visitor sees. Start one
-              to add the story, screenshots, and results — it becomes a normal
-              project document, editable from the Documents tab too.
+          )}
+        </Form>
+
+        {/* Write-up. The same collab editor the Documents tab uses, so images
+            paste and drop in anywhere and the order is whatever you type. */}
+        <section className="flex flex-col gap-2 flex-1 min-w-0 w-full">
+          <h2 className="font-heading font-semibold text-foreground">Write-up</h2>
+          {writeup && collabToken ? (
+            <>
+              <p className="text-xs text-muted-foreground">
+                Rendered below the card on dali.website. Drag or paste images
+                anywhere in the text; type <code>/</code> for headings, lists,
+                quotes, and callouts. Saves as you type.
+              </p>
+              {/* `chromeless` matches the full-page document surface: without
+                  it the editor draws its own bordered card, which then sits
+                  inside this one as a box in a box. One frame, and the write-up
+                  reads as page content rather than as a widget. */}
+              <div className="border border-border rounded-lg bg-card px-4 py-2">
+                <CollaborativeEditor
+                  documentName={`doc:${writeup.id}:body`}
+                  editorId={`doc:${writeup.id}:body`}
+                  token={collabToken}
+                  userName={userName}
+                  disabled={!canEdit}
+                  enableImages
+                  enableRichBlocks
+                  enableMentions
+                  chromeless
+                  placeholder="Tell the story of this project…"
+                />
+              </div>
+            </>
+          ) : writeup ? (
+            // Session cookie missing (an expired tab): the editor can't connect,
+            // so say so rather than mounting one that silently won't sync.
+            <p className="text-sm text-muted-foreground border border-border rounded-lg p-4">
+              Reload the page to edit the write-up — your session needs refreshing.
             </p>
-            {canEdit && (
-              <Form method="post">
-                <input type="hidden" name="intent" value="showcase-writeup" />
-                <button
-                  type="submit"
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
-                >
-                  <Plus className="w-4 h-4" />
-                  Start the write-up
-                </button>
-              </Form>
-            )}
-          </div>
-        )}
-      </section>
+          ) : (
+            <div className="border border-dashed border-border rounded-lg p-6 text-center flex flex-col items-center gap-3">
+              <p className="text-sm text-muted-foreground max-w-md">
+                No write-up yet — the card is all a visitor sees. Start one to add
+                the story, screenshots, and results. It becomes a normal project
+                document, editable from the Documents tab too.
+              </p>
+              {canEdit && (
+                <Form method="post">
+                  <input type="hidden" name="intent" value="showcase-writeup" />
+                  <button
+                    type="submit"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Start the write-up
+                  </button>
+                </Form>
+              )}
+            </div>
+          )}
+        </section>
+      </div>
     </div>
   );
 }
