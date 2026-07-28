@@ -345,6 +345,7 @@ export default [
   ),
 
   // Project task board
+  route("api/projects/:id", "projects/routes/api.projects.$id.ts"),
   route("api/projects/:id/tasks", "projects/routes/api.projects.$id.tasks.ts"),
   route(
     "api/projects/:id/tasks/archive",
