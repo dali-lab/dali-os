@@ -1,4 +1,5 @@
 import type { PMNode } from "~/collab/export-html";
+import { publicMediaUrl } from "./public-media";
 
 // ProseMirror JSON → the block shape dali.website's NotionRenderer already
 // draws. The public site was built against Notion's block format; rather than
@@ -90,6 +91,17 @@ function plain(content: string): PublicRichText {
   };
 }
 
+// Editor images are stored as `/api/upload/raw?key=<s3 key>` — a stable URL,
+// but a session-authed one (see app/components/editor/image.ts). An anonymous
+// visitor on dali.website can't fetch it, so rewrite to the public media
+// proxy, which is the same S3 object reached through the showcase secret.
+// Anything else (an external URL someone pasted) passes through as-is.
+export function publicImageSrc(src: string): string | null {
+  const match = /^\/api\/upload\/raw\?key=([^&]+)/.exec(src);
+  if (match) return publicMediaUrl(decodeURIComponent(match[1]));
+  return /^https?:\/\//i.test(src) ? src : null;
+}
+
 // Block ids only have to be stable within one response — the renderer uses
 // them as React keys. A positional counter is enough and keeps the mapper pure
 // (no crypto/random, so snapshots in tests stay deterministic).
@@ -114,10 +126,32 @@ function convert(node: PMNode, id: () => string): PublicBlock[] {
       const type = `heading_${level}`;
       return [{ id: id(), type, [type]: { rich_text: inline(node.content) } }];
     }
+    case "image": {
+      const src = typeof node.attrs?.src === "string" ? node.attrs.src : "";
+      const url = src ? publicImageSrc(src) : null;
+      // A src we can't make publicly reachable is dropped rather than emitted
+      // as a broken <img> on the marketing site.
+      if (!url) return [];
+      const alt = typeof node.attrs?.alt === "string" ? node.attrs.alt : "";
+      return [
+        {
+          id: id(),
+          type: "image",
+          image: {
+            external: { url },
+            caption: alt ? [plain(alt)] : [],
+          },
+        },
+      ];
+    }
     case "bulletList":
-    case "orderedList": {
+    case "orderedList":
+    // Task lists have no counterpart in the renderer's vocabulary. Rendering
+    // them as bullets keeps the writing intact — a public write-up is prose,
+    // and an unticked checkbox carries no meaning to a visitor anyway.
+    case "taskList": {
       const type =
-        node.type === "bulletList" ? "bulleted_list_item" : "numbered_list_item";
+        node.type === "orderedList" ? "numbered_list_item" : "bulleted_list_item";
       // Notion has no list container — each item is a top-level block. Nested
       // lists inside an item are flattened up as siblings; the site renders a
       // flat list either way, so this loses indentation but no content.
@@ -132,6 +166,32 @@ function convert(node: PMNode, id: () => string): PublicBlock[] {
     }
     case "blockquote":
       return [{ id: id(), type: "quote", quote: { rich_text: inline(node.content) } }];
+    case "callout":
+      return [
+        {
+          id: id(),
+          type: "callout",
+          callout: {
+            rich_text: inline(node.content),
+            icon: { emoji: typeof node.attrs?.emoji === "string" ? node.attrs.emoji : "💡" },
+          },
+        },
+      ];
+    // A toggle's summary is its visible label and its body is what unfolds.
+    // The renderer's `toggle` block only carries the label, so the body is
+    // emitted as following blocks — collapsed detail becomes plain prose
+    // rather than disappearing.
+    case "toggleBlock": {
+      const [summary, ...body] = node.content ?? [];
+      return [
+        {
+          id: id(),
+          type: "toggle",
+          toggle: { rich_text: inline(summary ? [summary] : []) },
+        },
+        ...body.flatMap((child) => convert(child, id)),
+      ];
+    }
     case "codeBlock":
       return [
         {

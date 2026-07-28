@@ -150,3 +150,75 @@ export async function ensureMeetingNotesFolder(
     throw new Error(`Failed to ensure meeting notes folder for project ${projectId}`);
   }
 }
+
+// The page behind a project's public write-up — the body dali.website renders
+// under the showcase card. Created on demand from the Public view (not on
+// mere page load: a project nobody intends to showcase shouldn't accrue an
+// empty document), and marked publicVisible so the public API picks it up
+// without a second step.
+//
+// It's an ordinary project page, so it also appears in the Documents block
+// and can be edited from there. The systemKey both makes this ensure-create
+// idempotent and stops api.documents.$id.ts deleting it out from under the
+// public site.
+export async function ensurePublicWriteupPage(
+  projectId: string,
+  createdById: string,
+): Promise<{ id: string }> {
+  // A team may already have nominated some other page via the Documents
+  // globe toggle. Respect that rather than creating a second public page —
+  // the public API takes the lowest-position publicVisible page, so creating
+  // one here could silently outrank the page they chose.
+  const existingPublic = await prisma.page.findFirst({
+    where: {
+      workspaceType: "Project",
+      workspaceId: projectId,
+      archivedAt: null,
+      publicVisible: true,
+    },
+    orderBy: { position: "asc" },
+    select: { id: true },
+  });
+  if (existingPublic) return existingPublic;
+
+  const systemKey = `project:${projectId}:public-writeup`;
+  // Un-archive rather than duplicate: the systemKey is unique, so a
+  // previously archived write-up would otherwise block creation forever.
+  const existing = await prisma.page.findUnique({
+    where: { systemKey },
+    select: { id: true },
+  });
+  if (existing) {
+    await prisma.page.update({
+      where: { id: existing.id },
+      data: { publicVisible: true, archivedAt: null },
+    });
+    return existing;
+  }
+
+  try {
+    const last = await prisma.page.findFirst({
+      where: { workspaceType: "Project", workspaceId: projectId, parentPageId: null },
+      orderBy: { position: "desc" },
+      select: { position: true },
+    });
+    return await prisma.page.create({
+      data: {
+        workspaceType: "Project",
+        workspaceId: projectId,
+        title: "Public write-up",
+        kind: "FreeForm",
+        position: last ? last.position + 1 : 0,
+        createdById,
+        systemKey,
+        publicVisible: true,
+      },
+      select: { id: true },
+    });
+  } catch {
+    // Unique-constraint race: another request created it concurrently.
+    const retry = await prisma.page.findUnique({ where: { systemKey }, select: { id: true } });
+    if (retry) return retry;
+    throw new Error(`Failed to ensure public write-up page for project ${projectId}`);
+  }
+}

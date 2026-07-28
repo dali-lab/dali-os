@@ -40,9 +40,12 @@ export type PublicProjectViewData = {
   // Current roster, shown on the public card as the credit line. Live, not
   // curated — the public site names who built it.
   teamMembers: string[];
-  // Project pages the team could nominate as the public write-up, with the
-  // current pick flagged. Empty when the project has no unarchived pages.
-  pages: { id: string; title: string; iconEmoji: string | null; publicVisible: boolean }[];
+  // The page whose body is the public write-up, if one has been nominated —
+  // either created from this view or flagged from the Documents block. Null
+  // means the write-up hasn't been started; the view offers to create it
+  // rather than accruing an empty document on every project someone merely
+  // looks at.
+  writeup: { id: string; title: string } | null;
 };
 
 export async function loadPublicProjectView(
@@ -59,15 +62,23 @@ export async function loadPublicProjectView(
   });
   if (!project) return null;
 
-  const [assignments, pages] = await Promise.all([
+  const [assignments, writeup] = await Promise.all([
     prisma.projectAssignment.findMany({
       where: { projectId },
       select: { user: { select: { id: true, firstName: true, lastName: true } } },
     }),
-    prisma.page.findMany({
-      where: { workspaceType: "Project", workspaceId: projectId, archivedAt: null },
+    // Lowest position wins when several pages are flagged — the same tiebreak
+    // the public API uses, so this view can't preview a different page from
+    // the one that actually ships.
+    prisma.page.findFirst({
+      where: {
+        workspaceType: "Project",
+        workspaceId: projectId,
+        archivedAt: null,
+        publicVisible: true,
+      },
       orderBy: { position: "asc" },
-      select: { id: true, title: true, iconEmoji: true, publicVisible: true },
+      select: { id: true, title: true },
     }),
   ]);
 
@@ -104,6 +115,6 @@ export async function loadPublicProjectView(
       : null,
     heroPreviewUrl: await resolvePhotoUrl(s?.heroImageUrl ?? project.imageUrl),
     teamMembers,
-    pages,
+    writeup,
   };
 }
