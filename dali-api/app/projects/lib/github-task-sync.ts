@@ -26,6 +26,31 @@ function appBaseUrl(): string {
   return process.env.API_BASE_URL ?? "https://os.dali.dartmouth.edu";
 }
 
+// Builds the GitHub issue body: the task description (when set), a compact
+// metadata line, and the dalios backlink. Pure function of the loaded task —
+// syncIssueForTask rewrites the body on edits, so anything included here must
+// come from loadTask's select.
+function buildIssueBody(task: TaskWithAssignees): string {
+  const sections: string[] = [];
+
+  if (task.description) sections.push(task.description);
+
+  const meta: string[] = [];
+  if (task.priority && task.priority !== "Normal") meta.push(`**Priority:** ${task.priority}`);
+  if (task.dueAt) meta.push(`**Due:** ${task.dueAt.toISOString().slice(0, 10)}`);
+  if (task.sprint) meta.push(`**Sprint:** ${task.sprint.name}`);
+  if (task.epic) meta.push(`**Epic:** ${task.epic.title}`);
+  if (task.domain) meta.push(`**Domain:** ${task.domain.displayName}`);
+  meta.push(`**Project:** ${task.project.name}`);
+  sections.push(meta.join(" · "));
+
+  sections.push(
+    `Tracked in dalios: ${appBaseUrl()}/projects/${task.projectId}?tab=board&task=${task.id}`,
+  );
+
+  return sections.join("\n\n");
+}
+
 // Normalize a Project.repoUrls entry into "owner/repo". Strips scheme/host,
 // trailing slash, and a `.git` suffix. Returns null if the result isn't a
 // clean "owner/repo".
@@ -98,7 +123,7 @@ export async function createIssueForTask(
     const gh = githubAppClient();
 
     const { assignees, missing } = resolveAssignees(task.assignees);
-    const body = `Tracked in dalios: ${appBaseUrl()}/projects/${task.projectId}?tab=board&task=${task.id}`;
+    const body = buildIssueBody(task);
 
     const res = await gh.rest.issues.create({
       owner,
@@ -162,6 +187,7 @@ export async function syncIssueForTask(taskId: string): Promise<void> {
       repo: name,
       issue_number: number,
       title: task.title,
+      body: buildIssueBody(task),
       state: closing ? "closed" : "open",
       // state_reason is only meaningful when closing; omit for reopens.
       ...(closing
@@ -250,9 +276,16 @@ type TaskWithAssignees = {
   id: string;
   projectId: string;
   title: string;
+  description: string | null;
+  priority: string;
+  dueAt: Date | null;
   status: TaskStatus;
   githubRepo: string | null;
   githubIssueNumber: number | null;
+  sprint: { name: string } | null;
+  epic: { title: string } | null;
+  domain: { displayName: string } | null;
+  project: { name: string };
   assignees: { user: { firstName: string; lastName: string; githubUsername: string | null } }[];
 };
 
@@ -263,9 +296,16 @@ async function loadTask(taskId: string): Promise<TaskWithAssignees | null> {
       id: true,
       projectId: true,
       title: true,
+      description: true,
+      priority: true,
+      dueAt: true,
       status: true,
       githubRepo: true,
       githubIssueNumber: true,
+      sprint: { select: { name: true } },
+      epic: { select: { title: true } },
+      domain: { select: { displayName: true } },
+      project: { select: { name: true } },
       assignees: {
         select: {
           user: { select: { firstName: true, lastName: true, githubUsername: true } },

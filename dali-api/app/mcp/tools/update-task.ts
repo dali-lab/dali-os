@@ -165,7 +165,17 @@ export async function runUpdateTask(callerId: string, input: Input) {
     }
   });
 
-  const syncableChanged = "title" in data || wantsAssignees;
+  // Re-sync when the title, assignees, or any body-rendered field changes
+  // (see buildIssueBody in github-task-sync). This tool doesn't edit the
+  // description, so that field isn't checked here.
+  const syncableChanged =
+    "title" in data ||
+    wantsAssignees ||
+    "priority" in data ||
+    "dueAt" in data ||
+    "sprintId" in data ||
+    "epicId" in data ||
+    "domainId" in data;
   if (task.githubIssueNumber !== null && syncableChanged) {
     void syncIssueForTask(input.taskId).catch((err) =>
       console.error(`mcp update_task: github sync failed for ${input.taskId}`, err),

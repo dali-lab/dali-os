@@ -255,9 +255,18 @@ export async function action({ request, params }: Route.ActionArgs) {
     );
   }
 
-  // Mirror title/assignee changes to GitHub when this task is linked. Other
-  // edited fields (priority, dueAt, domainId) don't have a GH equivalent.
-  const syncableChanged = "title" in body || wantsAssignees;
+  // Mirror to GitHub when this linked task changes a field the issue reflects:
+  // the title, its assignees, or any field rendered in the issue body
+  // (description + the metadata line — see buildIssueBody in github-task-sync).
+  const syncableChanged =
+    "title" in body ||
+    wantsAssignees ||
+    "description" in body ||
+    "priority" in body ||
+    "dueAt" in body ||
+    "domainId" in body ||
+    "sprintId" in body ||
+    "epicId" in body;
   if (task.githubIssueNumber !== null && syncableChanged) {
     void syncIssueForTask(params.id).catch((err) =>
       console.error(`task ${params.id}: github sync failed`, err),

@@ -135,11 +135,10 @@ describe("ModalHeader", () => {
 describe("ModalFooter", () => {
   it("renders a Cancel button and the primary child", () => {
     const html = renderToStaticMarkup(
-      createElement(
-        ModalFooter,
-        { onCancel: () => {} },
-        createElement("button", { key: "p" }, "Save"),
-      ),
+      createElement(ModalFooter, {
+        onCancel: () => {},
+        children: createElement("button", { key: "p" }, "Save"),
+      }),
     );
     expect(html).toContain("Cancel");
     expect(html).toContain("Save");
@@ -147,11 +146,11 @@ describe("ModalFooter", () => {
 
   it("uses a custom cancel label", () => {
     const html = renderToStaticMarkup(
-      createElement(
-        ModalFooter,
-        { onCancel: () => {}, cancelLabel: "Go back" },
-        createElement("button", { key: "p" }, "Confirm"),
-      ),
+      createElement(ModalFooter, {
+        onCancel: () => {},
+        cancelLabel: "Go back",
+        children: createElement("button", { key: "p" }, "Confirm"),
+      }),
     );
     expect(html).toContain("Go back");
     expect(html).not.toContain(">Cancel<");

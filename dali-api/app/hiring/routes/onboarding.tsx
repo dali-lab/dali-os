@@ -402,10 +402,10 @@ function RemindHeader({
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const busy = fetcher.state !== "idle" && fetcher.formData?.get("step") === step;
-  const justSent =
-    fetcher.state === "idle" &&
-    fetcher.data?.ok &&
-    fetcher.formData?.get("step") === step;
+  // This fetcher is scoped to this step's RemindHeader, so idle + ok already
+  // means this step's send just succeeded. (formData is cleared once idle, so
+  // it can't be read here.)
+  const justSent = fetcher.state === "idle" && !!fetcher.data?.ok;
 
   useEffect(() => {
     if (!menuOpen) return;
