@@ -103,6 +103,13 @@ model User {
   // username is silently skipped (and reported) by that automation.
   githubUsername String?
   personalSite   String?
+  // Opt-in to the public dali.website team directory. The public API serves
+  // only members with this set, and only ever a hard-coded narrow field set
+  // (see app/public-api/lib/public-team.server.ts) — never the onboarding
+  // fields below, the identity columns above, or anything else on this model.
+  // Backfilled true for everyone with a project/Core assignment, preserving
+  // the behavior of the Notion-backed team page it replaces.
+  publicProfile  Boolean   @default(false)
   // Short public handle for @-mentions (e.g. "spark" for Sophie Park). Seeded
   // from first-initial + last-name (lowercased), auto-suffixed on collision,
   // and editable in profile. Nullable + unique like the other identity handles;
@@ -241,6 +248,9 @@ model User {
 
   // ─── Payroll: Reconcile back-relation ─────────────────────────────────────
   timesheetImports TimesheetImport[]
+
+  // ─── Public showcase ──────────────────────────────────────────────────────
+  projectShowcasesUpdated ProjectShowcase[] @relation("ProjectShowcaseUpdatedBy")
 }
 
 // A DALI lab member. userId is optional because a member may be known (e.g. via daliEmail)
@@ -2332,8 +2342,83 @@ model Project {
   budgetNotes       BudgetNote[]
   scheduledMeetings ScheduledMeeting[]
   timeEntries       TimeEntry[]
+  // The curated public face of this project, if it has one. Absent until
+  // someone opens the project's Public view.
+  showcase          ProjectShowcase?
 
   createdAt DateTime @default(now())
+}
+
+// The public, curated view of a project — what dali.website shows to the
+// world. Stands to the marketing site as the partner view stands to the
+// partner portal: a deliberately narrow projection, not a filter over the
+// internal record. Nothing here is derived from Project; every field is
+// hand-written on the project's Public view tab, because the public framing
+// of a project ("Assessing personal risk during COVID") is rarely the
+// internal one ("CoRisk").
+//
+// Seeded from the frozen Notion "Projects Showcase" database
+// (scripts/import-project-showcase.ts). Only rows with status = Published are
+// ever served publicly.
+model ProjectShowcase {
+  id        String  @id @default(cuid())
+  projectId String  @unique
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  // The publish gate — Published is the only value the public API serves, so
+  // no separate boolean. The rest of the vocabulary is carried over from
+  // Notion so the import is lossless and the pipeline stays visible to Core.
+  status ProjectShowcaseStatus @default(NotStarted)
+
+  // One-line public blurb ("Assessing personal risk during COVID"). This, not
+  // the name, is what the showcase card leads with.
+  tagline String?
+  // Public name, when it differs from the internal one (internally "AIPA",
+  // publicly "AI Patient Actor"). Null = fall back to Project.name.
+  displayName String?
+  // Calendar year the project ran, e.g. 2020. Deliberately not a term code:
+  // the public site groups by year, and the archive reaches back to 2015,
+  // well before the Term table starts.
+  year Int?
+
+  // Free-text facet lists, rendered as tag pills and used by the site's
+  // filters. Not FKs to Domain/Term — the public taxonomy ("Mobile", "XR",
+  // "Student Founder") is its own vocabulary, curated for the audience.
+  partners  String[] @default([])
+  products  String[] @default([])
+  sectors   String[] @default([])
+  techStack String[] @default([])
+
+  appUrl     String?
+  websiteUrl String?
+  blogUrl    String?
+  pressUrl   String?
+
+  // Public hero image: an S3 key under `uploads/` or a full URL, resolved by
+  // resolvePhotoUrl like every other image. Separate from Project.imageUrl so
+  // curating the public face never disturbs the internal hub's banner.
+  heroImageUrl String?
+
+  // The Notion page this row was imported from. Makes re-running the importer
+  // idempotent and lets a later --images pass find its row without re-doing
+  // the (lossy) name matching. Null for rows created in-app.
+  notionPageId String? @unique
+
+  updatedById String?
+  updatedBy   User?   @relation("ProjectShowcaseUpdatedBy", fields: [updatedById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+}
+
+enum ProjectShowcaseStatus {
+  NotStarted
+  InProgress
+  NeedsReview
+  Published
+  Archive
 }
 
 // Many-to-many join: which domains a project has declared. Distinct from
@@ -3518,9 +3603,18 @@ model Page {
   // Partner sharing: when true and workspaceType == Project, users of any
   // PartnerOrg with an active ProjectPartner link to workspaceId may open
   // (and collaboratively edit) this page from the partner portal. Meaningless
-  // for Lab/EducationOffering workspaces (stays false). Distinct from a
-  // future public flag — the audiences are orthogonal.
+  // for Lab/EducationOffering workspaces (stays false).
   partnerVisible Boolean @default(false)
+
+  // Public sharing: when true and workspaceType == Project, this page's body
+  // is the project's write-up on dali.website. Orthogonal to partnerVisible —
+  // a partner-shared working doc is not automatically public, and the public
+  // write-up is not automatically shared with the partner. Read-only to the
+  // outside world (the public API renders a snapshot; it never grants edit
+  // access the way the partner portal does). At most one page per project is
+  // expected to carry it; the public API takes the lowest `position` if
+  // several do.
+  publicVisible Boolean @default(false)
 
   // Pinned to the top of the project's Documents block. Timestamp so pins can
   // be ordered most-recent-first. Null = not pinned. (Distinct from the

@@ -92,6 +92,10 @@ export default [
       "projects/:id/partner-view",
       "projects/routes/projects.$id.partner-view.tsx",
     ),
+    route(
+      "projects/:id/public-view",
+      "projects/routes/projects.$id.public-view.tsx",
+    ),
 
     // Documents & files — full-page reusable editor + file viewer. Literal
     // "file" segment precedes the :pageId param so it isn't captured.
@@ -301,6 +305,16 @@ export default [
   route("api/jobs/:name", "admin-console/routes/api.jobs.$name.ts"),
   route("internal/jobs/tick", "jobs/routes/internal.jobs.tick.ts"),
 
+  // Public showcase API — the read surface dali.website renders from. No
+  // member session: authorized by the SHOWCASE_API_SECRET header and called
+  // server-to-server by the website, never from a browser. Each handler
+  // serves a deliberately narrow projection; see app/public-api/lib.
+  route("api/public/projects", "public-api/routes/api.public.projects.ts"),
+  route("api/public/projects/:id", "public-api/routes/api.public.projects.$id.ts"),
+  route("api/public/team", "public-api/routes/api.public.team.ts"),
+  route("api/public/offerings", "public-api/routes/api.public.offerings.ts"),
+  route("api/public/media", "public-api/routes/api.public.media.ts"),
+
   // Scheduled meetings
   route("api/scheduled-meetings", "calendar/routes/api.scheduled-meetings.ts"),
   route("api/scheduled-meetings/:id/cancel", "calendar/routes/api.scheduled-meetings.$id.cancel.ts"),
@@ -376,6 +390,7 @@ export default [
   route("api/lab-documents", "routes/api.lab-documents.ts"),
   route("api/documents/:id", "projects/routes/api.documents.$id.ts"),
   route("api/pages/:id/partner-visible", "projects/routes/api.pages.$id.partner-visible.ts"),
+  route("api/pages/:id/public-visible", "projects/routes/api.pages.$id.public-visible.ts"),
   route("api/pages/:id/pin", "projects/routes/api.pages.$id.pin.ts"),
   route("api/pages/:id/move", "projects/routes/api.pages.$id.move.ts"),
 
