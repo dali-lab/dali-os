@@ -8,7 +8,7 @@
 // After upload, store the key in the DB and use GET /api/upload/url?key=... to read it.
 
 import { requireAuth } from "~/lib/auth";
-import { getUploadPost } from '~/lib/s3'
+import { getUploadPost, isS3Configured } from '~/lib/s3'
 import {
   MAX_UPLOAD_BYTES,
   MAX_UPLOAD_LABEL,
@@ -77,6 +77,18 @@ export async function action({ request }: { request: Request }) {
                   { status: 413 },
                 )
       }
+    }
+
+    // Say so plainly when the bucket isn't configured. Without this the AWS SDK
+    // throws on a missing bucket and every caller — the editor's image
+    // drag-drop, project banners, avatars, file uploads — reports the same
+    // opaque "Failed to generate upload URL", which reads as a bug in the
+    // feature rather than a missing local credential.
+    if (!isS3Configured()) {
+      return Response.json(
+        { error: 'File storage is not configured on this server (AWS_S3_BUCKET / credentials).' },
+        { status: 503 },
+      )
     }
 
     // Scope all keys under uploads/ to avoid collisions with other bucket contents

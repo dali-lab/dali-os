@@ -6,10 +6,12 @@ vi.mock("~/lib/auth", () => ({
 vi.mock("~/lib/s3", () => ({
   getUploadPost: vi.fn(),
   getDownloadUrl: vi.fn(),
+  // Configured by default; the "not configured" case sets it false per-test.
+  isS3Configured: vi.fn(() => true),
 }));
 
 import { requireAuth } from "~/lib/auth";
-import { getUploadPost } from "~/lib/s3";
+import { getUploadPost, isS3Configured } from "~/lib/s3";
 import { _resetForTests } from "~/lib/rate-limit";
 import { MAX_UPLOAD_BYTES } from "~/lib/file-validation";
 import { action } from "~/routes/api.upload.presign";
@@ -47,6 +49,17 @@ beforeEach(() => {
 });
 
 describe("POST /api/upload/presign response shape", () => {
+  it("says storage is unconfigured rather than failing opaquely", async () => {
+    // Without this the AWS SDK throws on a missing bucket and every caller
+    // reports "Failed to generate upload URL", which reads as a broken
+    // feature rather than a missing credential.
+    vi.mocked(isS3Configured).mockReturnValueOnce(false);
+    const res = await action({ request: makeRequest() } as any);
+    expect(res.status).toBe(503);
+    expect((await res.json()).error).toMatch(/not configured/i);
+    expect(getUploadPost).not.toHaveBeenCalled();
+  });
+
   it("returns url, fields, and a scoped key on success", async () => {
     const res = await action({ request: makeRequest() } as any);
     expect(res.status).toBe(200);

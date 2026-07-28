@@ -200,12 +200,16 @@ const FIELD =
 // remove × per chip. Values post as repeated `name` fields.
 function ChipList({
   name,
+  label,
+  hint,
   values,
   canEdit,
   placeholder,
   className,
 }: {
   name: string;
+  label: string;
+  hint: string;
   values: string[];
   canEdit: boolean;
   placeholder: string;
@@ -219,7 +223,16 @@ function ChipList({
   const [nextKey, setNextKey] = useState(values.length);
 
   return (
-    <span className="inline-flex flex-wrap items-center gap-1.5">
+    <div className="flex flex-wrap items-center gap-1.5">
+      {/* Named, because four rows of bare + buttons say nothing about what
+          belongs in each. The hint is the vocabulary the public site filters
+          on, so it doubles as a prompt for consistent values. */}
+      <span className="w-16 shrink-0 text-muted-foreground" title={hint}>
+        {label}
+      </span>
+      {rows.length === 0 && (
+        <span className="text-muted-foreground/50 italic">{hint}</span>
+      )}
       {rows.map((row, i) => (
         <span key={row.key} className={`inline-flex items-center gap-0.5 ${className}`}>
           <input
@@ -252,13 +265,14 @@ function ChipList({
             setRows([...rows, { key: nextKey, value: "" }]);
             setNextKey(nextKey + 1);
           }}
-          aria-label={`Add ${placeholder}`}
+          aria-label={`Add ${label.toLowerCase()}`}
           className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-xs rounded border border-dashed border-border text-muted-foreground hover:text-foreground hover:border-solid"
         >
           <Plus className="w-3 h-3" />
+          {label}
         </button>
       )}
-    </span>
+    </div>
   );
 }
 
@@ -372,6 +386,8 @@ export default function ProjectPublicView() {
               <div className="flex flex-col gap-2 text-xs">
                 <ChipList
                   name="products"
+                  label="Product"
+                  hint="Mobile, Web, XR, Animation…"
                   values={s?.products ?? []}
                   canEdit={canEdit}
                   placeholder="Product"
@@ -379,6 +395,8 @@ export default function ProjectPublicView() {
                 />
                 <ChipList
                   name="sectors"
+                  label="Sector"
+                  hint="Health, Education, Sustainability…"
                   values={s?.sectors ?? []}
                   canEdit={canEdit}
                   placeholder="Sector"
@@ -386,6 +404,8 @@ export default function ProjectPublicView() {
                 />
                 <ChipList
                   name="techStack"
+                  label="Tech"
+                  hint="React Native, Firebase, Unity3D…"
                   values={s?.techStack ?? []}
                   canEdit={canEdit}
                   placeholder="Tech"
@@ -393,6 +413,8 @@ export default function ProjectPublicView() {
                 />
                 <ChipList
                   name="partners"
+                  label="Partner"
+                  hint="Startup, Student Founder, Nonprofit…"
                   values={s?.partners ?? []}
                   canEdit={canEdit}
                   placeholder="Partner"
