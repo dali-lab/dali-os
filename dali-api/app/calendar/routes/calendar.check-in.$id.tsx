@@ -1,9 +1,10 @@
-import { redirect, useLoaderData } from "react-router";
+import { useLoaderData } from "react-router";
 import QRCode from "qrcode";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
 import { CheckInPanel } from "~/components/CheckInPanel";
+import { redirectToLogin } from "~/lib/login-next";
 import type { Route } from "./+types/calendar.check-in.$id";
 
 export const meta: Route.MetaFunction = () => [{ title: "Check in · DALI OS" }];
@@ -23,7 +24,7 @@ export const handle = {
 // no document to open.
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   const portalRedirect = redirectApplicantToPortal(auth);
   if (portalRedirect) return portalRedirect;
 

@@ -9,6 +9,7 @@ import { upsertUserFromGoogle } from "~/lib/user-provisioning";
 import { classifyPartnerEmail } from "~/partners/lib/magic-link.server";
 import { getApiBaseUrl, getCasBaseUrl } from "~/lib/app-env";
 import { syncAndRecomputeMembershipStatus } from "~/lib/membership-status";
+import { consumeLoginNext } from "~/lib/login-next";
 
 const OAUTH_STATE_COOKIE = "__dali_oauth_state";
 
@@ -227,7 +228,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   // merge with any existing applicant record. The session cookie identifies
   // which User to attach the netId to on return; linkCasToGoogleUser handles
   // the merge / no-op / attach cases. Mirrors the MCP-provider flow in
-  // oauth.callback.google.ts.
+  // oauth.callback.google.ts. Leave __dali_login_next for the final CAS hop.
   if (!user.netId) {
     const casBase = getCasBaseUrl();
     const serviceUrl = `${apiBase}/auth/callback/cas?link=1`;
@@ -238,6 +239,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     return new Response(null, { status: 302, headers });
   }
 
-  headers.set("Location", "/");
+  const next = consumeLoginNext(request, headers);
+  headers.set("Location", next ?? "/");
   return new Response(null, { status: 302, headers });
 }

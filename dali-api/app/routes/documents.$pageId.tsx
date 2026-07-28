@@ -12,6 +12,7 @@ import { AttendanceChecklist, type AttendanceRow } from "~/components/Attendance
 import { CheckInPanel } from "~/components/CheckInPanel";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import { PageIcon } from "~/components/PageIcon";
+import { redirectToLogin } from "~/lib/login-next";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const t = (data as { title?: string } | undefined)?.title;
@@ -72,7 +73,7 @@ export const handle = {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   if (auth.user.type === "applicant") return redirect("/portal");
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) return partnerRedirect;
