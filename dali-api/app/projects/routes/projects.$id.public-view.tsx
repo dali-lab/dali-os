@@ -1,19 +1,16 @@
-import { useRef } from "react";
-import { Form, redirect, useLoaderData, useSubmit } from "react-router";
-import {
-  Calendar,
-  Globe,
-  Info,
-  Link2,
-  Tag,
-  Users,
-} from "lucide-react";
+import { useState } from "react";
+import { Form, redirect, useLoaderData, useNavigation } from "react-router";
+import { Calendar, Globe, Plus, Users, X } from "lucide-react";
 import type { Route } from "./+types/projects.$id.public-view";
 import { prisma } from "~/lib/db";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
-import { EditableSection } from "~/components/EditableSection";
+import { ensurePublicWriteupPage } from "~/lib/pages";
+import { parseSessionCookie } from "~/lib/cookies";
+import { getPresenceUser } from "~/lib/presence-user";
+import { fullName } from "~/lib/display";
+import { CollaborativeEditor } from "~/components/CollaborativeEditor";
 import { ProjectImageBanner } from "../components/ProjectImageBanner";
 import { ProjectViewSwitch } from "../components/ProjectViewSwitch";
 import { loadPublicProjectView } from "../lib/public-project-view.server";
@@ -56,12 +53,7 @@ const STATUS_LABELS: Record<ProjectShowcaseStatus, string> = {
 // anyone staffed on the project. Flipping `status` is separate: Published
 // pushes the project onto the public marketing site, which is a lab-level
 // call, so that one intent is Core-only.
-const CONTENT_INTENTS = [
-  "showcase-details",
-  "showcase-tags",
-  "showcase-links",
-  "showcase-image",
-];
+const CONTENT_INTENTS = ["showcase-card", "showcase-image", "showcase-writeup"];
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -74,16 +66,26 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const core = await isCore(auth.user.sub);
   const canEdit = core || (await isProjectMember(auth.user.sub, params.id!));
-  return { ...data, canEdit, canPublish: core };
+
+  // The write-up is a collab document, so it needs the same session token and
+  // presence identity the standalone document route hands the editor.
+  const presenceUser = await getPresenceUser(auth.user.sub);
+  return {
+    ...data,
+    canEdit,
+    canPublish: core,
+    collabToken: parseSessionCookie(request),
+    userName: presenceUser?.name ?? "Someone",
+  };
 }
 
-// Splits a comma-separated tag field into a clean list. Notion exported these
-// as ", "-joined strings and the inputs keep that shape, since a chip editor
-// would be a heavier control than four rarely-touched facet lists warrant.
-function tagList(form: FormData, name: string): string[] {
-  return ((form.get(name) as string | null) ?? "")
-    .split(",")
-    .map((s) => s.trim())
+// Tag and link lists post as repeated fields of the same name, so the card can
+// render one input per chip and the action rebuilds the list from what came
+// back. Blank entries are dropped, which is also how a chip gets deleted.
+function list(form: FormData, name: string): string[] {
+  return form
+    .getAll(name)
+    .map((v) => String(v).trim())
     .filter(Boolean);
 }
 
@@ -114,9 +116,24 @@ export async function action({ request, params }: Route.ActionArgs) {
     return { error: "Unknown action." };
   }
 
+  // Starting the write-up doesn't touch the showcase row — it creates (or
+  // adopts) the page whose body the public site renders.
+  if (intent === "showcase-writeup") {
+    const page = await ensurePublicWriteupPage(projectId, auth.user.sub);
+    await logAuditEvent({
+      action: "page.public-visibility",
+      userId: auth.user.sub,
+      targetId: page.id,
+      metadata: { projectId, publicVisible: true },
+      request,
+    });
+    return redirect(`/projects/${projectId}/public-view`);
+  }
+
   let data: Record<string, unknown>;
   let newStatus: ProjectShowcaseStatus | null = null;
-  if (intent === "showcase-details") {
+
+  if (intent === "showcase-card") {
     const yearRaw = (form.get("year") as string | null)?.trim() ?? "";
     const year = yearRaw === "" ? null : Number.parseInt(yearRaw, 10);
     if (year !== null && (Number.isNaN(year) || year < 1990 || year > 2100)) {
@@ -126,16 +143,10 @@ export async function action({ request, params }: Route.ActionArgs) {
       displayName: optional(form, "displayName"),
       tagline: optional(form, "tagline"),
       year,
-    };
-  } else if (intent === "showcase-tags") {
-    data = {
-      partners: tagList(form, "partners"),
-      products: tagList(form, "products"),
-      sectors: tagList(form, "sectors"),
-      techStack: tagList(form, "techStack"),
-    };
-  } else if (intent === "showcase-links") {
-    data = {
+      products: list(form, "products"),
+      sectors: list(form, "sectors"),
+      techStack: list(form, "techStack"),
+      partners: list(form, "partners"),
       appUrl: optional(form, "appUrl"),
       websiteUrl: optional(form, "websiteUrl"),
       blogUrl: optional(form, "blogUrl"),
@@ -177,344 +188,313 @@ export async function action({ request, params }: Route.ActionArgs) {
   return redirect(`/projects/${projectId}/public-view`);
 }
 
-const INPUT =
-  "px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30";
+// Inputs that carry no chrome until you interact with them, so the card reads
+// as the rendered page rather than as a form. The dashed hover/focus ring is
+// the only affordance — enough to find the fields, quiet enough that the
+// preview still shows what a visitor will see.
+const FIELD =
+  "bg-transparent border border-transparent rounded px-1 -mx-1 hover:border-dashed hover:border-border focus:outline-none focus:border-solid focus:border-accent-coral/60 focus:bg-background transition-colors disabled:hover:border-transparent";
 
-function Field({
-  label,
+// A list of free-text chips (tags, links). Rendered as the pills the public
+// card shows, each an input sized to its content, with an add button and a
+// remove × per chip. Values post as repeated `name` fields.
+function ChipList({
   name,
-  value,
-  editing,
+  values,
+  canEdit,
   placeholder,
-  type = "text",
+  className,
 }: {
-  label: string;
   name: string;
-  value: string;
-  editing: boolean;
-  placeholder?: string;
-  type?: string;
+  values: string[];
+  canEdit: boolean;
+  placeholder: string;
+  className: string;
 }) {
+  // Local state only tracks how many inputs exist; the values themselves stay
+  // uncontrolled so typing never round-trips through React.
+  const [rows, setRows] = useState<{ key: number; value: string }[]>(
+    values.map((value, i) => ({ key: i, value })),
+  );
+  const [nextKey, setNextKey] = useState(values.length);
+
   return (
-    <label className="flex flex-col gap-1 text-xs">
-      <span className="text-muted-foreground">{label}</span>
-      {editing ? (
-        <input
-          name={name}
-          type={type}
-          defaultValue={value}
-          placeholder={placeholder}
-          className={INPUT}
-        />
-      ) : (
-        <span className="px-2 py-1.5 text-sm text-foreground break-all">
-          {value || "—"}
+    <span className="inline-flex flex-wrap items-center gap-1.5">
+      {rows.map((row, i) => (
+        <span key={row.key} className={`inline-flex items-center gap-0.5 ${className}`}>
+          <input
+            name={name}
+            defaultValue={row.value}
+            placeholder={placeholder}
+            disabled={!canEdit}
+            size={Math.max(row.value.length || placeholder.length, 4)}
+            className={`${FIELD} min-w-0`}
+            onChange={(e) => {
+              e.currentTarget.size = Math.max(e.currentTarget.value.length, 4);
+            }}
+          />
+          {canEdit && (
+            <button
+              type="button"
+              aria-label={`Remove ${row.value || placeholder}`}
+              onClick={() => setRows(rows.filter((_, j) => j !== i))}
+              className="opacity-50 hover:opacity-100"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          )}
         </span>
+      ))}
+      {canEdit && (
+        <button
+          type="button"
+          onClick={() => {
+            setRows([...rows, { key: nextKey, value: "" }]);
+            setNextKey(nextKey + 1);
+          }}
+          aria-label={`Add ${placeholder}`}
+          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-xs rounded border border-dashed border-border text-muted-foreground hover:text-foreground hover:border-solid"
+        >
+          <Plus className="w-3 h-3" />
+        </button>
       )}
-    </label>
+    </span>
   );
 }
 
 export default function ProjectPublicView() {
   const data = useLoaderData<typeof loader>();
-  const { project, showcase, heroPreviewUrl, teamMembers, pages, canEdit, canPublish } = data;
-  const submit = useSubmit();
-
-  const detailsRef = useRef<HTMLFormElement | null>(null);
-  const tagsRef = useRef<HTMLFormElement | null>(null);
-  const linksRef = useRef<HTMLFormElement | null>(null);
-
-  const s = showcase;
-  const cardName = s?.displayName || project.name;
-  const allTags = [
-    ...(s?.products ?? []),
-    ...(s?.sectors ?? []),
-    ...(s?.techStack ?? []),
-  ];
-  const links = [
-    ["Website", s?.websiteUrl],
-    ["App", s?.appUrl],
-    ["Student Blog", s?.blogUrl],
-    ["Press", s?.pressUrl],
-  ].filter(([, url]) => url) as [string, string][];
-
-  const publicPage = pages.find((p) => p.publicVisible);
+  const {
+    project,
+    showcase: s,
+    heroPreviewUrl,
+    teamMembers,
+    writeup,
+    canEdit,
+    canPublish,
+    collabToken,
+    userName,
+  } = data;
+  const navigation = useNavigation();
+  const saving = navigation.state !== "idle";
 
   return (
-    <div className="flex flex-col gap-6 p-4 sm:p-6 max-w-5xl mx-auto w-full">
-      <header className="flex flex-col gap-1">
-        <h1 className="font-heading text-2xl font-bold text-foreground inline-flex items-center gap-2">
-          <Globe className="w-5 h-5 text-accent-coral" />
-          Public view
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          What visitors see for this project on dali.website. Nothing here is
-          derived from the internal hub — the public framing is written
-          separately, and only a status of “Published” puts it on the site.
-        </p>
+    <div className="flex flex-col gap-4 p-4 sm:p-6 max-w-3xl mx-auto w-full">
+      <header className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h1 className="font-heading text-xl font-bold text-foreground inline-flex items-center gap-2">
+            <Globe className="w-5 h-5 text-accent-coral" />
+            Public view
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            This is the page as dali.website renders it. Edit it in place.
+          </p>
+        </div>
+        {canPublish && (
+          <Form method="post" className="flex items-center gap-2">
+            <input type="hidden" name="intent" value="showcase-status" />
+            <select
+              name="status"
+              defaultValue={s?.status ?? "NotStarted"}
+              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
+            >
+              {STATUSES.map((v) => (
+                <option key={v} value={v}>
+                  {STATUS_LABELS[v]}
+                </option>
+              ))}
+            </select>
+            <button
+              type="submit"
+              className="px-3 py-1.5 text-sm font-medium rounded-md border border-border hover:bg-muted/50 transition-colors"
+            >
+              Set
+            </button>
+          </Form>
+        )}
       </header>
 
-      {/* Preview: the showcase card as dali.website draws it, so curating is
-          WYSIWYG rather than fill-in-the-fields-and-hope. */}
-      <section className="bg-card border border-border rounded-lg overflow-hidden">
-        <div className="px-4 py-2 border-b border-border bg-muted/30 flex items-center justify-between">
-          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-            Preview
-          </span>
-          <span
-            className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-              s?.status === "Published"
-                ? "bg-accent-green/15 text-accent-green"
-                : "bg-muted text-muted-foreground"
-            }`}
-          >
-            {STATUS_LABELS[s?.status ?? "NotStarted"]}
-          </span>
-        </div>
-        <div className="p-4">
-          <div className="max-w-sm border border-border rounded-lg overflow-hidden bg-background">
-            {heroPreviewUrl ? (
-              <img src={heroPreviewUrl} alt="" className="w-full h-40 object-cover" />
-            ) : (
-              <div className="w-full h-40 bg-gradient-to-br from-accent-coral/25 to-accent-green/20" />
-            )}
-            <div className="p-4 flex flex-col gap-2">
-              <h3 className="font-semibold text-lg text-foreground leading-tight">
-                {cardName}
-              </h3>
-              <p className="text-sm text-muted-foreground">
-                {s?.tagline || "No tagline yet"}
-              </p>
-              <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                <span className="inline-flex items-center gap-1.5">
-                  <Calendar className="w-4 h-4" />
-                  {s?.year ?? "—"}
+      {/* The card. Every field is the real one — what you see is the page. */}
+      <Form method="post" className="flex flex-col">
+        <input type="hidden" name="intent" value="showcase-card" />
+
+        <div className="border border-border rounded-lg overflow-hidden bg-card">
+          <ProjectImageBanner
+            projectId={project.id}
+            projectName={s?.displayName || project.name}
+            initialPreviewUrl={heroPreviewUrl}
+            canEdit={canEdit}
+            intent="showcase-image"
+            fieldName="heroImageUrl"
+            removeTitle="Remove the public hero image?"
+            removeDescription="The project's internal banner will be used instead."
+          />
+
+          <div className="p-5 flex flex-col gap-3">
+            <input
+              name="displayName"
+              defaultValue={s?.displayName ?? ""}
+              placeholder={project.name}
+              disabled={!canEdit}
+              aria-label="Public project name"
+              className={`${FIELD} font-semibold text-xl text-foreground w-full`}
+            />
+            <input
+              name="tagline"
+              defaultValue={s?.tagline ?? ""}
+              placeholder="One line on what this project does"
+              disabled={!canEdit}
+              aria-label="Statement"
+              className={`${FIELD} text-muted-foreground w-full`}
+            />
+
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Calendar className="w-4 h-4 shrink-0" />
+              <input
+                name="year"
+                type="number"
+                defaultValue={s?.year ?? ""}
+                placeholder="2026"
+                disabled={!canEdit}
+                aria-label="Year"
+                className={`${FIELD} w-20`}
+              />
+            </div>
+
+            <div className="flex flex-col gap-2 text-xs">
+              <ChipList
+                name="products"
+                values={s?.products ?? []}
+                canEdit={canEdit}
+                placeholder="Product"
+                className="px-2 py-0.5 rounded border border-border text-foreground"
+              />
+              <ChipList
+                name="sectors"
+                values={s?.sectors ?? []}
+                canEdit={canEdit}
+                placeholder="Sector"
+                className="px-2 py-0.5 rounded border border-border text-foreground"
+              />
+              <ChipList
+                name="techStack"
+                values={s?.techStack ?? []}
+                canEdit={canEdit}
+                placeholder="Tech"
+                className="px-2 py-0.5 rounded border border-border text-foreground"
+              />
+              <ChipList
+                name="partners"
+                values={s?.partners ?? []}
+                canEdit={canEdit}
+                placeholder="Partner"
+                className="px-2 py-0.5 rounded border border-border text-muted-foreground"
+              />
+            </div>
+
+            {teamMembers.length > 0 && (
+              <div className="border-t border-border pt-3 flex items-center gap-2 text-sm text-muted-foreground">
+                <Users className="w-4 h-4" />
+                <span className="line-clamp-1">
+                  {teamMembers.slice(0, 2).join(", ")}
+                  {teamMembers.length > 2 && ` +${teamMembers.length - 2} more`}
                 </span>
-                {s?.sectors?.[0] && <span>{s.sectors[0]}</span>}
+                <span className="text-xs opacity-60">(from the project roster)</span>
               </div>
-              {allTags.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {allTags.slice(0, 3).map((tag) => (
-                    <span
-                      key={tag}
-                      className="px-2 py-0.5 text-xs rounded border border-border text-foreground"
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                  {allTags.length > 3 && (
-                    <span className="px-2 py-0.5 text-xs rounded border border-border text-muted-foreground">
-                      +{allTags.length - 3} more
-                    </span>
-                  )}
-                </div>
-              )}
-              {teamMembers.length > 0 && (
-                <div className="border-t border-border pt-2 flex items-center gap-2 text-sm text-muted-foreground">
-                  <Users className="w-4 h-4" />
-                  <span className="line-clamp-1">
-                    {teamMembers.slice(0, 2).join(", ")}
-                    {teamMembers.length > 2 && ` +${teamMembers.length - 2} more`}
-                  </span>
-                </div>
-              )}
-              {links.length > 0 && (
-                <div className="flex flex-wrap gap-2 text-xs">
-                  {links.map(([label, url]) => (
-                    <a
-                      key={label}
-                      href={url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-accent-coral hover:underline"
-                    >
-                      {label}
-                    </a>
-                  ))}
-                </div>
-              )}
+            )}
+
+            <div className="border-t border-border pt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+              {(
+                [
+                  ["websiteUrl", "Website", s?.websiteUrl],
+                  ["appUrl", "App", s?.appUrl],
+                  ["blogUrl", "Student blog", s?.blogUrl],
+                  ["pressUrl", "Press", s?.pressUrl],
+                ] as const
+              ).map(([field, label, value]) => (
+                <label key={field} className="flex items-center gap-2">
+                  <span className="text-xs text-accent-coral shrink-0 w-24">{label}</span>
+                  <input
+                    name={field}
+                    defaultValue={value ?? ""}
+                    placeholder="https://…"
+                    disabled={!canEdit}
+                    className={`${FIELD} flex-1 min-w-0 text-xs`}
+                  />
+                </label>
+              ))}
             </div>
           </div>
         </div>
-      </section>
 
-      {canPublish && (
-        <EditableSection
-          title="Publication status"
-          icon={<Globe className="w-4 h-4" />}
-          description="Only “Published” appears on dali.website. Core/Admin only."
-          canEdit
-          onSave={() => {}}
-        >
-          {() => (
-            <Form method="post" className="flex flex-wrap items-center gap-2">
-              <input type="hidden" name="intent" value="showcase-status" />
-              <select
-                name="status"
-                defaultValue={s?.status ?? "NotStarted"}
-                className={INPUT}
-              >
-                {STATUSES.map((v) => (
-                  <option key={v} value={v}>
-                    {STATUS_LABELS[v]}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="submit"
-                className="px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
-              >
-                Update status
-              </button>
-            </Form>
-          )}
-        </EditableSection>
-      )}
-
-      <EditableSection
-        title="Showcase details"
-        icon={<Info className="w-4 h-4" />}
-        description="The name and one-line statement the public site leads with."
-        canEdit={canEdit}
-        onSave={() => {
-          if (detailsRef.current) submit(detailsRef.current);
-        }}
-      >
-        {({ editing }) => (
-          <Form method="post" ref={detailsRef} className="flex flex-col gap-3">
-            <input type="hidden" name="intent" value="showcase-details" />
-            <Field
-              label={`Public name (internal: ${project.name})`}
-              name="displayName"
-              value={s?.displayName ?? ""}
-              editing={editing}
-              placeholder={project.name}
-            />
-            <Field
-              label="Statement"
-              name="tagline"
-              value={s?.tagline ?? ""}
-              editing={editing}
-              placeholder="Assessing personal risk during COVID"
-            />
-            <Field
-              label="Year"
-              name="year"
-              type="number"
-              value={s?.year ? String(s.year) : ""}
-              editing={editing}
-              placeholder="2026"
-            />
-          </Form>
-        )}
-      </EditableSection>
-
-      <EditableSection
-        title="Tags"
-        icon={<Tag className="w-4 h-4" />}
-        description="Comma-separated. These drive the filters and tag pills on the projects page."
-        canEdit={canEdit}
-        onSave={() => {
-          if (tagsRef.current) submit(tagsRef.current);
-        }}
-      >
-        {({ editing }) => (
-          <Form method="post" ref={tagsRef} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <input type="hidden" name="intent" value="showcase-tags" />
-            <Field
-              label="Product"
-              name="products"
-              value={(s?.products ?? []).join(", ")}
-              editing={editing}
-              placeholder="Mobile, Web"
-            />
-            <Field
-              label="Sector"
-              name="sectors"
-              value={(s?.sectors ?? []).join(", ")}
-              editing={editing}
-              placeholder="Health, Education"
-            />
-            <Field
-              label="Tech stack"
-              name="techStack"
-              value={(s?.techStack ?? []).join(", ")}
-              editing={editing}
-              placeholder="React Native, Firebase"
-            />
-            <Field
-              label="Partner"
-              name="partners"
-              value={(s?.partners ?? []).join(", ")}
-              editing={editing}
-              placeholder="Startup, Student Founder"
-            />
-          </Form>
-        )}
-      </EditableSection>
-
-      <EditableSection
-        title="Links"
-        icon={<Link2 className="w-4 h-4" />}
-        description="Shown as buttons on the public project card."
-        canEdit={canEdit}
-        onSave={() => {
-          if (linksRef.current) submit(linksRef.current);
-        }}
-      >
-        {({ editing }) => (
-          <Form method="post" ref={linksRef} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <input type="hidden" name="intent" value="showcase-links" />
-            <Field label="Website" name="websiteUrl" value={s?.websiteUrl ?? ""} editing={editing} />
-            <Field label="App" name="appUrl" value={s?.appUrl ?? ""} editing={editing} />
-            <Field label="Student blog" name="blogUrl" value={s?.blogUrl ?? ""} editing={editing} />
-            <Field label="Press" name="pressUrl" value={s?.pressUrl ?? ""} editing={editing} />
-          </Form>
-        )}
-      </EditableSection>
-
-      <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
-        <div>
-          <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
-            <Globe className="w-4 h-4" />
-            Hero image
-          </h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            The showcase card image. Separate from the internal hub banner —
-            leave it unset to fall back to the project image.
-          </p>
-        </div>
-        <ProjectImageBanner
-          projectId={project.id}
-          projectName={cardName}
-          initialPreviewUrl={heroPreviewUrl}
-          canEdit={canEdit}
-          intent="showcase-image"
-          fieldName="heroImageUrl"
-          removeTitle="Remove the public hero image?"
-          removeDescription="The project's internal banner will be used instead."
-        />
-      </section>
-
-      <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-2">
-        <h2 className="font-heading font-semibold text-foreground">Public write-up</h2>
-        <p className="text-xs text-muted-foreground">
-          The document rendered in the project's detail modal on dali.website.
-          Mark one from the project's Documents list — the “Public” toggle sits
-          beside the “Partner” one.
-        </p>
-        <p className="text-sm text-foreground">
-          {publicPage ? (
-            <>
-              {publicPage.iconEmoji && <span className="mr-1.5">{publicPage.iconEmoji}</span>}
-              {publicPage.title}
-            </>
-          ) : (
-            <span className="text-muted-foreground">
-              No page marked public — the detail modal will show the card fields only.
+        {canEdit && (
+          <div className="flex items-center gap-2 pt-3">
+            <button
+              type="submit"
+              disabled={saving}
+              className="px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors disabled:opacity-60"
+            >
+              {saving ? "Saving…" : "Save card"}
+            </button>
+            <span className="text-xs text-muted-foreground">
+              The hero image saves on upload; everything else saves here.
             </span>
-          )}
-        </p>
+          </div>
+        )}
+      </Form>
+
+      {/* Write-up. The same collab editor the Documents tab uses, so images
+          paste and drop in anywhere and the order is whatever you type. */}
+      <section className="flex flex-col gap-2 pt-2">
+        <h2 className="font-heading font-semibold text-foreground">Write-up</h2>
+        {writeup && collabToken ? (
+          <>
+            <p className="text-xs text-muted-foreground">
+              Rendered below the card on dali.website. Paste or drag images
+              anywhere in the text; type <code>/</code> for headings, lists,
+              quotes, and callouts. Saves as you type.
+            </p>
+            <div className="border border-border rounded-lg p-3 bg-card">
+              <CollaborativeEditor
+                documentName={`doc:${writeup.id}:body`}
+                editorId={`doc:${writeup.id}:body`}
+                token={collabToken}
+                userName={userName}
+                disabled={!canEdit}
+                enableImages
+                enableRichBlocks
+                enableMentions
+                placeholder="Tell the story of this project…"
+              />
+            </div>
+          </>
+        ) : writeup ? (
+          // Session cookie missing (an expired tab): the editor can't connect,
+          // so say so rather than mounting one that silently won't sync.
+          <p className="text-sm text-muted-foreground border border-border rounded-lg p-4">
+            Reload the page to edit the write-up — your session needs refreshing.
+          </p>
+        ) : (
+          <div className="border border-dashed border-border rounded-lg p-6 text-center flex flex-col items-center gap-3">
+            <p className="text-sm text-muted-foreground max-w-md">
+              No write-up yet. The card above is all a visitor sees. Start one
+              to add the story, screenshots, and results — it becomes a normal
+              project document, editable from the Documents tab too.
+            </p>
+            {canEdit && (
+              <Form method="post">
+                <input type="hidden" name="intent" value="showcase-writeup" />
+                <button
+                  type="submit"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                  Start the write-up
+                </button>
+              </Form>
+            )}
+          </div>
+        )}
       </section>
     </div>
   );
