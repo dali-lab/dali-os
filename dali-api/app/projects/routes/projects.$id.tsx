@@ -12,7 +12,7 @@ import {
   useSubmit,
   type ShouldRevalidateFunctionArgs,
 } from "react-router";
-import { CalendarDays, CalendarX, ChartNoAxesGantt, Check, Handshake, History, List, Pencil, Pin, X, Settings, Folder, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink } from "lucide-react";
+import { CalendarDays, CalendarX, ChartNoAxesGantt, Check, Globe, Handshake, History, List, Pencil, Pin, X, Settings, Folder, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink } from "lucide-react";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { useDialog, useConfirmSubmit } from "~/components/ui/dialog";
 import { Tooltip } from "~/components/ui/IconButton";
@@ -32,6 +32,7 @@ import { USER_NAME_SELECT } from "~/lib/prisma-shapes";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { Avatar } from "~/components/ui/Avatar";
 import { ProjectImageBanner } from "../components/ProjectImageBanner";
+import { ProjectViewSwitch } from "../components/ProjectViewSwitch";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import { ProjectIconPicker } from "../components/ProjectIconPicker";
 import { Markdown } from "~/components/Markdown";
@@ -83,15 +84,7 @@ export const handle = {
   headerAction: (data: unknown) => {
     const d = data as { project?: { id: string } } | undefined;
     if (!d?.project) return null;
-    return (
-      <Link
-        to={`/projects/${d.project.id}/partner-view`}
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md border border-border text-foreground hover:bg-muted/50 transition-colors"
-      >
-        <Handshake className="w-4 h-4" />
-        Partner view
-      </Link>
-    );
+    return <ProjectViewSwitch projectId={d.project.id} current="internal" />;
   },
 };
 
@@ -140,6 +133,8 @@ const PROJECT_ACTIVITY_ACTIONS = [
   "projectFile.create",
   "projectFile.partner-visibility",
   "page.partner-visibility",
+  "page.public-visibility",
+  "project.showcase-status",
   "project.assignment.level",
   "partner.project.link",
   "partner.project.update",
@@ -150,6 +145,8 @@ const ACTIVITY_LABELS: Record<string, string> = {
   "projectFile.create": "added a file",
   "projectFile.partner-visibility": "changed a file's partner sharing",
   "page.partner-visibility": "changed a document's partner sharing",
+  "page.public-visibility": "changed the public write-up",
+  "project.showcase-status": "changed the public showcase status",
   "project.assignment.level": "changed a team member's level",
   "partner.project.link": "linked a partner organization",
   "partner.project.update": "updated partnership dates",
@@ -358,6 +355,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       parentPageId: true,
       systemKey: true,
       partnerVisible: true,
+      publicVisible: true,
       pinnedAt: true,
       iconEmoji: true,
     },
@@ -375,6 +373,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     kind: d.kind,
     isSystem: d.systemKey !== null,
     partnerVisible: d.partnerVisible,
+    publicVisible: d.publicVisible,
     pinned: d.pinnedAt !== null,
     iconEmoji: d.iconEmoji,
   });
@@ -3051,17 +3050,24 @@ function DocumentsBlock({
     return () => window.removeEventListener("message", onMessage);
   }, [documents, revalidator]);
 
-  // Share/unshare a page with the project's partner org(s). Persisted via
+  // Share/unshare a page with the project's partner org(s), or mark it as the
+  // project's public write-up on dali.website. Two independent audiences, one
+  // API shape (/api/pages/:id/<field-kebab>), so one function. Persisted via
   // its own API route; the badge state comes back through the loader.
-  async function togglePartnerVisible(id: string, next: boolean) {
+  async function toggleVisibility(
+    id: string,
+    field: "partnerVisible" | "publicVisible",
+    next: boolean,
+  ) {
+    const path = field === "partnerVisible" ? "partner-visible" : "public-visible";
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(`/api/pages/${id}/partner-visible`, {
+      const res = await fetch(`/api/pages/${id}/${path}`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ partnerVisible: next }),
+        body: JSON.stringify({ [field]: next }),
       });
       if (!res.ok) {
         const b = (await res.json().catch(() => ({}))) as { error?: string };
@@ -3273,6 +3279,13 @@ function DocumentsBlock({
               </span>
             </Tooltip>
           )}
+          {doc.publicVisible && !canEdit && (
+            <Tooltip label="Public write-up — rendered on this project's page on dali.website">
+              <span className="flex items-center text-accent-coral">
+                <Globe className="w-3.5 h-3.5" />
+              </span>
+            </Tooltip>
+          )}
           {canEdit && (hasActivePartner || doc.partnerVisible) && (
             <Tooltip
               label={
@@ -3284,7 +3297,9 @@ function DocumentsBlock({
               <button
                 type="button"
                 disabled={busy}
-                onClick={() => void togglePartnerVisible(doc.id, !doc.partnerVisible)}
+                onClick={() =>
+                  void toggleVisibility(doc.id, "partnerVisible", !doc.partnerVisible)
+                }
                 // Accessible name must stay exactly "Shared with partner" /
                 // "Share with partner": it's the toggle's only name now that the
                 // label is icon-only, and it's the contract partner-portal.spec
@@ -3297,6 +3312,34 @@ function DocumentsBlock({
                 }`}
               >
                 <Handshake className="w-3.5 h-3.5" />
+              </button>
+            </Tooltip>
+          )}
+          {/* Public write-up: the page dali.website renders in this project's
+              detail modal. Independent of partner sharing — the visitor-facing
+              story is rarely the doc the partner works out of. */}
+          {canEdit && (
+            <Tooltip
+              label={
+                doc.publicVisible
+                  ? "Public write-up on dali.website — click to unpublish"
+                  : "Use as the public write-up on dali.website"
+              }
+            >
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() =>
+                  void toggleVisibility(doc.id, "publicVisible", !doc.publicVisible)
+                }
+                aria-label={doc.publicVisible ? "Public write-up" : "Make public write-up"}
+                className={`flex items-center disabled:opacity-60 ${
+                  doc.publicVisible
+                    ? "text-accent-coral"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Globe className="w-3.5 h-3.5" />
               </button>
             </Tooltip>
           )}

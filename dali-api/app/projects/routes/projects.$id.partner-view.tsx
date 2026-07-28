@@ -1,9 +1,9 @@
-import { Link, redirect, useLoaderData } from "react-router";
-import { Building2 } from "lucide-react";
+import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/projects.$id.partner-view";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { loadPartnerProjectView } from "~/partners/lib/partner-project-view.server";
 import { PartnerProjectHubView } from "~/partners/components/PartnerProjectHubView";
+import { ProjectViewSwitch } from "../components/ProjectViewSwitch";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const n = (data as { project?: { name: string } } | undefined)?.project?.name;
@@ -21,21 +21,13 @@ export const handle = {
     const d = data as { project?: { name: string } } | undefined;
     return d?.project ? d.project.name : null;
   },
-  // Swaps out for the project page's "Partner view" button (same header
-  // slot) rather than a separate in-page "back to project" link, so getting
-  // back to the internal hub is a toggle in place, not a second control.
+  // Swaps out for the project page's own view switcher (same header slot)
+  // rather than a separate in-page "back to project" link, so moving between
+  // the three views is a toggle in place, not a second control.
   headerAction: (data: unknown) => {
     const d = data as { project?: { id: string } } | undefined;
     if (!d?.project) return null;
-    return (
-      <Link
-        to={`/projects/${d.project.id}`}
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md border border-border text-foreground hover:bg-muted/50 transition-colors"
-      >
-        <Building2 className="w-4 h-4" />
-        Internal view
-      </Link>
-    );
+    return <ProjectViewSwitch projectId={d.project.id} current="partner" />;
   },
 };
 

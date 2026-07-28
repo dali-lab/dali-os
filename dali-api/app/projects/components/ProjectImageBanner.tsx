@@ -21,16 +21,28 @@ const BANNER_ASPECT = 3;
 // instead. Clicking the banner (or its camera button) picks → crops → uploads
 // to S3 → saves immediately via the page action's update-image intent. No
 // "edit details → save" round-trip. Mirrors members' ProfilePhotoAvatar.
+//
+// The project hub and the public-showcase view both need this control but
+// write to different columns, so `intent` and `fieldName` name the action
+// branch and form field to post to. They default to the project hub's.
 export function ProjectImageBanner({
   projectId,
   projectName,
   initialPreviewUrl,
   canEdit,
+  intent = "update-image",
+  fieldName = "imageUrl",
+  removeTitle = "Remove the project image?",
+  removeDescription = "The default banner will show instead.",
 }: {
   projectId: string;
   projectName: string;
   initialPreviewUrl: string | null;
   canEdit: boolean;
+  intent?: string;
+  fieldName?: string;
+  removeTitle?: string;
+  removeDescription?: string;
 }) {
   const dialog = useDialog();
   const fetcher = useFetcher();
@@ -135,10 +147,7 @@ export function ProjectImageBanner({
       previewBlobUrl.current = newPreview;
       setPreviewUrl(newPreview);
 
-      fetcher.submit(
-        { intent: "update-image", imageUrl: uploadedKey },
-        { method: "post" },
-      );
+      fetcher.submit({ intent, [fieldName]: uploadedKey }, { method: "post" });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
     } finally {
@@ -149,8 +158,8 @@ export function ProjectImageBanner({
   async function handleRemove() {
     if (
       !(await dialog.confirm({
-        title: "Remove the project image?",
-        description: "The default banner will show instead.",
+        title: removeTitle,
+        description: removeDescription,
         confirmLabel: "Remove",
         tone: "destructive",
       }))
@@ -163,8 +172,8 @@ export function ProjectImageBanner({
       previewBlobUrl.current = null;
     }
     setPreviewUrl(null);
-    // The page action treats an empty imageUrl as "clear to null".
-    fetcher.submit({ intent: "update-image", imageUrl: "" }, { method: "post" });
+    // The page action treats an empty value as "clear to null".
+    fetcher.submit({ intent, [fieldName]: "" }, { method: "post" });
   }
 
   const busy = uploading || fetcher.state !== "idle";
