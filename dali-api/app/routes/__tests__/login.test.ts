@@ -30,10 +30,11 @@ function authedAs(sub: string) {
   } as any);
 }
 
-function makeRequest(ip = "1.2.3.4") {
+function makeRequest(ip = "1.2.3.4", next?: string) {
   const form = new URLSearchParams({
     provider: "google",
   });
+  if (next) form.set("next", next);
   return new Request("http://localhost/login", {
     method: "POST",
     headers: {
@@ -129,5 +130,93 @@ describe("GET /login loader routing", () => {
     const res = (await loader({ request: loaderRequest() } as any)) as Response;
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe("/");
+  });
+
+  it("sends an onboarded member to a safe next path", async () => {
+    authedAs("member-done");
+    mockMemberFind.mockResolvedValue({
+      onboardedAt: new Date(),
+      user: { adminMembership: null },
+    } as any);
+    const res = (await loader({
+      request: new Request(
+        "http://localhost/login?next=%2Fcalendar%2Fcheck-in%2Fm1",
+      ),
+    } as any)) as Response;
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/calendar/check-in/m1");
+  });
+
+  it("ignores an unsafe next for an onboarded member", async () => {
+    authedAs("member-done");
+    mockMemberFind.mockResolvedValue({
+      onboardedAt: new Date(),
+      user: { adminMembership: null },
+    } as any);
+    const res = (await loader({
+      request: new Request("http://localhost/login?next=//evil.com"),
+    } as any)) as Response;
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/");
+  });
+
+  it("still sends un-onboarded members to onboarding even with next", async () => {
+    authedAs("member-unprovisioned");
+    mockMemberFind.mockResolvedValue({
+      onboardedAt: null,
+      user: { adminMembership: null },
+    } as any);
+    const res = (await loader({
+      request: new Request(
+        "http://localhost/login?next=%2Fcalendar%2Fcheck-in%2Fm1",
+      ),
+    } as any)) as Response;
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/onboarding");
+  });
+
+  it("honors next for staff who skip onboarding", async () => {
+    authedAs("member-staff");
+    mockMemberFind.mockResolvedValue({
+      onboardedAt: null,
+      user: { adminMembership: { isStaff: true } },
+    } as any);
+    const res = (await loader({
+      request: new Request(
+        "http://localhost/login?next=%2Fcalendar%2Fcheck-in%2Fm1",
+      ),
+    } as any)) as Response;
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/calendar/check-in/m1");
+  });
+});
+
+describe("POST /login next cookie", () => {
+  it("stores a safe next in __dali_login_next", async () => {
+    const res = await action({
+      request: makeRequest("9.9.9.9", "/calendar/check-in/m1"),
+    } as any);
+    expect(res.status).toBe(302);
+    const cookies = res.headers.getSetCookie?.() ?? [
+      res.headers.get("Set-Cookie")!,
+    ];
+    expect(
+      cookies.some((c) =>
+        c.includes(
+          `__dali_login_next=${encodeURIComponent("/calendar/check-in/m1")}`,
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  it("does not store an unsafe next", async () => {
+    const res = await action({
+      request: makeRequest("8.8.8.8", "//evil.com"),
+    } as any);
+    expect(res.status).toBe(302);
+    const cookies = res.headers.getSetCookie?.() ?? [
+      res.headers.get("Set-Cookie")!,
+    ];
+    expect(cookies.some((c) => c.includes("__dali_login_next="))).toBe(false);
   });
 });

@@ -6,6 +6,10 @@ import { prisma } from "~/lib/db";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { getApiBaseUrl, getAppEnv, getCasBaseUrl } from "~/lib/app-env";
 import { buildGoogleAuthUrl } from "~/lib/google-oauth";
+import {
+  pickSafeLoginNext,
+  setLoginNextCookie,
+} from "~/lib/login-next";
 
 const OAUTH_STATE_COOKIE = "__dali_oauth_state";
 
@@ -17,6 +21,9 @@ export const meta: Route.MetaFunction = () => [{ title: "DALI OS · Sign in" }];
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (auth.ok) {
+    const url = new URL(request.url);
+    const next = pickSafeLoginNext(url.searchParams.get("next"));
+
     // Route by membership, not by auth.user.type. type is derived from
     // daliEmail alone (auth.ts deriveAuthType), but an accepted member's
     // Workspace provisioning is best-effort — daliEmail can still be null
@@ -35,7 +42,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     });
     if (member) {
       const isStaff = member.user.adminMembership?.isStaff === true;
-      return redirect(member.onboardedAt || isStaff ? "/" : "/onboarding");
+      if (!(member.onboardedAt || isStaff)) return redirect("/onboarding");
+      return redirect(next ?? "/");
     }
     // Signed-in partners land in their portal, not the applicant one.
     const partnerUser = await prisma.partnerUser.findUnique({
@@ -59,6 +67,11 @@ export async function action({ request }: Route.ActionArgs) {
 
   const formData = await request.formData();
   const provider = formData.get("provider") as string;
+  const next = pickSafeLoginNext(
+    typeof formData.get("next") === "string"
+      ? (formData.get("next") as string)
+      : null,
+  );
 
   const state = randomBytes(32).toString("base64url");
   const apiBase = getApiBaseUrl();
@@ -66,6 +79,7 @@ export async function action({ request }: Route.ActionArgs) {
   const secure = getAppEnv() !== "dev";
 
   const headers = new Headers();
+  if (next) setLoginNextCookie(headers, next);
 
   if (provider === "cas") {
     // Dartmouth CAS login — redirect to CAS with service URL pointing to our callback
@@ -116,6 +130,7 @@ export async function action({ request }: Route.ActionArgs) {
 export default function Login() {
   const [searchParams] = useSearchParams();
   const error = searchParams.get("error");
+  const next = pickSafeLoginNext(searchParams.get("next"));
 
   const errorMessages: Record<string, string> = {
     access_denied:
@@ -197,6 +212,7 @@ export default function Login() {
             {/* DALI Member */}
             <Form method="post">
               <input type="hidden" name="provider" value="google" />
+              {next && <input type="hidden" name="next" value={next} />}
               <button
                 type="submit"
                 className="w-full flex items-center gap-4 p-5 rounded-2xl border-2 border-transparent bg-brand-tint hover:border-accent-coral transition group text-left"
@@ -243,6 +259,7 @@ export default function Login() {
             {/* Applicant */}
             <Form method="post">
               <input type="hidden" name="provider" value="cas" />
+              {next && <input type="hidden" name="next" value={next} />}
               <button
                 type="submit"
                 className="w-full flex items-center gap-4 p-5 rounded-2xl border-2 border-transparent bg-brand-tint hover:border-accent-coral transition group text-left"

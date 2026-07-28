@@ -7,6 +7,7 @@ import { logAuditEvent } from "~/lib/audit";
 import { upsertUserFromCas } from "~/lib/user-provisioning";
 import { getApiBaseUrl } from "~/lib/app-env";
 import { syncAndRecomputeMembershipStatus } from "~/lib/membership-status";
+import { consumeLoginNext } from "~/lib/login-next";
 
 export async function action() {
   return new Response("Method not allowed", { status: 405 });
@@ -98,9 +99,12 @@ export async function loader({ request }: Route.LoaderArgs) {
       },
       request,
     });
+    const headers = new Headers();
+    const next = consumeLoginNext(request, headers);
+    headers.set("Location", next ?? "/");
     return new Response(null, {
       status: 302,
-      headers: { Location: "/" },
+      headers,
     });
   }
 
