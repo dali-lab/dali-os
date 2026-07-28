@@ -2,6 +2,8 @@ import type { Route } from "./+types/api.projects.$id";
 import { prisma } from "~/lib/db";
 import { requireCore } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
+import { logAuditEvent } from "~/lib/audit";
+import { pageDocName } from "~/collab/roomName";
 
 // DELETE /api/projects/:id — permanently delete a project. Admin/Core only.
 //
@@ -63,10 +65,28 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Project not found" }, { status: 404 }));
   }
 
-  const counts = await Promise.all(BLOCKERS.map((b) => b.count(projectId)));
-  const blocking = BLOCKERS.map((b, i) => ({ label: b.label, count: counts[i]! })).filter(
-    (b) => b.count > 0,
+  // Pages live in the Project workspace via the polymorphic `workspaceId`, which
+  // has no foreign key — so they neither block the delete nor cascade, and would
+  // simply be orphaned. Every project auto-creates an Overview page (and
+  // sometimes a PRD), so those two can't count as content or nothing would ever
+  // be deletable; they're removed alongside the project below. Any *other* page
+  // is someone's writing and blocks.
+  const systemPageIds = [project.overviewPageId, project.prdPageId].filter(
+    (id): id is string => id !== null,
   );
+  const authoredPages = await prisma.page.count({
+    where: {
+      workspaceType: "Project",
+      workspaceId: projectId,
+      id: { notIn: systemPageIds },
+    },
+  });
+
+  const counts = await Promise.all(BLOCKERS.map((b) => b.count(projectId)));
+  const blocking = [
+    ...BLOCKERS.map((b, i) => ({ label: b.label, count: counts[i]! })),
+    { label: "documents", count: authoredPages },
+  ].filter((b) => b.count > 0);
 
   if (blocking.length > 0) {
     return withCors(
@@ -82,14 +102,37 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   // Only ProjectFile, ProjectDomain, ProjectTerm and ProjectDomainScope cascade;
-  // all four are empty-safe. The overview/PRD pages are referenced *from* the
-  // project, so clear those references before removing the row.
+  // all four are empty-safe at this point.
+  const systemPages = await prisma.page.findMany({
+    where: { id: { in: systemPageIds } },
+    select: { id: true, contentDocId: true },
+  });
+  // A FreeForm page's body lives in a CollabDocument keyed by name — the
+  // pageDocName() shape unless the page overrides it. Versions cascade off it.
+  const docNames = systemPages.map((p) => p.contentDocId ?? pageDocName(p.id));
+
   await prisma.$transaction(async (tx) => {
+    // Project references its own overview/PRD pages, so drop those references
+    // before either row can go.
     await tx.project.update({
       where: { id: projectId },
       data: { overviewPageId: null, prdPageId: null },
     });
     await tx.project.delete({ where: { id: projectId } });
+    if (systemPageIds.length) {
+      await tx.page.deleteMany({ where: { id: { in: systemPageIds } } });
+    }
+    if (docNames.length) {
+      await tx.collabDocument.deleteMany({ where: { name: { in: docNames } } });
+    }
+  });
+
+  await logAuditEvent({
+    action: "project.delete",
+    userId: gate.auth.user.sub,
+    targetId: projectId,
+    metadata: { name: project.name, systemPagesDeleted: systemPageIds.length },
+    request,
   });
 
   return withCors(request, Response.json({ ok: true, name: project.name }));
