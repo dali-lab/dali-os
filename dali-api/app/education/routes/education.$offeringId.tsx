@@ -153,7 +153,10 @@ export default function OfferingDetail() {
                 method="post"
                 onSubmit={confirmSubmit({
                   title: "Withdraw from this offering?",
-                  description: "Your seat goes to the waitlist.",
+                  description:
+                    myStatus === "Approved"
+                      ? "Your seat opens up for the next person on the waitlist."
+                      : "This removes your application. You can re-apply while registration is open.",
                   confirmLabel: "Withdraw",
                   tone: "destructive",
                 })}

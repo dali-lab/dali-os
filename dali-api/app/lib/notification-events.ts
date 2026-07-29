@@ -242,6 +242,14 @@ export const EVENT_TYPES = {
     description: "When you're issued a certificate of completion.",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
   },
+  "education.session_reminder": {
+    kind: "Education",
+    area: "Education",
+    label: "Session reminders",
+    description: "A reminder before each session of a course you're enrolled in.",
+    timeSensitive: true,
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
   "member.promotion": {
     kind: "General",
     area: "Staffing",

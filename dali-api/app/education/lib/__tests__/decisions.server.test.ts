@@ -49,6 +49,7 @@ describe("decideApplication", () => {
 
     const res = await decideApplication({
       applicationId: "app-1",
+      offeringId: "off-1",
       status: "Approved",
       actorId: "core-1",
     });
@@ -72,6 +73,7 @@ describe("decideApplication", () => {
 
     const res = await decideApplication({
       applicationId: "app-1",
+      offeringId: "off-1",
       status: "Approved",
       actorId: "core-1",
     });
@@ -87,6 +89,7 @@ describe("decideApplication", () => {
 
     const res = await decideApplication({
       applicationId: "app-1",
+      offeringId: "off-1",
       status: "Waitlisted",
       actorId: "core-1",
     });
@@ -112,6 +115,7 @@ describe("decideApplication", () => {
 
     const res = await decideApplication({
       applicationId: "app-1",
+      offeringId: "off-1",
       status: "Withdrawn",
       actorId: "user-1",
     });
@@ -133,6 +137,7 @@ describe("decideApplication", () => {
 
     await decideApplication({
       applicationId: "app-1",
+      offeringId: "off-1",
       status: "Rejected",
       actorId: "core-1",
     });
@@ -147,6 +152,21 @@ describe("decideApplication", () => {
     });
   });
 
+  it("refuses to act on an application from another offering", async () => {
+    mockPrisma.educationApplication.findUnique.mockResolvedValue(appRow());
+
+    const res = await decideApplication({
+      applicationId: "app-1",
+      offeringId: "other-offering",
+      status: "Approved",
+      actorId: "core-1",
+    });
+
+    expect(res).toMatchObject({ status: 404 });
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    expect(notifyApplicationStatus).not.toHaveBeenCalled();
+  });
+
   it("no-ops when the status is unchanged", async () => {
     mockPrisma.educationApplication.findUnique.mockResolvedValue(
       appRow({ status: "Approved" }),
@@ -154,6 +174,7 @@ describe("decideApplication", () => {
 
     const res = await decideApplication({
       applicationId: "app-1",
+      offeringId: "off-1",
       status: "Approved",
       actorId: "core-1",
     });

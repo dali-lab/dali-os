@@ -23,6 +23,10 @@ const DECIDABLE: EduApplicationStatus[] = [
  */
 export async function decideApplication(args: {
   applicationId: string;
+  // Scopes the decision to a single offering so a manager of offering A can
+  // never act on an application belonging to offering B. Self-scoped here (not
+  // just at the route) to match updateAssignment/saveAttendance.
+  offeringId: string;
   status: EduApplicationStatus;
   actorId: string;
 }): Promise<DecisionResult> {
@@ -39,7 +43,9 @@ export async function decideApplication(args: {
       offering: { select: { capacity: true } },
     },
   });
-  if (!application) return { error: "Application not found.", status: 404 };
+  if (!application || application.offeringId !== args.offeringId) {
+    return { error: "Application not found.", status: 404 };
+  }
   if (application.status === args.status) {
     return { ok: true, status: args.status, promotedApplicationId: null };
   }
@@ -176,6 +182,7 @@ export async function withdrawApplication(args: {
   }
   const result = await decideApplication({
     applicationId: application.id,
+    offeringId: args.offeringId,
     status: "Withdrawn",
     actorId: args.userId,
   });

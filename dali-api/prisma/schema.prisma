@@ -2859,6 +2859,9 @@ model EducationSession {
   id             String   @id @default(cuid())
   offeringId     String
   sequence       Int
+  // Optional topic/title for the session (e.g. "Intro to Figma"). Null falls
+  // back to "Session N" in the UI.
+  title          String?
   datetime       DateTime
   location       String?
   // DORMANT in v1 — per-session materials live as pages in the offering's
@@ -2869,6 +2872,10 @@ model EducationSession {
   // Stamped when session-feedback todos/emails have been fanned out for this
   // session (first attendance save). Guards against duplicate fan-out.
   feedbackRequestedAt DateTime?
+
+  // Stamped when a start-soon reminder has been fanned out for this session,
+  // so the reminder job stays idempotent across ticks/retries.
+  reminderSentAt DateTime?
 
   offering        EducationOffering     @relation(fields: [offeringId], references: [id])
   attendances     EducationAttendance[]
@@ -3605,6 +3612,14 @@ model Page {
   // (and collaboratively edit) this page from the partner portal. Meaningless
   // for Lab/EducationOffering workspaces (stays false).
   partnerVisible Boolean @default(false)
+
+  // Education collaborative doc: when true and workspaceType == EducationOffering,
+  // students with an Approved application to workspaceId may collaboratively
+  // edit this page (a shared "workspace" doc), not just read it server-side.
+  // Meaningless for Lab/Project workspaces (stays false). Enrollment — not auth
+  // type — grants access, so it covers member and Dartmouth-portal students
+  // alike. Editing is gated to before the offering is closed out.
+  studentEditable Boolean @default(false)
 
   // Public sharing: when true and workspaceType == Project, this page's body
   // is the project's write-up on dali.website. Orthogonal to partnerVisible —

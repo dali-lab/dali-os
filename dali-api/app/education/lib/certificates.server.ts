@@ -2,6 +2,7 @@ import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
 import { logAuditEvent } from "~/lib/audit";
 import { requestInstructorExitSurveys } from "./feedback.server";
+import { lockOffering } from "./apply.server";
 import { currentTerm } from "~/lib/roles";
 
 // Completion certificates. Pure derived data — the HTML page and PDF are
@@ -104,29 +105,37 @@ export async function closeOutOffering(args: {
   }
 
   // Teaching earns a CE credit too — but only on the FIRST close-out, since
-  // manual-style rows (sessionId null) have no uniqueness to lean on.
+  // manual-style rows (sessionId null) have no uniqueness to lean on. Grant the
+  // credits and stamp closedOutAt atomically under the offering row lock: a
+  // concurrent or retried close-out re-reads closedOutAt inside the lock and
+  // bails, so instructors can never be double-granted.
   if (firstCloseOut) {
     const term = await currentTerm();
-    if (term) {
-      for (const instructor of offering.instructors) {
-        await prisma.cECredit.create({
-          data: {
-            userId: instructor.userId,
-            termId: term.id,
-            grantedById: args.actorId,
-            reason: `Taught ${offering.title}`,
-          },
-        });
+    await prisma.$transaction(async (tx) => {
+      await lockOffering(tx, args.offeringId);
+      const fresh = await tx.educationOffering.findUnique({
+        where: { id: args.offeringId },
+        select: { closedOutAt: true },
+      });
+      if (fresh?.closedOutAt) return; // another close-out won the race
+      if (term) {
+        for (const instructor of offering.instructors) {
+          await tx.cECredit.create({
+            data: {
+              userId: instructor.userId,
+              termId: term.id,
+              grantedById: args.actorId,
+              reason: `Taught ${offering.title}`,
+            },
+          });
+        }
       }
-    }
+      await tx.educationOffering.update({
+        where: { id: args.offeringId },
+        data: { closedOutAt: new Date(), closedOutById: args.actorId },
+      });
+    });
   }
-
-  await prisma.educationOffering.update({
-    where: { id: args.offeringId },
-    data: firstCloseOut
-      ? { closedOutAt: new Date(), closedOutById: args.actorId }
-      : {},
-  });
 
   // Notifications + emails after the writes; best-effort. education.certificate
   // defaults to Instant email, matching the old everyone-gets-email behavior.

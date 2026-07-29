@@ -7,6 +7,7 @@ import {
   linkExtension,
 } from "./editor/shared";
 import { mentionViewerExtension } from "./editor/mention";
+import { readonlyRichExtensions } from "./editor/rich-nodes";
 
 interface RichTextViewerProps {
   content: unknown;
@@ -25,6 +26,10 @@ export function RichTextViewer({ content, className, enableMentions = false }: R
     extensions: [
       StarterKit,
       linkExtension({ interactive: true }),
+      // Full static schema so images, tables, callouts, colors, highlights,
+      // line spacing, and toggle blocks the editor produces render instead of
+      // being silently dropped.
+      ...readonlyRichExtensions(),
       ...(enableMentions ? [mentionViewerExtension()] : []),
     ],
     content: isEmptyDoc(content) ? "" : (content as object),

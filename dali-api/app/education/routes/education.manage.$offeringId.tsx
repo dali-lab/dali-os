@@ -226,15 +226,11 @@ export async function action({ request, params }: Route.ActionArgs) {
 
     switch (intent) {
       case "decide-application": {
-        const applicationId = String(formData.get("applicationId") ?? "");
-        const application = await prisma.educationApplication.findUnique({
-          where: { id: applicationId },
-          select: { offeringId: true },
-        });
-        if (!application || application.offeringId !== params.offeringId)
-          return Response.json({ error: "Application not found" }, { status: 404 });
+        // decideApplication self-scopes to offeringId, so a manager of another
+        // offering can't act on this application.
         const result = await decideApplication({
-          applicationId,
+          applicationId: String(formData.get("applicationId") ?? ""),
+          offeringId: params.offeringId!,
           status: String(formData.get("status")) as EduApplicationStatus,
           actorId: auth.user.sub,
         });
