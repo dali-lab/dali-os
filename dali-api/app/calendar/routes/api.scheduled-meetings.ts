@@ -15,11 +15,10 @@ const Base = {
   recurrenceRule: z.string().max(500).optional(),
   startTime: z.string().datetime().optional(),
   organizerCalendarLinkId: z.string().min(1).optional(),
+  // Note category, DERIVED client-side from project + partner-meeting:
+  // Partner (partner meeting) | Team (any other project meeting) | Other
+  // (no project → Lab-workspace note). Presence = "create a note".
   meetingType: z.enum(["Team", "Partner", "Other"]).optional(),
-  meetingTypeLabel: z.string().trim().min(1).max(80).optional(),
-  // Project-less meetingType meetings get a Lab-workspace note page instead of
-  // a project one — see createScheduledMeeting in ~/lib/scheduled-meeting.
-  // Invites still come only from the meeting's participant scope.
   projectId: z.string().min(1).optional(),
   // Share this meeting with the project's partners (portal + calendar invite +
   // RSVP). Independent of notes; ignored server-side without a projectId.
@@ -38,11 +37,7 @@ const CreateSchema = z
       participantUserIds: z.array(z.string().min(1)).min(1),
       ...Base,
     }),
-  ])
-  .refine((v) => v.meetingType !== "Other" || !!v.meetingTypeLabel, {
-    message: "meetingTypeLabel is required when meetingType is Other",
-    path: ["meetingTypeLabel"],
-  });
+  ]);
 
 export async function action({ request }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
@@ -84,7 +79,6 @@ export async function action({ request }: Route.ActionArgs) {
     recurrenceRule: body.recurrenceRule,
     organizerCalendarLinkId: body.organizerCalendarLinkId,
     meetingType: body.meetingType,
-    meetingTypeLabel: body.meetingTypeLabel,
     projectId: body.projectId,
     partnerVisible: body.partnerVisible,
     attendanceMode: body.attendanceMode,

@@ -3621,13 +3621,14 @@ function CreateScheduledMeetingForm({
   );
   // Project is a first-class association now (not gated behind the note).
   const [projectId, setProjectId] = useState("");
-  // Share with the project's partners — only offered when the chosen project
-  // has active partners.
+  // Partner meeting — shares it with the project's partners AND (if a note is
+  // attached) files that note under Partner meeting notes. Only offered when
+  // the chosen project has active partners.
   const [partnerVisible, setPartnerVisible] = useState(false);
-  // Meeting notes are opt-in — type/label only appear when this is on.
+  // Meeting notes are opt-in. The note's category is derived (Partner if this
+  // is a partner meeting, else Team when project-linked, else a Lab note) — no
+  // separate type dropdown.
   const [createNote, setCreateNote] = useState(false);
-  const [meetingType, setMeetingType] = useState<"Team" | "Partner" | "Other">("Other");
-  const [meetingTypeLabel, setMeetingTypeLabel] = useState("");
   // Self check-in is independent of the meeting note (QR lives on the note when
   // one exists, otherwise on /calendar/check-in/:id).
   const [selfCheckIn, setSelfCheckIn] = useState(false);
@@ -3665,8 +3666,6 @@ function CreateScheduledMeetingForm({
   const duration = durationMinutesBetween(startLocal, endLocal);
   const startEndValid =
     !startLocal || !endLocal || new Date(endLocal).getTime() > new Date(startLocal).getTime();
-  const meetingTypeValid =
-    !createNote || meetingType !== "Other" || meetingTypeLabel.trim().length > 0;
 
   const selectedProject = myProjects.find((p) => p.id === projectId) ?? null;
   const canShareWithPartners = Boolean(selectedProject?.hasActivePartners);
@@ -3697,15 +3696,18 @@ function CreateScheduledMeetingForm({
       if (organizerCalendarLinkId) {
         payload.organizerCalendarLinkId = organizerCalendarLinkId;
       }
-      // Project + partner-sharing are first-class, independent of the note.
+      // Project + partner-meeting are first-class, independent of the note.
       if (projectId) payload.projectId = projectId;
-      const sharing = partnerVisible && Boolean(projectId);
-      if (sharing) payload.partnerVisible = true;
+      const partnerMeeting = partnerVisible && Boolean(projectId);
+      if (partnerMeeting) payload.partnerVisible = true;
       if (createNote) {
-        // Sharing with partners categorizes the note under the Partner folder.
-        payload.meetingType = sharing ? "Partner" : meetingType;
-        if (payload.meetingType === "Other")
-          payload.meetingTypeLabel = meetingTypeLabel.trim();
+        // Note category is derived: Partner (partner meeting) → Team (any other
+        // project meeting) → Other (no project, lands in Lab documents).
+        payload.meetingType = partnerMeeting
+          ? "Partner"
+          : projectId
+            ? "Team"
+            : "Other";
       }
       if (canSetSelfCheckIn) {
         payload.attendanceMode = selfCheckIn ? "SelfCheckIn" : "Roster";
@@ -3748,9 +3750,8 @@ function CreateScheduledMeetingForm({
         onChangeSelectedUserIds([]);
         onChangeSelectedGroupIds([]);
         setCreateNote(false);
-        setMeetingType("Other");
-        setMeetingTypeLabel("");
         setProjectId("");
+        setPartnerVisible(false);
         setSelfCheckIn(false);
       }
     } catch (err) {
@@ -3761,7 +3762,7 @@ function CreateScheduledMeetingForm({
   }
 
   const canSubmit =
-    title.trim().length > 0 && duration > 0 && startEndValid && meetingTypeValid && !submitting;
+    title.trim().length > 0 && duration > 0 && startEndValid && !submitting;
 
   const fieldClass =
     "w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/40";
@@ -3920,11 +3921,12 @@ function CreateScheduledMeetingForm({
                 />
                 <span>
                   <span className="block text-sm font-medium text-foreground">
-                    Share with {selectedProject?.name}'s partners
+                    Partner meeting
                   </span>
                   <span className="block text-xs text-muted-foreground mt-0.5">
-                    They'll see it on their partner portal, get a calendar invite,
-                    and can RSVP.
+                    Shares it with {selectedProject?.name}'s partners — they see
+                    it on their portal, get a calendar invite, and can RSVP. Any
+                    note is filed under Partner meeting notes.
                   </span>
                 </span>
               </label>
@@ -3945,49 +3947,15 @@ function CreateScheduledMeetingForm({
                 </span>
                 <span className="block text-xs text-muted-foreground mt-0.5">
                   Adds a note with an attendance checklist
-                  {projectId ? " under the project's documents" : " in Lab documents"}. Invites
-                  still go only to people and groups in Participants.
+                  {projectId
+                    ? partnerVisible
+                      ? " under Partner meeting notes"
+                      : " under the project's documents"
+                    : " in Lab documents"}
+                  . Invites still go only to people and groups in Participants.
                 </span>
               </span>
             </label>
-
-            {createNote && (
-              <div className="pl-6 space-y-3">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label htmlFor="meeting-type" className={labelClass}>
-                      Meeting type
-                    </label>
-                    <select
-                      id="meeting-type"
-                      value={meetingType}
-                      onChange={(e) => setMeetingType(e.target.value as typeof meetingType)}
-                      className={fieldClass}
-                    >
-                      <option value="Team">Team meeting</option>
-                      <option value="Partner">Partner meeting</option>
-                      <option value="Other">Other</option>
-                    </select>
-                  </div>
-                  {meetingType === "Other" && (
-                    <div>
-                      <label htmlFor="meeting-type-label" className={labelClass}>
-                        Meeting type name
-                      </label>
-                      <input
-                        id="meeting-type-label"
-                        type="text"
-                        value={meetingTypeLabel}
-                        onChange={(e) => setMeetingTypeLabel(e.target.value)}
-                        placeholder="e.g. Partner hub meeting"
-                        required
-                        className={fieldClass}
-                      />
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
           </div>
 
           {canSetSelfCheckIn && (
