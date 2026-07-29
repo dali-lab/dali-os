@@ -1139,6 +1139,8 @@ function FeedbackResults({
   title: string;
   anonymizedNote: boolean;
   results: {
+    responded: number;
+    eligible: number;
     questions: { key: string; type: string; data: { label: string } }[];
     submissions: {
       id: string;
@@ -1148,10 +1150,19 @@ function FeedbackResults({
   };
 }) {
   const visibleQuestions = results.questions.filter((q) => q.type !== "info");
+  const rate =
+    results.eligible > 0
+      ? Math.round((results.responded / results.eligible) * 100)
+      : null;
   return (
     <section className="bg-card border border-border rounded-lg p-5 flex flex-col gap-4">
       <div>
         <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+        {rate !== null && (
+          <p className="text-xs font-medium text-muted-foreground mt-0.5">
+            {results.responded} of {results.eligible} responded ({rate}%)
+          </p>
+        )}
         {anonymizedNote && (
           <p className="text-xs text-muted-foreground mt-0.5">
             Responses are anonymized and shown in a shuffled order.
