@@ -44,7 +44,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const data = await loadPartnerProjectView(params.id!, null);
   if (!data) return redirect("/projects");
-  return data;
+  return { ...data, currentUserId: auth.user.sub };
 }
 
 export default function ProjectPartnerViewPreview() {
@@ -52,6 +52,7 @@ export default function ProjectPartnerViewPreview() {
   return (
     <PartnerProjectHubView
       data={data}
+      currentUserId={data.currentUserId}
       pageHref={(pageId) => `/documents/${pageId}`}
     />
   );

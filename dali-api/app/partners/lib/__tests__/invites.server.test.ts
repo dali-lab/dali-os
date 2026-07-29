@@ -32,6 +32,7 @@ const mockPrisma = prisma as any;
 
 beforeEach(() => {
   vi.resetAllMocks();
+  (sendPartnerInviteEmail as any).mockResolvedValue({ ok: true });
   mockPrisma.user.findFirst.mockResolvedValue(null);
   mockPrisma.user.findUnique.mockResolvedValue({ firstName: "Ada", lastName: "L" });
   mockPrisma.user.create.mockResolvedValue({ id: "new-user" });
@@ -83,7 +84,7 @@ describe("createPartnerInvite", () => {
 
   it("supersedes pending invites and emails a link with the raw token", async () => {
     const result = await createPartnerInvite(params);
-    expect(result).toEqual({ ok: true });
+    expect(result).toEqual({ ok: true, emailSent: true });
     expect(mockPrisma.partnerInvite.updateMany).toHaveBeenCalledWith({
       where: {
         partnerOrgId: "org1",
@@ -98,6 +99,13 @@ describe("createPartnerInvite", () => {
     const url: string = (sendPartnerInviteEmail as any).mock.calls[0][3];
     expect(url).toContain("/partner/invite/");
     expect(url).not.toContain(createArg.data.tokenHash);
+  });
+
+  it("still creates the invite but reports emailSent:false on delivery failure", async () => {
+    (sendPartnerInviteEmail as any).mockResolvedValue({ ok: false, error: "x" });
+    const result = await createPartnerInvite(params);
+    expect(result).toEqual({ ok: true, emailSent: false });
+    expect(mockPrisma.partnerInvite.create).toHaveBeenCalled();
   });
 });
 

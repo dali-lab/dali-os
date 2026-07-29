@@ -39,6 +39,8 @@ const req = () => new Request("http://localhost/partner/login", { method: "POST"
 beforeEach(() => {
   vi.resetAllMocks();
   (checkRateLimit as any).mockReturnValue(null);
+  (sendPartnerMagicLinkEmail as any).mockResolvedValue({ ok: true });
+  (sendMemberEmailConflictEmail as any).mockResolvedValue({ ok: true });
   mockPrisma.user.findFirst.mockResolvedValue(null);
   mockPrisma.dALIMember.findUnique.mockResolvedValue(null);
   mockPrisma.user.create.mockResolvedValue({ id: "new-user" });
@@ -153,6 +155,27 @@ describe("issuePartnerMagicLink", () => {
     await issuePartnerMagicLink("pat@example.com", req());
     expect(mockPrisma.user.create).not.toHaveBeenCalled();
     expect(mockPrisma.oneTimeToken.create.mock.calls[0][0].data.userId).toBe("u9");
+  });
+
+  it("reports sendFailed when the sign-in email can't be delivered", async () => {
+    (sendPartnerMagicLinkEmail as any).mockResolvedValue({
+      ok: false,
+      error: "nope",
+    });
+    const result = await issuePartnerMagicLink("pat@example.com", req());
+    expect(result).toEqual({ sendFailed: true });
+    // The token is still issued (the user can retry) — only the outcome differs.
+    expect(mockPrisma.oneTimeToken.create).toHaveBeenCalled();
+  });
+
+  it("reports sendFailed when the member-conflict email can't be delivered", async () => {
+    (sendMemberEmailConflictEmail as any).mockResolvedValue({
+      ok: false,
+      error: "nope",
+    });
+    const result = await issuePartnerMagicLink("kiran@dali.dartmouth.edu", req());
+    expect(result).toEqual({ sendFailed: true });
+    expect(mockPrisma.oneTimeToken.create).not.toHaveBeenCalled();
   });
 });
 

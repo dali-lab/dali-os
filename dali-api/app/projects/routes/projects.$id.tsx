@@ -43,6 +43,10 @@ import {
   unlinkProjectPartner,
   updateProjectPartnerDates,
 } from "~/partners/lib/partner-access";
+import {
+  notifyPartnerPartnershipEnded,
+  notifyPartnerProjectLinked,
+} from "~/partners/lib/partner-notify.server";
 import { getPresenceUser } from "~/lib/presence-user";
 import { TaskBoard } from "../components/TaskBoard";
 import { ProjectMentorshipTab } from "~/mentorship/components/ProjectMentorshipTab";
@@ -1053,6 +1057,11 @@ export async function action({ request, params }: Route.ActionArgs) {
       return { error: "Only Core or Admin can manage partner organizations." };
     }
     const actor = { actorUserId: auth.user.sub, request };
+    const linkedProject = await prisma.project.findUnique({
+      where: { id: params.id },
+      select: { name: true },
+    });
+    const projectName = linkedProject?.name ?? "your project";
     if (intent === "partner-link") {
       const partnerOrgId = (form.get("partnerOrgId") as string | null) ?? "";
       if (!partnerOrgId) return { error: "Select an organization." };
@@ -1060,12 +1069,14 @@ export async function action({ request, params }: Route.ActionArgs) {
         { projectId: params.id, partnerOrgId },
         actor,
       );
-      return "error" in result ? result : redirect(`/projects/${params.id}`);
+      if ("error" in result) return result;
+      await notifyPartnerProjectLinked({ projectId: params.id, partnerOrgId, projectName });
+      return redirect(`/projects/${params.id}`);
     }
     const projectPartnerId = (form.get("projectPartnerId") as string | null) ?? "";
     const existing = await prisma.projectPartner.findFirst({
       where: { id: projectPartnerId, projectId: params.id },
-      select: { id: true, startedAt: true },
+      select: { id: true, startedAt: true, partnerOrgId: true },
     });
     if (!existing) return { error: "Partnership not found." };
     if (intent === "partner-end") {
@@ -1073,10 +1084,14 @@ export async function action({ request, params }: Route.ActionArgs) {
         { projectPartnerId, startedAt: existing.startedAt, endedAt: new Date() },
         actor,
       );
-      return "error" in result ? result : redirect(`/projects/${params.id}`);
+      if ("error" in result) return result;
+      await notifyPartnerPartnershipEnded({ partnerOrgId: existing.partnerOrgId, projectName });
+      return redirect(`/projects/${params.id}`);
     }
     const result = await unlinkProjectPartner(projectPartnerId, actor);
-    return "error" in result ? result : redirect(`/projects/${params.id}`);
+    if ("error" in result) return result;
+    await notifyPartnerPartnershipEnded({ partnerOrgId: existing.partnerOrgId, projectName });
+    return redirect(`/projects/${params.id}`);
   }
 
   // Header form: name + status + icon.

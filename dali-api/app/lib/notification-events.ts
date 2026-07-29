@@ -75,6 +75,13 @@ export const EVENT_TYPES = {
     description: "When a meeting you were invited to is cancelled.",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
+  "partner.meeting.requested": {
+    kind: "General",
+    area: "Meetings",
+    label: "Partner meeting requests",
+    description: "When a partner asks your project team for a meeting.",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
+  },
   "task.due_reminder": {
     kind: "General",
     area: "Tasks",

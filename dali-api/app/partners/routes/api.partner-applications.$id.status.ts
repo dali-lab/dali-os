@@ -4,6 +4,7 @@ import { requireAuth, forbidden } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { isPartnerApplicationStatus } from "../lib/partner-application";
+import { notifyPartnerApplicationDecision } from "../lib/partner-notify.server";
 
 // POST /api/partner-applications/:id/status
 //
@@ -59,6 +60,8 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
     throw e;
   }
+
+  await notifyPartnerApplicationDecision({ applicationId: params.id, status });
 
   return withCors(request, Response.json({ ok: true }));
 }

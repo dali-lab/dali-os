@@ -1,15 +1,17 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Form,
   Link,
   redirect,
   useActionData,
   useLoaderData,
+  useSearchParams,
   useSubmit,
 } from "react-router";
 import { Building2, FolderKanban, Mail, Users, Unlink } from "lucide-react";
 import { Tooltip } from "~/components/ui/IconButton";
 import { useConfirmSubmit } from "~/components/ui/dialog";
+import { useToast } from "~/components/ui/toast";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import type { Route } from "./+types/partners.$orgId";
 import { requireAuth } from "~/lib/auth";
@@ -18,11 +20,17 @@ import { canViewStaffing, isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { EditableSection } from "~/components/EditableSection";
+import { PhotoUploadField } from "~/components/PhotoUploadField";
 import {
   linkProjectPartner,
   unlinkProjectPartner,
   updateProjectPartnerDates,
 } from "../lib/partner-access";
+import { normalizeWebsite } from "../lib/partner-org";
+import {
+  notifyPartnerPartnershipEnded,
+  notifyPartnerProjectLinked,
+} from "../lib/partner-notify.server";
 import {
   createPartnerInvite,
   listPendingInvites,
@@ -56,6 +64,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       website: true,
       isIndividual: true,
       primaryContactId: true,
+      archivedAt: true,
       createdAt: true,
       users: {
         orderBy: { createdAt: "asc" },
@@ -130,6 +139,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     pendingInvites,
     linkableProjects,
     otherOrgs,
+    // Actor id for the logo upload widget's signed-URL request.
+    viewerId: auth.user.sub,
     // Cleanup affordance for duplicate-org husks: deletable only when truly
     // empty (the action re-validates with authoritative counts).
     canDeleteOrg:
@@ -174,7 +185,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       where: { id: org.id },
       data: {
         name,
-        website: (form.get("website") as string | null)?.trim() || null,
+        website: normalizeWebsite(form.get("website") as string | null),
         logoUrl: (form.get("logoUrl") as string | null)?.trim() || null,
         isIndividual: form.get("isIndividual") === "on",
         primaryContactId,
@@ -186,7 +197,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       targetId: org.id,
       request,
     });
-    return { ok: true };
+    return { ok: true, toast: "Organization saved." };
   }
 
   if (intent === "member-role") {
@@ -205,7 +216,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       metadata: { partnerOrgId: org.id },
       request,
     });
-    return { ok: true };
+    return { ok: true, toast: "Role updated." };
   }
 
   if (intent === "member-move") {
@@ -247,7 +258,26 @@ export async function action({ request, params }: Route.ActionArgs) {
       metadata: { movedFrom: org.id, movedTo: targetOrgId },
       request,
     });
-    return { ok: true };
+    return { ok: true, toast: "Member moved." };
+  }
+
+  if (intent === "org-archive" || intent === "org-unarchive") {
+    const archiving = intent === "org-archive";
+    await prisma.partnerOrg.update({
+      where: { id: org.id },
+      data: { archivedAt: archiving ? new Date() : null },
+    });
+    await logAuditEvent({
+      action: "partner.org.update",
+      userId: auth.user.sub,
+      targetId: org.id,
+      metadata: { change: archiving ? "archived" : "unarchived" },
+      request,
+    });
+    return {
+      ok: true,
+      toast: archiving ? "Organization archived." : "Organization restored.",
+    };
   }
 
   if (intent === "org-delete") {
@@ -313,7 +343,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       metadata: { partnerOrgId: org.id },
       request,
     });
-    return { ok: true };
+    return { ok: true, toast: "Member removed." };
   }
 
   if (intent === "project-link") {
@@ -323,32 +353,78 @@ export async function action({ request, params }: Route.ActionArgs) {
       { projectId, partnerOrgId: org.id },
       actor,
     );
-    return "error" in result ? result : { ok: true };
+    if ("error" in result) return result;
+    const proj = await prisma.project.findUnique({
+      where: { id: projectId },
+      select: { name: true },
+    });
+    await notifyPartnerProjectLinked({
+      projectId,
+      partnerOrgId: org.id,
+      projectName: proj?.name ?? "your project",
+    });
+    return { ok: true, toast: "Project linked." };
   }
 
   if (intent === "project-end") {
     const projectPartnerId = form.get("projectPartnerId") as string;
     const existing = await prisma.projectPartner.findFirst({
       where: { id: projectPartnerId, partnerOrgId: org.id },
-      select: { startedAt: true },
+      select: { startedAt: true, project: { select: { name: true } } },
     });
     if (!existing) return { error: "Partnership not found." };
     const result = await updateProjectPartnerDates(
       { projectPartnerId, startedAt: existing.startedAt, endedAt: new Date() },
       actor,
     );
-    return "error" in result ? result : { ok: true };
+    if ("error" in result) return result;
+    await notifyPartnerPartnershipEnded({
+      partnerOrgId: org.id,
+      projectName: existing.project.name,
+    });
+    return { ok: true, toast: "Partnership ended." };
   }
 
   if (intent === "project-unlink") {
     const projectPartnerId = form.get("projectPartnerId") as string;
     const existing = await prisma.projectPartner.findFirst({
       where: { id: projectPartnerId, partnerOrgId: org.id },
-      select: { id: true },
+      select: { id: true, project: { select: { name: true } } },
     });
     if (!existing) return { error: "Partnership not found." };
     const result = await unlinkProjectPartner(projectPartnerId, actor);
-    return "error" in result ? result : { ok: true };
+    if ("error" in result) return result;
+    await notifyPartnerPartnershipEnded({
+      partnerOrgId: org.id,
+      projectName: existing.project.name,
+    });
+    return { ok: true, toast: "Project unlinked." };
+  }
+
+  if (intent === "project-reactivate") {
+    // Re-open an ended partnership (clear endedAt) — the unique constraint
+    // blocks a fresh link while the ended row still exists, so we revive it.
+    const projectPartnerId = form.get("projectPartnerId") as string;
+    const existing = await prisma.projectPartner.findFirst({
+      where: { id: projectPartnerId, partnerOrgId: org.id },
+      select: {
+        startedAt: true,
+        projectId: true,
+        project: { select: { name: true } },
+      },
+    });
+    if (!existing) return { error: "Partnership not found." };
+    const result = await updateProjectPartnerDates(
+      { projectPartnerId, startedAt: existing.startedAt, endedAt: null },
+      actor,
+    );
+    if ("error" in result) return result;
+    await notifyPartnerProjectLinked({
+      projectId: existing.projectId,
+      partnerOrgId: org.id,
+      projectName: existing.project.name,
+    });
+    return { ok: true, toast: "Partnership reactivated." };
   }
 
   if (intent === "invite") {
@@ -364,7 +440,8 @@ export async function action({ request, params }: Route.ActionArgs) {
       },
       request,
     );
-    return "error" in result ? result : { ok: true, invited: true };
+    if ("error" in result) return result;
+    return { ok: true, invited: true, emailSent: result.emailSent };
   }
 
   if (intent === "revoke-invite") {
@@ -373,7 +450,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       { inviteId, partnerOrgId: org.id, actorUserId: auth.user.sub },
       request,
     );
-    return "error" in result ? result : { ok: true };
+    return "error" in result ? result : { ok: true, toast: "Invite revoked." };
   }
 
   return { error: "Unknown action." };
@@ -384,20 +461,42 @@ function memberName(u: { firstName: string; lastName: string; personalEmail: str
 }
 
 export default function PartnerOrgDetail() {
-  const { org, pendingInvites, linkableProjects, otherOrgs, canDeleteOrg, canEdit } =
+  const { org, pendingInvites, linkableProjects, otherOrgs, viewerId, canDeleteOrg, canEdit } =
     useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const submit = useSubmit();
   const confirmSubmit = useConfirmSubmit();
+  const toast = useToast();
+  const [searchParams] = useSearchParams();
   const detailsFormRef = useRef<HTMLFormElement>(null);
-  const [inviting, setInviting] = useState(false);
+  // Open the invite panel automatically when arriving from org creation with a
+  // first-contact address that couldn't be sent (see partners.tsx create).
+  const [inviting, setInviting] = useState(searchParams.get("invite") === "1");
   const [linking, setLinking] = useState(false);
   // Which member row has the "move to another org" form open.
   const [movingId, setMovingId] = useState<string | null>(null);
+  // Which member row has the inline role editor open.
+  const [editingRoleId, setEditingRoleId] = useState<string | null>(null);
   // Which project row has its End/Unlink actions revealed.
   const [managingId, setManagingId] = useState<string | null>(null);
 
   const error = actionData && "error" in actionData ? actionData.error : null;
+
+  // Surface success as a toast (per the popup-system convention) and close any
+  // open inline editor once its action lands.
+  useEffect(() => {
+    if (!actionData || "error" in actionData) return;
+    if ("invited" in actionData) {
+      if (actionData.emailSent) toast.success("Invitation sent.");
+      else toast.error("Invite created, but the email couldn't be sent.");
+      setInviting(false);
+    } else if ("toast" in actionData && actionData.toast) {
+      toast.success(actionData.toast);
+    }
+    setMovingId(null);
+    setEditingRoleId(null);
+    setManagingId(null);
+  }, [actionData, toast]);
 
   const inputClass =
     "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm";
@@ -439,6 +538,26 @@ export default function PartnerOrgDetail() {
         </div>
       </div>
 
+      {org.archivedAt && (
+        <div className="flex items-center justify-between gap-3 flex-wrap rounded-lg border border-amber-300 bg-amber-50 px-4 py-3">
+          <p className="text-sm text-amber-800">
+            This organization is archived — hidden from the default Partners
+            list. Its history is preserved.
+          </p>
+          {canEdit && (
+            <Form method="post">
+              <input type="hidden" name="intent" value="org-unarchive" />
+              <button
+                type="submit"
+                className="px-3 py-1.5 text-xs font-medium rounded-md border border-amber-400 text-amber-800 hover:bg-amber-100 transition"
+              >
+                Restore
+              </button>
+            </Form>
+          )}
+        </div>
+      )}
+
       {error && (
         <p className="text-sm text-destructive bg-destructive/10 rounded-lg px-4 py-3">
           {error}
@@ -475,12 +594,16 @@ export default function PartnerOrgDetail() {
                 )}
               </div>
               <div>
-                <div className="text-xs font-medium text-muted-foreground mb-1">Logo URL</div>
-                {editing ? (
-                  <input name="logoUrl" defaultValue={org.logoUrl ?? ""} className={inputClass} />
-                ) : (
-                  <div className="text-sm text-foreground truncate">{org.logoUrl ?? "—"}</div>
-                )}
+                <PhotoUploadField
+                  userId={viewerId}
+                  name={org.name}
+                  label="Logo"
+                  fieldName="logoUrl"
+                  keyPrefix={`logos/${org.id}`}
+                  initialKey={org.logoUrl}
+                  initialPreviewUrl={org.logoDisplayUrl}
+                  readOnly={!editing}
+                />
               </div>
               <div>
                 <div className="text-xs font-medium text-muted-foreground mb-1">Primary contact</div>
@@ -594,6 +717,17 @@ export default function PartnerOrgDetail() {
                       {m.displayRole ? ` · ${m.displayRole}` : ""}
                     </div>
                   </div>
+                  {canEdit && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setEditingRoleId(editingRoleId === m.id ? null : m.id)
+                      }
+                      className="text-xs text-muted-foreground hover:text-foreground transition"
+                    >
+                      Edit role
+                    </button>
+                  )}
                   {canEdit && otherOrgs.length > 0 && (
                     <button
                       type="button"
@@ -626,6 +760,34 @@ export default function PartnerOrgDetail() {
                     </Form>
                   )}
                 </div>
+                {canEdit && editingRoleId === m.id && (
+                  <Form
+                    method="post"
+                    className="flex items-center gap-2 bg-muted/20 rounded-lg p-2.5"
+                  >
+                    <input type="hidden" name="intent" value="member-role" />
+                    <input type="hidden" name="partnerUserId" value={m.id} />
+                    <input
+                      name="displayRole"
+                      defaultValue={m.displayRole ?? ""}
+                      placeholder="e.g. CTO (display only)"
+                      className="flex-1 px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                    />
+                    <button
+                      type="submit"
+                      className="px-3 py-1.5 text-xs font-medium rounded-md bg-dark-blue text-white hover:opacity-90 transition"
+                    >
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingRoleId(null)}
+                      className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition"
+                    >
+                      Cancel
+                    </button>
+                  </Form>
+                )}
                 {canEdit && movingId === m.id && (
                   <Form
                     method="post"
@@ -684,16 +846,35 @@ export default function PartnerOrgDetail() {
                   </div>
                 </div>
                 {canEdit && (
-                  <Form method="post">
-                    <input type="hidden" name="intent" value="revoke-invite" />
-                    <input type="hidden" name="inviteId" value={inv.id} />
-                    <button
-                      type="submit"
-                      className="text-xs text-muted-foreground hover:text-destructive transition"
-                    >
-                      Revoke
-                    </button>
-                  </Form>
+                  <>
+                    <Form method="post">
+                      <input type="hidden" name="intent" value="invite" />
+                      <input type="hidden" name="email" value={inv.email} />
+                      {inv.displayRole && (
+                        <input
+                          type="hidden"
+                          name="displayRole"
+                          value={inv.displayRole}
+                        />
+                      )}
+                      <button
+                        type="submit"
+                        className="text-xs text-muted-foreground hover:text-foreground transition"
+                      >
+                        Resend
+                      </button>
+                    </Form>
+                    <Form method="post">
+                      <input type="hidden" name="intent" value="revoke-invite" />
+                      <input type="hidden" name="inviteId" value={inv.id} />
+                      <button
+                        type="submit"
+                        className="text-xs text-muted-foreground hover:text-destructive transition"
+                      >
+                        Revoke
+                      </button>
+                    </Form>
+                  </>
                 )}
               </li>
             ))}
@@ -705,7 +886,7 @@ export default function PartnerOrgDetail() {
       <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <h2 className="font-heading font-semibold text-foreground flex items-center gap-2">
-            <FolderKanban className="w-4 h-4" /> Funded projects
+            <FolderKanban className="w-4 h-4" /> Linked projects
           </h2>
           {canEdit && linkableProjects.length > 0 && (
             <button
@@ -821,6 +1002,18 @@ export default function PartnerOrgDetail() {
                         </button>
                       </Form>
                     )}
+                    {pp.endedAt && (
+                      <Form method="post">
+                        <input type="hidden" name="intent" value="project-reactivate" />
+                        <input type="hidden" name="projectPartnerId" value={pp.id} />
+                        <button
+                          type="submit"
+                          className="px-3 py-1.5 text-xs font-medium rounded-md border border-accent-teal/40 text-accent-teal hover:bg-accent-teal/10 transition"
+                        >
+                          Reactivate
+                        </button>
+                      </Form>
+                    )}
                     <Form
                       method="post"
                       onSubmit={confirmSubmit({
@@ -876,6 +1069,39 @@ export default function PartnerOrgDetail() {
           </ul>
         )}
       </section>
+
+      {/* Archive a former partner (keeps history) — the everyday wind-down,
+          distinct from the empty-husk delete below. */}
+      {canEdit && !org.archivedAt && (
+        <section className="border border-border rounded-lg p-4 flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <h2 className="text-sm font-semibold text-foreground">
+              Archive organization
+            </h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Hide this former partner from the default list while keeping its
+              history. You can restore it anytime.
+            </p>
+          </div>
+          <Form
+            method="post"
+            onSubmit={confirmSubmit({
+              title: `Archive ${org.name}?`,
+              description:
+                "It's hidden from the default Partners list. History is kept and you can restore it later.",
+              confirmLabel: "Archive",
+            })}
+          >
+            <input type="hidden" name="intent" value="org-archive" />
+            <button
+              type="submit"
+              className="px-3 py-1.5 text-sm font-medium rounded-md border border-border hover:bg-muted transition"
+            >
+              Archive organization
+            </button>
+          </Form>
+        </section>
+      )}
 
       {/* Cleanup for duplicate-org husks — only offered when truly empty. */}
       {canDeleteOrg && (

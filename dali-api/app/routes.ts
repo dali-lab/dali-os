@@ -213,6 +213,12 @@ export default [
   route("partner/invite/:token", "partners/routes/partner.invite.$token.tsx"),
   route("partner/onboarding", "partners/routes/partner.onboarding.tsx"),
 
+  // Partner calendar resource routes (no layout): ICS feed (public, token-auth),
+  // per-event ICS download, and meeting RSVP.
+  route("partner/calendar/:token", "partners/routes/partner.calendar.$token.ts"),
+  route("partner/meetings/:id/ics", "partners/routes/partner.meetings.$id.ics.ts"),
+  route("partner/meetings/:id/rsvp", "partners/routes/partner.meetings.$id.rsvp.ts"),
+
   // Authenticated member form fill (no layout), token-addressed. Every form
   // is filled while logged in — the submitter is always the session user, so
   // there's no name/email capture and submissions can drive StaffingPreference
@@ -318,6 +324,7 @@ export default [
   // Scheduled meetings
   route("api/scheduled-meetings", "calendar/routes/api.scheduled-meetings.ts"),
   route("api/scheduled-meetings/:id/cancel", "calendar/routes/api.scheduled-meetings.$id.cancel.ts"),
+  route("api/scheduled-meetings/:id/partner-visible", "calendar/routes/api.scheduled-meetings.$id.partner-visible.ts"),
   route("api/scheduled-meetings/:id/attendance", "calendar/routes/api.scheduled-meetings.$id.attendance.ts"),
   route("api/scheduled-meetings/:id/check-in", "calendar/routes/api.scheduled-meetings.$id.check-in.ts"),
   // Organizer/Core PDF of the self-check-in QR (print / project at the event).

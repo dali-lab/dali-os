@@ -74,9 +74,18 @@ export async function action({ request }: Route.ActionArgs) {
   }
   const result = await issuePartnerMagicLink(email, request);
   if ("rateLimited" in result) return result.rateLimited;
-  // Identical response whether or not the address maps to an account. Every
-  // address does receive an email (a sign-in link, or a use-the-member-login
-  // note), so the UI can say "we emailed you" truthfully in all cases.
+  // A delivery failure (sender not connected / Gmail error) is system-level,
+  // not account-dependent, so surfacing it doesn't reveal whether an account
+  // exists — both the sign-in link and the member-conflict note fail together.
+  if ("sendFailed" in result) {
+    return {
+      error:
+        "We couldn't send the email just now. Please try again in a moment.",
+    };
+  }
+  // Otherwise the response is identical whether or not the address maps to an
+  // account (a sign-in link, or a use-the-member-login note), so "we emailed
+  // you" stays truthful without leaking account existence.
   return { sent: true, email: normalizeEmail(email) };
 }
 

@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router";
-import { Download, Eye, X } from "lucide-react";
+import { Form, Link } from "react-router";
+import { CalendarClock, Download, Eye, Flag, X } from "lucide-react";
 import { termCodeLabel } from "~/lib/display";
 import { formatBytes } from "~/lib/upload-client";
 import { Avatar } from "~/components/ui/Avatar";
 import { Markdown } from "~/components/Markdown";
 import { Modal } from "~/components/Modal";
+import { CommentsRail } from "~/components/collab/CommentsRail";
 import { PartnerBackLink } from "~/partners/components/PartnerBackLink";
 import { ProjectCoverImage } from "~/projects/components/ProjectCoverImage";
 import { ProjectIcon } from "~/components/ProjectIcon";
@@ -18,6 +19,20 @@ import type {
 } from "~/partners/lib/partner-project-view.server";
 
 type SharedFile = PartnerProjectViewData["sharedFiles"][number];
+type PartnerMeeting = PartnerProjectViewData["meetings"][number];
+type PartnerMilestone = PartnerProjectViewData["milestones"][number];
+
+// Types the browser can render inline (image/pdf/text). Everything else is
+// download-only, so the row offers Download rather than Preview.
+function isPreviewable(contentType: string | null): boolean {
+  const ct = contentType ?? "";
+  return (
+    ct.startsWith("image/") ||
+    ct === "application/pdf" ||
+    ct.startsWith("text/") ||
+    ct === "application/json"
+  );
+}
 
 const fmtDate = (iso: string) =>
   new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
@@ -253,13 +268,19 @@ function EpicCard({ epic }: { epic: PartnerProjectEpic }) {
   );
 }
 
-// Hero readout: names the live sprint so a partner lands on "where are we
-// right now" before anything else.
+// Hero readout: names the live sprint and shows how far along it is + when it
+// wraps — a partner's "where are we right now" glance.
 function MomentumReadout({
   momentum,
 }: {
   momentum: NonNullable<PartnerProjectViewData["momentum"]>;
 }) {
+  const pct =
+    momentum.total > 0 ? Math.round((momentum.done / momentum.total) * 100) : 0;
+  const timing =
+    momentum.daysLeft > 0
+      ? `${momentum.daysLeft} day${momentum.daysLeft === 1 ? "" : "s"} left`
+      : "due now";
   return (
     <div className="rounded-2xl bg-brand-tint px-5 py-4 sm:min-w-[13rem]">
       <p className="text-xs font-medium uppercase tracking-wide text-accent-teal">
@@ -267,6 +288,18 @@ function MomentumReadout({
       </p>
       <p className="mt-1 font-heading font-bold text-dark-blue text-lg leading-snug">
         {momentum.label}
+      </p>
+      {momentum.total > 0 && (
+        <div className="mt-2 h-1.5 rounded-full bg-white/60 overflow-hidden">
+          <div
+            className="h-full rounded-full bg-accent-teal"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      )}
+      <p className="mt-1.5 text-xs text-muted-foreground">
+        {momentum.total > 0 ? `${momentum.done}/${momentum.total} tasks · ` : ""}
+        {timing}
       </p>
     </div>
   );
@@ -351,12 +384,25 @@ function SectionNav({
 // `handle.headerAction`), so it has no back link of its own here.
 export function PartnerProjectHubView({
   data,
+  currentUserId,
   backLink,
   pageHref,
+  calendarFeedUrl,
+  canRsvp = false,
+  meetingRequested = false,
+  requestError = null,
 }: {
   data: PartnerProjectViewData;
+  currentUserId: string;
   backLink?: { to: string; label: string };
   pageHref: (pageId: string) => string;
+  // Personal ICS subscribe URL (real portal only; absent in the member preview).
+  calendarFeedUrl?: string | null;
+  // Whether RSVP + request-a-meeting controls are live (real portal only).
+  canRsvp?: boolean;
+  // Request-a-meeting action feedback (real portal only).
+  meetingRequested?: boolean;
+  requestError?: string | null;
 }) {
   const {
     project,
@@ -366,12 +412,23 @@ export function PartnerProjectHubView({
     momentum,
     epics,
     ungroupedSprints,
+    nextSprint,
     recentlyDone,
     sharedPages,
     sharedFiles,
+    meetings,
+    milestones,
   } = data;
 
+  const hasUpcoming = meetings.length > 0 || milestones.length > 0;
+
   const hasWork = epics.length > 0 || ungroupedSprints.length > 0;
+
+  // Meetings + milestones woven into one time-ordered agenda.
+  const agenda = [
+    ...meetings.map((m) => ({ kind: "meeting" as const, date: m.start, meeting: m })),
+    ...milestones.map((mi) => ({ kind: "milestone" as const, date: mi.date, milestone: mi })),
+  ].sort((a, b) => a.date.localeCompare(b.date));
 
   // Shared-file inline preview (mirrors the internal file view): clicking a
   // file opens it in a modal — image/PDF inline, everything else a download.
@@ -389,9 +446,10 @@ export function PartnerProjectHubView({
 
   // Section anchors for the side nav — only the ones actually rendered.
   const sections: NavSection[] = [
+    ...(hasUpcoming ? [{ id: "upcoming", label: "Upcoming" }] : []),
     { id: "roadmap", label: "Roadmap" },
     ...(recentlyDone.length > 0
-      ? [{ id: "recently-completed", label: "Recently completed" }]
+      ? [{ id: "recently-completed", label: "Completed work" }]
       : []),
     { id: "shared-documents", label: "Shared documents" },
     { id: "shared-files", label: "Shared files" },
@@ -455,14 +513,66 @@ export function PartnerProjectHubView({
           <SectionNav sections={sections} active={activeSection} />
         )}
         <div className="flex min-w-0 flex-1 flex-col gap-8">
+      {(hasUpcoming || canRsvp) && (
+        <section id="upcoming" className="scroll-mt-24">
+          <div className="mb-3 flex items-center justify-between gap-4">
+            <h2 className="font-heading text-lg font-semibold text-dark-blue">
+              Upcoming
+            </h2>
+            {hasUpcoming && calendarFeedUrl && (
+              <a
+                href={calendarFeedUrl}
+                className="text-xs font-medium text-accent-coral hover:underline"
+                title="Add to Google, Outlook, or Apple Calendar"
+              >
+                Subscribe to calendar
+              </a>
+            )}
+          </div>
+          {hasUpcoming ? (
+            <div className="bg-card border border-border rounded-2xl divide-y divide-border">
+              {agenda.map((item) =>
+                item.kind === "milestone" ? (
+                  <MilestoneRow key={item.milestone.id} milestone={item.milestone} />
+                ) : (
+                  <MeetingRow
+                    key={`${item.meeting.id}-${item.meeting.start}`}
+                    meeting={item.meeting}
+                    pageHref={pageHref}
+                    canRsvp={canRsvp}
+                  />
+                ),
+              )}
+            </div>
+          ) : (
+            <div className="bg-card border border-border rounded-2xl p-6 text-sm text-muted-foreground">
+              No meetings scheduled yet.
+            </div>
+          )}
+          {canRsvp && (
+            <RequestMeetingForm
+              requested={meetingRequested}
+              error={requestError}
+            />
+          )}
+        </section>
+      )}
+
       {/* The roadmap — active epics by default, each showing its stories
           (scope) and its sprints across past, current, and planned. Backlog
           and done epics live behind the "Show all" toggle. */}
       <section id="roadmap" className="scroll-mt-24">
         <div className="mb-3 flex items-center justify-between gap-4">
-          <h2 className="font-heading text-lg font-semibold text-dark-blue">
-            Roadmap
-          </h2>
+          <div className="flex items-baseline gap-3 min-w-0">
+            <h2 className="font-heading text-lg font-semibold text-dark-blue">
+              Roadmap
+            </h2>
+            {nextSprint && (
+              <span className="text-xs text-muted-foreground truncate">
+                Up next: {nextSprint.name}
+              </span>
+            )}
+          </div>
           {hiddenEpicCount > 0 && (
             <button
               type="button"
@@ -518,7 +628,7 @@ export function PartnerProjectHubView({
       {recentlyDone.length > 0 && (
         <section id="recently-completed" className="scroll-mt-24">
           <h2 className="font-heading text-lg font-semibold text-dark-blue mb-3">
-            Recently completed
+            Completed work
           </h2>
           <ul className="bg-card border border-border rounded-2xl divide-y divide-border">
             {recentlyDone.map((t) => (
@@ -594,7 +704,11 @@ export function PartnerProjectHubView({
                       : "opacity-60 cursor-not-allowed"
                   }`}
                 >
-                  <Eye className="w-4 h-4 text-accent-teal flex-shrink-0" />
+                  {isPreviewable(f.contentType) ? (
+                    <Eye className="w-4 h-4 text-accent-teal flex-shrink-0" />
+                  ) : (
+                    <Download className="w-4 h-4 text-accent-teal flex-shrink-0" />
+                  )}
                   <span className="flex-1 min-w-0">
                     <span className="block truncate font-medium text-foreground">
                       {f.title}
@@ -608,7 +722,11 @@ export function PartnerProjectHubView({
                     )}
                   </span>
                   <span className="text-xs text-muted-foreground flex-shrink-0">
-                    {f.downloadUrl ? "Preview" : "Unavailable"}
+                    {!f.downloadUrl
+                      ? "Unavailable"
+                      : isPreviewable(f.contentType)
+                        ? "Preview"
+                        : "Download"}
                   </span>
                 </button>
               </li>
@@ -644,6 +762,7 @@ export function PartnerProjectHubView({
       {previewFile && (
         <SharedFilePreviewModal
           file={previewFile}
+          currentUserId={currentUserId}
           onClose={() => setPreviewFile(null)}
         />
       )}
@@ -658,12 +777,17 @@ export function PartnerProjectHubView({
 // back to a download prompt. Download stays one click away in the header.
 function SharedFilePreviewModal({
   file,
+  currentUserId,
   onClose,
 }: {
   file: SharedFile;
+  currentUserId: string;
   onClose: () => void;
 }) {
   const ct = file.contentType ?? "";
+  // Inline preview uses the content-type-forced URL; the Download button uses
+  // the plain attachment URL. Fall back to the download URL if no preview URL.
+  const previewSrc = file.previewUrl ?? file.downloadUrl ?? undefined;
   const url = file.downloadUrl ?? undefined;
   const isImage = ct.startsWith("image/");
   const isPdf = ct === "application/pdf";
@@ -708,13 +832,13 @@ function SharedFilePreviewModal({
       <div className="min-h-0 overflow-auto">
         {isImage ? (
           <img
-            src={url}
+            src={previewSrc}
             alt={file.title}
             className="max-w-full max-h-[70vh] mx-auto rounded-lg border border-border object-contain bg-muted/20"
           />
         ) : isPdf || isText ? (
           <iframe
-            src={url}
+            src={previewSrc}
             title={file.title}
             className="w-full h-[70vh] rounded-lg border border-border bg-white"
           />
@@ -736,7 +860,226 @@ function SharedFilePreviewModal({
             )}
           </div>
         )}
+
+        {/* Feedback thread on the shared file — the partner's channel to
+            comment on a deliverable. Read-only resolve (the team resolves). */}
+        <div className="mt-5 border-t border-border pt-4">
+          <CommentsRail
+            targetType="file"
+            targetId={file.id}
+            currentUserId={currentUserId}
+            canComment
+            canResolve={false}
+          />
+        </div>
       </div>
     </Modal>
+  );
+}
+
+// ─── Upcoming agenda rows ────────────────────────────────────────────────────
+
+function MeetingRow({
+  meeting,
+  pageHref,
+  canRsvp,
+}: {
+  meeting: PartnerMeeting;
+  pageHref: (pageId: string) => string;
+  canRsvp: boolean;
+}) {
+  const start = new Date(meeting.start);
+  const dateLabel = start.toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+  const timeLabel = start.toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  return (
+    <div className="px-4 py-3 flex flex-col gap-2">
+      <div className="flex items-start gap-3">
+        <CalendarClock className="w-4 h-4 text-accent-teal mt-0.5 flex-shrink-0" />
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-medium text-foreground">{meeting.title}</div>
+          <div className="text-xs text-muted-foreground">
+            {dateLabel} · {timeLabel} · {meeting.durationMinutes}m
+            {meeting.recurring ? " · repeats" : ""}
+          </div>
+          {meeting.attendees.length > 0 && (
+            <div className="text-xs text-muted-foreground mt-0.5 truncate">
+              {meeting.attendees.map((a) => a.name).join(", ")}
+            </div>
+          )}
+        </div>
+        <div className="flex flex-shrink-0 items-center gap-3">
+          {meeting.notePageId && (
+            <Link
+              to={pageHref(meeting.notePageId)}
+              className="text-xs text-accent-coral hover:underline"
+            >
+              Notes
+            </Link>
+          )}
+          <a
+            href={`/partner/meetings/${meeting.id}/ics`}
+            className="text-xs text-muted-foreground hover:text-foreground"
+          >
+            Add to calendar
+          </a>
+        </div>
+      </div>
+      {canRsvp && <MeetingRsvp meetingId={meeting.id} initial={meeting.rsvp} />}
+    </div>
+  );
+}
+
+function MeetingRsvp({
+  meetingId,
+  initial,
+}: {
+  meetingId: string;
+  initial: PartnerMeeting["rsvp"];
+}) {
+  const [rsvp, setRsvp] = useState(initial);
+  const [busy, setBusy] = useState(false);
+  async function respond(v: NonNullable<PartnerMeeting["rsvp"]>) {
+    setBusy(true);
+    try {
+      const res = await fetch(`/partner/meetings/${meetingId}/rsvp`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ response: v }),
+      });
+      if (res.ok) setRsvp(v);
+    } finally {
+      setBusy(false);
+    }
+  }
+  const opt = (v: NonNullable<PartnerMeeting["rsvp"]>, label: string) => (
+    <button
+      type="button"
+      disabled={busy}
+      onClick={() => respond(v)}
+      className={`px-2.5 py-1 rounded-full text-xs border transition disabled:opacity-50 ${
+        rsvp === v
+          ? "bg-accent-teal/15 text-accent-teal border-accent-teal/40"
+          : "border-border text-muted-foreground hover:text-foreground"
+      }`}
+    >
+      {label}
+    </button>
+  );
+  return (
+    <div className="flex items-center gap-2 pl-7">
+      {opt("Accepted", "Going")}
+      {opt("Tentative", "Maybe")}
+      {opt("Declined", "Can't make it")}
+    </div>
+  );
+}
+
+function MilestoneRow({ milestone }: { milestone: PartnerMilestone }) {
+  const dateLabel = new Date(milestone.date).toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+  return (
+    <div className="px-4 py-2.5 flex items-center gap-3">
+      <Flag className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+      <span className="text-sm text-foreground flex-1 min-w-0 truncate">
+        {milestone.label}
+      </span>
+      <span className="text-xs text-muted-foreground flex-shrink-0">{dateLabel}</span>
+    </div>
+  );
+}
+
+function RequestMeetingForm({
+  requested,
+  error,
+}: {
+  requested: boolean;
+  error: string | null;
+}) {
+  const [open, setOpen] = useState(false);
+  const inputClass =
+    "w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral";
+  if (requested) {
+    return (
+      <p className="mt-3 text-sm text-accent-teal bg-accent-teal/10 rounded-lg px-4 py-3">
+        Request sent — the team will follow up to schedule.
+      </p>
+    );
+  }
+  return (
+    <div className="mt-3">
+      {!open ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="text-sm font-medium text-accent-coral hover:underline"
+        >
+          + Request a meeting
+        </button>
+      ) : (
+        <Form
+          method="post"
+          className="bg-card border border-border rounded-2xl p-4 flex flex-col gap-3"
+        >
+          {error && (
+            <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">
+              {error}
+            </p>
+          )}
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">
+              What's it about?
+            </label>
+            <input
+              name="topic"
+              required
+              placeholder="e.g. Mid-sprint check-in"
+              className={inputClass}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">
+              Preferred times <span className="text-muted-foreground">(optional)</span>
+            </label>
+            <input
+              name="preferredWindows"
+              placeholder="e.g. Weekday afternoons ET"
+              className={inputClass}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">
+              Anything else? <span className="text-muted-foreground">(optional)</span>
+            </label>
+            <textarea name="details" rows={2} className={inputClass} />
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              type="submit"
+              className="self-start rounded-lg bg-dark-blue text-white text-sm font-heading font-semibold px-4 py-2 hover:opacity-90 transition"
+            >
+              Send request
+            </button>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="text-sm text-muted-foreground hover:text-foreground"
+            >
+              Cancel
+            </button>
+          </div>
+        </Form>
+      )}
+    </div>
   );
 }

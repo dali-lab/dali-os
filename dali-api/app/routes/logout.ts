@@ -25,8 +25,15 @@ export async function loader({ request }: Route.LoaderArgs) {
     request,
   });
 
+  // Honor a post-logout destination so external portals (e.g. partners) land
+  // back on their own sign-in page instead of the member /login. Allowlisted
+  // to same-origin absolute paths ("/foo", never "//host" or a full URL).
+  const next = new URL(request.url).searchParams.get("next");
+  const destination =
+    next && next.startsWith("/") && !next.startsWith("//") ? next : "/login";
+
   const headers = new Headers();
   clearSessionCookie(headers);
-  headers.set("Location", "/login");
+  headers.set("Location", destination);
   return new Response(null, { status: 302, headers });
 }

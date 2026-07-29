@@ -249,7 +249,9 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
     // canViewMentorship. Mentors only see own-domain notes; Core/Admin see all.
     { key: 'mentorship', label: 'Mentorship', to: '/mentorship', icon: Heart, show: isLabMentor || isCore },
     { key: 'members', label: 'People', to: '/members', icon: UsersRound, show: true },
-    { key: 'partners', label: 'Partners', to: '/partners', icon: Handshake, show: true },
+    // Core-only: every /partners/* loader redirects non-Core to /, so the link
+    // must not show to members who can't open it.
+    { key: 'partners', label: 'Partners', to: '/partners', icon: Handshake, show: isCore },
     { key: 'education', label: 'Education', to: '/education', icon: GraduationCap, show: true },
     { key: 'internal-processes', label: 'Lab Processes', to: '/internal-processes', icon: Workflow, show: true },
     { key: 'admin-console', label: 'Admin', to: '/admin-console', icon: Settings, show: isCore },

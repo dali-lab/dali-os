@@ -81,11 +81,23 @@ async function partnerCanAccessDoc(userSub: string, pageId: string): Promise<boo
   return partnerHasProjectAccess(userSub, page.workspaceId);
 }
 
+// A partner may comment on a `file` only when it's a live, partner-visible
+// file on a project their org actively partners on — the same gate that lets
+// them see and download it in the portal (partner-project-view.server).
+async function partnerCanAccessFile(userSub: string, fileId: string): Promise<boolean> {
+  const file = await prisma.projectFile.findFirst({
+    where: { id: fileId, archivedAt: null, partnerVisible: true },
+    select: { projectId: true },
+  });
+  if (!file) return false;
+  return partnerHasProjectAccess(userSub, file.projectId);
+}
+
 // Auth split by target: page-doc FAQ threads are open to any lab member (so
 // anyone can ask a question); doc comments stay on the project-edit gate
 // (Core/Admin), plus partners on that page's shared surface; file comments
 // are open to Core and members of the owning project — the artifact feedback
-// loop (upload → mentor comment → re-upload) runs on project members.
+// loop (upload → mentor comment → re-upload) — plus partners on a shared file.
 async function canAccessTarget(
   auth: AuthSuccess,
   targetType: CommentTarget,
@@ -99,6 +111,9 @@ async function canAccessTarget(
       : false;
   }
   if (await isCore(auth.user.sub)) return true;
+  if (auth.user.type === "partner") {
+    return partnerCanAccessFile(auth.user.sub, targetId);
+  }
   const file = await prisma.projectFile.findUnique({
     where: { id: targetId },
     select: { projectId: true },

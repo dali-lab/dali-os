@@ -21,6 +21,9 @@ const Base = {
   // a project one — see createScheduledMeeting in ~/lib/scheduled-meeting.
   // Invites still come only from the meeting's participant scope.
   projectId: z.string().min(1).optional(),
+  // Share this meeting with the project's partners (portal + calendar invite +
+  // RSVP). Independent of notes; ignored server-side without a projectId.
+  partnerVisible: z.boolean().optional(),
   // SelfCheckIn is independent of meeting notes — attendance rows fan out
   // whenever SelfCheckIn (or meetingType) is set; see createScheduledMeeting.
   attendanceMode: z.enum(["Roster", "SelfCheckIn"]).optional(),
@@ -83,6 +86,7 @@ export async function action({ request }: Route.ActionArgs) {
     meetingType: body.meetingType,
     meetingTypeLabel: body.meetingTypeLabel,
     projectId: body.projectId,
+    partnerVisible: body.partnerVisible,
     attendanceMode: body.attendanceMode,
   });
 

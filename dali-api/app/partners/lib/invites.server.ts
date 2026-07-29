@@ -12,6 +12,7 @@ import { getFrontendUrl } from "~/lib/app-env";
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 type InviteResult = { ok: true } | { error: string };
+type CreateInviteResult = { ok: true; emailSent: boolean } | { error: string };
 
 // Shared by partner settings (partners inviting teammates) and the internal
 // Core org page. The inviter is authenticated and org-scoped, so unlike the
@@ -24,7 +25,7 @@ export async function createPartnerInvite(
     invitedByUserId: string;
   },
   request?: Request,
-): Promise<InviteResult> {
+): Promise<CreateInviteResult> {
   const email = normalizeEmail(params.email);
   if (!email || !email.includes("@")) return { error: "Enter a valid email address" };
 
@@ -81,16 +82,21 @@ export async function createPartnerInvite(
     : null;
 
   const url = `${getFrontendUrl()}/partner/invite/${raw}`;
-  await sendPartnerInviteEmail(email, invite.partnerOrg.name, inviterName, url);
+  const sendRes = await sendPartnerInviteEmail(
+    email,
+    invite.partnerOrg.name,
+    inviterName,
+    url,
+  );
   await logAuditEvent({
     action: "partner.invited",
     userId: params.invitedByUserId,
     targetId: params.partnerOrgId,
-    metadata: { inviteId: invite.id },
+    metadata: { inviteId: invite.id, emailSent: sendRes.ok },
     request,
   });
 
-  return { ok: true };
+  return { ok: true, emailSent: sendRes.ok };
 }
 
 // Read-only validity check for the GET landing page (see magic-link peek).

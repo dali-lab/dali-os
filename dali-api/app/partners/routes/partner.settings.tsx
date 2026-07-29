@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Form, useLoaderData, useNavigation } from "react-router";
+import { Form, redirect, useLoaderData, useNavigation } from "react-router";
 import type { Route } from "./+types/partner.settings";
 import { prisma } from "~/lib/db";
 import { logAuditEvent } from "~/lib/audit";
@@ -154,7 +154,9 @@ export async function action({ request }: Route.ActionArgs) {
       },
       request,
     );
-    return "error" in result ? result : { ok: true, invited: true };
+    return "error" in result
+      ? result
+      : { ok: true, invited: true, emailSent: result.emailSent };
   }
 
   if (intent === "revoke-invite") {
@@ -169,6 +171,36 @@ export async function action({ request }: Route.ActionArgs) {
     return "error" in result ? result : { ok: true };
   }
 
+  if (intent === "leave-org") {
+    // One org per person (schema) means a mis-assigned partner would otherwise
+    // be stuck. Guard the org from being orphaned: the primary contact must
+    // hand off first, and the sole member can't leave a live org behind.
+    const memberCount = await prisma.partnerUser.count({
+      where: { partnerOrgId: org.id },
+    });
+    if (org.primaryContactId === partnerUser.id && memberCount > 1) {
+      return {
+        error:
+          "You're the primary contact — make someone else primary before leaving.",
+      };
+    }
+    if (memberCount <= 1) {
+      return {
+        error:
+          "You're the only member. Invite a teammate to take over, or contact DALI to close the organization.",
+      };
+    }
+    await prisma.partnerUser.delete({ where: { id: partnerUser.id } });
+    await logAuditEvent({
+      action: "partner.member.remove",
+      userId: auth.user.sub,
+      targetId: org.id,
+      metadata: { leftSelf: true },
+      request,
+    });
+    return redirect("/partner/onboarding");
+  }
+
   return { error: "Unknown action." };
 }
 
@@ -180,7 +212,7 @@ export default function PartnerSettings({ actionData }: Route.ComponentProps) {
   const confirmSubmit = useConfirmSubmit();
   const [inviting, setInviting] = useState(false);
   const error = actionData && "error" in actionData ? actionData.error : null;
-  const invited = actionData && "invited" in actionData;
+  const invited = actionData && "invited" in actionData ? actionData : null;
 
   const inputClass =
     "w-full rounded-xl border border-border bg-card px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral";
@@ -262,11 +294,17 @@ export default function PartnerSettings({ actionData }: Route.ComponentProps) {
           </button>
         </div>
 
-        {invited && (
-          <p className="text-sm text-accent-teal bg-accent-teal/10 rounded-lg px-4 py-3 mb-3">
-            Invitation sent.
-          </p>
-        )}
+        {invited &&
+          (invited.emailSent ? (
+            <p className="text-sm text-accent-teal bg-accent-teal/10 rounded-lg px-4 py-3 mb-3">
+              Invitation sent.
+            </p>
+          ) : (
+            <p className="text-sm text-amber-700 bg-amber-50 rounded-lg px-4 py-3 mb-3">
+              Invite created, but the email couldn't be sent right now. Revoke it
+              and try again once mail is back.
+            </p>
+          ))}
 
         {inviting && (
           <Form
@@ -355,6 +393,19 @@ export default function PartnerSettings({ actionData }: Route.ComponentProps) {
                 </div>
               </div>
               <Form method="post">
+                <input type="hidden" name="intent" value="invite" />
+                <input type="hidden" name="email" value={inv.email} />
+                {inv.displayRole && (
+                  <input type="hidden" name="displayRole" value={inv.displayRole} />
+                )}
+                <button
+                  type="submit"
+                  className="text-xs text-muted-foreground hover:text-foreground transition"
+                >
+                  Resend
+                </button>
+              </Form>
+              <Form method="post">
                 <input type="hidden" name="intent" value="revoke-invite" />
                 <input type="hidden" name="inviteId" value={inv.id} />
                 <button
@@ -367,6 +418,36 @@ export default function PartnerSettings({ actionData }: Route.ComponentProps) {
             </li>
           ))}
         </ul>
+      </section>
+
+      <section className="border border-destructive/30 rounded-2xl p-5 flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <h2 className="font-heading font-semibold text-dark-blue">
+            Leave organization
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Remove yourself from {org.name}. You'll lose access to its projects
+            and shared documents.
+          </p>
+        </div>
+        <Form
+          method="post"
+          onSubmit={confirmSubmit({
+            title: `Leave ${org.name}?`,
+            description:
+              "You'll lose access to its projects and shared documents. You can be re-invited later.",
+            confirmLabel: "Leave",
+            tone: "destructive",
+          })}
+        >
+          <input type="hidden" name="intent" value="leave-org" />
+          <button
+            type="submit"
+            className="px-3 py-1.5 text-sm font-medium rounded-md border border-destructive/40 text-destructive hover:bg-destructive/10 transition"
+          >
+            Leave organization
+          </button>
+        </Form>
       </section>
     </div>
   );

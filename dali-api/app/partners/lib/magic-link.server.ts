@@ -67,7 +67,7 @@ export async function classifyPartnerEmail(
 export async function issuePartnerMagicLink(
   emailRaw: string,
   request: Request,
-): Promise<{ ok: true } | { rateLimited: Response }> {
+): Promise<{ ok: true } | { rateLimited: Response } | { sendFailed: true }> {
   const email = normalizeEmail(emailRaw);
 
   const ipLimited = checkRateLimit(request, { max: 5, windowMs: 10 * 60_000 });
@@ -81,8 +81,8 @@ export async function issuePartnerMagicLink(
 
   const identity = await classifyPartnerEmail(email);
   if (identity.kind === "member-conflict") {
-    await sendMemberEmailConflictEmail(email);
-    return { ok: true };
+    const res = await sendMemberEmailConflictEmail(email);
+    return res.ok ? { ok: true } : { sendFailed: true };
   }
 
   // OneTimeToken.userId is NOT NULL, so a first-time email eagerly creates
@@ -116,12 +116,13 @@ export async function issuePartnerMagicLink(
   });
 
   const url = `${getFrontendUrl()}/partner/auth/verify?token=${raw}`;
-  await sendPartnerMagicLinkEmail(email, url);
+  const sendRes = await sendPartnerMagicLinkEmail(email, url);
   await logAuditEvent({
     action: "partner.magic_link.requested",
     userId,
     request,
   });
+  if (!sendRes.ok) return { sendFailed: true };
 
   return { ok: true };
 }

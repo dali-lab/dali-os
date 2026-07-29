@@ -37,11 +37,15 @@ export function PortalProfileMenu({
   displayName,
   subtitle,
   settingsTo,
+  logoutTo = "/logout",
 }: {
   initials: string;
   displayName: string;
   subtitle?: string | null;
   settingsTo: string;
+  // Where sign-out lands. Partners pass "/logout?next=/partner/login" so they
+  // return to their own portal, not the member /login.
+  logoutTo?: string;
 }) {
   const { open, setOpen, ref } = useDismissableMenu();
 
@@ -89,7 +93,7 @@ export function PortalProfileMenu({
             Settings
           </Link>
           <Link
-            to="/logout"
+            to={logoutTo}
             role="menuitem"
             className="block px-4 py-2 text-sm text-muted-foreground hover:bg-muted/50 transition"
           >

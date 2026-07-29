@@ -164,7 +164,7 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles, onOpe
       roles.canViewStaffing ? navItem("Staffing", "/projects/staffing", Users2) : null,
       roles.isLabMentor || roles.isCore ? navItem("Mentorship", "/mentorship", Heart) : null,
       navItem("People", "/members", UsersRound),
-      navItem("Partners", "/partners", Handshake),
+      roles.canViewStaffing ? navItem("Partners", "/partners", Handshake) : null,
       navItem("Education", "/education", GraduationCap),
       navItem("Lab Processes", "/internal-processes", Workflow),
       roles.isCore ? navItem("Admin", "/admin-console", Settings) : null,

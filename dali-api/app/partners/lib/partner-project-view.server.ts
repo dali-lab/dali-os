@@ -2,7 +2,9 @@ import { prisma } from "~/lib/db";
 import { currentTerm } from "~/lib/roles";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { getDownloadUrl } from "~/lib/s3";
-import { fullName } from "~/lib/display";
+import { fullName, primaryEmail } from "~/lib/display";
+import { expandOccurrences } from "~/lib/meeting-occurrences";
+import { activeProjectPartnerWhere } from "./partner-access";
 
 // The three time states every work item collapses to, so the UI can speak one
 // visual language: past (teal/settled), current (coral/live), planned (dashed).
@@ -88,7 +90,34 @@ export type PartnerProjectViewData = {
     fileName: string | null;
     sizeBytes: number | null;
     contentType: string | null;
+    // Attachment URL for the Download button.
     downloadUrl: string | null;
+    // Inline-render URL: forces the known content type + inline disposition so
+    // the browser previews it even when the S3 object's stored Content-Type is
+    // wrong/missing (e.g. generated PDFs served as octet-stream). Mirrors the
+    // internal file view (documents.file.$fileId.tsx).
+    previewUrl: string | null;
+  }[];
+  // Upcoming partner-visible meetings on this project, expanded into individual
+  // occurrences over a forward window. `id` is the meeting id (shared across a
+  // recurring series' occurrences — RSVP and .ics are meeting-level).
+  meetings: {
+    id: string;
+    title: string;
+    start: string; // ISO occurrence start
+    durationMinutes: number;
+    recurring: boolean;
+    // Note-page id, present only when the meeting note is itself partner-shared.
+    notePageId: string | null;
+    attendees: { name: string; email: string }[];
+    rsvp: "Accepted" | "Declined" | "Tentative" | null;
+  }[];
+  // Sprint boundaries as calendar markers, so the timeline isn't only meetings.
+  milestones: {
+    id: string;
+    label: string;
+    date: string; // ISO
+    kind: "sprint-start" | "sprint-end";
   }[];
 };
 
@@ -101,6 +130,9 @@ export type PartnerProjectViewData = {
 export async function loadPartnerProjectView(
   projectId: string,
   partnerOrgId: string | null,
+  // The signed-in user, used to surface their own RSVP on each meeting. Null
+  // in the in-app member preview (no partner RSVP there).
+  viewerUserId: string | null = null,
 ): Promise<PartnerProjectViewData | null> {
   // Every select below is deliberately minimal — this is the whole partner
   // read-surface for a project. No assignees on tasks, no levels on the
@@ -336,6 +368,129 @@ export async function loadPartnerProjectView(
       .filter((c) => c.status === "Planned")
       .sort((a, b) => a.startsAt.localeCompare(b.startsAt))[0] ?? null;
 
+  // ─── Calendar: partner-visible meetings + sprint milestones ─────────────────
+  const now = new Date();
+  const windowEnd = new Date(now.getTime() + 60 * 86_400_000);
+
+  const meetingRows = await prisma.scheduledMeeting.findMany({
+    where: {
+      projectId: project.id,
+      partnerVisible: true,
+      status: { not: "Cancelled" },
+    },
+    select: {
+      id: true,
+      title: true,
+      selectedAt: true,
+      durationMinutes: true,
+      recurrenceRule: true,
+      participantUserIds: true,
+      notePage: { select: { id: true, partnerVisible: true } },
+      exceptions: {
+        select: {
+          originalStart: true,
+          overrideStart: true,
+          overrideDurationMin: true,
+          cancelled: true,
+        },
+      },
+    },
+  });
+
+  const memberIds = [...new Set(meetingRows.flatMap((m) => m.participantUserIds))];
+  const [memberUsers, partnerLinks, viewerResponses] = await Promise.all([
+    memberIds.length
+      ? prisma.user.findMany({
+          where: { id: { in: memberIds } },
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            daliEmail: true,
+            dartmouthEmail: true,
+            personalEmail: true,
+          },
+        })
+      : Promise.resolve([]),
+    meetingRows.length
+      ? prisma.projectPartner.findMany({
+          where: { projectId: project.id, ...activeProjectPartnerWhere(now) },
+          select: {
+            partnerOrg: {
+              select: {
+                users: {
+                  select: {
+                    user: {
+                      select: {
+                        firstName: true,
+                        lastName: true,
+                        personalEmail: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        })
+      : Promise.resolve([]),
+    viewerUserId && meetingRows.length
+      ? prisma.partnerMeetingResponse.findMany({
+          where: {
+            userId: viewerUserId,
+            scheduledMeetingId: { in: meetingRows.map((m) => m.id) },
+          },
+          select: { scheduledMeetingId: true, rsvp: true },
+        })
+      : Promise.resolve([]),
+  ]);
+
+  const memberById = new Map(memberUsers.map((u) => [u.id, u]));
+  const partnerAttendees = partnerLinks.flatMap((l) =>
+    l.partnerOrg.users
+      .map((u) => ({
+        name: fullName(u.user) || u.user.personalEmail || "",
+        email: u.user.personalEmail ?? "",
+      }))
+      .filter((a) => a.email),
+  );
+  const rsvpByMeeting = new Map(
+    viewerResponses.map((r) => [r.scheduledMeetingId, r.rsvp]),
+  );
+
+  const meetings = meetingRows
+    .flatMap((m) => {
+      const memberAttendees = m.participantUserIds
+        .map((id) => memberById.get(id))
+        .filter((u): u is NonNullable<typeof u> => Boolean(u))
+        .map((u) => ({ name: fullName(u) || primaryEmail(u) || "", email: primaryEmail(u) ?? "" }));
+      const attendees = [...memberAttendees, ...partnerAttendees];
+      return expandOccurrences(m, m.exceptions, now, windowEnd).map((occ) => ({
+        id: m.id,
+        title: m.title,
+        start: occ.start.toISOString(),
+        durationMinutes: Math.round((occ.end.getTime() - occ.start.getTime()) / 60_000),
+        recurring: Boolean(m.recurrenceRule),
+        notePageId: m.notePage?.partnerVisible ? m.notePage.id : null,
+        attendees,
+        rsvp: rsvpByMeeting.get(m.id) ?? null,
+      }));
+    })
+    .sort((a, b) => a.start.localeCompare(b.start))
+    .slice(0, 30);
+
+  const milestones = allCards
+    .filter((c) => c.status !== "Closed")
+    .flatMap((c) => [
+      { id: `${c.id}-start`, label: `${c.name} starts`, date: c.startsAt, kind: "sprint-start" as const },
+      { id: `${c.id}-end`, label: `${c.name} ends`, date: c.endsAt, kind: "sprint-end" as const },
+    ])
+    .filter((mi) => {
+      const t = new Date(mi.date).getTime();
+      return t >= now.getTime() - 7 * 86_400_000 && t <= windowEnd.getTime();
+    })
+    .sort((a, b) => a.date.localeCompare(b.date));
+
   return {
     project: {
       id: project.id,
@@ -373,16 +528,26 @@ export async function loadPartnerProjectView(
       updatedAt: p.updatedAt.toISOString(),
     })),
     sharedFiles: await Promise.all(
-      sharedFileRows.map(async (f) => ({
-        id: f.id,
-        title: f.title,
-        fileName: f.currentVersion?.fileName ?? null,
-        sizeBytes: f.currentVersion?.sizeBytes ?? null,
-        contentType: f.currentVersion?.contentType ?? null,
-        downloadUrl: f.currentVersion?.s3Key
-          ? await getDownloadUrl(f.currentVersion.s3Key)
-          : null,
-      })),
+      sharedFileRows.map(async (f) => {
+        const s3Key = f.currentVersion?.s3Key ?? null;
+        const contentType = f.currentVersion?.contentType ?? null;
+        return {
+          id: f.id,
+          title: f.title,
+          fileName: f.currentVersion?.fileName ?? null,
+          sizeBytes: f.currentVersion?.sizeBytes ?? null,
+          contentType,
+          downloadUrl: s3Key ? await getDownloadUrl(s3Key) : null,
+          previewUrl: s3Key
+            ? await getDownloadUrl(s3Key, {
+                contentType: contentType ?? undefined,
+                inline: true,
+              })
+            : null,
+        };
+      }),
     ),
+    meetings,
+    milestones,
   };
 }

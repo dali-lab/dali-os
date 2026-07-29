@@ -1654,6 +1654,14 @@ model ScheduledMeeting {
   project          Project?     @relation(fields: [projectId], references: [id])
   notePage         Page?
 
+  // When true (and projectId is set), users of any PartnerOrg with an active
+  // ProjectPartner link to `projectId` see this meeting on their portal, get a
+  // calendar invite, and can RSVP. Independent of meetingType — the team flips
+  // it explicitly (mirrors Page.partnerVisible). Partner attendees are tracked
+  // in PartnerMeetingResponse, NOT participantUserIds, so they never appear in
+  // the member roster/directory.
+  partnerVisible Boolean @default(false)
+
   // Roster (default): organizer/Core check people off by hand via
   // AttendanceChecklist. SelfCheckIn: attendees mark themselves present via
   // the check-in route, scoped to a time window around selectedAt — meant for
@@ -1690,6 +1698,48 @@ enum MeetingType {
 enum AttendanceMode {
   Roster
   SelfCheckIn
+}
+
+// A partner user's RSVP to a partner-visible ScheduledMeeting. Kept separate
+// from MeetingAttendance (the member roster) so partners never leak into
+// member attendance/directory. Meeting-level (not per-occurrence), matching
+// how member RSVP works. Loose refs (no @relation) to avoid back-relations on
+// ScheduledMeeting/User — resolved in app code.
+model PartnerMeetingResponse {
+  id                 String       @id @default(cuid())
+  scheduledMeetingId String
+  userId             String // the partner's User.id
+  rsvp               MeetingRsvp?
+  respondedAt        DateTime?
+  createdAt          DateTime     @default(now())
+
+  @@unique([scheduledMeetingId, userId])
+  @@index([userId])
+  @@index([scheduledMeetingId])
+}
+
+// A partner asking their project team for a meeting. The team fulfills it by
+// scheduling a real ScheduledMeeting and marking this Scheduled. Loose refs.
+model PartnerMeetingRequest {
+  id                 String                      @id @default(cuid())
+  projectId          String
+  partnerOrgId       String
+  requestedByUserId  String
+  topic              String
+  details            String?
+  preferredWindows   String? // free-text preferred times
+  status             PartnerMeetingRequestStatus @default(Open)
+  resultingMeetingId String?
+  createdAt          DateTime                    @default(now())
+
+  @@index([projectId])
+  @@index([partnerOrgId])
+}
+
+enum PartnerMeetingRequestStatus {
+  Open
+  Scheduled
+  Declined
 }
 
 // One row per invited participant (including the organizer) on a
@@ -3870,6 +3920,9 @@ model PartnerOrg {
   invites      PartnerInvite[]
 
   createdAt DateTime @default(now())
+  // Soft lifecycle: a former partner is archived (hidden from the default org
+  // list) rather than deleted, so its history survives. Null = active.
+  archivedAt DateTime?
 }
 
 // Teammate invites into an existing PartnerOrg, sent by a partner (from
@@ -3910,6 +3963,9 @@ model PartnerUser {
   // Not a permission — visibility derives entirely from org membership.
   displayRole  String?
   authProvider PartnerAuthProvider
+  // Secret token for this partner's personal ICS subscribe feed
+  // (/partner/calendar/:token.ics). Lazily generated on first use.
+  calendarFeedToken String? @unique
 
   user       User       @relation(fields: [userId], references: [id])
   partnerOrg PartnerOrg @relation(fields: [partnerOrgId], references: [id])
@@ -4211,6 +4267,12 @@ model PartnerApplication {
   // form was bound when they applied. SetNull because deleting the Form
   // cascades its submissions away — the application must survive that.
   formSubmissionId   String?                  @unique
+  // Partner-VISIBLE decision note (rejection reason / acceptance message /
+  // hold context). Distinct from the Core-internal `summary`. Surfaced on the
+  // partner tracking page and in the decision email.
+  decisionNote       String?
+  // When the current decision status was set (Accepted/Rejected/OnHold).
+  decidedAt          DateTime?
 
   partnerOrg     PartnerOrg                     @relation(fields: [partnerOrgId], references: [id])
   formSubmission FormSubmission?                @relation(fields: [formSubmissionId], references: [id], onDelete: SetNull)
@@ -4281,13 +4343,14 @@ model PartnerApplicationDomain {
 }
 
 // Inbound-pitch pipeline. Submitted → UnderReview → (Accepted | Rejected),
-// with OnHold as a parking state.
+// with OnHold as a parking state and Withdrawn when the partner retracts it.
 enum PartnerApplicationStatus {
   Submitted
   UnderReview
   OnHold
   Accepted
   Rejected
+  Withdrawn
 }
 
 // ─── Payroll: Reconcile ──────────────────────────────────────────────────────
