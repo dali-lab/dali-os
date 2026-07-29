@@ -257,6 +257,13 @@ export const EVENT_TYPES = {
     description: "When an instructor grades or leaves feedback on your submission.",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
+  "education.ce_reminder": {
+    kind: "Education",
+    area: "Education",
+    label: "CE credit reminders",
+    description: "A nudge when you still owe your continuing-education credit for the term.",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
   "member.promotion": {
     kind: "General",
     area: "Staffing",
