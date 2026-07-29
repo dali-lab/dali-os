@@ -70,6 +70,7 @@ import { runTaskDueReminders } from "~/jobs/task-due-reminders.server";
 import { runMeetingReminders } from "~/jobs/meeting-reminders.server";
 import { runScheduledAnnouncements } from "~/jobs/scheduled-announcements.server";
 import { runSessionFeedbackSweep } from "~/jobs/session-feedback-sweep.server";
+import { runSessionReminderSweep } from "~/jobs/session-reminder-sweep.server";
 import { runDailyDigest, runWeeklyDigest } from "~/lib/notification-digest.server";
 import { runRetentionJanitor } from "~/jobs/retention-janitor.server";
 import { runSprintLifecycle } from "~/jobs/sprint-lifecycle.server";
@@ -134,6 +135,23 @@ export const JOBS: JobDefinition[] = [
       },
     ],
     handler: runSessionFeedbackSweep,
+  },
+  {
+    name: "session-reminder-sweep",
+    description:
+      "Reminds enrolled students before an education session starts (once per session).",
+    intervalMinutes: 30,
+    settings: [
+      {
+        key: "leadHours",
+        label: "Remind this far ahead",
+        unit: "hours",
+        min: 1,
+        max: 168,
+        default: 24,
+      },
+    ],
+    handler: runSessionReminderSweep,
   },
   // The digest jobs tick often but self-gate on wall clock, using the
   // runner's lastSuccessAt as the sent-today cursor.
