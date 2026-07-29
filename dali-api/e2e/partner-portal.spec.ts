@@ -265,8 +265,8 @@ test.describe('partner self-signup', () => {
 
     // The no-org landing owns the org concepts: invite guidance is shown,
     // and creating an organization is an explicit step.
-    await expect(page.getByText(/Joining a team that's already here/)).toBeVisible();
-    await page.getByRole('button', { name: 'Set up a new organization' }).click();
+    await expect(page.getByText(/Waiting on an invite/)).toBeVisible();
+    await page.getByRole('button', { name: 'Create your organization' }).click();
     await page.getByLabel('First name').fill('Emery');
     await page.getByLabel('Last name').fill('Example');
     await page.getByLabel('Organization name').fill('Example Robotics');
