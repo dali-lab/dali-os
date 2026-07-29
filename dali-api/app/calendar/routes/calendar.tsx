@@ -3648,15 +3648,17 @@ function CreateScheduledMeetingForm({
   const usersById = new Map(users.map((u) => [u.id, u]));
   const groupsById = new Map(groups.map((g) => [g.id, g]));
 
-  // Prefill the Project picker when exactly one selected group is a
-  // system-managed project group (see GroupOption.projectId) — still fully
-  // overridable by the sender.
+  // Adding a project's team group implies the meeting is FOR that project, so
+  // auto-link it (fills the Project field, which in turn surfaces the "share
+  // with partners" option). Only when exactly one group is a system-managed
+  // project group and the sender hasn't already picked a project — still fully
+  // overridable.
   useEffect(() => {
-    if (!createNote || selectedGroupIds.length !== 1) return;
+    if (selectedGroupIds.length !== 1) return;
     const g = groupsById.get(selectedGroupIds[0]!);
     if (g?.projectId && !projectId) setProjectId(g.projectId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedGroupIds, createNote]);
+  }, [selectedGroupIds]);
 
   // Both pickers filled → derive duration; otherwise fall back to 30 min so
   // "schedule later" (no start/end yet) still produces a valid payload.
