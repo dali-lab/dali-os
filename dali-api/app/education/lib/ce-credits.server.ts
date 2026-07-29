@@ -1,6 +1,6 @@
 import { prisma } from "~/lib/db";
 import type { Prisma, AttendanceStatus } from "~/generated/prisma/client";
-import { currentTermMemberWhere } from "~/lib/roles";
+import { currentTerm, currentTermMemberWhere } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 
 // Continuing-education credit ledger. Policy: every lab member earns ≥1 CE
@@ -154,6 +154,25 @@ export async function creditHistory(userId: string) {
       ? `${c.grantedBy.firstName} ${c.grantedBy.lastName}`.trim()
       : null,
   }));
+}
+
+/**
+ * The caller's own CE standing for the current term, for a member-facing
+ * surface ("you have N of 1 this term"). Returns null when there's no current
+ * term or the user is exempt (full-time staff), so callers can hide the strip.
+ */
+export async function myCreditStanding(userId: string) {
+  const term = await currentTerm();
+  if (!term) return null;
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { adminMembership: { select: { isStaff: true } } },
+  });
+  if (user?.adminMembership?.isStaff) return null;
+  const credits = await prisma.cECredit.count({
+    where: { userId, termId: term.id },
+  });
+  return { termCode: term.code, credits, compliant: credits >= 1 };
 }
 
 /**
