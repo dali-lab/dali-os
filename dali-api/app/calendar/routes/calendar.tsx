@@ -103,9 +103,12 @@ type GroupOption = {
   // or the resolved Dynamic membership). The picker treats both uniformly.
   memberIds: string[];
   // Derived from dynamicQuery ("project:<id>") for system-managed project
-  // groups (see ensureProjectGroup in ~/lib/groups.ts). Lets the Schedule
-  // Meeting form prefill the Project picker when such a group is selected.
+  // groups (see ensureProjectGroup in ~/lib/groups.ts). Inviting such a group
+  // is what links the meeting to a project (participants-first).
   projectId: string | null;
+  // True when this is a project group whose project has active partners — the
+  // schedule form offers "Partner meeting" only then.
+  hasActivePartners: boolean;
 };
 
 type UserOption = {
@@ -268,16 +271,30 @@ export async function loader({ request }: Route.LoaderArgs) {
         where: { userId },
         orderBy: { linkedAt: "asc" },
       }),
-      listVisibleGroupsForUser(userId).then((rows) =>
-        rows.map((r) => ({
+      listVisibleGroupsForUser(userId).then(async (rows) => {
+        const mapped = rows.map((r) => ({
           id: r.id,
           name: r.name,
           memberIds: r.memberIds,
           projectId: r.dynamicQuery?.startsWith("project:")
             ? r.dynamicQuery.slice("project:".length)
             : null,
-        })),
-      ),
+        }));
+        // Which of the project groups' projects currently have active partners
+        // — drives the "Partner meeting" affordance.
+        const pids = [...new Set(mapped.map((m) => m.projectId).filter(Boolean))] as string[];
+        const withPartners = pids.length
+          ? await prisma.projectPartner.findMany({
+              where: { projectId: { in: pids }, ...activeProjectPartnerWhere() },
+              select: { projectId: true },
+            })
+          : [];
+        const partnerSet = new Set(withPartners.map((p) => p.projectId));
+        return mapped.map((m) => ({
+          ...m,
+          hasActivePartners: m.projectId ? partnerSet.has(m.projectId) : false,
+        }));
+      }),
       prisma.user.findMany({
         where: memberWhere,
         select: { id: true, firstName: true, lastName: true, daliEmail: true },
@@ -3619,11 +3636,9 @@ function CreateScheduledMeetingForm({
   const [organizerCalendarLinkId, setOrganizerCalendarLinkId] = useState<string>(
     googleLinks[0]?.id ?? "",
   );
-  // Project is a first-class association now (not gated behind the note).
-  const [projectId, setProjectId] = useState("");
-  // Partner meeting — shares it with the project's partners AND (if a note is
-  // attached) files that note under Partner meeting notes. Only offered when
-  // the chosen project has active partners.
+  // Partner meeting — shares it with the linked project's partners AND (if a
+  // note is attached) files that note under Partner meeting notes. Only offered
+  // when the linked project has active partners.
   const [partnerVisible, setPartnerVisible] = useState(false);
   // Meeting notes are opt-in. The note's category is derived (Partner if this
   // is a partner meeting, else Team when project-linked, else a Lab note) — no
@@ -3649,30 +3664,27 @@ function CreateScheduledMeetingForm({
   const usersById = new Map(users.map((u) => [u.id, u]));
   const groupsById = new Map(groups.map((g) => [g.id, g]));
 
-  // Adding a project's team group implies the meeting is FOR that project, so
-  // auto-link it (fills the Project field, which in turn surfaces the "share
-  // with partners" option). Only when exactly one group is a system-managed
-  // project group and the sender hasn't already picked a project — still fully
-  // overridable.
+  // Participants-first: the meeting's project comes from the project team group
+  // you invite (a "Project X" group carrying its projectId) — no separate
+  // field. First project group among the participants wins.
+  const linkedGroup =
+    selectedGroupIds.map((id) => groupsById.get(id)).find((g) => g?.projectId) ??
+    null;
+  const linkedProjectId = linkedGroup?.projectId ?? null;
+  const linkedProjectName = linkedGroup
+    ? linkedGroup.name.replace(/^Project /, "")
+    : null;
+  const canShareWithPartners = Boolean(linkedGroup?.hasActivePartners);
+  // Reset the partner flag if the linked project has no partners (or is gone).
   useEffect(() => {
-    if (selectedGroupIds.length !== 1) return;
-    const g = groupsById.get(selectedGroupIds[0]!);
-    if (g?.projectId && !projectId) setProjectId(g.projectId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedGroupIds]);
+    if (!canShareWithPartners) setPartnerVisible(false);
+  }, [canShareWithPartners]);
 
   // Both pickers filled → derive duration; otherwise fall back to 30 min so
   // "schedule later" (no start/end yet) still produces a valid payload.
   const duration = durationMinutesBetween(startLocal, endLocal);
   const startEndValid =
     !startLocal || !endLocal || new Date(endLocal).getTime() > new Date(startLocal).getTime();
-
-  const selectedProject = myProjects.find((p) => p.id === projectId) ?? null;
-  const canShareWithPartners = Boolean(selectedProject?.hasActivePartners);
-  // Reset the share flag if the chosen project has no partners (or is cleared).
-  useEffect(() => {
-    if (!canShareWithPartners) setPartnerVisible(false);
-  }, [canShareWithPartners]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -3697,15 +3709,16 @@ function CreateScheduledMeetingForm({
         payload.organizerCalendarLinkId = organizerCalendarLinkId;
       }
       // Project + partner-meeting are first-class, independent of the note.
-      if (projectId) payload.projectId = projectId;
-      const partnerMeeting = partnerVisible && Boolean(projectId);
+      // Project is derived from the invited project group (participants-first).
+      if (linkedProjectId) payload.projectId = linkedProjectId;
+      const partnerMeeting = partnerVisible && Boolean(linkedProjectId);
       if (partnerMeeting) payload.partnerVisible = true;
       if (createNote) {
         // Note category is derived: Partner (partner meeting) → Team (any other
         // project meeting) → Other (no project, lands in Lab documents).
         payload.meetingType = partnerMeeting
           ? "Partner"
-          : projectId
+          : linkedProjectId
             ? "Team"
             : "Other";
       }
@@ -3750,7 +3763,6 @@ function CreateScheduledMeetingForm({
         onChangeSelectedUserIds([]);
         onChangeSelectedGroupIds([]);
         setCreateNote(false);
-        setProjectId("");
         setPartnerVisible(false);
         setSelfCheckIn(false);
       }
@@ -3889,49 +3901,49 @@ function CreateScheduledMeetingForm({
             Optional
           </p>
 
-          {/* Project association — first-class, so it can drive partner sharing
-              without forcing a meeting note. */}
-          <div className="rounded-md border border-border bg-muted/20 p-3 space-y-3">
-            <div>
-              <label htmlFor="meeting-project" className={labelClass}>
-                Project <span className="text-muted-foreground font-normal">(optional)</span>
-              </label>
-              <select
-                id="meeting-project"
-                value={projectId}
-                onChange={(e) => setProjectId(e.target.value)}
-                className={fieldClass}
-              >
-                <option value="">No project</option>
-                {myProjects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {canShareWithPartners && (
-              <label className="flex items-start gap-2.5 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={partnerVisible}
-                  onChange={(e) => setPartnerVisible(e.target.checked)}
-                  className="mt-0.5 h-3.5 w-3.5 rounded border-border"
-                />
-                <span>
-                  <span className="block text-sm font-medium text-foreground">
-                    Partner meeting
-                  </span>
-                  <span className="block text-xs text-muted-foreground mt-0.5">
-                    Shares it with {selectedProject?.name}'s partners — they see
-                    it on their portal, get a calendar invite, and can RSVP. Any
-                    note is filed under Partner meeting notes.
-                  </span>
+          {/* Project link is derived from the invited project team group, so
+              there's no separate field — but we make its effects explicit. */}
+          {linkedProjectId ? (
+            <div className="rounded-md border border-accent-teal/30 bg-accent-teal/5 p-3 space-y-2">
+              <p className="text-sm text-foreground">
+                Linked to{" "}
+                <span className="font-medium text-dark-blue">{linkedProjectName}</span>{" "}
+                <span className="text-muted-foreground font-normal">
+                  (you invited its team)
                 </span>
-              </label>
-            )}
-          </div>
+              </p>
+              <p className="text-xs text-muted-foreground">
+                It'll show on the project, and any meeting note files under its
+                documents.
+              </p>
+              {canShareWithPartners && (
+                <label className="flex items-start gap-2.5 cursor-pointer pt-1">
+                  <input
+                    type="checkbox"
+                    checked={partnerVisible}
+                    onChange={(e) => setPartnerVisible(e.target.checked)}
+                    className="mt-0.5 h-3.5 w-3.5 rounded border-border"
+                  />
+                  <span>
+                    <span className="block text-sm font-medium text-foreground">
+                      Partner meeting
+                    </span>
+                    <span className="block text-xs text-muted-foreground mt-0.5">
+                      Shares it with {linkedProjectName}'s partners — they see it
+                      on their portal, get a calendar invite, and can RSVP. Any
+                      note files under Partner meeting notes.
+                    </span>
+                  </span>
+                </label>
+              )}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground px-1">
+              Invite a project's team group in Participants to link this meeting
+              to that project (adds project notes and lets you share it with the
+              project's partners).
+            </p>
+          )}
 
           <div className="rounded-md border border-border bg-muted/20 p-3 space-y-3">
             <label className="flex items-start gap-2.5 cursor-pointer">
@@ -3947,7 +3959,7 @@ function CreateScheduledMeetingForm({
                 </span>
                 <span className="block text-xs text-muted-foreground mt-0.5">
                   Adds a note with an attendance checklist
-                  {projectId
+                  {linkedProjectId
                     ? partnerVisible
                       ? " under Partner meeting notes"
                       : " under the project's documents"
