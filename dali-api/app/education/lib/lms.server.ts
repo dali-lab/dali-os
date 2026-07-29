@@ -16,6 +16,8 @@ export async function listMaterialPages(offeringId: string) {
       workspaceType: "EducationOffering",
       workspaceId: offeringId,
       archivedAt: null,
+      // Collaborative "workspace" docs live in their own hub tab, not Materials.
+      studentEditable: false,
     },
     orderBy: [{ position: "asc" }],
     select: { id: true, title: true, parentPageId: true, updatedAt: true },
@@ -39,6 +41,24 @@ export async function listMaterialPages(offeringId: string) {
       updatedAt: c.updatedAt,
     })),
   }));
+}
+
+/**
+ * Collaborative "workspace" docs for an offering — pages marked studentEditable
+ * that enrolled students co-edit live (a shared scratchpad / group doc), shown
+ * in the hub's Workspace tab. Flat list (no nesting) in v1.
+ */
+export async function listWorkspaceDocs(offeringId: string) {
+  return prisma.page.findMany({
+    where: {
+      workspaceType: "EducationOffering",
+      workspaceId: offeringId,
+      archivedAt: null,
+      studentEditable: true,
+    },
+    orderBy: [{ position: "asc" }],
+    select: { id: true, title: true },
+  });
 }
 
 /**
@@ -74,6 +94,9 @@ export async function createMaterialPage(args: {
   offeringId: string;
   title: string;
   parentPageId?: string | null;
+  // A shared collaborative "workspace" doc enrolled students can co-edit
+  // (Workspace tab) vs a read-only material page (default).
+  studentEditable?: boolean;
   actorId: string;
 }): Promise<{ id: string } | { error: string; status: number }> {
   const title = args.title.trim();
@@ -114,6 +137,7 @@ export async function createMaterialPage(args: {
       kind: "FreeForm",
       parentPageId: args.parentPageId ?? null,
       position: (last?.position ?? -1) + 1,
+      studentEditable: args.studentEditable ?? false,
       createdById: args.actorId,
     },
     select: { id: true },
@@ -172,10 +196,12 @@ export async function getHubData(args: {
     announcements,
     sessions,
     materials,
+    workspaceDocs,
     assignments,
     threads,
     mySubmissions,
     myFeedback,
+    me,
   ] = await Promise.all([
     offering.descriptionDocId
       ? collabDocToHtml(offering.descriptionDocId)
@@ -183,6 +209,7 @@ export async function getHubData(args: {
     listAnnouncements(args.offeringId),
     listSessionsWithMyAttendance(args.offeringId, args.applicationId),
     listMaterialPages(args.offeringId),
+    listWorkspaceDocs(args.offeringId),
     listAssignments(args.offeringId),
     listThreads(args.offeringId, instructorIds),
     prisma.educationSubmission.findMany({
@@ -193,6 +220,10 @@ export async function getHubData(args: {
     args.applicationId
       ? studentVisibleFeedback(args.applicationId)
       : Promise.resolve(null),
+    prisma.user.findUnique({
+      where: { id: args.userId },
+      select: { firstName: true, lastName: true },
+    }),
   ]);
 
   const myCertificate = args.applicationId
@@ -220,6 +251,7 @@ export async function getHubData(args: {
     })),
     sessions,
     materials,
+    workspaceDocs,
     assignments: assignments.map((a) => ({
       id: a.id,
       title: a.title,
@@ -232,5 +264,6 @@ export async function getHubData(args: {
     myCertificateId: myCertificate?.id ?? null,
     isManager: args.isManager,
     currentUserId: args.userId,
+    currentUserName: me ? `${me.firstName} ${me.lastName}`.trim() : "Student",
   };
 }

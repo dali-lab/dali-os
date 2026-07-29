@@ -21,7 +21,7 @@ import { listApplications } from "~/education/lib/apply.server";
 import { decideApplication } from "~/education/lib/decisions.server";
 import { isOfferingManager } from "~/education/lib/access.server";
 import { ApplicationAnswers } from "~/education/components/ApplicationAnswers";
-import { listMaterialPages, createMaterialPage } from "~/education/lib/lms.server";
+import { listMaterialPages, listWorkspaceDocs, createMaterialPage } from "~/education/lib/lms.server";
 import {
   listAssignments,
   createAssignment,
@@ -96,6 +96,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     emailTemplates,
     decisionEmailBindings,
     materials,
+    workspaceDocs,
     assignments,
     announcements,
   ] = await Promise.all([
@@ -124,6 +125,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       select: { status: true, emailTemplateVersionId: true },
     }),
     listMaterialPages(params.offeringId!),
+    listWorkspaceDocs(params.offeringId!),
     listAssignments(params.offeringId!),
     listAnnouncements(params.offeringId!),
   ]);
@@ -178,6 +180,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     })),
     roster,
     materials,
+    workspaceDocs,
     assignments,
     announcements: announcements.map((a) => ({
       id: a.id,
@@ -241,6 +244,7 @@ export async function action({ request, params }: Route.ActionArgs) {
           offeringId: params.offeringId!,
           title: String(formData.get("title") ?? ""),
           parentPageId: String(formData.get("parentPageId") ?? "") || null,
+          studentEditable: formData.get("studentEditable") === "true",
           actorId: auth.user.sub,
         });
         return "error" in result ? fail(result) : { ok: true };
@@ -372,6 +376,7 @@ export default function ManageOffering() {
     applications,
     roster,
     materials,
+    workspaceDocs,
     assignments,
     announcements,
     emailTemplates,
@@ -982,7 +987,9 @@ export default function ManageOffering() {
         </div>
       )}
 
-      {tab === "materials" && <ManageMaterials materials={materials} />}
+      {tab === "materials" && (
+        <ManageMaterials materials={materials} workspaceDocs={workspaceDocs} />
+      )}
 
       {tab === "assignments" && (
         <ManageAssignments

@@ -17,8 +17,10 @@ const LABEL = "text-xs font-semibold text-muted-foreground";
 
 export function ManageMaterials({
   materials,
+  workspaceDocs,
 }: {
   materials: { id: string; title: string; children: { id: string; title: string }[] }[];
+  workspaceDocs: { id: string; title: string }[];
 }) {
   return (
     <div className="flex flex-col gap-4 max-w-2xl">
@@ -87,6 +89,46 @@ export function ManageMaterials({
           Add page
         </Button>
       </Form>
+
+      <div className="mt-2 border-t border-border pt-4">
+        <h3 className="text-sm font-semibold text-foreground">Shared workspace docs</h3>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Collaborative docs enrolled students can co-edit live — shown in the
+          hub's Workspace tab (not read-only Materials).
+        </p>
+        {workspaceDocs.length > 0 && (
+          <ul className="mt-3 bg-card border border-border rounded-lg divide-y divide-border">
+            {workspaceDocs.map((d) => (
+              <li key={d.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                <span className="text-sm font-medium text-foreground">{d.title}</span>
+                <Link to={`/documents/${d.id}`} className={buttonClasses("secondary", "sm")}>
+                  Edit
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+        <Form
+          method="post"
+          className="mt-3 bg-card border border-border rounded-lg p-4 grid gap-3 sm:grid-cols-[1fr_auto] items-end"
+        >
+          <input type="hidden" name="intent" value="create-page" />
+          <input type="hidden" name="studentEditable" value="true" />
+          <label className="block">
+            <span className={LABEL}>New shared doc title</span>
+            <input
+              type="text"
+              name="title"
+              required
+              placeholder="Workshop scratchpad"
+              className={INPUT}
+            />
+          </label>
+          <Button type="submit" size="sm">
+            Add shared doc
+          </Button>
+        </Form>
+      </div>
     </div>
   );
 }

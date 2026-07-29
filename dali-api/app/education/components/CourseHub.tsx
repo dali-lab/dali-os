@@ -1,10 +1,12 @@
 import { Link, Form, useSearchParams } from "react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button, buttonClasses } from "~/components/ui/Button";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { formatDateTime } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { cn } from "~/lib/cn";
+import { CollaborativeEditor } from "~/components/CollaborativeEditor";
+import { PresenceProvider } from "~/components/collab/PresenceProvider";
 
 // The enrolled course hub, shared by the member surface and the portal
 // mirror. `basePath` decides where page/assignment links land
@@ -27,6 +29,7 @@ export type HubData = {
     title: string;
     children: { id: string; title: string }[];
   }[];
+  workspaceDocs: { id: string; title: string }[];
   assignments: {
     id: string;
     title: string;
@@ -42,6 +45,7 @@ export type HubData = {
   } | null;
   myCertificateId: string | null;
   currentUserId: string;
+  currentUserName: string;
   isManager: boolean;
 };
 
@@ -69,10 +73,28 @@ const ATTENDANCE_STYLE: Record<string, string> = {
   Excused: "bg-amber-100 text-amber-800",
 };
 
-export function CourseHub({ data, basePath }: { data: HubData; basePath: string }) {
+export function CourseHub({
+  data,
+  basePath,
+  collabToken,
+}: {
+  data: HubData;
+  basePath: string;
+  collabToken?: string | null;
+}) {
   const [searchParams, setSearchParams] = useSearchParams();
   const tz = useUserTimeZone();
   const tab = searchParams.get("tab") ?? "overview";
+
+  // Workspace tab only when the offering has shared collaborative docs. Insert
+  // it after Materials so read-only materials and co-edited docs sit together.
+  const tabs = data.workspaceDocs.length > 0
+    ? [
+        ...TABS.slice(0, 3),
+        { key: "workspace", label: "Workspace" } as const,
+        ...TABS.slice(3),
+      ]
+    : TABS;
 
   // Assignments awaiting this student's submission (past-due ones can't be
   // submitted anymore, so they don't count) — surfaced as a tab badge so new
@@ -86,7 +108,7 @@ export function CourseHub({ data, basePath }: { data: HubData; basePath: string 
   return (
     <div className="flex flex-col gap-5">
       <nav className="flex gap-1 border-b border-border overflow-x-auto">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.key}
             type="button"
@@ -244,6 +266,14 @@ export function CourseHub({ data, basePath }: { data: HubData; basePath: string 
             </ul>
           )}
         </div>
+      )}
+
+      {tab === "workspace" && (
+        <WorkspaceTab
+          docs={data.workspaceDocs}
+          collabToken={collabToken ?? null}
+          userName={data.currentUserName}
+        />
       )}
 
       {tab === "assignments" && (
@@ -431,5 +461,87 @@ function ReplyForm({ parentId }: { parentId: string }) {
         </Button>
       </div>
     </Form>
+  );
+}
+
+// Shared collaborative docs for the offering. Enrolled students (members and
+// Dartmouth portal users) co-edit live via the same Hocuspocus room the
+// instructor uses. The editor is mounted client-only (it can't render on the
+// server) and re-keyed per doc so switching docs rebinds cleanly. Mentions are
+// off — the mention search is member-gated, so it would be empty for portal
+// students.
+function WorkspaceTab({
+  docs,
+  collabToken,
+  userName,
+}: {
+  docs: { id: string; title: string }[];
+  collabToken: string | null;
+  userName: string;
+}) {
+  const [mounted, setMounted] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(docs[0]?.id ?? null);
+  useEffect(() => setMounted(true), []);
+
+  const selected = docs.find((d) => d.id === selectedId) ?? docs[0] ?? null;
+
+  if (!collabToken) {
+    return (
+      <p className="text-sm text-muted-foreground italic">
+        Sign in again to open shared docs.
+      </p>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-3 max-w-3xl">
+      {docs.length > 1 && (
+        <div className="flex flex-wrap gap-1.5">
+          {docs.map((d) => (
+            <button
+              key={d.id}
+              type="button"
+              onClick={() => setSelectedId(d.id)}
+              className={cn(
+                "rounded-full px-3 py-1 text-xs font-semibold",
+                selected?.id === d.id
+                  ? "bg-accent-coral text-white"
+                  : "bg-muted text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {d.title}
+            </button>
+          ))}
+        </div>
+      )}
+      {selected && (
+        <div>
+          <p className="mb-1 text-xs text-muted-foreground">
+            Shared doc — everyone enrolled can edit. Changes save automatically.
+          </p>
+          {mounted ? (
+            <PresenceProvider
+              pageId={`doc:${selected.id}`}
+              token={collabToken}
+              userName={userName}
+            >
+              <CollaborativeEditor
+                key={selected.id}
+                editorId={`doc:${selected.id}:body`}
+                documentName={`doc:${selected.id}:body`}
+                token={collabToken}
+                userName={userName}
+                enableImages
+                enableRichBlocks
+                placeholder="Start writing together…"
+                className="border border-border rounded-md"
+              />
+            </PresenceProvider>
+          ) : (
+            <div className="h-40 animate-pulse rounded-md border border-border bg-muted/30" />
+          )}
+        </div>
+      )}
+    </div>
   );
 }
