@@ -375,6 +375,78 @@ export async function runOfferingAction(
   if (!(await isOfferingManager(actorId, offeringId))) return bad("Forbidden", 403);
 
   switch (intent) {
+    case "duplicate-offering": {
+      // Clone an offering for a new run: core fields + sessions + instructors,
+      // a fresh application form, as a Draft. Core-only, like creating one.
+      if (!(await isCore(actorId))) return bad("Core only", 403);
+      const src = await prisma.educationOffering.findUnique({
+        where: { id: offeringId },
+        select: {
+          type: true,
+          title: true,
+          capacity: true,
+          requiresReview: true,
+          calendarEmail: true,
+          registrationOpensAt: true,
+          registrationClosesAt: true,
+          startsAt: true,
+          endsAt: true,
+          sessions: {
+            orderBy: { sequence: "asc" },
+            select: { sequence: true, title: true, datetime: true, location: true },
+          },
+          instructors: { select: { userId: true } },
+        },
+      });
+      if (!src) return bad("Offering not found", 404);
+      const created = await prisma.educationOffering.create({
+        data: {
+          type: src.type,
+          title: `${src.title} (copy)`,
+          capacity: src.capacity,
+          requiresReview: src.requiresReview,
+          calendarEmail: src.calendarEmail,
+          registrationOpensAt: src.registrationOpensAt,
+          registrationClosesAt: src.registrationClosesAt,
+          startsAt: src.startsAt,
+          endsAt: src.endsAt,
+          status: "Draft",
+          sessions: {
+            create: src.sessions.map((s) => ({
+              sequence: s.sequence,
+              title: s.title,
+              datetime: s.datetime,
+              location: s.location,
+            })),
+          },
+        },
+        select: { id: true },
+      });
+      await prisma.educationOffering.update({
+        where: { id: created.id },
+        data: { descriptionDocId: `eduoffering:${created.id}:description` },
+      });
+      // Re-assign the same instructors for the current term (a clone is a fresh run).
+      const cloneTerm = await currentTerm();
+      if (cloneTerm && src.instructors.length > 0) {
+        await prisma.instructorAssignment.createMany({
+          data: src.instructors.map((i) => ({
+            userId: i.userId,
+            offeringId: created.id,
+            termId: cloneTerm.id,
+          })),
+          skipDuplicates: true,
+        });
+      }
+      await createOfferingApplicationForm(created.id, actorId);
+      await logAuditEvent({
+        action: "education.offering.create",
+        userId: actorId,
+        targetId: created.id,
+        metadata: { title: `${src.title} (copy)`, type: src.type, clonedFrom: offeringId },
+      });
+      return { ok: true, id: created.id };
+    }
     case "update-offering": {
       const title = String(formData.get("title") ?? "").trim();
       if (!title) return bad("Title is required");

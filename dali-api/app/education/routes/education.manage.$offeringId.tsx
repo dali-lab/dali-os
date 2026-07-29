@@ -368,6 +368,8 @@ export async function action({ request, params }: Route.ActionArgs) {
   if ("error" in result)
     return Response.json({ error: result.error }, { status: result.status });
   if (formData.get("intent") === "delete-offering") return redirect("/education/manage");
+  if (formData.get("intent") === "duplicate-offering" && "id" in result && result.id)
+    return redirect(`/education/manage/${result.id}`);
   return result;
 }
 
@@ -456,6 +458,14 @@ export default function ManageOffering() {
           >
             View listing
           </Link>
+          {core && (
+            <Form method="post">
+              <input type="hidden" name="intent" value="duplicate-offering" />
+              <Button type="submit" variant="ghost" size="sm">
+                Duplicate
+              </Button>
+            </Form>
+          )}
           <Form method="post">
             <input type="hidden" name="intent" value="preview-close-out" />
             <Button type="submit" variant="ghost" size="sm">
@@ -1270,6 +1280,11 @@ function FeedbackResults({
       </div>
       {results.submissions.length === 0 ? (
         <p className="text-sm text-muted-foreground italic">No responses yet.</p>
+      ) : anonymizedNote && results.responded < 3 ? (
+        <p className="text-sm text-muted-foreground italic">
+          Only {results.responded} response{results.responded === 1 ? "" : "s"} so far —
+          individual responses stay hidden until at least 3, to keep them anonymous.
+        </p>
       ) : (
         visibleQuestions.map((q) => {
           // Aggregate answers: a tally for enumerable (choice/rating) questions
