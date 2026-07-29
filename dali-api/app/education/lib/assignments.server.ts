@@ -1,6 +1,6 @@
 import { prisma } from "~/lib/db";
 import { logAuditEvent } from "~/lib/audit";
-import { notifyNewAssignment } from "./notifications.server";
+import { notifyNewAssignment, notifyGraded } from "./notifications.server";
 import type { SubmissionType } from "~/generated/prisma/client";
 
 // Assignments are scoped to the offering as a whole or to one session
@@ -274,7 +274,11 @@ export async function gradeSubmission(args: {
 }): Promise<MutationResult> {
   const submission = await prisma.educationSubmission.findUnique({
     where: { id: args.submissionId },
-    select: { assignmentId: true },
+    select: {
+      assignmentId: true,
+      studentId: true,
+      assignment: { select: { title: true } },
+    },
   });
   if (!submission) return { error: "Submission not found", status: 404 };
   const owner = await offeringIdForAssignment(submission.assignmentId);
@@ -292,6 +296,17 @@ export async function gradeSubmission(args: {
     userId: args.actorId,
     targetId: args.submissionId,
     metadata: { offeringId: args.offeringId },
+  });
+  await notifyGraded({
+    studentId: submission.studentId,
+    offeringId: args.offeringId,
+    assignmentId: submission.assignmentId,
+    assignmentTitle: submission.assignment.title,
+  }).catch((err) => {
+    console.error("grade notification fan-out failed", {
+      submissionId: args.submissionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
   });
   return { ok: true };
 }

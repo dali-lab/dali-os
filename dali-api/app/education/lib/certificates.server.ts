@@ -186,6 +186,55 @@ export async function closeOutOffering(args: {
   return { ok: true, issued, alreadyIssued, ineligible };
 }
 
+export type CloseOutPreview = {
+  eligible: string[];
+  belowThreshold: string[];
+  alreadyIssued: number;
+};
+
+/**
+ * Dry-run of close-out: who would get a certificate vs who's below the
+ * attendance threshold, without issuing anything or sending mail. Lets the
+ * instructor sanity-check before the irreversible fan-out.
+ */
+export async function previewCloseOut(offeringId: string): Promise<CloseOutPreview | null> {
+  const offering = await prisma.educationOffering.findUnique({
+    where: { id: offeringId },
+    select: {
+      type: true,
+      _count: { select: { sessions: true } },
+      applications: {
+        where: { status: "Approved" },
+        select: {
+          attendances: { select: { status: true } },
+          certificate: { select: { id: true } },
+          applicant: { select: { firstName: true, lastName: true } },
+        },
+      },
+    },
+  });
+  if (!offering) return null;
+  const totalSessions = offering._count.sessions;
+  const eligible: string[] = [];
+  const belowThreshold: string[] = [];
+  let alreadyIssued = 0;
+  for (const app of offering.applications) {
+    const name = `${app.applicant.firstName} ${app.applicant.lastName}`.trim();
+    if (app.certificate) {
+      alreadyIssued += 1;
+      continue;
+    }
+    const present = app.attendances.filter((a) => a.status === "Present").length;
+    const excused = app.attendances.filter((a) => a.status === "Excused").length;
+    if (certificateEligibility({ type: offering.type, totalSessions, present, excused })) {
+      eligible.push(name);
+    } else {
+      belowThreshold.push(name);
+    }
+  }
+  return { eligible, belowThreshold, alreadyIssued };
+}
+
 /**
  * Certificate data for the page/PDF. Caller gates access (owner, offering
  * manager, or Core) — this only assembles display data, including the

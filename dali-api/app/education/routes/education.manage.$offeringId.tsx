@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   redirect,
   useLoaderData,
@@ -18,7 +19,7 @@ import {
   runOfferingAction,
 } from "~/education/lib/offerings.server";
 import { listApplications } from "~/education/lib/apply.server";
-import { decideApplication } from "~/education/lib/decisions.server";
+import { decideApplication, approveAllPending } from "~/education/lib/decisions.server";
 import { isOfferingManager } from "~/education/lib/access.server";
 import { ApplicationAnswers } from "~/education/components/ApplicationAnswers";
 import { listMaterialPages, listWorkspaceDocs, createMaterialPage } from "~/education/lib/lms.server";
@@ -31,7 +32,7 @@ import {
 import { listAnnouncements, postAnnouncement } from "~/education/lib/announcements.server";
 import { getSessionRoster, saveAttendance } from "~/education/lib/attendance.server";
 import { notesForOffering, upsertStudentNote } from "~/education/lib/student-notes.server";
-import { closeOutOffering } from "~/education/lib/certificates.server";
+import { closeOutOffering, previewCloseOut } from "~/education/lib/certificates.server";
 import {
   setFormBinding,
   listFeedbackResults,
@@ -239,6 +240,13 @@ export async function action({ request, params }: Route.ActionArgs) {
         });
         return "error" in result ? fail(result) : { ok: true };
       }
+      case "approve-all-pending": {
+        const result = await approveAllPending({
+          offeringId: params.offeringId!,
+          actorId: auth.user.sub,
+        });
+        return { ok: true, bulkApprove: result };
+      }
       case "create-page": {
         const result = await createMaterialPage({
           offeringId: params.offeringId!,
@@ -297,6 +305,10 @@ export async function action({ request, params }: Route.ActionArgs) {
           actorId: auth.user.sub,
         });
         return "error" in result ? fail(result) : { ok: true };
+      }
+      case "preview-close-out": {
+        const preview = await previewCloseOut(params.offeringId!);
+        return { ok: true, closeOutPreview: preview };
       }
       case "close-out-offering": {
         const result = await closeOutOffering({
@@ -396,9 +408,21 @@ export default function ManageOffering() {
   const actionData = useActionData<{
     error?: string;
     closeOut?: { issued: number; alreadyIssued: number; ineligible: number };
+    closeOutPreview?: { eligible: string[]; belowThreshold: string[]; alreadyIssued: number } | null;
+    bulkApprove?: { approved: number; skipped: number };
   }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = searchParams.get("tab") ?? "details";
+
+  const [appFilter, setAppFilter] = useState("all");
+  const appCounts = applications.reduce<Record<string, number>>((m, a) => {
+    m[a.status] = (m[a.status] ?? 0) + 1;
+    return m;
+  }, {});
+  const filteredApps =
+    appFilter === "all"
+      ? applications
+      : applications.filter((a) => a.status === appFilter);
 
   const nextStatuses: { to: string; label: string; variant: "primary" | "secondary" | "destructive" }[] =
     offering.status === "Draft"
@@ -432,6 +456,12 @@ export default function ManageOffering() {
           >
             View listing
           </Link>
+          <Form method="post">
+            <input type="hidden" name="intent" value="preview-close-out" />
+            <Button type="submit" variant="ghost" size="sm">
+              Preview close-out
+            </Button>
+          </Form>
           <Form
             method="post"
             onSubmit={confirmSubmit({
@@ -471,6 +501,33 @@ export default function ManageOffering() {
             `, ${actionData.closeOut.alreadyIssued} already issued`}
           {actionData.closeOut.ineligible > 0 &&
             `, ${actionData.closeOut.ineligible} below the attendance threshold`}
+          .
+        </p>
+      )}
+      {actionData?.closeOutPreview && (
+        <div className="text-sm bg-card border border-border rounded-md px-3 py-2.5 flex flex-col gap-1">
+          <p className="font-semibold text-foreground">
+            Close-out preview — {actionData.closeOutPreview.eligible.length} would get a
+            certificate
+            {actionData.closeOutPreview.alreadyIssued > 0 &&
+              `, ${actionData.closeOutPreview.alreadyIssued} already issued`}
+            {actionData.closeOutPreview.belowThreshold.length > 0 &&
+              `, ${actionData.closeOutPreview.belowThreshold.length} below threshold`}
+            .
+          </p>
+          {actionData.closeOutPreview.belowThreshold.length > 0 && (
+            <p className="text-xs text-amber-700">
+              Below threshold: {actionData.closeOutPreview.belowThreshold.join(", ")}
+            </p>
+          )}
+        </div>
+      )}
+      {actionData?.bulkApprove && (
+        <p className="text-sm text-foreground bg-green-50 border border-green-200 rounded-md px-3 py-2">
+          Approved {actionData.bulkApprove.approved} pending application
+          {actionData.bulkApprove.approved === 1 ? "" : "s"}
+          {actionData.bulkApprove.skipped > 0 &&
+            ` — ${actionData.bulkApprove.skipped} left (capacity reached)`}
           .
         </p>
       )}
@@ -884,7 +941,34 @@ export default function ManageOffering() {
               No applications yet.
             </p>
           ) : (
-            applications.map((a) => (
+            <>
+              <div className="flex flex-wrap items-center gap-2">
+                {(["all", "Submitted", "Approved", "Waitlisted", "Rejected", "Withdrawn"] as const)
+                  .filter((s) => s === "all" || (appCounts[s] ?? 0) > 0)
+                  .map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setAppFilter(s)}
+                      className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                        appFilter === s
+                          ? "bg-accent-coral text-white"
+                          : "bg-muted text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      {s === "all" ? `All ${applications.length}` : `${s} ${appCounts[s] ?? 0}`}
+                    </button>
+                  ))}
+                {(appCounts["Submitted"] ?? 0) > 0 && (
+                  <Form method="post" className="ml-auto">
+                    <input type="hidden" name="intent" value="approve-all-pending" />
+                    <Button type="submit" size="sm">
+                      Approve all {appCounts["Submitted"]} pending
+                    </Button>
+                  </Form>
+                )}
+              </div>
+              {filteredApps.map((a) => (
               <details
                 key={a.id}
                 className="bg-card border border-border rounded-lg px-4 py-3"
@@ -988,7 +1072,8 @@ export default function ManageOffering() {
                   )}
                 </div>
               </details>
-            ))
+              ))}
+            </>
           )}
         </div>
       )}
@@ -1052,10 +1137,24 @@ export default function ManageOffering() {
                       </li>
                     ))}
                   </ul>
-                  <div className="px-4 py-3 border-t border-border">
+                  <div className="px-4 py-3 border-t border-border flex items-center gap-2">
                     <Button type="submit" size="sm">
                       Save attendance
                     </Button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        const form = e.currentTarget.closest("form");
+                        form
+                          ?.querySelectorAll<HTMLSelectElement>('select[name^="mark-"]')
+                          .forEach((el) => {
+                            el.value = "Present";
+                          });
+                      }}
+                      className="text-xs font-semibold text-accent-coral hover:underline"
+                    >
+                      Mark all Present
+                    </button>
                   </div>
                 </Form>
               )}

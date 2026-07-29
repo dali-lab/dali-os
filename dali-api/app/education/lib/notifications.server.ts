@@ -211,6 +211,57 @@ export async function notifyNewAssignment(args: {
   }
 }
 
+/** Tell a student their submission was graded. Member in-app / portal email. */
+export async function notifyGraded(args: {
+  studentId: string;
+  offeringId: string;
+  assignmentId: string;
+  assignmentTitle: string;
+}): Promise<void> {
+  const student = await prisma.user.findUnique({
+    where: { id: args.studentId },
+    select: {
+      id: true,
+      firstName: true,
+      daliEmail: true,
+      dartmouthEmail: true,
+      personalEmail: true,
+      netId: true,
+    },
+  });
+  if (!student) return;
+  const title = `Feedback on ${args.assignmentTitle}`;
+  const body = "Your instructor graded your submission — open the assignment to see it.";
+  const link = `${educationLink(student, args.offeringId)}/assignments/${args.assignmentId}`;
+  try {
+    if (student.daliEmail) {
+      await notify({
+        eventType: "education.grade",
+        message: { title, body },
+        recipients: [{ userId: student.id, link }],
+      });
+    } else {
+      const refreshToken = await getSenderRefreshToken("Education");
+      if (!refreshToken) return;
+      const { to, redirectedFrom } = resolveCandidateEmail(recipientEmail(student));
+      if (!to) return;
+      await sendEmail({
+        refreshToken,
+        to,
+        subject: title,
+        html:
+          redirectBannerHtml(redirectedFrom) +
+          `<p>Hi ${student.firstName},</p><p>${body}</p><p><a href="${getFrontendUrl()}${link}">Open the assignment</a></p>`,
+      });
+    }
+  } catch (err) {
+    console.error("grade notification failed", {
+      assignmentId: args.assignmentId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 /**
  * Remind approved enrollees that a session is starting soon. Members get a
  * pref-aware in-app notification (education.session_reminder); portal students,

@@ -250,6 +250,13 @@ export const EVENT_TYPES = {
     timeSensitive: true,
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
+  "education.grade": {
+    kind: "Education",
+    area: "Education",
+    label: "Grades & feedback",
+    description: "When an instructor grades or leaves feedback on your submission.",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
   "member.promotion": {
     kind: "General",
     area: "Staffing",

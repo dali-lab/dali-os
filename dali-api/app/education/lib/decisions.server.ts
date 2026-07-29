@@ -118,6 +118,34 @@ export async function decideApplication(args: {
   return { ok: true, status: args.status, promotedApplicationId };
 }
 
+/**
+ * Approve every Submitted application in FIFO order until capacity is reached.
+ * Each goes through decideApplication (atomic capacity guard), so this stops
+ * cleanly at the seat limit and leaves the rest Submitted.
+ */
+export async function approveAllPending(args: {
+  offeringId: string;
+  actorId: string;
+}): Promise<{ approved: number; skipped: number }> {
+  const pending = await prisma.educationApplication.findMany({
+    where: { offeringId: args.offeringId, status: "Submitted" },
+    orderBy: { submittedAt: "asc" },
+    select: { id: true },
+  });
+  let approved = 0;
+  for (const p of pending) {
+    const result = await decideApplication({
+      applicationId: p.id,
+      offeringId: args.offeringId,
+      status: "Approved",
+      actorId: args.actorId,
+    });
+    if ("ok" in result) approved += 1;
+    else break; // at capacity (or error) — leave the remainder for review
+  }
+  return { approved, skipped: pending.length - approved };
+}
+
 class DecisionError extends Error {}
 
 async function decrementRanksAbove(
