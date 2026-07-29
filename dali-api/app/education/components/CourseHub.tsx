@@ -19,6 +19,7 @@ export type HubData = {
   sessions: {
     id: string;
     sequence: number;
+    title: string | null;
     datetime: string | Date;
     location: string | null;
     recordingUrl: string | null;
@@ -199,7 +200,7 @@ export function CourseHub({
             <li key={s.id} className="px-4 py-3 flex items-center justify-between gap-4">
               <div>
                 <p className="text-sm font-medium text-foreground">
-                  Session {s.sequence}
+                  {s.title ? `${s.sequence}. ${s.title}` : `Session ${s.sequence}`}
                   {s.myAttendance && (
                     <span
                       className={cn(

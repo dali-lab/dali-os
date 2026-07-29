@@ -11,6 +11,7 @@ export type UpcomingSession = {
   offeringId: string;
   offeringTitle: string;
   sequence: number;
+  title: string | null;
   datetime: Date;
   location: string | null;
 };
@@ -33,6 +34,7 @@ export async function listUpcomingSessionsForUser(
     select: {
       id: true,
       sequence: true,
+      title: true,
       datetime: true,
       location: true,
       offering: { select: { id: true, title: true } },
@@ -43,6 +45,7 @@ export async function listUpcomingSessionsForUser(
     offeringId: s.offering.id,
     offeringTitle: s.offering.title,
     sequence: s.sequence,
+    title: s.title,
     datetime: s.datetime,
     location: s.location,
   }));

@@ -145,7 +145,9 @@ export async function loader({ request }: Route.LoaderArgs) {
     upcoming: upcomingSessions.map((s) => ({
       id: s.id,
       offeringId: s.offeringId,
-      label: `${s.offeringTitle} · Session ${s.sequence}`,
+      label: s.title
+        ? `${s.offeringTitle} · ${s.title}`
+        : `${s.offeringTitle} · Session ${s.sequence}`,
       when: s.datetime.toLocaleString("en-US", {
         timeZone: tz,
         weekday: "short",

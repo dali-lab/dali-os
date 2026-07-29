@@ -475,6 +475,7 @@ export async function runOfferingAction(
         data: {
           offeringId,
           sequence: (last?.sequence ?? 0) + 1,
+          title: String(formData.get("title") ?? "").trim() || null,
           datetime,
           location: String(formData.get("location") ?? "").trim() || null,
         },
@@ -487,6 +488,46 @@ export async function runOfferingAction(
         metadata: { offeringId },
       });
       return { ok: true, id: session.id };
+    }
+
+    case "generate-sessions": {
+      // Bulk-create N sessions spaced intervalDays apart from a start — the
+      // common "weekly for 6 weeks" setup, in one action instead of N.
+      const start = parseDate(formData.get("startDatetime"));
+      if (!start) return bad("Start date/time is required");
+      const count = Math.min(
+        30,
+        Math.max(1, Number.parseInt(String(formData.get("count") ?? "1"), 10) || 1),
+      );
+      const intervalDays = Math.min(
+        30,
+        Math.max(1, Number.parseInt(String(formData.get("intervalDays") ?? "7"), 10) || 7),
+      );
+      const location = String(formData.get("location") ?? "").trim() || null;
+      const last = await prisma.educationSession.findFirst({
+        where: { offeringId },
+        orderBy: { sequence: "desc" },
+        select: { sequence: true },
+      });
+      let sequence = last?.sequence ?? 0;
+      const rows = [];
+      for (let i = 0; i < count; i += 1) {
+        sequence += 1;
+        rows.push({
+          offeringId,
+          sequence,
+          datetime: new Date(start.getTime() + i * intervalDays * 86_400_000),
+          location,
+        });
+      }
+      await prisma.educationSession.createMany({ data: rows });
+      await logAuditEvent({
+        action: "education.session.create",
+        userId: actorId,
+        targetId: offeringId,
+        metadata: { offeringId, count, intervalDays, bulk: true },
+      });
+      return { ok: true };
     }
 
     case "update-session": {
@@ -502,6 +543,7 @@ export async function runOfferingAction(
       await prisma.educationSession.update({
         where: { id: sessionId },
         data: {
+          title: String(formData.get("title") ?? "").trim() || null,
           datetime,
           location: String(formData.get("location") ?? "").trim() || null,
           recordingUrl: String(formData.get("recordingUrl") ?? "").trim() || null,

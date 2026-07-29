@@ -710,7 +710,7 @@ export default function ManageOffering() {
                 <li key={s.id} className="bg-card border border-border rounded-lg p-4">
                   <div className="flex items-center justify-between gap-4 mb-3">
                     <p className="text-sm font-semibold text-foreground">
-                      Session {s.sequence}
+                      {s.title ? `${s.sequence}. ${s.title}` : `Session ${s.sequence}`}
                       <span className="ml-2 font-normal text-muted-foreground text-xs">
                         {formatDateTime(s.datetime, tz)}
                       </span>
@@ -730,9 +730,19 @@ export default function ManageOffering() {
                       </Button>
                     </Form>
                   </div>
-                  <Form method="post" className="grid gap-3 sm:grid-cols-[1fr_1fr_1fr_auto] items-end">
+                  <Form method="post" className="grid gap-3 sm:grid-cols-[1fr_1fr_1fr_1fr_auto] items-end">
                     <input type="hidden" name="intent" value="update-session" />
                     <input type="hidden" name="sessionId" value={s.id} />
+                    <label className="block">
+                      <span className="text-xs font-semibold text-muted-foreground">Topic</span>
+                      <input
+                        type="text"
+                        name="title"
+                        placeholder="e.g. Intro to Figma"
+                        defaultValue={s.title ?? ""}
+                        className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
+                      />
+                    </label>
                     <label className="block">
                       <span className="text-xs font-semibold text-muted-foreground">When</span>
                       <input
@@ -772,9 +782,18 @@ export default function ManageOffering() {
 
           <Form
             method="post"
-            className="bg-card border border-border rounded-lg p-4 grid gap-3 sm:grid-cols-[1fr_1fr_auto] items-end"
+            className="bg-card border border-border rounded-lg p-4 grid gap-3 sm:grid-cols-[1fr_1fr_1fr_auto] items-end"
           >
             <input type="hidden" name="intent" value="add-session" />
+            <label className="block">
+              <span className="text-xs font-semibold text-muted-foreground">Topic</span>
+              <input
+                type="text"
+                name="title"
+                placeholder="e.g. Intro to Figma"
+                className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
+              />
+            </label>
             <label className="block">
               <span className="text-xs font-semibold text-muted-foreground">When</span>
               <input
@@ -797,6 +816,64 @@ export default function ManageOffering() {
               Add session
             </Button>
           </Form>
+
+          <details className="bg-card border border-border rounded-lg p-4">
+            <summary className="cursor-pointer text-sm font-semibold text-foreground">
+              Generate a weekly series
+            </summary>
+            <Form
+              method="post"
+              className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto_auto_1fr_auto] items-end"
+            >
+              <input type="hidden" name="intent" value="generate-sessions" />
+              <label className="block">
+                <span className="text-xs font-semibold text-muted-foreground">First session</span>
+                <input
+                  type="datetime-local"
+                  name="startDatetime"
+                  required
+                  className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs font-semibold text-muted-foreground">How many</span>
+                <input
+                  type="number"
+                  name="count"
+                  min={1}
+                  max={30}
+                  defaultValue={6}
+                  className="mt-1 w-20 rounded-md border border-border bg-card px-2 py-1.5 text-sm"
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs font-semibold text-muted-foreground">Every N days</span>
+                <input
+                  type="number"
+                  name="intervalDays"
+                  min={1}
+                  max={30}
+                  defaultValue={7}
+                  className="mt-1 w-20 rounded-md border border-border bg-card px-2 py-1.5 text-sm"
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs font-semibold text-muted-foreground">Location</span>
+                <input
+                  type="text"
+                  name="location"
+                  placeholder="Sudikoff 007"
+                  className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
+                />
+              </label>
+              <Button type="submit" variant="secondary" size="sm">
+                Generate
+              </Button>
+            </Form>
+            <p className="mt-2 text-xs text-muted-foreground">
+              You can rename/retime individual sessions afterward.
+            </p>
+          </details>
         </div>
       )}
 

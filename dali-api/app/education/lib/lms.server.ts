@@ -156,6 +156,7 @@ export async function listSessionsWithMyAttendance(
     select: {
       id: true,
       sequence: true,
+      title: true,
       datetime: true,
       location: true,
       recordingUrl: true,
