@@ -3792,6 +3792,17 @@ async function main() {
         };
         await seedPage("Weekly Partner Update", true);
         await seedPage("Internal Retro Notes", false);
+
+        // A partner-facing link (demo / prototype) for the portal Deliverables.
+        await prisma.projectLink.deleteMany({ where: { projectId: tuckProject.id } });
+        await prisma.projectLink.create({
+          data: {
+            projectId: tuckProject.id,
+            label: "Prototype demo",
+            url: "https://example.com/tuck-alumni-prototype",
+            partnerVisible: true,
+          },
+        });
       }
 
       // Templates (idempotent by name): page + mentor-note.

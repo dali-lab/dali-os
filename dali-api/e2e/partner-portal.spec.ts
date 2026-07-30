@@ -214,9 +214,11 @@ test.describe('partner portal', () => {
     ).toBeVisible();
     await expect(page.getByText('2 of 5 done')).toBeVisible();
 
-    // Shared docs live in the Deliverables tab; unshared ones never render.
+    // Shared docs + partner links live in the Deliverables tab; unshared docs
+    // never render.
     await page.goto('/partner/projects/project-tuck-alumni?tab=deliverables');
     await expect(page.getByText('Weekly Partner Update')).toBeVisible();
+    await expect(page.getByText('Prototype demo')).toBeVisible();
     await expect(page.getByText('Internal Retro Notes')).not.toBeVisible();
   });
 

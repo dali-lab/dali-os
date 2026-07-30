@@ -2406,11 +2406,31 @@ model Project {
   budgetNotes       BudgetNote[]
   scheduledMeetings ScheduledMeeting[]
   timeEntries       TimeEntry[]
+  // Partner-facing links (demo / prototype / live URLs) surfaced in the portal.
+  projectLinks      ProjectLink[]
   // The curated public face of this project, if it has one. Absent until
   // someone opens the project's Public view.
   showcase          ProjectShowcase?
 
   createdAt DateTime @default(now())
+}
+
+// Partner-facing project links — demo / prototype / live URLs a Core member
+// adds and the partner sees in the portal (proof of work they can click).
+// Distinct from the internal repoUrls. partnerVisible defaults true (they're
+// added to share); Core can hide one without deleting it.
+model ProjectLink {
+  id             String   @id @default(cuid())
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId      String
+  label          String
+  url            String
+  partnerVisible Boolean  @default(true)
+  position       Int      @default(0)
+  createdAt      DateTime @default(now())
+  createdById    String?
+
+  @@index([projectId])
 }
 
 // The public, curated view of a project — what dali.website shows to the

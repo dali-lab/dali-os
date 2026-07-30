@@ -1,6 +1,14 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router";
-import { CalendarClock, CheckCircle2, Download, Eye, FileText, X } from "lucide-react";
+import {
+  CalendarClock,
+  CheckCircle2,
+  Download,
+  ExternalLink,
+  Eye,
+  FileText,
+  X,
+} from "lucide-react";
 import { termCodeLabel } from "~/lib/display";
 import { formatBytes } from "~/lib/upload-client";
 import { Avatar } from "~/components/ui/Avatar";
@@ -229,6 +237,7 @@ export function PartnerProjectHubView({
       {active === "progress" && <ProgressPanel areas={data.areas} />}
       {active === "deliverables" && (
         <DeliverablesPanel
+          links={data.links}
           sharedPages={data.sharedPages}
           sharedFiles={data.sharedFiles}
           pageHref={pageHref}
@@ -269,6 +278,7 @@ function OverviewPanel({
     currentFocus,
     meetings,
     activity,
+    links,
     sharedPages,
     sharedFiles,
   } = data;
@@ -278,7 +288,7 @@ function OverviewPanel({
       ? Math.round((progress.overallDone / progress.overallTotal) * 100)
       : 0;
   const newCount = activity.filter((a) => a.isNew).length;
-  const deliverableCount = sharedPages.length + sharedFiles.length;
+  const deliverableCount = links.length + sharedPages.length + sharedFiles.length;
 
   return (
     <div className="flex flex-col gap-6">
@@ -376,7 +386,23 @@ function OverviewPanel({
           </p>
         ) : (
           <ul className="flex flex-col divide-y divide-border">
-            {sharedPages.slice(0, 3).map((p) => (
+            {links.slice(0, 2).map((l) => (
+              <li key={`l-${l.id}`}>
+                <a
+                  href={l.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-3 py-2 text-sm transition hover:text-accent-coral"
+                >
+                  <ExternalLink className="h-4 w-4 flex-shrink-0 text-accent-teal" />
+                  <span className="min-w-0 flex-1 truncate font-medium text-foreground">
+                    {l.label}
+                  </span>
+                  <span className="flex-shrink-0 text-xs text-muted-foreground">Link</span>
+                </a>
+              </li>
+            ))}
+            {sharedPages.slice(0, 2).map((p) => (
               <li key={`p-${p.id}`}>
                 <Link
                   to={pageHref(p.id)}
@@ -392,7 +418,7 @@ function OverviewPanel({
                 </Link>
               </li>
             ))}
-            {sharedFiles.slice(0, 3).map((f) => (
+            {sharedFiles.slice(0, 2).map((f) => (
               <li key={`f-${f.id}`}>
                 <button
                   type="button"
@@ -483,11 +509,13 @@ function ProgressPanel({ areas }: { areas: PartnerProjectArea[] }) {
 // The library — everything the team has shared as proof of work: documents and
 // file uploads (previewed via a short-lived signed URL resolved in the loader).
 function DeliverablesPanel({
+  links,
   sharedPages,
   sharedFiles,
   pageHref,
   currentUserId,
 }: {
+  links: PartnerProjectViewData["links"];
   sharedPages: PartnerProjectViewData["sharedPages"];
   sharedFiles: PartnerProjectViewData["sharedFiles"];
   pageHref: (pageId: string) => string;
@@ -497,6 +525,32 @@ function DeliverablesPanel({
 
   return (
     <div className="flex flex-col gap-6">
+      {links.length > 0 && (
+        <section>
+          <h2 className={`${PANEL_HEADING} mb-3`}>Links</h2>
+          <ul className={`${CARD} divide-y divide-border`}>
+            {links.map((l) => (
+              <li key={l.id}>
+                <a
+                  href={l.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-3 px-4 py-3 text-sm transition hover:bg-muted/20"
+                >
+                  <ExternalLink className="h-4 w-4 flex-shrink-0 text-accent-teal" />
+                  <span className="min-w-0 flex-1 truncate font-medium text-foreground">
+                    {l.label}
+                  </span>
+                  <span className="hidden max-w-[45%] flex-shrink-0 truncate text-xs text-muted-foreground sm:block">
+                    {l.url.replace(/^https?:\/\//, "")}
+                  </span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <section>
         <h2 className={`${PANEL_HEADING} mb-3`}>Documents</h2>
         {sharedPages.length === 0 ? (

@@ -87,6 +87,8 @@ export type PartnerProjectViewData = {
     // internal file view (documents.file.$fileId.tsx).
     previewUrl: string | null;
   }[];
+  // Partner-facing project links (demo / prototype / live URLs), Core-curated.
+  links: { id: string; label: string; url: string }[];
   // Upcoming partner-visible meetings on this project, expanded into individual
   // occurrences over a forward window. `id` is the meeting id (shared across a
   // recurring series' occurrences — RSVP and .ics are meeting-level).
@@ -166,6 +168,7 @@ export async function loadPartnerProjectView(
     recentlyDone,
     sharedPages,
     sharedFileRows,
+    projectLinks,
   ] = await Promise.all([
       partnerOrgId
         ? prisma.projectPartner.findFirst({
@@ -246,6 +249,11 @@ export async function loadPartnerProjectView(
             select: { fileName: true, sizeBytes: true, s3Key: true, contentType: true },
           },
         },
+      }),
+      prisma.projectLink.findMany({
+        where: { projectId: project.id, partnerVisible: true },
+        orderBy: { position: "asc" },
+        select: { id: true, label: true, url: true },
       }),
     ]);
 
@@ -592,6 +600,7 @@ export async function loadPartnerProjectView(
         };
       }),
     ),
+    links: projectLinks,
     meetings,
     activity,
     lastVisitAt: lastVisit?.lastSeenAt.toISOString() ?? null,
