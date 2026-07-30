@@ -205,6 +205,12 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
         typeof data.label === 'string'
       ) {
         workspaceRef.current?.setTabLabel(data.url, data.label)
+      } else if (data.type === 'dali:closeTab' && typeof data.url === 'string') {
+        // An embedded page retracting a split-screen tab it opened earlier —
+        // e.g. the project hub closing a document pane when the user leaves the
+        // subtab that spawned it. Tabless mode never opened one, so ignore it
+        // there rather than navigating the top window somewhere unasked.
+        if (!tablessRef.current) workspaceRef.current?.closeTabByUrl(data.url)
       } else if (data.type === 'dali:profileUpdated') {
         // A profile edit inside a workspace iframe doesn't re-run the shell
         // loader, so re-fetch it to refresh the footer avatar.

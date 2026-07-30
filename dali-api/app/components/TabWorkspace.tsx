@@ -24,6 +24,14 @@ export interface TabWorkspaceHandle {
   /** Rename any tab matching `url` (across all panes). Used by embedded
    *  iframes to announce their preferred label after route meta resolves. */
   setTabLabel: (url: string, label: string) => void
+  /** Close the tab matching `url` (in whichever pane holds it), if any. Used by
+   *  an embedded page to retract a split-screen tab it opened once the context
+   *  that spawned it is gone — e.g. the project hub closing a document pane
+   *  when the user switches to a different subtab. No-op when the tab isn't
+   *  open, so a page can fire this without tracking what the user has since
+   *  closed by hand. Goes through closeTab, so it lands in the recently-closed
+   *  list and stays reopenable with mod+shift+T. */
+  closeTabByUrl: (url: string) => void
   /** Post a message to every open tab's iframe (across all panes). Used to
    *  relay a data-changed event from the iframe that made the change to
    *  sibling iframes that show the same data (e.g. a doc title edit in a
@@ -31,7 +39,7 @@ export interface TabWorkspaceHandle {
   broadcast: (message: Record<string, unknown>) => void
 }
 
-interface Tab {
+export interface Tab {
   id: string
   label: string
   // Where the tab's iframe currently is. Drifts as the user navigates links
@@ -62,7 +70,7 @@ interface Tab {
   ephemeral: boolean
 }
 
-interface Pane {
+export interface Pane {
   id: string
   tabs: Tab[]
   activeTabId: string | null
@@ -77,7 +85,7 @@ interface ClosedTab {
   closedAt: number
 }
 
-interface WorkspaceState {
+export interface WorkspaceState {
   panes: Pane[]
   focusedPaneId: string
   // LRU of recently-closed tabs (most-recent last). Capped at CLOSED_CAP so a
@@ -255,6 +263,61 @@ function findTabPane(state: WorkspaceState, url: string): { paneId: string; tabI
     if (tab) return { paneId: pane.id, tabId: tab.id }
   }
   return null
+}
+
+// Removing one tab from the workspace. Pure so that callers which have to
+// resolve the target from live state (closeTabByUrl) can reuse the exact
+// bookkeeping — recently-closed LRU, activeTabId repointing, dropping a pane
+// that empties — instead of duplicating it. Exported for unit tests.
+export function closeTabInState(
+  state: WorkspaceState,
+  paneId: string,
+  tabId: string,
+): WorkspaceState {
+  const closing = state.panes.find((p) => p.id === paneId)?.tabs.find((t) => t.id === tabId)
+  const panes: Pane[] = []
+  for (const p of state.panes) {
+    if (p.id !== paneId) {
+      panes.push(p)
+      continue
+    }
+    const idx = p.tabs.findIndex((t) => t.id === tabId)
+    if (idx < 0) {
+      panes.push(p)
+      continue
+    }
+    const tabs = p.tabs.filter((t) => t.id !== tabId)
+    let activeTabId = p.activeTabId
+    if (activeTabId === tabId) {
+      activeTabId = tabs[Math.min(idx, tabs.length - 1)]?.id ?? null
+    }
+    panes.push({ ...p, tabs, activeTabId })
+  }
+  // Push to recently-closed LRU so the user can reopen with mod+shift+T.
+  const closedTabs = closing
+    ? [
+        ...state.closedTabs,
+        {
+          label: closing.label,
+          url: closing.url,
+          origin: closing.origin,
+          backStack: closing.backStack,
+          forwardStack: closing.forwardStack,
+          closedAt: now(),
+        },
+      ].slice(-CLOSED_CAP)
+    : state.closedTabs
+  // If a pane became empty AND there's another pane, remove it.
+  const nonEmpty = panes.filter((p) => p.tabs.length > 0)
+  if (nonEmpty.length > 0 && nonEmpty.length < panes.length) {
+    const focusedStillExists = nonEmpty.some((p) => p.id === state.focusedPaneId)
+    return {
+      panes: nonEmpty,
+      focusedPaneId: focusedStillExists ? state.focusedPaneId : nonEmpty[0].id,
+      closedTabs,
+    }
+  }
+  return { ...state, panes, closedTabs }
 }
 
 export interface TabWorkspaceProps {
@@ -778,6 +841,14 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onOpenPal
           return changed ? { ...prev, panes } : prev
         })
       },
+      closeTabByUrl: (url) => {
+        setState((prev) => {
+          // Resolved inside the updater: this effect closes over the first
+          // render's state, so the tab has to be looked up against live state.
+          const found = findTabPane(prev, url)
+          return found ? closeTabInState(prev, found.paneId, found.tabId) : prev
+        })
+      },
       broadcast: (message) => {
         for (const iframe of iframeElsRef.current.values()) {
           iframe.contentWindow?.postMessage(message, window.location.origin)
@@ -1144,52 +1215,7 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onOpenPal
   }
 
   const closeTab = (paneId: string, tabId: string) => {
-    setState((prev) => {
-      const closing = prev.panes.find((p) => p.id === paneId)?.tabs.find((t) => t.id === tabId)
-      const panes: Pane[] = []
-      for (const p of prev.panes) {
-        if (p.id !== paneId) {
-          panes.push(p)
-          continue
-        }
-        const idx = p.tabs.findIndex((t) => t.id === tabId)
-        if (idx < 0) {
-          panes.push(p)
-          continue
-        }
-        const tabs = p.tabs.filter((t) => t.id !== tabId)
-        let activeTabId = p.activeTabId
-        if (activeTabId === tabId) {
-          activeTabId = tabs[Math.min(idx, tabs.length - 1)]?.id ?? null
-        }
-        panes.push({ ...p, tabs, activeTabId })
-      }
-      // Push to recently-closed LRU so the user can reopen with mod+shift+T.
-      const closedTabs = closing
-        ? [
-            ...prev.closedTabs,
-            {
-              label: closing.label,
-              url: closing.url,
-              origin: closing.origin,
-              backStack: closing.backStack,
-              forwardStack: closing.forwardStack,
-              closedAt: now(),
-            },
-          ].slice(-CLOSED_CAP)
-        : prev.closedTabs
-      // If a pane became empty AND there's another pane, remove it.
-      const nonEmpty = panes.filter((p) => p.tabs.length > 0)
-      if (nonEmpty.length > 0 && nonEmpty.length < panes.length) {
-        const focusedStillExists = nonEmpty.some((p) => p.id === prev.focusedPaneId)
-        return {
-          panes: nonEmpty,
-          focusedPaneId: focusedStillExists ? prev.focusedPaneId : nonEmpty[0].id,
-          closedTabs,
-        }
-      }
-      return { ...prev, panes, closedTabs }
-    })
+    setState((prev) => closeTabInState(prev, paneId, tabId))
   }
 
   // Close a set of tabs in one pane at once (backs the bulk-close context-menu
