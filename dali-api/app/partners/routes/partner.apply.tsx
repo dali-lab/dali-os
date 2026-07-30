@@ -219,7 +219,7 @@ export default function PartnerApply({ actionData }: Route.ComponentProps) {
       </p>
 
       {error && (
-        <p className="mb-4 text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3">
+        <p className="mb-4 text-sm text-destructive bg-destructive/10 rounded-lg px-4 py-3">
           {error}
         </p>
       )}
@@ -353,7 +353,7 @@ export default function PartnerApply({ actionData }: Route.ComponentProps) {
         <button
           type="submit"
           disabled={submitting}
-          className="rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
+          className="rounded-xl bg-accent-coral text-white font-heading font-semibold py-3 hover:bg-accent-coral/90 transition disabled:opacity-50"
         >
           {submitting ? "Submitting…" : "Submit application"}
         </button>

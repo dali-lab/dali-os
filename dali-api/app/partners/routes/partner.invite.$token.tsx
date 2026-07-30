@@ -80,7 +80,7 @@ export default function PartnerInvite({ actionData }: Route.ComponentProps) {
               <button
                 type="submit"
                 disabled={submitting}
-                className="w-full rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
+                className="w-full rounded-xl bg-accent-coral text-white font-heading font-semibold py-3 hover:bg-accent-coral/90 transition disabled:opacity-50"
               >
                 {submitting ? "Joining…" : "Accept invitation"}
               </button>
@@ -97,7 +97,7 @@ export default function PartnerInvite({ actionData }: Route.ComponentProps) {
             </p>
             <a
               href="/partner/login"
-              className="inline-block rounded-xl bg-dark-blue text-white font-heading font-semibold px-6 py-3 hover:opacity-90 transition"
+              className="inline-block rounded-xl bg-accent-coral text-white font-heading font-semibold px-6 py-3 hover:bg-accent-coral/90 transition"
             >
               Go to partner sign in
             </a>

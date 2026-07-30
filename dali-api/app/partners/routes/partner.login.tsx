@@ -152,7 +152,7 @@ export default function PartnerLogin() {
             </p>
 
             {actionData && "error" in actionData && (
-              <p className="mb-4 text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3">
+              <p className="mb-4 text-sm text-destructive bg-destructive/10 rounded-lg px-4 py-3">
                 {actionData.error}
               </p>
             )}
@@ -182,7 +182,7 @@ export default function PartnerLogin() {
               <button
                 type="submit"
                 disabled={submitting}
-                className="w-full rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
+                className="w-full rounded-xl bg-accent-coral text-white font-heading font-semibold py-3 hover:bg-accent-coral/90 transition disabled:opacity-50"
               >
                 {submitting ? "Sending…" : "Email me a sign-in link"}
               </button>

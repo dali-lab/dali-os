@@ -181,17 +181,19 @@ export default function PartnerSettings({ actionData }: Route.ComponentProps) {
   const invited = actionData && "invited" in actionData;
 
   const inputClass =
-    "w-full rounded-xl border border-border bg-card px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral";
+    "w-full rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral/30";
   const labelClass = "block text-xs font-medium text-muted-foreground mb-1";
   const saveClass =
-    "self-start rounded-xl bg-dark-blue text-white text-sm font-heading font-semibold px-5 py-2.5 hover:opacity-90 transition disabled:opacity-50";
+    "self-start rounded-xl bg-accent-coral text-white text-sm font-heading font-semibold px-5 py-2.5 hover:bg-accent-coral/90 transition disabled:opacity-50";
 
   return (
     <div className="flex flex-col gap-8 max-w-2xl mx-auto">
       <h1 className="font-heading text-3xl font-bold text-dark-blue">Settings</h1>
 
       {error && (
-        <p className="text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3">{error}</p>
+        <p className="text-sm text-destructive bg-destructive/10 rounded-lg px-4 py-3">
+          {error}
+        </p>
       )}
 
       <section className="bg-card border border-border rounded-2xl p-5">
@@ -269,7 +271,7 @@ export default function PartnerSettings({ actionData }: Route.ComponentProps) {
         {inviting && (
           <Form
             method="post"
-            className="flex flex-wrap items-end gap-3 bg-muted/20 rounded-xl p-4 mb-4"
+            className="flex flex-wrap items-end gap-3 bg-muted border border-border rounded-xl p-4 mb-4"
           >
             <input type="hidden" name="intent" value="invite" />
             <div className="flex-1 min-w-[200px]">

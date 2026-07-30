@@ -177,7 +177,7 @@ export default function PartnerApplicationDetail({
       )}
 
       {error && (
-        <p className="text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3">{error}</p>
+        <p className="text-sm text-destructive bg-destructive/10 rounded-lg px-4 py-3">{error}</p>
       )}
 
       <section className="bg-card border border-border rounded-2xl p-5">
@@ -193,7 +193,7 @@ export default function PartnerApplicationDetail({
             <button
               type="submit"
               disabled={submitting}
-              className="self-start rounded-xl bg-dark-blue text-white text-sm font-heading font-semibold px-5 py-2.5 hover:opacity-90 transition disabled:opacity-50"
+              className="self-start rounded-xl bg-accent-coral text-white text-sm font-heading font-semibold px-5 py-2.5 hover:bg-accent-coral/90 transition disabled:opacity-50"
             >
               {submitting ? "Saving…" : "Save changes"}
             </button>

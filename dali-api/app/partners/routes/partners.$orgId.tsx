@@ -561,7 +561,7 @@ export default function PartnerOrgDetail() {
             </div>
             <button
               type="submit"
-              className="rounded-lg bg-dark-blue text-white text-sm font-medium px-4 py-2 hover:opacity-90 transition"
+              className="rounded-lg bg-accent-coral text-white text-sm font-medium px-4 py-2 hover:bg-accent-coral/90 transition"
             >
               Send invite
             </button>
@@ -651,7 +651,7 @@ export default function PartnerOrgDetail() {
                     </select>
                     <button
                       type="submit"
-                      className="px-3 py-1.5 text-xs font-medium rounded-md bg-dark-blue text-white hover:opacity-90 transition"
+                      className="px-3 py-1.5 text-xs font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition"
                     >
                       Move
                     </button>
@@ -735,7 +735,7 @@ export default function PartnerOrgDetail() {
             </div>
             <button
               type="submit"
-              className="rounded-lg bg-dark-blue text-white text-sm font-medium px-4 py-2 hover:opacity-90 transition"
+              className="rounded-lg bg-accent-coral text-white text-sm font-medium px-4 py-2 hover:bg-accent-coral/90 transition"
             >
               Link
             </button>

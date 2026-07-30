@@ -126,7 +126,7 @@ export default function PartnerHome() {
             </p>
             <Link
               to="/partner/apply"
-              className="inline-block rounded-xl bg-dark-blue text-white font-heading font-semibold px-5 py-2.5 text-sm hover:opacity-90 transition"
+              className="inline-block rounded-xl bg-accent-coral text-white font-heading font-semibold px-5 py-2.5 text-sm hover:bg-accent-coral/90 transition"
             >
               Pitch a project
             </Link>
