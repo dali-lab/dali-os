@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link } from "react-router";
-import { CalendarClock, ChevronLeft, ChevronRight, Flag, X } from "lucide-react";
+import { CalendarClock, ChevronLeft, ChevronRight, X } from "lucide-react";
 import {
   APPLICATION_TZ,
   getZonedHourFraction,
@@ -21,7 +21,6 @@ import {
 import type { PartnerProjectViewData } from "~/partners/lib/partner-project-view.server";
 
 type PartnerMeeting = PartnerProjectViewData["meetings"][number];
-type PartnerMilestone = PartnerProjectViewData["milestones"][number];
 
 const DAY_MS = 86_400_000;
 // A placed chip never renders shorter than this, so a very short (or 0-minute)
@@ -38,16 +37,14 @@ type PlacedMeeting = {
 
 // Read-only week calendar for the partner project hub. Renders the project's
 // partner-visible meetings (already expanded to occurrences by the loader) on a
-// Sun..Sat × hour grid in the lab timezone, plus a slim strip of sprint
-// milestones above it. Paging is client-side over the already-loaded window.
+// Sun..Sat × hour grid in the lab timezone. Paging is client-side over the
+// already-loaded window.
 export function PartnerWeekCalendar({
   meetings,
-  milestones,
   pageHref,
   canRsvp = false,
 }: {
   meetings: PartnerMeeting[];
-  milestones: PartnerMilestone[];
   pageHref: (pageId: string) => string;
   canRsvp?: boolean;
 }) {
@@ -111,18 +108,8 @@ export function PartnerWeekCalendar({
     return m;
   }, [placed]);
 
-  const milestonesByDay = useMemo(() => {
-    const m: Record<number, PartnerMilestone[]> = {};
-    for (const mi of milestones) {
-      const idx = dayIndexFor(mi.date);
-      if (idx >= 0) (m[idx] ??= []).push(mi);
-    }
-    return m;
-  }, [milestones, days]);
-
-  const weekHasMilestones = Object.keys(milestonesByDay).length > 0;
-  const weekIsEmpty = placed.length === 0 && !weekHasMilestones;
-  const hasAnyData = meetings.length > 0 || milestones.length > 0;
+  const weekIsEmpty = placed.length === 0;
+  const hasAnyData = meetings.length > 0;
 
   // Today column + now-line (both deferred until `now` is set post-mount).
   const todayIdx = now
@@ -216,28 +203,6 @@ export function PartnerWeekCalendar({
           );
         })}
       </div>
-
-      {/* Milestone strip */}
-      {weekHasMilestones && (
-        <div className="flex border-b border-border bg-muted/30">
-          <div className="w-14 flex-shrink-0 flex items-center justify-end pr-1.5">
-            <Flag className="w-3 h-3 text-muted-foreground" />
-          </div>
-          {days.map((_, idx) => (
-            <div key={idx} className="flex-1 min-w-0 border-l border-border px-1 py-1 space-y-1">
-              {(milestonesByDay[idx] ?? []).map((mi) => (
-                <div
-                  key={mi.id}
-                  title={mi.label}
-                  className="truncate rounded bg-card border border-border px-1.5 py-0.5 text-[10px] font-medium text-foreground"
-                >
-                  {mi.label}
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-      )}
 
       {/* Scrolling hour grid */}
       <div ref={scrollRef} className="relative max-h-[520px] overflow-y-auto">
@@ -463,16 +428,13 @@ function MeetingPopover({
           </div>
         )}
 
-        <div className="mt-2 flex items-center gap-3 border-t border-border pt-2">
-          {meeting.notePageId && (
+        {meeting.notePageId && (
+          <div className="mt-2 flex items-center gap-3 border-t border-border pt-2">
             <Link to={pageHref(meeting.notePageId)} className="font-medium text-accent-coral hover:underline">
               Notes
             </Link>
-          )}
-          <a href={`/partner/meetings/${meeting.id}/ics`} className="text-muted-foreground hover:text-foreground">
-            Add to calendar
-          </a>
-        </div>
+          </div>
+        )}
 
         {canRsvp && (
           <div className="mt-2 border-t border-border pt-2">

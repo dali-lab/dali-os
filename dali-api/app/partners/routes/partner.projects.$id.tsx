@@ -7,8 +7,6 @@ import { prisma } from "~/lib/db";
 import { requirePartner } from "~/partners/lib/partner-auth.server";
 import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
 import { loadPartnerProjectView } from "~/partners/lib/partner-project-view.server";
-import { ensureCalendarFeedToken } from "~/partners/lib/partner-calendar.server";
-import { getFrontendUrl } from "~/lib/app-env";
 import { PartnerProjectHubView } from "~/partners/components/PartnerProjectHubView";
 
 export const meta: Route.MetaFunction = ({ data }) => {
@@ -45,11 +43,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     update: { lastSeenAt: new Date() },
   });
 
-  const feedToken = await ensureCalendarFeedToken(auth.user.sub);
-  const calendarFeedUrl = feedToken
-    ? `${getFrontendUrl()}/partner/calendar/${feedToken}`
-    : null;
-  return { ...data, currentUserId: auth.user.sub, calendarFeedUrl };
+  return { ...data, currentUserId: auth.user.sub };
 }
 
 // The section tabs live entirely in the ?tab= search param and don't change
@@ -72,7 +66,6 @@ export default function PartnerProjectView() {
       data={data}
       currentUserId={data.currentUserId}
       canRsvp
-      calendarFeedUrl={data.calendarFeedUrl}
       backLink={{ to: "/partner", label: "Back to portal" }}
       pageHref={(pageId) => `/partner/projects/${data.project.id}/pages/${pageId}`}
     />

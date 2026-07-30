@@ -21,23 +21,11 @@ export const meta: Route.MetaFunction = () => [
 const fmtDate = (iso: string) =>
   new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
-// Factual one-liner for a project card: where the work is, no health verdict.
+// Plain one-liner for a project card: how much of the work is done.
 function statusLineFor(progress: PartnerProjectViewData["progress"]): string | null {
-  const pct =
-    progress.overallTotal > 0
-      ? Math.round((progress.overallDone / progress.overallTotal) * 100)
-      : 0;
-  const phase =
-    progress.sprintCount === 0
-      ? null
-      : progress.sprintsStarted === 0
-        ? "Not started yet"
-        : `Sprint ${Math.min(progress.sprintsStarted, progress.sprintCount)} of ${progress.sprintCount}`;
-  return (
-    [phase, progress.overallTotal > 0 ? `${pct}% complete` : null]
-      .filter(Boolean)
-      .join(" · ") || null
-  );
+  if (progress.overallTotal === 0) return null;
+  const pct = Math.round((progress.overallDone / progress.overallTotal) * 100);
+  return `${pct}% complete`;
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -82,9 +70,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const projects = views.map((v) => {
     const upcoming = v.meetings[0]
       ? { label: v.meetings[0].title, at: v.meetings[0].start }
-      : v.milestones[0]
-        ? { label: v.milestones[0].label, at: v.milestones[0].date }
-        : null;
+      : null;
     return {
       id: v.project.id,
       name: v.project.name,

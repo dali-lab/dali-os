@@ -213,10 +213,7 @@ export default [
   route("partner/invite/:token", "partners/routes/partner.invite.$token.tsx"),
   route("partner/onboarding", "partners/routes/partner.onboarding.tsx"),
 
-  // Partner calendar resource routes (no layout): ICS feed (public, token-auth),
-  // per-event ICS download, and meeting RSVP.
-  route("partner/calendar/:token", "partners/routes/partner.calendar.$token.ts"),
-  route("partner/meetings/:id/ics", "partners/routes/partner.meetings.$id.ics.ts"),
+  // Partner meeting RSVP (no layout).
   route("partner/meetings/:id/rsvp", "partners/routes/partner.meetings.$id.rsvp.ts"),
 
   // Authenticated member form fill (no layout), token-addressed. Every form

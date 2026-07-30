@@ -6,18 +6,15 @@ import { fullName, primaryEmail } from "~/lib/display";
 import { expandOccurrences } from "~/lib/meeting-occurrences";
 import { activeProjectPartnerWhere } from "./partner-access";
 
-// The three time states every work item collapses to, so the UI can speak one
-// visual language: past (teal/settled), current (coral/live), planned (dashed).
-export type PartnerWorkState = "past" | "current" | "planned";
-
 // Kinds of "what's new" activity, each synthesized from existing project data.
 export type PartnerActivityKind =
   | "task-done"
-  | "sprint-done"
   | "file-shared"
   | "meeting-scheduled";
 
-export type PartnerProjectSprint = {
+// Internal sprint aggregate — used only to compute area/overall progress. No
+// sprint vocabulary is exposed to the partner UI.
+type PartnerProjectSprint = {
   id: string;
   name: string;
   startsAt: string;
@@ -27,27 +24,14 @@ export type PartnerProjectSprint = {
   open: number;
 };
 
-export type PartnerProjectStory = {
+// A plain "area of work" (an epic, de-jargoned): a coarse state + aggregate
+// progress, with no sprints/stories/priorities surfaced to the partner.
+export type PartnerProjectArea = {
   id: string;
   title: string;
-  status: "Todo" | "InProgress" | "Done";
-  successMetric: string | null;
-  acceptanceCriteria: string | null;
-  category: string | null;
-  priority: "Must" | "Should" | "Could" | "Wont" | null;
-};
-
-export type PartnerProjectEpic = {
-  id: string;
-  title: string;
-  status: "Backlog" | "Open" | "InProgress" | "Done" | "Cancelled";
-  startsAt: string | null;
-  endsAt: string | null;
-  // Scope (what we're building) and schedule (when) — the two parallel
-  // children of an epic. Sprints carry every status so the epic reads as a
-  // mini past→current→planned timeline.
-  stories: PartnerProjectStory[];
-  sprints: PartnerProjectSprint[];
+  state: "in-progress" | "done" | "upcoming";
+  done: number;
+  total: number;
 };
 
 export type PartnerProjectViewData = {
@@ -65,30 +49,16 @@ export type PartnerProjectViewData = {
   // The project's PM (domain "PM") as the partner's point of contact — name +
   // lab email for a "contact your team" mailto. Null when no PM is assigned.
   teamContact: { name: string; email: string } | null;
-  // Aggregate live progress across the in-flight sprint(s) — the hero readout.
-  // Null when nothing is active (between sprints / not yet started).
-  momentum: {
-    label: string;
-    done: number;
-    total: number;
-    endsAt: string;
-    daysLeft: number;
-  } | null;
-  // Headline progress for the project status line: overall task completion
-  // across every sprint, plus how far through the sprint sequence we are.
-  // Purely factual — no subjective "on track" verdict.
+  // Plain overall progress — how much of the work is done. No sprint counts.
   progress: {
     overallDone: number;
     overallTotal: number;
-    sprintsStarted: number; // Active + Closed — i.e. sprints under way or done
-    sprintCount: number;
   };
-  // Roadmap: every non-cancelled epic (position order), each carrying its
-  // stories and its full sprint history. Sprints with no epic sit in
-  // ungroupedSprints.
-  epics: PartnerProjectEpic[];
-  ungroupedSprints: PartnerProjectSprint[];
-  nextSprint: { name: string; startsAt: string; endsAt: string } | null;
+  // Plain "what we're working on now" — the in-progress areas of work, joined.
+  // Null when nothing is actively in progress.
+  currentFocus: string | null;
+  // "What we're building" — areas of work, each with a coarse state + progress.
+  areas: PartnerProjectArea[];
   recentlyDone: {
     id: string;
     title: string;
@@ -130,13 +100,6 @@ export type PartnerProjectViewData = {
     notePageId: string | null;
     attendees: { name: string; email: string }[];
     rsvp: "Accepted" | "Declined" | "Tentative" | null;
-  }[];
-  // Sprint boundaries as calendar markers, so the timeline isn't only meetings.
-  milestones: {
-    id: string;
-    label: string;
-    date: string; // ISO
-    kind: "sprint-start" | "sprint-end";
   }[];
   // "What's new" feed, newest first — synthesized from existing data (completed
   // tasks, closed sprints, shared files, scheduled meetings) within a ~30-day
@@ -230,7 +193,8 @@ export async function loadPartnerProjectView(
           })
         : Promise.resolve([]),
       // Cancelled epics are dropped work — partners never see them. Each epic
-      // carries its stories (scope) and every sprint (schedule/history).
+      // becomes a plain "area of work"; we only need its status + sprints to
+      // compute aggregate progress (no stories/priorities reach the partner).
       prisma.epic.findMany({
         where: { projectId: project.id, status: { not: "Cancelled" } },
         orderBy: { position: "asc" },
@@ -238,20 +202,6 @@ export async function loadPartnerProjectView(
           id: true,
           title: true,
           status: true,
-          startsAt: true,
-          endsAt: true,
-          stories: {
-            orderBy: { position: "asc" },
-            select: {
-              id: true,
-              title: true,
-              status: true,
-              successMetric: true,
-              acceptanceCriteria: true,
-              category: true,
-              priority: true,
-            },
-          },
           sprints: { orderBy: { startsAt: "asc" }, select: sprintSelect },
         },
       }),
@@ -337,16 +287,55 @@ export async function loadPartnerProjectView(
     };
   }
 
-  const epics: PartnerProjectEpic[] = epicsRaw.map((e) => ({
-    id: e.id,
-    title: e.title,
-    status: e.status,
-    startsAt: e.startsAt?.toISOString() ?? null,
-    endsAt: e.endsAt?.toISOString() ?? null,
-    stories: e.stories,
-    sprints: e.sprints.map(toSprintCard),
-  }));
-  const ungroupedSprints = ungroupedSprintRows.map(toSprintCard);
+  // Each epic → a plain "area of work" with a coarse state + aggregate progress.
+  function areaState(
+    epicStatus: string,
+    done: number,
+    total: number,
+    hasActive: boolean,
+  ): PartnerProjectArea["state"] {
+    if (epicStatus === "Done" || (total > 0 && done >= total)) return "done";
+    if (done > 0 || epicStatus === "InProgress" || hasActive) return "in-progress";
+    return "upcoming";
+  }
+  const areas: PartnerProjectArea[] = epicsRaw.map((e) => {
+    const cards = e.sprints.map(toSprintCard);
+    const done = cards.reduce((s, c) => s + c.done, 0);
+    const total = cards.reduce((s, c) => s + c.done + c.open, 0);
+    const hasActive = cards.some((c) => c.status === "Active");
+    return {
+      id: e.id,
+      title: e.title,
+      state: areaState(e.status, done, total, hasActive),
+      done,
+      total,
+    };
+  });
+  // Sprints with no epic roll up into one "Other work" area, but only when they
+  // actually carry tasks (so we never show an empty area).
+  const ungroupedCards = ungroupedSprintRows.map(toSprintCard);
+  const otherDone = ungroupedCards.reduce((s, c) => s + c.done, 0);
+  const otherTotal = ungroupedCards.reduce((s, c) => s + c.done + c.open, 0);
+  if (otherTotal > 0) {
+    areas.push({
+      id: "other",
+      title: "Other work",
+      state: areaState(
+        "",
+        otherDone,
+        otherTotal,
+        ungroupedCards.some((c) => c.status === "Active"),
+      ),
+      done: otherDone,
+      total: otherTotal,
+    });
+  }
+  // "What we're working on now" — the in-progress areas (excluding the catch-all).
+  const currentFocus =
+    areas
+      .filter((a) => a.state === "in-progress" && a.id !== "other")
+      .map((a) => a.title)
+      .join(", ") || null;
 
   // Dedupe the roster: one row per person, domains joined.
   const roster = new Map<
@@ -381,48 +370,13 @@ export async function loadPartnerProjectView(
 
   const allCards = allSprintRows.map(toSprintCard);
 
-  // Factual headline: task completion across the whole board + how far through
-  // the sprint sequence the project is ("Sprint 3 of 6"). No health verdict.
+  // Plain overall progress — how much of the work is complete.
   const progress = {
     overallDone: allCards.reduce((sum, c) => sum + c.done, 0),
     overallTotal: allCards.reduce((sum, c) => sum + c.done + c.open, 0),
-    sprintsStarted: allCards.filter((c) => c.status !== "Planned").length,
-    sprintCount: allCards.length,
   };
 
-  // Aggregate the in-flight sprints into a single hero readout. One active
-  // sprint → its name; several → a count. Deadline is the soonest end.
-  const activeCards = allCards.filter((c) => c.status === "Active");
-  const momentum =
-    activeCards.length > 0
-      ? (() => {
-          const done = activeCards.reduce((sum, c) => sum + c.done, 0);
-          const total = activeCards.reduce((sum, c) => sum + c.done + c.open, 0);
-          const endsAt = activeCards.map((c) => c.endsAt).sort()[0];
-          const daysLeft = Math.max(
-            0,
-            Math.ceil((new Date(endsAt).getTime() - Date.now()) / 86_400_000),
-          );
-          return {
-            label:
-              activeCards.length === 1
-                ? activeCards[0].name
-                : `${activeCards.length} sprints active`,
-            done,
-            total,
-            endsAt,
-            daysLeft,
-          };
-        })()
-      : null;
-
-  // Soonest planned sprint anywhere on the board — the "what's next" pointer.
-  const nextSprint =
-    allCards
-      .filter((c) => c.status === "Planned")
-      .sort((a, b) => a.startsAt.localeCompare(b.startsAt))[0] ?? null;
-
-  // ─── Calendar: partner-visible meetings + sprint milestones ─────────────────
+  // ─── Calendar: partner-visible meetings ─────────────────────────────────────
   const now = new Date();
   const windowEnd = new Date(now.getTime() + 60 * 86_400_000);
 
@@ -534,18 +488,6 @@ export async function loadPartnerProjectView(
     .sort((a, b) => a.start.localeCompare(b.start))
     .slice(0, 30);
 
-  const milestones = allCards
-    .filter((c) => c.status !== "Closed")
-    .flatMap((c) => [
-      { id: `${c.id}-start`, label: `${c.name} starts`, date: c.startsAt, kind: "sprint-start" as const },
-      { id: `${c.id}-end`, label: `${c.name} ends`, date: c.endsAt, kind: "sprint-end" as const },
-    ])
-    .filter((mi) => {
-      const t = new Date(mi.date).getTime();
-      return t >= now.getTime() - 7 * 86_400_000 && t <= windowEnd.getTime();
-    })
-    .sort((a, b) => a.date.localeCompare(b.date));
-
   // ─── "What's new" activity feed ─────────────────────────────────────────────
   // High-signal events from data we already load, each with a real timestamp.
   // Shared documents are intentionally omitted: a page has no honest "shared
@@ -574,14 +516,6 @@ export async function loadPartnerProjectView(
       label: `Completed “${t.title}”`,
       atMs: t.updatedAt.getTime(),
     })),
-    ...allCards
-      .filter((c) => c.status === "Closed")
-      .map((c) => ({
-        id: `sprint-${c.id}`,
-        kind: "sprint-done" as const,
-        label: `Wrapped ${c.name}`,
-        atMs: new Date(c.endsAt).getTime(),
-      })),
     ...sharedFileRows.map((f) => ({
       id: `file-${f.id}`,
       kind: "file-shared" as const,
@@ -623,17 +557,9 @@ export async function loadPartnerProjectView(
     currentTermCode: current?.code ?? null,
     team,
     teamContact,
-    momentum,
     progress,
-    epics,
-    ungroupedSprints,
-    nextSprint: nextSprint
-      ? {
-          name: nextSprint.name,
-          startsAt: nextSprint.startsAt,
-          endsAt: nextSprint.endsAt,
-        }
-      : null,
+    currentFocus,
+    areas,
     recentlyDone: recentlyDone.map((t) => ({
       id: t.id,
       title: t.title,
@@ -667,7 +593,6 @@ export async function loadPartnerProjectView(
       }),
     ),
     meetings,
-    milestones,
     activity,
     lastVisitAt: lastVisit?.lastSeenAt.toISOString() ?? null,
   };

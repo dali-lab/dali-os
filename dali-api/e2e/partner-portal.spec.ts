@@ -198,21 +198,24 @@ test.describe('partner portal', () => {
     await expect(page).toHaveURL(/\/partner$/);
   });
 
-  test('project view shows sprint summary and only shared pages', async ({ page }) => {
+  test('project view shows plain progress and only shared deliverables', async ({ page }) => {
     await page.goto('/partner/projects/project-tuck-alumni');
     await expect(
       page.getByRole('heading', { name: 'Tuck Alumni Connect' }),
     ).toBeVisible();
 
-    // The hub is a tabbed workspace; the section tabs are driven by ?tab= and
-    // server-rendered, so navigate straight to each tab (no click / hydration
-    // race, and only the active tab's copy of the sprint name is present).
-    await page.goto('/partner/projects/project-tuck-alumni?tab=roadmap');
-    await expect(page.getByText('Sprint 3 — Matching flow')).toBeVisible();
-    await expect(page.getByText('2 of 5 tasks done')).toBeVisible();
+    // Section tabs are ?tab=-driven and server-rendered, so navigate straight
+    // to each. Progress is plain — an "area of work" with how far along it is,
+    // no sprint / story / priority vocabulary (the seeded work aggregates to
+    // "2 of 5 done").
+    await page.goto('/partner/projects/project-tuck-alumni?tab=progress');
+    await expect(
+      page.getByRole('heading', { name: "What we're building" }),
+    ).toBeVisible();
+    await expect(page.getByText('2 of 5 done')).toBeVisible();
 
-    // Shared docs live in the Documents tab; unshared ones never render.
-    await page.goto('/partner/projects/project-tuck-alumni?tab=documents');
+    // Shared docs live in the Deliverables tab; unshared ones never render.
+    await page.goto('/partner/projects/project-tuck-alumni?tab=deliverables');
     await expect(page.getByText('Weekly Partner Update')).toBeVisible();
     await expect(page.getByText('Internal Retro Notes')).not.toBeVisible();
   });
