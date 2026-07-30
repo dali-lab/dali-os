@@ -275,6 +275,33 @@ const CAPABILITIES = {
   prompts: { listChanged: false },
 } as const;
 
+import {
+  LIST_MY_ROLES_TOOL,
+  runListMyRoles,
+  LIST_MY_TIME_ENTRIES_TOOL,
+  runListMyTimeEntries,
+  ADD_TIME_ENTRY_TOOL,
+  runAddTimeEntry,
+  UPDATE_TIME_ENTRY_TOOL,
+  runUpdateTimeEntry,
+  DELETE_TIME_ENTRY_TOOL,
+  runDeleteTimeEntry,
+  TimeEntryNotFoundError,
+  TimeEntryInvalidError,
+} from "~/mcp/tools/time-entries";
+import {
+  LIST_MY_MANUAL_BLOCKS_TOOL,
+  runListMyManualBlocks,
+  ADD_MANUAL_BLOCK_TOOL,
+  runAddManualBlock,
+  UPDATE_MANUAL_BLOCK_TOOL,
+  runUpdateManualBlock,
+  DELETE_MANUAL_BLOCK_TOOL,
+  runDeleteManualBlock,
+  ManualBlockNotFoundError,
+  ManualBlockInvalidError,
+} from "~/mcp/tools/manual-blocks";
+
 const TOOLS = [
   WHOAMI_TOOL,
   LIST_MY_NOTIFICATIONS_TOOL,
@@ -325,6 +352,16 @@ const TOOLS = [
   UPLOAD_PROJECT_FILE_TOOL,
   LINK_TASK_TO_GITHUB_TOOL,
   UNLINK_TASK_FROM_GITHUB_TOOL,
+  // Timesheet + calendar-block additions:
+  LIST_MY_ROLES_TOOL,
+  LIST_MY_TIME_ENTRIES_TOOL,
+  ADD_TIME_ENTRY_TOOL,
+  UPDATE_TIME_ENTRY_TOOL,
+  DELETE_TIME_ENTRY_TOOL,
+  LIST_MY_MANUAL_BLOCKS_TOOL,
+  ADD_MANUAL_BLOCK_TOOL,
+  UPDATE_MANUAL_BLOCK_TOOL,
+  DELETE_MANUAL_BLOCK_TOOL,
 ] as const;
 
 type JsonRpcRequest = {
@@ -369,6 +406,10 @@ function rpcErrorFromTool(id: unknown, err: unknown): Response | null {
     const code = err.status === 403 ? -32003 : err.status === 404 ? -32004 : -32602;
     return rpcError(id, code, err.message);
   }
+  if (err instanceof TimeEntryNotFoundError) return rpcError(id, -32004, err.message);
+  if (err instanceof TimeEntryInvalidError) return rpcError(id, -32602, err.message);
+  if (err instanceof ManualBlockNotFoundError) return rpcError(id, -32004, err.message);
+  if (err instanceof ManualBlockInvalidError) return rpcError(id, -32602, err.message);
   if (err instanceof ScheduleMeetingError) return rpcError(id, -32602, err.message);
   if (err instanceof PreferenceValidationError) return rpcError(id, -32602, err.message);
 
@@ -527,6 +568,60 @@ export async function action({ request }: Route.ActionArgs) {
             break;
           case "list_my_calendar_links":
             payload = await runListMyCalendarLinks(auth.user.id);
+            break;
+          case "list_my_roles":
+            payload = await runListMyRoles(
+              auth.user.id,
+              args as Parameters<typeof runListMyRoles>[1],
+            );
+            break;
+          case "list_my_time_entries":
+            payload = await runListMyTimeEntries(
+              auth.user.id,
+              args as Parameters<typeof runListMyTimeEntries>[1],
+            );
+            break;
+          case "add_time_entry":
+            payload = await runAddTimeEntry(
+              auth.user.id,
+              args as Parameters<typeof runAddTimeEntry>[1],
+            );
+            break;
+          case "update_time_entry":
+            payload = await runUpdateTimeEntry(
+              auth.user.id,
+              args as Parameters<typeof runUpdateTimeEntry>[1],
+            );
+            break;
+          case "delete_time_entry":
+            payload = await runDeleteTimeEntry(
+              auth.user.id,
+              args as Parameters<typeof runDeleteTimeEntry>[1],
+            );
+            break;
+          case "list_my_manual_blocks":
+            payload = await runListMyManualBlocks(
+              auth.user.id,
+              args as Parameters<typeof runListMyManualBlocks>[1],
+            );
+            break;
+          case "add_manual_block":
+            payload = await runAddManualBlock(
+              auth.user.id,
+              args as Parameters<typeof runAddManualBlock>[1],
+            );
+            break;
+          case "update_manual_block":
+            payload = await runUpdateManualBlock(
+              auth.user.id,
+              args as Parameters<typeof runUpdateManualBlock>[1],
+            );
+            break;
+          case "delete_manual_block":
+            payload = await runDeleteManualBlock(
+              auth.user.id,
+              args as Parameters<typeof runDeleteManualBlock>[1],
+            );
             break;
           case "mark_notification_read":
             payload = await runMarkNotificationRead(

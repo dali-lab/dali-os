@@ -268,6 +268,19 @@ export const prisma = {
   },
   manualBlock: {
     findMany: vi.fn().mockResolvedValue([]),
+    findUnique: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+  },
+  timeEntry: {
+    findMany: vi.fn().mockResolvedValue([]),
+    findUnique: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    upsert: vi.fn(),
+    delete: vi.fn(),
+    deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
   },
   userCalendarLink: {
     findMany: vi.fn().mockResolvedValue([]),
@@ -281,6 +294,7 @@ export const prisma = {
   },
   adminMembership: {
     findUnique: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
   },
   jobCodeLookup: {
     findUnique: vi.fn(),
@@ -296,6 +310,7 @@ export const prisma = {
   },
   domainLeadAssignment: {
     findFirst: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
   },
   instructorAssignment: {
     findFirst: vi.fn(),
