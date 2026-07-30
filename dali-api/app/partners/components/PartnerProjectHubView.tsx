@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Form, Link } from "react-router";
-import { CalendarClock, Download, Eye, Flag, X } from "lucide-react";
+import { Download, Eye, X } from "lucide-react";
 import { termCodeLabel } from "~/lib/display";
 import { formatBytes } from "~/lib/upload-client";
 import { Avatar } from "~/components/ui/Avatar";
@@ -8,6 +8,7 @@ import { Markdown } from "~/components/Markdown";
 import { Modal } from "~/components/Modal";
 import { CommentsRail } from "~/components/collab/CommentsRail";
 import { PartnerBackLink } from "~/partners/components/PartnerBackLink";
+import { PartnerWeekCalendar } from "~/partners/components/PartnerWeekCalendar";
 import { ProjectCoverImage } from "~/projects/components/ProjectCoverImage";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import type {
@@ -19,8 +20,6 @@ import type {
 } from "~/partners/lib/partner-project-view.server";
 
 type SharedFile = PartnerProjectViewData["sharedFiles"][number];
-type PartnerMeeting = PartnerProjectViewData["meetings"][number];
-type PartnerMilestone = PartnerProjectViewData["milestones"][number];
 
 // Types the browser can render inline (image/pdf/text). Everything else is
 // download-only, so the row offers Download rather than Preview.
@@ -424,12 +423,6 @@ export function PartnerProjectHubView({
 
   const hasWork = epics.length > 0 || ungroupedSprints.length > 0;
 
-  // Meetings + milestones woven into one time-ordered agenda.
-  const agenda = [
-    ...meetings.map((m) => ({ kind: "meeting" as const, date: m.start, meeting: m })),
-    ...milestones.map((mi) => ({ kind: "milestone" as const, date: mi.date, milestone: mi })),
-  ].sort((a, b) => a.date.localeCompare(b.date));
-
   // Shared-file inline preview (mirrors the internal file view): clicking a
   // file opens it in a modal — image/PDF inline, everything else a download.
   const [previewFile, setPreviewFile] = useState<SharedFile | null>(null);
@@ -529,31 +522,19 @@ export function PartnerProjectHubView({
               </a>
             )}
           </div>
-          {hasUpcoming ? (
-            <div className="bg-card border border-border rounded-2xl divide-y divide-border">
-              {agenda.map((item) =>
-                item.kind === "milestone" ? (
-                  <MilestoneRow key={item.milestone.id} milestone={item.milestone} />
-                ) : (
-                  <MeetingRow
-                    key={`${item.meeting.id}-${item.meeting.start}`}
-                    meeting={item.meeting}
-                    pageHref={pageHref}
-                    canRsvp={canRsvp}
-                  />
-                ),
-              )}
-            </div>
-          ) : (
-            <div className="bg-card border border-border rounded-2xl p-6 text-sm text-muted-foreground">
-              No meetings scheduled yet.
-            </div>
-          )}
+          <PartnerWeekCalendar
+            meetings={meetings}
+            milestones={milestones}
+            pageHref={pageHref}
+            canRsvp={canRsvp}
+          />
           {canRsvp && (
-            <RequestMeetingForm
-              requested={meetingRequested}
-              error={requestError}
-            />
+            <div className="mt-4">
+              <RequestMeetingForm
+                requested={meetingRequested}
+                error={requestError}
+              />
+            </div>
           )}
         </section>
       )}
@@ -874,128 +855,6 @@ function SharedFilePreviewModal({
         </div>
       </div>
     </Modal>
-  );
-}
-
-// ─── Upcoming agenda rows ────────────────────────────────────────────────────
-
-function MeetingRow({
-  meeting,
-  pageHref,
-  canRsvp,
-}: {
-  meeting: PartnerMeeting;
-  pageHref: (pageId: string) => string;
-  canRsvp: boolean;
-}) {
-  const start = new Date(meeting.start);
-  const dateLabel = start.toLocaleDateString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
-  const timeLabel = start.toLocaleTimeString(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-  return (
-    <div className="px-4 py-3 flex flex-col gap-2">
-      <div className="flex items-start gap-3">
-        <CalendarClock className="w-4 h-4 text-accent-teal mt-0.5 flex-shrink-0" />
-        <div className="min-w-0 flex-1">
-          <div className="text-sm font-medium text-foreground">{meeting.title}</div>
-          <div className="text-xs text-muted-foreground">
-            {dateLabel} · {timeLabel} · {meeting.durationMinutes}m
-            {meeting.recurring ? " · repeats" : ""}
-          </div>
-          {meeting.attendees.length > 0 && (
-            <div className="text-xs text-muted-foreground mt-0.5 truncate">
-              {meeting.attendees.map((a) => a.name).join(", ")}
-            </div>
-          )}
-        </div>
-        <div className="flex flex-shrink-0 items-center gap-3">
-          {meeting.notePageId && (
-            <Link
-              to={pageHref(meeting.notePageId)}
-              className="text-xs text-accent-coral hover:underline"
-            >
-              Notes
-            </Link>
-          )}
-          <a
-            href={`/partner/meetings/${meeting.id}/ics`}
-            className="text-xs text-muted-foreground hover:text-foreground"
-          >
-            Add to calendar
-          </a>
-        </div>
-      </div>
-      {canRsvp && <MeetingRsvp meetingId={meeting.id} initial={meeting.rsvp} />}
-    </div>
-  );
-}
-
-function MeetingRsvp({
-  meetingId,
-  initial,
-}: {
-  meetingId: string;
-  initial: PartnerMeeting["rsvp"];
-}) {
-  const [rsvp, setRsvp] = useState(initial);
-  const [busy, setBusy] = useState(false);
-  async function respond(v: NonNullable<PartnerMeeting["rsvp"]>) {
-    setBusy(true);
-    try {
-      const res = await fetch(`/partner/meetings/${meetingId}/rsvp`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ response: v }),
-      });
-      if (res.ok) setRsvp(v);
-    } finally {
-      setBusy(false);
-    }
-  }
-  const opt = (v: NonNullable<PartnerMeeting["rsvp"]>, label: string) => (
-    <button
-      type="button"
-      disabled={busy}
-      onClick={() => respond(v)}
-      className={`px-2.5 py-1 rounded-full text-xs border transition disabled:opacity-50 ${
-        rsvp === v
-          ? "bg-accent-teal/15 text-accent-teal border-accent-teal/40"
-          : "border-border text-muted-foreground hover:text-foreground"
-      }`}
-    >
-      {label}
-    </button>
-  );
-  return (
-    <div className="flex items-center gap-2 pl-7">
-      {opt("Accepted", "Going")}
-      {opt("Tentative", "Maybe")}
-      {opt("Declined", "Can't make it")}
-    </div>
-  );
-}
-
-function MilestoneRow({ milestone }: { milestone: PartnerMilestone }) {
-  const dateLabel = new Date(milestone.date).toLocaleDateString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
-  return (
-    <div className="px-4 py-2.5 flex items-center gap-3">
-      <Flag className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-      <span className="text-sm text-foreground flex-1 min-w-0 truncate">
-        {milestone.label}
-      </span>
-      <span className="text-xs text-muted-foreground flex-shrink-0">{dateLabel}</span>
-    </div>
   );
 }
 
