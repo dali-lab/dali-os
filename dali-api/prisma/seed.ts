@@ -3026,6 +3026,9 @@ async function main() {
   // its questions to the structural pitch fields (title, terms, domain scope).
   // Core can retarget or edit it from /partners/applications — this just makes
   // the feature live out of the box.
+  // Keep this question set in sync with the 20260730130000_partner_application_form_seed
+  // migration, which creates the same form (same id) on environments the seed
+  // never runs against.
   const partnerAppForm = await prisma.form.upsert({
     where: { id: "form-partner-application" },
     update: { published: true },
@@ -3062,6 +3065,25 @@ async function main() {
             label: "What does success look like?",
             description:
               "A term from now, what would make you glad you worked with the lab?",
+          },
+        },
+        {
+          key: "users",
+          type: "textarea",
+          required: false,
+          data: {
+            label: "Who will use what we build?",
+            description: "Roughly how many people, and in what setting?",
+          },
+        },
+        {
+          key: "existing_work",
+          type: "textarea",
+          required: false,
+          data: {
+            label: "What exists today?",
+            description:
+              "Any research, designs, or a codebase we would be building on rather than starting from scratch.",
           },
         },
       ] as object,
