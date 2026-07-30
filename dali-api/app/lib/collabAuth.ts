@@ -133,6 +133,27 @@ export async function authorizeCollabDoc(
     if (!page || page.archivedAt !== null) {
       return false;
     }
+
+    // Member-workspace pages are personal notes, and they're checked BEFORE
+    // the Core shortcut below on purpose: "private" has to mean private, or
+    // the feature doesn't do what its one switch says it does. Core has no
+    // bypass here — the owner, an explicit share, the profile-public switch,
+    // or a Core-approved lab listing are the only ways in.
+    //
+    // This is a read gate on the collab room. Write access is narrower still
+    // (owner only) and is enforced by the routes that mutate a note; there's
+    // no read-only collab connection, so a shared note is opened through the
+    // page's own read-only view rather than this room.
+    if (page.workspaceType === "Member") {
+      if (!page.workspaceId) return false;
+      const { noteAccess } = await import("~/members/lib/personal-notes.server");
+      try {
+        return (await noteAccess(id, userSub)).canView;
+      } catch {
+        return false;
+      }
+    }
+
     if (await isCore(userSub)) return true;
     // Lab-workspace pages (the lab-wide Documents area) open to any lab member
     // — the lab's members are the Lab workspace's members, mirroring the

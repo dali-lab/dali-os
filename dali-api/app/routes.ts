@@ -391,6 +391,10 @@ export default [
   route("api/documents/:id", "projects/routes/api.documents.$id.ts"),
   route("api/pages/:id/partner-visible", "projects/routes/api.pages.$id.partner-visible.ts"),
   route("api/pages/:id/public-visible", "projects/routes/api.pages.$id.public-visible.ts"),
+
+  // Personal notes (Member-workspace pages) — every write goes through one
+  // intent-dispatched route; read access is enforced in personal-notes.server.
+  route("api/notes", "members/routes/api.notes.ts"),
   route("api/pages/:id/pin", "projects/routes/api.pages.$id.pin.ts"),
   route("api/pages/:id/move", "projects/routes/api.pages.$id.move.ts"),
 

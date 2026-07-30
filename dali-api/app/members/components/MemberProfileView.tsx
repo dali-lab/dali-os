@@ -26,6 +26,7 @@ import { ProfilePhotoAvatar } from "~/components/ProfilePhotoAvatar";
 import { Avatar } from "~/components/ui/Avatar";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { PresenceBar } from "~/components/collab/PresenceBar";
+import { PersonalNotesRail } from "./PersonalNotesRail";
 import { buttonClasses } from "~/components/ui/Button";
 import type { Level } from "~/admin-console/lib/eligibility";
 import { APPLICATION_TZ, formatZoneLabel } from "~/lib/timezone";
@@ -62,6 +63,8 @@ export function MemberProfileView({
     presenceSubtitle,
     allowedLevels,
     mentorshipPanel,
+    notes,
+    sharedWithMe,
   } = data;
 
   // /members/:id renders inside a TabWorkspace iframe; a successful save only
@@ -104,8 +107,24 @@ export function MemberProfileView({
   // separate Account card, so there's a single Edit control on this page —
   // unlike /settings, which has no Personal section and so still renders
   // AccountSettingsBlock (name/pronouns + major/class year) on its own.
+  // Notes open in the normal document editor. Inside the TabWorkspace iframe
+  // that means asking the shell for a side-by-side pane, same as the project
+  // page does for its documents; standalone it's a plain navigation.
+  function openNote(note: { id: string; title: string }) {
+    const url = `/documents/${note.id}`;
+    if (typeof window !== "undefined" && window.self !== window.top) {
+      window.parent.postMessage(
+        { type: "dali:openTabToSide", url, label: note.title },
+        window.location.origin,
+      );
+    } else if (typeof window !== "undefined") {
+      window.location.assign(url);
+    }
+  }
+
   const page = (
-    <div className="max-w-4xl w-full flex flex-col gap-6">
+    <div className="w-full flex flex-col xl:flex-row xl:items-start gap-6">
+      <div className="max-w-4xl w-full flex flex-col gap-6">
       <PresenceBar className="self-end" />
 
       {actionError && (
@@ -188,6 +207,21 @@ export function MemberProfileView({
       {mentorshipPanel && (
         <MentorshipPanel data={mentorshipPanel} memberId={member.id} />
       )}
+      </div>
+
+      {/* Right rail. Below xl it stacks under the profile rather than
+          squeezing both columns; sticky above it so the notes stay reachable
+          while scrolling a long profile. */}
+      <div className="w-full xl:w-80 xl:shrink-0 xl:sticky xl:top-6">
+        <PersonalNotesRail
+          ownerId={member.id}
+          ownerFirstName={member.firstName}
+          isSelf={isSelf}
+          notes={notes}
+          sharedWithMe={sharedWithMe}
+          onOpenNote={openNote}
+        />
+      </div>
     </div>
   );
 

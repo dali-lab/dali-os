@@ -3573,10 +3573,11 @@ enum StaffingAssignmentStatus {
 model Page {
   id            String        @id @default(cuid())
   workspaceType WorkspaceType
-  // Null for Lab workspace. Otherwise references the Project or
-  // EducationOffering id. The FK is loose (no Prisma relation enforced at
-  // the DB layer for the polymorphic scope id); the explicit project /
-  // offering back-relations below cover the cases we look up by.
+  // Null for Lab workspace. Otherwise references the Project, the
+  // EducationOffering, or — for Member workspaces — the owning User's id. The
+  // FK is loose (no Prisma relation enforced at the DB layer for the
+  // polymorphic scope id); the explicit project / offering back-relations
+  // below cover the cases we look up by.
   workspaceId   String?
   // Null for top-level pages. App-level constraint: parentPageId's parent
   // must itself be null (enforces the 2-level cap from the plan).
@@ -3615,6 +3616,28 @@ model Page {
   // expected to carry it; the public API takes the lowest `position` if
   // several do.
   publicVisible Boolean @default(false)
+
+  // ─── Member-workspace visibility (meaningless elsewhere; stays false) ────
+  //
+  // Personal notes are private by default. `profileVisible` is the single
+  // public/private switch the owner controls: true puts the note on their
+  // profile for anyone who can see that profile. Sharing is ADDITIVE and
+  // independent — a private note can still be readable by the groups and
+  // members on its PageShare list, without appearing on the profile.
+  //
+  // Deliberately NOT `publicVisible`, which already means "published to
+  // dali.website" for project pages. Two different publics.
+  profileVisible Boolean @default(false)
+
+  // Owner-proposed, Core-approved promotion of a personal note onto the
+  // lab-wide Documents hub. The hub is the lab's curated shelf, so the owner
+  // can only ask; Core decides. Reviewer fields are null until then.
+  labListing         LabListingState @default(None)
+  labListingNote     String?
+  labListingReviewedById String?
+  labListingReviewedAt   DateTime?
+
+  shares PageShare[]
 
   // Pinned to the top of the project's Documents block. Timestamp so pins can
   // be ordered most-recent-first. Null = not pinned. (Distinct from the
@@ -3660,10 +3683,50 @@ model Page {
   @@index([archivedAt])
 }
 
+// Who a personal note has been shared with, beyond its own profileVisible
+// switch. Additive: a row here grants read access regardless of visibility.
+//
+// Principals are members and groups only. Partner orgs are deliberately absent
+// — partner users live in a separate portal scoped to their linked projects,
+// and a personal note has no project to hang off, so there'd be nowhere for it
+// to appear. The principalType enum leaves room to add them later.
+model PageShare {
+  id            String            @id @default(cuid())
+  pageId        String
+  principalType SharePrincipalType
+  // User.id or GroupDefinition.id, dispatched by principalType — same loose
+  // polymorphic pattern as Page.workspaceId.
+  principalId   String
+
+  createdById String
+  createdAt   DateTime @default(now())
+
+  page Page @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@unique([pageId, principalType, principalId])
+  @@index([principalType, principalId])
+}
+
+enum SharePrincipalType {
+  User
+  Group
+}
+
+enum LabListingState {
+  None
+  Proposed
+  Listed
+  Declined
+}
+
 enum WorkspaceType {
   Lab
   Project
   EducationOffering
+  // A member's own space — personal notes, scoped by workspaceId = User.id.
+  // Unlike the other three, most of these are private to one person; see
+  // Page.profileVisible and the PageShare list for how they're opened up.
+  Member
 }
 
 enum PageKind {

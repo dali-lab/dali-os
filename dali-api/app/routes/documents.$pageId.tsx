@@ -111,12 +111,27 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // document API routes use — without this the editor rendered enabled but
   // the collab handshake rejected members), plus the offering's instructors
   // for EducationOffering-workspace pages.
+  // Personal notes are the one workspace with a real READ gate. Every other
+  // page type is openable by any signed-in member (the checks below only
+  // decide who may edit), which is fine for lab/project/offering docs but
+  // would make "private" meaningless here. Core gets no bypass.
+  if (page.workspaceType === "Member") {
+    const { noteAccess } = await import("~/members/lib/personal-notes.server");
+    const access = await noteAccess(page.id, auth.user.sub).catch(() => null);
+    if (!access?.canView) throw new Response("Not found", { status: 404 });
+  }
+
   let canEdit = await isCore(auth.user.sub);
   if (!canEdit && page.workspaceType === "Lab") {
     canEdit = await isLabMember(auth.user.sub);
   }
   if (!canEdit && page.workspaceType === "Project" && page.workspaceId) {
     canEdit = await isProjectMember(auth.user.sub, page.workspaceId);
+  }
+  if (page.workspaceType === "Member") {
+    // Sharing is read-only: a personal note is someone's own notebook page,
+    // not a collaborative doc. This overrides the Core default above.
+    canEdit = page.workspaceId === auth.user.sub;
   }
   if (!canEdit && page.workspaceType === "EducationOffering" && page.workspaceId) {
     const instructor = await prisma.instructorAssignment.findFirst({
