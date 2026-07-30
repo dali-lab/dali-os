@@ -1,9 +1,13 @@
-import { Link, useLoaderData } from "react-router";
+import { Link, redirect, useLoaderData } from "react-router";
+import { CalendarClock } from "lucide-react";
 import type { Route } from "./+types/partner.home";
 import { prisma } from "~/lib/db";
 import { requirePartner } from "~/partners/lib/partner-auth.server";
 import { partnerProjectsWhere } from "~/partners/lib/partner-access";
-import { resolvePhotoUrl } from "~/lib/photo";
+import {
+  loadPartnerProjectView,
+  type PartnerProjectViewData,
+} from "~/partners/lib/partner-project-view.server";
 import { ProjectCoverImage } from "~/projects/components/ProjectCoverImage";
 import {
   PARTNER_APPLICATION_STATUS_LABELS,
@@ -14,10 +18,32 @@ export const meta: Route.MetaFunction = () => [
   { title: "Partner Portal · DALI OS" },
 ];
 
+const fmtDate = (iso: string) =>
+  new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+
+// Factual one-liner for a project card: where the work is, no health verdict.
+function statusLineFor(progress: PartnerProjectViewData["progress"]): string | null {
+  const pct =
+    progress.overallTotal > 0
+      ? Math.round((progress.overallDone / progress.overallTotal) * 100)
+      : 0;
+  const phase =
+    progress.sprintCount === 0
+      ? null
+      : progress.sprintsStarted === 0
+        ? "Not started yet"
+        : `Sprint ${Math.min(progress.sprintsStarted, progress.sprintCount)} of ${progress.sprintCount}`;
+  return (
+    [phase, progress.overallTotal > 0 ? `${pct}% complete` : null]
+      .filter(Boolean)
+      .join(" · ") || null
+  );
+}
+
 export async function loader({ request }: Route.LoaderArgs) {
   const { auth, partnerUser, org } = await requirePartner(request);
 
-  const [applications, projects] = await Promise.all([
+  const [applications, projectRows] = await Promise.all([
     prisma.partnerApplication.findMany({
       where: { partnerOrgId: partnerUser.partnerOrgId },
       orderBy: { createdAt: "desc" },
@@ -32,27 +58,50 @@ export async function loader({ request }: Route.LoaderArgs) {
     prisma.project.findMany({
       where: partnerProjectsWhere(partnerUser.partnerOrgId),
       orderBy: { name: "asc" },
-      select: { id: true, name: true, description: true, imageUrl: true },
+      select: { id: true },
     }),
   ]);
 
-  return {
-    org,
-    firstName: auth.user.firstName,
-    applications,
-    projects: await Promise.all(
-      projects.map(async (p) => ({
-        id: p.id,
-        name: p.name,
-        description: p.description,
-        imageUrl: await resolvePhotoUrl(p.imageUrl),
-      })),
-    ),
-  };
+  // A partner with a single project and nothing in the application pipeline has
+  // just one place to be — send them straight into it.
+  if (projectRows.length === 1 && applications.length === 0) {
+    return redirect(`/partner/projects/${projectRows[0].id}`);
+  }
+
+  // Reuse the project-view loader so each card's status + unread count stays in
+  // lockstep with the hub. Bounded in practice — a partner org has only a few
+  // active projects (a lean summary query is a follow-up if that changes).
+  const views = (
+    await Promise.all(
+      projectRows.map((p) =>
+        loadPartnerProjectView(p.id, partnerUser.partnerOrgId, auth.user.sub),
+      ),
+    )
+  ).filter((v): v is PartnerProjectViewData => v !== null);
+
+  const projects = views.map((v) => {
+    const upcoming = v.meetings[0]
+      ? { label: v.meetings[0].title, at: v.meetings[0].start }
+      : v.milestones[0]
+        ? { label: v.milestones[0].label, at: v.milestones[0].date }
+        : null;
+    return {
+      id: v.project.id,
+      name: v.project.name,
+      description: v.project.description,
+      imageUrl: v.project.imageUrl,
+      statusLine: statusLineFor(v.progress),
+      newCount: v.activity.filter((a) => a.isNew).length,
+      next: upcoming,
+    };
+  });
+
+  return { org, firstName: auth.user.firstName, applications, projects };
 }
 
 export default function PartnerHome() {
-  const { org, firstName, applications, projects } = useLoaderData<typeof loader>();
+  const { org, firstName, applications, projects } =
+    useLoaderData<typeof loader>();
 
   return (
     <div className="flex flex-col gap-8">
@@ -83,7 +132,7 @@ export default function PartnerHome() {
               <Link
                 key={p.id}
                 to={`/partner/projects/${p.id}`}
-                className="bg-card border border-border rounded-2xl overflow-hidden hover:border-accent-coral transition group"
+                className="group flex flex-col overflow-hidden rounded-2xl border border-border bg-card transition hover:border-accent-coral"
               >
                 <ProjectCoverImage
                   name={p.name}
@@ -91,13 +140,33 @@ export default function PartnerHome() {
                   className="w-full h-32 object-cover"
                   placeholderClassName="w-full h-32"
                 />
-                <div className="p-4">
-                  <span className="font-heading font-semibold text-dark-blue group-hover:text-accent-coral transition">
-                    {p.name}
-                  </span>
+                <div className="flex flex-col gap-1.5 p-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="min-w-0 truncate font-heading font-semibold text-dark-blue transition group-hover:text-accent-coral">
+                      {p.name}
+                    </span>
+                    {p.newCount > 0 && (
+                      <span className="flex-shrink-0 rounded-full bg-accent-coral/10 px-2 py-0.5 text-xs font-medium text-accent-coral">
+                        {p.newCount} new
+                      </span>
+                    )}
+                  </div>
+                  {p.statusLine && (
+                    <p className="text-xs font-medium text-dark-blue">
+                      {p.statusLine}
+                    </p>
+                  )}
                   {p.description && (
-                    <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
+                    <p className="line-clamp-2 text-sm text-muted-foreground">
                       {p.description}
+                    </p>
+                  )}
+                  {p.next && (
+                    <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+                      <CalendarClock className="h-3 w-3 flex-shrink-0" />
+                      <span className="truncate">
+                        Next: {p.next.label} · {fmtDate(p.next.at)}
+                      </span>
                     </p>
                   )}
                 </div>

@@ -1718,6 +1718,20 @@ model PartnerMeetingResponse {
   @@index([scheduledMeetingId])
 }
 
+// A partner user's last visit to a project's portal hub. Powers the "what's
+// new" feed (marks activity since they last looked) and the home unread count.
+// One row per (partner User, project). Loose refs (no @relation) — resolved in
+// app code, matching PartnerMeetingResponse.
+model PartnerProjectVisit {
+  id         String   @id @default(cuid())
+  userId     String // the partner's User.id
+  projectId  String
+  lastSeenAt DateTime @default(now())
+
+  @@unique([userId, projectId])
+  @@index([userId])
+}
+
 // A partner asking their project team for a meeting. The team fulfills it by
 // scheduling a real ScheduledMeeting and marking this Scheduled. Loose refs.
 model PartnerMeetingRequest {

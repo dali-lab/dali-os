@@ -10,6 +10,13 @@ import { activeProjectPartnerWhere } from "./partner-access";
 // visual language: past (teal/settled), current (coral/live), planned (dashed).
 export type PartnerWorkState = "past" | "current" | "planned";
 
+// Kinds of "what's new" activity, each synthesized from existing project data.
+export type PartnerActivityKind =
+  | "task-done"
+  | "sprint-done"
+  | "file-shared"
+  | "meeting-scheduled";
+
 export type PartnerProjectSprint = {
   id: string;
   name: string;
@@ -64,6 +71,15 @@ export type PartnerProjectViewData = {
     endsAt: string;
     daysLeft: number;
   } | null;
+  // Headline progress for the project status line: overall task completion
+  // across every sprint, plus how far through the sprint sequence we are.
+  // Purely factual — no subjective "on track" verdict.
+  progress: {
+    overallDone: number;
+    overallTotal: number;
+    sprintsStarted: number; // Active + Closed — i.e. sprints under way or done
+    sprintCount: number;
+  };
   // Roadmap: every non-cancelled epic (position order), each carrying its
   // stories and its full sprint history. Sprints with no epic sit in
   // ungroupedSprints.
@@ -119,6 +135,19 @@ export type PartnerProjectViewData = {
     date: string; // ISO
     kind: "sprint-start" | "sprint-end";
   }[];
+  // "What's new" feed, newest first — synthesized from existing data (completed
+  // tasks, closed sprints, shared files, scheduled meetings) within a ~30-day
+  // window. `isNew` marks events after the viewer's previous visit.
+  activity: {
+    id: string;
+    kind: PartnerActivityKind;
+    label: string;
+    at: string; // ISO
+    isNew: boolean;
+  }[];
+  // The viewer's previous visit to this project's hub (ISO), or null on a first
+  // visit / in the member preview. Drives the "since your last visit" cut.
+  lastVisitAt: string | null;
 };
 
 // The whole partner read-surface for a project: current epics/sprints, roster,
@@ -256,6 +285,7 @@ export async function loadPartnerProjectView(
         select: {
           id: true,
           title: true,
+          createdAt: true,
           currentVersion: {
             select: { fileName: true, sizeBytes: true, s3Key: true, contentType: true },
           },
@@ -336,6 +366,15 @@ export async function loadPartnerProjectView(
 
   const allCards = allSprintRows.map(toSprintCard);
 
+  // Factual headline: task completion across the whole board + how far through
+  // the sprint sequence the project is ("Sprint 3 of 6"). No health verdict.
+  const progress = {
+    overallDone: allCards.reduce((sum, c) => sum + c.done, 0),
+    overallTotal: allCards.reduce((sum, c) => sum + c.done + c.open, 0),
+    sprintsStarted: allCards.filter((c) => c.status !== "Planned").length,
+    sprintCount: allCards.length,
+  };
+
   // Aggregate the in-flight sprints into a single hero readout. One active
   // sprint → its name; several → a count. Deadline is the soonest end.
   const activeCards = allCards.filter((c) => c.status === "Active");
@@ -381,6 +420,7 @@ export async function loadPartnerProjectView(
     select: {
       id: true,
       title: true,
+      createdAt: true,
       selectedAt: true,
       durationMinutes: true,
       recurrenceRule: true,
@@ -491,6 +531,68 @@ export async function loadPartnerProjectView(
     })
     .sort((a, b) => a.date.localeCompare(b.date));
 
+  // ─── "What's new" activity feed ─────────────────────────────────────────────
+  // High-signal events from data we already load, each with a real timestamp.
+  // Shared documents are intentionally omitted: a page has no honest "shared
+  // at" time (its updatedAt churns on every collab keystroke), so it can't be
+  // dated here — a follow-up could add a partnerSharedAt column.
+  const activityWindowStart = now.getTime() - 30 * 86_400_000;
+  const lastVisit = viewerUserId
+    ? await prisma.partnerProjectVisit.findUnique({
+        where: {
+          userId_projectId: { userId: viewerUserId, projectId: project.id },
+        },
+        select: { lastSeenAt: true },
+      })
+    : null;
+  const lastVisitMs = lastVisit?.lastSeenAt.getTime() ?? null;
+
+  const rawActivity: {
+    id: string;
+    kind: PartnerActivityKind;
+    label: string;
+    atMs: number;
+  }[] = [
+    ...recentlyDone.map((t) => ({
+      id: `task-${t.id}`,
+      kind: "task-done" as const,
+      label: `Completed “${t.title}”`,
+      atMs: t.updatedAt.getTime(),
+    })),
+    ...allCards
+      .filter((c) => c.status === "Closed")
+      .map((c) => ({
+        id: `sprint-${c.id}`,
+        kind: "sprint-done" as const,
+        label: `Wrapped ${c.name}`,
+        atMs: new Date(c.endsAt).getTime(),
+      })),
+    ...sharedFileRows.map((f) => ({
+      id: `file-${f.id}`,
+      kind: "file-shared" as const,
+      label: `Shared file “${f.title}”`,
+      atMs: f.createdAt.getTime(),
+    })),
+    ...meetingRows.map((m) => ({
+      id: `meeting-${m.id}`,
+      kind: "meeting-scheduled" as const,
+      label: `Scheduled “${m.title}”`,
+      atMs: m.createdAt.getTime(),
+    })),
+  ];
+
+  const activity = rawActivity
+    .filter((a) => a.atMs >= activityWindowStart)
+    .sort((a, b) => b.atMs - a.atMs)
+    .slice(0, 15)
+    .map((a) => ({
+      id: a.id,
+      kind: a.kind,
+      label: a.label,
+      at: new Date(a.atMs).toISOString(),
+      isNew: lastVisitMs != null && a.atMs > lastVisitMs,
+    }));
+
   return {
     project: {
       id: project.id,
@@ -506,6 +608,7 @@ export async function loadPartnerProjectView(
     currentTermCode: current?.code ?? null,
     team,
     momentum,
+    progress,
     epics,
     ungroupedSprints,
     nextSprint: nextSprint
@@ -549,5 +652,7 @@ export async function loadPartnerProjectView(
     ),
     meetings,
     milestones,
+    activity,
+    lastVisitAt: lastVisit?.lastSeenAt.toISOString() ?? null,
   };
 }

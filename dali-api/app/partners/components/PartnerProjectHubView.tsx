@@ -1,6 +1,15 @@
-import { useEffect, useState } from "react";
-import { Form, Link } from "react-router";
-import { Download, Eye, X } from "lucide-react";
+import { useState } from "react";
+import { Form, Link, useSearchParams } from "react-router";
+import {
+  CalendarClock,
+  CheckCircle2,
+  ChevronRight,
+  Download,
+  Eye,
+  FileText,
+  Flag,
+  X,
+} from "lucide-react";
 import { termCodeLabel } from "~/lib/display";
 import { formatBytes } from "~/lib/upload-client";
 import { Avatar } from "~/components/ui/Avatar";
@@ -12,6 +21,7 @@ import { PartnerWeekCalendar } from "~/partners/components/PartnerWeekCalendar";
 import { ProjectCoverImage } from "~/projects/components/ProjectCoverImage";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import type {
+  PartnerActivityKind,
   PartnerProjectEpic,
   PartnerProjectSprint,
   PartnerProjectStory,
@@ -36,6 +46,30 @@ function isPreviewable(contentType: string | null): boolean {
 const fmtDate = (iso: string) =>
   new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
+const fmtDateTime = (iso: string) =>
+  new Date(iso).toLocaleString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+
+// Shared surface tokens so every tab panel reads the same.
+const PANEL_HEADING = "font-heading text-lg font-semibold text-dark-blue";
+const CARD = "bg-card border border-border rounded-2xl";
+const EMPTY_CARD =
+  "bg-card border border-border rounded-2xl p-6 text-sm text-muted-foreground";
+
+const PARTNER_TABS = [
+  { id: "overview", label: "Overview" },
+  { id: "roadmap", label: "Roadmap" },
+  { id: "documents", label: "Documents" },
+  { id: "meetings", label: "Meetings" },
+  { id: "team", label: "Team" },
+] as const;
+type PartnerTabId = (typeof PARTNER_TABS)[number]["id"];
+
 const EPIC_STATUS_LABEL: Record<PartnerProjectEpic["status"], string> = {
   Backlog: "Backlog",
   Open: "Open",
@@ -56,14 +90,6 @@ const EPIC_PILL: Record<PartnerProjectEpic["status"], string> = {
   Cancelled: "bg-muted text-muted-foreground",
 };
 
-// Story dots inherit the epic's coral: dashed grey before it starts, solid
-// coral in progress, faded coral once done.
-const STORY_DOT: Record<PartnerProjectStory["status"], string> = {
-  Todo: "border-2 border-dashed border-brand-gray",
-  InProgress: "bg-accent-coral",
-  Done: "bg-accent-coral/50",
-};
-
 const sprintState = (s: PartnerProjectSprint): PartnerWorkState =>
   s.status === "Active" ? "current" : s.status === "Planned" ? "planned" : "past";
 
@@ -77,17 +103,19 @@ const STORY_PRIORITY_TONE: Record<
   Wont: "text-muted-foreground line-through",
 };
 
-// Scope: the product requirements the epic delivers, as a read-only table with
-// every column partners can see (success metric, acceptance criteria, etc.).
+// Scope: the product requirements the epic delivers. Collapsed by default so
+// the roadmap leads with outcomes + timeline; a partner who wants the detailed
+// requirements (success metric, acceptance criteria, priority) expands it.
 function StoryList({ stories }: { stories: PartnerProjectStory[] }) {
   if (stories.length === 0) return null;
   const done = stories.filter((s) => s.status === "Done").length;
   return (
-    <div>
-      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-2">
+    <details className="group">
+      <summary className="flex cursor-pointer select-none items-center gap-1 text-xs font-medium uppercase tracking-wide text-muted-foreground hover:text-foreground">
+        <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" />
         Requirements · {done}/{stories.length} done
-      </p>
-      <div className="overflow-x-auto">
+      </summary>
+      <div className="mt-2 overflow-x-auto">
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr className="border-b border-border text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -137,7 +165,7 @@ function StoryList({ stories }: { stories: PartnerProjectStory[] }) {
           </tbody>
         </table>
       </div>
-    </div>
+    </details>
   );
 }
 
@@ -261,126 +289,128 @@ function EpicCard({ epic }: { epic: PartnerProjectEpic }) {
           </p>
         )}
       </div>
-      <StoryList stories={epic.stories} />
       <SprintGroup sprints={epic.sprints} />
+      <StoryList stories={epic.stories} />
     </div>
   );
 }
 
-// Hero readout: names the live sprint and shows how far along it is + when it
-// wraps — a partner's "where are we right now" glance.
-function MomentumReadout({
-  momentum,
+// Project identity + a factual status line (sprint sequence position + overall
+// task completion). No subjective "on track" verdict — just where the work is.
+function ProjectHeader({
+  project,
+  partnerSince,
+  progress,
+  backLink,
 }: {
-  momentum: NonNullable<PartnerProjectViewData["momentum"]>;
+  project: PartnerProjectViewData["project"];
+  partnerSince: string | null;
+  progress: PartnerProjectViewData["progress"];
+  backLink?: { to: string; label: string };
 }) {
   const pct =
-    momentum.total > 0 ? Math.round((momentum.done / momentum.total) * 100) : 0;
-  const timing =
-    momentum.daysLeft > 0
-      ? `${momentum.daysLeft} day${momentum.daysLeft === 1 ? "" : "s"} left`
-      : "due now";
+    progress.overallTotal > 0
+      ? Math.round((progress.overallDone / progress.overallTotal) * 100)
+      : 0;
+  const phase =
+    progress.sprintCount === 0
+      ? null
+      : progress.sprintsStarted === 0
+        ? "Not started yet"
+        : `Sprint ${Math.min(progress.sprintsStarted, progress.sprintCount)} of ${progress.sprintCount}`;
+  const statusBits = [
+    phase,
+    progress.overallTotal > 0 ? `${pct}% complete` : null,
+  ].filter(Boolean);
+  const meta = [
+    project.terms.length > 0
+      ? `Terms: ${project.terms.map(termCodeLabel).join(", ")}`
+      : null,
+    partnerSince ? `Partner since ${fmtDate(partnerSince)}` : null,
+  ].filter(Boolean);
   return (
-    <div className="rounded-2xl bg-brand-tint px-5 py-4 sm:min-w-[13rem]">
-      <p className="text-xs font-medium uppercase tracking-wide text-accent-teal">
-        Current sprint
-      </p>
-      <p className="mt-1 font-heading font-bold text-dark-blue text-lg leading-snug">
-        {momentum.label}
-      </p>
-      {momentum.total > 0 && (
-        <div className="mt-2 h-1.5 rounded-full bg-white/60 overflow-hidden">
-          <div
-            className="h-full rounded-full bg-accent-teal"
-            style={{ width: `${pct}%` }}
-          />
+    <div>
+      {backLink && <PartnerBackLink to={backLink.to} label={backLink.label} />}
+      <div className={`${CARD} overflow-hidden ${backLink ? "mt-2" : ""}`}>
+        <ProjectCoverImage
+          name={project.name}
+          imageUrl={project.imageUrl}
+          className="w-full h-40 object-cover"
+          placeholderClassName="w-full h-40"
+        />
+        <div className="p-5">
+          <h1 className="flex items-center gap-2 font-heading text-3xl font-bold text-dark-blue">
+            <ProjectIcon iconEmoji={project.iconEmoji} size="lg" />
+            <span className="min-w-0 truncate">{project.name}</span>
+          </h1>
+          {meta.length > 0 && (
+            <p className="text-sm text-muted-foreground mt-1">{meta.join(" · ")}</p>
+          )}
+          {statusBits.length > 0 && (
+            <div className="mt-3 max-w-md">
+              <p className="text-sm font-medium text-dark-blue">
+                {statusBits.join(" · ")}
+              </p>
+              {progress.overallTotal > 0 && (
+                <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full bg-accent-teal"
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
         </div>
-      )}
-      <p className="mt-1.5 text-xs text-muted-foreground">
-        {momentum.total > 0 ? `${momentum.done}/${momentum.total} tasks · ` : ""}
-        {timing}
-      </p>
+      </div>
     </div>
   );
 }
 
-type NavSection = { id: string; label: string };
-
-// Tracks which section is currently in view so the side nav can highlight it.
-// Picks the topmost section whose top has scrolled past the header band.
-function useActiveSection(ids: string[]): string {
-  const [active, setActive] = useState(ids[0] ?? "");
-  const key = ids.join(",");
-  useEffect(() => {
-    const els = ids
-      .map((id) => document.getElementById(id))
-      .filter((el): el is HTMLElement => el !== null);
-    if (els.length === 0) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries
-          .filter((e) => e.isIntersecting)
-          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
-        if (visible[0]) setActive(visible[0].target.id);
-      },
-      // Active band sits just below the fixed navbar; a section counts once its
-      // top clears the header and before it leaves the upper 40% of the view.
-      { rootMargin: "-96px 0px -60% 0px" },
-    );
-    els.forEach((el) => observer.observe(el));
-    return () => observer.disconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
-  return active;
-}
-
-// In-page table of contents. Sticky beside the sections on wide screens;
-// hidden on narrow ones, where the page just scrolls.
-function SectionNav({
-  sections,
+// The project workspace's section tabs. Client-side tab state lives in the
+// `?tab=` search param so each section has a shareable, back-navigable URL
+// without a loader round-trip (all the data is already client-side).
+function TabBar({
   active,
+  onSelect,
 }: {
-  sections: NavSection[];
-  active: string;
+  active: PartnerTabId;
+  onSelect: (id: PartnerTabId) => void;
 }) {
   return (
-    <nav className="hidden lg:block lg:w-44 lg:flex-shrink-0 lg:sticky lg:top-20 lg:self-start">
-      <p className="mb-2 px-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        On this page
-      </p>
-      <ul className="flex flex-col gap-0.5">
-        {sections.map((s) => (
-          <li key={s.id}>
+    <div className="border-b border-border">
+      <nav className="-mb-px flex gap-1 overflow-x-auto" aria-label="Project sections">
+        {PARTNER_TABS.map((t) => {
+          const isActive = t.id === active;
+          return (
             <button
+              key={t.id}
               type="button"
-              onClick={() =>
-                document
-                  .getElementById(s.id)
-                  ?.scrollIntoView({ behavior: "smooth", block: "start" })
-              }
-              className={`w-full rounded-lg px-3 py-1.5 text-left text-sm transition ${
-                active === s.id
-                  ? "bg-brand-tint font-medium text-dark-blue"
-                  : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+              onClick={() => onSelect(t.id)}
+              aria-current={isActive ? "page" : undefined}
+              className={`whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition ${
+                isActive
+                  ? "border-accent-coral text-accent-coral"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
               }`}
             >
-              {s.label}
+              {t.label}
             </button>
-          </li>
-        ))}
-      </ul>
-    </nav>
+          );
+        })}
+      </nav>
+    </div>
   );
 }
 
-// Renders the partner-facing read surface for a project. Shared by the real
-// partner portal (partner.projects.$id.tsx) and the in-app preview any
-// signed-in member can open from the project page
-// (projects.$id.partner-view.tsx) — same content, different chrome around it
-// via `backLink`, and pageHref for shared-document links. `backLink` is
-// optional: the in-app preview instead swaps the project page's "Partner
-// view" header button for an "Internal view" one (see that route's
-// `handle.headerAction`), so it has no back link of its own here.
+// Renders the partner-facing read surface for a project as a tabbed workspace:
+// a project header + status line, then Overview / Roadmap / Documents /
+// Meetings / Team. Shared by the real partner portal (partner.projects.$id.tsx)
+// and the in-app preview any signed-in member can open from the project page
+// (projects.$id.partner-view.tsx) — same content, different chrome via
+// `backLink`, and `pageHref` for shared-document links. The in-app preview
+// instead swaps the project page's "Partner view" header button for an
+// "Internal view" one, so it has no back link of its own here.
 export function PartnerProjectHubView({
   data,
   currentUserId,
@@ -403,255 +433,383 @@ export function PartnerProjectHubView({
   meetingRequested?: boolean;
   requestError?: string | null;
 }) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const raw = searchParams.get("tab");
+  const active: PartnerTabId = PARTNER_TABS.some((t) => t.id === raw)
+    ? (raw as PartnerTabId)
+    : "overview";
+  const selectTab = (id: PartnerTabId) =>
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (id === "overview") next.delete("tab");
+        else next.set("tab", id);
+        return next;
+      },
+      { preventScrollReset: true },
+    );
+
+  return (
+    <div className="flex flex-col gap-6">
+      <ProjectHeader
+        project={data.project}
+        partnerSince={data.partnerSince}
+        progress={data.progress}
+        backLink={backLink}
+      />
+      <TabBar active={active} onSelect={selectTab} />
+
+      {active === "overview" && (
+        <OverviewPanel data={data} onNavigate={selectTab} />
+      )}
+      {active === "roadmap" && (
+        <RoadmapPanel
+          epics={data.epics}
+          ungroupedSprints={data.ungroupedSprints}
+          nextSprint={data.nextSprint}
+        />
+      )}
+      {active === "documents" && (
+        <DocumentsPanel
+          sharedPages={data.sharedPages}
+          sharedFiles={data.sharedFiles}
+          pageHref={pageHref}
+          currentUserId={currentUserId}
+        />
+      )}
+      {active === "meetings" && (
+        <MeetingsPanel
+          meetings={data.meetings}
+          milestones={data.milestones}
+          pageHref={pageHref}
+          canRsvp={canRsvp}
+          calendarFeedUrl={calendarFeedUrl}
+          meetingRequested={meetingRequested}
+          requestError={requestError}
+        />
+      )}
+      {active === "team" && (
+        <TeamPanel team={data.team} currentTermCode={data.currentTermCode} />
+      )}
+    </div>
+  );
+}
+
+// The default landing — answers "how's my project going" at a glance: current
+// progress, what's coming up, recent activity, and jumps into the library.
+function OverviewPanel({
+  data,
+  onNavigate,
+}: {
+  data: PartnerProjectViewData;
+  onNavigate: (id: PartnerTabId) => void;
+}) {
   const {
     project,
-    partnerSince,
-    currentTermCode,
-    team,
     momentum,
-    epics,
-    ungroupedSprints,
-    nextSprint,
-    recentlyDone,
-    sharedPages,
-    sharedFiles,
+    progress,
     meetings,
     milestones,
+    nextSprint,
+    activity,
+    sharedPages,
+    sharedFiles,
   } = data;
+  const nextMeeting = meetings[0] ?? null;
+  const nextMilestone = milestones[0] ?? null;
+  const pct =
+    progress.overallTotal > 0
+      ? Math.round((progress.overallDone / progress.overallTotal) * 100)
+      : 0;
+  const newCount = activity.filter((a) => a.isNew).length;
 
-  const hasUpcoming = meetings.length > 0 || milestones.length > 0;
+  return (
+    <div className="flex flex-col gap-6">
+      {project.description && (
+        <div className={`${CARD} p-5`}>
+          <Markdown>{project.description}</Markdown>
+        </div>
+      )}
 
-  const hasWork = epics.length > 0 || ungroupedSprints.length > 0;
+      <div className="grid gap-4 md:grid-cols-2">
+        {/* Progress */}
+        <div className={`${CARD} p-5`}>
+          <h3 className={`${PANEL_HEADING} mb-3`}>Progress</h3>
+          {momentum ? (
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-accent-teal">
+                Current sprint
+              </p>
+              <p className="mt-0.5 font-heading text-lg font-bold leading-snug text-dark-blue">
+                {momentum.label}
+              </p>
+              {momentum.total > 0 && (
+                <div className="mt-2">
+                  <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
+                    <span>
+                      {momentum.done} of {momentum.total} tasks
+                    </span>
+                    <span>
+                      {momentum.daysLeft > 0
+                        ? `${momentum.daysLeft} day${momentum.daysLeft === 1 ? "" : "s"} left`
+                        : "due now"}
+                    </span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full rounded-full bg-accent-teal"
+                      style={{
+                        width: `${Math.round((momentum.done / momentum.total) * 100)}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No sprint is active right now.
+              {nextSprint ? ` Next up: ${nextSprint.name}.` : ""}
+            </p>
+          )}
+          {progress.overallTotal > 0 && (
+            <div className="mt-4 border-t border-border pt-3">
+              <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
+                <span>Overall</span>
+                <span>{pct}%</span>
+              </div>
+              <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full bg-dark-blue/60"
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {progress.overallDone} of {progress.overallTotal} tasks complete
+              </p>
+            </div>
+          )}
+        </div>
 
-  // Shared-file inline preview (mirrors the internal file view): clicking a
-  // file opens it in a modal — image/PDF inline, everything else a download.
-  const [previewFile, setPreviewFile] = useState<SharedFile | null>(null);
+        {/* What's next */}
+        <div className={`${CARD} p-5`}>
+          <h3 className={`${PANEL_HEADING} mb-3`}>What's next</h3>
+          {nextMeeting || nextMilestone ? (
+            <div className="flex flex-col gap-3">
+              {nextMeeting && (
+                <button
+                  type="button"
+                  onClick={() => onNavigate("meetings")}
+                  className="flex items-start gap-3 rounded-xl border border-border p-3 text-left transition hover:border-accent-coral"
+                >
+                  <CalendarClock className="mt-0.5 h-4 w-4 flex-shrink-0 text-accent-coral" />
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-medium text-foreground">
+                      {nextMeeting.title}
+                    </span>
+                    <span className="block text-xs text-muted-foreground">
+                      {fmtDateTime(nextMeeting.start)}
+                    </span>
+                  </span>
+                </button>
+              )}
+              {nextMilestone && (
+                <div className="flex items-start gap-3 rounded-xl border border-border p-3">
+                  <Flag className="mt-0.5 h-4 w-4 flex-shrink-0 text-accent-teal" />
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-medium text-foreground">
+                      {nextMilestone.label}
+                    </span>
+                    <span className="block text-xs text-muted-foreground">
+                      {fmtDate(nextMilestone.date)}
+                    </span>
+                  </span>
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => onNavigate("meetings")}
+                className="self-start text-xs font-medium text-accent-coral hover:underline"
+              >
+                View calendar →
+              </button>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Nothing scheduled yet. The team will add meetings and milestones as
+              the work gets underway.
+            </p>
+          )}
+        </div>
+      </div>
 
-  // The roadmap opens on live work — epics that are Open or In progress. The
-  // rest (Backlog, Done) sit behind a toggle so a partner isn't wading through
-  // finished or not-yet-started epics to see what's happening now.
+      {/* What's new — the reason to come back: activity since the last visit. */}
+      <div className={`${CARD} p-5`}>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h3 className={PANEL_HEADING}>What's new</h3>
+          {newCount > 0 && (
+            <span className="flex-shrink-0 rounded-full bg-accent-coral/10 px-2 py-0.5 text-xs font-medium text-accent-coral">
+              {newCount} new
+            </span>
+          )}
+        </div>
+        <ActivityFeed activity={activity} />
+      </div>
+
+      {/* Quick jumps into the library. */}
+      {(sharedPages.length > 0 || sharedFiles.length > 0) && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          {sharedPages.length > 0 && (
+            <button
+              type="button"
+              onClick={() => onNavigate("documents")}
+              className={`${CARD} flex items-center justify-between p-4 text-left transition hover:border-accent-coral`}
+            >
+              <span className="text-sm font-medium text-dark-blue">
+                {sharedPages.length} shared document
+                {sharedPages.length === 1 ? "" : "s"}
+              </span>
+              <span className="text-xs text-accent-coral">Open →</span>
+            </button>
+          )}
+          {sharedFiles.length > 0 && (
+            <button
+              type="button"
+              onClick={() => onNavigate("documents")}
+              className={`${CARD} flex items-center justify-between p-4 text-left transition hover:border-accent-coral`}
+            >
+              <span className="text-sm font-medium text-dark-blue">
+                {sharedFiles.length} shared file
+                {sharedFiles.length === 1 ? "" : "s"}
+              </span>
+              <span className="text-xs text-accent-coral">Open →</span>
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// The roadmap — active epics by default, each leading with its schedule
+// (sprints across past/current/planned) and its requirements collapsed behind
+// a disclosure. Backlog and done epics live behind the "Show all" toggle.
+function RoadmapPanel({
+  epics,
+  ungroupedSprints,
+  nextSprint,
+}: {
+  epics: PartnerProjectEpic[];
+  ungroupedSprints: PartnerProjectSprint[];
+  nextSprint: PartnerProjectViewData["nextSprint"];
+}) {
   const [showAllEpics, setShowAllEpics] = useState(false);
   const activeEpics = epics.filter(
     (e) => e.status === "Open" || e.status === "InProgress",
   );
   const hiddenEpicCount = epics.length - activeEpics.length;
   const visibleEpics = showAllEpics ? epics : activeEpics;
-
-  // Section anchors for the side nav — only the ones actually rendered.
-  const sections: NavSection[] = [
-    ...(hasUpcoming ? [{ id: "upcoming", label: "Upcoming" }] : []),
-    { id: "roadmap", label: "Roadmap" },
-    ...(recentlyDone.length > 0
-      ? [{ id: "recently-completed", label: "Completed work" }]
-      : []),
-    { id: "shared-documents", label: "Shared documents" },
-    { id: "shared-files", label: "Shared files" },
-    ...(team.length > 0 ? [{ id: "team", label: "Team" }] : []),
-  ];
-  const activeSection = useActiveSection(sections.map((s) => s.id));
+  const hasWork = epics.length > 0 || ungroupedSprints.length > 0;
 
   return (
-    <div className="flex flex-col gap-8">
-      <div>
-        {backLink && (
-          <PartnerBackLink to={backLink.to} label={backLink.label} />
+    <section>
+      <div className="mb-3 flex items-center justify-between gap-4">
+        <div className="flex min-w-0 items-baseline gap-3">
+          <h2 className={PANEL_HEADING}>Roadmap</h2>
+          {nextSprint && (
+            <span className="truncate text-xs text-muted-foreground">
+              Up next: {nextSprint.name}
+            </span>
+          )}
+        </div>
+        {hiddenEpicCount > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowAllEpics((v) => !v)}
+            className="text-xs font-medium text-accent-coral hover:underline"
+          >
+            {showAllEpics ? "Show active only" : `Show all epics (${epics.length})`}
+          </button>
         )}
-        <div
-          className={`bg-card border border-border rounded-2xl overflow-hidden ${backLink ? "mt-2" : ""}`}
-        >
-          <ProjectCoverImage
-            name={project.name}
-            imageUrl={project.imageUrl}
-            className="w-full h-40 object-cover"
-            placeholderClassName="w-full h-40"
-          />
-          <div className="p-5">
-            <div className="flex flex-col-reverse gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0">
-                <h1 className="flex items-center gap-2 font-heading text-3xl font-bold text-dark-blue">
-                  <ProjectIcon iconEmoji={project.iconEmoji} size="lg" />
-                  <span className="min-w-0 truncate">{project.name}</span>
-                </h1>
-                <p className="text-sm text-muted-foreground mt-1">
-                  {[
-                    project.terms.length > 0
-                      ? `Terms: ${project.terms.map(termCodeLabel).join(", ")}`
-                      : null,
-                    partnerSince ? `Partner since ${fmtDate(partnerSince)}` : null,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </p>
-                {/* Same Markdown renderer as the internal Overview tab, so a
-                    description written with formatting reads the same on both
-                    surfaces. */}
-                {project.description && (
-                  <div className="mt-3">
-                    <Markdown>{project.description}</Markdown>
-                  </div>
-                )}
-              </div>
-              {momentum && (
-                <div className="sm:flex-shrink-0">
-                  <MomentumReadout momentum={momentum} />
-                </div>
+      </div>
+      {!hasWork ? (
+        <div className={EMPTY_CARD}>
+          Nothing on the roadmap yet. Epics and sprints will appear here once the
+          team plans the work.
+        </div>
+      ) : (
+        <div className="flex flex-col gap-4">
+          {visibleEpics.map((epic) => (
+            <EpicCard key={epic.id} epic={epic} />
+          ))}
+          {visibleEpics.length === 0 && (
+            <div className={EMPTY_CARD}>
+              Nothing in progress right now.
+              {hiddenEpicCount > 0 && (
+                <>
+                  {" "}
+                  <button
+                    type="button"
+                    onClick={() => setShowAllEpics(true)}
+                    className="font-medium text-accent-coral hover:underline"
+                  >
+                    Show all {epics.length} epic{epics.length === 1 ? "" : "s"}
+                  </button>
+                  .
+                </>
               )}
             </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="lg:flex lg:items-start lg:gap-8">
-        {sections.length > 1 && (
-          <SectionNav sections={sections} active={activeSection} />
-        )}
-        <div className="flex min-w-0 flex-1 flex-col gap-8">
-      {(hasUpcoming || canRsvp) && (
-        <section id="upcoming" className="scroll-mt-24">
-          <div className="mb-3 flex items-center justify-between gap-4">
-            <h2 className="font-heading text-lg font-semibold text-dark-blue">
-              Upcoming
-            </h2>
-            {hasUpcoming && calendarFeedUrl && (
-              <a
-                href={calendarFeedUrl}
-                className="text-xs font-medium text-accent-coral hover:underline"
-                title="Add to Google, Outlook, or Apple Calendar"
-              >
-                Subscribe to calendar
-              </a>
-            )}
-          </div>
-          <PartnerWeekCalendar
-            meetings={meetings}
-            milestones={milestones}
-            pageHref={pageHref}
-            canRsvp={canRsvp}
-          />
-          {canRsvp && (
-            <div className="mt-4">
-              <RequestMeetingForm
-                requested={meetingRequested}
-                error={requestError}
-              />
+          )}
+          {ungroupedSprints.length > 0 && (
+            <div className={`${CARD} p-5`}>
+              <h3 className="mb-3 font-heading text-base font-semibold text-dark-blue">
+                Other sprints
+              </h3>
+              <SprintGroup sprints={ungroupedSprints} />
             </div>
           )}
-        </section>
-      )}
-
-      {/* The roadmap — active epics by default, each showing its stories
-          (scope) and its sprints across past, current, and planned. Backlog
-          and done epics live behind the "Show all" toggle. */}
-      <section id="roadmap" className="scroll-mt-24">
-        <div className="mb-3 flex items-center justify-between gap-4">
-          <div className="flex items-baseline gap-3 min-w-0">
-            <h2 className="font-heading text-lg font-semibold text-dark-blue">
-              Roadmap
-            </h2>
-            {nextSprint && (
-              <span className="text-xs text-muted-foreground truncate">
-                Up next: {nextSprint.name}
-              </span>
-            )}
-          </div>
-          {hiddenEpicCount > 0 && (
-            <button
-              type="button"
-              onClick={() => setShowAllEpics((v) => !v)}
-              className="text-xs font-medium text-accent-coral hover:underline"
-            >
-              {showAllEpics
-                ? "Show active only"
-                : `Show all epics (${epics.length})`}
-            </button>
-          )}
         </div>
-        {!hasWork ? (
-          <div className="bg-card border border-border rounded-2xl p-6 text-sm text-muted-foreground">
-            Nothing on the roadmap yet. Epics and sprints will appear here once
-            the team plans the work.
-          </div>
-        ) : (
-          <div className="flex flex-col gap-4">
-            {visibleEpics.map((epic) => (
-              <EpicCard key={epic.id} epic={epic} />
-            ))}
-            {visibleEpics.length === 0 && (
-              <div className="bg-card border border-border rounded-2xl p-6 text-sm text-muted-foreground">
-                Nothing in progress right now.
-                {hiddenEpicCount > 0 && (
-                  <>
-                    {" "}
-                    <button
-                      type="button"
-                      onClick={() => setShowAllEpics(true)}
-                      className="font-medium text-accent-coral hover:underline"
-                    >
-                      Show all {epics.length} epic{epics.length === 1 ? "" : "s"}
-                    </button>
-                    .
-                  </>
-                )}
-              </div>
-            )}
-            {ungroupedSprints.length > 0 && (
-              <div className="bg-card border border-border rounded-2xl p-5">
-                <h3 className="font-heading font-semibold text-dark-blue text-base mb-3">
-                  Other sprints
-                </h3>
-                <SprintGroup sprints={ungroupedSprints} />
-              </div>
-            )}
-          </div>
-        )}
-      </section>
-
-      {recentlyDone.length > 0 && (
-        <section id="recently-completed" className="scroll-mt-24">
-          <h2 className="font-heading text-lg font-semibold text-dark-blue mb-3">
-            Completed work
-          </h2>
-          <ul className="bg-card border border-border rounded-2xl divide-y divide-border">
-            {recentlyDone.map((t) => (
-              <li key={t.id} className="px-4 py-3 flex items-center gap-3 text-sm">
-                <span className="text-accent-teal">✓</span>
-                <span className="flex-1 min-w-0 truncate text-foreground">{t.title}</span>
-                {t.domain && (
-                  <span className="text-xs rounded-full bg-muted text-muted-foreground px-2 py-0.5 flex-shrink-0">
-                    {t.domain}
-                  </span>
-                )}
-                <span className="text-xs text-muted-foreground flex-shrink-0">
-                  {fmtDate(t.doneAt)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
       )}
+    </section>
+  );
+}
 
-      {/* Shared docs */}
-      <section id="shared-documents" className="scroll-mt-24">
-        <h2 className="font-heading text-lg font-semibold text-dark-blue mb-3">
-          Shared documents
-        </h2>
+// The library — documents the team has shared, and file uploads (previewed via
+// a short-lived signed URL resolved in the loader).
+function DocumentsPanel({
+  sharedPages,
+  sharedFiles,
+  pageHref,
+  currentUserId,
+}: {
+  sharedPages: PartnerProjectViewData["sharedPages"];
+  sharedFiles: PartnerProjectViewData["sharedFiles"];
+  pageHref: (pageId: string) => string;
+  currentUserId: string;
+}) {
+  const [previewFile, setPreviewFile] = useState<SharedFile | null>(null);
+
+  return (
+    <div className="flex flex-col gap-6">
+      <section>
+        <h2 className={`${PANEL_HEADING} mb-3`}>Shared documents</h2>
         {sharedPages.length === 0 ? (
-          <div className="bg-card border border-border rounded-2xl p-6 text-sm text-muted-foreground">
+          <div className={EMPTY_CARD}>
             The team hasn't shared any documents yet.
           </div>
         ) : (
-          <ul className="bg-card border border-border rounded-2xl divide-y divide-border">
+          <ul className={`${CARD} divide-y divide-border`}>
             {sharedPages.map((p) => (
               <li key={p.id}>
                 <Link
                   to={pageHref(p.id)}
-                  className="px-4 py-3 flex items-center gap-3 text-sm hover:bg-muted/20 transition"
+                  className="flex items-center gap-3 px-4 py-3 text-sm transition hover:bg-muted/20"
                 >
                   <span>{p.iconEmoji ?? "📄"}</span>
-                  <span className="flex-1 min-w-0 truncate font-medium text-foreground">
+                  <span className="min-w-0 flex-1 truncate font-medium text-foreground">
                     {p.title}
                   </span>
-                  <span className="text-xs text-muted-foreground flex-shrink-0">
+                  <span className="flex-shrink-0 text-xs text-muted-foreground">
                     Updated {fmtDate(p.updatedAt)}
                   </span>
                 </Link>
@@ -661,48 +819,45 @@ export function PartnerProjectHubView({
         )}
       </section>
 
-      {/* Shared files — uploads the team has shared, downloaded via a
-          short-lived signed URL resolved in the loader. */}
-      <section id="shared-files" className="scroll-mt-24">
-        <h2 className="font-heading text-lg font-semibold text-dark-blue mb-3">
-          Shared files
-        </h2>
+      <section>
+        <h2 className={`${PANEL_HEADING} mb-3`}>Shared files</h2>
         {sharedFiles.length === 0 ? (
-          <div className="bg-card border border-border rounded-2xl p-6 text-sm text-muted-foreground">
-            The team hasn't shared any files yet.
-          </div>
+          <div className={EMPTY_CARD}>The team hasn't shared any files yet.</div>
         ) : (
-          <ul className="bg-card border border-border rounded-2xl divide-y divide-border">
+          <ul className={`${CARD} divide-y divide-border`}>
             {sharedFiles.map((f) => (
               <li key={f.id}>
                 <button
                   type="button"
                   onClick={() => setPreviewFile(f)}
                   disabled={!f.downloadUrl}
-                  className={`w-full text-left px-4 py-3 flex items-center gap-3 text-sm transition ${
+                  className={`flex w-full items-center gap-3 px-4 py-3 text-left text-sm transition ${
                     f.downloadUrl
-                      ? "hover:bg-muted/20 cursor-pointer"
-                      : "opacity-60 cursor-not-allowed"
+                      ? "cursor-pointer hover:bg-muted/20"
+                      : "cursor-not-allowed opacity-60"
                   }`}
                 >
                   {isPreviewable(f.contentType) ? (
-                    <Eye className="w-4 h-4 text-accent-teal flex-shrink-0" />
+                    <Eye className="h-4 w-4 flex-shrink-0 text-accent-teal" />
                   ) : (
-                    <Download className="w-4 h-4 text-accent-teal flex-shrink-0" />
+                    <Download className="h-4 w-4 flex-shrink-0 text-accent-teal" />
                   )}
-                  <span className="flex-1 min-w-0">
+                  <span className="min-w-0 flex-1">
                     <span className="block truncate font-medium text-foreground">
                       {f.title}
                     </span>
                     {(f.fileName || f.sizeBytes != null) && (
                       <span className="block truncate text-xs text-muted-foreground">
-                        {[f.fileName, f.sizeBytes != null ? formatBytes(f.sizeBytes) : null]
+                        {[
+                          f.fileName,
+                          f.sizeBytes != null ? formatBytes(f.sizeBytes) : null,
+                        ]
                           .filter(Boolean)
                           .join(" · ")}
                       </span>
                     )}
                   </span>
-                  <span className="text-xs text-muted-foreground flex-shrink-0">
+                  <span className="flex-shrink-0 text-xs text-muted-foreground">
                     {!f.downloadUrl
                       ? "Unavailable"
                       : isPreviewable(f.contentType)
@@ -716,30 +871,6 @@ export function PartnerProjectHubView({
         )}
       </section>
 
-      {/* Team */}
-      {team.length > 0 && (
-        <section id="team" className="scroll-mt-24">
-          <h2 className="font-heading text-lg font-semibold text-dark-blue mb-3">
-            Your DALI team{currentTermCode ? ` · ${termCodeLabel(currentTermCode)}` : ""}
-          </h2>
-          <div className="bg-card border border-border rounded-2xl p-5 grid gap-x-6 gap-y-4 sm:grid-cols-2">
-            {team.map((m) => (
-              <div key={m.name} className="flex items-center gap-3 min-w-0">
-                <Avatar photoUrl={m.photoUrl} name={m.name} size="md" />
-                <div className="min-w-0">
-                  <span className="font-medium text-dark-blue block truncate">
-                    {m.name}
-                  </span>
-                  <span className="text-xs text-muted-foreground block truncate">
-                    {m.domains.join(", ")}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
       {previewFile && (
         <SharedFilePreviewModal
           file={previewFile}
@@ -747,9 +878,153 @@ export function PartnerProjectHubView({
           onClose={() => setPreviewFile(null)}
         />
       )}
-        </div>
-      </div>
     </div>
+  );
+}
+
+// Meetings tab: the week calendar (RSVP + notes in-place), a subscribe link for
+// the personal ICS feed, and the request-a-meeting form (real portal only).
+function MeetingsPanel({
+  meetings,
+  milestones,
+  pageHref,
+  canRsvp,
+  calendarFeedUrl,
+  meetingRequested,
+  requestError,
+}: {
+  meetings: PartnerProjectViewData["meetings"];
+  milestones: PartnerProjectViewData["milestones"];
+  pageHref: (pageId: string) => string;
+  canRsvp: boolean;
+  calendarFeedUrl?: string | null;
+  meetingRequested: boolean;
+  requestError: string | null;
+}) {
+  const hasUpcoming = meetings.length > 0 || milestones.length > 0;
+  return (
+    <section>
+      <div className="mb-3 flex items-center justify-between gap-4">
+        <h2 className={PANEL_HEADING}>Meetings</h2>
+        {hasUpcoming && calendarFeedUrl && (
+          <a
+            href={calendarFeedUrl}
+            className="text-xs font-medium text-accent-coral hover:underline"
+            title="Add to Google, Outlook, or Apple Calendar"
+          >
+            Subscribe to calendar
+          </a>
+        )}
+      </div>
+      <PartnerWeekCalendar
+        meetings={meetings}
+        milestones={milestones}
+        pageHref={pageHref}
+        canRsvp={canRsvp}
+      />
+      {canRsvp && (
+        <div className="mt-4">
+          <RequestMeetingForm requested={meetingRequested} error={requestError} />
+        </div>
+      )}
+    </section>
+  );
+}
+
+// The current-term project roster.
+function TeamPanel({
+  team,
+  currentTermCode,
+}: {
+  team: PartnerProjectViewData["team"];
+  currentTermCode: string | null;
+}) {
+  return (
+    <section>
+      <h2 className={`${PANEL_HEADING} mb-3`}>
+        Your DALI team
+        {currentTermCode ? ` · ${termCodeLabel(currentTermCode)}` : ""}
+      </h2>
+      {team.length === 0 ? (
+        <div className={EMPTY_CARD}>
+          Your team will appear here once the project is staffed.
+        </div>
+      ) : (
+        <div className={`${CARD} grid gap-x-6 gap-y-4 p-5 sm:grid-cols-2`}>
+          {team.map((m) => (
+            <div key={m.name} className="flex min-w-0 items-center gap-3">
+              <Avatar photoUrl={m.photoUrl} name={m.name} size="md" />
+              <div className="min-w-0">
+                <span className="block truncate font-medium text-dark-blue">
+                  {m.name}
+                </span>
+                <span className="block truncate text-xs text-muted-foreground">
+                  {m.domains.join(", ")}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+const ACTIVITY_ICON: Record<PartnerActivityKind, typeof CheckCircle2> = {
+  "task-done": CheckCircle2,
+  "sprint-done": Flag,
+  "file-shared": FileText,
+  "meeting-scheduled": CalendarClock,
+};
+
+// The "what's new" list — newest first, with an "Earlier" divider marking where
+// the viewer's previous visit was. New events carry a coral icon; older ones go
+// muted. Empty and all-new both read cleanly (no stray divider).
+function ActivityFeed({
+  activity,
+}: {
+  activity: PartnerProjectViewData["activity"];
+}) {
+  if (activity.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        No recent activity yet. Updates will show up here as the team makes
+        progress.
+      </p>
+    );
+  }
+  const firstOlderId = activity.find((a) => !a.isNew)?.id ?? null;
+  const hasNew = activity.some((a) => a.isNew);
+  return (
+    <ul className="flex flex-col">
+      {activity.map((a) => {
+        const Icon = ACTIVITY_ICON[a.kind];
+        return (
+          <li key={a.id}>
+            {hasNew && a.id === firstOlderId && (
+              <div className="my-1 flex items-center gap-2 text-[11px] uppercase tracking-wide text-muted-foreground">
+                <span className="h-px flex-1 bg-border" />
+                Earlier
+                <span className="h-px flex-1 bg-border" />
+              </div>
+            )}
+            <div className="flex items-center gap-3 py-2 text-sm">
+              <Icon
+                className={`h-4 w-4 flex-shrink-0 ${
+                  a.isNew ? "text-accent-coral" : "text-muted-foreground"
+                }`}
+              />
+              <span className="min-w-0 flex-1 truncate text-foreground">
+                {a.label}
+              </span>
+              <span className="flex-shrink-0 text-xs text-muted-foreground">
+                {fmtDate(a.at)}
+              </span>
+            </div>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
