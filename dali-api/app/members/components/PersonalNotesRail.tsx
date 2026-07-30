@@ -1,0 +1,235 @@
+import { useState } from "react";
+import { useFetcher } from "react-router";
+import {
+  ChevronRight,
+  Eye,
+  FolderPlus,
+  Landmark,
+  Lock,
+  Plus,
+  Users,
+} from "lucide-react";
+import { PageIcon } from "~/components/PageIcon";
+import { buttonClasses } from "~/components/ui/Button";
+import { Tooltip } from "~/components/ui/IconButton";
+import type { NoteSummary } from "~/members/lib/personal-notes.server";
+
+// The notes rail on a member's profile.
+//
+// Design notes, since this is the first right-hand rail in the app:
+//   - It reuses the page's existing card grammar (bg-card, border-border,
+//     rounded-lg) so it reads as another section that happens to sit beside
+//     the column rather than a new kind of surface.
+//   - Tabs mirror UnderlineTabButtons' visual language — coral underline on
+//     the active tab — at rail scale. That component's own spacing is built
+//     for full-width page navigation and would swamp a 320px column, so the
+//     grammar is borrowed rather than the component.
+//   - Visibility is the one thing this list has to communicate at a glance,
+//     so it's the only per-row adornment: a lock, an eye, or the lab mark.
+//     Everything else (tags, dates, share counts) stays quiet or on the row's
+//     second line, per the rule that one element does one job.
+
+type Tab = "mine" | "shared";
+
+function VisibilityMark({ note }: { note: NoteSummary }) {
+  if (note.labListing === "Listed") {
+    return (
+      <Tooltip label="On the lab Documents page">
+        <span className="text-accent-teal">
+          <Landmark className="w-3.5 h-3.5" aria-label="Listed lab-wide" />
+        </span>
+      </Tooltip>
+    );
+  }
+  if (note.visibility === "public") {
+    return (
+      <Tooltip label="On your profile — anyone can read it">
+        <span className="text-accent-coral">
+          <Eye className="w-3.5 h-3.5" aria-label="Public" />
+        </span>
+      </Tooltip>
+    );
+  }
+  if (note.shareCount > 0) {
+    return (
+      <Tooltip label={`Shared with ${note.shareCount} ${note.shareCount === 1 ? "person or group" : "people and groups"}`}>
+        <span className="text-muted-foreground">
+          <Users className="w-3.5 h-3.5" aria-label="Shared" />
+        </span>
+      </Tooltip>
+    );
+  }
+  return (
+    <Tooltip label="Only you">
+      <span className="text-muted-foreground/60">
+        <Lock className="w-3.5 h-3.5" aria-label="Private" />
+      </span>
+    </Tooltip>
+  );
+}
+
+function NoteRow({
+  note,
+  showOwner,
+  onOpen,
+}: {
+  note: NoteSummary;
+  showOwner: boolean;
+  onOpen: (note: NoteSummary) => void;
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() => onOpen(note)}
+        className="group w-full text-left px-2 py-1.5 rounded-md hover:bg-muted/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-coral/40 transition-colors"
+      >
+        <span className="flex items-center gap-2 min-w-0">
+          <PageIcon iconEmoji={note.iconEmoji} />
+          <span className="truncate text-sm text-foreground flex-1 min-w-0">
+            {note.title}
+          </span>
+          <VisibilityMark note={note} />
+          <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/0 group-hover:text-muted-foreground/70 transition-colors shrink-0" />
+        </span>
+        {(showOwner || note.tags.length > 0) && (
+          <span className="flex items-center gap-1.5 pl-6 pt-0.5 text-xs text-muted-foreground min-w-0">
+            {showOwner && note.owner && (
+              <span className="truncate">{note.owner.name}</span>
+            )}
+            {showOwner && note.owner && note.tags.length > 0 && <span>·</span>}
+            {note.tags.slice(0, 2).map((t) => (
+              <span key={t.id} className="truncate">
+                {t.label}
+              </span>
+            ))}
+          </span>
+        )}
+      </button>
+    </li>
+  );
+}
+
+export function PersonalNotesRail({
+  ownerId,
+  ownerFirstName,
+  isSelf,
+  notes,
+  sharedWithMe,
+  onOpenNote,
+}: {
+  ownerId: string;
+  ownerFirstName: string;
+  isSelf: boolean;
+  notes: NoteSummary[];
+  sharedWithMe: NoteSummary[];
+  onOpenNote: (note: NoteSummary) => void;
+}) {
+  const [tab, setTab] = useState<Tab>("mine");
+  const fetcher = useFetcher();
+  const creating = fetcher.state !== "idle";
+
+  const visible = isSelf && tab === "shared" ? sharedWithMe : notes;
+  const showOwner = isSelf && tab === "shared";
+
+  function create(isFolder: boolean) {
+    fetcher.submit(
+      { intent: "create", ownerId, isFolder: String(isFolder) },
+      { method: "post", action: "/api/notes" },
+    );
+  }
+
+  return (
+    <aside className="bg-card border border-border rounded-lg flex flex-col">
+      <div className="px-4 pt-3 pb-2 flex items-center justify-between gap-2">
+        <h2 className="font-heading font-semibold text-foreground">Notes</h2>
+        {isSelf && (
+          <div className="flex items-center gap-0.5">
+            <Tooltip label="New folder">
+              <button
+                type="button"
+                onClick={() => create(true)}
+                disabled={creating}
+                aria-label="New folder"
+                className={buttonClasses("ghost", "sm")}
+              >
+                <FolderPlus className="w-4 h-4" />
+              </button>
+            </Tooltip>
+            <Tooltip label="New note">
+              <button
+                type="button"
+                onClick={() => create(false)}
+                disabled={creating}
+                aria-label="New note"
+                className={buttonClasses("ghost", "sm")}
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </Tooltip>
+          </div>
+        )}
+      </div>
+
+      {isSelf && (
+        <div
+          className="flex items-stretch gap-0.5 px-3 border-b border-border"
+          role="tablist"
+          aria-label="Notes"
+        >
+          {(
+            [
+              ["mine", "Mine", notes.length],
+              ["shared", "Shared with me", sharedWithMe.length],
+            ] as const
+          ).map(([key, label, count]) => (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              aria-selected={tab === key}
+              onClick={() => setTab(key)}
+              className={`inline-flex items-center gap-1.5 px-2 py-1.5 text-xs font-semibold font-heading border-b-2 -mb-px transition-colors ${
+                tab === key
+                  ? "border-accent-coral text-accent-coral"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {label}
+              {count > 0 && (
+                <span className="text-[10px] font-normal opacity-70">{count}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {visible.length === 0 ? (
+        <p className="px-4 py-6 text-sm text-muted-foreground">
+          {isSelf && tab === "shared"
+            ? "Nothing yet. Notes other people share with you land here."
+            : isSelf
+              ? "Keep your own notes here — meeting prep, reading, anything. Private until you say otherwise."
+              : `${ownerFirstName} hasn't published any notes.`}
+        </p>
+      ) : (
+        <ul className="p-2 flex flex-col gap-0.5">
+          {visible.map((note) => (
+            <NoteRow
+              key={note.id}
+              note={note}
+              showOwner={showOwner}
+              onOpen={onOpenNote}
+            />
+          ))}
+        </ul>
+      )}
+
+      {fetcher.data && "error" in (fetcher.data as { error?: string }) && (
+        <p className="px-4 pb-3 text-xs text-destructive">
+          {(fetcher.data as { error: string }).error}
+        </p>
+      )}
+    </aside>
+  );
+}

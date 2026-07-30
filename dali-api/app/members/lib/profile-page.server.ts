@@ -11,6 +11,11 @@ import { graduateProgramLabel } from "~/lib/dartmouth-people";
 import { parseSessionCookie } from "~/lib/cookies";
 import { getPresenceUser } from "~/lib/presence-user";
 import {
+  listProfileNotes,
+  listSharedWithMe,
+  type NoteSummary,
+} from "~/members/lib/personal-notes.server";
+import {
   currentTerm,
   getUserRoles,
   isAdmin,
@@ -89,6 +94,11 @@ export type ProfilePageData = {
   isSelf: boolean;
   canEdit: boolean;
   canManageEligibility: boolean;
+  /** Personal notes shown in the profile's right-hand rail. On someone else's
+   *  profile this is only what they've made public plus anything shared with
+   *  the viewer; `sharedWithMe` is populated only on your own profile. */
+  notes: NoteSummary[];
+  sharedWithMe: NoteSummary[];
   allDomains: Array<{ id: string; displayName: string }>;
   photoUrlResolved: string | null;
   collabToken: string | null;
@@ -368,6 +378,13 @@ export async function loadProfilePage({
 
   const collabToken = parseSessionCookie(request);
 
+  // Personal notes for the rail. "Shared with me" is an inbox of your own, so
+  // it's only fetched when you're looking at your own profile.
+  const [notes, sharedWithMe] = await Promise.all([
+    listProfileNotes(targetId, auth.user.sub),
+    isSelf ? listSharedWithMe(auth.user.sub) : Promise.resolve([]),
+  ]);
+
   // Convert the raw People-API code to a label server-side; only the label
   // (gradProgram) crosses the wire, not the underlying department_class.
   const { dartmouthDepartmentClass, ...memberFields } = member;
@@ -393,6 +410,8 @@ export async function loadProfilePage({
     isSelf,
     canEdit,
     canManageEligibility,
+    notes,
+    sharedWithMe,
     allDomains,
     photoUrlResolved,
     collabToken,
