@@ -17,6 +17,9 @@ import {
   Link2Off,
   Undo2,
   Redo2,
+  AlignLeft,
+  AlignRight,
+  AlignJustify,
 } from "lucide-react";
 import {
   EDITOR_CONTENT_CLASS,
@@ -194,6 +197,32 @@ const FORMAT_GROUPS: ToolbarAction[][] = [
     { label: "Bullet list", icon: List, isActive: (e) => e.isActive("bulletList"), run: (e) => e.chain().focus().toggleBulletList().run() },
     { label: "Numbered list", icon: ListOrdered, isActive: (e) => e.isActive("orderedList"), run: (e) => e.chain().focus().toggleOrderedList().run() },
     { label: "Quote", icon: Quote, isActive: (e) => e.isActive("blockquote"), run: (e) => e.chain().focus().toggleBlockquote().run() },
+  ],
+  // Image wrapping. Only meaningful with an image selected, so the whole group
+  // disables otherwise rather than silently doing nothing. `align` is a plain
+  // node attribute, so updateAttributes is the whole implementation.
+  [
+    {
+      label: "Image left, text wraps right",
+      icon: AlignLeft,
+      isActive: (e) => e.isActive("image", { align: "left" }),
+      isDisabled: (e) => !e.isActive("image"),
+      run: (e) => e.chain().focus().updateAttributes("image", { align: "left" }).run(),
+    },
+    {
+      label: "Image right, text wraps left",
+      icon: AlignRight,
+      isActive: (e) => e.isActive("image", { align: "right" }),
+      isDisabled: (e) => !e.isActive("image"),
+      run: (e) => e.chain().focus().updateAttributes("image", { align: "right" }).run(),
+    },
+    {
+      label: "Image on its own line",
+      icon: AlignJustify,
+      isActive: (e) => e.isActive("image") && !e.getAttributes("image").align,
+      isDisabled: (e) => !e.isActive("image"),
+      run: (e) => e.chain().focus().updateAttributes("image", { align: null }).run(),
+    },
   ],
 ];
 
