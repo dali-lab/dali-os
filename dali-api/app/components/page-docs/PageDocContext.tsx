@@ -121,24 +121,35 @@ export function PageDocButton({ suppressWhenPills = false }: { suppressWhenPills
 export function PageDocOutlet({ children }: { children: ReactNode }) {
   const { open, docKey, docTitle, setOpen, focusCommentId } = usePageDoc();
   const location = useLocation();
+  const matches = useMatches();
 
   if (open && docKey) {
+    // On pill pages the layout zeroes its own top padding because AreaPillNav
+    // supplies that spacing — but the open guide replaces the outlet, pill nav
+    // included, so nothing is left to space it off the breadcrumb row. Put the
+    // layout's usual padding back for those routes only, so the guide starts
+    // at the same height as ordinary page content either way.
+    const hasAreaPills = matches.some(
+      (m) => (m as { handle?: { areaPills?: boolean } }).handle?.areaPills,
+    );
     return (
-      <Suspense
-        fallback={
-          <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
-            Loading guide…
-          </div>
-        }
-      >
-        <PageDocPage
-          docKey={docKey}
-          fallbackTitle={docTitle ?? "Page guide"}
-          path={location.pathname}
-          focusCommentId={focusCommentId}
-          onClose={() => setOpen(false)}
-        />
-      </Suspense>
+      <div className={hasAreaPills ? "pt-4 sm:pt-8 md:pt-12" : undefined}>
+        <Suspense
+          fallback={
+            <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
+              Loading guide…
+            </div>
+          }
+        >
+          <PageDocPage
+            docKey={docKey}
+            fallbackTitle={docTitle ?? "Page guide"}
+            path={location.pathname}
+            focusCommentId={focusCommentId}
+            onClose={() => setOpen(false)}
+          />
+        </Suspense>
+      </div>
     );
   }
   return <>{children}</>;
