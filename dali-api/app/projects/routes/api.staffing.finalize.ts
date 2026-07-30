@@ -63,6 +63,13 @@ type Automation = (typeof AUTOMATIONS)[number];
 
 type StepResult = { status: "ok" | "skipped" | "error"; message: string };
 
+// Every step's message is a " · "-joined list of facts — the modal renders one
+// line per step, so they report outcomes tersely rather than in prose. Blank
+// parts are dropped so callers can pass conditionals inline.
+function summarize(...parts: (string | false | null | undefined)[]): string {
+  return parts.filter(Boolean).join(" · ");
+}
+
 type Body = {
   cycleId: string;
   projectId: string;
@@ -416,15 +423,6 @@ export async function action({ request }: Route.ActionArgs) {
         );
       }
 
-      const dropNote = droppedCount > 0 ? `, removed ${droppedCount}` : "";
-      const pairNote = `, paired ${pairsCreated} mentor link${pairsCreated === 1 ? "" : "s"}`;
-      const promoteNote =
-        mentorsPromoted > 0 ? `, promoted ${mentorsPromoted} mentor${mentorsPromoted === 1 ? "" : "s"} to P3` : "";
-      const skipNote =
-        skippedNames.length > 0
-          ? ` Skipped ${skippedNames.length} with an invalid/blank domain (fix their bid): ${skippedNames.join(", ")}.`
-          : "";
-
       let mentorshipGapNote = "";
       if (mentorshipGaps.length > 0) {
         const menteeIds = [...new Set(mentorshipGaps.flatMap((g) => g.menteeUserIds))];
@@ -438,27 +436,32 @@ export async function action({ request }: Route.ActionArgs) {
         // Soft-skip: other domains still paired; surface a warning, not a
         // hard error, so the rest of Propagate isn't treated as failed.
         mentorshipGapNote =
-          " Skipped mentorship for " +
+          "unpaired: " +
           mentorshipGaps
             .map((g) => {
               const domain = domainNameById.get(g.domainId) ?? "Unknown domain";
               const names = g.menteeUserIds.map((id) => nameById.get(id) ?? id).join(", ");
-              return `${domain} (mentees but no P3/Mentor: ${names})`;
+              return `${domain} (${names})`;
             })
             .join("; ") +
-          " — other domains were paired. Raise someone to P3 on their domain chip (or mark Mentor / add an external mentor), then re-run Propagate.";
+          " — needs a P3/Mentor";
       }
 
       results.assignments = {
         // Invalid/blank domains are a real data error; mentorship gaps for
         // individual domains are soft-skipped and stay status ok.
         status: skippedNames.length > 0 ? "error" : "ok",
-        message:
-          (confirmedCount === 0 && droppedCount === 0
-            ? "No proposed assignments for this project."
-            : `Confirmed ${confirmedCount} assignment${confirmedCount === 1 ? "" : "s"}${dropNote}${pairNote}${promoteNote} → ProjectAssignment.`) +
-          skipNote +
+        message: summarize(
+          confirmedCount === 0 && droppedCount === 0
+            ? "Nothing proposed"
+            : `${confirmedCount} confirmed`,
+          droppedCount > 0 && `${droppedCount} removed`,
+          pairsCreated > 0 && `${pairsCreated} paired`,
+          mentorsPromoted > 0 && `${mentorsPromoted} promoted to P3`,
+          skippedNames.length > 0 &&
+            `${skippedNames.length} need a domain: ${skippedNames.join(", ")}`,
           mentorshipGapNote,
+        ),
       };
     } catch (err) {
       results.assignments = { status: "error", message: slackErrorMessage(err) };
@@ -535,12 +538,12 @@ export async function action({ request }: Route.ActionArgs) {
         const desiredName =
           body.slackChannel?.trim() || project.slackChannelName || project.name;
         let channelId = project.slackChannelId;
-        let channelNote = "reused channel";
+        let channelNote = `#${desiredName}`;
         const nameChanged = desiredName !== project.slackChannelName;
         if (!channelId || nameChanged) {
           const ch = await ensureChannel(desiredName);
           channelId = ch.id;
-          channelNote = ch.created ? `created #${ch.name}` : `found #${ch.name}`;
+          channelNote = ch.created ? `#${ch.name} (new)` : `#${ch.name}`;
           await prisma.project.update({
             where: { id: project.id },
             data: { slackChannelId: channelId, slackChannelName: desiredName },
@@ -619,15 +622,15 @@ export async function action({ request }: Route.ActionArgs) {
           (repoLines.length > 0 ? `\n\n*Repos*\n${repoLines.join("\n")}` : "");
         await postMessage(channelId, text);
 
-        const parts = [
-          channelNote,
-          `invited ${inv.invited} (members + core + admin)`,
-          `announced ${roster.length} member(s)`,
-        ];
-        if (missingMembers > 0) {
-          parts.push(`${missingMembers} without a Slack account (no email match)`);
-        }
-        results.slack = { status: "ok", message: `${parts.join("; ")}.` };
+        results.slack = {
+          status: "ok",
+          message: summarize(
+            channelNote,
+            `${inv.invited} invited`,
+            `${roster.length} announced`,
+            missingMembers > 0 && `${missingMembers} no Slack account`,
+          ),
+        };
       } catch (err) {
         results.slack = { status: "error", message: slackErrorMessage(err) };
       }
@@ -668,7 +671,7 @@ export async function action({ request }: Route.ActionArgs) {
         } else {
           parts.push(
             group.status === "ok"
-              ? `${group.created ? "created" : "found"} group ${group.email}`
+              ? `${group.email}${group.created ? " (new)" : ""}`
               : `group ${group.message}`,
           );
           if (group.status === "ok" && !project.teamGroupEmail) {
@@ -708,17 +711,15 @@ export async function action({ request }: Route.ActionArgs) {
               else already++;
             }
 
-            parts.push(`added ${added} member${added === 1 ? "" : "s"}`);
-            if (already > 0) parts.push(`${already} already in group`);
+            parts.push(`${added} added`);
+            if (already > 0) parts.push(`${already} already in`);
             if (missing.length > 0) {
-              parts.push(`skipped ${missing.length} with no DALI email (${missing.join(", ")})`);
+              parts.push(`${missing.length} no DALI email: ${missing.join(", ")}`);
             }
+            if (memberErrors.length > 0) parts.push(`failed: ${memberErrors.join("; ")}`);
             results.gmail = {
               status: memberErrors.length > 0 ? "error" : "ok",
-              message:
-                memberErrors.length > 0
-                  ? `${parts.join("; ")}; errors: ${memberErrors.join("; ")}`
-                  : `${parts.join("; ")}.`,
+              message: summarize(...parts),
             };
           }
         }
@@ -741,10 +742,7 @@ export async function action({ request }: Route.ActionArgs) {
     if (!process.env.GITHUB_ORG) {
       results.github = { status: "skipped", message: "GITHUB_ORG not set." };
     } else if (!slug) {
-      results.github = {
-        status: "skipped",
-        message: "No GitHub team slug provided — enter one in the Finalize modal.",
-      };
+      results.github = { status: "skipped", message: "No team slug set." };
     } else if (
       (await prisma.project.count({
         where: { id: { not: project.id }, githubTeamSlug: { equals: slug, mode: "insensitive" } },
@@ -754,7 +752,7 @@ export async function action({ request }: Route.ActionArgs) {
       // rosters into one team. Skip, matching the sync-teams sweep's guard.
       results.github = {
         status: "skipped",
-        message: `GitHub team slug "${slug}" is used by another project — skipped to avoid merging teams. Set a unique slug.`,
+        message: `Slug "${slug}" belongs to another project — set a unique one.`,
       };
     } else {
       try {
@@ -788,14 +786,14 @@ export async function action({ request }: Route.ActionArgs) {
           });
         }
 
-        const parts = [
-          `${team.created ? "Created" : "Updated"} team "${team.slug}"`,
-          `added ${withHandle.size} member${withHandle.size === 1 ? "" : "s"}`,
-        ];
-        if (missing.length > 0) {
-          parts.push(`skipped ${missing.length} with no GitHub username (${missing.join(", ")})`);
-        }
-        results.github = { status: "ok", message: `${parts.join("; ")}.` };
+        results.github = {
+          status: "ok",
+          message: summarize(
+            `${team.slug}${team.created ? " (new)" : ""}`,
+            `${withHandle.size} added`,
+            missing.length > 0 && `${missing.length} no GitHub username: ${missing.join(", ")}`,
+          ),
+        };
       } catch (err) {
         results.github = { status: "error", message: slackErrorMessage(err) };
       }
