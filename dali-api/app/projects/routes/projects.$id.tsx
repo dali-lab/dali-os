@@ -92,9 +92,16 @@ export const handle = {
 // TabWorkspace iframe, so we ask the parent shell to open /documents/:id in a
 // second pane beside the project (dali:openTabToSide → Layout). When somehow
 // rendered standalone (no iframe), fall back to a normal same-tab navigation.
+// Document panes this page asked the shell to open, so switching subtabs can
+// retract them (see closeOpenedDocumentTabs). Module-scoped because the open
+// calls happen deep in the Overview tree, and the iframe reloads — dropping
+// this set — whenever the page itself goes away.
+const openedDocumentUrls = new Set<string>();
+
 function openDocumentTab(pageId: string, label: string) {
   const url = `/documents/${pageId}`;
   if (typeof window !== "undefined" && window.self !== window.top) {
+    openedDocumentUrls.add(url);
     window.parent.postMessage(
       { type: "dali:openTabToSide", url, label },
       window.location.origin,
@@ -102,6 +109,21 @@ function openDocumentTab(pageId: string, label: string) {
   } else if (typeof window !== "undefined") {
     window.location.assign(url);
   }
+}
+
+// Documents are reachable only from Overview, so a doc pane left open while the
+// user reads Board or Planning is orphaned UI next to content it has nothing to
+// do with. Retract on subtab change; the shell no-ops for any the user already
+// closed, and keeps the rest reopenable via mod+shift+T.
+function closeOpenedDocumentTabs() {
+  if (typeof window === "undefined" || window.self === window.top) return;
+  for (const url of openedDocumentUrls) {
+    window.parent.postMessage(
+      { type: "dali:closeTab", url },
+      window.location.origin,
+    );
+  }
+  openedDocumentUrls.clear();
 }
 
 const STATUSES = ["Active", "Paused", "Archived"] as const;
@@ -1363,6 +1385,8 @@ export default function ProjectDetail() {
       ? tabParam
       : "overview";
   const setTab = (next: Tab) => {
+    if (next === tab) return;
+    closeOpenedDocumentTabs();
     setSearchParams(
       (prev) => {
         prev.set("tab", next);
