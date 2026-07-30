@@ -246,15 +246,40 @@ export function PageDocPage({
   return (
     <div className="flex min-h-[70vh] flex-col gap-5" aria-labelledby={TITLE_ID}>
       <header className="flex items-start justify-between gap-4 border-b border-border pb-4">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
+          {/* The input lives inside the h1 so the heading — and the
+              aria-labelledby that points at it — survives edit mode; a text
+              input's value carries into the accessible name. */}
           <h1 id={TITLE_ID} className="font-heading text-xl font-bold text-foreground sm:text-2xl">
-            {editing ? draftTitle || fallbackTitle : (data?.doc.title ?? fallbackTitle)}
+            {editing ? (
+              <input
+                value={draftTitle}
+                onChange={(e) => setDraftTitle(e.target.value)}
+                placeholder={fallbackTitle}
+                aria-label="Guide title"
+                className="w-full rounded-md border border-transparent bg-transparent px-1.5 py-0.5 -ml-1.5 font-heading text-xl font-bold text-foreground hover:border-border focus:border-border focus:bg-background focus:outline-none focus:ring-2 focus:ring-accent-coral/30 sm:text-2xl"
+              />
+            ) : (
+              (data?.doc.title ?? fallbackTitle)
+            )}
           </h1>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {data?.maintainer
-              ? `Maintained by ${data.maintainer.name}${data.maintainer.handle ? ` · @${data.maintainer.handle}` : ""}`
-              : "No maintainer assigned yet"}
-          </p>
+          {editing && data?.canAssignMaintainer ? (
+            <div className="mt-1.5 max-w-sm">
+              <MaintainerPicker
+                currentLabel={maintainerLabel}
+                onSelect={(u) => {
+                  setMaintainerId(u?.id ?? null);
+                  setMaintainerLabel(u?.name ?? null);
+                }}
+              />
+            </div>
+          ) : (
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {data?.maintainer
+                ? `Maintained by ${data.maintainer.name}${data.maintainer.handle ? ` · @${data.maintainer.handle}` : ""}`
+                : "No maintainer assigned yet"}
+            </p>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           {headerActions}
@@ -281,31 +306,6 @@ export function PageDocPage({
 
       {status === "ready" && data && (
         <div className="flex flex-col gap-5">
-          {editing && (
-            <div className="flex flex-col gap-3 rounded-lg border border-border bg-muted/20 p-3">
-              <label className="flex flex-col gap-1">
-                <span className={SECTION_LABEL_CLASS}>Guide title</span>
-                <input
-                  value={draftTitle}
-                  onChange={(e) => setDraftTitle(e.target.value)}
-                  className="rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-                />
-              </label>
-              {data.canAssignMaintainer && (
-                <div className="flex flex-col gap-1">
-                  <span className={SECTION_LABEL_CLASS}>Maintainer</span>
-                  <MaintainerPicker
-                    currentLabel={maintainerLabel}
-                    onSelect={(u) => {
-                      setMaintainerId(u?.id ?? null);
-                      setMaintainerLabel(u?.name ?? null);
-                    }}
-                  />
-                </div>
-              )}
-            </div>
-          )}
-
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
             <SectionSidebar
               sections={sections.map((s) => ({ id: s.id, title: s.title }))}
