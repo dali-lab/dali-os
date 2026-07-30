@@ -552,8 +552,10 @@ function ProjectsTable({ rows }: { rows: ProjectRow[] }) {
                 </div>
               </td>
               <td className="px-4 py-2">
-                <StatusPill status={p.status} />
-                <PublicPill status={p.showcaseStatus} />
+                <div className="flex items-center gap-1.5">
+                  <StatusPill status={p.status} />
+                  <PublicPill status={p.showcaseStatus} />
+                </div>
               </td>
               <td className="px-4 py-2 text-muted-foreground">
                 {p.partners.length > 0 ? p.partners.map((pp) => pp.name).join(", ") : "—"}
@@ -594,8 +596,10 @@ function ProjectCard({ project }: { project: ProjectRow }) {
           <ProjectIcon iconEmoji={project.iconEmoji} />
           <span className="truncate">{project.name}</span>
         </span>
-        <StatusPill status={project.status} />
-        <PublicPill status={project.showcaseStatus} />
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          <StatusPill status={project.status} />
+          <PublicPill status={project.showcaseStatus} />
+        </div>
       </div>
       {project.firstTermCode && (
         <div className="text-xs text-muted-foreground">Start term {project.firstTermCode}</div>
