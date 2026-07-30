@@ -25,6 +25,7 @@ import {
   linkExtension,
 } from "./editor/shared";
 import { mentionEditorExtension, searchMentionableUsers } from "./editor/mention";
+import { imageEditorExtensions } from "./editor/image";
 import { useDialog, type DialogApi } from "~/components/ui/dialog";
 
 interface RichTextEditorProps {
@@ -40,6 +41,11 @@ interface RichTextEditorProps {
   // headings/lists/quote/link/undo). Off by default — other surfaces keep the
   // minimal selection-only link toolbar.
   richToolbar?: boolean;
+  // Opt in to pasting/dropping images, uploaded to S3 and inserted by URL
+  // (same pipeline as the collaborative editor). Off by default: the short
+  // description fields this component also backs shouldn't accept images.
+  // RichTextViewer needs the matching flag, or saved images won't render.
+  enableImages?: boolean;
 }
 
 const LINK_PROTOCOLS = ["http", "https", "mailto"];
@@ -64,9 +70,16 @@ export function RichTextEditor({
   className,
   enableMentions = false,
   richToolbar = false,
+  enableImages = false,
 }: RichTextEditorProps) {
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+
+  const [imageError, setImageError] = useState<string | null>(null);
+  // The extension list is built once, so reach the current setter through a ref
+  // rather than closing over the first render's.
+  const imageErrorRef = useRef(setImageError);
+  imageErrorRef.current = setImageError;
 
   const editor = useEditor({
     immediatelyRender: false,
@@ -75,6 +88,7 @@ export function RichTextEditor({
       Placeholder.configure({ placeholder }),
       linkExtension({ interactive: false }),
       ...(enableMentions ? [mentionEditorExtension(searchMentionableUsers)] : []),
+      ...(enableImages ? imageEditorExtensions((m) => imageErrorRef.current(m)) : []),
     ],
     content: isProseMirrorDoc(value) ? (value as object) : "",
     editable: !disabled,
@@ -102,6 +116,11 @@ export function RichTextEditor({
         )
       ) : null}
       <EditorContent editor={editor} />
+      {imageError && (
+        <p className="px-3 pb-2 text-xs text-destructive">
+          Couldn't add the image — {imageError}
+        </p>
+      )}
     </EditorShell>
   );
 }

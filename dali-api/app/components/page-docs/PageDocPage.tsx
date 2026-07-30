@@ -509,7 +509,7 @@ function SectionReadPanel({ section }: { section: SectionData }) {
       {emptyBody ? (
         <p className={EMPTY_CLASS}>No guide written for this section yet.</p>
       ) : (
-        <RichTextViewer content={section.body} enableMentions />
+        <RichTextViewer content={section.body} enableMentions enableImages />
       )}
     </div>
   );
@@ -617,6 +617,7 @@ function SectionEditPanel({
           value={section.body}
           onChange={(body) => onChange({ body })}
           enableMentions
+          enableImages
           richToolbar
           placeholder="Explain this section of the page."
         />
