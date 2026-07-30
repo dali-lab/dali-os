@@ -26,6 +26,13 @@ import { ALL_TERMS } from "~/lib/terms.shared";
 import { ProjectCoverImage } from "~/projects/components/ProjectCoverImage";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import { ProjectIconPicker } from "~/projects/components/ProjectIconPicker";
+import { Globe } from "lucide-react";
+import {
+  matchesShowcaseFilter,
+  SHOWCASE_FILTER_ALL,
+  SHOWCASE_FILTER_NONE,
+  type ShowcaseStatusValue,
+} from "../lib/showcase-filter";
 
 export const handle = {
   areaPills: true,
@@ -36,6 +43,27 @@ export const handle = {
 export const meta: Route.MetaFunction = () => [{ title: "Projects · DALI OS" }];
 
 type ProjectStatus = "Active" | "Paused" | "Archived";
+
+// "none" is its own filter value, not a showcase status: a project whose Public
+// view has never been opened has no row at all, and "which projects has nobody
+// written up yet" is the question this filter gets asked most.
+const SHOWCASE_FILTERS: { value: string; label: string }[] = [
+  { value: SHOWCASE_FILTER_ALL, label: "Any" },
+  { value: "Published", label: "Published" },
+  { value: "NeedsReview", label: "Needs review" },
+  { value: "InProgress", label: "In progress" },
+  { value: "NotStarted", label: "Not started" },
+  { value: "Archive", label: "Archived" },
+  { value: SHOWCASE_FILTER_NONE, label: "Not written up" },
+];
+
+const SHOWCASE_LABELS: Record<ShowcaseStatusValue, string> = {
+  Published: "Published",
+  NeedsReview: "Needs review",
+  InProgress: "In progress",
+  NotStarted: "Not started",
+  Archive: "Archived",
+};
 
 type ProjectPartnerOut = {
   name: string;
@@ -50,6 +78,9 @@ type ProjectRow = {
   firstTermCode: string | null;
   imageUrl: string | null;
   partners: ProjectPartnerOut[];
+  // Publication state of the project's public showcase card, or null when it
+  // has none yet. Distinct from `status`, which is the internal lifecycle.
+  showcaseStatus: ShowcaseStatusValue | null;
 };
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -83,6 +114,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       partners: {
         select: { partnerOrg: { select: { name: true, logoUrl: true } } },
       },
+      showcase: { select: { status: true } },
     },
   });
 
@@ -105,6 +137,7 @@ export async function loader({ request }: Route.LoaderArgs) {
             logoUrl: await resolvePhotoUrl(pp.partnerOrg.logoUrl),
           })),
         ),
+        showcaseStatus: p.showcase?.status ?? null,
       };
     }),
   );
@@ -225,18 +258,26 @@ export default function ProjectsListPage() {
   const [newIconEmoji, setNewIconEmoji] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [mineOnly, setMineOnly] = useState(false);
+  // In the URL (like ?term=) rather than component state, so "show me every
+  // project still needing a write-up" is a link someone can share.
+  const showcaseFilter = searchParams.get("public") ?? SHOWCASE_FILTER_ALL;
   const [view, setView] = useViewPreference("dali:view:projects", "list");
 
   const filtered = useMemo(() => {
     const mine = new Set(myProjectIds);
-    const base = mineOnly ? rows.filter((r) => mine.has(r.id)) : rows;
+    let base = mineOnly ? rows.filter((r) => mine.has(r.id)) : rows;
+    if (showcaseFilter !== SHOWCASE_FILTER_ALL) {
+      base = base.filter((r) =>
+        matchesShowcaseFilter(r.showcaseStatus, showcaseFilter),
+      );
+    }
     const q = query.trim().toLowerCase();
     if (!q) return base;
     return base.filter((r) => {
       if (r.name.toLowerCase().includes(q)) return true;
       return r.partners.some((p) => p.name.toLowerCase().includes(q));
     });
-  }, [rows, query, mineOnly, myProjectIds]);
+  }, [rows, query, mineOnly, myProjectIds, showcaseFilter]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -381,11 +422,35 @@ export default function ProjectsListPage() {
         >
           My projects
         </button>
-        <TermFilter terms={terms} selected={selectedTerm} />
+        <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+          Term
+          <TermFilter terms={terms} selected={selectedTerm} />
+        </label>
+        <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+          Website
+          <select
+            value={showcaseFilter}
+            onChange={(e) => {
+              const next = new URLSearchParams(searchParams);
+              if (e.target.value === SHOWCASE_FILTER_ALL) next.delete("public");
+              else next.set("public", e.target.value);
+              setSearchParams(next);
+            }}
+            aria-label="Filter by status on dali.website"
+            className="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground sm:w-40"
+          >
+            {SHOWCASE_FILTERS.map((f) => (
+              <option key={f.value} value={f.value}>
+                {f.label}
+              </option>
+            ))}
+          </select>
+        </label>
         <ViewToggle value={view} onChange={setView} />
         <span className="text-xs text-muted-foreground ml-auto">
           {filtered.length} {filtered.length === 1 ? "project" : "projects"}
-          {(query || mineOnly) && filtered.length !== rows.length
+          {(query || mineOnly || showcaseFilter !== SHOWCASE_FILTER_ALL) &&
+          filtered.length !== rows.length
             ? ` of ${rows.length}`
             : ""}
         </span>
@@ -397,6 +462,21 @@ export default function ProjectsListPage() {
             "No projects match this search."
           ) : mineOnly && rows.length > 0 ? (
             "You're not on any of these projects."
+          ) : showcaseFilter !== SHOWCASE_FILTER_ALL && rows.length > 0 ? (
+            <>
+              No projects have that public status.{" "}
+              <button
+                type="button"
+                onClick={() => {
+                  const next = new URLSearchParams(searchParams);
+                  next.delete("public");
+                  setSearchParams(next);
+                }}
+                className="font-medium text-accent-coral hover:underline"
+              >
+                Clear the filter
+              </button>
+            </>
           ) : hiddenByTermFilter ? (
             // Projects exist — the default current-term filter just hides them
             // all. Say so, and offer the one-click way out.
@@ -473,6 +553,7 @@ function ProjectsTable({ rows }: { rows: ProjectRow[] }) {
               </td>
               <td className="px-4 py-2">
                 <StatusPill status={p.status} />
+                <PublicPill status={p.showcaseStatus} />
               </td>
               <td className="px-4 py-2 text-muted-foreground">
                 {p.partners.length > 0 ? p.partners.map((pp) => pp.name).join(", ") : "—"}
@@ -514,6 +595,7 @@ function ProjectCard({ project }: { project: ProjectRow }) {
           <span className="truncate">{project.name}</span>
         </span>
         <StatusPill status={project.status} />
+        <PublicPill status={project.showcaseStatus} />
       </div>
       {project.firstTermCode && (
         <div className="text-xs text-muted-foreground">Start term {project.firstTermCode}</div>
@@ -563,6 +645,23 @@ function PartnerChip({ partner }: { partner: ProjectPartnerOut }) {
         <img src={partner.logoUrl} alt="" className="w-3.5 h-3.5 rounded-sm object-contain" />
       )}
       {partner.name}
+    </span>
+  );
+}
+
+// Marks a project as live on dali.website. Only Published gets a badge: it's
+// the state with consequences outside the lab, and badging all five would put a
+// second pill on every row in a list that is mostly not published. The filter
+// covers the other states.
+function PublicPill({ status }: { status: ShowcaseStatusValue | null }) {
+  if (status !== "Published") return null;
+  return (
+    <span
+      title="Published on dali.website"
+      className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded border bg-accent-coral/10 text-accent-coral border-accent-coral/40"
+    >
+      <Globe className="w-3 h-3" />
+      {SHOWCASE_LABELS.Published}
     </span>
   );
 }
