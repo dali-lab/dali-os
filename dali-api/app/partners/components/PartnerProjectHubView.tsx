@@ -1,566 +1,575 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router";
-import { Download, Eye, X } from "lucide-react";
+import { useState } from "react";
+import { Link, useSearchParams } from "react-router";
+import {
+  CalendarClock,
+  CheckCircle2,
+  Download,
+  ExternalLink,
+  Eye,
+  FileText,
+  X,
+} from "lucide-react";
 import { termCodeLabel } from "~/lib/display";
 import { formatBytes } from "~/lib/upload-client";
 import { Avatar } from "~/components/ui/Avatar";
 import { Markdown } from "~/components/Markdown";
 import { Modal } from "~/components/Modal";
+import { CommentsRail } from "~/components/collab/CommentsRail";
 import { PartnerBackLink } from "~/partners/components/PartnerBackLink";
+import { PartnerWeekCalendar } from "~/partners/components/PartnerWeekCalendar";
 import { ProjectCoverImage } from "~/projects/components/ProjectCoverImage";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import type {
-  PartnerProjectEpic,
-  PartnerProjectSprint,
-  PartnerProjectStory,
+  PartnerActivityKind,
+  PartnerProjectArea,
   PartnerProjectViewData,
-  PartnerWorkState,
 } from "~/partners/lib/partner-project-view.server";
 
 type SharedFile = PartnerProjectViewData["sharedFiles"][number];
 
+// Types the browser can render inline (image/pdf/text). Everything else is
+// download-only, so the row offers Download rather than Preview.
+function isPreviewable(contentType: string | null): boolean {
+  const ct = contentType ?? "";
+  return (
+    ct.startsWith("image/") ||
+    ct === "application/pdf" ||
+    ct.startsWith("text/") ||
+    ct === "application/json"
+  );
+}
+
 const fmtDate = (iso: string) =>
   new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
-const EPIC_STATUS_LABEL: Record<PartnerProjectEpic["status"], string> = {
-  Backlog: "Backlog",
-  Open: "Open",
-  InProgress: "In progress",
-  Done: "Done",
-  Cancelled: "Cancelled",
-};
+const fmtDateTime = (iso: string) =>
+  new Date(iso).toLocaleString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 
-// Colour language, matched to the internal EpicsTimeline so both hubs read the
-// same way: coral is the epic hue, teal the sprint hue, and a story inherits
-// its epic's coral. Work that hasn't started is muted/dashed; finished work
-// fades. Every pill also carries a word, so hue never has to carry state alone.
-const EPIC_PILL: Record<PartnerProjectEpic["status"], string> = {
-  Backlog: "bg-muted text-muted-foreground",
-  Open: "bg-accent-coral/10 text-accent-coral",
-  InProgress: "bg-accent-coral/10 text-accent-coral",
-  Done: "bg-accent-coral/10 text-accent-coral/70",
-  Cancelled: "bg-muted text-muted-foreground",
-};
+// Shared surface tokens so every tab panel reads the same.
+const PANEL_HEADING = "font-heading text-lg font-semibold text-dark-blue";
+const CARD = "bg-card border border-border rounded-2xl";
+const EMPTY_CARD =
+  "bg-card border border-border rounded-2xl p-6 text-sm text-muted-foreground";
 
-// Story dots inherit the epic's coral: dashed grey before it starts, solid
-// coral in progress, faded coral once done.
-const STORY_DOT: Record<PartnerProjectStory["status"], string> = {
-  Todo: "border-2 border-dashed border-brand-gray",
-  InProgress: "bg-accent-coral",
-  Done: "bg-accent-coral/50",
-};
+const PARTNER_TABS = [
+  { id: "overview", label: "Overview" },
+  { id: "progress", label: "Progress" },
+  { id: "deliverables", label: "Deliverables" },
+  { id: "meetings", label: "Meetings" },
+  { id: "team", label: "Team" },
+] as const;
+type PartnerTabId = (typeof PARTNER_TABS)[number]["id"];
 
-const sprintState = (s: PartnerProjectSprint): PartnerWorkState =>
-  s.status === "Active" ? "current" : s.status === "Planned" ? "planned" : "past";
-
-const STORY_PRIORITY_TONE: Record<
-  NonNullable<PartnerProjectStory["priority"]>,
-  string
+// Plain-language presentation for an area's state — no agile vocabulary.
+const AREA_STATE: Record<
+  PartnerProjectArea["state"],
+  { label: string; pill: string; bar: string }
 > = {
-  Must: "text-accent-coral font-semibold",
-  Should: "text-foreground",
-  Could: "text-muted-foreground",
-  Wont: "text-muted-foreground line-through",
+  "in-progress": {
+    label: "In progress",
+    pill: "bg-accent-coral/10 text-accent-coral",
+    bar: "bg-accent-coral",
+  },
+  done: {
+    label: "Done",
+    pill: "bg-accent-teal/15 text-accent-teal",
+    bar: "bg-accent-teal",
+  },
+  upcoming: {
+    label: "Coming up",
+    pill: "bg-muted text-muted-foreground",
+    bar: "bg-muted-foreground/30",
+  },
 };
 
-// Scope: the product requirements the epic delivers, as a read-only table with
-// every column partners can see (success metric, acceptance criteria, etc.).
-function StoryList({ stories }: { stories: PartnerProjectStory[] }) {
-  if (stories.length === 0) return null;
-  const done = stories.filter((s) => s.status === "Done").length;
+// Project identity + a plain progress line ("About 42% complete"). No sprint
+// counts or health verdict — just how much of the work is done.
+function ProjectHeader({
+  project,
+  partnerSince,
+  progress,
+  backLink,
+}: {
+  project: PartnerProjectViewData["project"];
+  partnerSince: string | null;
+  progress: PartnerProjectViewData["progress"];
+  backLink?: { to: string; label: string };
+}) {
+  const pct =
+    progress.overallTotal > 0
+      ? Math.round((progress.overallDone / progress.overallTotal) * 100)
+      : 0;
+  const meta = [
+    project.terms.length > 0
+      ? `Terms: ${project.terms.map(termCodeLabel).join(", ")}`
+      : null,
+    partnerSince ? `Partner since ${fmtDate(partnerSince)}` : null,
+  ].filter(Boolean);
   return (
     <div>
-      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-2">
-        Requirements · {done}/{stories.length} done
-      </p>
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-sm">
-          <thead>
-            <tr className="border-b border-border text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              <th className="py-1.5 pr-3">Requirement</th>
-              <th className="py-1.5 px-3">Category</th>
-              <th className="py-1.5 px-3">Priority</th>
-              <th className="py-1.5 px-3">Success metric</th>
-              <th className="py-1.5 px-3">Acceptance criteria</th>
-              <th className="py-1.5 pl-3">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {stories.map((story) => (
-              <tr key={story.id} className="border-b border-border/60 align-top">
-                <td
-                  className={`min-w-[160px] py-2 pr-3 ${
-                    story.status === "Done"
-                      ? "text-muted-foreground line-through"
-                      : "text-foreground"
-                  }`}
-                >
-                  {story.title}
-                </td>
-                <td className="py-2 px-3 text-muted-foreground">
-                  {story.category ?? "—"}
-                </td>
-                <td className="py-2 px-3">
-                  {story.priority ? (
-                    <span className={`text-xs ${STORY_PRIORITY_TONE[story.priority]}`}>
-                      {story.priority}
-                    </span>
-                  ) : (
-                    <span className="text-muted-foreground">—</span>
-                  )}
-                </td>
-                <td className="max-w-[220px] whitespace-pre-wrap py-2 px-3 text-muted-foreground">
-                  {story.successMetric ?? "—"}
-                </td>
-                <td className="max-w-[220px] whitespace-pre-wrap py-2 px-3 text-muted-foreground">
-                  {story.acceptanceCriteria ?? "—"}
-                </td>
-                <td className="whitespace-nowrap py-2 pl-3 text-[11px] text-muted-foreground">
-                  {story.status}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-// A live or upcoming sprint — the sprints a partner should actually look at.
-// Active sprints carry a teal progress bar (teal is the sprint hue); planned
-// ones stay dashed and quiet until they start.
-function SprintCard({ s }: { s: PartnerProjectSprint }) {
-  const state = sprintState(s);
-  const total = s.done + s.open;
-  const pct = total > 0 ? Math.round((s.done / total) * 100) : 0;
-  return (
-    <div
-      className={`rounded-xl p-4 ${
-        state === "current"
-          ? "bg-accent-teal/5 border border-accent-teal/30"
-          : "border border-dashed border-border"
-      }`}
-    >
-      <div className="flex items-center justify-between gap-3">
-        <span className="font-heading font-semibold text-dark-blue text-sm">
-          {s.name}
-        </span>
-        <span
-          className={`text-xs rounded-full px-2 py-0.5 flex-shrink-0 ${
-            state === "current"
-              ? "bg-accent-teal/15 text-accent-teal"
-              : "bg-muted text-muted-foreground"
-          }`}
-        >
-          {state === "current" ? "In progress" : "Planned"}
-        </span>
-      </div>
-      <p className="text-xs text-muted-foreground mt-1">
-        {fmtDate(s.startsAt)} – {fmtDate(s.endsAt)}
-      </p>
-      {state === "current" && (
-        <div className="mt-3">
-          <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
-            <span>
-              {s.done} of {total} tasks done
-            </span>
-            <span>{pct}%</span>
-          </div>
-          <div className="h-2 rounded-full bg-muted overflow-hidden">
-            <div
-              className="h-full bg-accent-teal rounded-full"
-              style={{ width: `${pct}%` }}
-            />
+      {backLink && <PartnerBackLink to={backLink.to} label={backLink.label} />}
+      <div className={`${CARD} overflow-hidden ${backLink ? "mt-2" : ""}`}>
+        <ProjectCoverImage
+          name={project.name}
+          imageUrl={project.imageUrl}
+          className="w-full h-40 object-cover"
+          placeholderClassName="w-full h-40"
+        />
+        <div className="p-5">
+          <h1 className="flex items-center gap-2 font-heading text-3xl font-bold text-dark-blue">
+            <ProjectIcon iconEmoji={project.iconEmoji} size="lg" />
+            <span className="min-w-0 truncate">{project.name}</span>
+          </h1>
+          {meta.length > 0 && (
+            <p className="text-sm text-muted-foreground mt-1">{meta.join(" · ")}</p>
+          )}
+          <div className="mt-3 max-w-md">
+            <p className="text-sm font-medium text-dark-blue">
+              {progress.overallTotal > 0 ? `About ${pct}% complete` : "Getting started"}
+            </p>
+            {progress.overallTotal > 0 && (
+              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full bg-accent-teal"
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+            )}
           </div>
         </div>
-      )}
-      {state === "planned" && total > 0 && (
-        <p className="text-xs text-muted-foreground mt-2">
-          {total} task{total === 1 ? "" : "s"} queued
-        </p>
-      )}
-    </div>
-  );
-}
-
-// A wrapped sprint — history, so it collapses to one settled line.
-function PastSprintRow({ s }: { s: PartnerProjectSprint }) {
-  const total = s.done + s.open;
-  return (
-    <div className="flex items-center gap-2 py-1.5 text-sm">
-      <span className="text-accent-teal flex-shrink-0">✓</span>
-      <span className="min-w-0 flex-1 truncate text-muted-foreground">{s.name}</span>
-      <span className="text-xs text-muted-foreground flex-shrink-0">
-        {s.done}/{total} · {fmtDate(s.endsAt)}
-      </span>
-    </div>
-  );
-}
-
-// Sprints of one epic (or the epic-less bucket), ordered by attention: what's
-// live, then what's next, then completed history tucked behind a disclosure.
-function SprintGroup({ sprints }: { sprints: PartnerProjectSprint[] }) {
-  if (sprints.length === 0) return null;
-  const current = sprints.filter((s) => sprintState(s) === "current");
-  const planned = sprints.filter((s) => sprintState(s) === "planned");
-  const past = sprints.filter((s) => sprintState(s) === "past");
-  return (
-    <div className="flex flex-col gap-3 border-l-2 border-border pl-4">
-      {current.map((s) => (
-        <SprintCard key={s.id} s={s} />
-      ))}
-      {planned.map((s) => (
-        <SprintCard key={s.id} s={s} />
-      ))}
-      {past.length > 0 && (
-        <details>
-          <summary className="cursor-pointer select-none text-xs font-medium text-muted-foreground hover:text-foreground">
-            {past.length} completed sprint{past.length === 1 ? "" : "s"}
-          </summary>
-          <div className="mt-1 flex flex-col divide-y divide-border">
-            {past.map((s) => (
-              <PastSprintRow key={s.id} s={s} />
-            ))}
-          </div>
-        </details>
-      )}
-    </div>
-  );
-}
-
-function EpicCard({ epic }: { epic: PartnerProjectEpic }) {
-  return (
-    <div className="bg-card border border-border rounded-2xl p-5 flex flex-col gap-4">
-      <div>
-        <div className="flex items-center justify-between gap-3">
-          <h3 className="font-heading font-semibold text-dark-blue text-base">
-            {epic.title}
-          </h3>
-          <span className={`text-xs rounded-full px-2 py-0.5 flex-shrink-0 ${EPIC_PILL[epic.status]}`}>
-            {EPIC_STATUS_LABEL[epic.status]}
-          </span>
-        </div>
-        {epic.startsAt && epic.endsAt && (
-          <p className="text-xs text-muted-foreground mt-1">
-            {fmtDate(epic.startsAt)} – {fmtDate(epic.endsAt)}
-          </p>
-        )}
       </div>
-      <StoryList stories={epic.stories} />
-      <SprintGroup sprints={epic.sprints} />
     </div>
   );
 }
 
-// Hero readout: names the live sprint so a partner lands on "where are we
-// right now" before anything else.
-function MomentumReadout({
-  momentum,
-}: {
-  momentum: NonNullable<PartnerProjectViewData["momentum"]>;
-}) {
-  return (
-    <div className="rounded-2xl bg-brand-tint px-5 py-4 sm:min-w-[13rem]">
-      <p className="text-xs font-medium uppercase tracking-wide text-accent-teal">
-        Current sprint
-      </p>
-      <p className="mt-1 font-heading font-bold text-dark-blue text-lg leading-snug">
-        {momentum.label}
-      </p>
-    </div>
-  );
-}
-
-type NavSection = { id: string; label: string };
-
-// Tracks which section is currently in view so the side nav can highlight it.
-// Picks the topmost section whose top has scrolled past the header band.
-function useActiveSection(ids: string[]): string {
-  const [active, setActive] = useState(ids[0] ?? "");
-  const key = ids.join(",");
-  useEffect(() => {
-    const els = ids
-      .map((id) => document.getElementById(id))
-      .filter((el): el is HTMLElement => el !== null);
-    if (els.length === 0) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries
-          .filter((e) => e.isIntersecting)
-          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
-        if (visible[0]) setActive(visible[0].target.id);
-      },
-      // Active band sits just below the fixed navbar; a section counts once its
-      // top clears the header and before it leaves the upper 40% of the view.
-      { rootMargin: "-96px 0px -60% 0px" },
-    );
-    els.forEach((el) => observer.observe(el));
-    return () => observer.disconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
-  return active;
-}
-
-// In-page table of contents. Sticky beside the sections on wide screens;
-// hidden on narrow ones, where the page just scrolls.
-function SectionNav({
-  sections,
+// The project workspace's section tabs. Client-side tab state lives in the
+// `?tab=` search param so each section has a shareable, back-navigable URL
+// without a loader round-trip (all the data is already client-side).
+function TabBar({
   active,
+  onSelect,
 }: {
-  sections: NavSection[];
-  active: string;
+  active: PartnerTabId;
+  onSelect: (id: PartnerTabId) => void;
 }) {
   return (
-    <nav className="hidden lg:block lg:w-44 lg:flex-shrink-0 lg:sticky lg:top-20 lg:self-start">
-      <p className="mb-2 px-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        On this page
-      </p>
-      <ul className="flex flex-col gap-0.5">
-        {sections.map((s) => (
-          <li key={s.id}>
+    <div className="border-b border-border">
+      <nav className="-mb-px flex gap-1 overflow-x-auto" aria-label="Project sections">
+        {PARTNER_TABS.map((t) => {
+          const isActive = t.id === active;
+          return (
             <button
+              key={t.id}
               type="button"
-              onClick={() =>
-                document
-                  .getElementById(s.id)
-                  ?.scrollIntoView({ behavior: "smooth", block: "start" })
-              }
-              className={`w-full rounded-lg px-3 py-1.5 text-left text-sm transition ${
-                active === s.id
-                  ? "bg-brand-tint font-medium text-dark-blue"
-                  : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+              onClick={() => onSelect(t.id)}
+              aria-current={isActive ? "page" : undefined}
+              className={`whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition ${
+                isActive
+                  ? "border-accent-coral text-accent-coral"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
               }`}
             >
-              {s.label}
+              {t.label}
             </button>
-          </li>
-        ))}
-      </ul>
-    </nav>
+          );
+        })}
+      </nav>
+    </div>
   );
 }
 
-// Renders the partner-facing read surface for a project. Shared by the real
+// Renders the partner-facing read surface for a project as a tabbed workspace,
+// written for a busy, non-technical audience: a plain status header, then
+// Overview / Progress / Deliverables / Meetings / Team. Shared by the real
 // partner portal (partner.projects.$id.tsx) and the in-app preview any
 // signed-in member can open from the project page
-// (projects.$id.partner-view.tsx) — same content, different chrome around it
-// via `backLink`, and pageHref for shared-document links. `backLink` is
-// optional: the in-app preview instead swaps the project page's "Partner
-// view" header button for an "Internal view" one (see that route's
-// `handle.headerAction`), so it has no back link of its own here.
+// (projects.$id.partner-view.tsx) — same content, different chrome via
+// `backLink`, and `pageHref` for shared-document links.
 export function PartnerProjectHubView({
   data,
+  currentUserId,
   backLink,
   pageHref,
+  canRsvp = false,
 }: {
   data: PartnerProjectViewData;
+  currentUserId: string;
   backLink?: { to: string; label: string };
   pageHref: (pageId: string) => string;
+  // Whether the RSVP controls are live (real portal only).
+  canRsvp?: boolean;
+}) {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const raw = searchParams.get("tab");
+  const active: PartnerTabId = PARTNER_TABS.some((t) => t.id === raw)
+    ? (raw as PartnerTabId)
+    : "overview";
+  const selectTab = (id: PartnerTabId) =>
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (id === "overview") next.delete("tab");
+        else next.set("tab", id);
+        return next;
+      },
+      { preventScrollReset: true },
+    );
+
+  return (
+    <div className="flex flex-col gap-6">
+      <ProjectHeader
+        project={data.project}
+        partnerSince={data.partnerSince}
+        progress={data.progress}
+        backLink={backLink}
+      />
+      <TabBar active={active} onSelect={selectTab} />
+
+      {active === "overview" && (
+        <OverviewPanel data={data} pageHref={pageHref} onNavigate={selectTab} />
+      )}
+      {active === "progress" && <ProgressPanel areas={data.areas} />}
+      {active === "deliverables" && (
+        <DeliverablesPanel
+          links={data.links}
+          sharedPages={data.sharedPages}
+          sharedFiles={data.sharedFiles}
+          pageHref={pageHref}
+          currentUserId={currentUserId}
+        />
+      )}
+      {active === "meetings" && (
+        <MeetingsPanel
+          meetings={data.meetings}
+          pageHref={pageHref}
+          canRsvp={canRsvp}
+          teamContact={data.teamContact}
+          projectName={data.project.name}
+        />
+      )}
+      {active === "team" && (
+        <TeamPanel team={data.team} currentTermCode={data.currentTermCode} />
+      )}
+    </div>
+  );
+}
+
+// The default landing — answers "how's my project going" plainly: overall
+// progress, what the team is on now, what's been delivered (proof of work),
+// what's next, and recent updates.
+function OverviewPanel({
+  data,
+  pageHref,
+  onNavigate,
+}: {
+  data: PartnerProjectViewData;
+  pageHref: (pageId: string) => string;
+  onNavigate: (id: PartnerTabId) => void;
 }) {
   const {
     project,
-    partnerSince,
-    currentTermCode,
-    team,
-    momentum,
-    epics,
-    ungroupedSprints,
-    recentlyDone,
+    progress,
+    currentFocus,
+    meetings,
+    activity,
+    links,
     sharedPages,
     sharedFiles,
   } = data;
-
-  const hasWork = epics.length > 0 || ungroupedSprints.length > 0;
-
-  // Shared-file inline preview (mirrors the internal file view): clicking a
-  // file opens it in a modal — image/PDF inline, everything else a download.
-  const [previewFile, setPreviewFile] = useState<SharedFile | null>(null);
-
-  // The roadmap opens on live work — epics that are Open or In progress. The
-  // rest (Backlog, Done) sit behind a toggle so a partner isn't wading through
-  // finished or not-yet-started epics to see what's happening now.
-  const [showAllEpics, setShowAllEpics] = useState(false);
-  const activeEpics = epics.filter(
-    (e) => e.status === "Open" || e.status === "InProgress",
-  );
-  const hiddenEpicCount = epics.length - activeEpics.length;
-  const visibleEpics = showAllEpics ? epics : activeEpics;
-
-  // Section anchors for the side nav — only the ones actually rendered.
-  const sections: NavSection[] = [
-    { id: "roadmap", label: "Roadmap" },
-    ...(recentlyDone.length > 0
-      ? [{ id: "recently-completed", label: "Recently completed" }]
-      : []),
-    { id: "shared-documents", label: "Shared documents" },
-    { id: "shared-files", label: "Shared files" },
-    ...(team.length > 0 ? [{ id: "team", label: "Team" }] : []),
-  ];
-  const activeSection = useActiveSection(sections.map((s) => s.id));
+  const nextMeeting = meetings[0] ?? null;
+  const pct =
+    progress.overallTotal > 0
+      ? Math.round((progress.overallDone / progress.overallTotal) * 100)
+      : 0;
+  const newCount = activity.filter((a) => a.isNew).length;
+  const deliverableCount = links.length + sharedPages.length + sharedFiles.length;
 
   return (
-    <div className="flex flex-col gap-8">
-      <div>
-        {backLink && (
-          <PartnerBackLink to={backLink.to} label={backLink.label} />
-        )}
-        <div
-          className={`bg-card border border-border rounded-2xl overflow-hidden ${backLink ? "mt-2" : ""}`}
-        >
-          <ProjectCoverImage
-            name={project.name}
-            imageUrl={project.imageUrl}
-            className="w-full h-40 object-cover"
-            placeholderClassName="w-full h-40"
-          />
-          <div className="p-5">
-            <div className="flex flex-col-reverse gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0">
-                <h1 className="flex items-center gap-2 font-heading text-3xl font-bold text-dark-blue">
-                  <ProjectIcon iconEmoji={project.iconEmoji} size="lg" />
-                  <span className="min-w-0 truncate">{project.name}</span>
-                </h1>
-                <p className="text-sm text-muted-foreground mt-1">
-                  {[
-                    project.terms.length > 0
-                      ? `Terms: ${project.terms.map(termCodeLabel).join(", ")}`
-                      : null,
-                    partnerSince ? `Partner since ${fmtDate(partnerSince)}` : null,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </p>
-                {/* Same Markdown renderer as the internal Overview tab, so a
-                    description written with formatting reads the same on both
-                    surfaces. */}
-                {project.description && (
-                  <div className="mt-3">
-                    <Markdown>{project.description}</Markdown>
-                  </div>
-                )}
+    <div className="flex flex-col gap-6">
+      {project.description && (
+        <div className={`${CARD} p-5`}>
+          <Markdown>{project.description}</Markdown>
+        </div>
+      )}
+
+      <div className="grid gap-4 md:grid-cols-2">
+        {/* How it's going */}
+        <div className={`${CARD} p-5`}>
+          <h3 className={`${PANEL_HEADING} mb-3`}>How it's going</h3>
+          {progress.overallTotal > 0 ? (
+            <div>
+              <div className="flex items-baseline justify-between">
+                <span className="font-heading text-2xl font-bold text-dark-blue">
+                  {pct}%
+                </span>
+                <span className="text-xs text-muted-foreground">complete</span>
               </div>
-              {momentum && (
-                <div className="sm:flex-shrink-0">
-                  <MomentumReadout momentum={momentum} />
-                </div>
-              )}
+              <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full bg-accent-teal"
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
             </div>
-          </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              The team is getting set up — progress will show here soon.
+            </p>
+          )}
+          {currentFocus && (
+            <p className="mt-3 text-sm text-muted-foreground">
+              <span className="font-medium text-dark-blue">Working on now:</span>{" "}
+              {currentFocus}
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={() => onNavigate("progress")}
+            className="mt-3 text-xs font-medium text-accent-coral hover:underline"
+          >
+            See what we're building →
+          </button>
+        </div>
+
+        {/* What's next */}
+        <div className={`${CARD} p-5`}>
+          <h3 className={`${PANEL_HEADING} mb-3`}>What's next</h3>
+          {nextMeeting ? (
+            <button
+              type="button"
+              onClick={() => onNavigate("meetings")}
+              className="flex w-full items-start gap-3 rounded-xl border border-border p-3 text-left transition hover:border-accent-coral"
+            >
+              <CalendarClock className="mt-0.5 h-4 w-4 flex-shrink-0 text-accent-coral" />
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-medium text-foreground">
+                  {nextMeeting.title}
+                </span>
+                <span className="block text-xs text-muted-foreground">
+                  {fmtDateTime(nextMeeting.start)}
+                </span>
+              </span>
+            </button>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No meetings scheduled right now. The team will set one up when
+              there's something to review together.
+            </p>
+          )}
         </div>
       </div>
 
-      <div className="lg:flex lg:items-start lg:gap-8">
-        {sections.length > 1 && (
-          <SectionNav sections={sections} active={activeSection} />
-        )}
-        <div className="flex min-w-0 flex-1 flex-col gap-8">
-      {/* The roadmap — active epics by default, each showing its stories
-          (scope) and its sprints across past, current, and planned. Backlog
-          and done epics live behind the "Show all" toggle. */}
-      <section id="roadmap" className="scroll-mt-24">
-        <div className="mb-3 flex items-center justify-between gap-4">
-          <h2 className="font-heading text-lg font-semibold text-dark-blue">
-            Roadmap
-          </h2>
-          {hiddenEpicCount > 0 && (
+      {/* Recently delivered — proof of work, tied right to the progress above. */}
+      <div className={`${CARD} p-5`}>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h3 className={PANEL_HEADING}>Recently delivered</h3>
+          {deliverableCount > 0 && (
             <button
               type="button"
-              onClick={() => setShowAllEpics((v) => !v)}
-              className="text-xs font-medium text-accent-coral hover:underline"
+              onClick={() => onNavigate("deliverables")}
+              className="flex-shrink-0 text-xs font-medium text-accent-coral hover:underline"
             >
-              {showAllEpics
-                ? "Show active only"
-                : `Show all epics (${epics.length})`}
+              See all →
             </button>
           )}
         </div>
-        {!hasWork ? (
-          <div className="bg-card border border-border rounded-2xl p-6 text-sm text-muted-foreground">
-            Nothing on the roadmap yet. Epics and sprints will appear here once
-            the team plans the work.
-          </div>
+        {deliverableCount === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Nothing shared yet. Documents, files, and links from the team will
+            show up here as the work progresses.
+          </p>
         ) : (
-          <div className="flex flex-col gap-4">
-            {visibleEpics.map((epic) => (
-              <EpicCard key={epic.id} epic={epic} />
-            ))}
-            {visibleEpics.length === 0 && (
-              <div className="bg-card border border-border rounded-2xl p-6 text-sm text-muted-foreground">
-                Nothing in progress right now.
-                {hiddenEpicCount > 0 && (
-                  <>
-                    {" "}
-                    <button
-                      type="button"
-                      onClick={() => setShowAllEpics(true)}
-                      className="font-medium text-accent-coral hover:underline"
-                    >
-                      Show all {epics.length} epic{epics.length === 1 ? "" : "s"}
-                    </button>
-                    .
-                  </>
-                )}
-              </div>
-            )}
-            {ungroupedSprints.length > 0 && (
-              <div className="bg-card border border-border rounded-2xl p-5">
-                <h3 className="font-heading font-semibold text-dark-blue text-base mb-3">
-                  Other sprints
-                </h3>
-                <SprintGroup sprints={ungroupedSprints} />
-              </div>
-            )}
-          </div>
-        )}
-      </section>
-
-      {recentlyDone.length > 0 && (
-        <section id="recently-completed" className="scroll-mt-24">
-          <h2 className="font-heading text-lg font-semibold text-dark-blue mb-3">
-            Recently completed
-          </h2>
-          <ul className="bg-card border border-border rounded-2xl divide-y divide-border">
-            {recentlyDone.map((t) => (
-              <li key={t.id} className="px-4 py-3 flex items-center gap-3 text-sm">
-                <span className="text-accent-teal">✓</span>
-                <span className="flex-1 min-w-0 truncate text-foreground">{t.title}</span>
-                {t.domain && (
-                  <span className="text-xs rounded-full bg-muted text-muted-foreground px-2 py-0.5 flex-shrink-0">
-                    {t.domain}
+          <ul className="flex flex-col divide-y divide-border">
+            {links.slice(0, 2).map((l) => (
+              <li key={`l-${l.id}`}>
+                <a
+                  href={l.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-3 py-2 text-sm transition hover:text-accent-coral"
+                >
+                  <ExternalLink className="h-4 w-4 flex-shrink-0 text-accent-teal" />
+                  <span className="min-w-0 flex-1 truncate font-medium text-foreground">
+                    {l.label}
                   </span>
+                  <span className="flex-shrink-0 text-xs text-muted-foreground">Link</span>
+                </a>
+              </li>
+            ))}
+            {sharedPages.slice(0, 2).map((p) => (
+              <li key={`p-${p.id}`}>
+                <Link
+                  to={pageHref(p.id)}
+                  className="flex items-center gap-3 py-2 text-sm transition hover:text-accent-coral"
+                >
+                  <span>{p.iconEmoji ?? "📄"}</span>
+                  <span className="min-w-0 flex-1 truncate font-medium text-foreground">
+                    {p.title}
+                  </span>
+                  <span className="flex-shrink-0 text-xs text-muted-foreground">
+                    {fmtDate(p.updatedAt)}
+                  </span>
+                </Link>
+              </li>
+            ))}
+            {sharedFiles.slice(0, 2).map((f) => (
+              <li key={`f-${f.id}`}>
+                <button
+                  type="button"
+                  onClick={() => onNavigate("deliverables")}
+                  className="flex w-full items-center gap-3 py-2 text-left text-sm transition hover:text-accent-coral"
+                >
+                  <FileText className="h-4 w-4 flex-shrink-0 text-accent-teal" />
+                  <span className="min-w-0 flex-1 truncate font-medium text-foreground">
+                    {f.title}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* What's new — the reason to come back: updates since the last visit. */}
+      <div className={`${CARD} p-5`}>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h3 className={PANEL_HEADING}>What's new</h3>
+          {newCount > 0 && (
+            <span className="flex-shrink-0 rounded-full bg-accent-coral/10 px-2 py-0.5 text-xs font-medium text-accent-coral">
+              {newCount} new
+            </span>
+          )}
+        </div>
+        <ActivityFeed activity={activity} />
+      </div>
+    </div>
+  );
+}
+
+// "What we're building" — the plan in plain terms. Each area of work shows a
+// coarse state (In progress / Done / Coming up) and how far along it is. No
+// sprints, stories, priorities, or acceptance criteria.
+function ProgressPanel({ areas }: { areas: PartnerProjectArea[] }) {
+  return (
+    <section>
+      <h2 className={`${PANEL_HEADING} mb-3`}>What we're building</h2>
+      {areas.length === 0 ? (
+        <div className={EMPTY_CARD}>
+          The team will share the plan here as the work gets underway.
+        </div>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {areas.map((area) => {
+            const s = AREA_STATE[area.state];
+            const pct =
+              area.total > 0 ? Math.round((area.done / area.total) * 100) : 0;
+            return (
+              <div key={area.id} className={`${CARD} p-5`}>
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="min-w-0 truncate font-heading text-base font-semibold text-dark-blue">
+                    {area.title}
+                  </h3>
+                  <span
+                    className={`flex-shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${s.pill}`}
+                  >
+                    {s.label}
+                  </span>
+                </div>
+                {area.total > 0 && (
+                  <div className="mt-3">
+                    <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
+                      <span>
+                        {area.done} of {area.total} done
+                      </span>
+                      <span>{pct}%</span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-muted">
+                      <div
+                        className={`h-full rounded-full ${s.bar}`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </div>
                 )}
-                <span className="text-xs text-muted-foreground flex-shrink-0">
-                  {fmtDate(t.doneAt)}
-                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// The library — everything the team has shared as proof of work: documents and
+// file uploads (previewed via a short-lived signed URL resolved in the loader).
+function DeliverablesPanel({
+  links,
+  sharedPages,
+  sharedFiles,
+  pageHref,
+  currentUserId,
+}: {
+  links: PartnerProjectViewData["links"];
+  sharedPages: PartnerProjectViewData["sharedPages"];
+  sharedFiles: PartnerProjectViewData["sharedFiles"];
+  pageHref: (pageId: string) => string;
+  currentUserId: string;
+}) {
+  const [previewFile, setPreviewFile] = useState<SharedFile | null>(null);
+
+  return (
+    <div className="flex flex-col gap-6">
+      {links.length > 0 && (
+        <section>
+          <h2 className={`${PANEL_HEADING} mb-3`}>Links</h2>
+          <ul className={`${CARD} divide-y divide-border`}>
+            {links.map((l) => (
+              <li key={l.id}>
+                <a
+                  href={l.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-3 px-4 py-3 text-sm transition hover:bg-muted/20"
+                >
+                  <ExternalLink className="h-4 w-4 flex-shrink-0 text-accent-teal" />
+                  <span className="min-w-0 flex-1 truncate font-medium text-foreground">
+                    {l.label}
+                  </span>
+                  <span className="hidden max-w-[45%] flex-shrink-0 truncate text-xs text-muted-foreground sm:block">
+                    {l.url.replace(/^https?:\/\//, "")}
+                  </span>
+                </a>
               </li>
             ))}
           </ul>
         </section>
       )}
 
-      {/* Shared docs */}
-      <section id="shared-documents" className="scroll-mt-24">
-        <h2 className="font-heading text-lg font-semibold text-dark-blue mb-3">
-          Shared documents
-        </h2>
+      <section>
+        <h2 className={`${PANEL_HEADING} mb-3`}>Documents</h2>
         {sharedPages.length === 0 ? (
-          <div className="bg-card border border-border rounded-2xl p-6 text-sm text-muted-foreground">
+          <div className={EMPTY_CARD}>
             The team hasn't shared any documents yet.
           </div>
         ) : (
-          <ul className="bg-card border border-border rounded-2xl divide-y divide-border">
+          <ul className={`${CARD} divide-y divide-border`}>
             {sharedPages.map((p) => (
               <li key={p.id}>
                 <Link
                   to={pageHref(p.id)}
-                  className="px-4 py-3 flex items-center gap-3 text-sm hover:bg-muted/20 transition"
+                  className="flex items-center gap-3 px-4 py-3 text-sm transition hover:bg-muted/20"
                 >
                   <span>{p.iconEmoji ?? "📄"}</span>
-                  <span className="flex-1 min-w-0 truncate font-medium text-foreground">
+                  <span className="min-w-0 flex-1 truncate font-medium text-foreground">
                     {p.title}
                   </span>
-                  <span className="text-xs text-muted-foreground flex-shrink-0">
+                  <span className="flex-shrink-0 text-xs text-muted-foreground">
                     Updated {fmtDate(p.updatedAt)}
                   </span>
                 </Link>
@@ -570,45 +579,50 @@ export function PartnerProjectHubView({
         )}
       </section>
 
-      {/* Shared files — uploads the team has shared, downloaded via a
-          short-lived signed URL resolved in the loader. */}
-      <section id="shared-files" className="scroll-mt-24">
-        <h2 className="font-heading text-lg font-semibold text-dark-blue mb-3">
-          Shared files
-        </h2>
+      <section>
+        <h2 className={`${PANEL_HEADING} mb-3`}>Files</h2>
         {sharedFiles.length === 0 ? (
-          <div className="bg-card border border-border rounded-2xl p-6 text-sm text-muted-foreground">
-            The team hasn't shared any files yet.
-          </div>
+          <div className={EMPTY_CARD}>The team hasn't shared any files yet.</div>
         ) : (
-          <ul className="bg-card border border-border rounded-2xl divide-y divide-border">
+          <ul className={`${CARD} divide-y divide-border`}>
             {sharedFiles.map((f) => (
               <li key={f.id}>
                 <button
                   type="button"
                   onClick={() => setPreviewFile(f)}
                   disabled={!f.downloadUrl}
-                  className={`w-full text-left px-4 py-3 flex items-center gap-3 text-sm transition ${
+                  className={`flex w-full items-center gap-3 px-4 py-3 text-left text-sm transition ${
                     f.downloadUrl
-                      ? "hover:bg-muted/20 cursor-pointer"
-                      : "opacity-60 cursor-not-allowed"
+                      ? "cursor-pointer hover:bg-muted/20"
+                      : "cursor-not-allowed opacity-60"
                   }`}
                 >
-                  <Eye className="w-4 h-4 text-accent-teal flex-shrink-0" />
-                  <span className="flex-1 min-w-0">
+                  {isPreviewable(f.contentType) ? (
+                    <Eye className="h-4 w-4 flex-shrink-0 text-accent-teal" />
+                  ) : (
+                    <Download className="h-4 w-4 flex-shrink-0 text-accent-teal" />
+                  )}
+                  <span className="min-w-0 flex-1">
                     <span className="block truncate font-medium text-foreground">
                       {f.title}
                     </span>
                     {(f.fileName || f.sizeBytes != null) && (
                       <span className="block truncate text-xs text-muted-foreground">
-                        {[f.fileName, f.sizeBytes != null ? formatBytes(f.sizeBytes) : null]
+                        {[
+                          f.fileName,
+                          f.sizeBytes != null ? formatBytes(f.sizeBytes) : null,
+                        ]
                           .filter(Boolean)
                           .join(" · ")}
                       </span>
                     )}
                   </span>
-                  <span className="text-xs text-muted-foreground flex-shrink-0">
-                    {f.downloadUrl ? "Preview" : "Unavailable"}
+                  <span className="flex-shrink-0 text-xs text-muted-foreground">
+                    {!f.downloadUrl
+                      ? "Unavailable"
+                      : isPreviewable(f.contentType)
+                        ? "Preview"
+                        : "Download"}
                   </span>
                 </button>
               </li>
@@ -617,39 +631,137 @@ export function PartnerProjectHubView({
         )}
       </section>
 
-      {/* Team */}
-      {team.length > 0 && (
-        <section id="team" className="scroll-mt-24">
-          <h2 className="font-heading text-lg font-semibold text-dark-blue mb-3">
-            Your DALI team{currentTermCode ? ` · ${termCodeLabel(currentTermCode)}` : ""}
-          </h2>
-          <div className="bg-card border border-border rounded-2xl p-5 grid gap-x-6 gap-y-4 sm:grid-cols-2">
-            {team.map((m) => (
-              <div key={m.name} className="flex items-center gap-3 min-w-0">
-                <Avatar photoUrl={m.photoUrl} name={m.name} size="md" />
-                <div className="min-w-0">
-                  <span className="font-medium text-dark-blue block truncate">
-                    {m.name}
-                  </span>
-                  <span className="text-xs text-muted-foreground block truncate">
-                    {m.domains.join(", ")}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
       {previewFile && (
         <SharedFilePreviewModal
           file={previewFile}
+          currentUserId={currentUserId}
           onClose={() => setPreviewFile(null)}
         />
       )}
-        </div>
-      </div>
     </div>
+  );
+}
+
+// Meetings tab: the week calendar (RSVP + notes in-place) and a direct line to
+// the team when a partner wants to set something up.
+function MeetingsPanel({
+  meetings,
+  pageHref,
+  canRsvp,
+  teamContact,
+  projectName,
+}: {
+  meetings: PartnerProjectViewData["meetings"];
+  pageHref: (pageId: string) => string;
+  canRsvp: boolean;
+  teamContact: PartnerProjectViewData["teamContact"];
+  projectName: string;
+}) {
+  return (
+    <section>
+      <h2 className={`${PANEL_HEADING} mb-3`}>Meetings</h2>
+      <PartnerWeekCalendar
+        meetings={meetings}
+        pageHref={pageHref}
+        canRsvp={canRsvp}
+      />
+      <TeamContactPrompt contact={teamContact} projectName={projectName} />
+    </section>
+  );
+}
+
+// The current-term project roster.
+function TeamPanel({
+  team,
+  currentTermCode,
+}: {
+  team: PartnerProjectViewData["team"];
+  currentTermCode: string | null;
+}) {
+  return (
+    <section>
+      <h2 className={`${PANEL_HEADING} mb-3`}>
+        Your DALI team
+        {currentTermCode ? ` · ${termCodeLabel(currentTermCode)}` : ""}
+      </h2>
+      {team.length === 0 ? (
+        <div className={EMPTY_CARD}>
+          Your team will appear here once the project is staffed.
+        </div>
+      ) : (
+        <div className={`${CARD} grid gap-x-6 gap-y-4 p-5 sm:grid-cols-2`}>
+          {team.map((m) => (
+            <div key={m.name} className="flex min-w-0 items-center gap-3">
+              <Avatar photoUrl={m.photoUrl} name={m.name} size="md" />
+              <div className="min-w-0">
+                <span className="block truncate font-medium text-dark-blue">
+                  {m.name}
+                </span>
+                <span className="block truncate text-xs text-muted-foreground">
+                  {m.domains.join(", ")}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+const ACTIVITY_ICON: Record<PartnerActivityKind, typeof CheckCircle2> = {
+  "task-done": CheckCircle2,
+  "file-shared": FileText,
+  "meeting-scheduled": CalendarClock,
+};
+
+// The "what's new" list — newest first, with an "Earlier" divider marking where
+// the viewer's previous visit was. New items carry a coral icon; older ones go
+// muted. Empty and all-new both read cleanly (no stray divider).
+function ActivityFeed({
+  activity,
+}: {
+  activity: PartnerProjectViewData["activity"];
+}) {
+  if (activity.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        No recent updates yet. Progress and shared work will show up here.
+      </p>
+    );
+  }
+  const firstOlderId = activity.find((a) => !a.isNew)?.id ?? null;
+  const hasNew = activity.some((a) => a.isNew);
+  return (
+    <ul className="flex flex-col">
+      {activity.map((a) => {
+        const Icon = ACTIVITY_ICON[a.kind];
+        return (
+          <li key={a.id}>
+            {hasNew && a.id === firstOlderId && (
+              <div className="my-1 flex items-center gap-2 text-[11px] uppercase tracking-wide text-muted-foreground">
+                <span className="h-px flex-1 bg-border" />
+                Earlier
+                <span className="h-px flex-1 bg-border" />
+              </div>
+            )}
+            <div className="flex items-center gap-3 py-2 text-sm">
+              <Icon
+                className={`h-4 w-4 flex-shrink-0 ${
+                  a.isNew ? "text-accent-coral" : "text-muted-foreground"
+                }`}
+              />
+              <span className="min-w-0 flex-1 truncate text-foreground">
+                {a.label}
+              </span>
+              <span className="flex-shrink-0 text-xs text-muted-foreground">
+                {fmtDate(a.at)}
+              </span>
+            </div>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
@@ -658,12 +770,17 @@ export function PartnerProjectHubView({
 // back to a download prompt. Download stays one click away in the header.
 function SharedFilePreviewModal({
   file,
+  currentUserId,
   onClose,
 }: {
   file: SharedFile;
+  currentUserId: string;
   onClose: () => void;
 }) {
   const ct = file.contentType ?? "";
+  // Inline preview uses the content-type-forced URL; the Download button uses
+  // the plain attachment URL. Fall back to the download URL if no preview URL.
+  const previewSrc = file.previewUrl ?? file.downloadUrl ?? undefined;
   const url = file.downloadUrl ?? undefined;
   const isImage = ct.startsWith("image/");
   const isPdf = ct === "application/pdf";
@@ -708,13 +825,13 @@ function SharedFilePreviewModal({
       <div className="min-h-0 overflow-auto">
         {isImage ? (
           <img
-            src={url}
+            src={previewSrc}
             alt={file.title}
             className="max-w-full max-h-[70vh] mx-auto rounded-lg border border-border object-contain bg-muted/20"
           />
         ) : isPdf || isText ? (
           <iframe
-            src={url}
+            src={previewSrc}
             title={file.title}
             className="w-full h-[70vh] rounded-lg border border-border bg-white"
           />
@@ -736,7 +853,55 @@ function SharedFilePreviewModal({
             )}
           </div>
         )}
+
+        {/* Feedback thread on the shared file — the partner's channel to
+            comment on a deliverable. Read-only resolve (the team resolves). */}
+        <div className="mt-5 border-t border-border pt-4">
+          <CommentsRail
+            targetType="file"
+            targetId={file.id}
+            currentUserId={currentUserId}
+            canComment
+            canResolve={false}
+          />
+        </div>
       </div>
     </Modal>
+  );
+}
+
+// "Contact your team" — a direct line to the project's PM instead of a
+// fire-and-forget request form. The team schedules and shares meetings, which
+// then surface on the calendar above.
+function TeamContactPrompt({
+  contact,
+  projectName,
+}: {
+  contact: PartnerProjectViewData["teamContact"];
+  projectName: string;
+}) {
+  return (
+    <div className={`mt-4 ${CARD} p-4`}>
+      <p className="text-sm font-medium text-dark-blue">Need to meet?</p>
+      {contact ? (
+        <p className="mt-1 text-sm text-muted-foreground">
+          {contact.name} is your DALI point of contact — reach out and they'll
+          set up a time, which will show up here.{" "}
+          <a
+            href={`mailto:${contact.email}?subject=${encodeURIComponent(
+              `Meeting request — ${projectName}`,
+            )}`}
+            className="font-medium text-accent-coral hover:underline"
+          >
+            Email {contact.name.split(" ")[0] || contact.name}
+          </a>
+        </p>
+      ) : (
+        <p className="mt-1 text-sm text-muted-foreground">
+          Reach out to your DALI team to schedule time — new meetings will show
+          up here once they're set.
+        </p>
+      )}
+    </div>
   );
 }

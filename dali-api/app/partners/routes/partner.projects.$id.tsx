@@ -1,5 +1,9 @@
-import { useLoaderData } from "react-router";
+import {
+  useLoaderData,
+  type ShouldRevalidateFunctionArgs,
+} from "react-router";
 import type { Route } from "./+types/partner.projects.$id";
+import { prisma } from "~/lib/db";
 import { requirePartner } from "~/partners/lib/partner-auth.server";
 import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
 import { loadPartnerProjectView } from "~/partners/lib/partner-project-view.server";
@@ -17,9 +21,42 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     throw new Response("Not found", { status: 404 });
   }
 
-  const data = await loadPartnerProjectView(params.id!, partnerUser.partnerOrgId);
+  const data = await loadPartnerProjectView(
+    params.id!,
+    partnerUser.partnerOrgId,
+    auth.user.sub,
+  );
   if (!data) throw new Response("Not found", { status: 404 });
-  return data;
+
+  // Mark this project's hub as seen now, so the next visit's "what's new" feed
+  // cuts from this moment. Runs after the load above (which read the prior
+  // visit), so the feed the partner sees still reflects their previous visit.
+  await prisma.partnerProjectVisit.upsert({
+    where: {
+      userId_projectId: { userId: auth.user.sub, projectId: params.id! },
+    },
+    create: {
+      userId: auth.user.sub,
+      projectId: params.id!,
+      lastSeenAt: new Date(),
+    },
+    update: { lastSeenAt: new Date() },
+  });
+
+  return { ...data, currentUserId: auth.user.sub };
+}
+
+// The section tabs live entirely in the ?tab= search param and don't change
+// the loaded data — skip the refetch (and the "mark seen" write) on those
+// client-side navigations. Still revalidate after form submissions.
+export function shouldRevalidate({
+  currentUrl,
+  nextUrl,
+  formMethod,
+  defaultShouldRevalidate,
+}: ShouldRevalidateFunctionArgs) {
+  if (!formMethod && currentUrl.pathname === nextUrl.pathname) return false;
+  return defaultShouldRevalidate;
 }
 
 export default function PartnerProjectView() {
@@ -27,6 +64,8 @@ export default function PartnerProjectView() {
   return (
     <PartnerProjectHubView
       data={data}
+      currentUserId={data.currentUserId}
+      canRsvp
       backLink={{ to: "/partner", label: "Back to portal" }}
       pageHref={(pageId) => `/partner/projects/${data.project.id}/pages/${pageId}`}
     />

@@ -21,6 +21,10 @@ import {
   isPartnerApplicationStatus,
   type PartnerApplicationStatus as Status,
 } from "../lib/partner-application";
+import {
+  notifyPartnerApplicationDecision,
+  notifyPartnerProjectLinked,
+} from "../lib/partner-notify.server";
 import { formAnswerRows } from "~/forms/lib/answer-rows.server";
 import type { Question } from "~/types";
 import { CollaborativeEditor } from "~/components/CollaborativeEditor";
@@ -64,6 +68,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       title: true,
       summary: true,
       status: true,
+      decisionNote: true,
       sowDocId: true,
       resultingProjectId: true,
       partnerOrg: { select: { id: true, name: true, logoUrl: true } },
@@ -128,6 +133,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       title: application.title,
       summary: application.summary,
       status: application.status,
+      decisionNote: application.decisionNote,
       sowDocId: application.sowDocId,
       resultingProjectId: application.resultingProjectId,
       targetTerms: application.targetTerms.map((t) => ({
@@ -175,9 +181,25 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (!isPartnerApplicationStatus(status)) {
       return { error: "Invalid status." };
     }
+    const decided =
+      status === "Accepted" || status === "Rejected" || status === "OnHold";
     await prisma.partnerApplication.update({
       where: { id: params.id },
-      data: { status },
+      data: { status, ...(decided ? { decidedAt: new Date() } : {}) },
+    });
+    await notifyPartnerApplicationDecision({ applicationId: params.id, status });
+  } else if (intent === "decision-note") {
+    // Partner-visible note attached to the decision. Saving re-sends the
+    // decision email (with the note) when the app is in a decision state.
+    const note = (form.get("decisionNote") as string | null)?.trim() || null;
+    const updated = await prisma.partnerApplication.update({
+      where: { id: params.id },
+      data: { decisionNote: note },
+      select: { status: true },
+    });
+    await notifyPartnerApplicationDecision({
+      applicationId: params.id,
+      status: updated.status,
     });
   } else if (intent === "details") {
     const summaryRaw = (form.get("summary") as string | null)?.trim() ?? "";
@@ -295,9 +317,17 @@ export async function action({ request, params }: Route.ActionArgs) {
       });
       await tx.partnerApplication.update({
         where: { id: app.id },
-        data: { resultingProjectId: created.id },
+        // Promotion IS the acceptance — close the loop so the partner's
+        // "became a project" banner renders and the board leaves the pipeline.
+        data: { resultingProjectId: created.id, status: "Accepted" },
       });
       return created;
+    });
+    // The partner org can now see the project — tell them (best-effort).
+    await notifyPartnerProjectLinked({
+      projectId: project.id,
+      partnerOrgId: app.partnerOrgId,
+      projectName: app.title,
     });
     return redirect(`/projects/${project.id}`);
   } else {
@@ -346,6 +376,8 @@ export default function PartnerApplicationDetail() {
         terms={terms}
         canEdit={canEdit}
       />
+
+      {canEdit && <DecisionNoteSection application={application} />}
 
       {formAnswers.length > 0 && (
         <section className="bg-card border border-border rounded-lg p-4">
@@ -511,6 +543,45 @@ function Header({
         </Form>
       )}
     </header>
+  );
+}
+
+// Partner-VISIBLE decision note (distinct from the internal summary above).
+// Saving re-sends the decision email when the application is in a decision
+// state (Accepted/Rejected/OnHold); it's a no-op notification otherwise.
+function DecisionNoteSection({
+  application,
+}: {
+  application: LoaderData["application"];
+}) {
+  return (
+    <Form
+      method="post"
+      className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3"
+    >
+      <input type="hidden" name="intent" value="decision-note" />
+      <div>
+        <h2 className="text-sm font-semibold text-foreground">Decision note</h2>
+        <p className="text-xs text-muted-foreground">
+          Shared with the partner (a rejection reason, hold context, or an
+          acceptance message). When the application is accepted, rejected, or on
+          hold, saving also emails them the note.
+        </p>
+      </div>
+      <textarea
+        name="decisionNote"
+        rows={3}
+        defaultValue={application.decisionNote ?? ""}
+        placeholder="e.g. Loved the scope, but we can't staff it this term — reapply in the spring and we'll revisit."
+        className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+      />
+      <button
+        type="submit"
+        className="self-start px-3 py-1.5 text-xs font-medium rounded-md bg-dark-blue text-white hover:opacity-90 transition"
+      >
+        Save note
+      </button>
+    </Form>
   );
 }
 

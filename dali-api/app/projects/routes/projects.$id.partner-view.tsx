@@ -1,4 +1,8 @@
-import { redirect, useLoaderData } from "react-router";
+import {
+  redirect,
+  useLoaderData,
+  type ShouldRevalidateFunctionArgs,
+} from "react-router";
 import type { Route } from "./+types/projects.$id.partner-view";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { loadPartnerProjectView } from "~/partners/lib/partner-project-view.server";
@@ -44,7 +48,19 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const data = await loadPartnerProjectView(params.id!, null);
   if (!data) return redirect("/projects");
-  return data;
+  return { ...data, currentUserId: auth.user.sub };
+}
+
+// Tab switches only change the ?tab= search param; the loaded data doesn't
+// depend on it, so skip re-running the loader (and re-signing file URLs) on
+// same-path navigations.
+export function shouldRevalidate({
+  currentUrl,
+  nextUrl,
+  defaultShouldRevalidate,
+}: ShouldRevalidateFunctionArgs) {
+  if (currentUrl.pathname === nextUrl.pathname) return false;
+  return defaultShouldRevalidate;
 }
 
 export default function ProjectPartnerViewPreview() {
@@ -52,6 +68,7 @@ export default function ProjectPartnerViewPreview() {
   return (
     <PartnerProjectHubView
       data={data}
+      currentUserId={data.currentUserId}
       pageHref={(pageId) => `/documents/${pageId}`}
     />
   );

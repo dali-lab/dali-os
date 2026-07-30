@@ -18,6 +18,8 @@ import { AreaPillNav } from "~/components/AreaPillNav";
 import { ViewToggle, useViewPreference } from "~/components/ViewToggle";
 import { buttonClasses } from "~/components/ui/Button";
 import { OPEN_APPLICATION_STATUSES } from "../lib/partner-application";
+import { normalizeWebsite } from "../lib/partner-org";
+import { createPartnerInvite } from "../lib/invites.server";
 import { FileText, LayoutGrid } from "lucide-react";
 
 export const handle = { areaPills: true };
@@ -34,6 +36,7 @@ type OrgRow = {
   activeProjectCount: number;
   totalProjectCount: number;
   openApplicationCount: number;
+  archived: boolean;
 };
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -43,8 +46,12 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!(await canViewStaffing(auth.user.sub))) return redirect("/");
 
   const now = new Date();
+  const showArchived =
+    new URL(request.url).searchParams.get("archived") === "1";
   const [orgs, canEdit] = await Promise.all([
     prisma.partnerOrg.findMany({
+      // Former partners are archived, not deleted — hidden here unless asked.
+      where: showArchived ? {} : { archivedAt: null },
       orderBy: { name: "asc" },
       select: {
         id: true,
@@ -52,6 +59,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         logoUrl: true,
         website: true,
         isIndividual: true,
+        archivedAt: true,
         _count: { select: { users: true } },
         projects: {
           select: {
@@ -85,10 +93,11 @@ export async function loader({ request }: Route.LoaderArgs) {
       openApplicationCount: o.applications.filter((a) =>
         (OPEN_APPLICATION_STATUSES as readonly string[]).includes(a.status),
       ).length,
+      archived: o.archivedAt !== null,
     })),
   );
 
-  return { rows, canEdit };
+  return { rows, canEdit, showArchived };
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -100,8 +109,10 @@ export async function action({ request }: Route.ActionArgs) {
 
   const form = await request.formData();
   const name = (form.get("name") as string | null)?.trim() ?? "";
-  const website = (form.get("website") as string | null)?.trim() || null;
+  const website = normalizeWebsite(form.get("website") as string | null);
   const isIndividual = form.get("isIndividual") === "on";
+  const firstContactEmail =
+    (form.get("firstContactEmail") as string | null)?.trim() || null;
 
   if (!name) return { error: "A name is required." };
 
@@ -116,11 +127,27 @@ export async function action({ request }: Route.ActionArgs) {
     metadata: { via: "core" },
     request,
   });
+
+  // Bridge the "empty org is unreachable" gap: if Core supplied a first
+  // contact, send the invite now so the org has a real way in. A bad address
+  // doesn't fail creation — land on the org page with the invite panel open so
+  // it can be corrected.
+  if (firstContactEmail) {
+    const invited = await createPartnerInvite(
+      {
+        partnerOrgId: org.id,
+        email: firstContactEmail,
+        invitedByUserId: auth.user.sub,
+      },
+      request,
+    );
+    if ("error" in invited) return redirect(`/partners/${org.id}?invite=1`);
+  }
   return redirect(`/partners/${org.id}`);
 }
 
 export default function PartnersOrganizations() {
-  const { rows, canEdit } = useLoaderData<typeof loader>();
+  const { rows, canEdit, showArchived } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const [creating, setCreating] = useState(false);
   const [query, setQuery] = useState("");
@@ -194,6 +221,21 @@ export default function PartnersOrganizations() {
                 className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
               />
             </label>
+            <label className="flex flex-col gap-1 text-xs sm:col-span-2">
+              <span className="text-muted-foreground">
+                Invite first contact (optional)
+              </span>
+              <input
+                name="firstContactEmail"
+                type="email"
+                placeholder="contact@company.com"
+                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+              />
+              <span className="text-[11px] text-muted-foreground">
+                Sends a portal invite so the org has a way in. You can also
+                invite later.
+              </span>
+            </label>
             <label className="flex items-center gap-2 text-sm text-foreground sm:col-span-2">
               <input type="checkbox" name="isIndividual" className="rounded" />
               Individual
@@ -223,6 +265,12 @@ export default function PartnersOrganizations() {
           className="flex-1 min-w-[200px] max-w-sm px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
         />
         <ViewToggle value={view} onChange={setView} />
+        <Link
+          to={showArchived ? "/partners" : "/partners?archived=1"}
+          className="text-xs text-muted-foreground hover:text-foreground underline"
+        >
+          {showArchived ? "Hide archived" : "Show archived"}
+        </Link>
         <span className="text-xs text-muted-foreground ml-auto">
           {filtered.length}{" "}
           {filtered.length === 1 ? "organization" : "organizations"}
@@ -280,6 +328,9 @@ function PartnersTable({ rows }: { rows: OrgRow[] }) {
                         Individual
                       </span>
                     )}
+                    {o.archived && (
+                      <span className="text-xs text-amber-700 ml-2">Archived</span>
+                    )}
                   </div>
                 </div>
               </td>
@@ -323,6 +374,9 @@ function PartnerCard({ org }: { org: OrgRow }) {
           <span className="font-semibold text-foreground truncate">{org.name}</span>
           {org.isIndividual && (
             <span className="text-xs text-muted-foreground">Individual</span>
+          )}
+          {org.archived && (
+            <span className="text-xs text-amber-700">Archived</span>
           )}
         </div>
         <div className="mt-2 space-y-0.5 text-xs text-muted-foreground">

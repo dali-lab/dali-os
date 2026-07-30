@@ -23,6 +23,7 @@ import {
 import { requireAuth, forbidden, redirectApplicantToPortal } from "~/lib/auth";
 import { fullName } from "~/lib/display";
 import { prisma } from "~/lib/db";
+import { activeProjectPartnerWhere } from "~/partners/lib/partner-access";
 import { listVisibleGroupsForUser } from "~/lib/groups";
 import {
   canViewForms,
@@ -35,6 +36,20 @@ import { CalendarActionSchema, validateTimeEntryRange } from "~/lib/calendar-sch
 import { syncManualBlockTimeEntry } from "~/lib/time-entry-sync";
 import { fetchBusyEvents, listCalendarsForLink } from "~/lib/google-calendar";
 import { getZonedHourFraction, getZonedYMD, resolveUserTimeZone, zonedDayStartUtc } from "~/lib/timezone";
+import {
+  DAY_KEYS,
+  EVENT_TEXT,
+  HOUR_PX,
+  HOURS,
+  SNAP_HOURS,
+  SUBDIVISIONS_PER_HOUR,
+  formatHour,
+  formatHourMinute,
+  meetingBlockStyle,
+  readableTextColor,
+  useNow,
+  weekWindow,
+} from "~/calendar/lib/week-grid";
 import type { Route } from "./+types/calendar";
 import { UnderlineTabButtons } from "~/components/AreaPillNav";
 import { Tooltip } from "~/components/ui/IconButton";
@@ -102,9 +117,12 @@ type GroupOption = {
   // or the resolved Dynamic membership). The picker treats both uniformly.
   memberIds: string[];
   // Derived from dynamicQuery ("project:<id>") for system-managed project
-  // groups (see ensureProjectGroup in ~/lib/groups.ts). Lets the Schedule
-  // Meeting form prefill the Project picker when such a group is selected.
+  // groups (see ensureProjectGroup in ~/lib/groups.ts). Inviting such a group
+  // is what links the meeting to a project (participants-first).
   projectId: string | null;
+  // True when this is a project group whose project has active partners — the
+  // schedule form offers "Partner meeting" only then.
+  hasActivePartners: boolean;
 };
 
 type UserOption = {
@@ -114,7 +132,7 @@ type UserOption = {
   daliEmail: string | null;
 };
 
-type ProjectOption = { id: string; name: string };
+type ProjectOption = { id: string; name: string; hasActivePartners: boolean };
 
 type TimeEntryDTO = {
   id: string;
@@ -205,31 +223,6 @@ function defaultWorkingHours(): WhDay[] {
   }));
 }
 
-// Window for the visible week grid. We compute Sunday→following Sunday in the
-// user's timezone (the grid renders Sun..Sat columns). When `anchor` is provided
-// it picks the Sunday of that date's week; otherwise it uses "now".
-function weekWindow(timezone: string, anchor?: Date): { start: Date; end: Date } {
-  const ref = anchor ?? new Date();
-  const ymd = getZonedYMD(ref, timezone);
-  const refUtcMidnight = new Date(Date.UTC(ymd.year, ymd.month - 1, ymd.day));
-  const dow = refUtcMidnight.getUTCDay();
-  const sundayUtc = new Date(refUtcMidnight.getTime() - dow * 86_400_000);
-  const start = zonedDayStartUtc(
-    sundayUtc.getUTCFullYear(),
-    sundayUtc.getUTCMonth() + 1,
-    sundayUtc.getUTCDate(),
-    timezone,
-  );
-  const nextSundayUtc = new Date(sundayUtc.getTime() + 7 * 86_400_000);
-  const end = zonedDayStartUtc(
-    nextSundayUtc.getUTCFullYear(),
-    nextSundayUtc.getUTCMonth() + 1,
-    nextSundayUtc.getUTCDate(),
-    timezone,
-  );
-  return { start, end };
-}
-
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirect("/login");
@@ -267,16 +260,30 @@ export async function loader({ request }: Route.LoaderArgs) {
         where: { userId },
         orderBy: { linkedAt: "asc" },
       }),
-      listVisibleGroupsForUser(userId).then((rows) =>
-        rows.map((r) => ({
+      listVisibleGroupsForUser(userId).then(async (rows) => {
+        const mapped = rows.map((r) => ({
           id: r.id,
           name: r.name,
           memberIds: r.memberIds,
           projectId: r.dynamicQuery?.startsWith("project:")
             ? r.dynamicQuery.slice("project:".length)
             : null,
-        })),
-      ),
+        }));
+        // Which of the project groups' projects currently have active partners
+        // — drives the "Partner meeting" affordance.
+        const pids = [...new Set(mapped.map((m) => m.projectId).filter(Boolean))] as string[];
+        const withPartners = pids.length
+          ? await prisma.projectPartner.findMany({
+              where: { projectId: { in: pids }, ...activeProjectPartnerWhere() },
+              select: { projectId: true },
+            })
+          : [];
+        const partnerSet = new Set(withPartners.map((p) => p.projectId));
+        return mapped.map((m) => ({
+          ...m,
+          hasActivePartners: m.projectId ? partnerSet.has(m.projectId) : false,
+        }));
+      }),
       prisma.user.findMany({
         where: memberWhere,
         select: { id: true, firstName: true, lastName: true, daliEmail: true },
@@ -284,7 +291,13 @@ export async function loader({ request }: Route.LoaderArgs) {
       }),
       prisma.project.findMany({
         where: { assignments: { some: { userId } } },
-        select: { id: true, name: true },
+        select: {
+          id: true,
+          name: true,
+          // One active partnership is enough to offer the "share with partners"
+          // checkbox on this project.
+          partners: { where: activeProjectPartnerWhere(), select: { id: true }, take: 1 },
+        },
         orderBy: { name: "asc" },
       }),
       getUserRoleInstances(userId),
@@ -488,7 +501,11 @@ export async function loader({ request }: Route.LoaderArgs) {
     groups,
     users,
     currentUserId: userId,
-    myProjects,
+    myProjects: myProjects.map((p) => ({
+      id: p.id,
+      name: p.name,
+      hasActivePartners: p.partners.length > 0,
+    })),
     myRoles,
     canSetSelfCheckIn,
     timeEntries: timeEntryRows.map((t) => ({
@@ -1948,14 +1965,6 @@ function WeekToolbar({
   );
 }
 
-// Visible hour rows: the full day, midnight through 11pm (grid bottom edge is
-// midnight). Every downstream bound derives from HOURS[0] / last+1.
-const HOURS = Array.from({ length: 24 }, (_, i) => i);
-const HOUR_PX = 54;
-// Grid is snapped/subdivided into 10-minute cells.
-const SUBDIVISIONS_PER_HOUR = 6; // 60 / 10
-const SNAP_HOURS = 1 / SUBDIVISIONS_PER_HOUR; // 10 minutes as a fraction of an hour
-
 // Refetch when the tab regains focus (visibilitychange covers tab switches,
 // focus covers window-level focus on browsers that don't fire visibilitychange
 // for window blur). Used so external Google Calendar edits show up without a
@@ -1972,19 +1981,6 @@ function useRefreshOnFocus(refresh: () => void) {
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [refresh]);
-}
-
-// Ticking "current time" used to draw the now-line. Returns null on the first
-// render so SSR and the initial client paint agree (no hydration mismatch),
-// then fills in after mount and re-ticks every `intervalMs`.
-function useNow(intervalMs = 60_000): Date | null {
-  const [now, setNow] = useState<Date | null>(null);
-  useEffect(() => {
-    setNow(new Date());
-    const id = setInterval(() => setNow(new Date()), intervalMs);
-    return () => clearInterval(id);
-  }, [intervalMs]);
-  return now;
 }
 
 function AvailabilityWeekGrid({
@@ -2177,7 +2173,6 @@ function AvailabilityWeekGrid({
 }
 
 // Hard-coded dark text that doesn't flip in dark mode (the dark-blue token does).
-const EVENT_TEXT = "text-[hsl(203_38%_18%)]";
 const EVENT_CORAL = `bg-accent-coral-light ${EVENT_TEXT}`;
 
 // Schedule-preview availability tint: interpolate from white (no one free) to a
@@ -3608,11 +3603,14 @@ function CreateScheduledMeetingForm({
   const [organizerCalendarLinkId, setOrganizerCalendarLinkId] = useState<string>(
     googleLinks[0]?.id ?? "",
   );
-  // Meeting notes are opt-in — type/label/project only appear when this is on.
+  // Partner meeting — shares it with the linked project's partners AND (if a
+  // note is attached) files that note under Partner meeting notes. Only offered
+  // when the linked project has active partners.
+  const [partnerVisible, setPartnerVisible] = useState(false);
+  // Meeting notes are opt-in. The note's category is derived (Partner if this
+  // is a partner meeting, else Team when project-linked, else a Lab note) — no
+  // separate type dropdown.
   const [createNote, setCreateNote] = useState(false);
-  const [meetingType, setMeetingType] = useState<"Team" | "Partner" | "Other">("Other");
-  const [meetingTypeLabel, setMeetingTypeLabel] = useState("");
-  const [projectId, setProjectId] = useState("");
   // Self check-in is independent of the meeting note (QR lives on the note when
   // one exists, otherwise on /calendar/check-in/:id).
   const [selfCheckIn, setSelfCheckIn] = useState(false);
@@ -3633,23 +3631,27 @@ function CreateScheduledMeetingForm({
   const usersById = new Map(users.map((u) => [u.id, u]));
   const groupsById = new Map(groups.map((g) => [g.id, g]));
 
-  // Prefill the Project picker when exactly one selected group is a
-  // system-managed project group (see GroupOption.projectId) — still fully
-  // overridable by the sender.
+  // Participants-first: the meeting's project comes from the project team group
+  // you invite (a "Project X" group carrying its projectId) — no separate
+  // field. First project group among the participants wins.
+  const linkedGroup =
+    selectedGroupIds.map((id) => groupsById.get(id)).find((g) => g?.projectId) ??
+    null;
+  const linkedProjectId = linkedGroup?.projectId ?? null;
+  const linkedProjectName = linkedGroup
+    ? linkedGroup.name.replace(/^Project /, "")
+    : null;
+  const canShareWithPartners = Boolean(linkedGroup?.hasActivePartners);
+  // Reset the partner flag if the linked project has no partners (or is gone).
   useEffect(() => {
-    if (!createNote || selectedGroupIds.length !== 1) return;
-    const g = groupsById.get(selectedGroupIds[0]!);
-    if (g?.projectId && !projectId) setProjectId(g.projectId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedGroupIds, createNote]);
+    if (!canShareWithPartners) setPartnerVisible(false);
+  }, [canShareWithPartners]);
 
   // Both pickers filled → derive duration; otherwise fall back to 30 min so
   // "schedule later" (no start/end yet) still produces a valid payload.
   const duration = durationMinutesBetween(startLocal, endLocal);
   const startEndValid =
     !startLocal || !endLocal || new Date(endLocal).getTime() > new Date(startLocal).getTime();
-  const meetingTypeValid =
-    !createNote || meetingType !== "Other" || meetingTypeLabel.trim().length > 0;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -3673,10 +3675,19 @@ function CreateScheduledMeetingForm({
       if (organizerCalendarLinkId) {
         payload.organizerCalendarLinkId = organizerCalendarLinkId;
       }
+      // Project + partner-meeting are first-class, independent of the note.
+      // Project is derived from the invited project group (participants-first).
+      if (linkedProjectId) payload.projectId = linkedProjectId;
+      const partnerMeeting = partnerVisible && Boolean(linkedProjectId);
+      if (partnerMeeting) payload.partnerVisible = true;
       if (createNote) {
-        payload.meetingType = meetingType;
-        if (meetingType === "Other") payload.meetingTypeLabel = meetingTypeLabel.trim();
-        if (projectId) payload.projectId = projectId;
+        // Note category is derived: Partner (partner meeting) → Team (any other
+        // project meeting) → Other (no project, lands in Lab documents).
+        payload.meetingType = partnerMeeting
+          ? "Partner"
+          : linkedProjectId
+            ? "Team"
+            : "Other";
       }
       if (canSetSelfCheckIn) {
         payload.attendanceMode = selfCheckIn ? "SelfCheckIn" : "Roster";
@@ -3719,9 +3730,7 @@ function CreateScheduledMeetingForm({
         onChangeSelectedUserIds([]);
         onChangeSelectedGroupIds([]);
         setCreateNote(false);
-        setMeetingType("Other");
-        setMeetingTypeLabel("");
-        setProjectId("");
+        setPartnerVisible(false);
         setSelfCheckIn(false);
       }
     } catch (err) {
@@ -3732,7 +3741,7 @@ function CreateScheduledMeetingForm({
   }
 
   const canSubmit =
-    title.trim().length > 0 && duration > 0 && startEndValid && meetingTypeValid && !submitting;
+    title.trim().length > 0 && duration > 0 && startEndValid && !submitting;
 
   const fieldClass =
     "w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/40";
@@ -3859,6 +3868,50 @@ function CreateScheduledMeetingForm({
             Optional
           </p>
 
+          {/* Project link is derived from the invited project team group, so
+              there's no separate field — but we make its effects explicit. */}
+          {linkedProjectId ? (
+            <div className="rounded-md border border-accent-teal/30 bg-accent-teal/5 p-3 space-y-2">
+              <p className="text-sm text-foreground">
+                Linked to{" "}
+                <span className="font-medium text-dark-blue">{linkedProjectName}</span>{" "}
+                <span className="text-muted-foreground font-normal">
+                  (you invited its team)
+                </span>
+              </p>
+              <p className="text-xs text-muted-foreground">
+                It'll show on the project, and any meeting note files under its
+                documents.
+              </p>
+              {canShareWithPartners && (
+                <label className="flex items-start gap-2.5 cursor-pointer pt-1">
+                  <input
+                    type="checkbox"
+                    checked={partnerVisible}
+                    onChange={(e) => setPartnerVisible(e.target.checked)}
+                    className="mt-0.5 h-3.5 w-3.5 rounded border-border"
+                  />
+                  <span>
+                    <span className="block text-sm font-medium text-foreground">
+                      Partner meeting
+                    </span>
+                    <span className="block text-xs text-muted-foreground mt-0.5">
+                      Shares it with {linkedProjectName}'s partners — they see it
+                      on their portal, get a calendar invite, and can RSVP. Any
+                      note files under Partner meeting notes.
+                    </span>
+                  </span>
+                </label>
+              )}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground px-1">
+              Invite a project's team group in Participants to link this meeting
+              to that project (adds project notes and lets you share it with the
+              project's partners).
+            </p>
+          )}
+
           <div className="rounded-md border border-border bg-muted/20 p-3 space-y-3">
             <label className="flex items-start gap-2.5 cursor-pointer">
               <input
@@ -3873,67 +3926,15 @@ function CreateScheduledMeetingForm({
                 </span>
                 <span className="block text-xs text-muted-foreground mt-0.5">
                   Adds a note with an attendance checklist
-                  {projectId ? " under the project's documents" : " in Lab documents"}. Invites
-                  still go only to people and groups in Participants.
+                  {linkedProjectId
+                    ? partnerVisible
+                      ? " under Partner meeting notes"
+                      : " under the project's documents"
+                    : " in Lab documents"}
+                  . Invites still go only to people and groups in Participants.
                 </span>
               </span>
             </label>
-
-            {createNote && (
-              <div className="pl-6 space-y-3">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label htmlFor="meeting-type" className={labelClass}>
-                      Meeting type
-                    </label>
-                    <select
-                      id="meeting-type"
-                      value={meetingType}
-                      onChange={(e) => setMeetingType(e.target.value as typeof meetingType)}
-                      className={fieldClass}
-                    >
-                      <option value="Team">Team meeting</option>
-                      <option value="Partner">Partner meeting</option>
-                      <option value="Other">Other</option>
-                    </select>
-                  </div>
-                  {meetingType === "Other" && (
-                    <div>
-                      <label htmlFor="meeting-type-label" className={labelClass}>
-                        Meeting type name
-                      </label>
-                      <input
-                        id="meeting-type-label"
-                        type="text"
-                        value={meetingTypeLabel}
-                        onChange={(e) => setMeetingTypeLabel(e.target.value)}
-                        placeholder="e.g. Partner hub meeting"
-                        required
-                        className={fieldClass}
-                      />
-                    </div>
-                  )}
-                  <div className={meetingType === "Other" ? "sm:col-span-2" : ""}>
-                    <label htmlFor="meeting-project" className={labelClass}>
-                      Project <span className="text-muted-foreground font-normal">(optional)</span>
-                    </label>
-                    <select
-                      id="meeting-project"
-                      value={projectId}
-                      onChange={(e) => setProjectId(e.target.value)}
-                      className={fieldClass}
-                    >
-                      <option value="">No project — Lab documents</option>
-                      {myProjects.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
 
           {canSetSelfCheckIn && (
@@ -4855,32 +4856,12 @@ type EventBlock = {
   };
 };
 
-// RSVP status → block styling on the calendar. Pending (unanswered) invites get
-// a dashed teal outline to read as "needs response"; answered ones adopt a
-// solid tint keyed to the response (declined is muted/greyed).
-function meetingBlockStyle(rsvp: MeetingInviteDTO["rsvp"]): {
-  className: string;
-  borderClassName: string;
-} {
-  switch (rsvp) {
-    case "Accepted":
-      return { className: `bg-accent-teal-light ${EVENT_TEXT}`, borderClassName: "border-accent-teal" };
-    case "Tentative":
-      return { className: `bg-accent-yellow ${EVENT_TEXT}`, borderClassName: "border-accent-yellow" };
-    case "Declined":
-      return { className: "bg-muted text-muted-foreground line-through", borderClassName: "border-border" };
-    default:
-      return { className: `bg-accent-teal-light ${EVENT_TEXT}`, borderClassName: "border-dashed border-accent-teal" };
-  }
-}
-
 const RSVP_BADGE: Record<"Accepted" | "Declined" | "Tentative", string> = {
   Accepted: "bg-green-100 text-green-800",
   Declined: "bg-red-100 text-red-800",
   Tentative: "bg-yellow-100 text-yellow-800",
 };
 
-const DAY_KEYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 
 function CalendarEventDetailPopover({
   anchorEl,
@@ -5006,22 +4987,6 @@ function CalendarEventDetailPopover({
     </>,
     document.body,
   );
-}
-
-// Pick dark or light ink for a solid fill by its perceived luminance, so
-// custom event colors (which arrive as arbitrary hex — light Google "Banana"
-// through dark "Blueberry") stay readable instead of always getting white text.
-// Falls back to white for anything we can't parse as a hex color.
-function readableTextColor(bg: string): string {
-  const hex = bg.trim().replace(/^#/, "");
-  const full = hex.length === 3 ? hex.replace(/(.)/g, "$1$1") : hex;
-  if (full.length !== 6 || /[^0-9a-f]/i.test(full)) return "#ffffff";
-  const r = parseInt(full.slice(0, 2), 16);
-  const g = parseInt(full.slice(2, 4), 16);
-  const b = parseInt(full.slice(4, 6), 16);
-  // Rec. 601 luma; above ~0.6 the fill reads as light → switch to dark ink.
-  const luma = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  return luma > 0.6 ? "#1e2733" : "#ffffff";
 }
 
 function WeekGridEvent({ e }: { e: EventBlock }) {
@@ -5658,22 +5623,6 @@ function SelectionPopoverPortal({
     </div>,
     document.body,
   );
-}
-
-function formatHour(h: number) {
-  if (h === 12) return "12 PM";
-  if (h === 0) return "12 AM";
-  return h > 12 ? `${h - 12} PM` : `${h} AM`;
-}
-
-// Fractional hour → "9:15 AM" / "12:00 PM" style label for drag tooltips.
-function formatHourMinute(h: number) {
-  const totalMin = Math.round(h * 60);
-  const hour24 = Math.floor(totalMin / 60) % 24;
-  const minute = totalMin % 60;
-  const suffix = hour24 >= 12 ? "PM" : "AM";
-  const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
-  return `${hour12}:${String(minute).padStart(2, "0")} ${suffix}`;
 }
 
 const STRIPE_STYLE: React.CSSProperties = {

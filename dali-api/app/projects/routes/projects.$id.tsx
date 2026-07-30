@@ -43,6 +43,10 @@ import {
   unlinkProjectPartner,
   updateProjectPartnerDates,
 } from "~/partners/lib/partner-access";
+import {
+  notifyPartnerPartnershipEnded,
+  notifyPartnerProjectLinked,
+} from "~/partners/lib/partner-notify.server";
 import { getPresenceUser } from "~/lib/presence-user";
 import { TaskBoard } from "../components/TaskBoard";
 import { ProjectMentorshipTab } from "~/mentorship/components/ProjectMentorshipTab";
@@ -187,6 +191,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       iconEmoji: true,
       repoUrls: true,
       deploymentUrl: true,
+      projectLinks: {
+        orderBy: { position: "asc" },
+        select: { id: true, label: true, url: true, partnerVisible: true },
+      },
       githubTeamSlug: true,
       slackChannelName: true,
       slackChannelId: true,
@@ -931,6 +939,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       imageUrlResolved,
       repoUrls: project.repoUrls,
       deploymentUrl: project.deploymentUrl,
+      projectLinks: project.projectLinks,
       githubTeamSlug: project.githubTeamSlug,
       slackChannelName: project.slackChannelName,
       slackChannelId: project.slackChannelId,
@@ -1053,6 +1062,11 @@ export async function action({ request, params }: Route.ActionArgs) {
       return { error: "Only Core or Admin can manage partner organizations." };
     }
     const actor = { actorUserId: auth.user.sub, request };
+    const linkedProject = await prisma.project.findUnique({
+      where: { id: params.id },
+      select: { name: true },
+    });
+    const projectName = linkedProject?.name ?? "your project";
     if (intent === "partner-link") {
       const partnerOrgId = (form.get("partnerOrgId") as string | null) ?? "";
       if (!partnerOrgId) return { error: "Select an organization." };
@@ -1060,12 +1074,14 @@ export async function action({ request, params }: Route.ActionArgs) {
         { projectId: params.id, partnerOrgId },
         actor,
       );
-      return "error" in result ? result : redirect(`/projects/${params.id}`);
+      if ("error" in result) return result;
+      await notifyPartnerProjectLinked({ projectId: params.id, partnerOrgId, projectName });
+      return redirect(`/projects/${params.id}`);
     }
     const projectPartnerId = (form.get("projectPartnerId") as string | null) ?? "";
     const existing = await prisma.projectPartner.findFirst({
       where: { id: projectPartnerId, projectId: params.id },
-      select: { id: true, startedAt: true },
+      select: { id: true, startedAt: true, partnerOrgId: true },
     });
     if (!existing) return { error: "Partnership not found." };
     if (intent === "partner-end") {
@@ -1073,10 +1089,14 @@ export async function action({ request, params }: Route.ActionArgs) {
         { projectPartnerId, startedAt: existing.startedAt, endedAt: new Date() },
         actor,
       );
-      return "error" in result ? result : redirect(`/projects/${params.id}`);
+      if ("error" in result) return result;
+      await notifyPartnerPartnershipEnded({ partnerOrgId: existing.partnerOrgId, projectName });
+      return redirect(`/projects/${params.id}`);
     }
     const result = await unlinkProjectPartner(projectPartnerId, actor);
-    return "error" in result ? result : redirect(`/projects/${params.id}`);
+    if ("error" in result) return result;
+    await notifyPartnerPartnershipEnded({ partnerOrgId: existing.partnerOrgId, projectName });
+    return redirect(`/projects/${params.id}`);
   }
 
   // Header form: name + status + icon.
@@ -2594,6 +2614,10 @@ function OverviewTab({
         canManage={canManagePartners}
       />
 
+      {/* Partner-facing links (demo / prototype / live URLs) shown to the
+          partner in the portal. Team-editable via the project-links API. */}
+      <ProjectLinksSection project={project} canEdit={canEdit} />
+
       {/* Project details. Editable as one section; commits via intent=details
           which expects the full field set. Section-level Save submits and
           closes; Cancel reverts (the wrapper remounts the body which resets
@@ -2832,6 +2856,134 @@ function ScopeTab({
         />
       )}
     </div>
+  );
+}
+
+// Partner-facing project links (demo / prototype / live URLs). Team-editable;
+// surfaced to the partner in the portal's Deliverables tab. Posts JSON to the
+// project-links API, which revalidates this loader so the list stays in sync.
+function ProjectLinksSection({
+  project,
+  canEdit,
+}: {
+  project: LoaderData["project"];
+  canEdit: boolean;
+}) {
+  const fetcher = useFetcher();
+  const [adding, setAdding] = useState(false);
+  const [label, setLabel] = useState("");
+  const [url, setUrl] = useState("");
+  const links = project.projectLinks;
+  const busy = fetcher.state !== "idle";
+
+  const post = (body: Record<string, string>) =>
+    fetcher.submit(body, {
+      method: "post",
+      action: `/api/projects/${project.id}/project-links`,
+      encType: "application/json",
+    });
+
+  if (links.length === 0 && !canEdit) return null;
+
+  const add = () => {
+    if (!label.trim() || !url.trim() || busy) return;
+    post({ op: "create", label: label.trim(), url: url.trim() });
+    setLabel("");
+    setUrl("");
+    setAdding(false);
+  };
+
+  return (
+    <section className="bg-card border border-border rounded-lg p-4">
+      <div className="flex items-center justify-between mb-1">
+        <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
+          <Globe className="w-4 h-4" /> Partner links
+        </h2>
+        {canEdit && !adding && (
+          <button
+            type="button"
+            onClick={() => setAdding(true)}
+            className="text-xs font-medium text-accent-coral hover:underline flex items-center gap-1"
+          >
+            <Plus className="w-3.5 h-3.5" /> Add link
+          </button>
+        )}
+      </div>
+      <p className="text-xs text-muted-foreground mb-3">
+        Demo, prototype, or live URLs — shown to the partner in their portal.
+      </p>
+
+      {links.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No partner links yet.</p>
+      ) : (
+        <ul className="flex flex-col divide-y divide-border">
+          {links.map((l) => (
+            <li key={l.id} className="flex items-center gap-3 py-2 text-sm">
+              <a
+                href={l.url}
+                target="_blank"
+                rel="noreferrer"
+                className="font-medium text-foreground hover:text-accent-coral truncate max-w-[40%]"
+              >
+                {l.label}
+              </a>
+              <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                {l.url}
+              </span>
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={() => post({ op: "delete", linkId: l.id })}
+                  disabled={busy}
+                  className="flex-shrink-0 text-muted-foreground/70 hover:text-red-600 disabled:opacity-50"
+                  aria-label={`Remove ${l.label}`}
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {canEdit && adding && (
+        <div className="mt-3 flex flex-col gap-2 border-t border-border pt-3 sm:flex-row sm:items-center">
+          <input
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            placeholder="Label (e.g. Live demo)"
+            className="rounded-md border border-border bg-card px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral sm:w-44"
+          />
+          <input
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://…"
+            className="min-w-0 flex-1 rounded-md border border-border bg-card px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral"
+          />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={add}
+              disabled={!label.trim() || !url.trim() || busy}
+              className="rounded-md bg-dark-blue px-3 py-1 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+            >
+              Add
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAdding(false);
+                setLabel("");
+                setUrl("");
+              }}
+              className="text-sm text-muted-foreground hover:text-foreground"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 

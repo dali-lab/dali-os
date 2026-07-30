@@ -916,6 +916,7 @@ function ApplicationsBoard({
       OnHold: [],
       Accepted: [],
       Rejected: [],
+      Withdrawn: [],
     };
     for (const a of rows) map[a.status].push(a);
     return map;

@@ -326,21 +326,15 @@ export default function PartnerApply({ actionData }: Route.ComponentProps) {
               questions={applicationForm.questions}
               values={formAnswers}
               onChange={(k, v) => setFormAnswers((a) => ({ ...a, [k]: v }))}
-              renderField={(q) =>
-                q.type === "file" ? (
-                  <div className="text-xs text-muted-foreground italic border border-dashed border-border rounded-md px-3 py-2">
-                    File uploads aren’t available here.
-                  </div>
-                ) : (
-                  <FormQuestionField
-                    question={q}
-                    value={formAnswers[q.key] ?? ""}
-                    onChange={(v) =>
-                      setFormAnswers((a) => ({ ...a, [q.key]: v }))
-                    }
-                  />
-                )
-              }
+              renderField={(q) => (
+                <FormQuestionField
+                  question={q}
+                  value={formAnswers[q.key] ?? ""}
+                  onChange={(v) =>
+                    setFormAnswers((a) => ({ ...a, [q.key]: v }))
+                  }
+                />
+              )}
             />
             <input
               type="hidden"

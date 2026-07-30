@@ -9,6 +9,7 @@ export const PARTNER_APPLICATION_STATUSES = [
   "OnHold",
   "Accepted",
   "Rejected",
+  "Withdrawn",
 ] as const;
 
 export type PartnerApplicationStatus =
@@ -23,6 +24,7 @@ export const PARTNER_APPLICATION_STATUS_LABELS: Record<
   OnHold: "On hold",
   Accepted: "Accepted",
   Rejected: "Rejected",
+  Withdrawn: "Withdrawn",
 };
 
 // Pill tint per status (Tailwind classes), shared by the list table and the
@@ -36,6 +38,7 @@ export const PARTNER_APPLICATION_STATUS_PILL: Record<
   OnHold: "bg-muted/50 text-muted-foreground",
   Accepted: "bg-accent-teal/25 text-accent-teal",
   Rejected: "bg-destructive/10 text-destructive",
+  Withdrawn: "bg-muted/50 text-muted-foreground line-through",
 };
 
 // Statuses that count toward the projected lab-headcount chart. Submitted /

@@ -13,6 +13,7 @@ import {
 import type { Question } from "~/types";
 import { CollaborativeEditor } from "~/components/CollaborativeEditor";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
+import { useConfirmSubmit } from "~/components/ui/dialog";
 import {
   PARTNER_APPLICATION_STATUS_LABELS,
   PARTNER_APPLICATION_STATUS_PILL,
@@ -29,6 +30,8 @@ export const meta: Route.MetaFunction = ({ data }) => {
 // decision lands the structured fields freeze (the SOW collab doc stays
 // live — it's co-owned with the lab).
 const PARTNER_EDITABLE_STATUSES = ["Submitted", "UnderReview"];
+// Non-terminal states a partner can still retract from.
+const WITHDRAWABLE_STATUSES = ["Submitted", "UnderReview", "OnHold"];
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const { auth, partnerUser } = await requirePartner(request);
@@ -40,6 +43,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       id: true,
       title: true,
       status: true,
+      decisionNote: true,
       createdAt: true,
       resultingProjectId: true,
       targetTerms: {
@@ -92,11 +96,25 @@ export async function action({ request, params }: Route.ActionArgs) {
     select: { id: true, status: true },
   });
   if (!application) throw new Response("Not found", { status: 404 });
+
+  const form = await request.formData();
+  const intent = (form.get("intent") as string | null) ?? "title";
+
+  if (intent === "withdraw") {
+    if (!WITHDRAWABLE_STATUSES.includes(application.status)) {
+      return { error: "This application can no longer be withdrawn." };
+    }
+    await prisma.partnerApplication.update({
+      where: { id: application.id },
+      data: { status: "Withdrawn" },
+    });
+    return { ok: true };
+  }
+
+  // Title edit (the only field a partner may change post-submit).
   if (!PARTNER_EDITABLE_STATUSES.includes(application.status)) {
     return { error: "This application is no longer editable." };
   }
-
-  const form = await request.formData();
   const title = (form.get("title") as string | null)?.trim() ?? "";
   if (!title) return { error: "A title is required." };
 
@@ -108,15 +126,20 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 function StatusTimeline({ status }: { status: PartnerApplicationStatus }) {
-  const terminal =
-    status === "Accepted" || status === "Rejected" || status === "OnHold";
-  const activeIndex = terminal ? 2 : status === "UnderReview" ? 1 : 0;
+  // OnHold is a PARKING state, not a decision — it sits in the review lane, so
+  // the third "Decision" step stays unreached until Accepted/Rejected lands.
+  const decided = status === "Accepted" || status === "Rejected";
+  const onHold = status === "OnHold";
+  const activeIndex = decided ? 2 : status === "UnderReview" || onHold ? 1 : 0;
   const steps: { label: string; pillStatus: PartnerApplicationStatus }[] = [
     { label: "Submitted", pillStatus: "Submitted" },
-    { label: "Under review", pillStatus: "UnderReview" },
     {
-      label: terminal ? PARTNER_APPLICATION_STATUS_LABELS[status] : "Decision",
-      pillStatus: terminal ? status : "OnHold",
+      label: onHold ? "On hold" : "Under review",
+      pillStatus: onHold ? "OnHold" : "UnderReview",
+    },
+    {
+      label: decided ? PARTNER_APPLICATION_STATUS_LABELS[status] : "Decision",
+      pillStatus: decided ? status : "OnHold",
     },
   ];
   return (
@@ -146,7 +169,11 @@ export default function PartnerApplicationDetail({
     useLoaderData<typeof loader>();
   const navigation = useNavigation();
   const submitting = navigation.state === "submitting";
+  const confirmSubmit = useConfirmSubmit();
   const error = actionData && "error" in actionData ? actionData.error : null;
+  const canWithdraw = ["Submitted", "UnderReview", "OnHold"].includes(
+    application.status,
+  );
 
   const documentName = `partnersow:${application.id}:body`;
   const inputClass =
@@ -162,10 +189,47 @@ export default function PartnerApplicationDetail({
           </h1>
           <StatusTimeline status={application.status} />
         </div>
-        <p className="text-sm text-muted-foreground mt-1">
-          Submitted {new Date(application.createdAt).toLocaleDateString()}
-        </p>
+        <div className="flex items-center gap-3 mt-1 flex-wrap">
+          <p className="text-sm text-muted-foreground">
+            Submitted {new Date(application.createdAt).toLocaleDateString()}
+          </p>
+          {canWithdraw && (
+            <Form
+              method="post"
+              onSubmit={confirmSubmit({
+                title: "Withdraw this application?",
+                description:
+                  "The lab will stop considering it. This can't be undone — you'd need to submit a new pitch.",
+                confirmLabel: "Withdraw",
+                tone: "destructive",
+              })}
+            >
+              <input type="hidden" name="intent" value="withdraw" />
+              <button
+                type="submit"
+                className="text-sm text-muted-foreground hover:text-destructive transition"
+              >
+                Withdraw application
+              </button>
+            </Form>
+          )}
+        </div>
       </div>
+
+      {application.decisionNote && (
+        <div
+          className={`rounded-2xl border px-5 py-4 text-sm ${
+            application.status === "Rejected"
+              ? "border-destructive/30 bg-destructive/5 text-foreground"
+              : "border-border bg-muted/30 text-foreground"
+          }`}
+        >
+          <p className="text-xs font-medium text-muted-foreground mb-1">
+            A note from the DALI team
+          </p>
+          <p className="whitespace-pre-wrap">{application.decisionNote}</p>
+        </div>
+      )}
 
       {application.status === "Accepted" && application.resultingProjectId && (
         <Link
@@ -255,18 +319,18 @@ export default function PartnerApplicationDetail({
         <h2 className="font-heading font-semibold text-dark-blue">
           Statement of Work
         </h2>
-        {application.status !== "Submitted" && (
+        {application.status === "Accepted" && (
           <p className="text-xs text-muted-foreground mt-0.5">
             Drafted together with the DALI team — edits sync live.
           </p>
         )}
         <div className="mt-3" />
-        {/* The SOW is a co-owned doc: it opens once the lab is actually in
-            the room (review has started), not the moment a pitch lands. */}
-        {application.status === "Submitted" ? (
+        {/* The SOW is a co-owned doc: it opens once the pitch is accepted and
+            the engagement is real, not while it's still under consideration. */}
+        {application.status !== "Accepted" ? (
           <p className="text-sm text-muted-foreground bg-muted/30 rounded-lg px-4 py-3">
-            This document opens when the lab starts reviewing your pitch —
-            you'll draft the details here together with the DALI team.
+            The statement of work opens once your pitch is accepted — you'll
+            draft the details here together with the DALI team.
           </p>
         ) : collabToken ? (
           <PresenceProvider

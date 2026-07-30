@@ -11,6 +11,10 @@ import { createGoogleCalendarEvent, type GoogleAttendee } from "~/lib/google-cal
 import { primaryEmail, formatDateShort } from "~/lib/display";
 import { buildIcs } from "~/lib/ics";
 import { createProjectPage, createLabMeetingPage, ensureMeetingNotesFolder } from "~/lib/pages";
+import {
+  sharePartnerMeeting,
+  notifyPartnerMeetingUpdated,
+} from "~/partners/lib/partner-meeting.server";
 import { isCore } from "~/lib/roles";
 import type { ScheduledMeeting, MeetingType, AttendanceMode } from "~/generated/prisma/client";
 
@@ -92,6 +96,9 @@ export type CreateScheduledMeetingInput = {
   meetingType?: MeetingType | null;
   meetingTypeLabel?: string | null;
   projectId?: string | null;
+  // Share with the project's partners (portal + calendar invite + RSVP).
+  // Independent of meetingType/notes; requires a projectId to mean anything.
+  partnerVisible?: boolean;
   // Roster (default): organizer/Core check attendees off by hand (needs a
   // meeting note for the checklist UI). SelfCheckIn: a checkInToken is
   // generated and attendees mark themselves present via the check-in route —
@@ -159,7 +166,11 @@ export async function createScheduledMeeting(
       organizerCalendarLinkId: organizerLink?.id ?? null,
       meetingType: input.meetingType ?? null,
       meetingTypeLabel: input.meetingType === "Other" ? (input.meetingTypeLabel ?? null) : null,
-      projectId: input.meetingType ? (input.projectId ?? null) : null,
+      // A project association is first-class now — independent of whether a
+      // note is created (meetingType). Note nesting below still keys off both.
+      projectId: input.projectId ?? null,
+      // Partner sharing only means something with a project behind it.
+      partnerVisible: Boolean(input.partnerVisible && input.projectId),
       attendanceMode,
       checkInToken,
     },
@@ -296,6 +307,12 @@ export async function createScheduledMeeting(
       })),
     });
     notifiedCount = result.inApp;
+  }
+
+  // If created already shared with partners, deliver the calendar invite
+  // (best-effort; no-op unless partnerVisible + projectId + a time are set).
+  if (meeting.partnerVisible) {
+    await sharePartnerMeeting(meeting.id);
   }
 
   return {
@@ -469,5 +486,10 @@ export async function cancelScheduledMeeting(
       console.error(`meeting ${meetingId}: cancellation notify failed`, err);
     }
   }
+
+  // Partner-facing cancel (best-effort) — separate from the member fan-out,
+  // sends a CANCEL invite that clears it from the partner's calendar.
+  await notifyPartnerMeetingUpdated(meetingId, true);
+
   return { ok: true, alreadyCancelled: false };
 }

@@ -108,10 +108,9 @@ export default function PartnerOnboarding({ actionData }: Route.ComponentProps) 
   const submitting = navigation.state === "submitting";
   const error = actionData && "error" in actionData ? actionData.error : null;
 
-  // Org concepts live HERE, not on the auth screens: a signed-in account
-  // with no membership either waits for an invite (which attaches to this
-  // account) or explicitly creates a new organization. Invite-only join —
-  // shared @dartmouth.edu domains rule out auto-matching.
+  // Org concepts live HERE, not on the auth screens: a signed-in account with
+  // no membership either accepts an invite (from DALI or a teammate — the link
+  // in the email attaches to this account) or creates a new organization.
   const [creating, setCreating] = useState(false);
   const showForm = Boolean(existingOrg) || creating;
 
@@ -147,16 +146,13 @@ export default function PartnerOnboarding({ actionData }: Route.ComponentProps) 
           <>
             <div className="rounded-2xl bg-brand-tint p-6 mb-6">
               <p className="font-heading font-semibold text-dark-blue mb-1">
-                Joining a team that's already here?
+                Waiting on an invite?
               </p>
               <p className="text-sm text-muted-foreground">
-                Ask a teammate to invite you — it's under{" "}
-                <span className="font-medium text-dark-blue">
-                  Settings → Team
-                </span>{" "}
-                in their portal. The invite lands in your email and attaches
-                to this account; accept it and you're in. Not sure who has
-                portal access? Ask your DALI project contact.
+                If DALI or a teammate invited you, use the link in your
+                invitation email — it signs you in and adds you to their
+                organization automatically. It lands at{" "}
+                <span className="font-medium text-dark-blue">{email}</span>.
               </p>
             </div>
             <button
@@ -164,7 +160,7 @@ export default function PartnerOnboarding({ actionData }: Route.ComponentProps) 
               onClick={() => setCreating(true)}
               className="w-full rounded-xl border border-border bg-card text-dark-blue font-heading font-semibold py-3 hover:border-accent-coral transition"
             >
-              Set up a new organization
+              Create your organization
             </button>
           </>
         )}

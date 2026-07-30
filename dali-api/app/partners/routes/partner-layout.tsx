@@ -69,6 +69,7 @@ export default function PartnerLayout() {
           displayName={displayName}
           subtitle={orgName}
           settingsTo="/partner/settings"
+          logoutTo="/logout?next=/partner/login"
         />
       </nav>
 

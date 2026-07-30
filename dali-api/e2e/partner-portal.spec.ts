@@ -198,17 +198,27 @@ test.describe('partner portal', () => {
     await expect(page).toHaveURL(/\/partner$/);
   });
 
-  test('project view shows sprint summary and only shared pages', async ({ page }) => {
+  test('project view shows plain progress and only shared deliverables', async ({ page }) => {
     await page.goto('/partner/projects/project-tuck-alumni');
     await expect(
       page.getByRole('heading', { name: 'Tuck Alumni Connect' }),
     ).toBeVisible();
-    // Sprint name also appears in the momentum hero, so scope to the roadmap.
+
+    // Section tabs are ?tab=-driven and server-rendered, so navigate straight
+    // to each. Progress is plain — an "area of work" with how far along it is,
+    // no sprint / story / priority vocabulary (the seeded work aggregates to
+    // "2 of 5 done").
+    await page.goto('/partner/projects/project-tuck-alumni?tab=progress');
     await expect(
-      page.locator('#roadmap').getByText('Sprint 3 — Matching flow'),
+      page.getByRole('heading', { name: "What we're building" }),
     ).toBeVisible();
-    await expect(page.getByText('2 of 5 tasks done')).toBeVisible();
+    await expect(page.getByText('2 of 5 done')).toBeVisible();
+
+    // Shared docs + partner links live in the Deliverables tab; unshared docs
+    // never render.
+    await page.goto('/partner/projects/project-tuck-alumni?tab=deliverables');
     await expect(page.getByText('Weekly Partner Update')).toBeVisible();
+    await expect(page.getByText('Prototype demo')).toBeVisible();
     await expect(page.getByText('Internal Retro Notes')).not.toBeVisible();
   });
 
@@ -265,8 +275,8 @@ test.describe('partner self-signup', () => {
 
     // The no-org landing owns the org concepts: invite guidance is shown,
     // and creating an organization is an explicit step.
-    await expect(page.getByText(/Joining a team that's already here/)).toBeVisible();
-    await page.getByRole('button', { name: 'Set up a new organization' }).click();
+    await expect(page.getByText(/Waiting on an invite/)).toBeVisible();
+    await page.getByRole('button', { name: 'Create your organization' }).click();
     await page.getByLabel('First name').fill('Emery');
     await page.getByLabel('Last name').fill('Example');
     await page.getByLabel('Organization name').fill('Example Robotics');
