@@ -204,15 +204,15 @@ test.describe('partner portal', () => {
       page.getByRole('heading', { name: 'Tuck Alumni Connect' }),
     ).toBeVisible();
 
-    // The roadmap lives in its own tab now; open it for the sprint summary.
-    // (Only the active tab renders, so the sprint name is unambiguous here even
-    // though it also appears in the Overview momentum card.)
-    await page.getByRole('button', { name: 'Roadmap' }).click();
+    // The hub is a tabbed workspace; the section tabs are driven by ?tab= and
+    // server-rendered, so navigate straight to each tab (no click / hydration
+    // race, and only the active tab's copy of the sprint name is present).
+    await page.goto('/partner/projects/project-tuck-alumni?tab=roadmap');
     await expect(page.getByText('Sprint 3 — Matching flow')).toBeVisible();
     await expect(page.getByText('2 of 5 tasks done')).toBeVisible();
 
     // Shared docs live in the Documents tab; unshared ones never render.
-    await page.getByRole('button', { name: 'Documents' }).click();
+    await page.goto('/partner/projects/project-tuck-alumni?tab=documents');
     await expect(page.getByText('Weekly Partner Update')).toBeVisible();
     await expect(page.getByText('Internal Retro Notes')).not.toBeVisible();
   });

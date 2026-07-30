@@ -62,6 +62,9 @@ export type PartnerProjectViewData = {
   partnerSince: string | null;
   currentTermCode: string | null;
   team: { name: string; domains: string[]; photoUrl: string | null }[];
+  // The project's PM (domain "PM") as the partner's point of contact — name +
+  // lab email for a "contact your team" mailto. Null when no PM is assigned.
+  teamContact: { name: string; email: string } | null;
   // Aggregate live progress across the in-flight sprint(s) — the hero readout.
   // Null when nothing is active (between sprints / not yet started).
   momentum: {
@@ -217,6 +220,9 @@ export async function loadPartnerProjectView(
                   firstName: true,
                   lastName: true,
                   photoUrl: true,
+                  daliEmail: true,
+                  dartmouthEmail: true,
+                  personalEmail: true,
                 },
               },
               domain: { select: { name: true } },
@@ -363,6 +369,15 @@ export async function loadPartnerProjectView(
       photoUrl: await resolvePhotoUrl(r.photoUrl),
     })),
   );
+
+  // The PM (domain "PM") is the partner's point of contact — surface their name
+  // + lab email so the portal can offer a direct "contact your team" line.
+  const pmAssignment = assignments.find((a) => a.domain.name === "PM");
+  const pmEmail = pmAssignment ? primaryEmail(pmAssignment.user) : null;
+  const teamContact =
+    pmAssignment && pmEmail
+      ? { name: fullName(pmAssignment.user), email: pmEmail }
+      : null;
 
   const allCards = allSprintRows.map(toSprintCard);
 
@@ -607,6 +622,7 @@ export async function loadPartnerProjectView(
     partnerSince: partnership?.startedAt?.toISOString() ?? null,
     currentTermCode: current?.code ?? null,
     team,
+    teamContact,
     momentum,
     progress,
     epics,

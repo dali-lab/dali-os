@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Form, Link, useSearchParams } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import {
   CalendarClock,
   CheckCircle2,
@@ -418,8 +418,6 @@ export function PartnerProjectHubView({
   pageHref,
   calendarFeedUrl,
   canRsvp = false,
-  meetingRequested = false,
-  requestError = null,
 }: {
   data: PartnerProjectViewData;
   currentUserId: string;
@@ -427,11 +425,8 @@ export function PartnerProjectHubView({
   pageHref: (pageId: string) => string;
   // Personal ICS subscribe URL (real portal only; absent in the member preview).
   calendarFeedUrl?: string | null;
-  // Whether RSVP + request-a-meeting controls are live (real portal only).
+  // Whether the RSVP controls are live (real portal only).
   canRsvp?: boolean;
-  // Request-a-meeting action feedback (real portal only).
-  meetingRequested?: boolean;
-  requestError?: string | null;
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const raw = searchParams.get("tab");
@@ -484,8 +479,8 @@ export function PartnerProjectHubView({
           pageHref={pageHref}
           canRsvp={canRsvp}
           calendarFeedUrl={calendarFeedUrl}
-          meetingRequested={meetingRequested}
-          requestError={requestError}
+          teamContact={data.teamContact}
+          projectName={data.project.name}
         />
       )}
       {active === "team" && (
@@ -890,16 +885,16 @@ function MeetingsPanel({
   pageHref,
   canRsvp,
   calendarFeedUrl,
-  meetingRequested,
-  requestError,
+  teamContact,
+  projectName,
 }: {
   meetings: PartnerProjectViewData["meetings"];
   milestones: PartnerProjectViewData["milestones"];
   pageHref: (pageId: string) => string;
   canRsvp: boolean;
   calendarFeedUrl?: string | null;
-  meetingRequested: boolean;
-  requestError: string | null;
+  teamContact: PartnerProjectViewData["teamContact"];
+  projectName: string;
 }) {
   const hasUpcoming = meetings.length > 0 || milestones.length > 0;
   return (
@@ -922,11 +917,7 @@ function MeetingsPanel({
         pageHref={pageHref}
         canRsvp={canRsvp}
       />
-      {canRsvp && (
-        <div className="mt-4">
-          <RequestMeetingForm requested={meetingRequested} error={requestError} />
-        </div>
-      )}
+      <TeamContactPrompt contact={teamContact} projectName={projectName} />
     </section>
   );
 }
@@ -1133,86 +1124,37 @@ function SharedFilePreviewModal({
   );
 }
 
-function RequestMeetingForm({
-  requested,
-  error,
+// "Contact your team" — a direct line to the project's PM instead of a
+// fire-and-forget request form. The team schedules and shares meetings, which
+// then surface on the calendar above.
+function TeamContactPrompt({
+  contact,
+  projectName,
 }: {
-  requested: boolean;
-  error: string | null;
+  contact: PartnerProjectViewData["teamContact"];
+  projectName: string;
 }) {
-  const [open, setOpen] = useState(false);
-  const inputClass =
-    "w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral";
-  if (requested) {
-    return (
-      <p className="mt-3 text-sm text-accent-teal bg-accent-teal/10 rounded-lg px-4 py-3">
-        Request sent — the team will follow up to schedule.
-      </p>
-    );
-  }
   return (
-    <div className="mt-3">
-      {!open ? (
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="text-sm font-medium text-accent-coral hover:underline"
-        >
-          + Request a meeting
-        </button>
+    <div className={`mt-4 ${CARD} p-4`}>
+      <p className="text-sm font-medium text-dark-blue">Need to meet?</p>
+      {contact ? (
+        <p className="mt-1 text-sm text-muted-foreground">
+          {contact.name} is your DALI point of contact — reach out and they'll
+          set up a time, which will show up here.{" "}
+          <a
+            href={`mailto:${contact.email}?subject=${encodeURIComponent(
+              `Meeting request — ${projectName}`,
+            )}`}
+            className="font-medium text-accent-coral hover:underline"
+          >
+            Email {contact.name.split(" ")[0] || contact.name}
+          </a>
+        </p>
       ) : (
-        <Form
-          method="post"
-          className="bg-card border border-border rounded-2xl p-4 flex flex-col gap-3"
-        >
-          {error && (
-            <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">
-              {error}
-            </p>
-          )}
-          <div>
-            <label className="block text-xs font-medium text-muted-foreground mb-1">
-              What's it about?
-            </label>
-            <input
-              name="topic"
-              required
-              placeholder="e.g. Mid-sprint check-in"
-              className={inputClass}
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-muted-foreground mb-1">
-              Preferred times <span className="text-muted-foreground">(optional)</span>
-            </label>
-            <input
-              name="preferredWindows"
-              placeholder="e.g. Weekday afternoons ET"
-              className={inputClass}
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-muted-foreground mb-1">
-              Anything else? <span className="text-muted-foreground">(optional)</span>
-            </label>
-            <textarea name="details" rows={2} className={inputClass} />
-          </div>
-          <div className="flex items-center gap-3">
-            <button
-              type="submit"
-              className="self-start rounded-lg bg-dark-blue text-white text-sm font-heading font-semibold px-4 py-2 hover:opacity-90 transition"
-            >
-              Send request
-            </button>
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              className="text-sm text-muted-foreground hover:text-foreground"
-            >
-              Cancel
-            </button>
-          </div>
-        </Form>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Reach out to your DALI team to schedule time — new meetings will show
+          up here once they're set.
+        </p>
       )}
     </div>
   );

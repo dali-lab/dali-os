@@ -1,5 +1,4 @@
 import {
-  useActionData,
   useLoaderData,
   type ShouldRevalidateFunctionArgs,
 } from "react-router";
@@ -9,7 +8,6 @@ import { requirePartner } from "~/partners/lib/partner-auth.server";
 import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
 import { loadPartnerProjectView } from "~/partners/lib/partner-project-view.server";
 import { ensureCalendarFeedToken } from "~/partners/lib/partner-calendar.server";
-import { requestPartnerMeeting } from "~/partners/lib/partner-meeting.server";
 import { getFrontendUrl } from "~/lib/app-env";
 import { PartnerProjectHubView } from "~/partners/components/PartnerProjectHubView";
 
@@ -54,26 +52,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   return { ...data, currentUserId: auth.user.sub, calendarFeedUrl };
 }
 
-export async function action({ request, params }: Route.ActionArgs) {
-  const { auth, partnerUser } = await requirePartner(request);
-  if (!(await partnerHasProjectAccess(auth.user.sub, params.id!))) {
-    throw new Response("Not found", { status: 404 });
-  }
-  const form = await request.formData();
-  const topic = ((form.get("topic") as string | null) ?? "").trim();
-  if (!topic) return { error: "A topic is required." };
-  await requestPartnerMeeting({
-    projectId: params.id!,
-    partnerOrgId: partnerUser.partnerOrgId,
-    requestedByUserId: auth.user.sub,
-    topic,
-    details: ((form.get("details") as string | null) ?? "").trim() || null,
-    preferredWindows:
-      ((form.get("preferredWindows") as string | null) ?? "").trim() || null,
-  });
-  return { ok: true, requested: true };
-}
-
 // The section tabs live entirely in the ?tab= search param and don't change
 // the loaded data — skip the refetch (and the "mark seen" write) on those
 // client-side navigations. Still revalidate after form submissions.
@@ -89,19 +67,12 @@ export function shouldRevalidate({
 
 export default function PartnerProjectView() {
   const data = useLoaderData<typeof loader>();
-  const actionData = useActionData<typeof action>();
   return (
     <PartnerProjectHubView
       data={data}
       currentUserId={data.currentUserId}
       canRsvp
       calendarFeedUrl={data.calendarFeedUrl}
-      meetingRequested={Boolean(
-        actionData && "requested" in actionData && actionData.requested,
-      )}
-      requestError={
-        actionData && "error" in actionData ? actionData.error : null
-      }
       backLink={{ to: "/partner", label: "Back to portal" }}
       pageHref={(pageId) => `/partner/projects/${data.project.id}/pages/${pageId}`}
     />
