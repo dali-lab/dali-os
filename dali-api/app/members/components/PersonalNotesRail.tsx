@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useFetcher } from "react-router";
+import { useFetcher, useRevalidator } from "react-router";
 import {
   ChevronRight,
   Eye,
@@ -13,6 +13,7 @@ import { PageIcon } from "~/components/PageIcon";
 import { buttonClasses } from "~/components/ui/Button";
 import { Tooltip } from "~/components/ui/IconButton";
 import type { NoteSummary } from "~/members/lib/personal-notes.server";
+import { NoteShareModal } from "./NoteShareModal";
 
 // The notes rail on a member's profile.
 //
@@ -71,11 +72,15 @@ function VisibilityMark({ note }: { note: NoteSummary }) {
 function NoteRow({
   note,
   showOwner,
+  canManage,
   onOpen,
+  onManage,
 }: {
   note: NoteSummary;
   showOwner: boolean;
+  canManage: boolean;
   onOpen: (note: NoteSummary) => void;
+  onManage: (note: NoteSummary) => void;
 }) {
   return (
     <li>
@@ -89,7 +94,31 @@ function NoteRow({
           <span className="truncate text-sm text-foreground flex-1 min-w-0">
             {note.title}
           </span>
-          <VisibilityMark note={note} />
+          {canManage ? (
+            // On your own notes the mark IS the control — it reads as state
+            // and opens the dialog that changes it, so there's no separate
+            // decoration that merely looks clickable.
+            <span
+              role="button"
+              tabIndex={0}
+              aria-label={`Change who can see ${note.title}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onManage(note);
+              }}
+              onKeyDown={(e) => {
+                if (e.key !== "Enter" && e.key !== " ") return;
+                e.preventDefault();
+                e.stopPropagation();
+                onManage(note);
+              }}
+              className="shrink-0 rounded p-0.5 -m-0.5 hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-coral/40"
+            >
+              <VisibilityMark note={note} />
+            </span>
+          ) : (
+            <VisibilityMark note={note} />
+          )}
           <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/0 group-hover:text-muted-foreground/70 transition-colors shrink-0" />
         </span>
         {(showOwner || note.tags.length > 0) && (
@@ -126,6 +155,8 @@ export function PersonalNotesRail({
   onOpenNote: (note: NoteSummary) => void;
 }) {
   const [tab, setTab] = useState<Tab>("mine");
+  const [managing, setManaging] = useState<NoteSummary | null>(null);
+  const revalidator = useRevalidator();
   const fetcher = useFetcher();
   const creating = fetcher.state !== "idle";
 
@@ -219,10 +250,21 @@ export function PersonalNotesRail({
               key={note.id}
               note={note}
               showOwner={showOwner}
+              canManage={isSelf && tab === "mine"}
               onOpen={onOpenNote}
+              onManage={setManaging}
             />
           ))}
         </ul>
+      )}
+
+      {managing && (
+        <NoteShareModal
+          note={managing}
+          open
+          onClose={() => setManaging(null)}
+          onChanged={() => revalidator.revalidate()}
+        />
       )}
 
       {fetcher.data && "error" in (fetcher.data as { error?: string }) && (

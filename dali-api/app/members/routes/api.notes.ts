@@ -1,7 +1,9 @@
 import type { Route } from "./+types/api.notes";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { isCore } from "~/lib/roles";
+import { isCore, isLabMember } from "~/lib/roles";
+import { prisma } from "~/lib/db";
+import { listVisibleGroupsForUser } from "~/lib/groups";
 import {
   NoteForbiddenError,
   NoteNotFoundError,
@@ -71,6 +73,44 @@ export async function action({ request }: Route.ActionArgs) {
       case "visibility":
         await setNoteVisibility(pageId, me, str("public") === "true");
         return withCors(request, Response.json({ ok: true }));
+      // Who the owner can share with: lab members matching a query, plus the
+      // groups they belong to. Scoped to lab members and capped, so the share
+      // picker can't be used as a directory dump.
+      case "share-options": {
+        if (!(await isLabMember(me))) {
+          return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
+        }
+        const q = (str("q") ?? "").trim();
+        const [members, groups] = await Promise.all([
+          q.length < 2
+            ? Promise.resolve([])
+            : prisma.user.findMany({
+                where: {
+                  id: { not: me },
+                  daliMember: { isNot: null },
+                  OR: [
+                    { firstName: { contains: q, mode: "insensitive" } },
+                    { lastName: { contains: q, mode: "insensitive" } },
+                  ],
+                },
+                orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+                take: 8,
+                select: { id: true, firstName: true, lastName: true },
+              }),
+          listVisibleGroupsForUser(me),
+        ]);
+        return withCors(
+          request,
+          Response.json({
+            ok: true,
+            members: members.map((m) => ({
+              id: m.id,
+              label: `${m.firstName} ${m.lastName}`.trim(),
+            })),
+            groups: groups.map((g) => ({ id: g.id, label: g.name })),
+          }),
+        );
+      }
       case "shares":
         return withCors(
           request,
