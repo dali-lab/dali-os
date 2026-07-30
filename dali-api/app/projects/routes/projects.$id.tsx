@@ -3050,24 +3050,20 @@ function DocumentsBlock({
     return () => window.removeEventListener("message", onMessage);
   }, [documents, revalidator]);
 
-  // Share/unshare a page with the project's partner org(s), or mark it as the
-  // project's public write-up on dali.website. Two independent audiences, one
-  // API shape (/api/pages/:id/<field-kebab>), so one function. Persisted via
-  // its own API route; the badge state comes back through the loader.
-  async function toggleVisibility(
-    id: string,
-    field: "partnerVisible" | "publicVisible",
-    next: boolean,
-  ) {
-    const path = field === "partnerVisible" ? "partner-visible" : "public-visible";
+  // Share/unshare a page with the project's partner org(s). The public
+  // write-up is not toggled from here — the Public view owns nominating it
+  // (ensurePublicWriteupPage), so there's no second control for it in the
+  // Documents list. Persisted via its own API route; the badge state comes
+  // back through the loader.
+  async function togglePartnerVisible(id: string, next: boolean) {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(`/api/pages/${id}/${path}`, {
+      const res = await fetch(`/api/pages/${id}/partner-visible`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ [field]: next }),
+        body: JSON.stringify({ partnerVisible: next }),
       });
       if (!res.ok) {
         const b = (await res.json().catch(() => ({}))) as { error?: string };
@@ -3279,14 +3275,21 @@ function DocumentsBlock({
               </span>
             </Tooltip>
           )}
-          {doc.publicVisible && !canEdit && (
+          {/* Read-only marker. Which page is the public write-up is decided on
+              the Public view, so this says which one it is without offering a
+              second way to change it. */}
+          {doc.publicVisible && (
             <Tooltip label="Public write-up — rendered on this project's page on dali.website">
               <span className="flex items-center text-accent-coral">
                 <Globe className="w-3.5 h-3.5" />
               </span>
             </Tooltip>
           )}
-          {canEdit && (hasActivePartner || doc.partnerVisible) && (
+          {/* Shown whenever the viewer can edit, not only once a partner org is
+              linked: teams routinely prepare shared docs before the partner
+              account exists, and gating the control on an active partnership
+              made it vanish from most projects. */}
+          {canEdit && (
             <Tooltip
               label={
                 doc.partnerVisible
@@ -3297,9 +3300,7 @@ function DocumentsBlock({
               <button
                 type="button"
                 disabled={busy}
-                onClick={() =>
-                  void toggleVisibility(doc.id, "partnerVisible", !doc.partnerVisible)
-                }
+                onClick={() => void togglePartnerVisible(doc.id, !doc.partnerVisible)}
                 // Accessible name must stay exactly "Shared with partner" /
                 // "Share with partner": it's the toggle's only name now that the
                 // label is icon-only, and it's the contract partner-portal.spec
@@ -3312,34 +3313,6 @@ function DocumentsBlock({
                 }`}
               >
                 <Handshake className="w-3.5 h-3.5" />
-              </button>
-            </Tooltip>
-          )}
-          {/* Public write-up: the page dali.website renders in this project's
-              detail modal. Independent of partner sharing — the visitor-facing
-              story is rarely the doc the partner works out of. */}
-          {canEdit && (
-            <Tooltip
-              label={
-                doc.publicVisible
-                  ? "Public write-up on dali.website — click to unpublish"
-                  : "Use as the public write-up on dali.website"
-              }
-            >
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() =>
-                  void toggleVisibility(doc.id, "publicVisible", !doc.publicVisible)
-                }
-                aria-label={doc.publicVisible ? "Public write-up" : "Make public write-up"}
-                className={`flex items-center disabled:opacity-60 ${
-                  doc.publicVisible
-                    ? "text-accent-coral"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <Globe className="w-3.5 h-3.5" />
               </button>
             </Tooltip>
           )}
@@ -3773,7 +3746,9 @@ function FilesBlock({
                     </span>
                   </Tooltip>
                 )}
-                {canEdit && (hasActivePartner || f.partnerVisible) && (
+                {/* Same as the Documents toggle: available to any editor, not
+                    only once a partner org is linked. */}
+                {canEdit && (
                   <Tooltip
                     label={
                       f.partnerVisible
