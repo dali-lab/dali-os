@@ -32,7 +32,7 @@ import {
 import type { Question } from "~/types";
 import { listSelectableForms } from "~/projects/lib/form-slots";
 import { AreaPillNav } from "~/components/AreaPillNav";
-import { FileText, LayoutGrid } from "lucide-react";
+import { ChevronRight, FileText, LayoutGrid } from "lucide-react";
 
 export const handle = { areaPills: true };
 
@@ -284,8 +284,7 @@ export default function PartnersApplications() {
             Partner Applications
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Inbound partner pitches, their expected scope per domain, and where
-            they sit in review.
+            Inbound partner pitches and where they sit in review.
           </p>
         </div>
         {canEdit && !creating && (
@@ -363,13 +362,28 @@ export default function PartnersApplications() {
       )}
 
       {canEdit && (
-        <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-2">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div>
-              <h2 className="text-sm font-semibold text-foreground">
-                Application form
-              </h2>
-              <p className="text-xs text-muted-foreground mt-0.5">
+        <details className="group bg-card border border-border rounded-lg">
+          {/* Binding a form is once-a-cycle configuration, not something to
+              read past on every visit — so it collapses to a single line that
+              still names the bound form and flags it when partners aren't
+              actually seeing it. */}
+          <summary className="flex items-center gap-2 px-4 py-2.5 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+            <ChevronRight className="w-4 h-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-90" />
+            <h2 className="text-sm font-semibold text-foreground">
+              Application form
+            </h2>
+            <span className="text-xs text-muted-foreground truncate">
+              {formBinding ? formBinding.formName : "None bound"}
+            </span>
+            {formBinding && (!formBinding.published || !formBinding.hasVersion) && (
+              <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+                Not live
+              </span>
+            )}
+          </summary>
+          <div className="px-4 pb-4 pt-1 flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <p className="text-xs text-muted-foreground">
                 Extra questions partners answer when pitching a project.
                 {formBinding && (
                   <>
@@ -383,54 +397,54 @@ export default function PartnersApplications() {
                   </>
                 )}
               </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Form method="post" className="flex items-center gap-2">
-                <input type="hidden" name="intent" value="bind-form" />
-                <select
-                  name="formId"
-                  defaultValue={formBinding?.formId ?? ""}
-                  className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-                >
-                  <option value="" disabled>
-                    Choose a form…
-                  </option>
-                  {selectableForms.map((f) => (
-                    <option key={f.id} value={f.id}>
-                      {f.name}
-                      {f.published ? "" : " (unpublished)"}
+              <div className="flex items-center gap-2">
+                <Form method="post" className="flex items-center gap-2">
+                  <input type="hidden" name="intent" value="bind-form" />
+                  <select
+                    name="formId"
+                    defaultValue={formBinding?.formId ?? ""}
+                    className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                  >
+                    <option value="" disabled>
+                      Choose a form…
                     </option>
-                  ))}
-                </select>
-                <button
-                  type="submit"
-                  className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors"
-                >
-                  {formBinding ? "Change" : "Bind"}
-                </button>
-              </Form>
-              {formBinding && (
-                <Form method="post">
-                  <input type="hidden" name="intent" value="clear-form" />
+                    {selectableForms.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.name}
+                        {f.published ? "" : " (unpublished)"}
+                      </option>
+                    ))}
+                  </select>
                   <button
                     type="submit"
-                    className="px-3 py-1.5 text-xs font-medium rounded-md border border-border text-muted-foreground hover:text-destructive hover:border-destructive/40 transition-colors"
+                    className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors"
                   >
-                    Remove
+                    {formBinding ? "Change" : "Bind"}
                   </button>
                 </Form>
-              )}
+                {formBinding && (
+                  <Form method="post">
+                    <input type="hidden" name="intent" value="clear-form" />
+                    <button
+                      type="submit"
+                      className="px-3 py-1.5 text-xs font-medium rounded-md border border-border text-muted-foreground hover:text-destructive hover:border-destructive/40 transition-colors"
+                    >
+                      Remove
+                    </button>
+                  </Form>
+                )}
+              </div>
             </div>
+            {formBinding && (!formBinding.published || !formBinding.hasVersion) && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5">
+                {formBinding.hasVersion
+                  ? "This form isn't published yet"
+                  : "This form has no saved version yet"}
+                {" "}— partners currently see only the built-in pitch fields.
+              </p>
+            )}
           </div>
-          {formBinding && (!formBinding.published || !formBinding.hasVersion) && (
-            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5">
-              {formBinding.hasVersion
-                ? "This form isn't published yet"
-                : "This form has no saved version yet"}
-              {" "}— partners currently see only the built-in pitch fields.
-            </p>
-          )}
-        </section>
+        </details>
       )}
 
       <TermProjection rows={effectiveRows} requiredCells={requiredCells} />
@@ -635,190 +649,168 @@ function TermProjection({
     (t) => t.expected.total > 0 || t.required.total > 0,
   );
 
+  // Both series share one scale so the bar and the tick in a row are directly
+  // comparable, and so rows are comparable across terms.
+  const scaleMax = useMemo(
+    () =>
+      Math.max(
+        ...byTerm.flatMap((t) => [t.expected.total, t.required.total]),
+        1,
+      ),
+    [byTerm],
+  );
+
   return (
     <section className="bg-card border border-border rounded-lg p-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+      <div className="flex items-baseline justify-between gap-3 flex-wrap">
         <h2 className="text-sm font-semibold text-foreground">
-          Expected vs required lab members
+          Lab members by term
         </h2>
-        <select
-          value={domainFocus}
-          onChange={(e) => setDomainFocus(e.target.value)}
-          aria-label="Focus on a domain"
-          className="text-xs px-2 py-1 border border-border rounded-md bg-background text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-        >
-          <option value="all">All domains</option>
-          {domains.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name}
-            </option>
-          ))}
-        </select>
+        {hasData && (
+          <span className="text-[11px] text-muted-foreground tabular-nums">
+            expected <span className="opacity-60">/ required</span>
+          </span>
+        )}
       </div>
+
       {!hasData ? (
-        <p className="text-sm text-muted-foreground italic">
-          No projection yet — add expected headcount to applications under
-          review/accepted, or role requests to projects.
+        <p className="text-sm text-muted-foreground mt-2">
+          Nothing to project yet. Add expected headcount to an application under
+          review, or role requests to a project.
         </p>
       ) : (
-        <TermBars byTerm={byTerm} domains={domains} colorOf={colorOf} />
-      )}
-
-      {hasData && (
-        <div className="flex flex-col gap-2 mt-4">
-          {/* Solid bar = Expected, washed-out bar = Required. */}
-          <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span className="w-3 h-3 rounded-sm bg-foreground/70" />
-              Expected
-            </span>
-            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span className="w-3 h-3 rounded-sm bg-foreground/70 opacity-[0.55]" />
-              Required
-            </span>
+        <>
+          <div className="flex flex-col gap-1.5 mt-3">
+            {byTerm.map((t) => (
+              <TermRow
+                key={t.code}
+                term={t}
+                domains={domains}
+                colorOf={colorOf}
+                scaleMax={scaleMax}
+              />
+            ))}
           </div>
-          {domainFocus === "all" && (
-            <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-              {domains.map((d) => (
-                <span
-                  key={d.id}
-                  className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
-                >
-                  <span
-                    className="w-3 h-3 rounded-sm"
-                    style={{ backgroundColor: colorOf(d.id) }}
-                  />
-                  {d.name}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
+          <DomainLegend
+            domains={domains}
+            colorOf={colorOf}
+            focus={domainFocus}
+            onFocus={(id) =>
+              setDomainFocus((cur) => (cur === id ? "all" : id))
+            }
+          />
+        </>
       )}
     </section>
   );
 }
 
-// A single stacked bar: domain segments sized within `barTotal`, drawn to a
-// pixel height relative to `chartMax`. `dim` washes out the Required bar so
-// it reads as the target line rather than competing with Expected.
-function StackedBar({
-  series,
+// One term on a single track: expected headcount as a domain-split bar from
+// the left, required as a tick at its own point on the same scale. Putting
+// both on one axis makes the shortfall/surplus the shape of the row, so
+// neither bar needs its own label and neither series needs a washed-out fill
+// to tell it apart from the other.
+function TermRow({
+  term,
   domains,
   colorOf,
-  chartMax,
-  dim,
+  scaleMax,
 }: {
-  series: Series;
+  term: { code: string; expected: Series; required: Series };
   domains: { id: string; name: string }[];
   colorOf: (domainId: string) => string;
-  chartMax: number;
-  dim?: boolean;
+  scaleMax: number;
 }) {
+  const { code, expected, required } = term;
+  const pct = (n: number) => `${(n / scaleMax) * 100}%`;
+
   return (
-    <div
-      className="w-9 flex flex-col-reverse overflow-hidden"
-      style={{
-        height: `${series.total === 0 ? 2 : Math.max(8, (series.total / chartMax) * 120)}px`,
-        opacity: dim ? 0.55 : 1,
-      }}
-    >
-      {domains.map((d) => {
-        const n = series.perDomain.get(d.id) ?? 0;
-        if (n === 0) return null;
-        return (
+    <div className="grid grid-cols-[2.75rem_1fr_4.5rem] items-center gap-3">
+      <span className="text-xs font-medium text-foreground">{code}</span>
+
+      <div className="relative h-5">
+        <div className="absolute inset-0 rounded-[3px] bg-muted/40" />
+        {expected.total > 0 && (
           <div
-            key={d.id}
-            style={{
-              height: `${(n / series.total) * 100}%`,
-              backgroundColor: colorOf(d.id),
-            }}
-            title={`${d.name}: ${n}`}
-          />
-        );
-      })}
-    </div>
-  );
-}
-
-function TermBars({
-  byTerm,
-  domains,
-  colorOf,
-}: {
-  byTerm: {
-    code: string;
-    expected: Series;
-    required: Series;
-  }[];
-  domains: { id: string; name: string }[];
-  colorOf: (domainId: string) => string;
-}) {
-  const max = Math.max(
-    ...byTerm.flatMap((t) => [t.expected.total, t.required.total]),
-    1,
-  );
-  return (
-    <div className="flex items-end gap-6 pt-2 overflow-x-auto">
-      {byTerm.map((t) => (
-        <div key={t.code} className="flex flex-col items-center gap-2">
-          <div className="flex items-end gap-1.5">
-            <LabeledBar
-              label="Exp"
-              series={t.expected}
-              domains={domains}
-              colorOf={colorOf}
-              chartMax={max}
-            />
-            <LabeledBar
-              label="Req"
-              series={t.required}
-              domains={domains}
-              colorOf={colorOf}
-              chartMax={max}
-              dim
-            />
+            className="absolute inset-y-0 left-0 flex overflow-hidden rounded-[3px]"
+            style={{ width: pct(expected.total) }}
+          >
+            {domains.map((d) => {
+              const n = expected.perDomain.get(d.id) ?? 0;
+              if (n === 0) return null;
+              return (
+                <div
+                  key={d.id}
+                  style={{
+                    width: `${(n / expected.total) * 100}%`,
+                    backgroundColor: colorOf(d.id),
+                  }}
+                  title={`${d.name}: ${n} expected`}
+                />
+              );
+            })}
           </div>
-          <span className="text-xs text-foreground">{t.code}</span>
-        </div>
-      ))}
+        )}
+        {required.total > 0 && (
+          <span
+            className="absolute w-0.5 bg-foreground rounded-full"
+            style={{
+              left: pct(required.total),
+              top: -2,
+              bottom: -2,
+              transform: "translateX(-50%)",
+            }}
+            title={`${required.total} required`}
+          />
+        )}
+      </div>
+
+      <span className="text-xs text-right tabular-nums text-foreground">
+        {expected.total}
+        <span className="text-muted-foreground"> / {required.total}</span>
+      </span>
     </div>
   );
 }
 
-// A count above one StackedBar, with an Exp/Req tag beneath so each bar is
-// self-labeled (the user can't tell expected from required otherwise). `dim`
-// (the Required bar) mutes the count to match the bar's washed-out fill.
-function LabeledBar({
-  label,
-  series,
+// The legend doubles as the domain filter: clicking a swatch isolates that
+// domain across every term, clicking it again clears. That keeps the chart
+// self-contained and saves a second domain dropdown on a page whose toolbar
+// already has one for the table.
+function DomainLegend({
   domains,
   colorOf,
-  chartMax,
-  dim,
+  focus,
+  onFocus,
 }: {
-  label: string;
-  series: Series;
   domains: { id: string; name: string }[];
   colorOf: (domainId: string) => string;
-  chartMax: number;
-  dim?: boolean;
+  focus: string;
+  onFocus: (domainId: string) => void;
 }) {
   return (
-    <div className="flex flex-col items-center gap-1">
-      <span
-        className={`text-xs font-medium ${dim ? "text-muted-foreground" : "text-foreground"}`}
-      >
-        {series.total}
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mt-3 pt-3 border-t border-border">
+      {domains.map((d) => (
+        <button
+          key={d.id}
+          type="button"
+          onClick={() => onFocus(d.id)}
+          aria-pressed={focus === d.id}
+          className={`inline-flex items-center gap-1.5 text-xs text-muted-foreground rounded px-1 -mx-1 transition-opacity hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-coral/40 ${
+            focus === "all" || focus === d.id ? "opacity-100" : "opacity-40"
+          }`}
+        >
+          <span
+            className="w-2.5 h-2.5 rounded-sm"
+            style={{ backgroundColor: colorOf(d.id) }}
+          />
+          {d.name}
+        </button>
+      ))}
+      <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground ml-auto">
+        <span className="w-0.5 h-3 bg-foreground rounded-full" />
+        required
       </span>
-      <StackedBar
-        series={series}
-        domains={domains}
-        colorOf={colorOf}
-        chartMax={chartMax}
-        dim={dim}
-      />
-      <span className="text-[10px] text-muted-foreground">{label}</span>
     </div>
   );
 }
