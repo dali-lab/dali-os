@@ -436,8 +436,14 @@ function SectionSidebar({
           return (
             <div
               key={s.id}
-              className={`group flex min-w-[8rem] flex-col gap-1 rounded-md sm:min-w-0 ${
-                selected ? "bg-muted/70" : "hover:bg-muted/40"
+              // Selection follows the app's active-nav convention (accent-coral
+              // edge + text, as in AreaPillNav) rather than a muted tint, which
+              // was too faint to read as selected in light mode. The
+              // transparent edge on unselected rows keeps the text aligned.
+              className={`group flex min-w-[8rem] flex-col gap-1 rounded-md border-l-2 sm:min-w-0 ${
+                selected
+                  ? "border-accent-coral bg-accent-coral/10"
+                  : "border-transparent hover:bg-muted/40"
               }`}
             >
               {editing ? (
@@ -484,7 +490,7 @@ function SectionSidebar({
                   type="button"
                   onClick={() => onSelect(s.id)}
                   className={`w-full truncate px-2.5 py-1.5 text-left text-sm ${
-                    selected ? "font-semibold text-foreground" : "text-foreground/80"
+                    selected ? "font-semibold text-accent-coral" : "text-foreground/80"
                   }`}
                 >
                   {s.title}
@@ -502,7 +508,12 @@ function SectionReadPanel({ section }: { section: SectionData }) {
   const emptyBody = isEmptyDoc(section.body);
   return (
     <div className="flex flex-col gap-4">
-      <h3 className="font-heading text-base font-semibold text-foreground">{section.title}</h3>
+      {/* One step below the guide's own h1 (text-xl/2xl), so the section you're
+          reading is legible as the heading of this pane rather than sitting at
+          body size. */}
+      <h3 className="font-heading text-lg font-bold text-foreground sm:text-xl">
+        {section.title}
+      </h3>
       {section.videoUrl && (
         <video src={section.videoUrl} controls className="w-full rounded-lg bg-black" />
       )}
