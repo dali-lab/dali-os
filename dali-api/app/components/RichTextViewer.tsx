@@ -1,6 +1,5 @@
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import Image from "@tiptap/extension-image";
 import { useEffect } from "react";
 import {
   EDITOR_VIEWER_CONTENT_CLASS,
@@ -8,6 +7,7 @@ import {
   linkExtension,
 } from "./editor/shared";
 import { mentionViewerExtension } from "./editor/mention";
+import { imageExtension } from "./editor/image";
 
 interface RichTextViewerProps {
   content: unknown;
@@ -35,7 +35,7 @@ export function RichTextViewer({
       StarterKit,
       linkExtension({ interactive: true }),
       ...(enableMentions ? [mentionViewerExtension()] : []),
-      ...(enableImages ? [Image.configure({ allowBase64: false })] : []),
+      ...(enableImages ? [imageExtension()] : []),
     ],
     content: isEmptyDoc(content) ? "" : (content as object),
     editable: false,
