@@ -192,6 +192,7 @@ export const prisma = {
     findMany: vi.fn().mockResolvedValue([]),
     create: vi.fn(),
     update: vi.fn(),
+    delete: vi.fn(),
     count: vi.fn().mockResolvedValue(0),
   },
   projectFile: {
@@ -207,6 +208,7 @@ export const prisma = {
   collabDocument: {
     findUnique: vi.fn(),
     upsert: vi.fn(),
+    deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
   },
   docComment: {
     create: vi.fn(),
@@ -259,6 +261,9 @@ export const prisma = {
   },
   domainEligibility: {
     findMany: vi.fn().mockResolvedValue([]),
+    findFirst: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
   },
   userAvailabilitySettings: {
     findUnique: vi.fn().mockResolvedValue(null),
@@ -272,6 +277,31 @@ export const prisma = {
     create: vi.fn(),
     update: vi.fn(),
     delete: vi.fn(),
+  },
+  projectShowcase: {
+    findUnique: vi.fn(),
+    findFirst: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+    upsert: vi.fn(),
+    update: vi.fn(),
+    deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+  },
+  staffingCycle: {
+    findUnique: vi.fn(),
+    findFirst: vi.fn(),
+  },
+  staffingAssignment: {
+    findMany: vi.fn().mockResolvedValue([]),
+    create: vi.fn(),
+    deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+  },
+  staffingBoardMember: {
+    findMany: vi.fn().mockResolvedValue([]),
+  },
+  domain: {
+    findUnique: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+    count: vi.fn().mockResolvedValue(0),
   },
   timeEntry: {
     findMany: vi.fn().mockResolvedValue([]),

@@ -302,6 +302,47 @@ import {
   ManualBlockInvalidError,
 } from "~/mcp/tools/manual-blocks";
 
+import {
+  GET_PROJECT_SETTINGS_TOOL,
+  runGetProjectSettings,
+  ProjectSettingsNotFoundError,
+} from "~/mcp/tools/project-settings";
+import {
+  GET_PROJECT_SHOWCASE_TOOL,
+  runGetProjectShowcase,
+  UPDATE_PROJECT_SHOWCASE_TOOL,
+  runUpdateProjectShowcase,
+  ShowcaseNotFoundError,
+  ShowcaseForbiddenError,
+  ShowcaseInvalidError,
+} from "~/mcp/tools/project-showcase";
+import {
+  GET_STAFFING_BOARD_TOOL,
+  runGetStaffingBoard,
+  SET_STAFFING_ASSIGNMENT_TOOL,
+  runSetStaffingAssignment,
+  SET_DOMAIN_ELIGIBILITY_TOOL,
+  runSetDomainEligibility,
+  StaffingForbiddenError,
+  StaffingNotFoundError,
+  StaffingInvalidError,
+} from "~/mcp/tools/staffing";
+import {
+  LIST_DOCUMENT_SHARING_TOOL,
+  runListDocumentSharing,
+  SET_DOCUMENT_SHARING_TOOL,
+  runSetDocumentSharing,
+  DELETE_PROJECT_DOCUMENT_TOOL,
+  runDeleteProjectDocument,
+  SET_FILE_SHARING_TOOL,
+  runSetFileSharing,
+  DELETE_PROJECT_FILE_TOOL,
+  runDeleteProjectFile,
+  CurationNotFoundError,
+  CurationForbiddenError,
+  CurationInvalidError,
+} from "~/mcp/tools/document-curation";
+
 const TOOLS = [
   WHOAMI_TOOL,
   LIST_MY_NOTIFICATIONS_TOOL,
@@ -362,6 +403,18 @@ const TOOLS = [
   ADD_MANUAL_BLOCK_TOOL,
   UPDATE_MANUAL_BLOCK_TOOL,
   DELETE_MANUAL_BLOCK_TOOL,
+  // Project settings (read), showcase, staffing, document/file curation:
+  GET_PROJECT_SETTINGS_TOOL,
+  GET_PROJECT_SHOWCASE_TOOL,
+  UPDATE_PROJECT_SHOWCASE_TOOL,
+  GET_STAFFING_BOARD_TOOL,
+  SET_STAFFING_ASSIGNMENT_TOOL,
+  SET_DOMAIN_ELIGIBILITY_TOOL,
+  LIST_DOCUMENT_SHARING_TOOL,
+  SET_DOCUMENT_SHARING_TOOL,
+  DELETE_PROJECT_DOCUMENT_TOOL,
+  SET_FILE_SHARING_TOOL,
+  DELETE_PROJECT_FILE_TOOL,
 ] as const;
 
 type JsonRpcRequest = {
@@ -406,6 +459,16 @@ function rpcErrorFromTool(id: unknown, err: unknown): Response | null {
     const code = err.status === 403 ? -32003 : err.status === 404 ? -32004 : -32602;
     return rpcError(id, code, err.message);
   }
+  if (err instanceof ProjectSettingsNotFoundError) return rpcError(id, -32004, err.message);
+  if (err instanceof ShowcaseNotFoundError) return rpcError(id, -32004, err.message);
+  if (err instanceof ShowcaseForbiddenError) return rpcError(id, -32003, err.message);
+  if (err instanceof ShowcaseInvalidError) return rpcError(id, -32602, err.message);
+  if (err instanceof StaffingForbiddenError) return rpcError(id, -32003, err.message);
+  if (err instanceof StaffingNotFoundError) return rpcError(id, -32004, err.message);
+  if (err instanceof StaffingInvalidError) return rpcError(id, -32602, err.message);
+  if (err instanceof CurationNotFoundError) return rpcError(id, -32004, err.message);
+  if (err instanceof CurationForbiddenError) return rpcError(id, -32003, err.message);
+  if (err instanceof CurationInvalidError) return rpcError(id, -32602, err.message);
   if (err instanceof TimeEntryNotFoundError) return rpcError(id, -32004, err.message);
   if (err instanceof TimeEntryInvalidError) return rpcError(id, -32602, err.message);
   if (err instanceof ManualBlockNotFoundError) return rpcError(id, -32004, err.message);
@@ -568,6 +631,72 @@ export async function action({ request }: Route.ActionArgs) {
             break;
           case "list_my_calendar_links":
             payload = await runListMyCalendarLinks(auth.user.id);
+            break;
+          case "get_project_settings":
+            payload = await runGetProjectSettings(
+              auth.user.id,
+              args as Parameters<typeof runGetProjectSettings>[1],
+            );
+            break;
+          case "get_project_showcase":
+            payload = await runGetProjectShowcase(
+              auth.user.id,
+              args as Parameters<typeof runGetProjectShowcase>[1],
+            );
+            break;
+          case "update_project_showcase":
+            payload = await runUpdateProjectShowcase(
+              auth.user.id,
+              args as Parameters<typeof runUpdateProjectShowcase>[1],
+            );
+            break;
+          case "get_staffing_board":
+            payload = await runGetStaffingBoard(
+              auth.user.id,
+              args as Parameters<typeof runGetStaffingBoard>[1],
+            );
+            break;
+          case "set_staffing_assignment":
+            payload = await runSetStaffingAssignment(
+              auth.user.id,
+              args as Parameters<typeof runSetStaffingAssignment>[1],
+            );
+            break;
+          case "set_domain_eligibility":
+            payload = await runSetDomainEligibility(
+              auth.user.id,
+              args as Parameters<typeof runSetDomainEligibility>[1],
+            );
+            break;
+          case "list_document_sharing":
+            payload = await runListDocumentSharing(
+              auth.user.id,
+              args as Parameters<typeof runListDocumentSharing>[1],
+            );
+            break;
+          case "set_document_sharing":
+            payload = await runSetDocumentSharing(
+              auth.user.id,
+              args as Parameters<typeof runSetDocumentSharing>[1],
+            );
+            break;
+          case "delete_project_document":
+            payload = await runDeleteProjectDocument(
+              auth.user.id,
+              args as Parameters<typeof runDeleteProjectDocument>[1],
+            );
+            break;
+          case "set_file_sharing":
+            payload = await runSetFileSharing(
+              auth.user.id,
+              args as Parameters<typeof runSetFileSharing>[1],
+            );
+            break;
+          case "delete_project_file":
+            payload = await runDeleteProjectFile(
+              auth.user.id,
+              args as Parameters<typeof runDeleteProjectFile>[1],
+            );
             break;
           case "list_my_roles":
             payload = await runListMyRoles(
