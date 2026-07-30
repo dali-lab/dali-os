@@ -203,11 +203,16 @@ test.describe('partner portal', () => {
     await expect(
       page.getByRole('heading', { name: 'Tuck Alumni Connect' }),
     ).toBeVisible();
-    // Sprint name also appears in the momentum hero, so scope to the roadmap.
-    await expect(
-      page.locator('#roadmap').getByText('Sprint 3 — Matching flow'),
-    ).toBeVisible();
+
+    // The roadmap lives in its own tab now; open it for the sprint summary.
+    // (Only the active tab renders, so the sprint name is unambiguous here even
+    // though it also appears in the Overview momentum card.)
+    await page.getByRole('button', { name: 'Roadmap' }).click();
+    await expect(page.getByText('Sprint 3 — Matching flow')).toBeVisible();
     await expect(page.getByText('2 of 5 tasks done')).toBeVisible();
+
+    // Shared docs live in the Documents tab; unshared ones never render.
+    await page.getByRole('button', { name: 'Documents' }).click();
     await expect(page.getByText('Weekly Partner Update')).toBeVisible();
     await expect(page.getByText('Internal Retro Notes')).not.toBeVisible();
   });
