@@ -379,6 +379,34 @@ select:not(:disabled) {
 
 /* Slow recurring coral glow that draws the eye to the page Guide button.
    Pauses on hover/focus — once it's found there's no need to keep nagging. */
+/* Editor/viewer images can float so body text runs beside them, instead of
+   every image taking a line of its own. The attribute is set by the toolbar
+   and stored on the image node (see editor/image.ts).
+
+   `flow-root` on the content box contains the float: without it a tall image
+   escapes the bottom of the prose container and overlaps whatever follows. */
+.prose { display: flow-root; }
+
+.prose img[data-align="left"] {
+  float: left;
+  max-width: 50%;
+  margin: 0.25rem 1.25rem 0.75rem 0;
+}
+
+.prose img[data-align="right"] {
+  float: right;
+  max-width: 50%;
+  margin: 0.25rem 0 0.75rem 1.25rem;
+}
+
+/* Headings shouldn't start halfway down a floated image. */
+.prose :is(h1, h2, h3) { clear: both; }
+
+/* Narrow screens have no room for a column of text beside a picture. */
+@media (max-width: 640px) {
+  .prose img[data-align] { float: none; max-width: 100%; margin: 1rem 0; }
+}
+
 @keyframes guide-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(255, 139, 129, 0); }
   50%      { box-shadow: 0 0 0 4px rgba(255, 139, 129, 0.28); }

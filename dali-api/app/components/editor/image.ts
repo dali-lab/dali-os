@@ -14,6 +14,40 @@ import { uploadFileToS3 } from "~/lib/upload-client";
 export const IMAGE_UPLOAD_ACCEPT = "image/*";
 const UPLOAD_KEY_PREFIX = "doc-images";
 
+export type ImageAlign = "left" | "right";
+
+/**
+ * The image node, with a float attribute so body text can run beside a picture
+ * instead of every image forcing its own line.
+ *
+ * Exported as one configured extension rather than configured separately at
+ * each call site: ProseMirror strips attributes its schema doesn't declare, so
+ * a viewer that built its own Image would silently drop `align` and the wrap
+ * would vanish the moment you stopped editing.
+ *
+ * Kept as a block node on purpose. Making images inline would let them sit in a
+ * paragraph, but it also invalidates every image already stored at block level.
+ */
+const AlignableImage = Image.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      align: {
+        default: null,
+        parseHTML: (element) => element.getAttribute("data-align"),
+        renderHTML: (attributes) => {
+          const align = (attributes as { align?: string | null }).align;
+          return align ? { "data-align": align } : {};
+        },
+      },
+    };
+  },
+});
+
+export function imageExtension() {
+  return AlignableImage.configure({ allowBase64: false });
+}
+
 export function rawUploadUrl(key: string): string {
   return `/api/upload/raw?key=${encodeURIComponent(key)}`;
 }
@@ -91,8 +125,5 @@ const ImagePasteDrop = Extension.create({
 });
 
 export function imageEditorExtensions(onError?: (message: string) => void) {
-  return [
-    Image.configure({ allowBase64: false }),
-    ImagePasteDrop.configure({ onError }),
-  ];
+  return [imageExtension(), ImagePasteDrop.configure({ onError })];
 }
