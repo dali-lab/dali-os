@@ -2,6 +2,7 @@ import * as Y from "yjs";
 import type { Server as HocuspocusServer } from "@hocuspocus/server";
 import { prisma } from "~/lib/db";
 import { isPresenceRoom } from "./roomName";
+import { seedRegistryDoc, syncRegistryDocBack } from "./sources";
 
 const SNAPSHOT_MIN_INTERVAL_MS = 30_000;
 
@@ -97,6 +98,11 @@ export async function loadDocument(name: string, doc: Y.Doc): Promise<void> {
     return;
   }
 
+  // Registry-backed rich surfaces (mentorship notes/templates, …) seed from
+  // their source ProseMirror JSON via pmJsonToYDoc, preserving marks/nodes.
+  const parsed = parseDocName(name);
+  if (parsed && (await seedRegistryDoc(parsed.entity, parsed.id, doc))) return;
+
   // First time — seed from existing content into the XmlFragment that
   // y-prosemirror / Tiptap binds to. A minimal ProseMirror doc is a single
   // <paragraph> element wrapping a text node. Note: Y.XmlText() constructor
@@ -174,6 +180,12 @@ export async function storeDocument(
   // Sync plain text back to source field
   const parsed = parseDocName(name);
   if (!parsed) return { state, plainText };
+
+  // Registry-backed surfaces sync full ProseMirror JSON back to their source
+  // column; skip the legacy plain-text sync below.
+  if (await syncRegistryDocBack(parsed.entity, parsed.id, doc)) {
+    return { state, plainText };
+  }
 
   const { entity, id, field } = parsed;
 
