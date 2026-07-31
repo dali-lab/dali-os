@@ -1983,43 +1983,66 @@ async function main() {
 
   // ── Confidentiality agreement (Fall 2026) ────────────────────────────────
   // Bind a signed agreement to the active cycle so domain leads and the hiring
-  // lead can access confidentiality-gated pages in E2E tests.
-  await prisma.confidentialityAgreement.upsert({
+  // lead can access confidentiality-gated pages in E2E tests. Confidentiality
+  // is now a SigningDocument (kind Confidentiality) bound to the cycle via a
+  // SigningBinding and signed as a SigningSignature (roleKey "member").
+  await prisma.signingDocument.upsert({
     where: { id: "ca-fall-2026" },
     update: {},
-    create: { id: "ca-fall-2026", name: "Fall 2026 Hiring Confidentiality Agreement" },
+    create: {
+      id: "ca-fall-2026",
+      name: "Fall 2026 Hiring Confidentiality Agreement",
+      slug: "confidentiality-ca-fall-2026",
+      kind: "Confidentiality",
+      gateScope: "HiringCycle",
+      audience: "HiringParticipants",
+    },
   });
-  await prisma.confidentialityAgreementVersion.upsert({
+  await prisma.signingDocumentVersion.upsert({
     where: { id: "cav-fall-2026-v1" },
     update: {},
     create: {
       id: "cav-fall-2026-v1",
       versionNumber: 1,
       body: { type: "doc", content: [] },
-      agreementId: "ca-fall-2026",
+      roles: ["member"],
+      publishedAt: new Date(),
+      documentId: "ca-fall-2026",
       createdById: jordan.id,
     },
   });
-  await prisma.cycleConfidentialityAgreement.upsert({
-    where: { applicationCycleId: cycle.id },
+  await prisma.signingBinding.upsert({
+    where: { id: "sb-fall-2026" },
     update: {},
     create: {
-      applicationCycleId: cycle.id,
-      confidentialityAgreementVersionId: "cav-fall-2026-v1",
+      id: "sb-fall-2026",
+      documentId: "ca-fall-2026",
+      versionId: "cav-fall-2026-v1",
+      scopeKey: `cycle:${cycle.id}`,
+      cycleId: cycle.id,
     },
   });
   for (const [sigId, userId] of [
     ["cas-eng-lead", engLead.id],
     ["cas-jordan", jordan.id],
   ] as [string, string][]) {
-    await prisma.confidentialityAgreementSignature.upsert({
-      where: { userId_applicationCycleId: { userId, applicationCycleId: cycle.id } },
+    await prisma.signingSignature.upsert({
+      where: {
+        bindingId_signerUserId_roleKey: {
+          bindingId: "sb-fall-2026",
+          signerUserId: userId,
+          roleKey: "member",
+        },
+      },
       update: {},
       create: {
         id: sigId,
-        userId,
-        applicationCycleId: cycle.id,
-        confidentialityAgreementVersionId: "cav-fall-2026-v1",
+        bindingId: "sb-fall-2026",
+        versionId: "cav-fall-2026-v1",
+        signerUserId: userId,
+        roleKey: "member",
+        typedName: "",
+        fieldValues: {},
       },
     });
   }
@@ -2128,13 +2151,22 @@ async function main() {
     });
 
     if (r.signed) {
-      await prisma.confidentialityAgreementSignature.upsert({
-        where: { userId_applicationCycleId: { userId: user.id, applicationCycleId: cycle.id } },
+      await prisma.signingSignature.upsert({
+        where: {
+          bindingId_signerUserId_roleKey: {
+            bindingId: "sb-fall-2026",
+            signerUserId: user.id,
+            roleKey: "member",
+          },
+        },
         update: {},
         create: {
-          userId: user.id,
-          applicationCycleId: cycle.id,
-          confidentialityAgreementVersionId: "cav-fall-2026-v1",
+          bindingId: "sb-fall-2026",
+          versionId: "cav-fall-2026-v1",
+          signerUserId: user.id,
+          roleKey: "member",
+          typedName: "",
+          fieldValues: {},
         },
       });
     }
