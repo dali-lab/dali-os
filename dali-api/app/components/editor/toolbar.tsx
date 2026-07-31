@@ -32,8 +32,11 @@ import {
   AlignRight,
   AlignJustify,
   Image as ImageIcon,
+  Crop,
 } from "lucide-react";
+import { NodeSelection } from "@tiptap/pm/state";
 import { uploadEditorImage, IMAGE_UPLOAD_ACCEPT } from "./image";
+import { ImageCropModal } from "./ImageCropModal";
 import { SIGNING_FIELD_TYPES, FIELD_LABEL } from "~/lib/signing-fields";
 import { ALL_SIGNING_VARIABLES } from "~/lib/signing-variables";
 import { useDialog, type DialogApi } from "~/components/ui/dialog";
@@ -414,6 +417,11 @@ export function EditorToolbar({
   // Tiptap doesn't re-render React on its own; tick on every transaction so
   // active/disabled states track the selection and history enable-state.
   const [, setTick] = useState(0);
+  const [crop, setCrop] = useState<{
+    src: string;
+    pos: number;
+    attrs: Record<string, unknown>;
+  } | null>(null);
   useEffect(() => {
     const rerender = () => setTick((t) => t + 1);
     editor.on("transaction", rerender);
@@ -427,6 +435,37 @@ export function EditorToolbar({
   const imagesOn = !!features.images;
   const signingRoles = signingRolesOf(features);
   const hasLink = !!editor.schema.marks.link;
+
+  // Open the crop modal for the currently-selected image node.
+  function openCrop() {
+    const { selection } = editor.state;
+    if (
+      selection instanceof NodeSelection &&
+      selection.node.type.name === "image" &&
+      typeof selection.node.attrs.src === "string"
+    ) {
+      setCrop({
+        src: selection.node.attrs.src,
+        pos: selection.from,
+        attrs: { ...selection.node.attrs },
+      });
+    }
+  }
+
+  // Re-upload the cropped image and swap the node's src (resetting width, since
+  // the dimensions changed). Throwing leaves the modal open to show the error.
+  async function applyCrop(file: File) {
+    if (!crop) return;
+    const url = await uploadEditorImage(file);
+    editor.view.dispatch(
+      editor.view.state.tr.setNodeMarkup(crop.pos, undefined, {
+        ...crop.attrs,
+        src: url,
+        width: null,
+      }),
+    );
+    setCrop(null);
+  }
 
   // Compact density (short one-line fields): selection-only link controls plus a
   // persistent image button when images are on. Nothing to show otherwise.
@@ -456,6 +495,19 @@ export function EditorToolbar({
         <>
           <Divider />
           <ActionGroup editor={editor} actions={IMAGE_ALIGN_ACTIONS} />
+          <button
+            type="button"
+            title="Crop image"
+            aria-label="Crop image"
+            disabled={!editor.isActive("image")}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              openCrop();
+            }}
+            className="rounded p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40 disabled:pointer-events-none"
+          >
+            <Crop size={15} />
+          </button>
         </>
       )}
       {extraFormatControls && (
@@ -486,9 +538,18 @@ export function EditorToolbar({
   );
 
   return (
-    <div className="flex items-center justify-between gap-1 border-b border-border px-1.5 py-1">
-      {main}
-      {trailing && <div className="flex-shrink-0">{trailing}</div>}
-    </div>
+    <>
+      <div className="flex items-center justify-between gap-1 border-b border-border px-1.5 py-1">
+        {main}
+        {trailing && <div className="flex-shrink-0">{trailing}</div>}
+      </div>
+      {crop && (
+        <ImageCropModal
+          src={crop.src}
+          onApply={applyCrop}
+          onCancel={() => setCrop(null)}
+        />
+      )}
+    </>
   );
 }
