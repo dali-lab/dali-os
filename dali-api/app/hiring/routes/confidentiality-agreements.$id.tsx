@@ -3,6 +3,7 @@ import type { Route } from "./+types/confidentiality-agreements.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore, isDomainLead, isAdmin } from "~/lib/roles";
+import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { ConfidentialityAgreementDetail } from "~/hiring/components/ConfidentialityAgreementDetail";
 
 export const meta: Route.MetaFunction = ({ data }) => {
@@ -45,7 +46,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
   });
 
-  return { agreement, canEdit: hiringLead || domainLead || admin };
+  return {
+    agreement: {
+      ...agreement,
+      // Convert-on-read: legacy ProseMirror bodies → block JSON for DocEditor.
+      versions: agreement.versions.map((v) => ({ ...v, body: ensureBlocks(v.body) })),
+    },
+    canEdit: hiringLead || domainLead || admin,
+  };
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -74,6 +82,8 @@ export async function action({ request, params }: Route.ActionArgs) {
     } catch {
       return { error: "Body must be valid JSON" };
     }
+    // New versions store BLOCK JSON (stale ProseMirror payloads convert).
+    body = ensureBlocks(body);
 
     const lastVersion = await prisma.signingDocumentVersion.findFirst({
       where: { documentId: params.id },

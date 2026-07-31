@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { ImagePlus, Trash2 } from "lucide-react";
-import { uploadEditorImage, IMAGE_UPLOAD_ACCEPT } from "./image";
+import { uploadEditorImage, IMAGE_UPLOAD_ACCEPT } from "~/components/doc";
 
 // Notion-style page cover banner. Surfaces Page.coverImageUrl; uploads reuse
 // the editor's S3 image pipeline (stable /api/upload/raw src). Persistence is

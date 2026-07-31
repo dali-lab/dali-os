@@ -1,23 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRevalidator } from "react-router";
-import { FileDown, Check, RotateCcw, Trash2 } from "lucide-react";
-import { CollaborativeEditor, type CommentAnchor, type EditorApi, type TocHeading } from "./CollaborativeEditor";
+import { FileDown, History } from "lucide-react";
+import { DocEditor, type TocHeading } from "~/components/doc";
+import { pageDocName } from "~/collab/roomName";
 import { PresenceProvider } from "./collab/PresenceProvider";
 import { PresenceBar } from "./collab/PresenceBar";
-import { CommentsRail, formatCommentDate, type Comment, type ThreadActions } from "./collab/CommentsRail";
+import { CommentsRail } from "./collab/CommentsRail";
+import { VersionHistoryPanel } from "./collab/VersionHistoryPanel";
 import { TagPicker, type DocTag } from "./TagPicker";
-import { MentionTextInput } from "./editor/MentionTextInput";
 import { useEditMode, EditModeToggle } from "./EditModeToggle";
-import { PageIconPicker } from "./editor/PageIconPicker";
-import { PageCover } from "./editor/PageCover";
-import { DocToc } from "./editor/DocToc";
+import { PageIconPicker } from "./doc-chrome/PageIconPicker";
+import { PageCover } from "./doc-chrome/PageCover";
+import { DocToc } from "./doc-chrome/DocToc";
 import { relativeTime } from "~/lib/relative-time";
 
 // Reusable, abstract document surface: a Notion-style large title, a
-// collaborative rich-text body, lab tags, inline + doc-level comments, and
-// PDF/Word export. Keyed off a Page id so it can be dropped onto any FreeForm
-// page (project docs today; meeting notes / PRDs / etc. later) — it knows
-// nothing about projects.
+// collaborative rich-text body, lab tags, doc-level comments, and PDF/Word
+// export. Keyed off a Page id so it can be dropped onto any FreeForm page
+// (project docs today; meeting notes / PRDs / etc. later) — it knows nothing
+// about projects.
 //
 // The body lives in the collab room `doc:{pageId}:body` (same room the project
 // overview/PRD already use). The title is the Page.title field, saved via
@@ -38,7 +39,6 @@ export function DocumentEditor({
   createdByName,
   lastEditedByName,
   updatedAt,
-  focusMentionUserId,
   focusCommentId,
 }: {
   pageId: string;
@@ -56,27 +56,25 @@ export function DocumentEditor({
   createdByName?: string | null;
   lastEditedByName?: string | null;
   updatedAt?: string | null;
-  // When set (arriving from a mention notification), scroll to + flash this
-  // user's mention in the body once it syncs.
-  focusMentionUserId?: string;
   // When set (arriving from a comment-mention notification), scroll to + flash
   // this comment in the rail.
   focusCommentId?: string;
 }) {
   const revalidator = useRevalidator();
   // Read/edit gate: docs open in a clean reading view even for editors; the
-  // header toggle or the first click/keystroke in the body flips to edit.
+  // header toggle flips to edit.
   const { editing, editMode, setEditMode } = useEditMode(canEdit);
   const [title, setTitle] = useState(initialTitle);
   const [savingTitle, setSavingTitle] = useState(false);
-  const [pendingAnchor, setPendingAnchor] = useState<CommentAnchor | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   // Page chrome — optimistic local state, persisted via the documents API.
   const [iconEmoji, setIconEmoji] = useState<string | null>(initialIcon);
   const [coverImageUrl, setCoverImageUrl] = useState<string | null>(initialCover);
   const [wordCount, setWordCount] = useState(0);
   const [headings, setHeadings] = useState<TocHeading[]>([]);
-  const editorApiRef = useRef<EditorApi | null>(null);
+
+  const documentName = pageDocName(pageId);
 
   async function savePageMeta(patch: { iconEmoji?: string | null; coverImageUrl?: string | null }) {
     if (patch.iconEmoji !== undefined) setIconEmoji(patch.iconEmoji);
@@ -93,14 +91,6 @@ export function DocumentEditor({
       console.error("[document] failed to save page metadata", err);
     }
   }
-
-  // Bridge between the comments rail (owns the data) and the editor (needs the
-  // anchors to highlight + a way to refetch after a new inline comment).
-  const refreshRef = useRef<(() => void) | null>(null);
-  const getThreadsRef = useRef<(() => Comment[]) | null>(null);
-  const focusAnchorRef = useRef<((a: CommentAnchor) => void) | null>(null);
-  const actionsRef = useRef<ThreadActions | null>(null);
-  const [anchors, setAnchors] = useState<{ id: string; anchor: CommentAnchor }[]>([]);
 
   // Debounced title save.
   const titleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -139,40 +129,19 @@ export function DocumentEditor({
     }, 600);
   }
 
-  const registerRefresh = useCallback(
-    (refresh: () => void, threads: () => Comment[], actions: ThreadActions) => {
-      refreshRef.current = refresh;
-      getThreadsRef.current = threads;
-      actionsRef.current = actions;
-      // Recompute the editor's highlight anchors from the latest root threads.
-      const list = threads()
-        .filter((c) => c.parentId === null && c.anchor && !c.resolved)
-        .map((c) => ({ id: c.id, anchor: c.anchor as CommentAnchor }));
-      setAnchors(list);
-    },
-    [],
-  );
-
-  // Renders inside the CollaborativeEditor's popover when an inline highlight
-  // is clicked — reuses the rail's fetched data + mutation actions (via the
-  // refs above) instead of duplicating fetch/mutate logic, so this stays a
-  // thin read+act view rather than a second source of truth.
-  function getThreadNode(id: string, close: () => void) {
-    const all = getThreadsRef.current?.() ?? [];
-    const root = all.find((c) => c.id === id && c.parentId === null);
-    if (!root) return null;
-    const replies = all.filter((c) => c.parentId === id);
-    return (
-      <InlineThreadPopover
-        root={root}
-        replies={replies}
-        currentUserId={currentUserId}
-        canComment={canEdit}
-        actions={actionsRef.current}
-        close={close}
-      />
-    );
-  }
+  // ToC jump. Ordinals come from the block tree (H1–H3, in traversal order —
+  // see extractHeadings); BlockNote renders each heading block as a
+  // [data-content-type="heading"] element in the same order, so re-resolving
+  // the ordinal against the live DOM stays correct as peers edit the doc.
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const jumpToHeading = useCallback((ordinal: number) => {
+    const root = bodyRef.current;
+    if (!root) return;
+    const headingEls = Array.from(
+      root.querySelectorAll('[data-content-type="heading"]'),
+    ).filter((el) => Number(el.getAttribute("data-level") ?? "1") <= 3);
+    headingEls[ordinal]?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
 
   const metaSegments = [
     createdByName ? `Created by ${createdByName}` : null,
@@ -221,12 +190,20 @@ export function DocumentEditor({
             />
             <div className="flex items-center gap-2 text-xs">
               {savingTitle && <span className="text-muted-foreground">Saving…</span>}
-              <DocToc
-                headings={headings}
-                onJump={(ordinal) => editorApiRef.current?.scrollToHeading(ordinal)}
-              />
+              <DocToc headings={headings} onJump={jumpToHeading} />
               <PresenceBar />
               <EditModeToggle canEdit={canEdit} editMode={editMode} setEditMode={setEditMode} />
+              {collabToken && (
+                <button
+                  type="button"
+                  onClick={() => setHistoryOpen(true)}
+                  title="Version history"
+                  aria-label="Version history"
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded border border-border hover:bg-muted text-muted-foreground hover:text-foreground"
+                >
+                  <History className="w-3.5 h-3.5" />
+                </button>
+              )}
               <a
                 href={`/documents/${pageId}/export?format=pdf`}
                 className="inline-flex items-center gap-1 px-2 py-1 rounded border border-border hover:bg-muted text-muted-foreground hover:text-foreground"
@@ -253,38 +230,33 @@ export function DocumentEditor({
         </div>
 
         {collabToken ? (
-          <CollaborativeEditor
-            editorId={`doc:${pageId}:body`}
-            documentName={`doc:${pageId}:body`}
-            token={collabToken}
-            userName={userName}
-            disabled={!editing}
-            onBeginEdit={canEdit ? () => setEditMode(true) : undefined}
-            onWordCountChange={setWordCount}
-            onHeadingsChange={setHeadings}
-            onReady={(api) => {
-              editorApiRef.current = api;
-            }}
-            enableMentions
-            enableImages
-            enableRichBlocks
-            chromeless
-            focusMentionUserId={focusMentionUserId}
-            placeholder="Write something, or press '/' for commands"
-            inlineComments={{
-              enabled: true,
-              anchors,
-              onRequestComment: (a) => setPendingAnchor(a),
-              onReady: (api) => {
-                focusAnchorRef.current = api.focusAnchor;
-              },
-              getThreadNode,
-            }}
-          />
+          <div ref={bodyRef}>
+            <DocEditor
+              features="document"
+              editable={editing}
+              collab={{
+                documentName,
+                token: collabToken,
+                userName,
+                userId: currentUserId,
+              }}
+              onWordCountChange={setWordCount}
+              onHeadingsChange={setHeadings}
+              placeholder="Write something, or press '/' for commands"
+              className="min-h-[60vh]"
+            />
+          </div>
         ) : (
           <p className="text-sm text-muted-foreground italic">
             Sign in again to edit this document.
           </p>
+        )}
+
+        {historyOpen && (
+          <VersionHistoryPanel
+            documentName={documentName}
+            onClose={() => setHistoryOpen(false)}
+          />
         )}
       </div>
 
@@ -294,10 +266,6 @@ export function DocumentEditor({
           targetId={pageId}
           currentUserId={currentUserId}
           canComment={canEdit}
-          pendingAnchor={pendingAnchor}
-          onClearPendingAnchor={() => setPendingAnchor(null)}
-          onFocusAnchor={(a) => focusAnchorRef.current?.(a)}
-          registerRefresh={registerRefresh}
           focusCommentId={focusCommentId}
         />
       </aside>
@@ -319,117 +287,5 @@ export function DocumentEditor({
     </PresenceProvider>
   ) : (
     body
-  );
-}
-
-// Compact single-thread view rendered inside the editor's floating popover
-// (see getThreadNode above). Read + act, not a second source of truth: data
-// comes from the rail's live fetch, mutations go through the rail's own
-// actions, so both views update from the same refresh.
-function InlineThreadPopover({
-  root,
-  replies,
-  currentUserId,
-  canComment,
-  actions,
-  close,
-}: {
-  root: Comment;
-  replies: Comment[];
-  currentUserId: string;
-  canComment: boolean;
-  actions: ThreadActions | null;
-  close: () => void;
-}) {
-  const [replyDraft, setReplyDraft] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  return (
-    <div className="flex flex-col gap-2 p-3 text-sm max-h-96 overflow-y-auto">
-      <div>
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-xs font-medium text-foreground">{root.author}</span>
-          <span className="text-[10px] text-muted-foreground">{formatCommentDate(root.createdAt)}</span>
-        </div>
-        <p className="text-sm text-foreground whitespace-pre-wrap mt-0.5">{root.body}</p>
-      </div>
-
-      {replies.map((r) => (
-        <div key={r.id} className="ml-3 pl-2 border-l border-border">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-medium text-foreground">{r.author}</span>
-            <span className="text-[10px] text-muted-foreground">{formatCommentDate(r.createdAt)}</span>
-          </div>
-          <p className="text-sm text-foreground whitespace-pre-wrap mt-0.5">{r.body}</p>
-        </div>
-      ))}
-
-      {canComment && (
-        <>
-          <div className="flex items-end gap-1">
-            <MentionTextInput
-              autoFocus
-              value={replyDraft}
-              onChange={setReplyDraft}
-              placeholder="Reply… "
-              wrapperClassName="relative flex-1"
-              className="w-full px-2 py-1 text-xs border border-border rounded bg-background focus:outline-none focus:ring-1 focus:ring-accent-coral/40"
-              onKeyDown={async (e) => {
-                if (e.key !== "Enter" || !replyDraft.trim()) return;
-                e.preventDefault();
-                setBusy(true);
-                const ok = await actions?.reply(root.id, replyDraft.trim());
-                setBusy(false);
-                if (ok) setReplyDraft("");
-              }}
-            />
-            <button
-              type="button"
-              disabled={busy || !replyDraft.trim()}
-              onClick={async () => {
-                setBusy(true);
-                const ok = await actions?.reply(root.id, replyDraft.trim());
-                setBusy(false);
-                if (ok) setReplyDraft("");
-              }}
-              className="text-xs px-2 py-1 rounded bg-accent-coral text-white disabled:opacity-50"
-            >
-              Reply
-            </button>
-          </div>
-
-          <div className="flex items-center gap-3 pt-1 border-t border-border">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={async () => {
-                setBusy(true);
-                await actions?.resolve(root.id, !root.resolved);
-                setBusy(false);
-                close();
-              }}
-              className="text-[11px] text-muted-foreground hover:text-foreground flex items-center gap-0.5"
-            >
-              {root.resolved ? <><RotateCcw className="w-3 h-3" /> Reopen</> : <><Check className="w-3 h-3" /> Resolve</>}
-            </button>
-            {root.authorId === currentUserId && (
-              <button
-                type="button"
-                disabled={busy}
-                onClick={async () => {
-                  setBusy(true);
-                  await actions?.remove(root.id);
-                  setBusy(false);
-                  close();
-                }}
-                className="text-[11px] text-destructive hover:underline flex items-center gap-0.5"
-              >
-                <Trash2 className="w-3 h-3" /> Delete
-              </button>
-            )}
-          </div>
-        </>
-      )}
-    </div>
   );
 }

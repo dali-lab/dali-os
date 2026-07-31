@@ -7,9 +7,11 @@ import { ShieldCheck, Download } from "lucide-react";
 import type { Route } from "./+types/sign.$bindingId";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { RichTextViewer } from "~/components/RichTextViewer";
+import { DocEditor, looksLikeProseMirrorDoc } from "~/components/doc";
+import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { renderProseMirrorToPdf } from "~/collab/export-pdf";
-import type { PMNode } from "~/collab/export-html";
+import { renderNodes, type PMNode } from "~/collab/export-html";
+import type { DocBlock } from "~/collab/blocknote-server";
 import { collectSigningFields } from "~/lib/signing-fields";
 import { getBindingStateForUser, getSignerCohorts } from "~/signing/lib/state.server";
 import { AUDIENCE_RESOLVERS } from "~/signing/lib/audiences";
@@ -63,9 +65,18 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const supervisorName = binding.signatures[0]?.typedName ?? "";
   const variables = await resolveSigningVariablesForSigner(userId, { supervisorName });
-  const fields = collectSigningFields(binding.version.body);
 
-  let signedBody: unknown = null;
+  // Convert-on-read: the fill surface and field validation walk block JSON;
+  // legacy ProseMirror version rows are normalized here (never rewritten).
+  const body = ensureBlocks(binding.version.body);
+  const fields = collectSigningFields(body);
+
+  // The signed copy is the FROZEN body: pre-migration signatures are legacy
+  // ProseMirror JSON (rendered server-side via the legacy walker — never
+  // transcoded), new ones are block JSON (rendered by the block viewer).
+  let signedRaw: unknown = null;
+  let signedLegacyHtml: string | null = null;
+  let signedBlocks: DocBlock[] | null = null;
   if (state.status === "signed") {
     const mine = await prisma.signingSignature.findUnique({
       where: {
@@ -73,13 +84,21 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       },
       select: { frozenBody: true },
     });
-    signedBody = mine?.frozenBody ?? binding.version.body;
+    signedRaw = mine?.frozenBody ?? binding.version.body;
+    if (looksLikeProseMirrorDoc(signedRaw)) {
+      signedLegacyHtml = renderNodes((signedRaw as PMNode).content);
+    } else {
+      signedBlocks = ensureBlocks(signedRaw);
+    }
   }
 
-  // Download the member's own signed copy as a PDF.
+  // Download the member's own signed copy as a PDF (accepts both formats).
   if (url.searchParams.get("format") === "pdf") {
-    if (state.status !== "signed" || !signedBody) return redirect(`/sign/${bindingId}`);
-    const pdf = await renderProseMirrorToPdf(binding.document.name, signedBody as PMNode);
+    if (state.status !== "signed" || signedRaw == null) return redirect(`/sign/${bindingId}`);
+    const pdf = await renderProseMirrorToPdf(
+      binding.document.name,
+      signedRaw as PMNode | DocBlock[],
+    );
     return new Response(new Uint8Array(pdf), {
       headers: {
         "Content-Type": "application/pdf",
@@ -91,8 +110,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   return {
     name: binding.document.name,
     bindingId,
-    body: binding.version.body,
-    signedBody,
+    body,
+    signedLegacyHtml,
+    signedBlocks,
     variables,
     fields,
     status: state.status,
@@ -140,7 +160,21 @@ export default function SignBindingPage() {
           <h1 className="text-2xl font-bold text-foreground">You have signed {data.name}</h1>
         </div>
         <article className="bg-card border border-border rounded-lg p-6">
-          <RichTextViewer content={data.signedBody} enableImages enableSigningFields />
+          {data.signedLegacyHtml != null ? (
+            // Pre-migration frozen copy: server-rendered by the legacy PM
+            // walker (renderNodes escapes all text/attrs).
+            <div
+              className="prose prose-sm dark:prose-invert max-w-none"
+              dangerouslySetInnerHTML={{ __html: data.signedLegacyHtml }}
+            />
+          ) : (
+            <DocEditor
+              features="agreement"
+              editable={false}
+              initialContent={data.signedBlocks ?? []}
+              signing={{ mode: "view" }}
+            />
+          )}
         </article>
         <div className="flex items-center gap-3">
           <Link

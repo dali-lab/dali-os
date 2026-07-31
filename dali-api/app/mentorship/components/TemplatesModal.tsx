@@ -10,8 +10,7 @@ import {
 } from "lucide-react";
 import { Modal } from "~/components/Modal";
 import { Tooltip } from "~/components/ui/IconButton";
-import { CollaborativeEditor } from "~/components/CollaborativeEditor";
-import { RichTextViewer } from "~/components/RichTextViewer";
+import { DocEditor } from "~/components/doc";
 
 // Template management, moved out of the (removed) Templates subtab into a modal
 // launched from the Mentorship notes subtab. Core-only — the caller gates the
@@ -362,19 +361,22 @@ function TemplateDetail({
 
       <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-5">
         {collabToken ? (
-          <CollaborativeEditor
-            editorId="body"
-            documentName={`mentorNoteTemplate:${id}:body`}
-            token={collabToken}
-            userName={userName}
-            enableImages
+          <DocEditor
+            features="notes"
+            collab={{
+              documentName: `mentorNoteTemplate:${id}:body`,
+              token: collabToken,
+              userName,
+            }}
             placeholder="Sections, prompts, and headings the mentor fills in each week…"
             className="min-h-[12rem]"
           />
         ) : (
-          <RichTextViewer
-            content={content}
-            enableImages
+          <DocEditor
+            features="notes"
+            editable={false}
+            // The API GET normalizes contentJson to blocks server-side.
+            initialContent={content}
             className="min-h-[12rem]"
           />
         )}

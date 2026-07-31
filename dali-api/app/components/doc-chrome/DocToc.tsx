@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { List } from "lucide-react";
-import type { TocHeading } from "../CollaborativeEditor";
+import type { TocHeading } from "~/components/doc";
 
 // Collapsible document outline (H1–H3). Lives in the header row and opens a
 // floating panel, so it works the same in read and edit mode. Clicking an entry

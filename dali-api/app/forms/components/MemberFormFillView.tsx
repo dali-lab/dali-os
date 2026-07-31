@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { FormQuestionField } from "~/components/form-builder/QuestionField";
 import { FormFieldList } from "~/forms/components/FormField";
-import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
+import { DocEditor } from "~/components/doc";
+import { isEmptyBlocks } from "~/lib/blocks";
 import { Button } from "~/components/ui/Button";
 import { findMissingRequired } from "~/lib/form-answers";
 import type { Question } from "~/types";
@@ -94,9 +95,14 @@ export function MemberFormFillView({
       <h1 className="font-heading text-2xl font-bold text-dark-blue">
         {data.name}
       </h1>
-      {data.description && !isEmptyDoc(data.description) && (
+      {!isEmptyBlocks(data.description) && (
         <div className="mt-2 text-sm text-muted-foreground">
-          <RichTextViewer content={data.description} enableImages />
+          <DocEditor
+            features="notes"
+            density="compact"
+            editable={false}
+            initialContent={data.description}
+          />
         </div>
       )}
 

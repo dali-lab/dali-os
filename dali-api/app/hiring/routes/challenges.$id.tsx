@@ -2,6 +2,7 @@ import { redirect } from "react-router";
 import type { Route } from "./+types/challenges.$id";
 import { prisma } from "~/lib/db";
 import { requireCoreOrDomainLead } from "~/lib/auth";
+import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { ChallengeDetail } from "~/hiring/components/ChallengeDetail";
 
 export const meta: Route.MetaFunction = ({ data }) => {
@@ -43,7 +44,18 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     prisma.domain.findMany({ orderBy: { name: "asc" } }),
   ]);
 
-  return { challenge, domains };
+  // ChallengeVersion rows are immutable — legacy ProseMirror descriptions
+  // convert to block JSON on read, forever. New versions store blocks.
+  return {
+    challenge: {
+      ...challenge,
+      versions: challenge.versions.map((v) => ({
+        ...v,
+        description: ensureBlocks(v.description),
+      })),
+    },
+    domains,
+  };
 }
 
 export async function action({ request, params }: Route.ActionArgs) {

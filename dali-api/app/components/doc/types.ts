@@ -5,7 +5,7 @@
 
 import type { TocHeading } from "./blocks-util";
 import type { Features, EditorPresetName } from "./features";
-import type { DocBlock, DocPartialBlock } from "./schema/build";
+import type { DocBlock, DocEditorInstance, DocPartialBlock } from "./schema/build";
 import type { SigningContextValue } from "./signing-context";
 
 export interface DocCollabConfig {
@@ -52,4 +52,9 @@ export interface DocEditorProps {
   /** Signing context (mode/signerRole/variables/values/onFieldChange) for
    * surfaces with features.signing. Defaults to view mode. */
   signing?: SigningContextValue;
+  /** Fires with the live editor instance whenever it's (re)created — hosts
+   * that drive imperative helpers (insertSigningField/insertVariable) capture
+   * it here. The instance is invalid after the editor unmounts/remounts; the
+   * callback fires again with the replacement. */
+  onEditorReady?: (editor: DocEditorInstance) => void;
 }

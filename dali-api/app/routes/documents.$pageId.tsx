@@ -290,11 +290,9 @@ export default function DocumentPage() {
     attendance,
   } = useLoaderData() as Exclude<Awaited<ReturnType<typeof loader>>, Response>;
 
-  // Arriving from a mention notification (?mention=1): scroll to this reader's
-  // own mention in the body once collab syncs.
+  // Arriving from a comment-mention notification (?comment=<id>): scroll to +
+  // flash that comment in the rail once threads load.
   const [searchParams] = useSearchParams();
-  const focusMentionUserId =
-    searchParams.get("mention") === "1" ? currentUserId : undefined;
   const focusCommentId = searchParams.get("comment") ?? undefined;
 
   return (
@@ -333,7 +331,6 @@ export default function DocumentPage() {
         createdByName={createdByName}
         lastEditedByName={lastEditedByName}
         updatedAt={updatedAt}
-        focusMentionUserId={focusMentionUserId}
         focusCommentId={focusCommentId}
       />
     </div>

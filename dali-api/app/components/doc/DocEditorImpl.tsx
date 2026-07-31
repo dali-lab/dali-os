@@ -172,6 +172,14 @@ function DocView(props: ResolvedProps & { editor: DocEditorInstance }) {
   useDocChrome(editor, props);
   const isDark = useIsDark();
 
+  // Hand hosts the live instance (ref-routed so a new callback identity per
+  // render doesn't re-fire the effect).
+  const onReadyRef = useRef(props.onEditorReady);
+  onReadyRef.current = props.onEditorReady;
+  useEffect(() => {
+    onReadyRef.current?.(editor);
+  }, [editor]);
+
   const menus: ReactNode = (
     <>
       {/* Custom "/" menu: defaults trimmed to the app command set + callout. */}

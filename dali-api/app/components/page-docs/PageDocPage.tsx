@@ -10,13 +10,15 @@ import {
   ChevronDown,
   X,
 } from "lucide-react";
-import { RichTextEditor } from "~/components/RichTextEditor";
-import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
+import { DocEditor } from "~/components/doc";
+import { isEmptyBlocks } from "~/lib/blocks";
 import { CommentsRail } from "~/components/collab/CommentsRail";
 import { buttonClasses } from "~/components/ui/Button";
 import { uploadFileToS3 } from "~/lib/upload-client";
 import { MAX_UPLOAD_LABEL } from "~/lib/file-validation";
-import { searchMentionableUsers, type MentionUser } from "~/components/editor/mention";
+// PageDocPage is lazy-loaded (see PageDocContext), so importing from the doc
+// schema package here doesn't drag BlockNote into any route's initial chunk.
+import { searchMentionableUsers, type MentionUser } from "~/components/doc/schema/mention";
 import { Tooltip } from "~/components/ui/IconButton";
 
 type Maintainer = { id: string; name: string; handle: string | null };
@@ -505,7 +507,7 @@ function SectionSidebar({
 }
 
 function SectionReadPanel({ section }: { section: SectionData }) {
-  const emptyBody = isEmptyDoc(section.body);
+  const emptyBody = isEmptyBlocks(section.body);
   return (
     <div className="flex flex-col gap-4">
       {/* One step below the guide's own h1 (text-xl/2xl), so the section you're
@@ -520,7 +522,15 @@ function SectionReadPanel({ section }: { section: SectionData }) {
       {emptyBody ? (
         <p className={EMPTY_CLASS}>No guide written for this section yet.</p>
       ) : (
-        <RichTextViewer content={section.body} enableMentions enableImages />
+        // Keyed per section: DocEditor reads initialContent once, so switching
+        // sections must remount it. "guide" = mentions + images.
+        <DocEditor
+          key={section.id}
+          features="guide"
+          density="compact"
+          editable={false}
+          initialContent={section.body}
+        />
       )}
     </div>
   );
@@ -623,14 +633,15 @@ function SectionEditPanel({
 
       <div className="flex flex-col gap-1.5">
         <span className={SECTION_LABEL_CLASS}>Guide</span>
-        <RichTextEditor
+        {/* Section bodies save as BlockNote block JSON (the API converts
+            legacy ProseMirror on read, so initialContent is always blocks). */}
+        <DocEditor
           key={section.id}
-          value={section.body}
+          features="guide"
+          initialContent={section.body}
           onChange={(body) => onChange({ body })}
-          enableMentions
-          enableImages
-          richToolbar
           placeholder="Explain this section of the page."
+          className="rounded-md border border-border bg-card py-2"
         />
       </div>
 

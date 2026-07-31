@@ -55,7 +55,7 @@ import { Button, buttonClasses } from "~/components/ui/Button";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { TypeBadge, StatusBadge, MyStatusChip } from "~/education/components/OfferingCard";
 import { OfferingFields, toDatetimeLocal } from "~/education/components/OfferingFields";
-import { CollaborativeEditor } from "~/components/CollaborativeEditor";
+import { DocEditor } from "~/components/doc";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { formatDateTime } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
@@ -535,12 +535,13 @@ export default function ManageOffering() {
                 token={collabToken}
                 userName={userName}
               >
-                <CollaborativeEditor
-                  editorId={offering.descriptionDocId}
-                  documentName={offering.descriptionDocId}
-                  token={collabToken}
-                  userName={userName}
-                  enableImages
+                <DocEditor
+                  features="notes"
+                  collab={{
+                    documentName: offering.descriptionDocId,
+                    token: collabToken,
+                    userName,
+                  }}
                   placeholder="What this offering covers, who it's for, what attendees build…"
                   className="border border-border rounded-md"
                 />
