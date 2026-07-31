@@ -65,6 +65,21 @@ export const prisma = {
     findUnique: vi.fn().mockResolvedValue({ confidentialityAgreementVersionId: "mock-cav-id" }),
     count: vi.fn().mockResolvedValue(0),
   },
+  // Confidentiality gate now reads the generalized signing tables. Default to a
+  // bound + signed state so the ~30 gated hiring loaders keep passing (the old
+  // confidentiality mocks above defaulted the same way).
+  signingDocument: {
+    findMany: vi.fn().mockResolvedValue([]),
+  },
+  signingBinding: {
+    findFirst: vi.fn().mockResolvedValue({ versionId: "mock-cav-id" }),
+    findMany: vi.fn().mockResolvedValue([]),
+  },
+  signingSignature: {
+    findFirst: vi.fn().mockResolvedValue({ versionId: "mock-cav-id" }),
+    findMany: vi.fn().mockResolvedValue([]),
+    count: vi.fn().mockResolvedValue(0),
+  },
   oAuthClient: {
     findUnique: vi.fn(),
   },

@@ -1,5 +1,11 @@
 import PDFDocument from "pdfkit";
 import type { PMNode } from "./export-html";
+import {
+  isSigningFieldType,
+  isCheckboxChecked,
+  variableDisplayText,
+  type SigningFieldType,
+} from "~/lib/signing-fields";
 
 // Render ProseMirror JSON to a PDF buffer with pdfkit — pure JS, no headless
 // browser, so it runs under `npm ci --omit=dev` on the Alpine runtime. Walks
@@ -25,6 +31,22 @@ function collectRuns(node: PMNode, inherited: Partial<Run> = {}): Run[] {
     ];
   }
   if (node.type === "hardBreak") return [{ text: "\n" }];
+  // Merge-variable + signing-field inline atoms. Values are baked into
+  // attrs.value before export. pdfkit core fonts lack ballot-box glyphs, so
+  // checkboxes render as [x]/[ ] like taskList does.
+  if (node.type === "variable") {
+    const name = typeof node.attrs?.name === "string" ? node.attrs.name : "";
+    return [{ text: variableDisplayText(name, node.attrs?.value) }];
+  }
+  if (isSigningFieldType(node.type)) {
+    const type = node.type as SigningFieldType;
+    if (type === "checkboxField") {
+      return [{ text: isCheckboxChecked(node.attrs?.value) ? "[x]" : "[ ]" }];
+    }
+    const value = node.attrs?.value;
+    const text = value == null || value === "" ? "__________" : String(value);
+    return [{ text, underline: true }];
+  }
   return (node.content ?? []).flatMap((c) => collectRuns(c, inherited));
 }
 

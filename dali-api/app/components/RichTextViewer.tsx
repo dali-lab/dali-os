@@ -8,6 +8,7 @@ import {
 } from "./editor/shared";
 import { mentionViewerExtension } from "./editor/mention";
 import { imageExtension } from "./editor/image";
+import { signingFieldExtensions } from "./editor/signing-fields";
 
 interface RichTextViewerProps {
   content: unknown;
@@ -18,6 +19,12 @@ interface RichTextViewerProps {
   // Render image nodes. Must be on wherever RichTextEditor had enableImages,
   // or Tiptap drops the nodes it doesn't know and the images vanish on read.
   enableImages?: boolean;
+  // Render signing field + variable nodes (read-only). Must be on wherever a
+  // signing body is displayed, or Tiptap strips the fields on load. Pass
+  // resolved variable values so {{term}} etc. show their value, not the token.
+  enableSigningFields?: boolean;
+  signingVariables?: Record<string, string>;
+  signingValues?: Record<string, unknown>;
 }
 
 // Re-exported for back-compat: many call sites import isEmptyDoc from here.
@@ -28,6 +35,9 @@ export function RichTextViewer({
   className,
   enableMentions = false,
   enableImages = false,
+  enableSigningFields = false,
+  signingVariables,
+  signingValues,
 }: RichTextViewerProps) {
   const editor = useEditor({
     immediatelyRender: false,
@@ -36,6 +46,13 @@ export function RichTextViewer({
       linkExtension({ interactive: true }),
       ...(enableMentions ? [mentionViewerExtension()] : []),
       ...(enableImages ? [imageExtension()] : []),
+      ...(enableSigningFields
+        ? signingFieldExtensions({
+            mode: "view",
+            variables: signingVariables,
+            values: signingValues,
+          })
+        : []),
     ],
     content: isEmptyDoc(content) ? "" : (content as object),
     editable: false,

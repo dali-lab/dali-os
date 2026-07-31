@@ -3,6 +3,7 @@ import {
   BarChart3,
   Clock,
   FileText,
+  FileSignature,
   ClipboardCheck,
   Globe,
   LayoutGrid,
@@ -30,6 +31,7 @@ export function adminPills(args: {
     | "jobs"
     | "email-senders"
     | "email-templates"
+    | "agreements"
     | "payroll"
     | "payroll-reconcile";
 }): AreaPill[] {
@@ -60,6 +62,14 @@ export function adminPills(args: {
       to: "/admin-console/email-templates",
       active: args.active === "email-templates",
       icon: FileText,
+    },
+    // Document signing: author agreements (membership, mentorship,
+    // confidentiality), place fields, and track signatories. Core-visible.
+    {
+      label: "Agreements",
+      to: "/admin-console/agreements",
+      active: args.active === "agreements",
+      icon: FileSignature,
     },
     {
       label: "Attendance",

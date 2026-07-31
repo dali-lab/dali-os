@@ -503,6 +503,56 @@ select:not(:disabled) {
 .callout__content > :first-child { margin-top: 0; }
 .callout__content > :last-child { margin-bottom: 0; }
 
+/* ── Signing fields + merge variables ──────────────────────────────────── */
+.signing-field {
+  display: inline-flex;
+  align-items: baseline;
+  vertical-align: baseline;
+  white-space: nowrap;
+}
+/* Authoring: a coral pill naming the placeable field, mirroring the mention
+   pill so authors can see where signers will act. */
+.signing-field--author {
+  border-radius: 0.25rem;
+  background: rgba(255, 111, 97, 0.15);
+  color: var(--color-accent-coral, #ff6f61);
+  padding: 0.05rem 0.35rem;
+  font-weight: 500;
+  font-size: 0.9em;
+  cursor: default;
+}
+.signing-field--input .signing-field__text {
+  border: none;
+  border-bottom: 1px solid var(--color-foreground, #1a1a1a);
+  background: transparent;
+  padding: 0 0.25rem;
+  min-width: 12rem;
+  font: inherit;
+  color: inherit;
+}
+.signing-field--input .signing-field__text:focus {
+  outline: none;
+  border-bottom-color: var(--color-accent-coral, #ff6f61);
+}
+.signing-field__value {
+  border-bottom: 1px solid var(--color-foreground, #1a1a1a);
+  padding: 0 0.25rem;
+  font-style: italic;
+}
+/* An unfilled field in read-only/other-role rendering: a signature line. */
+.signing-field__line {
+  display: inline-block;
+  min-width: 10rem;
+  border-bottom: 1px solid var(--color-foreground, #1a1a1a);
+}
+.signing-variable--token {
+  border-radius: 0.25rem;
+  background: rgba(128, 128, 128, 0.14);
+  padding: 0.05rem 0.3rem;
+  font-size: 0.9em;
+  color: var(--color-muted-foreground);
+}
+
 /* ── Task list (checkboxes) ────────────────────────────────────────────── */
 ul[data-type="taskList"] {
   list-style: none;

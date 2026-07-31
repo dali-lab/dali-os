@@ -38,7 +38,8 @@ export async function loader({ request }: Route.LoaderArgs) {
       },
       orderBy: { createdAt: "desc" },
     }),
-    prisma.confidentialityAgreement.findMany({
+    prisma.signingDocument.findMany({
+      where: { kind: "Confidentiality", archivedAt: null },
       include: {
         versions: {
           include: { createdBy: true },
@@ -111,8 +112,26 @@ export async function action({ request }: Route.ActionArgs) {
     if (intent === "create") {
       const name = (formData.get("name") as string)?.trim();
       if (!name) return { error: "Name is required" };
-      const agreement = await prisma.confidentialityAgreement.create({
-        data: { name },
+      // Confidentiality agreements are now SigningDocuments (kind
+      // Confidentiality), gated to hiring cycles.
+      const base =
+        "confidentiality-" +
+        (name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 50) ||
+          "agreement");
+      let slug = base;
+      let n = 1;
+      while (await prisma.signingDocument.findUnique({ where: { slug }, select: { id: true } })) {
+        n += 1;
+        slug = `${base}-${n}`;
+      }
+      const agreement = await prisma.signingDocument.create({
+        data: {
+          name,
+          slug,
+          kind: "Confidentiality",
+          gateScope: "HiringCycle",
+          audience: "HiringParticipants",
+        },
       });
       return redirect(`/hiring/confidentiality-agreements/${agreement.id}`);
     }

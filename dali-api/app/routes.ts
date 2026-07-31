@@ -12,6 +12,12 @@ export default [
     // My Tasks surface: Open tasks + browsable notification history.
     route("notifications", "routes/notifications.tsx"),
 
+    // Document signing: the member "documents to sign" inbox + per-agreement
+    // fill/sign page. The app gate (layout loader) redirects here when a
+    // required agreement is unsigned.
+    route("sign", "signing/routes/sign._index.tsx"),
+    route("sign/:bindingId", "signing/routes/sign.$bindingId.tsx"),
+
     // Hiring section. /hiring is the role-aware hub; the tools below are
     // reached via its pill row (the sidebar carries a single Hiring entry).
     route("hiring", "hiring/routes/hiring.tsx"),
@@ -60,6 +66,10 @@ export default [
     route("admin-console/email-senders", "admin-console/routes/admin-console.email-senders.tsx"),
     route("admin-console/email-templates", "admin-console/routes/admin-console.email-templates.tsx"),
     route("admin-console/email-templates/:id", "admin-console/routes/admin-console.email-templates.$id.tsx"),
+    // Document signing: author agreements, place fields, put versions in force,
+    // track signatories.
+    route("admin-console/agreements", "signing/routes/admin-console.agreements.tsx"),
+    route("admin-console/agreements/:id", "signing/routes/admin-console.agreements.$id.tsx"),
     route("admin-console/payroll-export", "admin-console/routes/admin-console.payroll-export.tsx"),
     route("admin-console/payroll", "admin-console/routes/admin-console.payroll.tsx"),
 
