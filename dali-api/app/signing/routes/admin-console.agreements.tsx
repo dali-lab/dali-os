@@ -7,7 +7,12 @@ import type { Route } from "./+types/admin-console.agreements";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { getUserRoles, isCore } from "~/lib/roles";
-import type { SigningDocumentKind, SigningGateScope, SigningAudience } from "~/generated/prisma/enums";
+import type {
+  SigningDocumentKind,
+  SigningGateScope,
+  SigningAudience,
+  SigningCadence,
+} from "~/generated/prisma/enums";
 import { SigningDocumentsPage } from "~/signing/components/SigningDocumentsPage";
 
 export const handle = { areaPills: true };
@@ -29,6 +34,7 @@ const AUDIENCES: SigningAudience[] = [
   "Mentors",
   "HiringParticipants",
 ];
+const CADENCES: SigningCadence[] = ["Once", "PerTerm", "PerCycle"];
 
 function slugify(s: string): string {
   return (
@@ -83,6 +89,7 @@ export async function action({ request }: Route.ActionArgs) {
     const kind = formData.get("kind") as SigningDocumentKind;
     const gateScope = formData.get("gateScope") as SigningGateScope;
     const audience = formData.get("audience") as SigningAudience;
+    const cadence = formData.get("cadence") as SigningCadence;
 
     const doc = await prisma.signingDocument.create({
       data: {
@@ -91,6 +98,7 @@ export async function action({ request }: Route.ActionArgs) {
         kind: KINDS.includes(kind) ? kind : "General",
         gateScope: SCOPES.includes(gateScope) ? gateScope : "None",
         audience: AUDIENCES.includes(audience) ? audience : "Manual",
+        cadence: CADENCES.includes(cadence) ? cadence : "Once",
       },
     });
     return redirect(`/admin-console/agreements/${doc.id}`);

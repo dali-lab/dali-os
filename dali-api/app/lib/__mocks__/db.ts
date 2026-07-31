@@ -62,7 +62,9 @@ export const prisma = {
   },
   signingBinding: {
     findFirst: vi.fn().mockResolvedValue({ versionId: "mock-cav-id" }),
+    findUnique: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
+    create: vi.fn(),
   },
   signingSignature: {
     findFirst: vi.fn().mockResolvedValue({ versionId: "mock-cav-id" }),
@@ -79,6 +81,7 @@ export const prisma = {
   },
   dALIMember: {
     findUnique: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
   },
   partnerUser: {
     findUnique: vi.fn(),

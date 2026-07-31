@@ -1514,6 +1514,7 @@ model SigningDocument {
   kind      SigningDocumentKind @default(General)
   gateScope SigningGateScope    @default(None) // how an unsigned copy is enforced
   audience  SigningAudience     @default(Manual) // who is required to sign
+  cadence   SigningCadence      @default(Once) // how often a fresh signature is required
 
   // Optional repeating page-header banner + footer for PDF export (the paper
   // letterhead look). Null = no running header/footer.
@@ -1546,6 +1547,14 @@ enum SigningAudience {
   ActiveMembers
   Mentors
   HiringParticipants
+}
+
+// How often a signature must be renewed — the binding scope an "activate" (or the
+// signing-issuance job) targets. Replaces the old kind/audience-inferred scope.
+enum SigningCadence {
+  Once // one standing binding ("app"); re-sign only on a new version in force
+  PerTerm // one binding per term ("term:<id>") — mentor/termly agreements
+  PerCycle // one binding per hiring cycle ("cycle:<id>") — bound from hiring UI
 }
 
 // Immutable snapshot of a SigningDocument. Never update — append a new version.

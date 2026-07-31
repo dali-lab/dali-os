@@ -11,7 +11,7 @@ import { logAuditEvent } from "~/lib/audit";
 import { fullName } from "~/lib/display";
 import { resolveAdminScope } from "~/signing/lib/scope.server";
 import { notifySignRequest } from "~/signing/lib/notify.server";
-import { activeMemberAudienceWhere, listTermMentors } from "~/signing/lib/state.server";
+import { AUDIENCE_RESOLVERS } from "~/signing/lib/audiences";
 import { SigningDocumentDetail } from "~/signing/components/SigningDocumentDetail";
 
 export const handle = { areaPills: true };
@@ -58,9 +58,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
 
   // Signatory roster per binding: who has signed (linkable to their completed
-  // copy) and — when the audience is known — who hasn't. ActiveMembers uses the
-  // active-member set; Mentors uses the mentor set for that binding's term;
-  // other audiences show the signed list only.
+  // copy) and — when the audience is enumerable — who hasn't. The audience
+  // registry resolves the member set per binding (Mentors keys off the binding's
+  // term); non-enumerable audiences show the signed list only.
   type Person = { id: string; firstName: string; lastName: string };
   const rosterFor = (
     audience: Person[] | null,
@@ -87,27 +87,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     { signed: { name: string; signatureId: string }[]; outstanding: string[] | null }
   > = {};
 
-  let memberAudience: Person[] | null = null;
-  const mentorsByTerm = new Map<string, Person[]>();
-  if (document.audience === "ActiveMembers") {
-    const members = await prisma.dALIMember.findMany({
-      where: activeMemberAudienceWhere,
-      select: { user: { select: { id: true, firstName: true, lastName: true } } },
-    });
-    memberAudience = members.map((m) => m.user);
-  }
-
+  const resolver = AUDIENCE_RESOLVERS[document.audience];
   for (const b of document.bindings) {
-    let audience: Person[] | null = null;
-    if (document.audience === "ActiveMembers") {
-      audience = memberAudience;
-    } else if (document.audience === "Mentors" && b.termId) {
-      audience = mentorsByTerm.get(b.termId) ?? null;
-      if (!audience) {
-        audience = await listTermMentors(b.termId);
-        mentorsByTerm.set(b.termId, audience);
-      }
-    }
+    const audience = resolver.enumerable
+      ? await resolver.listMembers({ termId: b.termId ?? undefined })
+      : null;
     rosters[b.id] = rosterFor(audience, b);
   }
 
@@ -182,7 +166,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
     const doc = await prisma.signingDocument.findUniqueOrThrow({
       where: { id: params.id },
-      select: { kind: true, audience: true, gateScope: true },
+      select: { cadence: true },
     });
     const scope = await resolveAdminScope(doc);
     if ("error" in scope) return { error: scope.error };
