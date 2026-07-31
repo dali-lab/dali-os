@@ -14,6 +14,12 @@
 // `props.{...}`, same keys and value types) — the PM→BlockNote conversion
 // mapper and the mention-notification scanner both depend on this.
 
+// Y.Doc fragment names. BlockNote binds "blocknote"; the legacy Tiptap editor
+// bound "default" (ProseMirror XML). Both fragments live in the SAME Y.Doc —
+// lazy conversion reads "default" and writes "blocknote", never the reverse.
+export const BLOCKNOTE_FRAGMENT = "blocknote";
+export const LEGACY_PM_FRAGMENT = "default";
+
 export const mentionConfig = {
   type: "mention",
   propSchema: {
@@ -41,7 +47,7 @@ export const calloutConfig = {
 // collectSigningFields/bakeSigningBody walkers rely on. `value` carries the
 // baked value in frozen snapshots; live fill values stay in host React state
 // keyed by fieldId (never in the document).
-const signingFieldPropSchema = {
+export const signingFieldPropSchema = {
   fieldId: { default: "" },
   role: { default: "" },
   label: { default: "" },
@@ -89,7 +95,11 @@ interface AnyInline {
 }
 interface AnyBlock {
   type?: string;
-  content?: AnyInline[] | { rows?: { cells?: AnyInline[][] | { content?: AnyInline[] }[][] }[] } | string;
+  props?: Record<string, unknown>;
+  content?:
+    | AnyInline[]
+    | { rows?: { cells?: (AnyInline[] | { content?: AnyInline[] })[] }[] }
+    | string;
   children?: AnyBlock[];
 }
 
@@ -102,7 +112,10 @@ function inlineText(inline: AnyInline): string {
   return "";
 }
 
-export function blocksToPlainText(blocks: AnyBlock[] | undefined | null): string {
+// Accepts any array (typed Block[] from any feature schema included) — the
+// walk itself is structural, so the parameter shouldn't force callers through
+// a cast narrower than what the function actually tolerates.
+export function blocksToPlainText(blocks: readonly unknown[] | undefined | null): string {
   if (!Array.isArray(blocks)) return "";
   const lines: string[] = [];
   const walk = (block: AnyBlock) => {
@@ -127,6 +140,6 @@ export function blocksToPlainText(blocks: AnyBlock[] | undefined | null): string
     if (line.trim()) lines.push(line);
     for (const child of block.children ?? []) walk(child);
   };
-  for (const block of blocks) walk(block);
+  for (const block of blocks as AnyBlock[]) walk(block);
   return lines.join("\n");
 }

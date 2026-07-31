@@ -48,4 +48,35 @@ describe("extractMentionUserIds", () => {
     fragment.push([p]);
     expect(extractMentionUserIds(doc)).toEqual([]);
   });
+
+  it("collects ids from converted (blocknote-fragment) documents, incl. nested children", async () => {
+    const { blocksToFragment } = await import("../blocknote-server");
+    const doc = new Y.Doc();
+    doc.transact(() => {
+      blocksToFragment(
+        [
+          {
+            id: "b1",
+            type: "paragraph",
+            props: { backgroundColor: "default", textColor: "default", textAlignment: "left" },
+            content: [
+              { type: "text", text: "cc ", styles: {} },
+              { type: "mention", props: { id: "u1", label: "one" } },
+            ],
+            children: [
+              {
+                id: "b2",
+                type: "paragraph",
+                props: { backgroundColor: "default", textColor: "default", textAlignment: "left" },
+                content: [{ type: "mention", props: { id: "u2", label: "two" } }],
+                children: [],
+              },
+            ],
+          },
+        ],
+        doc.getXmlFragment("blocknote"),
+      );
+    });
+    expect(extractMentionUserIds(doc).sort()).toEqual(["u1", "u2"]);
+  });
 });

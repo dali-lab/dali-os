@@ -1,8 +1,10 @@
-// Pure ProseMirror-JSON → HTML rendering for the document export pipeline.
+// LEGACY pure ProseMirror-JSON → HTML rendering, plus the shared PMNode type
+// and the buildExportHtml document shell (both still current). The live HTML
+// export path is blocks-based (blocksToHtml in blocknote-server.ts);
+// renderNodes remains for PM-JSON inputs that are never transcoded — signing
+// frozen bodies — and as the reference renderer for legacy fixtures.
 // Deliberately free of any DB / Prisma import so it can be unit-tested and
-// reused without loading the database client. The DB-coupled decode functions
-// live in export.ts (which re-exports these); the PDF renderer in export-pdf.ts
-// walks the same node/mark set so the two formats stay visually consistent.
+// reused without loading the database client.
 
 import {
   isSigningFieldType,

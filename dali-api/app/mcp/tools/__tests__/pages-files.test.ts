@@ -5,8 +5,8 @@ vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, isCore: vi.fn(), isProjectMember: vi.fn() };
 });
-vi.mock("~/collab/export", () => ({
-  collabDocToProseMirror: vi.fn(),
+vi.mock("~/collab/read", () => ({
+  readDocAsBlocks: vi.fn(),
 }));
 vi.mock("~/collab/write", () => ({
   replaceCollabDocContent: vi.fn(),
@@ -17,7 +17,7 @@ vi.mock("~/lib/collabAuth", () => ({
 
 import { prisma } from "~/lib/db";
 import { isCore, isProjectMember } from "~/lib/roles";
-import { collabDocToProseMirror } from "~/collab/export";
+import { readDocAsBlocks } from "~/collab/read";
 import { authorizeCollabDoc } from "~/lib/collabAuth";
 import { replaceCollabDocContent } from "~/collab/write";
 import {
@@ -93,16 +93,19 @@ describe("pages + files tools", () => {
       contentDocId: null,
       iconEmoji: null,
     });
-    vi.mocked(collabDocToProseMirror).mockResolvedValue({
-      type: "doc",
-      content: [
-        { type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: "Hi" }] },
-      ],
-    });
+    vi.mocked(readDocAsBlocks).mockResolvedValue([
+      {
+        id: "b1",
+        type: "heading",
+        props: { backgroundColor: "default", textColor: "default", textAlignment: "left", level: 1 },
+        content: [{ type: "text", text: "Hi", styles: {} }],
+        children: [],
+      },
+    ]);
     const out = await runReadPage("u1", { pageId: "pg1" });
     // Authorization is keyed on the page's own doc room, not any contentDocId.
     expect(authorizeCollabDoc).toHaveBeenCalledWith("u1", "doc:pg1:body");
-    expect(collabDocToProseMirror).toHaveBeenCalledWith("doc:pg1:body");
+    expect(readDocAsBlocks).toHaveBeenCalledWith("doc:pg1:body");
     expect(out.markdown.startsWith("# Hi")).toBe(true);
   });
 
@@ -117,9 +120,9 @@ describe("pages + files tools", () => {
       contentDocId: "page:lab-handbook",
       iconEmoji: null,
     });
-    vi.mocked(collabDocToProseMirror).mockResolvedValue({ type: "doc", content: [] });
+    vi.mocked(readDocAsBlocks).mockResolvedValue([]);
     const out = await runReadPage("u1", { pageId: "pg1" });
-    expect(collabDocToProseMirror).toHaveBeenCalledWith("page:lab-handbook");
+    expect(readDocAsBlocks).toHaveBeenCalledWith("page:lab-handbook");
     expect(out.markdown).toBe("");
   });
 
@@ -142,7 +145,7 @@ describe("pages + files tools", () => {
     await expect(
       runReadPage("u1", { pageId: "pg1" }),
     ).rejects.toMatchObject({ name: "ReadPageError", status: 403 });
-    expect(collabDocToProseMirror).not.toHaveBeenCalled();
+    expect(readDocAsBlocks).not.toHaveBeenCalled();
   });
 
   it("create_page rejects a non-Folder parent (app nesting rule)", async () => {
@@ -196,9 +199,10 @@ describe("pages + files tools", () => {
       content: "# Hello\n\nWorld",
     });
     expect(out.id).toBe("pg-new");
+    // Markdown seeds convert to block JSON before the collab write.
     expect(replaceCollabDocContent).toHaveBeenCalledWith(
       "doc:pg-new:body",
-      expect.objectContaining({ type: "doc" }),
+      expect.arrayContaining([expect.objectContaining({ type: "heading" })]),
       "u1",
     );
   });
@@ -244,7 +248,7 @@ describe("pages + files tools", () => {
     const out = await runSetPageContent("u1", { pageId: "pg1", markdown: "# T\n\nbody" });
     expect(replaceCollabDocContent).toHaveBeenCalledWith(
       "doc:pg1:body",
-      expect.objectContaining({ type: "doc" }),
+      expect.arrayContaining([expect.objectContaining({ type: "heading" })]),
       "u1",
     );
     expect(mockPrisma.page.update).toHaveBeenCalledWith(

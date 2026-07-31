@@ -1,0 +1,130 @@
+/* DALI theming for the shared DocEditor (BlockNote). Imported by
+ * DocEditorImpl AFTER @blocknote/shadcn/style.css and blocknote.tailwind.css
+ * so these overrides win cascade ties.
+ *
+ * Three parts:
+ *   1. --bn-* variables on .bn-root pointed at the app's semantic tokens —
+ *      the tokens themselves flip under html.dark (app.css), so dark mode
+ *      comes for free. The second selector matters: the base sheet's dark
+ *      defaults live on .bn-root[data-color-scheme=dark] (specificity 0,2,0),
+ *      which would beat a plain .bn-root override in dark mode.
+ *   2. Density / layout tweaks scoped to the .dali-doc wrapper.
+ *   3. Callout "styled nesting": the colored box is painted on the .bn-block
+ *      (blockContainer) that CONTAINS a callout blockContent — the child
+ *      .bn-block-group is a sibling of the blockContent inside that same
+ *      .bn-block, so nested children sit on the same painted surface (one
+ *      background, one border, no seams). Every rule is doubled with the
+ *      .react-renderer wrapper variant, exactly like BlockNote's own shipped
+ *      toggle-block CSS. Non-default props serialize to data-* attributes on
+ *      .bn-block-content (documented behavior), which drives the emoji tints.
+ */
+
+/* ── 1. BlockNote variables → DALI tokens ──────────────────────────────── */
+.bn-root,
+.bn-root[data-color-scheme="dark"] {
+  --bn-colors-editor-text: var(--color-foreground);
+  --bn-colors-editor-background: transparent;
+  --bn-colors-menu-text: var(--color-popover-foreground);
+  --bn-colors-menu-background: var(--color-popover);
+  --bn-colors-tooltip-text: var(--color-brand-white);
+  --bn-colors-tooltip-background: var(--color-navy-deep);
+  --bn-colors-hovered-text: var(--color-accent-foreground);
+  --bn-colors-hovered-background: var(--color-accent);
+  --bn-colors-selected-text: var(--color-brand-white);
+  --bn-colors-selected-background: var(--color-accent-teal);
+  --bn-colors-disabled-text: var(--color-muted-foreground);
+  --bn-colors-disabled-background: var(--color-muted);
+  --bn-colors-shadow: rgb(8 35 48 / 0.2); /* navy-deep ink, matches --shadow-* */
+  --bn-colors-border: var(--color-border);
+  --bn-colors-side-menu: var(--color-muted-foreground);
+
+  /* DALI-fied highlight swatches (colored text + background pickers). */
+  --bn-colors-highlights-red-text: var(--color-accent-coral);
+  --bn-colors-highlights-red-background: color-mix(in srgb, var(--color-accent-coral) 25%, var(--color-card));
+  --bn-colors-highlights-blue-text: var(--color-dali-teal-dark);
+  --bn-colors-highlights-blue-background: color-mix(in srgb, var(--color-accent-teal) 22%, var(--color-card));
+  --bn-colors-highlights-yellow-text: var(--color-foreground);
+  --bn-colors-highlights-yellow-background: color-mix(in srgb, var(--color-accent-yellow) 40%, var(--color-card));
+
+  --bn-border-radius: var(--radius);
+  --bn-font-family: var(--font-sans);
+}
+
+/* ── 2. Density / layout ───────────────────────────────────────────────── */
+.dali-doc .bn-editor {
+  min-height: 6rem;
+}
+
+/* Compact: no side menu (disabled via the sideMenu prop), so the wide
+ * drag-handle gutter is dead space — pull the default 54px inline padding in. */
+.dali-doc--compact .bn-editor {
+  padding-inline: 0.875rem;
+}
+
+/* ── 3. Callout block ──────────────────────────────────────────────────── */
+
+/* The colored box (default 💡 = amber). */
+.dali-doc .bn-block:has(> .bn-block-content[data-content-type="callout"]),
+.dali-doc .bn-block:has(> .react-renderer > .bn-block-content[data-content-type="callout"]) {
+  background: color-mix(in srgb, #eab308 9%, var(--color-card));
+  border: 1px solid color-mix(in srgb, #eab308 30%, transparent);
+  border-left: 3px solid #eab308;
+  border-radius: 8px;
+  padding: 6px 12px;
+  margin: 4px 0;
+}
+
+/* Emoji-driven tint variants (prop → data-emoji on .bn-block-content). */
+.dali-doc .bn-block:has(> .bn-block-content[data-emoji="🚨"]),
+.dali-doc .bn-block:has(> .react-renderer > .bn-block-content[data-emoji="🚨"]) {
+  background: color-mix(in srgb, #dc2626 8%, var(--color-card));
+  border-color: color-mix(in srgb, #dc2626 30%, transparent);
+  border-left-color: #dc2626;
+}
+
+.dali-doc .bn-block:has(> .bn-block-content[data-emoji="✅"]),
+.dali-doc .bn-block:has(> .react-renderer > .bn-block-content[data-emoji="✅"]) {
+  background: color-mix(in srgb, #16a34a 8%, var(--color-card));
+  border-color: color-mix(in srgb, #16a34a 30%, transparent);
+  border-left-color: #16a34a;
+}
+
+.dali-doc .bn-block:has(> .bn-block-content[data-emoji="📌"]),
+.dali-doc .bn-block:has(> .react-renderer > .bn-block-content[data-emoji="📌"]) {
+  background: color-mix(in srgb, var(--color-accent-teal) 9%, var(--color-card));
+  border-color: color-mix(in srgb, var(--color-accent-teal) 30%, transparent);
+  border-left-color: var(--color-accent-teal);
+}
+
+/* Inner layout of the content row: emoji gutter + editable body. */
+.dali-callout {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+}
+
+.dali-callout__emoji {
+  flex: none;
+  width: 20px;
+  text-align: center;
+  cursor: pointer;
+  user-select: none;
+}
+
+.dali-callout__body {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Child blocks: keep them visually inside the box and aligned with the callout
+ * text instead of the default 24px indent-guide offset (core Block.css).
+ * 28px = 20px emoji gutter + 8px gap. */
+.dali-doc
+  .bn-block:has(> .bn-block-content[data-content-type="callout"])
+  > .bn-block-group,
+.dali-doc
+  .bn-block:has(> .react-renderer > .bn-block-content[data-content-type="callout"])
+  > .bn-block-group {
+  margin-left: 28px;
+}

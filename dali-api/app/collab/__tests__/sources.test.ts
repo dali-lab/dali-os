@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as Y from "yjs";
-import { yDocToProsemirrorJSON } from "y-prosemirror";
 
 // Mock the DB + roles before importing the module under test.
 vi.mock("~/lib/db", () => {
@@ -15,11 +14,15 @@ vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
 import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
 import { COLLAB_SOURCES, seedRegistryDoc, syncRegistryDocBack } from "../sources";
+import { BLOCKNOTE_FRAGMENT, plainTextToBlocks } from "../blocknote-server";
+import { ydocToBlocks } from "../read";
+import { blocksToPlainText } from "~/components/doc/schema/configs";
 
 const mockPrisma = prisma as any;
 const mockIsCore = isCore as any;
 
-const HELLO_DOC = {
+// Legacy PM column value — seeds must survive the migration boundary.
+const HELLO_PM_DOC = {
   type: "doc",
   content: [{ type: "paragraph", content: [{ type: "text", text: "Hello" }] }],
 };
@@ -27,14 +30,24 @@ const HELLO_DOC = {
 beforeEach(() => vi.clearAllMocks());
 
 describe("seedRegistryDoc", () => {
-  it("seeds a new room from the source column's ProseMirror JSON", async () => {
-    mockPrisma.mentorNote.findUnique.mockResolvedValue({ contentJson: HELLO_DOC });
+  it("seeds a new room's blocknote fragment from a legacy ProseMirror column", async () => {
+    mockPrisma.mentorNote.findUnique.mockResolvedValue({ contentJson: HELLO_PM_DOC });
     const doc = new Y.Doc();
     const handled = await seedRegistryDoc("mentorNote", "n1", doc);
     expect(handled).toBe(true);
-    const json = yDocToProsemirrorJSON(doc, "default");
-    expect(json.type).toBe("doc");
-    expect(JSON.stringify(json)).toContain("Hello");
+    const { blocks, source } = ydocToBlocks(doc);
+    expect(source).toBe("blocknote");
+    expect(blocksToPlainText(blocks)).toBe("Hello");
+  });
+
+  it("seeds from an already-converted block JSON column", async () => {
+    mockPrisma.mentorNote.findUnique.mockResolvedValue({
+      contentJson: plainTextToBlocks("Block hello"),
+    });
+    const doc = new Y.Doc();
+    const handled = await seedRegistryDoc("mentorNote", "n1", doc);
+    expect(handled).toBe(true);
+    expect(blocksToPlainText(ydocToBlocks(doc).blocks)).toBe("Block hello");
   });
 
   it("claims the entity but seeds nothing for the empty-object default", async () => {
@@ -42,7 +55,7 @@ describe("seedRegistryDoc", () => {
     const doc = new Y.Doc();
     const handled = await seedRegistryDoc("mentorNote", "n1", doc);
     expect(handled).toBe(true);
-    expect(doc.getXmlFragment("default").length).toBe(0);
+    expect(doc.getXmlFragment(BLOCKNOTE_FRAGMENT).length).toBe(0);
   });
 
   it("returns false for a non-registry entity (legacy plain-text path)", async () => {
@@ -52,9 +65,9 @@ describe("seedRegistryDoc", () => {
 });
 
 describe("syncRegistryDocBack", () => {
-  it("writes the live doc back to the source column as ProseMirror JSON", async () => {
+  it("writes the live doc back to the source column as block JSON", async () => {
     const doc = new Y.Doc();
-    mockPrisma.mentorNote.findUnique.mockResolvedValue({ contentJson: HELLO_DOC });
+    mockPrisma.mentorNote.findUnique.mockResolvedValue({ contentJson: HELLO_PM_DOC });
     await seedRegistryDoc("mentorNote", "n1", doc);
 
     const handled = await syncRegistryDocBack("mentorNote", "n1", doc);
@@ -62,7 +75,9 @@ describe("syncRegistryDocBack", () => {
     expect(mockPrisma.mentorNote.update).toHaveBeenCalledTimes(1);
     const arg = mockPrisma.mentorNote.update.mock.calls[0][0];
     expect(arg.where).toEqual({ id: "n1" });
-    expect(JSON.stringify(arg.data.contentJson)).toContain("Hello");
+    // Sync-back stores BLOCK JSON (an array), not a PM doc.
+    expect(Array.isArray(arg.data.contentJson)).toBe(true);
+    expect(blocksToPlainText(arg.data.contentJson)).toBe("Hello");
   });
 
   it("returns false for a non-registry entity", async () => {
