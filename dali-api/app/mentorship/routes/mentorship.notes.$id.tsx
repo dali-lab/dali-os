@@ -259,6 +259,8 @@ export default function MentorNoteEditor() {
         value={value}
         onChange={setValue}
         disabled={!data.canEdit}
+        richToolbar
+        enableImages
         placeholder="What went well, what's blocked, what to follow up on…"
         className="min-h-[24rem] w-full"
       />

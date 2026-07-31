@@ -96,7 +96,7 @@ export function MemberFormFillView({
       </h1>
       {data.description && !isEmptyDoc(data.description) && (
         <div className="mt-2 text-sm text-muted-foreground">
-          <RichTextViewer content={data.description} />
+          <RichTextViewer content={data.description} enableImages />
         </div>
       )}
 

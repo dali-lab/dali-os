@@ -351,6 +351,7 @@ function TemplateDetail({
         <RichTextEditor
           value={content}
           onChange={setContent}
+          enableImages
           placeholder="Sections, prompts, and headings the mentor fills in each week…"
           className="min-h-[12rem]"
         />

@@ -9,23 +9,9 @@ import { TextStyle, Color } from "@tiptap/extension-text-style";
 import Highlight from "@tiptap/extension-highlight";
 import {
   History,
-  Bold,
-  Italic,
-  Underline as UnderlineIcon,
-  Strikethrough,
-  Code,
-  Heading1,
-  Heading2,
-  Heading3,
-  List,
-  ListOrdered,
-  Quote,
-  Image as ImageIcon,
   ListCollapse,
   GripVertical,
   Plus,
-  Undo2,
-  Redo2,
   X,
 } from "lucide-react";
 import * as Y from "yjs";
@@ -53,10 +39,9 @@ import {
 import { useRegisterCollabEditor } from "./collab/PresenceProvider";
 import { VersionHistoryPanel } from "./collab/VersionHistoryPanel";
 import { EDITOR_CONTENT_CLASS, EditorShell } from "./editor/shared";
-import { mentionEditorExtension, searchMentionableUsers } from "./editor/mention";
-import { imageEditorExtensions, uploadEditorImage, IMAGE_UPLOAD_ACCEPT } from "./editor/image";
-import { richBlockExtensions } from "./editor/blocks";
-import { slashCommandExtension } from "./editor/slash-menu";
+import { uploadEditorImage, IMAGE_UPLOAD_ACCEPT } from "./editor/image";
+import { capabilityExtensions } from "./editor/presets";
+import { EditorToolbar } from "./editor/toolbar";
 import { BubbleToolbar } from "./editor/BubbleToolbar";
 import { ColorControl, HighlightControl, LineSpacingControl } from "./editor/formatting-controls";
 
@@ -618,233 +603,6 @@ const ToggleBlock = TiptapNode.create({
   },
 });
 
-type ToolbarAction = {
-  label: string;
-  icon: typeof Bold;
-  isActive: (editor: Editor) => boolean;
-  run: (editor: Editor) => void;
-};
-
-const TOOLBAR_ACTIONS: ToolbarAction[] = [
-  {
-    label: "Bold",
-    icon: Bold,
-    isActive: (e) => e.isActive("bold"),
-    run: (e) => e.chain().focus().toggleBold().run(),
-  },
-  {
-    label: "Italic",
-    icon: Italic,
-    isActive: (e) => e.isActive("italic"),
-    run: (e) => e.chain().focus().toggleItalic().run(),
-  },
-  {
-    label: "Underline",
-    icon: UnderlineIcon,
-    isActive: (e) => e.isActive("underline"),
-    run: (e) => e.chain().focus().toggleUnderline().run(),
-  },
-  {
-    label: "Strikethrough",
-    icon: Strikethrough,
-    isActive: (e) => e.isActive("strike"),
-    run: (e) => e.chain().focus().toggleStrike().run(),
-  },
-  {
-    label: "Inline code",
-    icon: Code,
-    isActive: (e) => e.isActive("code"),
-    run: (e) => e.chain().focus().toggleCode().run(),
-  },
-  {
-    label: "Heading 1",
-    icon: Heading1,
-    isActive: (e) => e.isActive("heading", { level: 1 }),
-    run: (e) => e.chain().focus().toggleHeading({ level: 1 }).run(),
-  },
-  {
-    label: "Heading 2",
-    icon: Heading2,
-    isActive: (e) => e.isActive("heading", { level: 2 }),
-    run: (e) => e.chain().focus().toggleHeading({ level: 2 }).run(),
-  },
-  {
-    label: "Heading 3",
-    icon: Heading3,
-    isActive: (e) => e.isActive("heading", { level: 3 }),
-    run: (e) => e.chain().focus().toggleHeading({ level: 3 }).run(),
-  },
-  {
-    label: "Bullet list",
-    icon: List,
-    isActive: (e) => e.isActive("bulletList"),
-    run: (e) => e.chain().focus().toggleBulletList().run(),
-  },
-  {
-    label: "Numbered list",
-    icon: ListOrdered,
-    isActive: (e) => e.isActive("orderedList"),
-    run: (e) => e.chain().focus().toggleOrderedList().run(),
-  },
-  {
-    label: "Quote",
-    icon: Quote,
-    isActive: (e) => e.isActive("blockquote"),
-    run: (e) => e.chain().focus().toggleBlockquote().run(),
-  },
-];
-
-function EditorToolbar({
-  editor,
-  onOpenHistory,
-  showImageButton = false,
-}: {
-  editor: Editor;
-  onOpenHistory: () => void;
-  showImageButton?: boolean;
-}) {
-  // Tiptap doesn't trigger a React re-render on its own; re-render on every
-  // transaction so the active-button highlighting (bold/heading/etc. state)
-  // tracks the current selection and the undo/redo buttons enable/disable live
-  // (undo/redo/typing all dispatch transactions).
-  const [, setTick] = useState(0);
-  const imageInputRef = useRef<HTMLInputElement | null>(null);
-  useEffect(() => {
-    const rerender = () => setTick((t) => t + 1);
-    editor.on("transaction", rerender);
-    return () => {
-      editor.off("transaction", rerender);
-    };
-  }, [editor]);
-
-  async function onImagePicked(files: FileList | null) {
-    for (const file of Array.from(files ?? [])) {
-      try {
-        const src = await uploadEditorImage(file);
-        editor
-          .chain()
-          .focus()
-          .setImage({ src, alt: file.name.replace(/\.[^.]+$/, "") })
-          .run();
-      } catch (err) {
-        console.error("[editor] image upload failed", err);
-      }
-    }
-    if (imageInputRef.current) imageInputRef.current.value = "";
-  }
-
-  // Undo/redo via the live plugin's own UndoManager (found by iteration, immune
-  // to the prod-bundle key duplication). Re-renders above keep the state live.
-  const undoManager = getCollabUndoManager(editor.state);
-  const canUndo = undoManager?.canUndo() ?? false;
-  const canRedo = undoManager?.canRedo() ?? false;
-
-  return (
-    <div className="flex items-center justify-between gap-1 border-b border-border px-1.5 py-1">
-      <div className="flex flex-wrap items-center gap-0.5">
-        <button
-          type="button"
-          title="Undo (⌘Z)"
-          aria-label="Undo"
-          disabled={!canUndo}
-          onMouseDown={(e) => {
-            e.preventDefault();
-            getCollabUndoManager(editor.state)?.undo();
-            editor.commands.focus();
-          }}
-          className="p-1.5 rounded transition-colors text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
-        >
-          <Undo2 size={15} />
-        </button>
-        <button
-          type="button"
-          title="Redo (⌘⇧Z)"
-          aria-label="Redo"
-          disabled={!canRedo}
-          onMouseDown={(e) => {
-            e.preventDefault();
-            getCollabUndoManager(editor.state)?.redo();
-            editor.commands.focus();
-          }}
-          className="p-1.5 rounded transition-colors text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
-        >
-          <Redo2 size={15} />
-        </button>
-        <span className="mx-0.5 h-5 w-px bg-border" aria-hidden />
-        {TOOLBAR_ACTIONS.map(({ label, icon: Icon, isActive, run }) => (
-          <button
-            key={label}
-            type="button"
-            title={label}
-            aria-label={label}
-            aria-pressed={isActive(editor)}
-            onMouseDown={(e) => {
-              // Preserve the current selection through the click.
-              e.preventDefault();
-              run(editor);
-            }}
-            className={`p-1.5 rounded transition-colors ${
-              isActive(editor)
-                ? "bg-accent-coral/15 text-accent-coral"
-                : "text-muted-foreground hover:text-foreground hover:bg-muted"
-            }`}
-          >
-            <Icon size={15} />
-          </button>
-        ))}
-        <span className="mx-0.5 h-5 w-px bg-border" aria-hidden />
-        <ColorControl editor={editor} />
-        <HighlightControl editor={editor} />
-        <LineSpacingControl editor={editor} />
-        <button
-          type="button"
-          title="Toggle list (collapsible section)"
-          aria-label="Toggle list"
-          onMouseDown={(e) => {
-            e.preventDefault();
-            editor.chain().focus().setToggleBlock().run();
-          }}
-          className="rounded p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        >
-          <ListCollapse size={15} />
-        </button>
-        {showImageButton && (
-          <>
-            <button
-              type="button"
-              title="Image"
-              aria-label="Image"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                imageInputRef.current?.click();
-              }}
-              className="p-1.5 rounded transition-colors text-muted-foreground hover:text-foreground hover:bg-muted"
-            >
-              <ImageIcon size={15} />
-            </button>
-            <input
-              ref={imageInputRef}
-              type="file"
-              accept={IMAGE_UPLOAD_ACCEPT}
-              multiple
-              className="hidden"
-              onChange={(e) => void onImagePicked(e.target.files)}
-            />
-          </>
-        )}
-      </div>
-      <button
-        type="button"
-        onClick={onOpenHistory}
-        title="Version history"
-        aria-label="Version history"
-        className="flex-shrink-0 p-1.5 rounded text-muted-foreground/70 hover:text-foreground/80 hover:bg-muted transition-colors"
-      >
-        <History size={15} />
-      </button>
-    </div>
-  );
-}
 
 // Module-level cache so StrictMode's double-mount reuses the same Y.Doc /
 // provider — without it, the editor binds to one while the duplicate leaks,
@@ -1021,11 +779,14 @@ function CollaborativeEditorInner({
       ToggleSummary,
       ToggleBlock,
       TabKeymap,
-      ...(enableMentions ? [mentionEditorExtension(searchMentionableUsers)] : []),
-      ...(enableImages
-        ? imageEditorExtensions((m) => imageErrorRef.current(m))
-        : []),
-      ...(enableRichBlocks ? [...richBlockExtensions(), slashCommandExtension()] : []),
+      ...capabilityExtensions(
+        { mentions: enableMentions, images: enableImages, richBlocks: enableRichBlocks },
+        {
+          side: "editor",
+          onImageError: (m) => imageErrorRef.current(m),
+          withSlashMenu: enableRichBlocks,
+        },
+      ),
       createCollabExtension(entry.fragment, entry.provider),
       ...(inlineComments?.enabled
         ? [
@@ -1512,8 +1273,50 @@ function CollaborativeEditorInner({
       {editor && !disabled ? (
         <EditorToolbar
           editor={editor}
-          onOpenHistory={() => setHistoryOpen(true)}
-          showImageButton={enableImages}
+          features={{ images: enableImages }}
+          density="full"
+          history={{
+            canUndo: () => getCollabUndoManager(editor.state)?.canUndo() ?? false,
+            canRedo: () => getCollabUndoManager(editor.state)?.canRedo() ?? false,
+            undo: () => {
+              getCollabUndoManager(editor.state)?.undo();
+              editor.commands.focus();
+            },
+            redo: () => {
+              getCollabUndoManager(editor.state)?.redo();
+              editor.commands.focus();
+            },
+          }}
+          extraFormatControls={
+            <>
+              <ColorControl editor={editor} />
+              <HighlightControl editor={editor} />
+              <LineSpacingControl editor={editor} />
+              <button
+                type="button"
+                title="Toggle list (collapsible section)"
+                aria-label="Toggle list"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  editor.chain().focus().setToggleBlock().run();
+                }}
+                className="rounded p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <ListCollapse size={15} />
+              </button>
+            </>
+          }
+          trailing={
+            <button
+              type="button"
+              onClick={() => setHistoryOpen(true)}
+              title="Version history"
+              aria-label="Version history"
+              className="p-1.5 rounded text-muted-foreground/70 hover:text-foreground/80 hover:bg-muted transition-colors"
+            >
+              <History size={15} />
+            </button>
+          }
         />
       ) : (
         <button

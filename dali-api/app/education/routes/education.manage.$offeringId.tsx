@@ -540,6 +540,7 @@ export default function ManageOffering() {
                   documentName={offering.descriptionDocId}
                   token={collabToken}
                   userName={userName}
+                  enableImages
                   placeholder="What this offering covers, who it's for, what attendees build…"
                   className="border border-border rounded-md"
                 />

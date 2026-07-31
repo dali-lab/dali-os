@@ -242,7 +242,7 @@ export function ChallengeDetail() {
               <div className="p-6 space-y-4">
                 {!isEmptyDoc(selectedVersion.description) && (
                   <div className="px-4 py-3 rounded-lg border border-border bg-muted/30">
-                    <RichTextViewer content={selectedVersion.description} />
+                    <RichTextViewer content={selectedVersion.description} enableImages />
                   </div>
                 )}
                 {(selectedVersion.questions as unknown as Question[]).map((q, index) => (

@@ -836,6 +836,7 @@ function DomainScopeBlock({
                     {!isEmptyDoc(d.expectedChallenges) ? (
                       <RichTextViewer
                         content={d.expectedChallenges}
+                        enableImages
                         className="text-sm text-muted-foreground mt-1"
                       />
                     ) : (
@@ -958,6 +959,7 @@ function DomainScopeEditRow({
         <RichTextEditor
           value={challenges}
           onChange={setChallenges}
+          enableImages
           placeholder="What does the partner expect this domain to deliver?"
         />
       </label>
@@ -1004,6 +1006,7 @@ function SowBlock({
             documentName={documentName}
             token={collabToken}
             userName={userName}
+            enableImages
             disabled={!canEdit}
             placeholder="Draft the statement of work…"
             className="border border-border rounded-md"

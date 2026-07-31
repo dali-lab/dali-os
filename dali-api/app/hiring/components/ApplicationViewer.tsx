@@ -426,7 +426,7 @@ export function ApplicationViewer({ application, questionLabels, initialAnnotati
         <div className="p-6 space-y-6">
           {!isEmptyDoc(application.generalChallengeVersion?.description) && (
             <div className="border border-border rounded-md bg-muted/30 px-4 py-3">
-              <RichTextViewer content={application.generalChallengeVersion!.description} />
+              <RichTextViewer content={application.generalChallengeVersion!.description} enableImages />
             </div>
           )}
           {Object.entries(application.answers as Record<string, unknown>).map(([key, value]) => {
@@ -472,7 +472,7 @@ export function ApplicationViewer({ application, questionLabels, initialAnnotati
             <div className="p-6 space-y-6">
               {!isEmptyDoc(cv.description) && (
                 <div className="border border-border rounded-md bg-muted/30 px-4 py-3">
-                  <RichTextViewer content={cv.description} />
+                  <RichTextViewer content={cv.description} enableImages />
                 </div>
               )}
               {Object.entries(dapp.answers as Record<string, unknown>).map(([key, value]) => {

@@ -536,6 +536,7 @@ export default function InterviewDetailPage() {
             documentName={`interview:${interview.id}:notes`}
             token={collabToken}
             userName={userName}
+            enableImages
             disabled={isCompleted}
             placeholder="Write your interview notes here..."
           />

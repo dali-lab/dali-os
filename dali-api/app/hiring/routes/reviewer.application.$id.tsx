@@ -479,6 +479,7 @@ export default function ReviewerApplicationReview() {
                     documentName={`review:${existingReview.id}:feedback`}
                     token={collabToken}
                     userName={userName}
+                    enableImages
                     disabled={isSubmitted}
                     placeholder="Strengths, weaknesses, areas to probe in interview..."
                   />
@@ -503,6 +504,7 @@ export default function ReviewerApplicationReview() {
                     documentName={`review:${existingReview.id}:rejectionRationale`}
                     token={collabToken}
                     userName={userName}
+                    enableImages
                     disabled={isSubmitted}
                     placeholder="If we reject this candidate, what feedback should we provide?"
                   />

@@ -279,6 +279,7 @@ export default function PartnerApplicationDetail({
               documentName={documentName}
               token={collabToken}
               userName={userName}
+              enableImages
               placeholder="Draft the statement of work…"
               className="border border-border rounded-md"
             />

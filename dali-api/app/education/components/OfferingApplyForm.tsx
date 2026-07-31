@@ -56,7 +56,7 @@ export function OfferingApplyForm({
     <div>
       {description != null && !isEmptyDoc(description) && (
         <div className="text-sm text-muted-foreground">
-          <RichTextViewer content={description} />
+          <RichTextViewer content={description} enableImages />
         </div>
       )}
 
