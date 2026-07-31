@@ -90,6 +90,14 @@ export function SigningDocumentsPage() {
               <option value="HiringParticipants">Hiring participants</option>
             </select>
           </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="font-medium text-foreground/80">Cadence</span>
+            <select name="cadence" defaultValue="Once" className="px-3 py-2 border border-gray-300 rounded-md">
+              <option value="Once">One-time (sign once)</option>
+              <option value="PerTerm">Per term (re-sign each term)</option>
+              <option value="PerCycle">Per hiring cycle</option>
+            </select>
+          </label>
           <div className="sm:col-span-2 flex justify-end gap-2">
             <button
               type="button"
