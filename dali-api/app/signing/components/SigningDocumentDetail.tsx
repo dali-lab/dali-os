@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Form, useLoaderData } from "react-router";
+import { Form, Link, useLoaderData } from "react-router";
 import {
   Plus,
   Clock,
@@ -318,7 +318,6 @@ export function SigningDocumentDetail() {
 
 function BindingsPanel() {
   const { document, rosters } = useLoaderData<typeof loader>();
-  const tz = useUserTimeZone();
   if (document.bindings.length === 0) {
     return (
       <div className="bg-card rounded-xl border border-border p-6 shadow-sm">
@@ -354,7 +353,6 @@ function BindingsPanel() {
         const context =
           b.cycle?.name ? `cycle: ${b.cycle.name}` : b.term?.code ? `term: ${b.term.code}` : "app-wide";
         const supervisorSigned = b.signatures.some((s) => s.roleKey === "supervisor");
-        const memberSigs = b.signatures.filter((s) => s.roleKey === "member");
         const roster = rosters[b.id];
         return (
           <div key={b.id} className="rounded-lg border border-border p-4">
@@ -377,29 +375,35 @@ function BindingsPanel() {
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
               Supervisor: {supervisorSigned ? "signed ✓" : "pending"}
-              {roster
+              {roster.outstanding !== null
                 ? ` · ${roster.signed.length} of ${roster.signed.length + roster.outstanding.length} signed`
-                : ` · ${memberSigs.length} member signature${memberSigs.length !== 1 ? "s" : ""}`}
+                : ` · ${roster.signed.length} signature${roster.signed.length !== 1 ? "s" : ""}`}
             </p>
 
-            {roster ? (
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                <div>
-                  <p className="text-xs font-semibold text-green-700 mb-1">
-                    Signed ({roster.signed.length})
-                  </p>
-                  <ul className="space-y-0.5 max-h-40 overflow-y-auto">
-                    {roster.signed.length === 0 ? (
-                      <li className="text-xs text-muted-foreground italic">No one yet.</li>
-                    ) : (
-                      roster.signed.map((n) => (
-                        <li key={n} className="text-xs text-foreground truncate">
-                          {n}
-                        </li>
-                      ))
-                    )}
-                  </ul>
-                </div>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <div>
+                <p className="text-xs font-semibold text-green-700 mb-1">
+                  Signed ({roster.signed.length})
+                </p>
+                <ul className="space-y-0.5 max-h-40 overflow-y-auto">
+                  {roster.signed.length === 0 ? (
+                    <li className="text-xs text-muted-foreground italic">No one yet.</li>
+                  ) : (
+                    roster.signed.map((s) => (
+                      <li key={s.signatureId}>
+                        <Link
+                          to={`/admin-console/agreements/${document.id}/signature/${s.signatureId}`}
+                          className="block truncate text-xs text-accent-coral hover:underline"
+                          title="View signed copy"
+                        >
+                          {s.name}
+                        </Link>
+                      </li>
+                    ))
+                  )}
+                </ul>
+              </div>
+              {roster.outstanding !== null && (
                 <div>
                   <p className="text-xs font-semibold text-amber-700 mb-1">
                     Outstanding ({roster.outstanding.length})
@@ -416,19 +420,8 @@ function BindingsPanel() {
                     )}
                   </ul>
                 </div>
-              </div>
-            ) : (
-              memberSigs.length > 0 && (
-                <ul className="mt-2 space-y-1 max-h-40 overflow-y-auto">
-                  {memberSigs.map((s) => (
-                    <li key={s.id} className="text-xs text-muted-foreground flex items-center justify-between gap-2">
-                      <span className="truncate">{s.typedName || fullName(s.signer) || UNKNOWN_LABEL}</span>
-                      <span className="shrink-0">{formatDateTime(s.signedAt, tz)}</span>
-                    </li>
-                  ))}
-                </ul>
-              )
-            )}
+              )}
+            </div>
           </div>
         );
       })}

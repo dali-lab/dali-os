@@ -70,6 +70,7 @@ export default [
     // track signatories.
     route("admin-console/agreements", "signing/routes/admin-console.agreements.tsx"),
     route("admin-console/agreements/:id", "signing/routes/admin-console.agreements.$id.tsx"),
+    route("admin-console/agreements/:id/signature/:sigId", "signing/routes/admin-console.agreements.$id.signature.$sigId.tsx"),
     route("admin-console/payroll-export", "admin-console/routes/admin-console.payroll-export.tsx"),
     route("admin-console/payroll", "admin-console/routes/admin-console.payroll.tsx"),
 
