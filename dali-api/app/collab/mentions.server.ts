@@ -1,4 +1,4 @@
-import type * as Y from "yjs";
+import * as Y from "yjs";
 import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
 import { ydocToBlocks } from "./read";
@@ -19,8 +19,11 @@ function parseDocRoom(documentName: string): string | null {
 }
 
 // Collect the user ids of every `mention` inline node in the doc body. Reads
-// the block JSON via ydocToBlocks, so both converted ("blocknote" fragment)
-// and legacy ("default" fragment) documents scan correctly.
+// the block JSON via ydocToBlocks on a *clone* of the doc — the server schema
+// does not know the `comment` mark, so reading the live doc through y-prosemirror
+// would delete Y.XmlText items that carry comment marks (a destructive side-effect
+// inside y-prosemirror's error handler). Using a clone means any such deletion
+// happens to a throwaway doc and never propagates to connected clients.
 export function extractMentionUserIds(doc: Y.Doc): string[] {
   const ids = new Set<string>();
   type InlineNode = { type?: string; props?: Record<string, unknown>; content?: unknown };
@@ -54,7 +57,13 @@ export function extractMentionUserIds(doc: Y.Doc): string[] {
     }
     for (const child of block.children ?? []) walkBlock(child as typeof block);
   };
-  for (const block of ydocToBlocks(doc).blocks) walkBlock(block);
+  const clone = new Y.Doc();
+  try {
+    Y.applyUpdate(clone, Y.encodeStateAsUpdate(doc));
+    for (const block of ydocToBlocks(clone).blocks) walkBlock(block);
+  } finally {
+    clone.destroy();
+  }
   return [...ids];
 }
 

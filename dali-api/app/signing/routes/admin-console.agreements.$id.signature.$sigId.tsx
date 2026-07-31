@@ -1,6 +1,6 @@
 // Admin view of ONE member's completed, signed copy of an agreement — the
 // frozen archival body (captured field values + resolved variables baked in)
-// plus signing metadata. `?format=pdf` streams the same copy as a PDF.
+// plus signing metadata. PDF download lives at the sibling resource route.
 
 import { redirect, Link, useLoaderData } from "react-router";
 import { ArrowLeft, Download, ShieldCheck } from "lucide-react";
@@ -12,9 +12,7 @@ import { fullName, formatDateTime } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { DocEditor, looksLikeProseMirrorDoc } from "~/components/doc";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
-import { renderProseMirrorToPdf } from "~/collab/export-pdf";
 import { renderNodes, type PMNode } from "~/collab/export-html";
-import type { DocBlock } from "~/collab/blocknote-server";
 
 export const meta: Route.MetaFunction = () => [{ title: "Signed copy · Admin · DALI OS" }];
 
@@ -53,20 +51,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // legacy ProseMirror JSON and render via the legacy PM walker; post-migration
   // rows are block JSON and render via the block viewer. Format-sniff on read.
   const body = sig.frozenBody ?? sig.version.body;
-
-  const url = new URL(request.url);
-  if (url.searchParams.get("format") === "pdf") {
-    const title = sig.version.document.name;
-    // renderProseMirrorToPdf accepts both formats (normalizes in-memory only).
-    const pdf = await renderProseMirrorToPdf(title, body as PMNode | DocBlock[]);
-    const filename = `${safeFilename(title)}-${safeFilename(sig.typedName || fullName(sig.signer))}.pdf`;
-    return new Response(new Uint8Array(pdf), {
-      headers: {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": `inline; filename="${filename}"`,
-      },
-    });
-  }
 
   const isLegacy = looksLikeProseMirrorDoc(body);
   return {
@@ -115,7 +99,7 @@ export default function SignatureViewPage() {
           )}
         </div>
         <a
-          href={`/admin-console/agreements/${data.documentId}/signature/${data.signatureId}?format=pdf`}
+          href={`/admin-console/agreements/${data.documentId}/signature/${data.signatureId}/pdf`}
           className="inline-flex items-center gap-1 px-3 py-2 text-sm font-medium rounded-lg text-foreground bg-card border border-border hover:bg-muted/50 shrink-0"
         >
           <Download className="w-4 h-4" /> PDF

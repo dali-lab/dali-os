@@ -224,6 +224,32 @@ export class DaliThreadStore extends ThreadStore {
     selection: { head: number; anchor: number };
     editor: unknown;
   }): Promise<void> {
+    // Insert the ProseMirror comment mark at the saved selection range. BlockNote
+    // calls addThreadToDocument INSTEAD of inserting the mark itself when this
+    // method is defined, so we must dispatch the mark transaction here.
+    //
+    // The selection has been cleared by the time the async createThread network
+    // call resolves, so we use the saved anchor/head positions from options.selection
+    // and restore + apply via a TipTap chain (flows through the Yjs sync layer).
+    const bnEditor = options.editor as {
+      _tiptapEditor?: {
+        state?: { schema?: { marks?: Record<string, { create: (attrs: object) => unknown } > } };
+        view?: { dispatch?: (tr: unknown) => void; state?: { tr?: unknown } };
+      };
+    };
+    const tiptap = bnEditor._tiptapEditor;
+    if (tiptap) {
+      const sel = options.selection as { anchor: number; head: number };
+      const from = Math.min(sel.anchor, sel.head);
+      const to = Math.max(sel.anchor, sel.head);
+      if (from < to) {
+        (tiptap as { chain?: () => { setTextSelection: (r: { from: number; to: number }) => { setMark: (name: string, attrs: object) => { run: () => void } } } }).chain?.()
+          .setTextSelection({ from, to })
+          .setMark("comment", { orphan: false, threadId: options.threadId })
+          .run();
+      }
+    }
+
     // Patch the DocComment's anchor to BLOCKNOTE_ANCHOR so the rail and this
     // store can distinguish it from doc-level and legacy Yjs threads.
     await fetch(`/api/comments/${options.threadId}`, {
@@ -232,8 +258,6 @@ export class DaliThreadStore extends ThreadStore {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ intent: "set-anchor", anchor: BLOCKNOTE_ANCHOR }),
     });
-    // Best-effort — if this fails the thread stays doc-level (safe degradation).
-    // Refetch so the store sees the updated anchor.
     await this.refetch();
   }
 
@@ -241,7 +265,7 @@ export class DaliThreadStore extends ThreadStore {
     initialComment: { body: CommentBody; metadata?: unknown };
     metadata?: unknown;
   }): Promise<ThreadData> {
-    const bodyText = serializeBody(options.initialComment.body);
+    const bodyText = bodyToPlainText(options.initialComment.body);
     const res = await fetch("/api/comments", {
       method: "POST",
       credentials: "include",
@@ -290,7 +314,7 @@ export class DaliThreadStore extends ThreadStore {
     comment: { body: CommentBody; metadata?: unknown };
     threadId: string;
   }): Promise<CommentData> {
-    const bodyText = serializeBody(options.comment.body);
+    const bodyText = bodyToPlainText(options.comment.body);
     const res = await fetch("/api/comments", {
       method: "POST",
       credentials: "include",

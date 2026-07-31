@@ -165,12 +165,69 @@ export async function loadDocument(name: string, doc: Y.Doc): Promise<void> {
 }
 
 /**
+ * Strip inline-comment format attributes from every Y.XmlText node inside
+ * `element`. The `comment` ProseMirror mark is stored by y-prosemirror as
+ * attributes whose keys start with `"comment"` (e.g. `"comment--<hash>"`).
+ * The server's BlockNote schema does not include the comment mark, so when
+ * y-prosemirror tries to deserialise those attributes it throws and then
+ * *deletes the Y.XmlText item* from the doc — corrupting the live document
+ * and causing Hocuspocus to broadcast the deletion to clients.
+ *
+ * Call this on a **temporary clone** of the doc before reading plain text so
+ * the deletion side-effect never touches the live document.
+ */
+function stripCommentFormats(element: Y.XmlFragment | Y.XmlElement): void {
+  for (let i = 0; i < element.length; i++) {
+    const child = element.get(i);
+    if (child instanceof Y.XmlText) {
+      const delta = child.toDelta() as Array<{
+        insert?: string;
+        attributes?: Record<string, unknown>;
+      }>;
+      let pos = 0;
+      for (const op of delta) {
+        const len = typeof op.insert === "string" ? op.insert.length : 1;
+        if (op.attributes) {
+          const commentKeys = Object.keys(op.attributes).filter((k) =>
+            k.startsWith("comment"),
+          );
+          if (commentKeys.length > 0) {
+            const nullAttrs: Record<string, null> = {};
+            for (const k of commentKeys) nullAttrs[k] = null;
+            child.format(pos, len, nullAttrs);
+          }
+        }
+        pos += len;
+      }
+    } else if (child instanceof Y.XmlElement) {
+      stripCommentFormats(child);
+    }
+  }
+}
+
+/**
  * Extract the plain text of a Y.Doc's body. Reads the "blocknote" fragment
  * (falling back to an in-memory conversion of legacy "default" content) and
  * flattens the blocks — one line per block, table cells joined by spaces.
+ *
+ * Works on a **temporary clone** of the doc so that the server-side BlockNote
+ * schema (which does not include the `comment` mark) cannot trigger y-prosemirror's
+ * destructive error-recovery path — which deletes Y.XmlText items from the live
+ * document and causes Hocuspocus to broadcast that deletion to all clients.
  */
 export function getPlainText(doc: Y.Doc): string {
-  return blocksToPlainText(ydocToBlocks(doc).blocks);
+  const clone = new Y.Doc();
+  try {
+    Y.applyUpdate(clone, Y.encodeStateAsUpdate(doc));
+    // Strip comment-format attributes before reading through the server schema.
+    const fragment = clone.getXmlFragment(BLOCKNOTE_FRAGMENT);
+    if (fragment.length > 0) {
+      clone.transact(() => stripCommentFormats(fragment));
+    }
+    return blocksToPlainText(ydocToBlocks(clone).blocks);
+  } finally {
+    clone.destroy();
+  }
 }
 
 export interface StoredDocState {

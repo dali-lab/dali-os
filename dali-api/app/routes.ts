@@ -17,6 +17,7 @@ export default [
     // required agreement is unsigned.
     route("sign", "signing/routes/sign._index.tsx"),
     route("sign/:bindingId", "signing/routes/sign.$bindingId.tsx"),
+    route("sign/:bindingId/pdf", "signing/routes/sign.$bindingId.pdf.ts"),
 
     // Hiring section. /hiring is the role-aware hub; the tools below are
     // reached via its pill row (the sidebar carries a single Hiring entry).
@@ -71,6 +72,7 @@ export default [
     route("admin-console/agreements", "signing/routes/admin-console.agreements.tsx"),
     route("admin-console/agreements/:id", "signing/routes/admin-console.agreements.$id.tsx"),
     route("admin-console/agreements/:id/signature/:sigId", "signing/routes/admin-console.agreements.$id.signature.$sigId.tsx"),
+    route("admin-console/agreements/:id/signature/:sigId/pdf", "signing/routes/admin-console.agreements.$id.signature.$sigId.pdf.ts"),
     route("admin-console/payroll-export", "admin-console/routes/admin-console.payroll-export.tsx"),
     route("admin-console/payroll", "admin-console/routes/admin-console.payroll.tsx"),
 

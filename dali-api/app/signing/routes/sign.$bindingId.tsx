@@ -9,7 +9,6 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { DocEditor, looksLikeProseMirrorDoc } from "~/components/doc";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
-import { renderProseMirrorToPdf } from "~/collab/export-pdf";
 import { renderNodes, type PMNode } from "~/collab/export-html";
 import type { DocBlock } from "~/collab/blocknote-server";
 import { collectSigningFields } from "~/lib/signing-fields";
@@ -92,21 +91,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     }
   }
 
-  // Download the member's own signed copy as a PDF (accepts both formats).
-  if (url.searchParams.get("format") === "pdf") {
-    if (state.status !== "signed" || signedRaw == null) return redirect(`/sign/${bindingId}`);
-    const pdf = await renderProseMirrorToPdf(
-      binding.document.name,
-      signedRaw as PMNode | DocBlock[],
-    );
-    return new Response(new Uint8Array(pdf), {
-      headers: {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": `inline; filename="${binding.document.name.replace(/[^a-z0-9]+/gi, "-")}.pdf"`,
-      },
-    });
-  }
-
   return {
     name: binding.document.name,
     bindingId,
@@ -184,7 +168,7 @@ export default function SignBindingPage() {
             Continue
           </Link>
           <a
-            href={`/sign/${data.bindingId}?format=pdf`}
+            href={`/sign/${data.bindingId}/pdf`}
             className="inline-flex items-center gap-1 px-4 py-2 text-sm font-medium rounded-md text-foreground bg-card border border-border hover:bg-muted/50"
           >
             <Download className="w-4 h-4" /> Download PDF
