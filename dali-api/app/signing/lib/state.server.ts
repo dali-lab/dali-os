@@ -6,7 +6,7 @@
 
 import { prisma } from "~/lib/db";
 import { currentTerm, isLabMentor } from "~/lib/roles";
-import type { SigningAudience } from "~/generated/prisma/enums";
+import { AUDIENCE_RESOLVERS } from "./audiences";
 
 export interface SignerCohorts {
   isMember: boolean;
@@ -28,62 +28,6 @@ export async function getSignerCohorts(userId: string): Promise<SignerCohorts> {
   const isMember = !!member && u?.membershipStatus !== "Alumni";
   const isMentor = await isLabMentor(userId, term?.id);
   return { isMember, isMentor };
-}
-
-// Prisma predicate for the ActiveMembers audience: active lab members who are
-// not full-time staff. Shared by the notifier and the admin roster.
-export const activeMemberAudienceWhere = {
-  user: {
-    membershipStatus: "Active" as const,
-    NOT: { adminMembership: { is: { isStaff: true } } },
-  },
-};
-
-// Bulk equivalent of isLabMentor for a term — the set of users who mentor in the
-// given term (P3 project OR domain lead OR core OR PM-eligible + any term role),
-// excluding full-time staff. Used by the admin roster for Mentors-audience docs.
-export async function listTermMentors(
-  termId: string,
-): Promise<{ id: string; firstName: string; lastName: string }[]> {
-  return prisma.user.findMany({
-    where: {
-      NOT: { adminMembership: { is: { isStaff: true } } },
-      OR: [
-        { projectAssignments: { some: { termId, level: "P3" } } },
-        { domainLeadAssignmentsAsUser: { some: { termId } } },
-        { coreAssignments: { some: { termId } } },
-        {
-          // PM mentor: monotonic P3 PM eligibility confirmed by any current-term role.
-          AND: [
-            { domainEligibilities: { some: { level: "P3", domain: { code: "PM" } } } },
-            {
-              OR: [
-                { projectAssignments: { some: { termId } } },
-                { coreAssignments: { some: { termId } } },
-                { domainLeadAssignmentsAsUser: { some: { termId } } },
-                { instructorAssignments: { some: { termId } } },
-              ],
-            },
-          ],
-        },
-      ],
-    },
-    select: { id: true, firstName: true, lastName: true },
-  });
-}
-
-// Whether an enforced document's audience includes this signer. Manual +
-// HiringParticipants are not app-gated here (Manual is explicit-only;
-// confidentiality is gated inside hiring).
-function audienceIncludes(audience: SigningAudience, cohorts: SignerCohorts): boolean {
-  switch (audience) {
-    case "ActiveMembers":
-      return cohorts.isMember;
-    case "Mentors":
-      return cohorts.isMentor;
-    default:
-      return false;
-  }
 }
 
 export interface OutstandingBinding {
@@ -117,7 +61,7 @@ export async function listOutstandingBindings(userId: string): Promise<Outstandi
 
   const out: OutstandingBinding[] = [];
   for (const b of bindings) {
-    if (!audienceIncludes(b.document.audience, cohorts)) continue;
+    if (!AUDIENCE_RESOLVERS[b.document.audience].includes(cohorts)) continue;
     const signed = b.signatures.some((s) => s.versionId === b.versionId);
     if (signed) continue;
     out.push({
