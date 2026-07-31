@@ -9,7 +9,17 @@ import type {
 } from "./messages";
 import type { TimesheetExport, FillOutcome, LoggedEntry } from "./types";
 import { prepareRow, commitRow, canFill, classify, findSavedRowDelete, type EntryStatus } from "./jobx";
+import { formatHours, totalHours } from "./overlap";
 import { DEFAULT_LOOKBACK_DAYS } from "./config";
+
+/** An entry's [start, end] as minutes since midnight, for totalling. */
+function entryMinutes(entry: LoggedEntry): [number, number] {
+  const mins = (iso: string) => {
+    const d = new Date(iso);
+    return d.getHours() * 60 + d.getMinutes();
+  };
+  return [mins(entry.startAt), mins(entry.endAt)];
+}
 
 // A fill that must survive JobX's full-page reload after each saved row. We
 // persist remaining entries to chrome.storage.local; after every reload the
@@ -428,6 +438,9 @@ export class Panel {
     const frag = document.createDocumentFragment();
 
     // Role picker — the fill only ever touches the selected role's timesheet.
+    // Always rendered when there's more than one hire, even if the others have
+    // no hours in this window: hiding it meant a member with a second job
+    // couldn't reach it from here at all.
     if (data.availableHires.length > 1) {
       const select = h(
         "select",
@@ -449,15 +462,34 @@ export class Panel {
     const addedCount = statuses.filter((s) => s === "added").length;
     const overrideCount = statuses.filter((s) => s === "override").length;
 
+    // Hours for the whole pulled window, so the member can reconcile against
+    // what payroll expects without adding the rows up by hand. Counts only
+    // what isn't already in JobX, with the full figure alongside when some of
+    // it has been filed already.
+    const ranges = data.entries.map(entryMinutes);
+    const periodTotal = totalHours(ranges);
+    const outstandingTotal = totalHours(ranges.filter((_, i) => statuses[i] !== "added"));
+
     frag.append(
       h(
         "div",
         { class: "row" },
         h("span", { class: "pill" }, `${data.entries.length} ${data.entries.length === 1 ? "entry" : "entries"}`),
+        h(
+          "span",
+          { class: "pill total", title: `${formatHours(periodTotal)} logged in DALI OS for this window` },
+          formatHours(periodTotal),
+        ),
         switching ? h("span", { class: "spin" }) : h("span", { class: "muted" }, `→ ${data.hireLabel}`),
         h("button", { class: "link refresh", onclick: () => void this.pull(data.hireKey) }, "Refresh"),
       ),
     );
+
+    if (outstandingTotal > 0 && outstandingTotal !== periodTotal) {
+      frag.append(
+        h("p", { class: "muted" }, `${formatHours(outstandingTotal)} still to add to JobX.`),
+      );
+    }
 
     if (addedCount || overrideCount) {
       const parts: string[] = [];
