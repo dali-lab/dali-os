@@ -11,7 +11,7 @@ import { logAuditEvent } from "~/lib/audit";
 import { fullName } from "~/lib/display";
 import { resolveAdminScope } from "~/signing/lib/scope.server";
 import { notifySignRequest } from "~/signing/lib/notify.server";
-import { activeMemberAudienceWhere } from "~/signing/lib/state.server";
+import { activeMemberAudienceWhere, listTermMentors } from "~/signing/lib/state.server";
 import { SigningDocumentDetail } from "~/signing/components/SigningDocumentDetail";
 
 export const handle = { areaPills: true };
@@ -57,9 +57,23 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
   });
 
-  // Signatory roster: for an ActiveMembers audience, split the audience into who
-  // has / hasn't signed each binding's in-force version. (Mentors have no bulk
-  // query; their panel shows the signed list only.)
+  // Signatory roster: split the enforced audience into who has / hasn't signed
+  // each binding's in-force version. ActiveMembers uses the active-member set;
+  // Mentors uses the mentor set for that binding's term.
+  type Person = { id: string; firstName: string; lastName: string };
+  const name = (u: Person) => `${u.firstName} ${u.lastName}`.trim();
+  const rosterFor = (audience: Person[], b: (typeof document.bindings)[number]) => {
+    const signedIds = new Set(
+      b.signatures
+        .filter((s) => s.roleKey === "member" && s.versionId === b.versionId)
+        .map((s) => s.signerUserId),
+    );
+    return {
+      signed: audience.filter((u) => signedIds.has(u.id)).map(name).sort(),
+      outstanding: audience.filter((u) => !signedIds.has(u.id)).map(name).sort(),
+    };
+  };
+
   const rosters: Record<string, { signed: string[]; outstanding: string[] }> = {};
   if (document.audience === "ActiveMembers") {
     const members = await prisma.dALIMember.findMany({
@@ -67,18 +81,18 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       select: { user: { select: { id: true, firstName: true, lastName: true } } },
     });
     const audience = members.map((m) => m.user);
+    for (const b of document.bindings) rosters[b.id] = rosterFor(audience, b);
+  } else if (document.audience === "Mentors") {
+    // Mentorship bindings are term-scoped; resolve the mentor set per term.
+    const mentorsByTerm = new Map<string, Person[]>();
     for (const b of document.bindings) {
-      const signedIds = new Set(
-        b.signatures
-          .filter((s) => s.roleKey === "member" && s.versionId === b.versionId)
-          .map((s) => s.signerUserId),
-      );
-      const name = (u: { firstName: string; lastName: string }) =>
-        `${u.firstName} ${u.lastName}`.trim();
-      rosters[b.id] = {
-        signed: audience.filter((u) => signedIds.has(u.id)).map(name).sort(),
-        outstanding: audience.filter((u) => !signedIds.has(u.id)).map(name).sort(),
-      };
+      if (!b.termId) continue;
+      let mentors = mentorsByTerm.get(b.termId);
+      if (!mentors) {
+        mentors = await listTermMentors(b.termId);
+        mentorsByTerm.set(b.termId, mentors);
+      }
+      rosters[b.id] = rosterFor(mentors, b);
     }
   }
 

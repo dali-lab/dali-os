@@ -39,6 +39,39 @@ export const activeMemberAudienceWhere = {
   },
 };
 
+// Bulk equivalent of isLabMentor for a term — the set of users who mentor in the
+// given term (P3 project OR domain lead OR core OR PM-eligible + any term role),
+// excluding full-time staff. Used by the admin roster for Mentors-audience docs.
+export async function listTermMentors(
+  termId: string,
+): Promise<{ id: string; firstName: string; lastName: string }[]> {
+  return prisma.user.findMany({
+    where: {
+      NOT: { adminMembership: { is: { isStaff: true } } },
+      OR: [
+        { projectAssignments: { some: { termId, level: "P3" } } },
+        { domainLeadAssignmentsAsUser: { some: { termId } } },
+        { coreAssignments: { some: { termId } } },
+        {
+          // PM mentor: monotonic P3 PM eligibility confirmed by any current-term role.
+          AND: [
+            { domainEligibilities: { some: { level: "P3", domain: { code: "PM" } } } },
+            {
+              OR: [
+                { projectAssignments: { some: { termId } } },
+                { coreAssignments: { some: { termId } } },
+                { domainLeadAssignmentsAsUser: { some: { termId } } },
+                { instructorAssignments: { some: { termId } } },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    select: { id: true, firstName: true, lastName: true },
+  });
+}
+
 // Whether an enforced document's audience includes this signer. Manual +
 // HiringParticipants are not app-gated here (Manual is explicit-only;
 // confidentiality is gated inside hiring).

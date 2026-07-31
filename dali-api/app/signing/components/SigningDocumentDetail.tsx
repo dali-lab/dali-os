@@ -378,7 +378,7 @@ function BindingsPanel() {
             <p className="mt-2 text-xs text-muted-foreground">
               Supervisor: {supervisorSigned ? "signed ✓" : "pending"}
               {roster
-                ? ` · ${roster.signed.length} of ${roster.signed.length + roster.outstanding.length} members signed`
+                ? ` · ${roster.signed.length} of ${roster.signed.length + roster.outstanding.length} signed`
                 : ` · ${memberSigs.length} member signature${memberSigs.length !== 1 ? "s" : ""}`}
             </p>
 
