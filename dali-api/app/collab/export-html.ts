@@ -117,7 +117,12 @@ function renderNode(node: PMNode): string {
     case "image": {
       const src = typeof node.attrs?.src === "string" ? escapeHtml(node.attrs.src) : "";
       const alt = typeof node.attrs?.alt === "string" ? escapeHtml(node.attrs.alt) : "";
-      return src ? `<img src="${src}" alt="${alt}" />` : "";
+      if (!src) return "";
+      const align = node.attrs?.align;
+      const width = node.attrs?.width;
+      const alignAttr = align === "left" || align === "right" ? ` data-align="${align}"` : "";
+      const widthStyle = typeof width === "number" && width > 0 ? ` style="width:${width}px"` : "";
+      return `<img src="${src}" alt="${alt}"${alignAttr}${widthStyle} />`;
     }
     case "toggleBlock": {
       // First child may be a toggleSummary; the rest is the collapsible body.

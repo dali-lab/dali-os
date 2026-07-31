@@ -387,13 +387,17 @@ select:not(:disabled) {
    escapes the bottom of the prose container and overlaps whatever follows. */
 .prose { display: flow-root; }
 
-.prose img[data-align="left"] {
+/* Floated images. Both the bare <img> (server-rendered export HTML) and the
+   editor's resize node-view wrapper (.editor-image) carry data-align. */
+.prose img[data-align="left"],
+.prose .editor-image[data-align="left"] {
   float: left;
   max-width: 50%;
   margin: 0.25rem 1.25rem 0.75rem 0;
 }
 
-.prose img[data-align="right"] {
+.prose img[data-align="right"],
+.prose .editor-image[data-align="right"] {
   float: right;
   max-width: 50%;
   margin: 0.25rem 0 0.75rem 1.25rem;
@@ -404,7 +408,44 @@ select:not(:disabled) {
 
 /* Narrow screens have no room for a column of text beside a picture. */
 @media (max-width: 640px) {
-  .prose img[data-align] { float: none; max-width: 100%; margin: 1rem 0; }
+  .prose img[data-align],
+  .prose .editor-image[data-align] { float: none; max-width: 100%; margin: 1rem 0; }
+}
+
+/* Resizable image node view: the wrapper shrinks to the (optionally sized)
+   image so the drag handle sits on the image's corner. Unaligned images keep
+   their own line (block, shrink-to-fit). */
+.prose .editor-image {
+  position: relative;
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  line-height: 0;
+}
+.prose .editor-image img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0;
+}
+
+/* Drag-to-resize handle — bottom-right, revealed on hover in editable mode. */
+.editor-image__resize {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--color-accent-coral);
+  border: 2px solid var(--color-card);
+  cursor: nwse-resize;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  touch-action: none;
+}
+.editor-image--editable:hover .editor-image__resize {
+  opacity: 1;
 }
 
 @keyframes guide-pulse {
