@@ -178,6 +178,7 @@ export function ManageAssignments({
                     documentName={a.instructionsDocId}
                     token={collabToken}
                     userName={userName}
+                    enableImages
                     placeholder="What students should build or hand in…"
                     className="mt-1 border border-border rounded-md"
                   />

@@ -1354,7 +1354,7 @@ export default function PortalApply() {
               <h3 className="font-heading text-sm font-bold text-dark-blue uppercase tracking-wider">General Questions</h3>
               {!isEmptyDoc(generalDescription) && (
                 <div className="text-dark-blue">
-                  <RichTextViewer content={generalDescription} />
+                  <RichTextViewer content={generalDescription} enableImages />
                 </div>
               )}
               {beforeQuestions.map(q => (
@@ -1446,7 +1446,7 @@ export default function PortalApply() {
                     const pickedChallenge = domain.challenges.find(c => c.challengeVersionId === pickedCvId);
                     return !isEmptyDoc(pickedChallenge?.description) ? (
                       <div className="text-dark-blue">
-                        <RichTextViewer content={pickedChallenge!.description} />
+                        <RichTextViewer content={pickedChallenge!.description} enableImages />
                       </div>
                     ) : null;
                   })()}

@@ -163,6 +163,7 @@ export function InterviewPrepNoteSection({
               documentName={`domainApplication:${domainApplicationId}:prepNote`}
               token={collabToken}
               userName={userName}
+              enableImages
               placeholder="Specific things to bring up in the interview…"
             />
           ) : (

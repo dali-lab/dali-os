@@ -564,6 +564,7 @@ export function FormBuilderTab({
         <RichTextEditor
           value={description}
           onChange={setDescription}
+          enableImages
           placeholder="Describe this challenge for applicants…"
         />
       </div>

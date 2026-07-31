@@ -1520,7 +1520,7 @@ function ChallengeSelector({ cycleId, domainId, options, linkedChallengeVersions
                 </div>
                 {!isEmptyDoc(cv.description) && (
                   <div className="mt-2 border border-border rounded-md bg-muted/30 px-4 py-3">
-                    <RichTextViewer content={cv.description} />
+                    <RichTextViewer content={cv.description} enableImages />
                   </div>
                 )}
               </div>

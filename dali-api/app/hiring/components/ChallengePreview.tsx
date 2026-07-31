@@ -16,7 +16,7 @@ export function ChallengePreview({ description, questions }: ChallengePreviewPro
 
       {!isEmptyDoc(description) && (
         <div className="text-dark-blue px-4 py-3 rounded-lg border border-border bg-muted/30">
-          <RichTextViewer content={description} />
+          <RichTextViewer content={description} enableImages />
         </div>
       )}
 

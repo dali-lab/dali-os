@@ -106,7 +106,7 @@ export function AssignmentWorkArea({
       {assignment.instructionsContent != null &&
         !isEmptyDoc(assignment.instructionsContent) && (
           <section className="bg-card border border-border rounded-lg p-5">
-            <RichTextViewer content={assignment.instructionsContent} />
+            <RichTextViewer content={assignment.instructionsContent} enableImages />
           </section>
         )}
 

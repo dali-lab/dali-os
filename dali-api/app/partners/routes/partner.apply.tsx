@@ -319,7 +319,7 @@ export default function PartnerApply({ actionData }: Route.ComponentProps) {
             {Boolean(applicationForm.description) &&
               !isEmptyDoc(applicationForm.description) && (
                 <div className="text-sm text-muted-foreground -mt-1">
-                  <RichTextViewer content={applicationForm.description} />
+                  <RichTextViewer content={applicationForm.description} enableImages />
                 </div>
               )}
             <FormFieldList

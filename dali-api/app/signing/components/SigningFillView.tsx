@@ -1,10 +1,8 @@
 import { useMemo, useRef, useState } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import { Form as RRForm } from "react-router";
-import StarterKit from "@tiptap/starter-kit";
-import { EDITOR_VIEWER_CONTENT_CLASS, linkExtension } from "~/components/editor/shared";
-import { imageExtension } from "~/components/editor/image";
-import { signingFieldExtensions } from "~/components/editor/signing-fields";
+import { EDITOR_VIEWER_CONTENT_CLASS } from "~/components/editor/shared";
+import { buildExtensions } from "~/components/editor/presets";
 import { isCheckboxChecked, type SigningFieldRef } from "~/lib/signing-fields";
 
 interface SigningFillViewProps {
@@ -34,29 +32,23 @@ export function SigningFillView({ body, variables, fields, next }: SigningFillVi
   const valuesRef = useRef<Record<string, unknown>>({ ...initial });
   const [tick, setTick] = useState(0);
 
-  const ctx = useMemo(
-    () => ({
-      mode: "fill" as const,
-      signerRole: "member",
-      variables,
-      values: valuesRef.current,
-      onFieldChange: (fieldId: string, value: unknown) => {
-        valuesRef.current[fieldId] = value;
-        setTick((t) => t + 1);
-      },
-    }),
-    [variables],
-  );
-
   const editor = useEditor({
     immediatelyRender: false,
     editable: false,
-    extensions: [
-      StarterKit,
-      linkExtension({ interactive: true }),
-      imageExtension(),
-      ...signingFieldExtensions(ctx),
-    ],
+    extensions: buildExtensions(
+      { images: true, signing: { variables, values: valuesRef.current } },
+      {
+        side: "viewer",
+        signingCtx: {
+          mode: "fill",
+          signerRole: "member",
+          onFieldChange: (fieldId, value) => {
+            valuesRef.current[fieldId] = value;
+            setTick((t) => t + 1);
+          },
+        },
+      },
+    ),
     content: (body as object) ?? "",
     editorProps: { attributes: { class: EDITOR_VIEWER_CONTENT_CLASS } },
   });
