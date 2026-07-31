@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "DALI Timesheet",
   "description": "Fill your JobX timesheet from the hours you've logged in DALI OS.",
-  "version": "0.1.0",
+  "version": "0.1.3",
   "permissions": ["storage", "tabs"],
   "host_permissions": [
     "https://os.dali.dartmouth.edu/*",
