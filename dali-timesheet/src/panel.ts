@@ -475,12 +475,15 @@ export class Panel {
         "div",
         { class: "row" },
         h("span", { class: "pill" }, `${data.entries.length} ${data.entries.length === 1 ? "entry" : "entries"}`),
+        // Hours, not the hire name — the picker (or heading) directly above
+        // already says which role this is, and the total is the number you
+        // actually need to reconcile against payroll.
         h(
           "span",
-          { class: "pill total", title: `${formatHours(periodTotal)} logged in DALI OS for this window` },
+          { class: "pill total", title: "Total hours logged in DALI OS for this window" },
           formatHours(periodTotal),
         ),
-        switching ? h("span", { class: "spin" }) : h("span", { class: "muted" }, `→ ${data.hireLabel}`),
+        switching ? h("span", { class: "spin" }) : null,
         h("button", { class: "link refresh", onclick: () => void this.pull(data.hireKey) }, "Refresh"),
       ),
     );
