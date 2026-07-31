@@ -10,7 +10,8 @@ import {
 } from "lucide-react";
 import { Modal } from "~/components/Modal";
 import { Tooltip } from "~/components/ui/IconButton";
-import { RichTextEditor } from "~/components/RichTextEditor";
+import { CollaborativeEditor } from "~/components/CollaborativeEditor";
+import { RichTextViewer } from "~/components/RichTextViewer";
 
 // Template management, moved out of the (removed) Templates subtab into a modal
 // launched from the Mentorship notes subtab. Core-only — the caller gates the
@@ -32,9 +33,13 @@ const TITLE_ID = "mentorship-templates-modal-title";
 export function TemplatesModal({
   open,
   onClose,
+  collabToken,
+  userName,
 }: {
   open: boolean;
   onClose: () => void;
+  collabToken: string | null;
+  userName: string;
 }) {
   const [templates, setTemplates] = useState<TemplateListItem[] | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -212,6 +217,8 @@ export function TemplatesModal({
               id={selected.id}
               isDefault={selected.isDefault}
               busy={busy}
+              collabToken={collabToken}
+              userName={userName}
               onBack={() => setSelectedId(null)}
               onRename={(name) => renameInList(selected.id, name)}
               onMakeDefault={() => makeDefault(selected.id)}
@@ -240,6 +247,8 @@ function TemplateDetail({
   id,
   isDefault,
   busy,
+  collabToken,
+  userName,
   onBack,
   onRename,
   onMakeDefault,
@@ -248,6 +257,8 @@ function TemplateDetail({
   id: string;
   isDefault: boolean;
   busy: boolean;
+  collabToken: string | null;
+  userName: string;
   onBack: () => void;
   onRename: (name: string) => void;
   onMakeDefault: () => void;
@@ -278,8 +289,10 @@ function TemplateDetail({
     };
   }, [id]);
 
-  // Debounced autosave, mirroring the note editor. The hydration render is
-  // skipped so opening a template never writes it straight back.
+  // Debounced autosave for the name. The body is a collaborative document
+  // (persisted through Hocuspocus + synced back to contentJson), so only the
+  // name is PATCHed here. The hydration render is skipped so opening a template
+  // never writes it straight back.
   useEffect(() => {
     if (!loaded) return;
     if (skipNextSave.current) {
@@ -293,7 +306,7 @@ function TemplateDetail({
         const res = await fetch(`/api/mentorship/templates/${id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name, contentJson: content }),
+          body: JSON.stringify({ name }),
         });
         if (!res.ok) throw new Error("save failed");
         setStatus("saved");
@@ -304,7 +317,7 @@ function TemplateDetail({
     return () => {
       if (timer.current) window.clearTimeout(timer.current);
     };
-  }, [name, content, loaded, id]);
+  }, [name, loaded, id]);
 
   if (!loaded) {
     return (
@@ -348,13 +361,23 @@ function TemplateDetail({
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-5">
-        <RichTextEditor
-          value={content}
-          onChange={setContent}
-          enableImages
-          placeholder="Sections, prompts, and headings the mentor fills in each week…"
-          className="min-h-[12rem]"
-        />
+        {collabToken ? (
+          <CollaborativeEditor
+            editorId="body"
+            documentName={`mentorNoteTemplate:${id}:body`}
+            token={collabToken}
+            userName={userName}
+            enableImages
+            placeholder="Sections, prompts, and headings the mentor fills in each week…"
+            className="min-h-[12rem]"
+          />
+        ) : (
+          <RichTextViewer
+            content={content}
+            enableImages
+            className="min-h-[12rem]"
+          />
+        )}
       </div>
 
       <div className="flex items-center justify-between gap-3 px-4 sm:px-5 py-3 border-t border-border">

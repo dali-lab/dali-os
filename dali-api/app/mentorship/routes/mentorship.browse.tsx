@@ -11,6 +11,7 @@ import { LayoutTemplate } from "lucide-react";
 import type { Route } from "./+types/mentorship.browse";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
+import { parseSessionCookie } from "~/lib/cookies";
 import {
   canViewMentorship,
   mentorNoteWhere,
@@ -59,6 +60,8 @@ type LoaderData = {
   grid: MentorGridResult;
   isCore: boolean;
   viewerId: string;
+  collabToken: string | null;
+  userName: string;
 };
 
 function pickFilter(value: string | null): string {
@@ -197,12 +200,19 @@ export async function loader({ request }: Route.LoaderArgs) {
     };
   }
 
+  const me = await prisma.user.findUnique({
+    where: { id: auth.user.sub },
+    select: { firstName: true, lastName: true },
+  });
+
   const data: LoaderData = {
     filters,
     options,
     grid,
     isCore: await isCore(auth.user.sub),
     viewerId: auth.user.sub,
+    collabToken: parseSessionCookie(request),
+    userName: [me?.firstName, me?.lastName].filter(Boolean).join(" ") || "Core",
   };
   return data;
 }
@@ -282,6 +292,8 @@ export default function MentorshipBrowse() {
         <TemplatesModal
           open={templatesOpen}
           onClose={() => setTemplatesOpen(false)}
+          collabToken={data.collabToken}
+          userName={data.userName}
         />
       )}
 
