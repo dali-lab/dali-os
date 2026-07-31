@@ -3,6 +3,7 @@ import { isCore, isDomainLead, isProjectMember, isLabMember } from "~/lib/roles"
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
 import { resolvePhotoUrl } from "~/lib/photo";
+import { COLLAB_SOURCES } from "~/collab/sources";
 
 /** Hydrate author IDs into `{ id, name, photoUrl }` objects in a single IN
  * query. `photoUrl` is resolved to a ready avatar src (null → initials). */
@@ -247,6 +248,11 @@ export async function authorizeCollabDoc(
     });
     return instructor !== null;
   }
+
+  // Registry-backed surfaces (mentorship notes/templates, …) declare their own
+  // open/edit gate in app/collab/sources.ts.
+  const source = COLLAB_SOURCES[entity];
+  if (source) return source.authorize(userSub, id);
 
   return false;
 }
