@@ -12,6 +12,7 @@ import { renderProseMirrorToPdf } from "~/collab/export-pdf";
 import type { PMNode } from "~/collab/export-html";
 import { collectSigningFields } from "~/lib/signing-fields";
 import { getBindingStateForUser, getSignerCohorts } from "~/signing/lib/state.server";
+import { AUDIENCE_RESOLVERS } from "~/signing/lib/audiences";
 import { recordSignature } from "~/signing/lib/sign.server";
 import { resolveSigningVariablesForSigner } from "~/signing/lib/variables.server";
 import { SigningFillView } from "~/signing/components/SigningFillView";
@@ -57,9 +58,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   // Gate direct access: only members in the audience (or someone who already
   // signed) may open this. Confidentiality (HiringCycle) never lands here.
-  const inAudience =
-    (binding.document.audience === "ActiveMembers" && cohorts.isMember) ||
-    (binding.document.audience === "Mentors" && cohorts.isMentor);
+  const inAudience = AUDIENCE_RESOLVERS[binding.document.audience].includes(cohorts);
   if (state.status !== "signed" && !inAudience) return redirect("/");
 
   const supervisorName = binding.signatures[0]?.typedName ?? "";

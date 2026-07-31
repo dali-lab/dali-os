@@ -1,11 +1,12 @@
-// Fires the "document.sign_request" notification to the members who must sign a
-// newly in-force agreement. Called when an admin puts a version in force. Only
-// app-scoped ActiveMembers audiences are notified proactively; mentors and
-// hiring-cycle confidentiality are still caught by their respective gates.
+// Fires the "document.sign_request" notification to everyone in a newly in-force
+// agreement's audience. Called when an admin puts a version in force (and by the
+// signing-issuance job when it materializes a new period's binding). Only
+// app-enforced documents are notified proactively; hiring-cycle confidentiality
+// is caught by its own gate (its resolver enumerates no one here).
 
 import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
-import { activeMemberAudienceWhere } from "./state.server";
+import { AUDIENCE_RESOLVERS } from "./audiences";
 
 export async function notifySignRequest(bindingId: string): Promise<void> {
   const binding = await prisma.signingBinding.findUnique({
@@ -13,19 +14,17 @@ export async function notifySignRequest(bindingId: string): Promise<void> {
     select: {
       id: true,
       versionId: true,
+      termId: true,
       document: { select: { name: true, gateScope: true, audience: true } },
     },
   });
   if (!binding) return;
-  if (binding.document.gateScope !== "App" || binding.document.audience !== "ActiveMembers") {
-    return;
-  }
+  if (binding.document.gateScope !== "App") return;
 
-  // Active, non-staff lab members who haven't already signed the in-force version.
-  const [members, signed] = await Promise.all([
-    prisma.dALIMember.findMany({
-      where: activeMemberAudienceWhere,
-      select: { userId: true },
+  // The document's audience, minus anyone who already signed the in-force version.
+  const [audience, signed] = await Promise.all([
+    AUDIENCE_RESOLVERS[binding.document.audience].listMembers({
+      termId: binding.termId ?? undefined,
     }),
     prisma.signingSignature.findMany({
       where: { bindingId, roleKey: "member", versionId: binding.versionId },
@@ -33,9 +32,9 @@ export async function notifySignRequest(bindingId: string): Promise<void> {
     }),
   ]);
   const signedSet = new Set(signed.map((s) => s.signerUserId));
-  const recipients = members
-    .filter((m) => !signedSet.has(m.userId))
-    .map((m) => ({ userId: m.userId }));
+  const recipients = audience
+    .filter((p) => !signedSet.has(p.id))
+    .map((p) => ({ userId: p.id }));
   if (recipients.length === 0) return;
 
   await notify({
