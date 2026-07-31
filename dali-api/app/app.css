@@ -3,6 +3,15 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
+/* @blocknote/shadcn ships ZERO compiled UI styles — its editor chrome is
+   Tailwind classes embedded in the dist JS, and the consumer build must
+   generate them. This @source MUST live here, in the app's single Tailwind
+   pass: a separate utilities emission in the lazy editor chunk (the original
+   approach) loads after this sheet and its plain utilities (.flex/.hidden)
+   win same-layer cascade ties over our responsive variants (md:hidden /
+   md:flex), breaking the app shell once any editor page has loaded. */
+@source "../node_modules/@blocknote/shadcn/dist";
+
 /* Class-based dark mode (html.dark) so settings can override system preference. */
 @custom-variant dark (&:where(.dark, .dark *));
 
