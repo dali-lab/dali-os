@@ -12,9 +12,9 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   const cycleId = params.cycleId!;
-  const binding = await prisma.cycleConfidentialityAgreement.findUnique({
-    where: { applicationCycleId: cycleId },
-    select: { confidentialityAgreementVersionId: true },
+  const binding = await prisma.signingBinding.findFirst({
+    where: { cycleId, document: { kind: "Confidentiality" } },
+    select: { id: true, versionId: true },
   });
   if (!binding) {
     return Response.json(
@@ -23,26 +23,36 @@ export async function action({ request, params }: Route.ActionArgs) {
     );
   }
 
-  const versionId = binding.confidentialityAgreementVersionId;
+  const versionId = binding.versionId;
+  const signer = await prisma.user.findUnique({
+    where: { id: auth.user.sub },
+    select: { firstName: true, lastName: true },
+  });
 
-  // Idempotent: if a row already exists for this user+cycle, replace it so the
+  // Idempotent: if a row already exists for this user+binding, replace it so the
   // user is recorded as having signed the currently-bound version.
-  const signature = await prisma.confidentialityAgreementSignature.upsert({
+  const signature = await prisma.signingSignature.upsert({
     where: {
-      userId_applicationCycleId: {
-        userId: auth.user.sub,
-        applicationCycleId: cycleId,
+      bindingId_signerUserId_roleKey: {
+        bindingId: binding.id,
+        signerUserId: auth.user.sub,
+        roleKey: "member",
       },
     },
     create: {
-      userId: auth.user.sub,
-      applicationCycleId: cycleId,
-      confidentialityAgreementVersionId: versionId,
+      bindingId: binding.id,
+      versionId,
+      signerUserId: auth.user.sub,
+      roleKey: "member",
+      typedName: signer ? `${signer.firstName} ${signer.lastName}`.trim() : "",
+      ip:
+        request.headers.get("fly-client-ip") ||
+        request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+        null,
+      userAgent: request.headers.get("user-agent") || null,
+      fieldValues: {},
     },
-    update: {
-      confidentialityAgreementVersionId: versionId,
-      signedAt: new Date(),
-    },
+    update: { versionId, signedAt: new Date() },
   });
 
   await logAuditEvent({

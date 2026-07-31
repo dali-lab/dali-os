@@ -20,6 +20,7 @@ import {
   AlignLeft,
   AlignRight,
   AlignJustify,
+  Image as ImageIcon,
 } from "lucide-react";
 import {
   EDITOR_CONTENT_CLASS,
@@ -28,7 +29,10 @@ import {
   linkExtension,
 } from "./editor/shared";
 import { mentionEditorExtension, searchMentionableUsers } from "./editor/mention";
-import { imageEditorExtensions } from "./editor/image";
+import { imageEditorExtensions, uploadEditorImage } from "./editor/image";
+import { signingFieldExtensions } from "./editor/signing-fields";
+import { SIGNING_FIELD_TYPES, FIELD_LABEL } from "~/lib/signing-fields";
+import { ALL_SIGNING_VARIABLES } from "~/lib/signing-variables";
 import { useDialog, type DialogApi } from "~/components/ui/dialog";
 
 interface RichTextEditorProps {
@@ -49,6 +53,11 @@ interface RichTextEditorProps {
   // description fields this component also backs shouldn't accept images.
   // RichTextViewer needs the matching flag, or saved images won't render.
   enableImages?: boolean;
+  // Opt in to placeable signing fields + merge variables (document-signing
+  // authoring). When set, the rich toolbar gains an "Insert" group that drops
+  // fields for the given roles. RichTextViewer needs enableSigningFields to
+  // render them back. Off by default.
+  signingRoles?: string[];
 }
 
 const LINK_PROTOCOLS = ["http", "https", "mailto"];
@@ -74,6 +83,7 @@ export function RichTextEditor({
   enableMentions = false,
   richToolbar = false,
   enableImages = false,
+  signingRoles,
 }: RichTextEditorProps) {
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
@@ -92,6 +102,7 @@ export function RichTextEditor({
       linkExtension({ interactive: false }),
       ...(enableMentions ? [mentionEditorExtension(searchMentionableUsers)] : []),
       ...(enableImages ? imageEditorExtensions((m) => imageErrorRef.current(m)) : []),
+      ...(signingRoles ? signingFieldExtensions({ mode: "author" }) : []),
     ],
     content: isProseMirrorDoc(value) ? (value as object) : "",
     editable: !disabled,
@@ -113,7 +124,7 @@ export function RichTextEditor({
     <EditorShell disabled={disabled} className={className}>
       {editor && !disabled ? (
         richToolbar ? (
-          <FormattingToolbar editor={editor} />
+          <FormattingToolbar editor={editor} signingRoles={signingRoles} enableImages={enableImages} />
         ) : (
           <Toolbar editor={editor} />
         )
@@ -226,8 +237,17 @@ const FORMAT_GROUPS: ToolbarAction[][] = [
   ],
 ];
 
-function FormattingToolbar({ editor }: { editor: Editor }) {
+function FormattingToolbar({
+  editor,
+  signingRoles,
+  enableImages,
+}: {
+  editor: Editor;
+  signingRoles?: string[];
+  enableImages?: boolean;
+}) {
   const dialog = useDialog();
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
   // Tiptap doesn't re-render React on its own; tick on every transaction so
   // active/disabled states track the selection.
   const [, setTick] = useState(0);
@@ -305,6 +325,117 @@ function FormattingToolbar({ editor }: { editor: Editor }) {
           <Link2Off size={15} />
         </button>
       )}
+      {enableImages && (
+        <>
+          <span className="mx-1 h-5 w-px bg-border" aria-hidden />
+          <button
+            type="button"
+            title="Insert image"
+            aria-label="Insert image"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              imageInputRef.current?.click();
+            }}
+            className="rounded p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <ImageIcon size={15} />
+          </button>
+          <input
+            ref={imageInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (!file) return;
+              try {
+                const src = await uploadEditorImage(file);
+                editor.chain().focus().insertContent({ type: "image", attrs: { src } }).run();
+              } catch (err) {
+                console.error("[editor] image insert failed", err);
+              }
+            }}
+          />
+        </>
+      )}
+      {signingRoles && signingRoles.length > 0 && (
+        <>
+          <span className="mx-1 h-5 w-px bg-border" aria-hidden />
+          <SigningInsertControls editor={editor} roles={signingRoles} />
+        </>
+      )}
+    </div>
+  );
+}
+
+// Insert-field controls for document-signing authoring. The author picks the
+// signer role, then drops a field for that role; a separate dropdown inserts a
+// merge variable. Fields/variables are inline atom nodes, so a plain
+// insertContent is the whole implementation.
+function SigningInsertControls({ editor, roles }: { editor: Editor; roles: string[] }) {
+  const [role, setRole] = useState(roles[0] ?? "member");
+
+  const insertField = (type: string) => {
+    editor
+      .chain()
+      .focus()
+      .insertContent({
+        type,
+        attrs: { fieldId: crypto.randomUUID(), role, required: true },
+      })
+      .run();
+  };
+
+  const insertVariable = (name: string) => {
+    if (!name) return;
+    editor.chain().focus().insertContent({ type: "variable", attrs: { name } }).run();
+  };
+
+  return (
+    <div className="flex items-center gap-1">
+      <select
+        value={role}
+        onChange={(e) => setRole(e.target.value)}
+        title="Signer role for inserted fields"
+        className="rounded border border-border bg-card px-1.5 py-1 text-xs text-foreground"
+      >
+        {roles.map((r) => (
+          <option key={r} value={r}>
+            {r}
+          </option>
+        ))}
+      </select>
+      {SIGNING_FIELD_TYPES.map((type) => (
+        <button
+          key={type}
+          type="button"
+          title={`Insert ${FIELD_LABEL[type]} field (${role})`}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            insertField(type);
+          }}
+          className="rounded px-1.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          {FIELD_LABEL[type]}
+        </button>
+      ))}
+      <select
+        value=""
+        onChange={(e) => {
+          insertVariable(e.target.value);
+          e.currentTarget.value = "";
+        }}
+        title="Insert a merge variable"
+        className="rounded border border-border bg-card px-1.5 py-1 text-xs text-muted-foreground"
+      >
+        <option value="">+ Variable</option>
+        {ALL_SIGNING_VARIABLES.map((v) => (
+          <option key={v} value={v}>
+            {`{{${v}}}`}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }

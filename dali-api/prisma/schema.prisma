@@ -53,10 +53,10 @@ model User {
   // ─── Profile fields (Phase 1 additions; all nullable) ─────────────────────
   // Dartmouth class year (e.g., 2026). Solves the "took a term off"
   // ambiguity. Input to membership-status recompute + display.
-  classYear      Int?
+  classYear   Int?
   // Optional explicit graduation override for off-cycle graduations. A manual
   // input to the status recompute (Alumni once past); never auto-stamped.
-  graduatedAt    DateTime?
+  graduatedAt DateTime?
 
   // ─── Membership status (authoritative, stored) ────────────────────────────
   // Recomputed at transitions (term rollover, login, mutation) — never derived
@@ -75,20 +75,20 @@ model User {
   // at transitions. Inputs to the status recompute; see dartmouth-people.ts.
   // dartmouthAffiliation: raw IDM code ("DART" | "ALUMNI" | "E-FAC" | ...).
   // Stays DART for months post-graduation — the slow long-tail signal.
-  dartmouthAffiliation    String?
+  dartmouthAffiliation     String?
   // "Alum" in the affiliations array — degree conferred; appears within weeks
   // of Commencement. The prompt graduation signal.
-  dartmouthIsAlum         Boolean?
+  dartmouthIsAlum          Boolean?
   // "Student" in the affiliations array. Lingers after graduation, so
   // currently-enrolled is the compound: isStudent AND NOT isAlum.
-  dartmouthIsStudent      Boolean?
+  dartmouthIsStudent       Boolean?
   // Raw department_class from the People API: an undergrad class year ("'27")
   // or a grad/professional program code ("TH" Thayer, "GR" Guarini, "DM"
   // Geisel, "TU27" Tuck). A program code means currently enrolled in that
   // school, so a student who ALSO carries "Alum" (a prior Dartmouth degree) is
   // Active, not Alumni — see resolveMembershipStatus.
   dartmouthDepartmentClass String?
-  dartmouthPeopleSyncedAt DateTime?
+  dartmouthPeopleSyncedAt  DateTime?
 
   pronouns       String?
   photoUrl       String?
@@ -109,12 +109,12 @@ model User {
   // fields below, the identity columns above, or anything else on this model.
   // Backfilled true for everyone with a project/Core assignment, preserving
   // the behavior of the Notion-backed team page it replaces.
-  publicProfile  Boolean   @default(false)
+  publicProfile  Boolean @default(false)
   // Short public handle for @-mentions (e.g. "spark" for Sophie Park). Seeded
   // from first-initial + last-name (lowercased), auto-suffixed on collision,
   // and editable in profile. Nullable + unique like the other identity handles;
   // a user with no handle simply can't be @-mentioned until they set one.
-  handle         String?   @unique
+  handle         String? @unique
 
   // ─── Onboarding profile fields (collected on the New Member Profile form) ──
   // Name as it appears on file with the College, when different from the
@@ -143,6 +143,8 @@ model User {
   rubricVersions                RubricVersion[]
   internToFullFormVersions      InternToFullFormVersion[]
   confidentialitySignatures     ConfidentialityAgreementSignature[]
+  authoredSigningVersions       SigningDocumentVersion[]            @relation("SigningVersionAuthor")
+  signingSignatures             SigningSignature[]                  @relation("SigningSigner")
 
   // ─── Calendar / scheduling relations ───────────────────────────────────────
   calendarLinks        UserCalendarLink[]
@@ -154,14 +156,14 @@ model User {
   timeEntries          TimeEntry[]
 
   // ─── Phase 1: foundational role-model back-relations ──────────────────────
-  domainEligibilities     DomainEligibility[]
-  projectAssignments      ProjectAssignment[]
-  coreAssignments         CoreAssignment[]
-  instructorAssignments   InstructorAssignment[]
-  adminMembership         AdminMembership?
-  mentorshipPairsAsMentee MentorshipPair[]       @relation("MenteePairs")
-  mentorshipPairsAsMentor MentorshipPair[]       @relation("MentorPairs")
-  staffingMentorRoles     StaffingMentorRole[]
+  domainEligibilities      DomainEligibility[]
+  projectAssignments       ProjectAssignment[]
+  coreAssignments          CoreAssignment[]
+  instructorAssignments    InstructorAssignment[]
+  adminMembership          AdminMembership?
+  mentorshipPairsAsMentee  MentorshipPair[]       @relation("MenteePairs")
+  mentorshipPairsAsMentor  MentorshipPair[]       @relation("MentorPairs")
+  staffingMentorRoles      StaffingMentorRole[]
   externalMentorPlacements ExternalMentor[]
 
   // ─── Phase 1: project workspace back-relations ────────────────────────────
@@ -223,8 +225,8 @@ model User {
   // ─── Phase 1: Gmail integration (single per User) ─────────────────────────
   gmailIntegrations     GmailIntegration[]
   // ─── Notification relations ────────────────────────────────────────────────
-  receivedNotifications Notification[]    @relation("NotificationRecipient")
-  authoredNotifications Notification[]    @relation("NotificationAuthor")
+  receivedNotifications Notification[]     @relation("NotificationRecipient")
+  authoredNotifications Notification[]     @relation("NotificationAuthor")
 
   // ─── Phase 2: hiring FK back-relations (formerly via DALIMember) ──────────
   cycleReviewers                          CycleReviewer[]
@@ -242,9 +244,9 @@ model User {
   docComments                 DocComment[]         @relation("DocCommentAuthor")
 
   // ─── Page documentation (per-page guides) ─────────────────────────────────
-  pageDocsMaintained  PageDoc[] @relation("PageDocMaintainer")
-  pageDocsCreated     PageDoc[] @relation("PageDocCreatedBy")
-  pageDocsLastEdited  PageDoc[] @relation("PageDocLastEditedBy")
+  pageDocsMaintained PageDoc[] @relation("PageDocMaintainer")
+  pageDocsCreated    PageDoc[] @relation("PageDocCreatedBy")
+  pageDocsLastEdited PageDoc[] @relation("PageDocLastEditedBy")
 
   // ─── Payroll: Reconcile back-relation ─────────────────────────────────────
   timesheetImports TimesheetImport[]
@@ -342,6 +344,7 @@ model ApplicationCycle {
 
   confidentialityBinding    CycleConfidentialityAgreement?
   confidentialitySignatures ConfidentialityAgreementSignature[]
+  signingBindings           SigningBinding[]
 }
 
 // Applicant-initiated status changes only. DALI-initiated outcomes (interview,
@@ -1212,8 +1215,8 @@ model PageDoc {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  maintainer User? @relation("PageDocMaintainer", fields: [maintainerId], references: [id], onDelete: SetNull)
-  createdBy  User? @relation("PageDocCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  maintainer   User? @relation("PageDocMaintainer", fields: [maintainerId], references: [id], onDelete: SetNull)
+  createdBy    User? @relation("PageDocCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   lastEditedBy User? @relation("PageDocLastEditedBy", fields: [lastEditedById], references: [id], onDelete: SetNull)
 
   @@index([maintainerId])
@@ -1562,6 +1565,146 @@ model ConfidentialityAgreementSignature {
   @@index([applicationCycleId])
 }
 
+// ─── Document Signing ────────────────────────────────────────────────────────
+
+// A named, versioned signable document — the generalization of
+// ConfidentialityAgreement into a lab-wide e-sign service. A document declares
+// how it's enforced (gateScope), who must sign it (audience), and optional
+// letterhead branding for PDF export. Its immutable versions hold the body +
+// signer roles; a SigningBinding puts one version in force for a context.
+model SigningDocument {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  name String
+  // Stable machine key for gates + lifecycle wiring (e.g. "member-agreement",
+  // "mentorship-agreement", "hiring-confidentiality"). Rule-driven code
+  // references a document by slug rather than a cuid.
+  slug String @unique
+
+  kind      SigningDocumentKind @default(General)
+  gateScope SigningGateScope    @default(None) // how an unsigned copy is enforced
+  audience  SigningAudience     @default(Manual) // who is required to sign
+
+  // Optional repeating page-header banner + footer for PDF export (the paper
+  // letterhead look). Null = no running header/footer.
+  letterheadImageUrl String?
+  footerText         String?
+
+  archivedAt DateTime?
+
+  versions SigningDocumentVersion[]
+  bindings SigningBinding[]
+
+  @@index([kind])
+}
+
+enum SigningDocumentKind {
+  General
+  MemberAgreement // onboarding auto-trigger (membership lifecycle)
+  MentorshipAgreement // termly re-sign for mentors
+  Confidentiality // hiring-cycle gate (migrated from ConfidentialityAgreement)
+}
+
+enum SigningGateScope {
+  None // not enforced; surfaced only
+  App // blocks the whole app until signed (membership / mentor agreements)
+  HiringCycle // blocks sensitive cycle data until signed (confidentiality's scope)
+}
+
+enum SigningAudience {
+  Manual
+  ActiveMembers
+  Mentors
+  HiringParticipants
+}
+
+// Immutable snapshot of a SigningDocument. Never update — append a new version.
+// body is ProseMirror JSON containing the placeable field + variable nodes;
+// roles is the ordered list of signer-role slugs (e.g. ["member","supervisor"]).
+model SigningDocumentVersion {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  versionNumber Int
+  body          Json
+  roles         Json // ordered role slugs, e.g. ["member","supervisor"]
+  publishedAt   DateTime? // only a published version may be bound
+
+  documentId String
+  document   SigningDocument @relation(fields: [documentId], references: [id])
+
+  createdById String
+  createdBy   User   @relation("SigningVersionAuthor", fields: [createdById], references: [id])
+
+  bindings   SigningBinding[]
+  signatures SigningSignature[]
+
+  @@unique([documentId, versionNumber])
+  @@index([documentId, versionNumber])
+}
+
+// Puts one version "in force" for a context. Generalizes
+// CycleConfidentialityAgreement. scopeKey disambiguates the context because
+// Postgres treats NULLs in composite uniques as distinct:
+//   "app" (one active binding per doc) | "cycle:<id>" | "term:<id>"
+// No binding for a context = nothing in force (the confidentiality
+// "no_agreement" state).
+model SigningBinding {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  documentId String
+  document   SigningDocument        @relation(fields: [documentId], references: [id])
+  versionId  String
+  version    SigningDocumentVersion @relation(fields: [versionId], references: [id])
+
+  scopeKey String
+  cycleId  String? // set for HiringCycle scope
+  cycle    ApplicationCycle? @relation(fields: [cycleId], references: [id])
+  termId   String? // set for termly (mentorship) scope
+  term     Term?             @relation(fields: [termId], references: [id])
+
+  signatures SigningSignature[]
+
+  @@unique([documentId, scopeKey])
+  @@index([cycleId])
+  @@index([termId])
+}
+
+// One party's signature on one binding. Generalizes
+// ConfidentialityAgreementSignature: adds roleKey, typedName, ip/userAgent
+// (low-security capture, like AuditLog), captured fieldValues, and a frozen
+// archival snapshot of the body with baked-in values + resolved variables.
+// The fixed staff counter-signature is a single row per binding with
+// roleKey "supervisor", created once by staff and shown on every member copy.
+model SigningSignature {
+  id       String   @id @default(cuid())
+  signedAt DateTime @default(now())
+
+  bindingId String
+  binding   SigningBinding @relation(fields: [bindingId], references: [id], onDelete: Cascade)
+
+  versionId String // pinned version at sign time
+  version   SigningDocumentVersion @relation(fields: [versionId], references: [id])
+
+  signerUserId String
+  signer       User   @relation("SigningSigner", fields: [signerUserId], references: [id], onDelete: Cascade)
+  roleKey      String // "member" | "supervisor"
+
+  typedName   String // typed full-name affirmation
+  ip          String?
+  userAgent   String?
+  fieldValues Json // { [fieldId]: value }
+  frozenBody  Json? // archival snapshot: body w/ baked values + resolved vars
+
+  @@unique([bindingId, signerUserId, roleKey])
+  @@index([signerUserId])
+  @@index([versionId])
+}
+
 // ─── DomainLeadAssignment ────────────────────────────────────────────────────
 
 model DomainLeadAssignment {
@@ -1729,8 +1872,8 @@ model TimeEntry {
   // is attributed to. Untyped at DB layer — dispatched in app code by
   // assignmentType, same pattern as ScheduledMeeting.scopeType/scopeId. Null
   // for legacy/unattributed rows (the export route's "unassigned" bucket).
-  assignmentType AssignmentType?
-  roleRefId      String?
+  assignmentType     AssignmentType?
+  roleRefId          String?
   // Denormalized from the resolved role when assignmentType == Project, so
   // existing project-grouped readers (export, project hour totals) keep
   // working without joining through ProjectAssignment.
@@ -1794,7 +1937,7 @@ model Notification {
   // and their per-channel defaults lives in app/lib/notification-events.ts;
   // `kind` stays the UI/render discriminator. Pre-registry rows carry the
   // hidden fallback value "general".
-  eventType String @default("general")
+  eventType String    @default("general")
   // Delivery tracking, set by notify()/the digest job on actual delivery.
   // The digest scan is `emailedAt IS NULL` within its cadence window.
   emailedAt DateTime?
@@ -1951,12 +2094,12 @@ enum WorkLocation {
 
 // User-defined busy blocks, optionally recurring (RFC 5545 RRULE).
 model ManualBlock {
-  id              String    @id @default(cuid())
+  id              String          @id @default(cuid())
   userId          String
   title           String
   startTime       DateTime
   endTime         DateTime
-  allDay          Boolean   @default(false)
+  allDay          Boolean         @default(false)
   // Nullable: a one-off block has no rule. When set, startTime/endTime define
   // the first occurrence; subsequent ones are expanded by rrule.
   recurrenceRule  String?
@@ -1966,12 +2109,12 @@ model ManualBlock {
   // expansion isn't implemented for TimeEntry), this block mirrors itself
   // into a Block-sourced TimeEntry for the chosen role, kept in sync by the
   // manual-block action handlers (see syncManualBlockTimeEntry).
-  isWork          Boolean   @default(false)
+  isWork          Boolean         @default(false)
   assignmentType  AssignmentType?
   roleRefId       String?
-  createdAt       DateTime  @default(now())
+  createdAt       DateTime        @default(now())
 
-  user       User        @relation(fields: [userId], references: [id])
+  user        User        @relation(fields: [userId], references: [id])
   timeEntries TimeEntry[]
 
   @@index([userId, startTime])
@@ -2018,6 +2161,7 @@ model Term {
   payPeriods            PayPeriod[]
   budgetEntries         BudgetEntry[]
   budgetNotes           BudgetNote[]
+  signingBindings       SigningBinding[]
 
   @@index([sortKey])
 }
@@ -2117,7 +2261,7 @@ model MentorshipPair {
 // who isn't P3 in a mentee's domain is promoted (see api.staffing.finalize),
 // and derivePairings pairs each domain's effective mentors to its mentees.
 model StaffingMentorRole {
-  id              String @id @default(cuid())
+  id              String  @id @default(cuid())
   staffingCycleId String
   userId          String
   isMentor        Boolean
@@ -2372,14 +2516,14 @@ model ProjectShowcase {
 
   // One-line public blurb ("Assessing personal risk during COVID"). This, not
   // the name, is what the showcase card leads with.
-  tagline String?
+  tagline     String?
   // Public name, when it differs from the internal one (internally "AIPA",
   // publicly "AI Patient Actor"). Null = fall back to Project.name.
   displayName String?
   // Calendar year the project ran, e.g. 2020. Deliberately not a term code:
   // the public site groups by year, and the archive reaches back to 2015,
   // well before the Term table starts.
-  year Int?
+  year        Int?
 
   // Free-text facet lists, rendered as tag pills and used by the site's
   // filters. Not FKs to Domain/Term — the public taxonomy ("Mobile", "XR",
@@ -3632,8 +3776,8 @@ model Page {
   // Owner-proposed, Core-approved promotion of a personal note onto the
   // lab-wide Documents hub. The hub is the lab's curated shelf, so the owner
   // can only ask; Core decides. Reviewer fields are null until then.
-  labListing         LabListingState @default(None)
-  labListingNote     String?
+  labListing             LabListingState @default(None)
+  labListingNote         String?
   labListingReviewedById String?
   labListingReviewedAt   DateTime?
 
@@ -3691,7 +3835,7 @@ model Page {
 // and a personal note has no project to hang off, so there'd be nowhere for it
 // to appear. The principalType enum leaves room to add them later.
 model PageShare {
-  id            String            @id @default(cuid())
+  id            String             @id @default(cuid())
   pageId        String
   principalType SharePrincipalType
   // User.id or GroupDefinition.id, dispatched by principalType — same loose
@@ -3757,21 +3901,21 @@ model PageTemplate {
 // ─── Mentorship ──────────────────────────────────────────────────────────────
 
 model MentorNote {
-  id           String   @id @default(cuid())
-  mentorId     String
-  menteeId     String
-  projectId    String
-  termId       String
-  domainId     String
+  id          String          @id @default(cuid())
+  mentorId    String
+  menteeId    String
+  projectId   String
+  termId      String
+  domainId    String
   // Start-of-week date (Monday, UTC) the note covers. App enforces one row
   // per (mentor, mentee, project, term, domain, week).
-  weekOf       DateTime
+  weekOf      DateTime
   // Tiptap/ProseMirror JSON document. Seeded from the current default
   // MentorNoteTemplate on create. Single-author — no Yjs/Hocuspocus.
-  contentJson  Json     @default("{}")
+  contentJson Json            @default("{}")
   // Mentor's at-a-glance read on how the mentee is doing this week. Null until
   // the mentor picks one — the browse grid renders it as a colored cell.
-  vibe         MentorNoteVibe?
+  vibe        MentorNoteVibe?
 
   mentor User @relation("MentorNoteMentor", fields: [mentorId], references: [id])
   mentee User @relation("MentorNoteMentee", fields: [menteeId], references: [id])
@@ -3810,19 +3954,19 @@ model MentorNoteTemplate {
 // eventType/emailedAt/slackDmAt now live there.
 
 model NotificationPreference {
-  id     String @id @default(cuid())
-  userId String
+  id              String     @id @default(cuid())
+  userId          String
   // Matches Notification.eventType (registry: app/lib/notification-events.ts).
   // No wildcard rows — an absent row means the registry default applies, so
   // evolving a default never requires a backfill.
-  eventType String
-  inApp     Boolean @default(true)
+  eventType       String
+  inApp           Boolean    @default(true)
   // Native banner raised by the desktop app for an in-app row. Sub-preference
   // of inApp: without the in-app row there is nothing to banner.
-  desktop Boolean @default(true)
+  desktop         Boolean    @default(true)
   // Slack DM requires a resolved User.slackUserId; without one the channel
   // silently skips regardless of this toggle.
-  slackDm Boolean @default(false)
+  slackDm         Boolean    @default(false)
   // Email cadence: Instant = per-notification email at notify() time,
   // Daily/Weekly = batched digest, Off = in-app only.
   digestFrequency DigestFreq @default(Off)
@@ -4172,8 +4316,8 @@ enum DevicePairingStatus {
 // accounts that use Gmail send-as, then drops the User columns.
 
 model GmailIntegration {
-  id     String @id @default(cuid())
-  userId String
+  id             String           @id @default(cuid())
+  userId         String
   // Which area's outbound mail this identity serves. Rows that predate
   // purposes are the applications@ integration and default to Hiring.
   // Resolution (lib/gmail-integration.ts) falls back to Hiring for purposes
@@ -4188,12 +4332,12 @@ model GmailIntegration {
   // proactive refresh ahead of expiry.
   tokenExpiresAt DateTime?
   // Soft-disable so the admin UI can revoke without deleting.
-  enabled        Boolean   @default(true)
+  enabled        Boolean          @default(true)
   // Last successful Gmail API call against this integration. Drives the
   // "Gmail connected" indicator on hiring email-templates UI.
   lastUsedAt     DateTime?
   syncError      String?
-  linkedAt       DateTime  @default(now())
+  linkedAt       DateTime         @default(now())
 
   user User @relation(fields: [userId], references: [id])
 

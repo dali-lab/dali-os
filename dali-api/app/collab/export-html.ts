@@ -4,6 +4,13 @@
 // live in export.ts (which re-exports these); the PDF renderer in export-pdf.ts
 // walks the same node/mark set so the two formats stay visually consistent.
 
+import {
+  isSigningFieldType,
+  fieldDisplayText,
+  variableDisplayText,
+  type SigningFieldType,
+} from "~/lib/signing-fields";
+
 export type PMNode = {
   type: string;
   content?: PMNode[];
@@ -11,6 +18,21 @@ export type PMNode = {
   marks?: { type: string; attrs?: Record<string, unknown> }[];
   attrs?: Record<string, unknown>;
 };
+
+// Signing field / variable atoms — inline leaf nodes. Values are baked into
+// attrs.value by bakeSigningBody before export, so the renderer reads attrs
+// only. An unfilled field renders as a blank signature line.
+function renderSigningFieldHtml(node: PMNode): string {
+  const type = node.type as SigningFieldType;
+  const value = node.attrs?.value;
+  if (type === "checkboxField") {
+    return `<span>${fieldDisplayText(type, value)}</span>`;
+  }
+  const text = fieldDisplayText(type, value);
+  return text
+    ? `<span style="border-bottom:1px solid #333;padding:0 4px;font-style:italic;">${escapeHtml(text)}</span>`
+    : `<span style="display:inline-block;min-width:160px;border-bottom:1px solid #333;">&nbsp;</span>`;
+}
 
 function escapeHtml(s: string): string {
   return s
@@ -132,7 +154,13 @@ function renderNode(node: PMNode): string {
       return `<th>${renderNodes(node.content)}</th>`;
     case "tableCell":
       return `<td>${renderNodes(node.content)}</td>`;
+    case "variable": {
+      const name = typeof node.attrs?.name === "string" ? node.attrs.name : "";
+      return `<span>${escapeHtml(variableDisplayText(name, node.attrs?.value))}</span>`;
+    }
     default:
+      // Signing field atoms render their captured value / a signature line.
+      if (isSigningFieldType(node.type)) return renderSigningFieldHtml(node);
       // Unknown block: render its children so content is never dropped.
       return renderNodes(node.content);
   }

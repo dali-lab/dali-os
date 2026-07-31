@@ -35,7 +35,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   ]);
   if (!hiringLead && !domainLead && !admin) return redirect("/");
 
-  const agreement = await prisma.confidentialityAgreement.findUniqueOrThrow({
+  const agreement = await prisma.signingDocument.findUniqueOrThrow({
     where: { id: params.id },
     include: {
       versions: {
@@ -75,17 +75,21 @@ export async function action({ request, params }: Route.ActionArgs) {
       return { error: "Body must be valid JSON" };
     }
 
-    const lastVersion = await prisma.confidentialityAgreementVersion.findFirst({
-      where: { agreementId: params.id },
+    const lastVersion = await prisma.signingDocumentVersion.findFirst({
+      where: { documentId: params.id },
       orderBy: { versionNumber: "desc" },
     });
     const versionNumber = (lastVersion?.versionNumber ?? 0) + 1;
 
-    await prisma.confidentialityAgreementVersion.create({
+    await prisma.signingDocumentVersion.create({
       data: {
-        agreementId: params.id,
+        documentId: params.id!,
         versionNumber,
-        body: body as any,
+        body: body as object,
+        // Confidentiality agreements are plain text signed by a single member
+        // role, and have no draft step — publish on create so they're bindable.
+        roles: ["member"],
+        publishedAt: new Date(),
         createdById: auth.user.sub,
       },
     });
@@ -96,7 +100,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (intent === "rename") {
     const name = (formData.get("name") as string)?.trim();
     if (!name) return { error: "Name is required" };
-    await prisma.confidentialityAgreement.update({
+    await prisma.signingDocument.update({
       where: { id: params.id },
       data: { name },
     });
