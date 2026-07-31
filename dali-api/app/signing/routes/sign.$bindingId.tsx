@@ -3,11 +3,13 @@
 // validates + records the signature, and shows the signed copy afterward.
 
 import { redirect, Link, useLoaderData } from "react-router";
-import { ShieldCheck } from "lucide-react";
+import { ShieldCheck, Download } from "lucide-react";
 import type { Route } from "./+types/sign.$bindingId";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { RichTextViewer } from "~/components/RichTextViewer";
+import { renderProseMirrorToPdf } from "~/collab/export-pdf";
+import type { PMNode } from "~/collab/export-html";
 import { collectSigningFields } from "~/lib/signing-fields";
 import { getBindingStateForUser, getSignerCohorts } from "~/signing/lib/state.server";
 import { recordSignature } from "~/signing/lib/sign.server";
@@ -75,6 +77,18 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     signedBody = mine?.frozenBody ?? binding.version.body;
   }
 
+  // Download the member's own signed copy as a PDF.
+  if (url.searchParams.get("format") === "pdf") {
+    if (state.status !== "signed" || !signedBody) return redirect(`/sign/${bindingId}`);
+    const pdf = await renderProseMirrorToPdf(binding.document.name, signedBody as PMNode);
+    return new Response(new Uint8Array(pdf), {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `inline; filename="${binding.document.name.replace(/[^a-z0-9]+/gi, "-")}.pdf"`,
+      },
+    });
+  }
+
   return {
     name: binding.document.name,
     bindingId,
@@ -129,12 +143,20 @@ export default function SignBindingPage() {
         <article className="bg-card border border-border rounded-lg p-6">
           <RichTextViewer content={data.signedBody} enableImages enableSigningFields />
         </article>
-        <Link
-          to={data.next ?? "/sign"}
-          className="inline-block px-4 py-2 text-sm font-medium text-white bg-accent-coral rounded-md hover:bg-accent-coral/90"
-        >
-          Continue
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link
+            to={data.next ?? "/sign"}
+            className="inline-block px-4 py-2 text-sm font-medium text-white bg-accent-coral rounded-md hover:bg-accent-coral/90"
+          >
+            Continue
+          </Link>
+          <a
+            href={`/sign/${data.bindingId}?format=pdf`}
+            className="inline-flex items-center gap-1 px-4 py-2 text-sm font-medium rounded-md text-foreground bg-card border border-border hover:bg-muted/50"
+          >
+            <Download className="w-4 h-4" /> Download PDF
+          </a>
+        </div>
       </div>
     );
   }

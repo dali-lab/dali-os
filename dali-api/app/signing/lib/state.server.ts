@@ -135,6 +135,51 @@ export async function countOutstandingBindings(userId: string): Promise<number> 
   return (await listOutstandingBindings(userId)).length;
 }
 
+export interface SignedDocument {
+  signatureId: string;
+  bindingId: string;
+  documentName: string;
+  context: string;
+  signedAt: Date;
+}
+
+// A member's own signed lab agreements (Membership / Mentorship / General),
+// newest first — for the personal "My agreements" archive. Excludes hiring
+// Confidentiality (hiring-internal, no member-facing copy).
+export async function listMySignedDocuments(userId: string): Promise<SignedDocument[]> {
+  const sigs = await prisma.signingSignature.findMany({
+    where: {
+      signerUserId: userId,
+      roleKey: "member",
+      binding: { document: { kind: { not: "Confidentiality" }, archivedAt: null } },
+    },
+    select: {
+      id: true,
+      signedAt: true,
+      bindingId: true,
+      binding: {
+        select: {
+          document: { select: { name: true } },
+          term: { select: { code: true } },
+          cycle: { select: { name: true } },
+        },
+      },
+    },
+    orderBy: { signedAt: "desc" },
+  });
+  return sigs.map((s) => ({
+    signatureId: s.id,
+    bindingId: s.bindingId,
+    documentName: s.binding.document.name,
+    context: s.binding.cycle?.name
+      ? s.binding.cycle.name
+      : s.binding.term?.code
+        ? `Term ${s.binding.term.code}`
+        : "Lab-wide",
+    signedAt: s.signedAt,
+  }));
+}
+
 export type BindingSignState =
   | { status: "not_found" }
   | { status: "unsigned" }
