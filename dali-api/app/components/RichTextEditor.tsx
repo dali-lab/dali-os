@@ -20,6 +20,7 @@ import {
   AlignLeft,
   AlignRight,
   AlignJustify,
+  Image as ImageIcon,
 } from "lucide-react";
 import {
   EDITOR_CONTENT_CLASS,
@@ -28,7 +29,7 @@ import {
   linkExtension,
 } from "./editor/shared";
 import { mentionEditorExtension, searchMentionableUsers } from "./editor/mention";
-import { imageEditorExtensions } from "./editor/image";
+import { imageEditorExtensions, uploadEditorImage } from "./editor/image";
 import { signingFieldExtensions } from "./editor/signing-fields";
 import { SIGNING_FIELD_TYPES, FIELD_LABEL } from "~/lib/signing-fields";
 import { ALL_SIGNING_VARIABLES } from "~/lib/signing-variables";
@@ -123,7 +124,7 @@ export function RichTextEditor({
     <EditorShell disabled={disabled} className={className}>
       {editor && !disabled ? (
         richToolbar ? (
-          <FormattingToolbar editor={editor} signingRoles={signingRoles} />
+          <FormattingToolbar editor={editor} signingRoles={signingRoles} enableImages={enableImages} />
         ) : (
           <Toolbar editor={editor} />
         )
@@ -239,11 +240,14 @@ const FORMAT_GROUPS: ToolbarAction[][] = [
 function FormattingToolbar({
   editor,
   signingRoles,
+  enableImages,
 }: {
   editor: Editor;
   signingRoles?: string[];
+  enableImages?: boolean;
 }) {
   const dialog = useDialog();
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
   // Tiptap doesn't re-render React on its own; tick on every transaction so
   // active/disabled states track the selection.
   const [, setTick] = useState(0);
@@ -320,6 +324,40 @@ function FormattingToolbar({
         >
           <Link2Off size={15} />
         </button>
+      )}
+      {enableImages && (
+        <>
+          <span className="mx-1 h-5 w-px bg-border" aria-hidden />
+          <button
+            type="button"
+            title="Insert image"
+            aria-label="Insert image"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              imageInputRef.current?.click();
+            }}
+            className="rounded p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <ImageIcon size={15} />
+          </button>
+          <input
+            ref={imageInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (!file) return;
+              try {
+                const src = await uploadEditorImage(file);
+                editor.chain().focus().insertContent({ type: "image", attrs: { src } }).run();
+              } catch (err) {
+                console.error("[editor] image insert failed", err);
+              }
+            }}
+          />
+        </>
       )}
       {signingRoles && signingRoles.length > 0 && (
         <>

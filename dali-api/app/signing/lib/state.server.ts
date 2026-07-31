@@ -14,21 +14,30 @@ export interface SignerCohorts {
 }
 
 export async function getSignerCohorts(userId: string): Promise<SignerCohorts> {
-  const [member, term] = await Promise.all([
+  const [member, u, term] = await Promise.all([
     prisma.dALIMember.findUnique({ where: { userId }, select: { userId: true } }),
+    prisma.user.findUnique({
+      where: { id: userId },
+      select: { membershipStatus: true, adminMembership: { select: { isStaff: true } } },
+    }),
     currentTerm(),
   ]);
-  let isMember = false;
-  if (member) {
-    const u = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { membershipStatus: true },
-    });
-    isMember = u?.membershipStatus !== "Alumni";
-  }
+  // Full-time staff are exempt from signing obligations entirely (they also
+  // skip the student onboarding flow).
+  if (u?.adminMembership?.isStaff) return { isMember: false, isMentor: false };
+  const isMember = !!member && u?.membershipStatus !== "Alumni";
   const isMentor = await isLabMentor(userId, term?.id);
   return { isMember, isMentor };
 }
+
+// Prisma predicate for the ActiveMembers audience: active lab members who are
+// not full-time staff. Shared by the notifier and the admin roster.
+export const activeMemberAudienceWhere = {
+  user: {
+    membershipStatus: "Active" as const,
+    NOT: { adminMembership: { is: { isStaff: true } } },
+  },
+};
 
 // Whether an enforced document's audience includes this signer. Manual +
 // HiringParticipants are not app-gated here (Manual is explicit-only;

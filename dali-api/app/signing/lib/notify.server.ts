@@ -5,6 +5,7 @@
 
 import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
+import { activeMemberAudienceWhere } from "./state.server";
 
 export async function notifySignRequest(bindingId: string): Promise<void> {
   const binding = await prisma.signingBinding.findUnique({
@@ -20,10 +21,10 @@ export async function notifySignRequest(bindingId: string): Promise<void> {
     return;
   }
 
-  // Active lab members who haven't already signed the in-force version.
+  // Active, non-staff lab members who haven't already signed the in-force version.
   const [members, signed] = await Promise.all([
     prisma.dALIMember.findMany({
-      where: { user: { membershipStatus: "Active" } },
+      where: activeMemberAudienceWhere,
       select: { userId: true },
     }),
     prisma.signingSignature.findMany({

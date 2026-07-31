@@ -34,6 +34,7 @@ export function SigningDocumentDetail() {
   );
   const [isCreating, setIsCreating] = useState(false);
   const [isRenaming, setIsRenaming] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
   const [draftName, setDraftName] = useState(document.name);
 
   const selectedVersion =
@@ -200,15 +201,48 @@ export function SigningDocumentDetail() {
                   </span>
                 </label>
                 <div>
-                  <label className="block text-sm font-medium text-foreground/80 mb-1">Body</label>
-                  <RichTextEditor
-                    value={draftBody}
-                    onChange={setDraftBody}
-                    placeholder="Write the agreement… use the Insert group to place signature/date/checkbox fields and {{term}} variables."
-                    richToolbar
-                    enableImages
-                    signingRoles={editorRoles.length ? editorRoles : ["member"]}
-                  />
+                  <div className="mb-1 flex items-center justify-between">
+                    <label className="block text-sm font-medium text-foreground/80">Body</label>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewing((p) => !p)}
+                      className="text-xs font-medium text-accent-coral hover:underline"
+                    >
+                      {previewing ? "← Back to editing" : "Preview as signer"}
+                    </button>
+                  </div>
+                  {previewing ? (
+                    <div className="rounded-lg border border-border bg-card p-6">
+                      <RichTextViewer
+                        content={draftBody}
+                        enableImages
+                        enableSigningFields
+                        signingVariables={{
+                          term: "26S",
+                          today: new Date().toLocaleDateString("en-US", {
+                            year: "numeric",
+                            month: "long",
+                            day: "numeric",
+                          }),
+                          memberName: "Jane Member",
+                          supervisorName: "DALI Staff",
+                        }}
+                      />
+                      <p className="mt-4 text-xs text-muted-foreground italic">
+                        Preview with sample values — signature/date/checkbox fields appear as blank
+                        lines here and become fillable for the signer.
+                      </p>
+                    </div>
+                  ) : (
+                    <RichTextEditor
+                      value={draftBody}
+                      onChange={setDraftBody}
+                      placeholder="Write the agreement… use the Insert group to place signature/date/checkbox fields and {{term}} variables."
+                      richToolbar
+                      enableImages
+                      signingRoles={editorRoles.length ? editorRoles : ["member"]}
+                    />
+                  )}
                 </div>
                 <div className="flex justify-end gap-2">
                   <button
@@ -283,7 +317,7 @@ export function SigningDocumentDetail() {
 }
 
 function BindingsPanel() {
-  const { document } = useLoaderData<typeof loader>();
+  const { document, rosters } = useLoaderData<typeof loader>();
   const tz = useUserTimeZone();
   if (document.bindings.length === 0) {
     return (
@@ -295,16 +329,33 @@ function BindingsPanel() {
       </div>
     );
   }
+  const anyPending = document.bindings.some(
+    (b) => !b.signatures.some((s) => s.roleKey === "supervisor"),
+  );
   return (
     <div className="bg-card rounded-xl border border-border p-6 shadow-sm space-y-4">
-      <h3 className="text-sm font-semibold text-foreground/80 uppercase tracking-wide">
-        In force &amp; signatories
-      </h3>
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold text-foreground/80 uppercase tracking-wide">
+          In force &amp; signatories
+        </h3>
+        {anyPending && (
+          <Form method="post">
+            <input type="hidden" name="intent" value="countersign-all" />
+            <button
+              type="submit"
+              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-md text-white bg-dark-blue hover:opacity-90"
+            >
+              <PenLine className="w-3.5 h-3.5" /> Counter-sign all as supervisor
+            </button>
+          </Form>
+        )}
+      </div>
       {document.bindings.map((b) => {
         const context =
           b.cycle?.name ? `cycle: ${b.cycle.name}` : b.term?.code ? `term: ${b.term.code}` : "app-wide";
         const supervisorSigned = b.signatures.some((s) => s.roleKey === "supervisor");
         const memberSigs = b.signatures.filter((s) => s.roleKey === "member");
+        const roster = rosters[b.id];
         return (
           <div key={b.id} className="rounded-lg border border-border p-4">
             <div className="flex items-center justify-between gap-3">
@@ -325,18 +376,58 @@ function BindingsPanel() {
               )}
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
-              Supervisor: {supervisorSigned ? "signed ✓" : "pending"} · {memberSigs.length} member signature
-              {memberSigs.length !== 1 ? "s" : ""}
+              Supervisor: {supervisorSigned ? "signed ✓" : "pending"}
+              {roster
+                ? ` · ${roster.signed.length} of ${roster.signed.length + roster.outstanding.length} members signed`
+                : ` · ${memberSigs.length} member signature${memberSigs.length !== 1 ? "s" : ""}`}
             </p>
-            {memberSigs.length > 0 && (
-              <ul className="mt-2 space-y-1 max-h-40 overflow-y-auto">
-                {memberSigs.map((s) => (
-                  <li key={s.id} className="text-xs text-muted-foreground flex items-center justify-between gap-2">
-                    <span className="truncate">{s.typedName || fullName(s.signer) || UNKNOWN_LABEL}</span>
-                    <span className="shrink-0">{formatDateTime(s.signedAt, tz)}</span>
-                  </li>
-                ))}
-              </ul>
+
+            {roster ? (
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <div>
+                  <p className="text-xs font-semibold text-green-700 mb-1">
+                    Signed ({roster.signed.length})
+                  </p>
+                  <ul className="space-y-0.5 max-h-40 overflow-y-auto">
+                    {roster.signed.length === 0 ? (
+                      <li className="text-xs text-muted-foreground italic">No one yet.</li>
+                    ) : (
+                      roster.signed.map((n) => (
+                        <li key={n} className="text-xs text-foreground truncate">
+                          {n}
+                        </li>
+                      ))
+                    )}
+                  </ul>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-amber-700 mb-1">
+                    Outstanding ({roster.outstanding.length})
+                  </p>
+                  <ul className="space-y-0.5 max-h-40 overflow-y-auto">
+                    {roster.outstanding.length === 0 ? (
+                      <li className="text-xs text-muted-foreground italic">Everyone signed 🎉</li>
+                    ) : (
+                      roster.outstanding.map((n) => (
+                        <li key={n} className="text-xs text-muted-foreground truncate">
+                          {n}
+                        </li>
+                      ))
+                    )}
+                  </ul>
+                </div>
+              </div>
+            ) : (
+              memberSigs.length > 0 && (
+                <ul className="mt-2 space-y-1 max-h-40 overflow-y-auto">
+                  {memberSigs.map((s) => (
+                    <li key={s.id} className="text-xs text-muted-foreground flex items-center justify-between gap-2">
+                      <span className="truncate">{s.typedName || fullName(s.signer) || UNKNOWN_LABEL}</span>
+                      <span className="shrink-0">{formatDateTime(s.signedAt, tz)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )
             )}
           </div>
         );

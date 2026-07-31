@@ -11,6 +11,7 @@ import { logAuditEvent } from "~/lib/audit";
 import { fullName } from "~/lib/display";
 import { resolveAdminScope } from "~/signing/lib/scope.server";
 import { notifySignRequest } from "~/signing/lib/notify.server";
+import { activeMemberAudienceWhere } from "~/signing/lib/state.server";
 import { SigningDocumentDetail } from "~/signing/components/SigningDocumentDetail";
 
 export const handle = { areaPills: true };
@@ -56,7 +57,32 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
   });
 
-  return { document, isAdmin: roles.isAdmin };
+  // Signatory roster: for an ActiveMembers audience, split the audience into who
+  // has / hasn't signed each binding's in-force version. (Mentors have no bulk
+  // query; their panel shows the signed list only.)
+  const rosters: Record<string, { signed: string[]; outstanding: string[] }> = {};
+  if (document.audience === "ActiveMembers") {
+    const members = await prisma.dALIMember.findMany({
+      where: activeMemberAudienceWhere,
+      select: { user: { select: { id: true, firstName: true, lastName: true } } },
+    });
+    const audience = members.map((m) => m.user);
+    for (const b of document.bindings) {
+      const signedIds = new Set(
+        b.signatures
+          .filter((s) => s.roleKey === "member" && s.versionId === b.versionId)
+          .map((s) => s.signerUserId),
+      );
+      const name = (u: { firstName: string; lastName: string }) =>
+        `${u.firstName} ${u.lastName}`.trim();
+      rosters[b.id] = {
+        signed: audience.filter((u) => signedIds.has(u.id)).map(name).sort(),
+        outstanding: audience.filter((u) => !signedIds.has(u.id)).map(name).sort(),
+      };
+    }
+  }
+
+  return { document, isAdmin: roles.isAdmin, rosters };
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -195,6 +221,51 @@ export async function action({ request, params }: Route.ActionArgs) {
       userId: auth.user.sub,
       targetId: params.id,
       metadata: { bindingId },
+      request,
+    });
+    return redirect(back);
+  }
+
+  if (intent === "countersign-all") {
+    // Apply the fixed staff signature to every in-force binding that doesn't
+    // have one yet, in one click.
+    const me = await prisma.user.findUniqueOrThrow({
+      where: { id: auth.user.sub },
+      select: { firstName: true, lastName: true },
+    });
+    const bindings = await prisma.signingBinding.findMany({
+      where: { documentId: params.id },
+      select: {
+        id: true,
+        versionId: true,
+        signatures: { where: { roleKey: "supervisor" }, select: { id: true } },
+      },
+    });
+    const ip =
+      request.headers.get("fly-client-ip") ||
+      request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+      null;
+    const userAgent = request.headers.get("user-agent") || null;
+    for (const b of bindings) {
+      if (b.signatures.length > 0) continue;
+      await prisma.signingSignature.create({
+        data: {
+          bindingId: b.id,
+          versionId: b.versionId,
+          signerUserId: auth.user.sub,
+          roleKey: "supervisor",
+          typedName: fullName(me),
+          ip,
+          userAgent,
+          fieldValues: {},
+        },
+      });
+    }
+    await logAuditEvent({
+      action: "signing.staff_countersign",
+      userId: auth.user.sub,
+      targetId: params.id,
+      metadata: { bulk: true },
       request,
     });
     return redirect(back);
