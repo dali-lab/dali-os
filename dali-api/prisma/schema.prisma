@@ -142,7 +142,6 @@ model User {
   sessions                      Session[]
   rubricVersions                RubricVersion[]
   internToFullFormVersions      InternToFullFormVersion[]
-  confidentialitySignatures     ConfidentialityAgreementSignature[]
   authoredSigningVersions       SigningDocumentVersion[]            @relation("SigningVersionAuthor")
   signingSignatures             SigningSignature[]                  @relation("SigningSigner")
 
@@ -237,7 +236,6 @@ model User {
   delibsSessionsOpened                    DelibsSession[]
   legacyEmailTemplatesCreated             LegacyEmailTemplate[]
   emailTemplateVersionsCreated            EmailTemplateVersion[]
-  confidentialityAgreementVersionsCreated ConfidentialityAgreementVersion[]
 
   // ─── Documents & files ───────────────────────────────────────────────────
   projectFileVersionsUploaded ProjectFileVersion[] @relation("ProjectFileVersionUploader")
@@ -342,8 +340,6 @@ model ApplicationCycle {
   notificationEmails CycleNotificationEmail[]
   notificationSends  CycleNotificationSend[]
 
-  confidentialityBinding    CycleConfidentialityAgreement?
-  confidentialitySignatures ConfidentialityAgreementSignature[]
   signingBindings           SigningBinding[]
 }
 
@@ -1495,74 +1491,6 @@ model ClientError {
 
   @@index([createdAt])
   @@index([message, createdAt])
-}
-
-// ─── Confidentiality Agreements ──────────────────────────────────────────────
-
-// Named, versioned confidentiality agreement — independent of any cycle.
-// Mirrors EmailTemplate / Rubric. The hiring lead binds a specific version
-// to a cycle via CycleConfidentialityAgreement.
-model ConfidentialityAgreement {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  name String
-
-  versions ConfidentialityAgreementVersion[]
-}
-
-// Immutable snapshot of a ConfidentialityAgreement. Never update — append
-// a new version. body is ProseMirror JSON.
-model ConfidentialityAgreementVersion {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-
-  versionNumber Int
-  body          Json
-
-  agreementId String
-  agreement   ConfidentialityAgreement @relation(fields: [agreementId], references: [id])
-
-  createdById String
-  createdBy   User   @relation(fields: [createdById], references: [id])
-
-  cycleBindings CycleConfidentialityAgreement[]
-  signatures    ConfidentialityAgreementSignature[]
-
-  @@index([agreementId, versionNumber])
-}
-
-// Per-cycle binding: at most one agreement version may be in force per cycle.
-// No row = unbound; in that state nobody (including the hiring lead) can
-// view sensitive cycle data.
-model CycleConfidentialityAgreement {
-  applicationCycleId String           @unique
-  applicationCycle   ApplicationCycle @relation(fields: [applicationCycleId], references: [id])
-
-  confidentialityAgreementVersionId String
-  confidentialityAgreementVersion   ConfidentialityAgreementVersion @relation(fields: [confidentialityAgreementVersionId], references: [id])
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-// Per-user-per-cycle signature. Pinned to the version that was active when
-// the user signed — re-binding the cycle to a new version forces re-signing.
-model ConfidentialityAgreementSignature {
-  id       String   @id @default(cuid())
-  signedAt DateTime @default(now())
-
-  userId             String
-  user               User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  applicationCycleId String
-  applicationCycle   ApplicationCycle @relation(fields: [applicationCycleId], references: [id])
-
-  confidentialityAgreementVersionId String
-  confidentialityAgreementVersion   ConfidentialityAgreementVersion @relation(fields: [confidentialityAgreementVersionId], references: [id])
-
-  @@unique([userId, applicationCycleId])
-  @@index([applicationCycleId])
 }
 
 // ─── Document Signing ────────────────────────────────────────────────────────
