@@ -129,6 +129,20 @@ export function DocumentEditor({
     }, 600);
   }
 
+  // Jump from the CommentsRail to a BlockNote inline thread mark in the editor.
+  // BlockNote renders comment marks as <span data-bn-thread-id="..."> elements.
+  const jumpToInlineThread = useCallback((threadId: string) => {
+    const root = bodyRef.current;
+    if (!root) return;
+    const el = root.querySelector<HTMLElement>(`[data-bn-thread-id="${CSS.escape(threadId)}"]`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    // Flash the mark by briefly toggling a class (reuses the existing mention-
+    // flash keyframe animation defined in app.css).
+    el.classList.add("mention-flash");
+    setTimeout(() => el.classList.remove("mention-flash"), 2600);
+  }, []);
+
   // ToC jump. Ordinals come from the block tree (H1–H3, in traversal order —
   // see extractHeadings); BlockNote renders each heading block as a
   // [data-content-type="heading"] element in the same order, so re-resolving
@@ -240,6 +254,12 @@ export function DocumentEditor({
                 userName,
                 userId: currentUserId,
               }}
+              comments={{
+                pageId,
+                currentUserId,
+                canComment: canEdit,
+                canResolve: canEdit,
+              }}
               onWordCountChange={setWordCount}
               onHeadingsChange={setHeadings}
               placeholder="Write something, or press '/' for commands"
@@ -267,6 +287,7 @@ export function DocumentEditor({
           currentUserId={currentUserId}
           canComment={canEdit}
           focusCommentId={focusCommentId}
+          onFocusInlineThread={jumpToInlineThread}
         />
       </aside>
     </div>

@@ -19,6 +19,19 @@ export interface DocCollabConfig {
   userId?: string;
 }
 
+/** Wires BlockNote's CommentsExtension for inline commenting.
+ * Passed by DocumentEditor for pages; omitted on all other surfaces. */
+export interface DocCommentsConfig {
+  /** The Page id — used as DocComment.targetId. */
+  pageId: string;
+  /** The current user's id — drives auth rules in ThreadStoreAuth. */
+  currentUserId: string;
+  /** Whether the viewer may post new comments / replies. */
+  canComment: boolean;
+  /** Whether the viewer may resolve / reopen threads. */
+  canResolve: boolean;
+}
+
 export interface DocEditorProps {
   /** Capability set or preset name. Default: {} (the "field" preset). */
   features?: Features | EditorPresetName;
@@ -57,4 +70,7 @@ export interface DocEditorProps {
    * it here. The instance is invalid after the editor unmounts/remounts; the
    * callback fires again with the replacement. */
   onEditorReady?: (editor: DocEditorInstance) => void;
+  /** When provided, wires BlockNote's inline comment system for this doc.
+   * Other surfaces omit this prop — no comments feature is enabled. */
+  comments?: DocCommentsConfig;
 }

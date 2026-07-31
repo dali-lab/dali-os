@@ -46,6 +46,36 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ ok: true }));
   }
 
+  let raw: unknown;
+  try {
+    raw = await request.json();
+  } catch {
+    return withCors(request, Response.json({ error: "Invalid JSON" }, { status: 400 }));
+  }
+  const body = raw as { intent?: string; anchor?: unknown } | null;
+  const intent = body?.intent;
+
+  // "set-anchor" is called by DaliThreadStore.addThreadToDocument after
+  // BlockNote places the comment mark in the doc; it stamps the anchor column
+  // so the rail can identify inline BlockNote threads vs doc-level ones.
+  // Auth: only the comment's own author may set the anchor (the store calls
+  // this immediately after createThread, so it's always the same user).
+  if (intent === "set-anchor") {
+    if (comment.targetType !== "doc") {
+      return withCors(request, Response.json({ error: "anchor only on docs" }, { status: 400 }));
+    }
+    if (comment.authorId !== auth.user.sub) {
+      return forbidden(request);
+    }
+    const anchor = body?.anchor ?? null;
+    await prisma.docComment.update({
+      where: { id: comment.id },
+      data: { anchor: anchor === null ? undefined : (anchor as object) },
+    });
+    return withCors(request, Response.json({ ok: true }));
+  }
+
+  // resolve / reopen require Core or pagedoc maintainer.
   if (comment.targetType === "pagedoc") {
     const pageDoc = await prisma.pageDoc.findUnique({
       where: { id: comment.targetId },
@@ -58,13 +88,6 @@ export async function action({ request, params }: Route.ActionArgs) {
     return forbidden(request);
   }
 
-  let raw: unknown;
-  try {
-    raw = await request.json();
-  } catch {
-    return withCors(request, Response.json({ error: "Invalid JSON" }, { status: 400 }));
-  }
-  const intent = (raw as { intent?: string } | null)?.intent;
   if (intent !== "resolve" && intent !== "reopen") {
     return withCors(request, Response.json({ error: "Invalid intent" }, { status: 400 }));
   }

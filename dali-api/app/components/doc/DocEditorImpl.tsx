@@ -25,11 +25,19 @@ import type { EditorState } from "prosemirror-state";
 import type * as Y from "yjs";
 import { withCollaboration } from "@blocknote/core/yjs";
 import { en } from "@blocknote/core/locales";
-import { SuggestionMenuController, useCreateBlockNote } from "@blocknote/react";
+import { CommentsExtension } from "@blocknote/core/comments";
+import type { User } from "@blocknote/core";
+import {
+  SuggestionMenuController,
+  useCreateBlockNote,
+  FloatingComposerController,
+  FloatingThreadController,
+} from "@blocknote/react";
 import { BlockNoteView } from "@blocknote/shadcn";
 
 import { countWords, extractHeadings, normalizeInitialContent } from "./blocks-util";
 import { acquireCollabDoc, nameToHexColor, releaseCollabDoc, type CollabDocEntry } from "./collab-doc";
+import { DaliThreadStore } from "./comments/DaliThreadStore";
 import { DocEditorFallback } from "./DocEditor";
 import { resolveFeatures, type Features } from "./features";
 import { buildSchema, type DocEditorInstance, type DocPartialBlock } from "./schema/build";
@@ -37,7 +45,7 @@ import { BLOCKNOTE_FRAGMENT } from "./schema/configs";
 import { getMentionMenuItems } from "./schema/mention";
 import { getFilteredDocSlashMenuItems } from "./schema/slash-menu";
 import { DEFAULT_SIGNING_CTX, SigningContext } from "./signing-context";
-import type { DocCollabConfig, DocEditorProps } from "./types";
+import type { DocCollabConfig, DocCommentsConfig, DocEditorProps } from "./types";
 import { uploadEditorImage } from "./upload";
 
 export default function DocEditorImpl(props: DocEditorProps) {
@@ -104,6 +112,7 @@ function CollabDocInner(
   const { userName, userId } = props.collab;
   const schema = useDocSchema(props.features);
   const dictionary = useDocDictionary(props.placeholder);
+  const threadStore = useThreadStore(props.comments);
 
   const editor = useCreateBlockNote(
     // withCollaboration injects the CollaborationExtension (ySync + yCursor +
@@ -114,6 +123,18 @@ function CollabDocInner(
       schema,
       dictionary,
       uploadFile: props.features.images ? uploadEditorImage : undefined,
+      // Wire CommentsExtension when a threadStore is available. Extensions are
+      // passed through withCollaboration unchanged (see dist/yjs.js).
+      ...(threadStore
+        ? {
+            extensions: [
+              CommentsExtension({
+                threadStore,
+                resolveUsers: makeResolveDocUsers(threadStore),
+              }),
+            ],
+          }
+        : {}),
       collaboration: {
         fragment: entry.ydoc.getXmlFragment(BLOCKNOTE_FRAGMENT),
         // Awareness color must be 6-digit hex (y-prosemirror appends a hex
@@ -132,7 +153,10 @@ function CollabDocInner(
         showCursorLabels: "activity",
       },
     }),
-    [schema, dictionary, entry],
+    // threadStore is stable per (pageId, userId) via useThreadStore; adding it
+    // here is safe and ensures the editor is re-created if comments config
+    // changes (e.g. canEdit toggle).
+    [schema, dictionary, entry, threadStore],
   );
 
   // FIX (undo no-ops in collab): y-prosemirror's yUndoPlugin creates its
@@ -165,6 +189,59 @@ function findCollabUndoManager(state: EditorState): Y.UndoManager | null {
   return null;
 }
 
+// ─── Comments helpers ────────────────────────────────────────────────────────
+
+/**
+ * Stable DaliThreadStore per (pageId, currentUserId, canComment, canResolve).
+ * Returns null when comments config is absent (CommentsExtension not wired).
+ */
+function useThreadStore(comments: DocCommentsConfig | undefined): DaliThreadStore | null {
+  return useMemo(() => {
+    if (!comments) return null;
+    return new DaliThreadStore({
+      pageId: comments.pageId,
+      currentUserId: comments.currentUserId,
+      canComment: comments.canComment,
+      canResolve: comments.canResolve,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [comments?.pageId, comments?.currentUserId, comments?.canComment, comments?.canResolve]);
+}
+
+/**
+ * Returns a resolveUsers callback for CommentsExtension. BlockNote calls it
+ * with `(userIds, store)` and expects `Promise<User[]>` where User is
+ * `{ id, username, avatarUrl }`.
+ *
+ * We scan the thread store's comment metadata (author name + photoUrl stored
+ * by DaliThreadStore) — no separate request needed since that data arrives
+ * with the initial comments fetch.
+ */
+function makeResolveDocUsers(store: DaliThreadStore) {
+  return async (userIds: string[]): Promise<User[]> => {
+    const threads = store.getThreads();
+    const knownUsers = new Map<string, { username: string; avatarUrl: string }>();
+    for (const thread of threads.values()) {
+      for (const comment of thread.comments) {
+        if (!knownUsers.has(comment.userId) && comment.metadata) {
+          const meta = comment.metadata as { author?: string; authorPhotoUrl?: string | null };
+          knownUsers.set(comment.userId, {
+            username: meta.author ?? comment.userId,
+            avatarUrl: meta.authorPhotoUrl ?? "",
+          });
+        }
+      }
+    }
+    const resolved: User[] = [];
+    for (const id of userIds) {
+      const known = knownUsers.get(id);
+      if (known) resolved.push({ id, ...known });
+      // Unknown: skip; BlockNote retries after the next subscribe callback fires.
+    }
+    return resolved;
+  };
+}
+
 // ─── Shared view + chrome ───────────────────────────────────────────────────
 
 function DocView(props: ResolvedProps & { editor: DocEditorInstance }) {
@@ -180,6 +257,8 @@ function DocView(props: ResolvedProps & { editor: DocEditorInstance }) {
     onReadyRef.current?.(editor);
   }, [editor]);
 
+  const hasComments = Boolean(props.comments);
+
   const menus: ReactNode = (
     <>
       {/* Custom "/" menu: defaults trimmed to the app command set + callout. */}
@@ -193,6 +272,12 @@ function DocView(props: ResolvedProps & { editor: DocEditorInstance }) {
           getItems={(query) => getMentionMenuItems(editor, query)}
         />
       )}
+      {/* Inline comment floating UI — only active when CommentsExtension is
+          wired (i.e. props.comments is set and mode is collab).
+          FloatingComposerController: new-thread composer floating above selection.
+          FloatingThreadController: selected-thread popover anchored to the mark. */}
+      {hasComments && <FloatingComposerController />}
+      {hasComments && <FloatingThreadController />}
     </>
   );
 
