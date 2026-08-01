@@ -198,6 +198,29 @@ html.dark .dali-doc .bn-thread-mark[data-orphan="true"] {
   pointer-events: auto;
 }
 
+/* Comment bodies and the "Add comment…" composer are NESTED BlockNote
+ * editors; without this reset they inherit the document's 6rem min-height
+ * (section 2), so a one-line comment renders with ~90px of empty space —
+ * the chunky floating popover. Covers threads anywhere inside .dali-doc and
+ * everything portaled into the floating root (thread popover + composer). */
+.dali-doc .bn-thread .bn-editor,
+.dali-doc .dali-doc-floating-root .bn-editor {
+  min-height: 0;
+}
+
+/* Floating thread popover (mark click outside the rail view): same compact
+ * card treatment as the rail cards — width/padding/gap override the shadcn
+ * Card slot utilities (w-[300px], py-6, gap-6). */
+.dali-doc-floating-root .bn-thread {
+  width: 340px;
+  padding-block: 12px;
+  gap: 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--color-border);
+  background-color: var(--color-card);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.1);
+}
+
 /* ThreadsSidebar portaled into the panel: reset BlockNote's sidebar defaults
  * that assume a fixed-width aside. The panel width is set by the panel itself. */
 #doc-comments-panel .bn-threads-sidebar,
