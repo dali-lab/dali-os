@@ -31,7 +31,9 @@ import { en } from "@blocknote/core/locales";
 import { CommentsExtension } from "@blocknote/core/comments";
 import type { User } from "@blocknote/core";
 import {
+  GridSuggestionMenuController,
   SuggestionMenuController,
+  getDefaultReactEmojiPickerItems,
   useCreateBlockNote,
   FloatingComposerController,
   FloatingThreadController,
@@ -88,6 +90,7 @@ function LocalDoc(props: ResolvedProps) {
       initialContent,
       dictionary,
       uploadFile: props.features.images ? uploadEditorImage : undefined,
+      tables: { splitCells: true, cellBackgroundColor: true, cellTextColor: true, headers: true },
     },
     [schema, dictionary],
   );
@@ -134,6 +137,7 @@ function CollabDocInner(
       schema,
       dictionary,
       uploadFile: props.features.images ? uploadEditorImage : undefined,
+      tables: { splitCells: true, cellBackgroundColor: true, cellTextColor: true, headers: true },
       // Wire CommentsExtension when a threadStore is available. Extensions are
       // passed through withCollaboration unchanged (see dist/yjs.js).
       ...(threadStore
@@ -330,6 +334,13 @@ function DocView(props: ResolvedProps & { editor: DocEditorInstance }) {
           getItems={(query) => getMentionMenuItems(editor, query)}
         />
       )}
+      {/* ":" emoji shortcode picker — GridSuggestionMenuController with 10
+          columns matches BlockNote's default emoji grid width. */}
+      <GridSuggestionMenuController
+        triggerCharacter=":"
+        getItems={(query) => getDefaultReactEmojiPickerItems(editor, query)}
+        columns={10}
+      />
       <FormattingToolbarController />
       {/* "Aa" popover: standard text options applying to the current
           selection/caret. Coexists with the floating toolbar. */}
@@ -415,7 +426,10 @@ function DocView(props: ResolvedProps & { editor: DocEditorInstance }) {
           theme={isDark ? "dark" : "light"}
           editable={props.editable ?? true}
           slashMenu={false}
-          emojiPicker={false}
+          // emojiPicker={false} removed — emoji shortcode suggestions are now
+          // handled by the GridSuggestionMenuController child above. The built-in
+          // emojiPicker prop on BlockNoteView controls a *separate* toolbar button;
+          // we leave it at its default (true) so the toolbar also exposes emoji.
           // Compact fields don't need the drag-handle side menu (and its wide
           // gutter — see .dali-doc--compact in theme.css).
           sideMenu={props.density !== "compact"}

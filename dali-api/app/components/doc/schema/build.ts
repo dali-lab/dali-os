@@ -17,6 +17,7 @@
 import {
   BlockNoteSchema,
   createCodeBlockSpec,
+  createHeadingBlockSpec,
   defaultBlockSpecs,
   defaultInlineContentSpecs,
 } from "@blocknote/core";
@@ -26,10 +27,22 @@ import { CalloutSpec } from "./callout";
 import { MentionSpec } from "./mention";
 import { signingInlineSpecs } from "./signing";
 
+// Heading spec with allowToggleHeadings=true enables Notion-style collapsible
+// headings (h1–h3 only; h4–h6 are excluded per Notion convention — the app
+// caps heading levels at 3, same as Notion, so this is a deliberate decision).
+// isToggleable is an optional block prop, so existing documents with plain
+// headings are unaffected; the server codec handles the prop transparently
+// (it's part of the heading block schema that defaultBlockSpecs.heading already
+// registers, just gated behind the option).
+const headingSpec = createHeadingBlockSpec({
+  levels: [1, 2, 3],
+  allowToggleHeadings: true,
+});
+
 function fullBlockSpecs() {
   return {
     paragraph: defaultBlockSpecs.paragraph,
-    heading: defaultBlockSpecs.heading,
+    heading: headingSpec,
     quote: defaultBlockSpecs.quote,
     bulletListItem: defaultBlockSpecs.bulletListItem,
     numberedListItem: defaultBlockSpecs.numberedListItem,
