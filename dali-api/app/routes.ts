@@ -541,4 +541,7 @@ export default [
   route("api/mentorship/templates", "mentorship/routes/api.mentorship.templates.ts"),
   route("api/mentorship/templates/:id", "mentorship/routes/api.mentorship.templates.$id.ts"),
   route("api/mentorship/pairs", "mentorship/routes/api.mentorship.pairs.ts"),
+
+  // AI document-writing assistant — requires ANTHROPIC_API_KEY to be active.
+  route("api/ai/doc", "routes/api.ai.doc.ts"),
 ] satisfies RouteConfig;

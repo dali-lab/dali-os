@@ -102,4 +102,10 @@ export interface DocEditorProps {
    * editor. The host (DocumentEditor) owns open/close state; toggling this
    * prop registers or unregisters the decoration plugin accordingly. */
   findOpen?: boolean;
+  /**
+   * When true, AI slash-menu items ("Ask AI…", etc.) appear in the "/" menu.
+   * Resolved server-side by checking ANTHROPIC_API_KEY; never shown when false.
+   * Only meaningful on surfaces with features "document" (full editable body).
+   */
+  aiEnabled?: boolean;
 }
