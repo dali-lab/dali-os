@@ -10,6 +10,8 @@ export interface Features {
   mentions?: boolean;
   /** Image block + paste/drop/file-panel upload to S3. */
   images?: boolean;
+  /** File + video blocks — doc attachments, embedded video player. */
+  files?: boolean;
   /** Rich extras: callout, table, toggle list — and their slash-menu items. */
   richBlocks?: boolean;
   /**
@@ -28,8 +30,8 @@ export const EDITOR_PRESETS: Record<EditorPresetName, Features> = {
   field: {}, // short structured input
   notes: { images: true }, // mentorship notes/templates, hiring notes
   agreement: { images: true, signing: true }, // signing document body
-  guide: { mentions: true, images: true }, // page-doc guides
-  document: { mentions: true, images: true, richBlocks: true }, // full document
+  guide: { mentions: true, images: true, files: true }, // page-doc guides
+  document: { mentions: true, images: true, files: true, richBlocks: true }, // full document
 };
 
 export function resolveFeatures(input: EditorPresetName | Features | undefined): Features {

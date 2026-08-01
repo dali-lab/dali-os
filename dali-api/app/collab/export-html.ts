@@ -126,6 +126,29 @@ function renderNode(node: PMNode): string {
       const widthStyle = typeof width === "number" && width > 0 ? ` style="width:${width}px"` : "";
       return `<img src="${src}" alt="${alt}"${alignAttr}${widthStyle} />`;
     }
+    case "file": {
+      // Render as a download link; fall back gracefully when no URL is stored.
+      const url = typeof node.attrs?.url === "string" ? node.attrs.url : "";
+      const name =
+        typeof node.attrs?.name === "string" && node.attrs.name
+          ? node.attrs.name
+          : url.split("/").pop() ?? "File";
+      const caption = typeof node.attrs?.caption === "string" ? node.attrs.caption : "";
+      if (!url) return "";
+      const label = escapeHtml(caption || name);
+      return `<p><a href="${escapeHtml(url)}" download="${escapeHtml(name)}">${label}</a></p>`;
+    }
+    case "video": {
+      // Render as a native <video> when a URL is present; degrade to a link
+      // when it is missing.
+      const url = typeof node.attrs?.url === "string" ? node.attrs.url : "";
+      const caption = typeof node.attrs?.caption === "string" ? node.attrs.caption : "";
+      if (!url) return "";
+      const captionHtml = caption
+        ? `<figcaption>${escapeHtml(caption)}</figcaption>`
+        : "";
+      return `<figure><video src="${escapeHtml(url)}" controls style="max-width:100%;border-radius:6px;"></video>${captionHtml}</figure>`;
+    }
     case "toggleBlock": {
       // First child may be a toggleSummary; the rest is the collapsible body.
       // Render as native <details> so it round-trips and stays interactive in

@@ -125,6 +125,9 @@ const calloutSpec = createBlockSpec(calloutConfig, {
   },
 })();
 
+// defaultBlockSpecs includes file and video (and audio, which the app never
+// uses but keeping it in the server schema is harmless — it ensures blocks
+// authored by external tools are preserved, not stripped on server read).
 export const serverSchema = BlockNoteSchema.create({
   blockSpecs: { ...defaultBlockSpecs, callout: calloutSpec },
   inlineContentSpecs: {

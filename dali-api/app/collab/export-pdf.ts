@@ -209,6 +209,49 @@ function renderBlock(doc: PDFKit.PDFDocument, block: DocBlock, listPrefix?: stri
       doc.moveDown(0.5);
       break;
     }
+    case "file": {
+      // Render as a link line — pdfkit supports `link` option on text().
+      const url = typeof block.props?.url === "string" ? block.props.url : "";
+      const name =
+        typeof block.props?.name === "string" && block.props.name
+          ? block.props.name
+          : url.split("/").pop() ?? "File";
+      const caption =
+        typeof block.props?.caption === "string" && block.props.caption
+          ? block.props.caption
+          : "";
+      const label = caption || name;
+      if (url) {
+        doc.font("Times-Roman").fontSize(12).fillColor("#1155cc");
+        doc.text(label, { link: url, underline: true });
+        doc.fillColor("#1a1a1a");
+      } else {
+        doc.font("Times-Italic").fontSize(11).fillColor("#555");
+        doc.text(`[File: ${label || "attachment"}]`);
+        doc.fillColor("#1a1a1a");
+      }
+      doc.moveDown(0.5);
+      break;
+    }
+    case "video": {
+      // PDFs cannot embed video; degrade to a link the same way image degrades
+      // to a placeholder.
+      const url = typeof block.props?.url === "string" ? block.props.url : "";
+      const caption =
+        typeof block.props?.caption === "string" && block.props.caption
+          ? block.props.caption
+          : "";
+      doc.font("Times-Italic").fontSize(11).fillColor("#555");
+      if (url) {
+        const label = caption ? `[Video: ${caption}]` : "[Video]";
+        doc.text(label, { link: url, underline: true });
+      } else {
+        doc.text(caption ? `[Video: ${caption}]` : "[Video]");
+      }
+      doc.fillColor("#1a1a1a");
+      doc.moveDown(0.5);
+      break;
+    }
     case "toggleListItem": {
       // Print the summary as a bold line, then the (always-expanded) body.
       doc.font("Helvetica-Bold").fontSize(12).fillColor("#1a1a1a");

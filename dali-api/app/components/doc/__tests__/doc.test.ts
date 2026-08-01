@@ -42,7 +42,8 @@ const sampleBlocks = [
 
 describe("resolveFeatures", () => {
   it("resolves preset names to the legacy preset shapes", () => {
-    expect(resolveFeatures("document")).toEqual({ mentions: true, images: true, richBlocks: true });
+    expect(resolveFeatures("document")).toEqual({ mentions: true, images: true, files: true, richBlocks: true });
+    expect(resolveFeatures("guide")).toEqual({ mentions: true, images: true, files: true });
     expect(resolveFeatures("agreement")).toEqual({ images: true, signing: true });
     expect(resolveFeatures("field")).toEqual({});
   });

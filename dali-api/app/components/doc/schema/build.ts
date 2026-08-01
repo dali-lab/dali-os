@@ -3,16 +3,17 @@
 // resolver for every surface keeps editor↔viewer parity structural: a node
 // type enabled on one side can't be forgotten on the other.
 //
-// Media blocks the app never had (audio/video/file) are excluded outright.
+// Audio is excluded (spec decision: "audio probably never").
 // codeBlock is registered through createCodeBlockSpec + @blocknote/code-block's
 // shiki bundle, so code blocks get syntax highlighting + a language picker.
 //
 // TYPE NOTE: the returned schema is always TYPED as the full schema (every
 // spec registered) while the runtime instance omits feature-gated specs
-// (image without `images`; table/toggle/callout without `richBlocks`; mention
-// without `mentions`; the signing family without `signing`). The static
-// superset keeps one stable DocBlock/DocPartialBlock type across the app;
-// the runtime subset is what actually validates/strips content.
+// (image without `images`; file/video without `files`;
+// table/toggle/callout without `richBlocks`; mention without `mentions`;
+// the signing family without `signing`). The static superset keeps one stable
+// DocBlock/DocPartialBlock type across the app; the runtime subset is what
+// actually validates/strips content.
 
 import {
   BlockNoteSchema,
@@ -37,6 +38,8 @@ function fullBlockSpecs() {
     codeBlock: createCodeBlockSpec(codeBlockOptions),
     divider: defaultBlockSpecs.divider,
     image: defaultBlockSpecs.image,
+    file: defaultBlockSpecs.file,
+    video: defaultBlockSpecs.video,
     table: defaultBlockSpecs.table,
     toggleListItem: defaultBlockSpecs.toggleListItem,
     callout: CalloutSpec,
@@ -59,6 +62,10 @@ export function buildSchema(features: Features = {}) {
   const blocks = blockSpecs as Record<string, unknown>;
   const inline = inlineContentSpecs as Record<string, unknown>;
   if (!features.images) delete blocks.image;
+  if (!features.files) {
+    delete blocks.file;
+    delete blocks.video;
+  }
   if (!features.richBlocks) {
     delete blocks.table;
     delete blocks.toggleListItem;
