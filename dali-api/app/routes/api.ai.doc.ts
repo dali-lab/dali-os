@@ -361,8 +361,11 @@ export async function action({ request }: Route.ActionArgs) {
 
       // Token usage seen so far — recorded in the finally so aborted and
       // fallback runs are counted too (the provider bills them regardless).
+      // streamedText mirrors what the client received, for the count_tokens
+      // recovery below.
       let usageIn = 0;
       let usageOut = 0;
+      let streamedText = "";
 
       const onAbort = () => {
         sdkStream?.abort();
@@ -390,6 +393,7 @@ export async function action({ request }: Route.ActionArgs) {
             event.type === "content_block_delta" &&
             event.delta.type === "text_delta"
           ) {
+            streamedText += event.delta.text;
             enqueue({ delta: event.delta.text });
           }
         }
@@ -423,6 +427,7 @@ export async function action({ request }: Route.ActionArgs) {
           // billed too.
           usageIn += fallbackMsg.usage?.input_tokens ?? 0;
           usageOut += fallbackMsg.usage?.output_tokens ?? 0;
+          streamedText += text;
           enqueue({ delta: text });
           enqueue({ done: true });
         } catch (fallbackErr) {
@@ -434,6 +439,33 @@ export async function action({ request }: Route.ActionArgs) {
         }
       } finally {
         request.signal.removeEventListener("abort", onAbort);
+        // The Dartmouth gateway streams real text but zeroes the usage
+        // fields on its Anthropic-compat streaming path, while its
+        // count_tokens endpoint returns real numbers (both verified live
+        // 2026-08-01). When a stream produced text but reported no usage,
+        // recover the counts post-stream: the request we sent → exact input;
+        // the text we received → output within a few tokens (message-framing
+        // overhead). First-party Anthropic always reports stream usage, so
+        // this never fires there.
+        if (usageIn <= 0 && usageOut <= 0 && streamedText.length > 0) {
+          try {
+            const [inCount, outCount] = await Promise.all([
+              provider.client.messages.countTokens({
+                model: provider.model,
+                system: SYSTEM_PROMPT,
+                messages,
+              }),
+              provider.client.messages.countTokens({
+                model: provider.model,
+                messages: [{ role: "user", content: streamedText }],
+              }),
+            ]);
+            usageIn = inCount.input_tokens ?? 0;
+            usageOut = outCount.input_tokens ?? 0;
+          } catch {
+            // Counting is best-effort — record zeros if the gateway can't.
+          }
+        }
         await recordTokenUsage(auth.user.sub, day, usageIn, usageOut);
         try {
           controller.close();
