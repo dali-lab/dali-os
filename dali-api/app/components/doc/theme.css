@@ -453,3 +453,177 @@ html.dark .dali-doc .bn-thread-mark[data-orphan="true"] {
     border-radius: 3px;
   }
 }
+
+/* ── 10. Find & Replace ──────────────────────────────────────────────────────
+ *
+ * Decorations painted by FindReplacePlugin (ProseMirror inline decorations).
+ * Uses accent-yellow (consistent with comment thread marks) for non-current
+ * matches and accent-teal for the current/active match — matches the
+ * selected-background token used elsewhere in the theme.
+ */
+
+/* All match highlights */
+.dali-find-match {
+  background-color: color-mix(in srgb, var(--color-accent-yellow, #eab308) 35%, transparent);
+  border-radius: 2px;
+  padding-block: 1px;
+}
+
+/* Active (current) match — distinctly different from the others */
+.dali-find-match--current {
+  background-color: color-mix(in srgb, var(--color-accent-teal, #0d9488) 40%, transparent);
+  border-radius: 2px;
+  outline: 1px solid color-mix(in srgb, var(--color-accent-teal, #0d9488) 70%, transparent);
+}
+
+html.dark .dali-find-match {
+  background-color: color-mix(in srgb, var(--color-accent-yellow, #ca8a04) 28%, transparent);
+}
+
+html.dark .dali-find-match--current {
+  background-color: color-mix(in srgb, var(--color-accent-teal, #0d9488) 35%, transparent);
+}
+
+/* Find & Replace bar — floats at top-right of the body area (position:absolute
+ * on the .relative wrapper in DocumentEditor). Similar altitude to the Aa popover. */
+.dali-find-bar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 25;
+  background-color: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-brand-2, 0 4px 16px rgb(0 0 0 / 0.12));
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 320px;
+  max-width: 420px;
+}
+
+.dali-find-bar__row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Expand/collapse toggle button */
+.dali-find-bar__toggle {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: calc(var(--radius) - 2px);
+  color: var(--color-muted-foreground);
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.dali-find-bar__toggle:hover {
+  background-color: var(--color-muted);
+  color: var(--color-foreground);
+}
+
+/* Search / replace input */
+.dali-find-bar__input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  font-size: 13px;
+  line-height: 1;
+  background-color: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: calc(var(--radius) - 2px);
+  color: var(--color-foreground);
+  outline: none;
+  transition: border-color 120ms ease;
+}
+
+.dali-find-bar__input:focus {
+  border-color: var(--color-accent-teal, #0d9488);
+}
+
+.dali-find-bar__input--replace {
+  /* Same visual; separate class for replace row layout adjustments. */
+}
+
+/* "n of m" count */
+.dali-find-bar__count {
+  flex: none;
+  font-size: 11px;
+  color: var(--color-muted-foreground);
+  white-space: nowrap;
+  min-width: 54px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Prev/next navigation buttons */
+.dali-find-bar__nav {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: calc(var(--radius) - 2px);
+  color: var(--color-muted-foreground);
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.dali-find-bar__nav:hover:not(:disabled) {
+  background-color: var(--color-muted);
+  color: var(--color-foreground);
+}
+
+.dali-find-bar__nav:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Close (X) button */
+.dali-find-bar__close {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: calc(var(--radius) - 2px);
+  color: var(--color-muted-foreground);
+  margin-left: 2px;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.dali-find-bar__close:hover {
+  background-color: var(--color-muted);
+  color: var(--color-foreground);
+}
+
+/* Replace row action buttons */
+.dali-find-bar__action {
+  flex: none;
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: calc(var(--radius) - 2px);
+  background-color: var(--color-muted);
+  color: var(--color-foreground);
+  white-space: nowrap;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.dali-find-bar__action:hover:not(:disabled) {
+  background-color: var(--color-accent);
+  border-color: var(--color-accent-teal, #0d9488);
+}
+
+.dali-find-bar__action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

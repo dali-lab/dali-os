@@ -98,4 +98,8 @@ export interface DocEditorProps {
    * stays active regardless. */
   formatPopoverTargetId?: string;
   formatPopoverOpen?: boolean;
+  /** When true, the find/replace ProseMirror plugin is registered on the
+   * editor. The host (DocumentEditor) owns open/close state; toggling this
+   * prop registers or unregisters the decoration plugin accordingly. */
+  findOpen?: boolean;
 }

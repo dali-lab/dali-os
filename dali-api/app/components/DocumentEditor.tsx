@@ -8,7 +8,7 @@ import {
   type RefObject,
 } from "react";
 import { useNavigate, useRevalidator } from "react-router";
-import { Copy, FileDown, History, LayoutTemplate, Link, MessageSquare, MoreHorizontal, Printer, Upload } from "lucide-react";
+import { Copy, FileDown, History, LayoutTemplate, Link, MessageSquare, MoreHorizontal, Printer, Search, Upload } from "lucide-react";
 import { DocEditor, type TocHeading } from "~/components/doc";
 import type { DocEditorInstance } from "~/components/doc/schema/build";
 import { DocCommentsPanel, useDocThreadCounts } from "~/components/doc/comments";
@@ -21,6 +21,7 @@ import { PageIconPicker } from "./doc-chrome/PageIconPicker";
 import { PageCover } from "./doc-chrome/PageCover";
 import { DocToc } from "./doc-chrome/DocToc";
 import { relativeTime } from "~/lib/relative-time";
+import { FindReplaceBar } from "./doc/find";
 
 // Reusable, abstract document surface: a Notion-style large title, a
 // collaborative rich-text body, lab tags, doc-level comments, and PDF/Word
@@ -109,6 +110,13 @@ export function DocumentEditor({
   const [templateMarked, setTemplateMarked] = useState(isTemplate);
   const [backlinksOpen, setBacklinksOpen] = useState(false);
   const backlinksRef = useRef<HTMLDivElement | null>(null);
+  // Find & replace bar state.
+  const [findOpen, setFindOpen] = useState(false);
+  const [findInitialQuery, setFindInitialQuery] = useState("");
+  // Live editor instance captured via onEditorReady — needed to pass to FindReplaceBar.
+  // Using `any` here keeps this file free of BlockNote type imports.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const liveEditorRef = useRef<any>(null);
   const commentsBubbleRef = useRef<HTMLDivElement | null>(null);
   const [locallyEdited, setLocallyEdited] = useState(false);
   // "Aa" formatting popover (replaced the static-toolbar toggle). Stays open
@@ -136,6 +144,38 @@ export function DocumentEditor({
       document.removeEventListener("keydown", onKey);
     };
   }, [formatOpen]);
+
+  // ⌘F / Ctrl-F — open find bar when focus is inside the doc surface.
+  // We attach to the document-level keydown so it fires regardless of which
+  // child element has focus, but only when the event target is inside the
+  // doc surface (bodyRef or its ancestors in this component).
+  const docSurfaceRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const onKeyDown = (e: globalThis.KeyboardEvent) => {
+      const isMod = e.metaKey || e.ctrlKey;
+      if (!isMod || e.key !== "f") return;
+      // Only intercept when the focused element is inside the doc surface.
+      const surface = docSurfaceRef.current;
+      if (!surface) return;
+      const active = document.activeElement;
+      // The doc surface itself, the title, or the editor body.
+      if (!surface.contains(active)) return;
+      e.preventDefault();
+      // Pre-fill with the editor's current text selection if any.
+      let selText = "";
+      const view = liveEditorRef.current?.prosemirrorView;
+      if (view) {
+        const { from, to } = view.state.selection;
+        if (from !== to) {
+          selText = view.state.doc.textBetween(from, to);
+        }
+      }
+      setFindInitialQuery(selText);
+      setFindOpen(true);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   const { open: openThreadCount } = useDocThreadCounts(pageId);
 
@@ -520,6 +560,14 @@ export function DocumentEditor({
         </button>
         {moreMenuOpen && (
           <div className="absolute right-0 z-30 mt-1 w-52 rounded-md border border-border bg-card p-1 shadow-brand-2 text-sm">
+            <button
+              type="button"
+              onClick={() => { setFindInitialQuery(""); setFindOpen(true); setMoreMenuOpen(false); }}
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-muted"
+            >
+              <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              Find &amp; replace
+            </button>
             {collabToken && (
               <button
                 type="button"
@@ -765,7 +813,18 @@ export function DocumentEditor({
           />
 
           {/* Body */}
-          <div className="mt-4" ref={bodyRef}>
+          <div className="mt-4 relative" ref={bodyRef}>
+            {/* Find & replace bar: floats at the top-right of the document area,
+                above the editor, below the top bar. Unmounted when closed so
+                cleanup decorations fire via the FindReplaceBar unmount effect. */}
+            {findOpen && liveEditorRef.current && (
+              <FindReplaceBar
+                editor={liveEditorRef.current}
+                canEdit={canEdit}
+                onClose={() => setFindOpen(false)}
+                initialQuery={findInitialQuery}
+              />
+            )}
             {collabToken ? (
               <DocEditor
                 features="document"
@@ -793,6 +852,8 @@ export function DocumentEditor({
                 }}
                 formatPopoverOpen={formatOpen}
                 formatPopoverTargetId="doc-format-popover"
+                findOpen={findOpen}
+                onEditorReady={(ed) => { liveEditorRef.current = ed; }}
                 onWordCountChange={setWordCount}
                 onHeadingsChange={setHeadings}
                 onChange={() => setLocallyEdited(true)}
@@ -837,7 +898,7 @@ export function DocumentEditor({
   );
 
   const body = (
-    <div className="doc-surface flex flex-col min-h-screen">
+    <div ref={docSurfaceRef} className="doc-surface flex flex-col min-h-screen">
       {topBar}
       {canvas}
       {versionHistory}

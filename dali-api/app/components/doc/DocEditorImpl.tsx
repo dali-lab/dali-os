@@ -58,6 +58,7 @@ import { DaliThreadStore, getOrCreateStore, resolveDocUsers } from "./comments/D
 import { DocEditorFallback } from "./DocEditor";
 import { DaliSideMenuController } from "./DocSideMenu";
 import { resolveFeatures, type Features } from "./features";
+import { createFindReplacePlugin } from "./find";
 import { buildSchema, type DocEditorInstance, type DocPartialBlock } from "./schema/build";
 import { BLOCKNOTE_FRAGMENT } from "./schema/configs";
 import { getMentionMenuItems } from "./schema/mention";
@@ -372,6 +373,24 @@ function DocView(
     dom.addEventListener("focus", onFocus, true);
     return () => dom.removeEventListener("focus", onFocus, true);
   }, [editor]);
+
+  // Register/unregister the find-replace PM plugin when findOpen toggles.
+  // We create a new plugin instance each time so plugin state is fresh.
+  const FIND_REPLACE_KEY = "dali-find-replace-ext";
+  useEffect(() => {
+    if (!props.findOpen) {
+      editor.unregisterExtension(FIND_REPLACE_KEY);
+      return;
+    }
+    editor.registerExtension({
+      key: FIND_REPLACE_KEY,
+      prosemirrorPlugins: [createFindReplacePlugin()],
+    });
+    return () => {
+      editor.unregisterExtension(FIND_REPLACE_KEY);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor, props.findOpen]);
 
   const hasComments = Boolean(props.comments);
   const panelOpen = props.comments?.panelOpen ?? false;
