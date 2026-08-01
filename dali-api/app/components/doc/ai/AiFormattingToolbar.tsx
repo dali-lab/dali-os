@@ -8,6 +8,7 @@
 // because the selection is cleared as soon as focus moves to the AiBar input.
 
 import React from "react";
+import { AiSparkleIcon } from "./AiSparkleIcon";
 import {
   FormattingToolbar,
   useBlockNoteEditor,
@@ -70,7 +71,8 @@ function AiToolbarButton({
   return (
     <Components.FormattingToolbar.Button
       mainTooltip="Edit with AI"
-      label="✦"
+      label="Edit with AI"
+      icon={<AiSparkleIcon size={14} />}
       onClick={handleClick}
     />
   );

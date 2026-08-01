@@ -36,6 +36,8 @@ interface AiCardHostProps extends AiBarProps {
    *  Passed to BlockPopover so the floating card portals into the editor subtree
    *  (same fix as FloatingComposerController/FloatingThreadController). */
   portalElement: HTMLElement | null;
+  /** Called when the AI writes into a new block — updates the anchor position. */
+  onAnchorChange?: (blockId: string) => void;
 }
 
 export function AiCardHost({
@@ -43,6 +45,7 @@ export function AiCardHost({
   dialog,
   portalElement,
   onClose,
+  onAnchorChange,
   ...barProps
 }: AiCardHostProps) {
   const cardRef = useRef<HTMLDivElement>(null);
@@ -122,10 +125,10 @@ export function AiCardHost({
       focusManagerProps={{ disabled: true }}
       elementProps={{ style: { zIndex: 50 } }}
     >
-      {/* Card chrome */}
+      {/* Sizing wrapper only — AiBar's individual cards provide their own chrome. */}
       <div
         ref={cardRef}
-        className="bg-card border border-border rounded-lg shadow-brand-2 w-[min(560px,90vw)] p-4"
+        className="w-[min(680px,90vw)] py-2 px-2"
       >
         <AiBar
           ref={aiBarRef}
@@ -133,6 +136,7 @@ export function AiCardHost({
           onClose={handleClose}
           dialog={dialog}
           onHasResultChange={handleHasResultChange}
+          onAnchorChange={onAnchorChange}
         />
       </div>
     </BlockPopover>

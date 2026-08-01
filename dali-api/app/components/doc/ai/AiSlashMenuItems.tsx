@@ -7,6 +7,7 @@ import React from "react";
 import type { DefaultReactSuggestionItem } from "@blocknote/react";
 import type { DocEditorInstance } from "../schema/build";
 import type { AiBarConfig } from "./AiBar";
+import { AiSparkleIcon } from "./AiSparkleIcon";
 
 // DefaultReactSuggestionItem's type omits `key` but runtime objects carry it —
 // same pattern as slash-menu.tsx.
@@ -100,16 +101,6 @@ export function isCursorBlockEmpty(editor: DocEditorInstance): boolean {
   );
 }
 
-// ── Icon ──────────────────────────────────────────────────────────────────────
-
-function AiIcon() {
-  return (
-    <span style={{ fontSize: 16, lineHeight: 1, userSelect: "none" }} aria-hidden>
-      ✦
-    </span>
-  );
-}
-
 // ── Hook: provides the single AI item for SuggestionMenuController ────────────
 
 export function useAiSlashMenuItems(
@@ -125,7 +116,7 @@ export function useAiSlashMenuItems(
     subtext: "Open the AI writing assistant",
     aliases: ["ai", "ask", "gpt", "write"],
     group: AI_GROUP,
-    icon: <AiIcon />,
+    icon: <AiSparkleIcon size={16} />,
     onItemClick: () => {
       // Capture cursor state synchronously before the menu closes.
       const cursorBlock = editor.getTextCursorPosition().block;

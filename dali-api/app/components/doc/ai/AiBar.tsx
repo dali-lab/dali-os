@@ -1,8 +1,8 @@
 // AiBar — streaming inline AI writing assistant.
 //
 // Replaces AiPanel. Lives inside AiCardHost (BlockPopover) or a Modal fallback.
-// Drives the full lifecycle: idle (input + suggestions) → streaming (deltas
-// applied into the document live) → result (Accept / Revert / follow-up).
+// Drives the full lifecycle: idle (input + suggestions) → streaming (compact
+// status strip) → result (Accept / Revert / follow-up).
 //
 // Key contracts:
 //   - The client composes context INTO the instruction string before sending, so
@@ -10,7 +10,8 @@
 //   - replaceBlocks returns {insertedBlocks} — IDs come from insertedBlocks.map(b=>b.id).
 //   - insertBlocks returns Block[] — IDs come from result.map(b=>b.id).
 //   - tryParseMarkdownToBlocks is synchronous.
-//   - The AI cursor plugin is registered while streaming and unregistered on stop/done.
+//   - The AI cursor plugin stays registered through result phase (highlight persists);
+//     unregistered only on Accept, Revert, or unmount.
 
 import React, {
   useCallback,
@@ -20,7 +21,17 @@ import React, {
   useState,
   forwardRef,
 } from "react";
-import { buttonClasses } from "~/components/ui/Button";
+import {
+  PenLine,
+  ListChecks,
+  Languages,
+  CornerDownLeft,
+  Undo2,
+  WandSparkles,
+  Check,
+  Minimize2,
+  AlignLeft,
+} from "lucide-react";
 import type { DocEditorInstance, DocPartialBlock } from "../schema/build";
 import type { DialogApi } from "~/components/ui/dialog";
 import {
@@ -33,7 +44,13 @@ import {
 } from "./AiSlashMenuItems";
 import { streamAi } from "./stream";
 import { createStreamApplyEngine } from "./stream-apply";
-import { createAiCursorPlugin, findBlockEndPos, aiCursorKey } from "./AiCursorPlugin";
+import {
+  createAiCursorPlugin,
+  findBlockEndPos,
+  aiCursorKey,
+  updateAiPluginState,
+} from "./AiCursorPlugin";
+import { AiSparkleIcon } from "./AiSparkleIcon";
 
 // ── Config / Props ────────────────────────────────────────────────────────────
 
@@ -54,6 +71,8 @@ export interface AiBarProps {
   onHasResultChange?: (has: boolean) => void;
   /** Dialog API for the Escape→discard-confirm flow (result state). */
   dialog?: DialogApi;
+  /** Called when the anchor block changes during streaming (dynamic anchor). */
+  onAnchorChange?: (blockId: string) => void;
 }
 
 export interface AiBarHandle {
@@ -129,20 +148,18 @@ export function buildFreeTextInstruction(
 
 type Phase = "idle" | "streaming" | "result";
 
-// ── Suggestion list ───────────────────────────────────────────────────────────
+// ── Suggestion type ───────────────────────────────────────────────────────────
 
-function AiIcon() {
-  return (
-    <span style={{ fontSize: 14, lineHeight: 1, userSelect: "none" }} aria-hidden>
-      ✦
-    </span>
-  );
-}
+type SuggestionEntry = {
+  label: string;
+  action: () => void;
+  Icon: React.ComponentType<{ size?: number; className?: string }>;
+};
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export const AiBar = forwardRef<AiBarHandle, AiBarProps>(function AiBar(
-  { editor, config, onClose, toastInfo, toastError, onHasResultChange, dialog },
+  { editor, config, onClose, toastInfo, toastError, onHasResultChange, dialog, onAnchorChange },
   ref,
 ) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -193,11 +210,17 @@ export const AiBar = forwardRef<AiBarHandle, AiBarProps>(function AiBar(
     if (!blockIds.length) return;
     const lastId = blockIds[blockIds.length - 1];
     const pos = findBlockEndPos(editor, lastId);
-    if (pos < 0) return;
     const view = editor.prosemirrorView;
     if (!view) return;
-    const tr = view.state.tr.setMeta(aiCursorKey, { pos });
-    view.dispatch(tr);
+    // Update both cursor position and pending block highlight set.
+    updateAiPluginState(view, {
+      ...(pos >= 0 ? { pos } : {}),
+      pendingBlockIds: blockIds,
+    });
+    // Notify parent of the new anchor block for dynamic card positioning.
+    if (blockIds.length > 0) {
+      onAnchorChange?.(blockIds[blockIds.length - 1]);
+    }
   }
 
   // ── Snapshot capture ─────────────────────────────────────────────────────
@@ -236,11 +259,16 @@ export const AiBar = forwardRef<AiBarHandle, AiBarProps>(function AiBar(
   const stopStream = useCallback((engineAccumulated: string, engineBlockIds: string[]) => {
     abortRef.current?.abort();
     abortRef.current = null;
-    unregisterCursorPlugin();
+    // Keep plugin registered — highlight persists into result phase.
+    // Just clear the caret pos.
+    const view = editor.prosemirrorView;
+    if (view) {
+      updateAiPluginState(view, { pos: -1 });
+    }
     setAiBlockIds(engineBlockIds);
     setAccumulated(engineAccumulated);
     setPhase("result");
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [editor]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Stable ref for stopStream callback so engine closures can call it.
   const stopStreamRef = useRef(stopStream);
@@ -301,7 +329,11 @@ export const AiBar = forwardRef<AiBarHandle, AiBarProps>(function AiBar(
       onDone: () => {
         engine.onDone();
         if (!controller.signal.aborted) {
-          unregisterCursorPlugin();
+          // Keep plugin registered — highlight persists. Just clear the caret.
+          const view = editor.prosemirrorView;
+          if (view) {
+            updateAiPluginState(view, { pos: -1 });
+          }
           setAiBlockIds(engine.aiBlockIds);
           setAccumulated(engine.accumulated);
           setPhase("result");
@@ -309,16 +341,22 @@ export const AiBar = forwardRef<AiBarHandle, AiBarProps>(function AiBar(
       },
       onError: (msg) => {
         engine.finalize();
-        unregisterCursorPlugin();
         if (!controller.signal.aborted) {
-          toastError(msg);
-          // If we already put content in the document, show result (so user can revert).
-          if (engine.aiBlockIds.length > 0) {
+          // On error with no content: unregister immediately.
+          if (engine.aiBlockIds.length === 0) {
+            unregisterCursorPlugin();
+            toastError(msg);
+            setPhase("idle");
+          } else {
+            // Has partial content: keep highlight, clear caret, show result.
+            const view = editor.prosemirrorView;
+            if (view) {
+              updateAiPluginState(view, { pos: -1 });
+            }
+            toastError(msg);
             setAiBlockIds(engine.aiBlockIds);
             setAccumulated(engine.accumulated);
             setPhase("result");
-          } else {
-            setPhase("idle");
           }
         }
       },
@@ -424,7 +462,7 @@ export const AiBar = forwardRef<AiBarHandle, AiBarProps>(function AiBar(
   // ── Accept ───────────────────────────────────────────────────────────────
 
   function handleAccept() {
-    // AI blocks are already in the document. Just clear state and close.
+    unregisterCursorPlugin();
     originalSnapshotRef.current = null;
     onClose();
   }
@@ -432,19 +470,22 @@ export const AiBar = forwardRef<AiBarHandle, AiBarProps>(function AiBar(
   // ── Revert and close ─────────────────────────────────────────────────────
 
   const handleRevertAndClose = useCallback(async () => {
+    unregisterCursorPlugin();
     doRevert();
     onClose();
-  }, [doRevert, onClose]);
+  }, [doRevert, onClose]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Escape ───────────────────────────────────────────────────────────────
 
   const handleEscape = useCallback(async () => {
     if (phase === "streaming") {
-      // Stop the stream; keep partial content; move to result.
+      // Stop the stream; keep partial content + highlight; clear caret; move to result.
       abortRef.current?.abort();
       abortRef.current = null;
-      unregisterCursorPlugin();
-      // Phase will have been set by onDone/onError callbacks; force result if still streaming.
+      const view = editor.prosemirrorView;
+      if (view) {
+        updateAiPluginState(view, { pos: -1 });
+      }
       setPhase((p) => (p === "streaming" ? "result" : p));
     } else if (phase === "result") {
       // Confirm before discarding.
@@ -465,7 +506,7 @@ export const AiBar = forwardRef<AiBarHandle, AiBarProps>(function AiBar(
       // Idle — just close.
       onClose();
     }
-  }, [phase, dialog, handleRevertAndClose, onClose]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [phase, dialog, handleRevertAndClose, onClose, editor]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Imperative handle (used by AiCardHost for Escape + outside-click) ───
 
@@ -502,10 +543,10 @@ export const AiBar = forwardRef<AiBarHandle, AiBarProps>(function AiBar(
 
   const isSelection = (config.selectionBlockIds?.length ?? 0) > 0;
 
-  const suggestions: { label: string; action: () => void }[] = isSelection
+  const suggestions: SuggestionEntry[] = isSelection
     ? [
-        { label: "Improve Writing", action: () => void runTemplate("improve") },
-        { label: "Fix Spelling & Grammar", action: () => void runTemplate("fix-spelling") },
+        { label: "Improve Writing", action: () => void runTemplate("improve"), Icon: WandSparkles },
+        { label: "Fix Spelling & Grammar", action: () => void runTemplate("fix-spelling"), Icon: Check },
         {
           label: "Translate…",
           action: () => {
@@ -518,18 +559,20 @@ export const AiBar = forwardRef<AiBarHandle, AiBarProps>(function AiBar(
               }
             }, 0);
           },
+          Icon: Languages,
         },
-        { label: "Simplify", action: () => void runTemplate("simplify") },
+        { label: "Simplify", action: () => void runTemplate("simplify"), Icon: Minimize2 },
       ]
     : [
-        { label: "Continue Writing", action: () => void runTemplate("continue") },
-        { label: "Summarize", action: () => void runTemplate("summarize") },
-        { label: "Add Action Items", action: () => void runTemplate("action-items") },
+        { label: "Continue Writing", action: () => void runTemplate("continue"), Icon: PenLine },
+        { label: "Summarize", action: () => void runTemplate("summarize"), Icon: AlignLeft },
+        { label: "Add Action Items", action: () => void runTemplate("action-items"), Icon: ListChecks },
         {
           label: "Write Anything…",
           action: () => {
             setTimeout(() => inputRef.current?.focus(), 0);
           },
+          Icon: PenLine,
         },
       ];
 
@@ -538,12 +581,6 @@ export const AiBar = forwardRef<AiBarHandle, AiBarProps>(function AiBar(
   const isIdle = phase === "idle";
   const isStreaming = phase === "streaming";
   const isResult = phase === "result";
-
-  const inputPlaceholder = isResult
-    ? "Respond to edit…"
-    : isSelection
-      ? "Ask AI to transform selection…"
-      : "Ask AI to write or edit…";
 
   function handleInputKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -563,108 +600,103 @@ export const AiBar = forwardRef<AiBarHandle, AiBarProps>(function AiBar(
     }
   }
 
-  return (
-    <div className="flex flex-col gap-3">
-      {/* Header row: sparkle icon + status */}
-      <div className="flex items-center gap-2">
-        <span className="text-accent-coral" aria-hidden>
-          ✦
-        </span>
-        <span className="text-sm font-medium text-foreground">
-          {isStreaming ? "Writing…" : isResult ? "Review AI response" : "AI Writing Assistant"}
-        </span>
-        {isStreaming && (
-          <span
-            className="ml-auto inline-block h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent text-muted-foreground"
-            aria-hidden
-          />
-        )}
+  // ── Streaming: compact status strip ─────────────────────────────────────
+
+  if (isStreaming) {
+    return (
+      <div className="flex items-center gap-2 px-1">
+        <AiSparkleIcon size={14} className="text-violet-500 shrink-0" />
+        <span className="text-sm text-muted-foreground flex-1">Editing…</span>
+        <button
+          type="button"
+          onClick={() => {
+            abortRef.current?.abort();
+            abortRef.current = null;
+            const view = editor.prosemirrorView;
+            if (view) {
+              updateAiPluginState(view, { pos: -1 });
+            }
+            setPhase("result");
+          }}
+          className="text-xs text-muted-foreground hover:text-foreground transition-colors px-1 py-0.5 rounded"
+        >
+          Stop
+        </button>
       </div>
+    );
+  }
 
-      {/* Suggestion chips — only in idle */}
-      {isIdle && (
-        <div className="flex flex-wrap gap-1.5">
-          {suggestions.map((s) => (
-            <button
-              key={s.label}
-              type="button"
-              onClick={s.action}
-              className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/50 px-2.5 py-1 text-xs text-foreground hover:bg-muted transition-colors"
-            >
-              <AiIcon />
-              {s.label}
-            </button>
-          ))}
-        </div>
-      )}
+  // ── Idle / Result: two-card stack ────────────────────────────────────────
 
-      {/* Input row */}
-      <div className="flex items-center gap-2">
+  return (
+    <div className="flex flex-col gap-1.5">
+      {/* Card 1: Input */}
+      <div className="flex items-center gap-2 bg-card border border-border rounded-xl shadow-sm px-4 py-3">
+        <AiSparkleIcon size={16} className="text-muted-foreground shrink-0" />
         <input
           ref={inputRef}
           type="text"
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           onKeyDown={handleInputKeyDown}
-          placeholder={inputPlaceholder}
-          disabled={isStreaming}
-          className="flex-1 min-w-0 rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-coral/30 focus-visible:ring-offset-2 disabled:opacity-50"
+          placeholder={
+            isResult
+              ? "Respond to the edit…"
+              : isSelection
+                ? "Ask AI to transform selection…"
+                : "Ask AI anything…"
+          }
+          className="flex-1 min-w-0 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
           autoFocus
         />
-        {isIdle && inputValue.trim() && (
+        {inputValue.trim() && (
           <button
             type="button"
-            onClick={() => void runFreeText(inputValue.trim())}
-            className={buttonClasses("primary", "sm")}
+            onClick={() =>
+              isResult ? void runFollowUp(inputValue.trim()) : void runFreeText(inputValue.trim())
+            }
+            className="shrink-0 flex items-center justify-center w-6 h-6 rounded-md bg-foreground text-background hover:bg-foreground/90 transition-colors"
+            aria-label="Submit"
           >
-            Run
-          </button>
-        )}
-        {isResult && inputValue.trim() && (
-          <button
-            type="button"
-            onClick={() => void runFollowUp(inputValue.trim())}
-            className={buttonClasses("secondary", "sm")}
-          >
-            Send
+            <CornerDownLeft size={12} />
           </button>
         )}
       </div>
 
-      {/* Footer buttons — result or streaming */}
-      {(isResult || isStreaming) && (
-        <div className="flex items-center justify-end gap-2">
-          {isStreaming && (
-            <button
-              type="button"
-              onClick={() => {
-                abortRef.current?.abort();
-                abortRef.current = null;
-                unregisterCursorPlugin();
-                setPhase("result");
-              }}
-              className={buttonClasses("secondary", "sm")}
-            >
-              Stop
-            </button>
-          )}
-          {isResult && (
+      {/* Card 2: suggestions (idle) or accept/revert (result) */}
+      {(isIdle || isResult) && (
+        <div className="self-start min-w-[200px] bg-card border border-border rounded-lg shadow-sm overflow-hidden">
+          {isResult ? (
             <>
               <button
                 type="button"
-                onClick={() => void handleRevertAndClose()}
-                className={buttonClasses("secondary", "sm")}
+                onClick={handleAccept}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors text-left"
               >
-                Revert
+                <Check size={14} className="text-green-600 shrink-0" />
+                Accept
               </button>
               <button
                 type="button"
-                onClick={handleAccept}
-                className={buttonClasses("primary", "sm")}
+                onClick={() => void handleRevertAndClose()}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors text-left"
               >
-                Accept
+                <Undo2 size={14} className="text-muted-foreground shrink-0" />
+                Revert
               </button>
             </>
+          ) : (
+            suggestions.map((s) => (
+              <button
+                key={s.label}
+                type="button"
+                onClick={s.action}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors text-left"
+              >
+                <s.Icon size={14} className="text-muted-foreground shrink-0" />
+                {s.label}
+              </button>
+            ))
           )}
         </div>
       )}

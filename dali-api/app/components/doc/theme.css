@@ -628,15 +628,57 @@ html.dark .dali-find-match--current {
   cursor: not-allowed;
 }
 
-/* ── 11. AI streaming cursor ─────────────────────────────────────────────────
- * Widget decoration injected by AiCursorPlugin while content is streaming.
- * Reuses the collab caret classes so it looks like a collaborator named "AI"
- * is typing. The --bn-user-color CSS variable drives the caret/label color;
- * we set it to violet-500 (#8b5cf6) on the base element via the plugin.
- *
- * The "AI" label should always be visible (BlockNote's showCursorLabels="activity"
- * hides labels when inactive; the AI cursor should always show its label).
+/* ── 11. AI streaming caret + pending-content highlight ──────────────────────
+ * AiCursorPlugin injects these decorations. All styles are self-contained —
+ * no dependency on BlockNote's collab-cursor classes.
  */
-.dali-doc .dali-ai-cursor .bn-collaboration-cursor__label {
-  opacity: 1 !important;
+
+/* Pending-content highlight: applied as a NODE decoration (class on .bn-block)
+ * while AI has written content and the user hasn't yet accepted/reverted. */
+.dali-doc .dali-ai-pending {
+  background-color: color-mix(in srgb, #8b5cf6 8%, transparent);
+  border-radius: 4px;
+  transition: background-color 200ms ease;
+}
+
+/* AI caret: inline widget at the write head. */
+.dali-doc .dali-ai-caret {
+  display: inline;
+  position: relative;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* The 2px vertical bar */
+.dali-doc .dali-ai-caret__bar {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background-color: #8b5cf6;
+  vertical-align: text-bottom;
+  border-radius: 1px;
+  animation: dali-ai-caret-blink 1s step-start infinite;
+}
+
+@keyframes dali-ai-caret-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* "AI" chip above the caret */
+.dali-doc .dali-ai-caret__chip {
+  position: absolute;
+  bottom: calc(1em + 2px);
+  left: 0;
+  background-color: #8b5cf6;
+  color: #ffffff;
+  font-size: 9px;
+  font-family: var(--font-sans);
+  font-weight: 600;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 3px;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
 }

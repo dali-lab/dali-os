@@ -273,14 +273,23 @@ function DocView(
   const [aiSession, setAiSession] = useState<AiBarConfig | null>(null);
   const aiPanelTitleId = useId();
 
-  // Anchor block id for the inline card: slash origin → cursorBlockId;
-  // toolbar origin → last id in selectionBlockIds (card sits below selection).
+  // Dynamic anchor: updated as AI writes into new blocks so the card follows.
+  const [dynamicAnchorId, setDynamicAnchorId] = useState<string | undefined>(undefined);
+  const handleAnchorChange = useCallback((id: string) => setDynamicAnchorId(id), []);
+
+  // Reset dynamic anchor when the session closes.
+  useEffect(() => {
+    if (!aiSession) setDynamicAnchorId(undefined);
+  }, [aiSession]);
+
+  // Anchor block id for the inline card: dynamic anchor (set while streaming)
+  // takes priority; falls back to the session's static origin block.
   // null/undefined → fall back to Modal host so the session isn't lost.
-  const anchorBlockId: string | undefined = aiSession
+  const anchorBlockId: string | undefined = dynamicAnchorId ?? (aiSession
     ? (aiSession.origin === "slash"
         ? (aiSession.cursorBlockId ?? undefined)
         : (aiSession.selectionBlockIds?.[aiSession.selectionBlockIds.length - 1] ?? undefined))
-    : undefined;
+    : undefined);
 
   // Stable callback: opening a session clears any prior one (there's only ever
   // one AI bar open at a time; a previous in-flight request is aborted by
@@ -603,7 +612,7 @@ function DocView(
           case where anchorBlockId is undefined (deleted block, edge case). */}
       {aiSession && anchorBlockId && (
         <AiCardHost
-          key={anchorBlockId}
+          key="ai-card"
           anchorBlockId={anchorBlockId}
           editor={editor}
           config={aiSession}
@@ -612,6 +621,7 @@ function DocView(
           toastError={(m) => toast.error(m)}
           dialog={dialog}
           portalElement={floatingRootRef.current}
+          onAnchorChange={handleAnchorChange}
         />
       )}
     </>
