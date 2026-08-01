@@ -37,12 +37,16 @@ function postReq(body: unknown): Request {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(requireAuth).mockResolvedValue(AUTH_OK);
-  // Ensure key is unset by default — tests that need it set it explicitly.
+  // Ensure keys are unset by default — tests that need one set it explicitly.
   delete process.env.ANTHROPIC_API_KEY;
+  delete process.env.DARTMOUTH_CHAT_API_KEY;
+  delete process.env.AI_PROVIDER;
 });
 
 afterEach(() => {
   delete process.env.ANTHROPIC_API_KEY;
+  delete process.env.DARTMOUTH_CHAT_API_KEY;
+  delete process.env.AI_PROVIDER;
 });
 
 describe("POST /api/ai/doc — auth gate", () => {
@@ -54,7 +58,7 @@ describe("POST /api/ai/doc — auth gate", () => {
 });
 
 describe("POST /api/ai/doc — key gate", () => {
-  it("returns 503 with aiEnabled:false when ANTHROPIC_API_KEY is unset", async () => {
+  it("returns 503 with aiEnabled:false when no provider key is set", async () => {
     const res = await action({
       request: postReq({ action: "continue", context: "hello world" }),
     } as any);
@@ -75,6 +79,17 @@ describe("POST /api/ai/doc — key gate", () => {
     const body = await res.json();
     expect((body as { aiEnabled?: false }).aiEnabled).not.toBe(false);
     delete process.env.ANTHROPIC_API_KEY;
+  });
+
+  it("does not 503 when only DARTMOUTH_CHAT_API_KEY is set", async () => {
+    // The Dartmouth gateway path drives the same SDK; without a live key the
+    // call fails upstream — we only verify the 503 gate is skipped.
+    process.env.DARTMOUTH_CHAT_API_KEY = "dartmouth-test-key";
+    const res = await action({
+      request: postReq({ action: "continue", context: "hello world" }),
+    } as any);
+    const body = await res.json();
+    expect((body as { aiEnabled?: false }).aiEnabled).not.toBe(false);
   });
 });
 

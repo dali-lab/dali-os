@@ -1,15 +1,17 @@
 // POST /api/ai/doc — AI document-writing assistant for the BlockNote editor.
-// Requires an authenticated member session. Returns 503 when
-// ANTHROPIC_API_KEY is not configured (feature hidden client-side when that
-// happens, so 503 is a defence-in-depth signal, not a normal path).
+// Requires an authenticated member session. Returns 503 when no AI provider
+// is configured (feature hidden client-side when that happens, so 503 is a
+// defence-in-depth signal, not a normal path). Provider selection — first-party
+// Anthropic vs the Dartmouth Chat gateway — lives in ~/lib/ai.server.
 //
 // NEVER log the API key, JWT, cookies, or full document content.
-// NEVER include temperature/top_p/top_k — they 400 on this model.
+// NEVER include temperature/top_p/top_k — they 400 on first-party models.
 // NEVER prefill the assistant turn — it 400s too.
 
 import type { Route } from "./+types/api.ai.doc";
 import Anthropic from "@anthropic-ai/sdk";
 import { requireAuth } from "~/lib/auth";
+import { resolveAiProvider } from "~/lib/ai.server";
 
 export type AiDocAction = "prompt" | "improve" | "fix" | "summarize" | "continue";
 
@@ -63,8 +65,8 @@ export async function action({ request }: Route.ActionArgs) {
     return Response.json({ error: "Method not allowed" }, { status: 405 });
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
+  const provider = resolveAiProvider();
+  if (!provider) {
     return Response.json({ aiEnabled: false } satisfies AiDocDisabledResponse, {
       status: 503,
     });
@@ -109,13 +111,13 @@ export async function action({ request }: Route.ActionArgs) {
     context: context.slice(0, 8000),
   };
 
-  const client = new Anthropic();
-
   try {
-    const message = await client.messages.create({
-      model: "claude-opus-4-8",
+    const message = await provider.client.messages.create({
+      model: provider.model,
       max_tokens: 8192,
-      thinking: { type: "adaptive" },
+      // Adaptive thinking only on first-party Claude — the Dartmouth gateway's
+      // Bedrock-style model ids may reject the param.
+      ...(provider.adaptiveThinking ? { thinking: { type: "adaptive" as const } } : {}),
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: buildUserMessage(req) }],
     });

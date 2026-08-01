@@ -13,6 +13,7 @@ import { CheckInPanel } from "~/components/CheckInPanel";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import { PageIcon } from "~/components/PageIcon";
 import { redirectToLogin } from "~/lib/login-next";
+import { isAiEnabled } from "~/lib/ai.server";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const t = (data as { title?: string } | undefined)?.title;
@@ -264,7 +265,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     subtitle: presenceUser?.subtitle ?? null,
     attendance,
     backlinks,
-    aiEnabled: Boolean(process.env.ANTHROPIC_API_KEY),
+    aiEnabled: isAiEnabled(),
   };
 }
 

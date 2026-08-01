@@ -26,7 +26,7 @@ export interface Features {
   signing?: boolean | Record<string, unknown>;
   /**
    * AI slash-menu items ("Ask AI…", "Continue writing", etc.).
-   * Only available on the full document surface when ANTHROPIC_API_KEY is set
+   * Only available on the full document surface when an AI provider key is set
    * server-side. The route loader resolves this and passes it through
    * DocEditorProps.aiEnabled — features.ai is never checked client-side alone.
    */

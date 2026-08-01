@@ -88,7 +88,7 @@ export function DocumentEditor({
   // When set (arriving from an @-mention notification), scroll to and flash the
   // first mention chip for that user once the collab doc syncs.
   focusMentionUserId?: string;
-  // True when the server has an ANTHROPIC_API_KEY — shows the AI slash items.
+  // True when the server has an AI provider key configured — shows the AI slash items.
   aiEnabled?: boolean;
 }) {
   const revalidator = useRevalidator();
