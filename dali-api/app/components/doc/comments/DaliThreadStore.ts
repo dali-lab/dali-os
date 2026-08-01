@@ -27,6 +27,7 @@ import {
   type ThreadData,
   type CommentData,
   type CommentBody,
+  type CommentReactionData,
 } from "@blocknote/core/comments";
 
 // Marker stored in DocComment.anchor to distinguish inline BlockNote threads
@@ -34,6 +35,12 @@ import {
 export const BLOCKNOTE_ANCHOR = { kind: "blocknote" } as const;
 
 // ── Type for the raw shape the /api/comments loader returns ─────────────────
+
+interface ApiReaction {
+  userId: string;
+  emoji: string;
+  createdAt: string;
+}
 
 interface ApiComment {
   id: string;
@@ -45,6 +52,7 @@ interface ApiComment {
   anchor: { kind?: string; from?: string; to?: string } | null;
   resolved: boolean;
   createdAt: string;
+  reactions?: ApiReaction[];
 }
 
 // ── Body serialisation helpers ───────────────────────────────────────────────
@@ -89,6 +97,29 @@ export function deserializeBody(stored: string): CommentBody {
 
 // ── DocComment → BlockNote shape mapping ────────────────────────────────────
 
+/**
+ * Group flat reaction rows into the CommentReactionData[] shape BlockNote expects:
+ * one entry per emoji with the userIds array and the earliest createdAt.
+ */
+export function groupReactions(rows: ApiReaction[]): CommentReactionData[] {
+  const map = new Map<string, { userIds: string[]; createdAt: Date }>();
+  for (const r of rows) {
+    const entry = map.get(r.emoji);
+    const ts = new Date(r.createdAt);
+    if (entry) {
+      entry.userIds.push(r.userId);
+      if (ts < entry.createdAt) entry.createdAt = ts;
+    } else {
+      map.set(r.emoji, { userIds: [r.userId], createdAt: ts });
+    }
+  }
+  return Array.from(map.entries()).map(([emoji, { userIds, createdAt }]) => ({
+    emoji,
+    createdAt,
+    userIds,
+  }));
+}
+
 function toCommentData(c: ApiComment): CommentData {
   return {
     type: "comment",
@@ -96,7 +127,7 @@ function toCommentData(c: ApiComment): CommentData {
     userId: c.authorId,
     createdAt: new Date(c.createdAt),
     updatedAt: new Date(c.createdAt), // DocComment has no updatedAt; createdAt is the best proxy
-    reactions: [],
+    reactions: groupReactions(c.reactions ?? []),
     metadata: { author: c.author, authorPhotoUrl: c.authorPhotoUrl ?? null },
     body: deserializeBody(c.body),
   };
@@ -143,12 +174,11 @@ export function apiCommentsToThreadMap(
   return map;
 }
 
-// ── DaliThreadStoreAuth — reactions disabled, resolve gated ─────────────────
+// ── DaliThreadStoreAuth — resolve gated, reactions allowed ──────────────────
 //
-// DefaultThreadStoreAuth allows reactions, which we silently no-op in the
-// store. The cleaner fix: subclass and return false from canAddReaction /
-// canDeleteReaction so the emoji picker UI is never shown in the first place.
-// We also let canResolve / canUnresolve gate on the config flag.
+// canResolve / canUnresolve gate on the editor role (canEdit || Core).
+// Reactions are open to anyone with comment access (same as canAddComment).
+// canDeleteReaction is limited to the current user's own reactions.
 
 export class DaliThreadStoreAuth extends ThreadStoreAuth {
   constructor(
@@ -168,10 +198,15 @@ export class DaliThreadStoreAuth extends ThreadStoreAuth {
   canResolveThread(_thread: ThreadData): boolean { return this.role === "editor"; }
   canUnresolveThread(_thread: ThreadData): boolean { return this.role === "editor"; }
 
-  // Reactions are not supported — returning false hides the emoji picker button
-  // and reaction badges without needing any CSS overrides.
-  canAddReaction(_comment: CommentData, _emoji?: string): boolean { return false; }
-  canDeleteReaction(_comment: CommentData, _emoji?: string): boolean { return false; }
+  // Any viewer with comment access can add a reaction.
+  canAddReaction(_comment: CommentData, _emoji?: string): boolean { return true; }
+  // Only the user can remove their own reaction (server enforces; client gates UI).
+  canDeleteReaction(comment: CommentData, emoji?: string): boolean {
+    if (!emoji) return false;
+    return comment.reactions.some(
+      (r) => r.emoji === emoji && r.userIds.includes(this.userId),
+    );
+  }
 }
 
 // ── DaliThreadStore ──────────────────────────────────────────────────────────
@@ -453,20 +488,35 @@ export class DaliThreadStore extends ThreadStore {
     await this.refetch();
   }
 
-  // Reactions are disabled via DaliThreadStoreAuth (canAddReaction → false).
-  // These no-ops exist to satisfy the abstract contract in case the auth check
-  // is ever bypassed or the type system requires them.
-  async addReaction(_options: {
+  async addReaction(options: {
     threadId: string;
     commentId: string;
     emoji: string;
-  }): Promise<void> {}
+  }): Promise<void> {
+    const res = await fetch(`/api/comments/${options.commentId}`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ intent: "react", emoji: options.emoji }),
+    });
+    if (!res.ok) throw new Error(`addReaction failed: ${res.status}`);
+    await this.refetch();
+  }
 
-  async deleteReaction(_options: {
+  async deleteReaction(options: {
     threadId: string;
     commentId: string;
     emoji: string;
-  }): Promise<void> {}
+  }): Promise<void> {
+    const res = await fetch(`/api/comments/${options.commentId}`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ intent: "unreact", emoji: options.emoji }),
+    });
+    if (!res.ok) throw new Error(`deleteReaction failed: ${res.status}`);
+    await this.refetch();
+  }
 
   // ── Internal ────────────────────────────────────────────────────────────
 

@@ -238,8 +238,9 @@ model User {
   emailTemplateVersionsCreated            EmailTemplateVersion[]
 
   // ─── Documents & files ───────────────────────────────────────────────────
-  projectFileVersionsUploaded ProjectFileVersion[] @relation("ProjectFileVersionUploader")
-  docComments                 DocComment[]         @relation("DocCommentAuthor")
+  projectFileVersionsUploaded ProjectFileVersion[]   @relation("ProjectFileVersionUploader")
+  docComments                 DocComment[]           @relation("DocCommentAuthor")
+  docCommentReactions         DocCommentReaction[]
 
   // ─── Page documentation (per-page guides) ─────────────────────────────────
   pageDocsMaintained PageDoc[] @relation("PageDocMaintainer")
@@ -1152,9 +1153,10 @@ model DocComment {
   createdAt  DateTime         @default(now())
   updatedAt  DateTime         @updatedAt
 
-  author  User         @relation("DocCommentAuthor", fields: [authorId], references: [id])
-  parent  DocComment?  @relation("DocCommentThread", fields: [parentId], references: [id], onDelete: Cascade)
-  replies DocComment[] @relation("DocCommentThread")
+  author    User                  @relation("DocCommentAuthor", fields: [authorId], references: [id])
+  parent    DocComment?           @relation("DocCommentThread", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   DocComment[]          @relation("DocCommentThread")
+  reactions DocCommentReaction[]
 
   // Back-relation when targetType=file. Kept loose: only the file side is a
   // real relation (Pages are referenced by id without a back-relation to avoid
@@ -1170,6 +1172,22 @@ model DocComment {
 
   @@index([targetType, targetId, createdAt])
   @@index([parentId])
+}
+
+// Per-user emoji reactions on a DocComment. Toggle semantics: upsert on add,
+// delete on remove. Unique constraint enforces one row per (comment, user, emoji).
+model DocCommentReaction {
+  id        String   @id @default(cuid())
+  commentId String
+  userId    String
+  emoji     String   @db.VarChar(64)
+  createdAt DateTime @default(now())
+
+  comment DocComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  user    User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([commentId, userId, emoji])
+  @@index([commentId])
 }
 
 enum DocCommentTarget {

@@ -224,6 +224,10 @@ export const prisma = {
     update: vi.fn(),
     delete: vi.fn(),
   },
+  docCommentReaction: {
+    upsert: vi.fn().mockResolvedValue({}),
+    deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+  },
   pageDoc: {
     findUnique: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),

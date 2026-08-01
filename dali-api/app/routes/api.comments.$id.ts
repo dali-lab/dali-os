@@ -6,7 +6,7 @@ import { isCore, isLabMember } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { getPageAccess } from "~/lib/pageAccess.server";
 
-// POST   /api/comments/:id  { intent: "resolve" | "reopen" | "edit" | "set-anchor" }
+// POST   /api/comments/:id  { intent: "resolve" | "reopen" | "edit" | "set-anchor" | "react" | "unreact" }
 // DELETE /api/comments/:id
 //
 // Permission matrix per action:
@@ -21,6 +21,9 @@ import { getPageAccess } from "~/lib/pageAccess.server";
 //
 //   set-anchor (stamp Yjs range after BlockNote places the mark):
 //     doc only → comment author only
+//
+//   react / unreact:
+//     any target type → same canComment access as posting a comment; idempotent
 //
 //   DELETE:
 //     doc     → Core, or comment author (members + partners may delete own)
@@ -69,7 +72,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   } catch {
     return withCors(request, Response.json({ error: "Invalid JSON" }, { status: 400 }));
   }
-  const body = raw as { intent?: string; anchor?: unknown; body?: unknown } | null;
+  const body = raw as { intent?: string; anchor?: unknown; body?: unknown; emoji?: unknown } | null;
   const intent = body?.intent;
 
   // "edit" — author updates body, bumps updatedAt. Any target type.
@@ -100,6 +103,47 @@ export async function action({ request, params }: Route.ActionArgs) {
       where: { id: comment.id },
       data: { anchor: anchor === null ? undefined : (anchor as object) },
     });
+    return withCors(request, Response.json({ ok: true }));
+  }
+
+  // "react" / "unreact" — emoji reaction toggle. Same permission as posting a
+  // comment (canComment). Idempotent: react is an upsert, unreact is a no-op if
+  // the row doesn't exist.
+  if (intent === "react" || intent === "unreact") {
+    const emojiParsed = z.string().trim().min(1).max(64).safeParse(body?.emoji);
+    if (!emojiParsed.success) {
+      return withCors(request, Response.json({ error: "Invalid emoji" }, { status: 400 }));
+    }
+    const emoji = emojiParsed.data;
+
+    // Permission: same as canComment — viewer with read+comment access.
+    // For doc targets, delegate to getPageAccess; for file/pagedoc, the
+    // requireAuth check plus existing membership is sufficient (same logic
+    // as the GET loader in api.comments.ts canReadTarget).
+    if (comment.targetType === "doc") {
+      const access = await getPageAccess(auth.user.sub, comment.targetId);
+      if (!access.canComment) return forbidden(request);
+    }
+    // file + pagedoc: being authenticated and having an existing comment row
+    // already implies access; no additional check needed.
+
+    if (intent === "react") {
+      await prisma.docCommentReaction.upsert({
+        where: {
+          commentId_userId_emoji: {
+            commentId: comment.id,
+            userId: auth.user.sub,
+            emoji,
+          },
+        },
+        create: { commentId: comment.id, userId: auth.user.sub, emoji },
+        update: {},
+      });
+    } else {
+      await prisma.docCommentReaction.deleteMany({
+        where: { commentId: comment.id, userId: auth.user.sub, emoji },
+      });
+    }
     return withCors(request, Response.json({ ok: true }));
   }
 
