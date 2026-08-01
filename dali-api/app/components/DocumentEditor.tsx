@@ -455,16 +455,6 @@ export function DocumentEditor({
                 - When cover is NOT set: show "Add cover" only in the hover row.
                 The hover-reveal row is always reserved (h-6) so the title does
                 not shift when hovering; items appear with opacity transition. */}
-            {iconEmoji && (
-              <div className="mb-2">
-                <PageIconPicker
-                  iconEmoji={iconEmoji}
-                  canEdit={canEdit}
-                  onChange={(e) => savePageMeta({ iconEmoji: e })}
-                />
-              </div>
-            )}
-
             {canEdit && (
               <div className="flex items-center gap-1 h-6 mb-2 opacity-0 transition-opacity duration-150 group-hover/header:opacity-100">
                 {!iconEmoji && (
@@ -487,31 +477,45 @@ export function DocumentEditor({
             {/* Title — FIX 5: rendered uncontrolled (no children re-rendered
                 from state) so React never resets textContent mid-keystroke.
                 useLayoutEffect seeds DOM text on mount/pageId change. */}
-            {canEdit ? (
-              <h1
-                ref={titleRef}
-                contentEditable
-                suppressContentEditableWarning
-                role="textbox"
-                aria-label="Document title"
-                aria-multiline="false"
-                data-placeholder="Untitled"
-                onFocus={() => { titleFocusedRef.current = true; }}
-                onBlur={(e) => {
-                  titleFocusedRef.current = false;
-                  // Save on blur in addition to the debounce.
-                  const text = (e.currentTarget.textContent ?? "").replace(/\n/g, "");
-                  scheduleTitleSave(text);
-                }}
-                onInput={(e) => scheduleTitleSave((e.currentTarget.textContent ?? "").replace(/\n/g, ""))}
-                onKeyDown={onTitleKeyDown}
-                className="doc-title-editable block w-full font-heading text-[40px] font-bold leading-tight text-foreground outline-none empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground/50"
-              />
-            ) : (
-              <h1 className="font-heading text-[40px] font-bold leading-tight text-foreground select-text">
-                {initialTitle}
-              </h1>
-            )}
+            <div className="flex items-start gap-3">
+              {iconEmoji && (
+                // h-[50px] = the title's first-line height (40px × 1.25
+                // leading-tight), so the icon stays centered on line one even
+                // when the title wraps.
+                <div className="flex h-[50px] shrink-0 items-center">
+                  <PageIconPicker
+                    iconEmoji={iconEmoji}
+                    canEdit={canEdit}
+                    onChange={(e) => savePageMeta({ iconEmoji: e })}
+                  />
+                </div>
+              )}
+              {canEdit ? (
+                <h1
+                  ref={titleRef}
+                  contentEditable
+                  suppressContentEditableWarning
+                  role="textbox"
+                  aria-label="Document title"
+                  aria-multiline="false"
+                  data-placeholder="Untitled"
+                  onFocus={() => { titleFocusedRef.current = true; }}
+                  onBlur={(e) => {
+                    titleFocusedRef.current = false;
+                    // Save on blur in addition to the debounce.
+                    const text = (e.currentTarget.textContent ?? "").replace(/\n/g, "");
+                    scheduleTitleSave(text);
+                  }}
+                  onInput={(e) => scheduleTitleSave((e.currentTarget.textContent ?? "").replace(/\n/g, ""))}
+                  onKeyDown={onTitleKeyDown}
+                  className="doc-title-editable min-w-0 flex-1 font-heading text-[40px] font-bold leading-tight text-foreground outline-none empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground/50"
+                />
+              ) : (
+                <h1 className="min-w-0 flex-1 font-heading text-[40px] font-bold leading-tight text-foreground select-text">
+                  {initialTitle}
+                </h1>
+              )}
+            </div>
 
             {/* Tags row — just below the title */}
             <div className="mt-3">
