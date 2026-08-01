@@ -62,6 +62,11 @@ export default function AdminHub() {
             description: "Site usage and error analytics.",
           },
           {
+            to: "/admin-console/ai-usage",
+            title: "AI Usage",
+            description: "Per-member AI request and token usage.",
+          },
+          {
             to: "/admin-console/jobs",
             title: "Jobs",
             description: "Background job status — reminders, digests, scheduled sends.",

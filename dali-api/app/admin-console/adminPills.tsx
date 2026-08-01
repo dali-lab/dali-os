@@ -11,6 +11,7 @@ import {
   Megaphone,
   Receipt,
   Shield,
+  Sparkles,
   UserPlus,
 } from "lucide-react";
 import type { AreaPill } from "~/components/AreaPillNav";
@@ -28,6 +29,7 @@ export function adminPills(args: {
     | "attendance"
     | "activity"
     | "analytics"
+    | "ai-usage"
     | "jobs"
     | "email-senders"
     | "email-templates"
@@ -90,6 +92,12 @@ export function adminPills(args: {
             to: "/admin-console/analytics",
             active: args.active === "analytics",
             icon: BarChart3,
+          },
+          {
+            label: "AI Usage",
+            to: "/admin-console/ai-usage",
+            active: args.active === "ai-usage",
+            icon: Sparkles,
           },
           {
             label: "Jobs",

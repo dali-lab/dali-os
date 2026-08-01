@@ -63,6 +63,7 @@ export default [
     route("admin-console/attendance", "admin-console/routes/admin-console.attendance.tsx"),
     route("admin-console/activity", "admin-console/routes/admin-console.activity.tsx"),
     route("admin-console/analytics", "admin-console/routes/admin-console.analytics.tsx"),
+    route("admin-console/ai-usage", "admin-console/routes/admin-console.ai-usage.tsx"),
     route("admin-console/jobs", "admin-console/routes/admin-console.jobs.tsx"),
     route("admin-console/email-senders", "admin-console/routes/admin-console.email-senders.tsx"),
     route("admin-console/email-templates", "admin-console/routes/admin-console.email-templates.tsx"),
