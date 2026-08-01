@@ -12,6 +12,8 @@ import type { Route } from "./+types/api.ai.doc";
 import Anthropic from "@anthropic-ai/sdk";
 import { requireAuth } from "~/lib/auth";
 import { resolveAiProvider } from "~/lib/ai.server";
+import { checkRateLimit } from "~/lib/rate-limit";
+import { prisma } from "~/lib/db";
 
 // ── Contract ──────────────────────────────────────────────────────────────────
 
@@ -41,6 +43,25 @@ const INSTRUCTION_MAX = 4000;
 const CONTEXT_MAX = 8000;
 const HISTORY_ENTRY_MAX = 8000;
 const HISTORY_ENTRIES_MAX = 12;
+
+// ── Rate limits (per user) ────────────────────────────────────────────────────
+// Burst is in-memory (per machine, like every other rate-limited route); the
+// daily quota is Postgres-backed so it holds across prod's 2 machines and
+// survives deploys.
+
+const AI_BURST_MAX = 10;
+const AI_BURST_WINDOW_MS = 60_000;
+const AI_DAILY_MAX = 200;
+
+function secondsToUtcMidnight(): number {
+  const now = new Date();
+  const next = Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate() + 1,
+  );
+  return Math.max(1, Math.ceil((next - now.getTime()) / 1000));
+}
 
 // ── System prompt ─────────────────────────────────────────────────────────────
 
@@ -150,6 +171,22 @@ export async function action({ request }: Route.ActionArgs) {
     return Response.json({ error: "Method not allowed" }, { status: 405 });
   }
 
+  // ── Burst gate (in-memory, cheapest — before provider/body work) ──────────
+  const burstLimited = checkRateLimit(
+    request,
+    { max: AI_BURST_MAX, windowMs: AI_BURST_WINDOW_MS },
+    `ai:${auth.user.sub}`,
+  );
+  if (burstLimited) {
+    const retryAfter = burstLimited.headers.get("Retry-After") ?? "60";
+    return Response.json(
+      {
+        error: `You're sending AI requests too quickly — try again in ${retryAfter}s.`,
+      },
+      { status: 429, headers: { "Retry-After": retryAfter } },
+    );
+  }
+
   const provider = resolveAiProvider();
   if (!provider) {
     return Response.json({ aiEnabled: false } satisfies AiDocDisabledResponse, {
@@ -216,6 +253,25 @@ export async function action({ request }: Route.ActionArgs) {
     system: SYSTEM_PROMPT,
     messages,
   };
+
+  // ── Daily quota — last gate before the model call, so invalid requests
+  // (400s) never consume it. Increment-then-check: concurrent requests can't
+  // slip past the cap.
+  const day = new Date().toISOString().slice(0, 10);
+  const usage = await prisma.aiUsage.upsert({
+    where: { userId_day: { userId: auth.user.sub, day } },
+    create: { userId: auth.user.sub, day, count: 1 },
+    update: { count: { increment: 1 } },
+  });
+  if (usage.count > AI_DAILY_MAX) {
+    const retryAfter = secondsToUtcMidnight();
+    return Response.json(
+      {
+        error: `You've reached today's AI limit (${AI_DAILY_MAX} requests). It resets at midnight UTC.`,
+      },
+      { status: 429, headers: { "Retry-After": String(retryAfter) } },
+    );
+  }
 
   // ── Non-streaming path ────────────────────────────────────────────────────
   if (!wantStream) {

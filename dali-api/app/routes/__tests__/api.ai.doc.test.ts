@@ -7,8 +7,11 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
 }));
+vi.mock("~/lib/db");
 
 import { requireAuth } from "~/lib/auth";
+import { prisma } from "~/lib/db";
+import { _resetForTests as resetRateLimits } from "~/lib/rate-limit";
 import { action, validateHistory } from "~/routes/api.ai.doc";
 
 const AUTH_OK = {
@@ -38,6 +41,16 @@ function postReq(body: unknown, signal?: AbortSignal): Request {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(requireAuth).mockResolvedValue(AUTH_OK);
+  // All tests share user u1 — reset the in-memory burst counter so earlier
+  // tests can't trip the 10/min gate for later ones.
+  resetRateLimits();
+  // Default: first request of the day, well under the daily quota.
+  vi.mocked(prisma.aiUsage.upsert).mockResolvedValue({
+    id: "au1",
+    userId: "u1",
+    day: "2026-08-01",
+    count: 1,
+  } as never);
   // Ensure keys are unset by default — tests that need one set it explicitly.
   delete process.env.ANTHROPIC_API_KEY;
   delete process.env.DARTMOUTH_CHAT_API_KEY;
@@ -104,6 +117,107 @@ describe("POST /api/ai/doc — method gate", () => {
       request: new Request("http://localhost/api/ai/doc", { method: "GET" }),
     } as any);
     expect(res.status).toBe(405);
+  });
+});
+
+// ── Burst rate limit (10/min per user, in-memory) ────────────────────────────
+
+describe("POST /api/ai/doc — burst rate limit", () => {
+  it("returns 429 with Retry-After on the 11th request in a minute", async () => {
+    for (let i = 0; i < 10; i++) {
+      const res = await action({ request: postReq({ instruction: "hi" }) } as any);
+      expect(res.status).not.toBe(429);
+    }
+    const res = await action({ request: postReq({ instruction: "hi" }) } as any);
+    expect(res.status).toBe(429);
+    expect(res.headers.get("Retry-After")).toBeTruthy();
+    const body = await res.json();
+    expect(body.error).toMatch(/too quickly/i);
+  });
+
+  it("fires before the provider gate (429, not 503, even with no key set)", async () => {
+    // No provider key in this test — a 429 instead of 503 proves the burst
+    // gate short-circuits before any provider work.
+    for (let i = 0; i < 10; i++) {
+      await action({ request: postReq({ instruction: "hi" }) } as any);
+    }
+    const res = await action({ request: postReq({ instruction: "hi" }) } as any);
+    expect(res.status).toBe(429);
+  });
+
+  it("is keyed per user", async () => {
+    for (let i = 0; i < 10; i++) {
+      await action({ request: postReq({ instruction: "hi" }) } as any);
+    }
+    vi.mocked(requireAuth).mockResolvedValue({
+      ...AUTH_OK,
+      user: { ...AUTH_OK.user, sub: "u2" },
+    });
+    const res = await action({ request: postReq({ instruction: "hi" }) } as any);
+    expect(res.status).not.toBe(429);
+  });
+});
+
+// ── Daily quota (200/day per user, Postgres-backed) ──────────────────────────
+
+describe("POST /api/ai/doc — daily quota", () => {
+  beforeEach(() => {
+    process.env.ANTHROPIC_API_KEY = "sk-ant-test";
+  });
+
+  it("returns 429 with the daily message once the quota is exceeded", async () => {
+    vi.mocked(prisma.aiUsage.upsert).mockResolvedValue({
+      id: "au1",
+      userId: "u1",
+      day: "2026-08-01",
+      count: 201,
+    } as never);
+    const res = await action({ request: postReq({ instruction: "hi" }) } as any);
+    expect(res.status).toBe(429);
+    expect(res.headers.get("Retry-After")).toBeTruthy();
+    const body = await res.json();
+    expect(body.error).toMatch(/daily|today's/i);
+  });
+
+  it("proceeds at exactly the quota (count == 200)", async () => {
+    vi.mocked(prisma.aiUsage.upsert).mockResolvedValue({
+      id: "au1",
+      userId: "u1",
+      day: "2026-08-01",
+      count: 200,
+    } as never);
+    const res = await action({
+      request: postReq({ instruction: "hi", stream: true }),
+    } as any);
+    expect(res.status).not.toBe(429);
+  });
+
+  it("increments via upsert keyed on userId + UTC day", async () => {
+    await action({
+      request: postReq({ instruction: "hi", stream: true }),
+    } as any);
+    expect(prisma.aiUsage.upsert).toHaveBeenCalledTimes(1);
+    const arg = vi.mocked(prisma.aiUsage.upsert).mock.calls[0][0];
+    expect(arg.where.userId_day).toEqual({
+      userId: "u1",
+      day: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+    });
+    expect(arg.update).toEqual({ count: { increment: 1 } });
+  });
+
+  it("does not consume quota on invalid requests (400s)", async () => {
+    const res = await action({
+      request: postReq({ instruction: "" }),
+    } as any);
+    expect(res.status).toBe(400);
+    expect(prisma.aiUsage.upsert).not.toHaveBeenCalled();
+  });
+
+  it("does not consume quota when no provider key is set (503)", async () => {
+    delete process.env.ANTHROPIC_API_KEY;
+    const res = await action({ request: postReq({ instruction: "hi" }) } as any);
+    expect(res.status).toBe(503);
+    expect(prisma.aiUsage.upsert).not.toHaveBeenCalled();
   });
 });
 

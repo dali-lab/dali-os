@@ -1511,6 +1511,18 @@ model ClientError {
   @@index([message, createdAt])
 }
 
+// Per-user daily AI request counter — enforces the /api/ai/doc daily quota
+// (accurate across machines, unlike the in-memory burst limiter) and doubles
+// as usage data for a future admin view. One row per user per UTC day.
+model AiUsage {
+  id     String @id @default(cuid())
+  userId String
+  day    String // UTC date "YYYY-MM-DD"
+  count  Int    @default(0)
+
+  @@unique([userId, day])
+}
+
 // ─── Document Signing ────────────────────────────────────────────────────────
 
 // A named, versioned signable document — the generalization of

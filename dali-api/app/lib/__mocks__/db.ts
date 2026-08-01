@@ -530,6 +530,9 @@ export const prisma = {
     delete: vi.fn(),
     deleteMany: vi.fn(),
   },
+  aiUsage: {
+    upsert: vi.fn(),
+  },
   $transaction: vi.fn(),
   $queryRaw: vi.fn().mockResolvedValue([]),
 };

@@ -1,14 +1,18 @@
 const CLEANUP_INTERVAL_MS = 60_000;
 
-const hits = new Map<string, number[]>();
+// windowMs is stored per key so cleanup knows how long timestamps stay
+// relevant — purging on the cleanup interval alone silently collapsed any
+// window longer than 60s (e.g. the 10-minute oauth/register window).
+const hits = new Map<string, { windowMs: number; timestamps: number[] }>();
 
 // Periodically purge expired entries so the map doesn't grow unbounded.
 const cleanup = setInterval(() => {
   const now = Date.now();
-  for (const [key, timestamps] of hits) {
-    const fresh = timestamps.filter((t) => t > now - CLEANUP_INTERVAL_MS);
+  for (const [key, entry] of hits) {
+    const horizon = Math.max(entry.windowMs, CLEANUP_INTERVAL_MS);
+    const fresh = entry.timestamps.filter((t) => t > now - horizon);
     if (fresh.length === 0) hits.delete(key);
-    else hits.set(key, fresh);
+    else entry.timestamps = fresh;
   }
 }, CLEANUP_INTERVAL_MS);
 // unref exists only on Node's Timeout — in a browser setInterval returns a
@@ -31,7 +35,9 @@ export function checkRateLimit(
 ): Response | null {
   const id = key ?? getClientIp(request);
   const now = Date.now();
-  const timestamps = (hits.get(id) ?? []).filter((t) => t > now - windowMs);
+  const timestamps = (hits.get(id)?.timestamps ?? []).filter(
+    (t) => t > now - windowMs,
+  );
 
   if (timestamps.length >= max) {
     const retryAfter = Math.ceil((timestamps[0] + windowMs - now) / 1000);
@@ -45,7 +51,7 @@ export function checkRateLimit(
   }
 
   timestamps.push(now);
-  hits.set(id, timestamps);
+  hits.set(id, { windowMs, timestamps });
   return null;
 }
 
