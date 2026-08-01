@@ -264,7 +264,7 @@ function DocView(
     editor,
     aiEnabled,
     dialog.prompt,
-    dialog.confirm,
+    dialog.choice,
   );
 
   // Build a stable FormattingToolbar component reference so the controller

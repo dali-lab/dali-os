@@ -261,36 +261,36 @@ export async function runAiAction(opts: {
   }
 }
 
-// ── Scope chooser via dialog.confirm ─────────────────────────────────────────
+// ── Scope chooser via dialog.choice ──────────────────────────────────────────
 //
-// Decision: ConfirmOptions supports confirmLabel + cancelLabel, so we repurpose
-// dialog.confirm as a two-option scope chooser: "Current block" (confirm=true)
-// vs "Entire document" (cancel=false). Zero new UI, zero new API surface.
-// Returns: "block" | "document" | null (null = user dismissed).
+// dialog.choice resolves null on cancel/dismiss — Escape ABORTS the AI action
+// instead of being coerced into a scope (a full-document rewrite on an escape
+// keypress would be a nasty surprise).
+// Returns: "block" | "document" | null (null = aborted).
 
 export async function chooseScopeDialog(
-  dialogConfirm: (opts: {
+  dialogChoice: (opts: {
     title: string;
     description?: React.ReactNode;
-    confirmLabel?: string;
+    options: { value: string; label: string; description?: string }[];
     cancelLabel?: string;
-  }) => Promise<boolean>,
+  }) => Promise<string | null>,
   currentBlockIsEmpty: boolean,
 ): Promise<AiScope | null> {
   if (currentBlockIsEmpty) {
     // Empty block: "Current block" would produce empty context. Default to document.
     return "document";
   }
-  const chose = await dialogConfirm({
+  const picked = await dialogChoice({
     title: "Apply to…",
     description: "Choose the scope for this AI action.",
-    confirmLabel: "Current block",
-    cancelLabel: "Entire document",
+    options: [
+      { value: "block", label: "Current block", description: "Only the block the cursor is in." },
+      { value: "document", label: "Entire document", description: "The whole page body." },
+    ],
   });
-  // true → "Current block" button; false → "Entire document" button OR dismiss.
-  // We can't distinguish dismiss from "Entire document" with the current dialog
-  // API — treat both as "document" (the safer, non-destructive default).
-  return chose ? "block" : "document";
+  if (picked !== "block" && picked !== "document") return null;
+  return picked;
 }
 
 // Checks whether the current cursor block is empty (no content or only whitespace).
@@ -321,12 +321,12 @@ export function useAskAiPrompt(editor: DocEditorInstance) {
       label?: string;
       placeholder?: string;
     }) => Promise<string | null>,
-    dialogConfirm: (opts: {
+    dialogChoice: (opts: {
       title: string;
       description?: React.ReactNode;
-      confirmLabel?: string;
+      options: { value: string; label: string; description?: string }[];
       cancelLabel?: string;
-    }) => Promise<boolean>,
+    }) => Promise<string | null>,
   ) => {
     const instruction = await dialogPrompt({
       title: "Ask AI",
@@ -336,7 +336,7 @@ export function useAskAiPrompt(editor: DocEditorInstance) {
     if (!instruction) return;
 
     const isEmpty = isCursorBlockEmpty(editor);
-    const scope = await chooseScopeDialog(dialogConfirm, isEmpty);
+    const scope = await chooseScopeDialog(dialogChoice, isEmpty);
     if (scope === null) return;
 
     const afterBlock = getSlashMenuAfterBlock(editor);
@@ -377,12 +377,12 @@ export function buildAiSlashMenuItems(
     label?: string;
     placeholder?: string;
   }) => Promise<string | null>,
-  dialogConfirm: (opts: {
+  dialogChoice: (opts: {
     title: string;
     description?: React.ReactNode;
-    confirmLabel?: string;
+    options: { value: string; label: string; description?: string }[];
     cancelLabel?: string;
-  }) => Promise<boolean>,
+  }) => Promise<string | null>,
   toastError: (msg: string) => void,
   toastWarn: (msg: string) => void,
 ): DefaultReactSuggestionItem[] {
@@ -425,7 +425,7 @@ export function buildAiSlashMenuItems(
     onItemClick: () => {
       void (async () => {
         const isEmpty = isCursorBlockEmpty(editor);
-        const scope = await chooseScopeDialog(dialogConfirm, isEmpty);
+        const scope = await chooseScopeDialog(dialogChoice, isEmpty);
         if (scope === null) return;
 
         const afterBlock = getSlashMenuAfterBlock(editor);
@@ -459,7 +459,7 @@ export function buildAiSlashMenuItems(
     onItemClick: () => {
       void (async () => {
         const isEmpty = isCursorBlockEmpty(editor);
-        const scope = await chooseScopeDialog(dialogConfirm, isEmpty);
+        const scope = await chooseScopeDialog(dialogChoice, isEmpty);
         if (scope === null) return;
 
         const afterBlock = getSlashMenuAfterBlock(editor);
@@ -493,7 +493,7 @@ export function buildAiSlashMenuItems(
     onItemClick: () => {
       void (async () => {
         const isEmpty = isCursorBlockEmpty(editor);
-        const scope = await chooseScopeDialog(dialogConfirm, isEmpty);
+        const scope = await chooseScopeDialog(dialogChoice, isEmpty);
         if (scope === null) return;
 
         const afterBlock = getSlashMenuAfterBlock(editor);
@@ -542,7 +542,7 @@ export function buildAiSlashMenuItems(
         if (!instruction) return;
 
         const isEmpty = isCursorBlockEmpty(editor);
-        const scope = await chooseScopeDialog(dialogConfirm, isEmpty);
+        const scope = await chooseScopeDialog(dialogChoice, isEmpty);
         if (scope === null) return;
 
         const afterBlock = getSlashMenuAfterBlock(editor);
@@ -579,12 +579,12 @@ export function useAiSlashMenuItems(
     label?: string;
     placeholder?: string;
   }) => Promise<string | null>,
-  dialogConfirm: (opts: {
+  dialogChoice: (opts: {
     title: string;
     description?: React.ReactNode;
-    confirmLabel?: string;
+    options: { value: string; label: string; description?: string }[];
     cancelLabel?: string;
-  }) => Promise<boolean>,
+  }) => Promise<string | null>,
 ): DefaultReactSuggestionItem[] | null {
   const toast = useToast();
 
@@ -593,7 +593,7 @@ export function useAiSlashMenuItems(
   return buildAiSlashMenuItems(
     editor,
     dialogPrompt,
-    dialogConfirm,
+    dialogChoice,
     (m) => toast.error(m),
     (m) => toast.info(m),
   );
