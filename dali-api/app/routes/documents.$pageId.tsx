@@ -273,8 +273,11 @@ export default function DocumentPage() {
 
   // Arriving from a comment-mention notification (?comment=<id>): open the
   // comments panel and scroll to that comment once threads load.
+  // Arriving from an @-mention notification (?mention=<userId>): scroll to and
+  // flash the first mention chip for that user once the collab doc syncs.
   const [searchParams] = useSearchParams();
   const focusCommentId = searchParams.get("comment") ?? undefined;
+  const focusMentionUserId = searchParams.get("mention") ?? undefined;
 
   return (
     <div className="flex flex-col gap-4">
@@ -313,6 +316,7 @@ export default function DocumentPage() {
         coverImageUrl={coverImageUrl}
         updatedAt={updatedAt}
         focusCommentId={focusCommentId}
+        focusMentionUserId={focusMentionUserId}
       />
     </div>
   );
