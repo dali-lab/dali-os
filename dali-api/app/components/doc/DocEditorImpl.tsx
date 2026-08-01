@@ -49,6 +49,7 @@ import {
   CreateLinkButton,
   ThreadsSidebar,
 } from "@blocknote/react";
+import { buildAiFormattingToolbar } from "./ai/AiFormattingToolbar";
 import { DocCommentsRail } from "./comments/DocCommentsRail";
 import { BlockNoteView } from "@blocknote/shadcn";
 
@@ -257,10 +258,20 @@ function DocView(
   useDocChrome(editor, props);
   const isDark = useIsDark();
   const dialog = useDialog();
+  const aiEnabled = props.aiEnabled ?? false;
+  const editable = props.editable ?? true;
   const aiItems = useAiSlashMenuItems(
     editor,
-    props.aiEnabled ?? false,
+    aiEnabled,
     dialog.prompt,
+    dialog.confirm,
+  );
+
+  // Build a stable FormattingToolbar component reference so the controller
+  // doesn't remount on every render when aiEnabled/editable change.
+  const aiFormattingToolbar = useMemo(
+    () => buildAiFormattingToolbar(aiEnabled, editable),
+    [aiEnabled, editable],
   );
 
   // Hand hosts the live instance (ref-routed so a new callback identity per
@@ -496,7 +507,11 @@ function DocView(
       {props.density !== "compact" && (
         <DaliSideMenuController canComment={props.comments?.canComment ?? false} />
       )}
-      <FormattingToolbarController />
+      {/* AI-aware floating selection toolbar. Passes a custom component ref
+          that renders all default toolbar items + an AI dropdown when AI is
+          enabled. The component is memoized in DocView so its identity is stable
+          and FormattingToolbarController doesn't remount on every state tick. */}
+      <FormattingToolbarController formattingToolbar={aiFormattingToolbar} />
       {/* "Aa" popover: standard text options applying to the current
           selection/caret. Coexists with the floating toolbar. */}
       {formatTarget &&
