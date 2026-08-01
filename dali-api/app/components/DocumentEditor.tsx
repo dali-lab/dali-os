@@ -7,8 +7,8 @@ import {
   type KeyboardEvent,
   type RefObject,
 } from "react";
-import { useRevalidator } from "react-router";
-import { History, MessageSquare, MoreHorizontal, FileDown } from "lucide-react";
+import { useNavigate, useRevalidator } from "react-router";
+import { Copy, FileDown, History, LayoutTemplate, MessageSquare, MoreHorizontal } from "lucide-react";
 import { DocEditor, type TocHeading } from "~/components/doc";
 import { DocCommentsPanel, useDocThreadCounts } from "~/components/doc/comments";
 import { pageDocName } from "~/collab/roomName";
@@ -50,6 +50,7 @@ export function DocumentEditor({
   coverImageUrl: initialCover = null,
   updatedAt,
   focusCommentId,
+  isTemplate = false,
 }: {
   pageId: string;
   initialTitle: string;
@@ -66,11 +67,14 @@ export function DocumentEditor({
   iconEmoji?: string | null;
   coverImageUrl?: string | null;
   updatedAt?: string | null;
+  // When true, the page is a template (shown in "Start from template" picker).
+  isTemplate?: boolean;
   // When set (arriving from a comment-mention notification), open the comments
   // panel and scroll to this comment.
   focusCommentId?: string;
 }) {
   const revalidator = useRevalidator();
+  const navigate = useNavigate();
   // FIX 5: title is uncontrolled — we never feed state back into the DOM while
   // the h1 is focused, which prevents caret-at-0 "backwards typing" caused by
   // React re-rendering contentEditable with the controlled value on every input.
@@ -83,6 +87,8 @@ export function DocumentEditor({
   const [commentsOpen, setCommentsOpen] = useState(!!focusCommentId);
   const [panelFilter, setPanelFilter] = useState<"open" | "resolved">("open");
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  // Optimistic local reflection of isTemplate — revalidator syncs server truth.
+  const [templateMarked, setTemplateMarked] = useState(isTemplate);
   const commentsBubbleRef = useRef<HTMLDivElement | null>(null);
   const [locallyEdited, setLocallyEdited] = useState(false);
   // "Aa" formatting popover (replaced the static-toolbar toggle). Stays open
@@ -199,6 +205,30 @@ export function DocumentEditor({
     } catch (err) {
       console.error("[document] failed to save page metadata", err);
     }
+  }
+
+  async function duplicateDoc() {
+    setMoreMenuOpen(false);
+    const res = await fetch(`/api/pages/${pageId}/duplicate`, {
+      method: "POST",
+      credentials: "include",
+    });
+    if (!res.ok) return;
+    const { id } = (await res.json()) as { id: string };
+    navigate(`/documents/${id}`);
+  }
+
+  async function toggleTemplate() {
+    const next = !templateMarked;
+    setTemplateMarked(next);
+    setMoreMenuOpen(false);
+    await fetch(`/api/pages/${pageId}/template`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isTemplate: next }),
+    });
+    revalidator.revalidate();
   }
 
   // Debounced title save — fires at most once per 800ms burst.
@@ -413,6 +443,24 @@ export function DocumentEditor({
               >
                 <History className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 Version history
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => void duplicateDoc()}
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-muted"
+            >
+              <Copy className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              Duplicate
+            </button>
+            {canEdit && (
+              <button
+                type="button"
+                onClick={() => void toggleTemplate()}
+                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-muted"
+              >
+                <LayoutTemplate className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                {templateMarked ? "Unmark as template" : "Mark as template"}
               </button>
             )}
             <div className="my-1 border-t border-border" />

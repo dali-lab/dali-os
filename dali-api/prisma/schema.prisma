@@ -3756,6 +3756,12 @@ model Page {
   // pages. The unique constraint makes ensure-create idempotent.
   systemKey String? @unique
 
+  // When true, this page acts as a template: it is excluded from the normal
+  // document list and offered as a starting point when creating new pages.
+  // The new page is created by byte-copying the CollabDocument state into a
+  // fresh doc id — no structural schema change, just a new row.
+  isTemplate Boolean @default(false)
+
   parent   Page?  @relation("PageTree", fields: [parentPageId], references: [id])
   children Page[] @relation("PageTree")
 

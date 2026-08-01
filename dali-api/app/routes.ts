@@ -410,6 +410,9 @@ export default [
   route("api/notes", "members/routes/api.notes.ts"),
   route("api/pages/:id/pin", "projects/routes/api.pages.$id.pin.ts"),
   route("api/pages/:id/move", "projects/routes/api.pages.$id.move.ts"),
+  route("api/pages/:id/duplicate", "routes/api.pages.$id.duplicate.ts"),
+  route("api/pages/:id/template", "routes/api.pages.$id.template.ts"),
+  route("api/page-templates", "routes/api.page-templates.ts"),
 
   // Project files (standalone uploads with versions)
   route("api/projects/:id/files", "projects/routes/api.projects.$id.files.ts"),
