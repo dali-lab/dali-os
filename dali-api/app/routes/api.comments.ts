@@ -11,6 +11,7 @@ import { hydrateAuthors } from "~/lib/collabAuth";
 import { notify } from "~/lib/notify.server";
 import { extractHandlesFromText, resolveHandles, notifyMentions, pageDocLink } from "~/lib/mentions";
 import { getPageAccess } from "~/lib/pageAccess.server";
+import { publishCommentChange } from "~/lib/comment-events.server";
 
 // Comments + inline annotations on documents (Pages) and files (ProjectFile).
 //   GET  /api/comments?targetType=doc|file|pagedoc&targetId=...   → threads (roots + replies)
@@ -231,6 +232,11 @@ export async function action({ request }: Route.ActionArgs) {
     },
     select: { id: true },
   });
+
+  // Nudge any open comment-stream listeners for this page so they refetch.
+  if (body.targetType === "doc") {
+    publishCommentChange(body.targetId);
+  }
 
   // Root comments on a file notify its audience (uploaders + linked-task
   // assignees). Replies are covered by the thread-reply path below.

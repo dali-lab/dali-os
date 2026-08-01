@@ -423,6 +423,8 @@ export default [
   // Comments + inline annotations on documents and files
   route("api/comments", "routes/api.comments.ts"),
   route("api/comments/:id", "routes/api.comments.$id.ts"),
+  // SSE stream: pushes a `change` nudge when comments mutate for a doc page.
+  route("api/comments/:pageId/stream", "routes/api.comments.$pageId.stream.ts"),
 
   // Batch user resolver — used by comments rail / presence avatars.
   route("api/users/resolve", "routes/api.users.resolve.ts"),

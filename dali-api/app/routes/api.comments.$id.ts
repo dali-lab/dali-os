@@ -5,6 +5,7 @@ import { requireAuth, forbidden } from "~/lib/auth";
 import { isCore, isLabMember } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { getPageAccess } from "~/lib/pageAccess.server";
+import { publishCommentChange } from "~/lib/comment-events.server";
 
 // POST   /api/comments/:id  { intent: "resolve" | "reopen" | "edit" | "set-anchor" }
 // DELETE /api/comments/:id
@@ -60,6 +61,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (!canDelete) return forbidden(request);
 
     await prisma.docComment.delete({ where: { id: comment.id } });
+    if (comment.targetType === "doc") publishCommentChange(comment.targetId);
     return withCors(request, Response.json({ ok: true }));
   }
 
@@ -83,6 +85,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       where: { id: comment.id },
       data: { body: newBody.data },
     });
+    if (comment.targetType === "doc") publishCommentChange(comment.targetId);
     return withCors(request, Response.json({ ok: true }));
   }
 
@@ -129,5 +132,6 @@ export async function action({ request, params }: Route.ActionArgs) {
     where: { id: comment.id },
     data: { resolvedAt: intent === "resolve" ? new Date() : null },
   });
+  if (comment.targetType === "doc") publishCommentChange(comment.targetId);
   return withCors(request, Response.json({ ok: true }));
 }

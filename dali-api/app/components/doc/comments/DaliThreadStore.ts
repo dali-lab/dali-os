@@ -197,6 +197,12 @@ export class DaliThreadStore extends ThreadStore {
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private didMount = false;
   private fetchError: string | null = null;
+  // SSE nudge stream: one EventSource per store, opened when the first
+  // subscriber arrives and closed when the last subscriber leaves.
+  private eventSource: EventSource | null = null;
+  // Debounce timer: collapse comment bursts (e.g. create + set-anchor) into
+  // a single refetch 300ms after the last nudge.
+  private nudgeTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(config: DaliThreadStoreConfig) {
     super(
@@ -225,13 +231,14 @@ export class DaliThreadStore extends ThreadStore {
   subscribe(cb: (threads: Map<string, ThreadData>) => void): () => void {
     this.listeners.add(cb);
 
-    // First subscriber: boot the fetch + optional polling.
+    // First subscriber: boot the fetch + optional polling + SSE nudge stream.
     if (!this.didMount) {
       this.didMount = true;
       void this.refetch();
       if (this.pollIntervalMs > 0) {
         this.pollTimer = setInterval(() => void this.refetch(), this.pollIntervalMs);
       }
+      this.openStream();
     }
 
     return () => {
@@ -241,9 +248,46 @@ export class DaliThreadStore extends ThreadStore {
           clearInterval(this.pollTimer);
           this.pollTimer = null;
         }
+        if (this.nudgeTimer !== null) {
+          clearTimeout(this.nudgeTimer);
+          this.nudgeTimer = null;
+        }
+        this.closeStream();
         this.didMount = false;
       }
     };
+  }
+
+  // ── SSE nudge stream ────────────────────────────────────────────────────
+
+  private openStream(): void {
+    // Browser-only: EventSource is not available in SSR / server-side Prisma
+    // import paths. The full-stack SSR app may import this module server-side.
+    if (typeof EventSource === "undefined") return;
+    const url = `/api/comments/${encodeURIComponent(this.pageId)}/stream`;
+    const es = new EventSource(url, { withCredentials: true });
+    this.eventSource = es;
+
+    const scheduleRefetch = () => {
+      // Debounce: collapse rapid sequences (create → set-anchor) into one
+      // refetch 300ms after the last nudge arrives.
+      if (this.nudgeTimer !== null) clearTimeout(this.nudgeTimer);
+      this.nudgeTimer = setTimeout(() => {
+        this.nudgeTimer = null;
+        void this.refetch();
+      }, 300);
+    };
+
+    es.addEventListener("change", scheduleRefetch);
+    // `sync` doubles as a cross-instance backstop — treat it like a nudge.
+    es.addEventListener("sync", scheduleRefetch);
+  }
+
+  private closeStream(): void {
+    if (this.eventSource) {
+      this.eventSource.close();
+      this.eventSource = null;
+    }
   }
 
   /** Last fetch error, mapped to user-friendly language. Null if none. */
