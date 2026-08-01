@@ -23,6 +23,8 @@ import { isCore } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { action } from "~/routes/api.comments.$id";
 
+const mockPrismaTyped = prisma as any;
+
 const COMMENT_ID = "cmt-1";
 const AUTHOR_ID = "author-1";
 const OTHER_ID = "other-1";
@@ -270,5 +272,88 @@ describe("DELETE", () => {
     );
     const res = (await del(AUTHOR_ID)) as Response;
     expect(res.status).toBe(200);
+  });
+});
+
+// ── react / unreact ──────────────────────────────────────────────────────────
+describe("react intent", () => {
+  beforeEach(() => {
+    vi.mocked(getPageAccess).mockResolvedValue({
+      canView: true,
+      canEdit: false,
+      canComment: true,
+      canResolve: false,
+    });
+    mockPrismaTyped.docCommentReaction.upsert.mockResolvedValue({});
+  });
+
+  it("upserts a reaction row for a valid emoji", async () => {
+    const res = (await post("react", AUTHOR_ID, { emoji: "👍" })) as Response;
+    expect(res.status).toBe(200);
+    expect(mockPrismaTyped.docCommentReaction.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: { commentId: COMMENT_ID, userId: AUTHOR_ID, emoji: "👍" },
+      }),
+    );
+  });
+
+  it("rejects react with missing emoji", async () => {
+    const res = (await post("react", AUTHOR_ID, {})) as Response;
+    expect(res.status).toBe(400);
+    expect(mockPrismaTyped.docCommentReaction.upsert).not.toHaveBeenCalled();
+  });
+
+  it("rejects react when canComment is false on a doc target", async () => {
+    vi.mocked(getPageAccess).mockResolvedValue({
+      canView: true,
+      canEdit: false,
+      canComment: false,
+      canResolve: false,
+    });
+    const res = (await post("react", OTHER_ID, { emoji: "👍" })) as Response;
+    expect(res.status).toBe(403);
+    expect(mockPrismaTyped.docCommentReaction.upsert).not.toHaveBeenCalled();
+  });
+
+  it("allows react on file/pagedoc targets without extra access check", async () => {
+    mockPrisma.docComment.findUnique.mockResolvedValue(
+      baseComment({ targetType: "pagedoc", targetId: "pd-1" }),
+    );
+    const res = (await post("react", OTHER_ID, { emoji: "❤️" })) as Response;
+    expect(res.status).toBe(200);
+    // getPageAccess should NOT be called for non-doc targets
+    expect(getPageAccess).not.toHaveBeenCalled();
+  });
+});
+
+describe("unreact intent", () => {
+  beforeEach(() => {
+    vi.mocked(getPageAccess).mockResolvedValue({
+      canView: true,
+      canEdit: false,
+      canComment: true,
+      canResolve: false,
+    });
+    mockPrismaTyped.docCommentReaction.deleteMany.mockResolvedValue({ count: 1 });
+  });
+
+  it("deletes a reaction row for a valid emoji", async () => {
+    const res = (await post("unreact", AUTHOR_ID, { emoji: "👍" })) as Response;
+    expect(res.status).toBe(200);
+    expect(mockPrismaTyped.docCommentReaction.deleteMany).toHaveBeenCalledWith({
+      where: { commentId: COMMENT_ID, userId: AUTHOR_ID, emoji: "👍" },
+    });
+  });
+
+  it("is idempotent — no error when the reaction doesn't exist", async () => {
+    mockPrismaTyped.docCommentReaction.deleteMany.mockResolvedValue({ count: 0 });
+    const res = (await post("unreact", AUTHOR_ID, { emoji: "🚀" })) as Response;
+    expect(res.status).toBe(200);
+  });
+
+  it("rejects unreact with empty emoji string", async () => {
+    const res = (await post("unreact", AUTHOR_ID, { emoji: "" })) as Response;
+    expect(res.status).toBe(400);
+    expect(mockPrismaTyped.docCommentReaction.deleteMany).not.toHaveBeenCalled();
   });
 });

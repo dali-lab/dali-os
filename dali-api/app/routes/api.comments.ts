@@ -130,6 +130,10 @@ export async function loader({ request }: Route.LoaderArgs) {
       createdAt: true,
       versionId: true,
       updatedAt: true,
+      reactions: {
+        select: { userId: true, emoji: true, createdAt: true },
+        orderBy: { createdAt: "asc" },
+      },
     },
   });
 
@@ -149,6 +153,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
     versionId: r.versionId,
+    reactions: r.reactions,
   }));
 
   return withCors(request, Response.json({ comments }));
