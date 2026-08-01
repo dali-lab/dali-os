@@ -92,9 +92,10 @@ export interface DocEditorProps {
   /** When provided, wires BlockNote's inline comment system for this doc.
    * Other surfaces omit this prop — no comments feature is enabled. */
   comments?: DocCommentsConfig;
-  /** FIX 7: When true, renders a static formatting toolbar pinned above the
-   * editor body (instead of the default floating-on-selection toolbar).
-   * Preference is owned + persisted by the host (DocumentEditor via
-   * localStorage); DocEditorImpl just reads the flag. */
-  staticToolbar?: boolean;
+  /** "Aa" formatting popover: while open, DocEditorImpl portals a
+   * FormattingToolbar into the host element with this id (a popover the host
+   * anchors under its top-bar Aa button). The floating-on-selection toolbar
+   * stays active regardless. */
+  formatPopoverTargetId?: string;
+  formatPopoverOpen?: boolean;
 }

@@ -39,6 +39,8 @@ import {
   FormattingToolbarController,
   BlockTypeSelect,
   BasicTextStyleButton,
+  ColorStyleButton,
+  CreateLinkButton,
   ThreadsSidebar,
 } from "@blocknote/react";
 import { DocCommentsRail } from "./comments/DocCommentsRail";
@@ -302,7 +304,18 @@ function DocView(props: ResolvedProps & { editor: DocEditorInstance }) {
     }
   }, [railVisible, railTargetId]);
 
-  const staticToolbar = props.staticToolbar ?? false;
+  // "Aa" popover: portal a FormattingToolbar into the host-owned popover div
+  // while open (same portal pattern as the panel/rail targets below).
+  const formatOpen = props.formatPopoverOpen ?? false;
+  const formatTargetId = props.formatPopoverTargetId;
+  const [formatTarget, setFormatTarget] = useState<Element | null>(null);
+  useEffect(() => {
+    if (formatOpen && formatTargetId) {
+      setFormatTarget(document.getElementById(formatTargetId));
+    } else {
+      setFormatTarget(null);
+    }
+  }, [formatOpen, formatTargetId]);
 
   const menus: ReactNode = (
     <>
@@ -317,11 +330,23 @@ function DocView(props: ResolvedProps & { editor: DocEditorInstance }) {
           getItems={(query) => getMentionMenuItems(editor, query)}
         />
       )}
-      {/* FIX 7: floating formatting toolbar — suppressed when static bar is ON
-          to avoid duplication; active by default (no static bar) */}
-      {!staticToolbar && (
-        <FormattingToolbarController />
-      )}
+      <FormattingToolbarController />
+      {/* "Aa" popover: standard text options applying to the current
+          selection/caret. Coexists with the floating toolbar. */}
+      {formatTarget &&
+        createPortal(
+          <FormattingToolbar>
+            <BlockTypeSelect />
+            <BasicTextStyleButton basicTextStyle="bold" />
+            <BasicTextStyleButton basicTextStyle="italic" />
+            <BasicTextStyleButton basicTextStyle="underline" />
+            <BasicTextStyleButton basicTextStyle="strike" />
+            <ColorStyleButton />
+            <CreateLinkButton />
+          </FormattingToolbar>,
+          formatTarget,
+        )
+      }
       {/* Inline comment floating UI — only active when CommentsExtension is
           wired (i.e. props.comments is set and mode is collab).
           FloatingComposerController: new-thread composer floating above selection.
@@ -395,31 +420,14 @@ function DocView(props: ResolvedProps & { editor: DocEditorInstance }) {
           // gutter — see .dali-doc--compact in theme.css).
           sideMenu={props.density !== "compact"}
           // Disable BlockNoteDefaultUI's built-in formatting toolbar — we
-          // mount FormattingToolbarController manually as a child (either
-          // floating when static bar is OFF, or suppressed when static bar is ON
-          // because we render FormattingToolbar directly below the top bar).
+          // mount FormattingToolbarController manually as a child (plus the
+          // "Aa" popover portal in menus).
           formattingToolbar={false}
           // Disable BlockNoteDefaultUI's built-in comments controllers — we
           // mount FloatingComposerController and FloatingThreadController
           // manually as children (with our portalElement override).
           comments={false}
         >
-          {/* FIX 7: static formatting toolbar — rendered as a child of
-              BlockNoteView so it inherits the editor context. It is pinned via
-              CSS (dali-doc-static-toolbar in theme.css) above the .bn-editor.
-              When static bar is OFF, FormattingToolbarController (floating) is
-              mounted instead (inside menus below). */}
-          {staticToolbar && (
-            <div className="dali-doc-static-toolbar">
-              <FormattingToolbar>
-                <BlockTypeSelect />
-                <BasicTextStyleButton basicTextStyle="bold" />
-                <BasicTextStyleButton basicTextStyle="italic" />
-                <BasicTextStyleButton basicTextStyle="underline" />
-                <BasicTextStyleButton basicTextStyle="strike" />
-              </FormattingToolbar>
-            </div>
-          )}
           {menus}
         </BlockNoteView>
       </div>

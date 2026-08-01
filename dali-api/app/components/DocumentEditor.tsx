@@ -85,18 +85,31 @@ export function DocumentEditor({
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const commentsBubbleRef = useRef<HTMLDivElement | null>(null);
   const [locallyEdited, setLocallyEdited] = useState(false);
-  // FIX 7: toggleable static formatting toolbar, persisted in localStorage.
-  const [staticToolbar, setStaticToolbar] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return localStorage.getItem("dali-doc-static-toolbar") === "1";
-  });
-  function toggleStaticToolbar() {
-    setStaticToolbar((v) => {
-      const next = !v;
-      localStorage.setItem("dali-doc-static-toolbar", next ? "1" : "0");
-      return next;
-    });
-  }
+  // "Aa" formatting popover (replaced the static-toolbar toggle). Stays open
+  // while the user works in the editor — dismissed by the Aa button, Escape,
+  // or clicking other chrome; clicks inside the editor body do NOT close it,
+  // so select-then-format round trips don't need reopening.
+  const [formatOpen, setFormatOpen] = useState(false);
+  const formatRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!formatOpen) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as HTMLElement;
+      if (formatRef.current?.contains(t)) return;
+      if (t.closest(".bn-editor")) return;
+      setFormatOpen(false);
+    };
+    // globalThis: the React KeyboardEvent type import shadows the DOM one.
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape") setFormatOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [formatOpen]);
 
   const { open: openThreadCount } = useDocThreadCounts(pageId);
 
@@ -312,6 +325,39 @@ export function DocumentEditor({
       {/* ToC control */}
       <DocToc headings={headings} onJump={jumpToHeading} />
 
+      {/* "Aa" text-format popover — visible standard text options without the
+          old static-bar mode. onMouseDown preventDefault keeps the editor
+          selection alive when the button is clicked. */}
+      {canEdit && (
+        <div ref={formatRef} className="relative">
+          <button
+            type="button"
+            onClick={() => setFormatOpen((o) => !o)}
+            onMouseDown={(e) => e.preventDefault()}
+            aria-pressed={formatOpen}
+            aria-label="Text formatting"
+            className={`inline-flex items-center rounded-md border px-2 py-1 text-[11px] font-semibold transition-colors ${
+              formatOpen
+                ? "border-accent-coral/40 bg-accent-coral/10 text-accent-coral"
+                : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+            }`}
+          >
+            Aa
+          </button>
+          {formatOpen && (
+            <div
+              id="doc-format-popover"
+              // bn-root + bn-shadcn: BlockNote component styling requires an
+              // ancestor with these classes (same as the panel/rail targets).
+              // No mousedown preventDefault here: the link button's URL input
+              // needs real focus, and toolbar commands act on the editor's
+              // STATE selection, which survives the editor blurring.
+              className="dali-doc-format-popover bn-root bn-shadcn absolute right-0 top-full z-30 mt-1 w-max max-w-[360px] rounded-md border border-border bg-card p-2 shadow-brand-2"
+            />
+          )}
+        </div>
+      )}
+
       {/* Comments bubble → rail toggle (wide) or compact dropdown (narrow) */}
       {(canComment || openThreadCount > 0) && (
         <div ref={commentsBubbleRef} className="relative">
@@ -359,17 +405,6 @@ export function DocumentEditor({
         </button>
         {moreMenuOpen && (
           <div className="absolute right-0 z-30 mt-1 w-52 rounded-md border border-border bg-card p-1 shadow-brand-2 text-sm">
-            {/* FIX 7: static formatting toolbar toggle */}
-            {canEdit && (
-              <button
-                type="button"
-                onClick={() => { toggleStaticToolbar(); setMoreMenuOpen(false); }}
-                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-muted"
-              >
-                <span className="h-3.5 w-3.5 shrink-0 text-muted-foreground text-xs font-bold">B</span>
-                {staticToolbar ? "Hide formatting bar" : "Show formatting bar"}
-              </button>
-            )}
             {collabToken && (
               <button
                 type="button"
@@ -557,7 +592,8 @@ export function DocumentEditor({
                   onRailFilterChange: setRailFilter,
                   focusCommentId,
                 }}
-                staticToolbar={staticToolbar}
+                formatPopoverOpen={formatOpen}
+                formatPopoverTargetId="doc-format-popover"
                 onWordCountChange={setWordCount}
                 onHeadingsChange={setHeadings}
                 onChange={() => setLocallyEdited(true)}

@@ -256,24 +256,13 @@ html.dark .dali-doc .bn-thread-mark[data-orphan="true"] {
   border-bottom: 1px solid var(--color-border);
 }
 
-/* FIX 7: static formatting toolbar — sticky below .doc-topbar (approx 41px),
- * above the editor content. The .dali-doc-static-toolbar wrapper lives inside
- * BlockNoteView's .bn-container; we override BlockNote's toolbar positioning
- * to make it a normal flow element. The BlockNote FormattingToolbar normally
- * lives in a floating overlay; when rendered as a non-floating child it renders
- * inline. We pin it sticky so it scrolls with the page but stays at the top. */
-.dali-doc .dali-doc-static-toolbar {
-  position: sticky;
-  top: 41px;
-  z-index: 15;
-  background-color: var(--color-card);
-  border-bottom: 1px solid var(--color-border);
-  padding: 4px 8px;
-}
-
-/* The FormattingToolbar inside the static bar must NOT use absolute/fixed
- * positioning — override BlockNote's toolbar defaults so it renders inline. */
-.dali-doc .dali-doc-static-toolbar .bn-toolbar {
+/* "Aa" formatting popover — anchored under the top bar's Aa button (replaced
+ * the static-toolbar mode, which as a flow child of .bn-container ended up
+ * hovering at the last block whenever its sticky offset failed). The popover
+ * div lives in the top bar (OUTSIDE .dali-doc), so this class is not nested.
+ * The FormattingToolbar inside must not use its floating-overlay positioning;
+ * buttons wrap to rows within the popover width. */
+.dali-doc-format-popover .bn-toolbar {
   position: static !important;
   transform: none !important;
   box-shadow: none !important;
