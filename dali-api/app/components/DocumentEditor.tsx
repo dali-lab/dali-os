@@ -568,6 +568,16 @@ export function DocumentEditor({
                   void saveTypography({ ...typo, fullWidth: !typo.fullWidth })
                 }
               />
+              <TypographyToggle
+                label="Nesting guides"
+                checked={typo.nestingGuides}
+                onToggle={() =>
+                  void saveTypography({
+                    ...typo,
+                    nestingGuides: !typo.nestingGuides,
+                  })
+                }
+              />
             </div>
           )}
         </div>
@@ -727,7 +737,7 @@ export function DocumentEditor({
               : "w-full max-w-[1400px]"
         }${typo.font !== "default" ? ` doc-canvas--${typo.font}` : ""}${
           typo.smallText ? " doc-canvas--small" : ""
-        }`}
+        }${typo.nestingGuides ? " doc-canvas--guides" : ""}`}
       >
         {/* Cover lives at the top edge of the canvas, full-bleed.
             FIX 6: Only render PageCover here when a cover IS set (so it shows
