@@ -84,6 +84,12 @@ export interface AiPanelProps {
   onClose: () => void;
   toastInfo: (msg: string) => void;
   toastError: (msg: string) => void;
+  /** Override max-height on the result preview scroll container.
+   *  Default "40vh" suits the Modal host; inline card host passes "35vh". */
+  previewMaxHeight?: string;
+  /** Called whenever the "has a result" state changes — lets the host layer
+   *  track whether to show a discard-confirm dialog on outside click. */
+  onHasResultChange?: (hasResult: boolean) => void;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -94,6 +100,8 @@ export function AiPanel({
   onClose,
   toastInfo,
   toastError,
+  previewMaxHeight = "40vh",
+  onHasResultChange,
 }: AiPanelProps) {
   const titleId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -120,6 +128,8 @@ export function AiPanel({
   // Tracks whether any run has completed so we know when scope/instruction changes
   // are "after a result" (enabling Re-run) vs before the first run (normal state).
   const [hasResult, setHasResult] = useState(false);
+  const onHasResultChangeRef = useRef(onHasResultChange);
+  onHasResultChangeRef.current = onHasResultChange;
   // Whether scope or instruction changed after the last run (enables Re-run).
   const [dirty, setDirty] = useState(false);
 
@@ -293,6 +303,11 @@ export function AiPanel({
       abortRef.current?.abort();
     };
   }, []);
+
+  // ── Notify host when result availability changes ──────────────────────────────
+  useEffect(() => {
+    onHasResultChangeRef.current?.(hasResult);
+  }, [hasResult]);
 
   // ── Scope/instruction change tracking ───────────────────────────────────────
   function handleScopeChange(next: SlashScope | ToolbarScope) {
@@ -471,7 +486,7 @@ export function AiPanel({
       {/* Result preview */}
       {!loading && markdown != null && (
         <>
-          <div className="max-h-[40vh] overflow-y-auto rounded-md border border-border bg-muted/30">
+          <div className="overflow-y-auto rounded-md border border-border bg-muted/30" style={{ maxHeight: previewMaxHeight }}>
             {blocks.length === 0 ? (
               <div className="px-4 py-6 text-sm italic text-muted-foreground">
                 (empty response)

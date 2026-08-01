@@ -52,6 +52,7 @@ import {
 } from "@blocknote/react";
 import { buildAiFormattingToolbar } from "./ai/AiFormattingToolbar";
 import { AiPanel } from "./ai/AiPanel";
+import { AiCardHost } from "./ai/AiCardHost";
 import type { AiSessionConfig } from "./ai/apply";
 import { DocCommentsRail } from "./comments/DocCommentsRail";
 import { BlockNoteView } from "@blocknote/shadcn";
@@ -74,6 +75,7 @@ import { uploadEditorImage } from "./upload";
 import { useAiSlashMenuItems } from "./ai/AiSlashMenuItems";
 import { Modal } from "~/components/Modal";
 import { useToast } from "~/components/ui/toast";
+import { useDialog } from "~/components/ui/dialog";
 
 export default function DocEditorImpl(props: DocEditorProps) {
   const features = resolveFeatures(props.features);
@@ -262,6 +264,7 @@ function DocView(
   useDocChrome(editor, props);
   const isDark = useIsDark();
   const toast = useToast();
+  const dialog = useDialog();
   const aiEnabled = props.aiEnabled ?? false;
   const editable = props.editable ?? true;
 
@@ -269,6 +272,15 @@ function DocView(
   // the user applies, inserts, or discards. AiPanel owns the full lifecycle.
   const [aiSession, setAiSession] = useState<AiSessionConfig | null>(null);
   const aiPanelTitleId = useId();
+
+  // Anchor block id for the inline card: slash origin → cursorBlockId;
+  // toolbar origin → last id in selectionBlockIds (card sits below selection).
+  // null/undefined → fall back to Modal host so the session isn't lost.
+  const anchorBlockId: string | undefined = aiSession
+    ? (aiSession.origin === "slash"
+        ? (aiSession.cursorBlockId ?? undefined)
+        : (aiSession.selectionBlockIds?.[aiSession.selectionBlockIds.length - 1] ?? undefined))
+    : undefined;
 
   // Stable callback: opening a session clears any prior one (there's only ever
   // one AI panel open at a time; a previous in-flight request is aborted by
@@ -584,6 +596,24 @@ function DocView(
           railTarget,
         )
       }
+      {/* AI inline card — anchored to the trigger block via BlockPopover.
+          Rendered inside BlockNoteView children so useBlockNoteEditor is in
+          scope (BlockPopover requires the editor context). Only mounts when
+          there's a valid anchor block id; the Modal fallback below handles the
+          case where anchorBlockId is undefined (deleted block, edge case). */}
+      {aiSession && anchorBlockId && (
+        <AiCardHost
+          key={`${aiSession.action}-${anchorBlockId}`}
+          anchorBlockId={anchorBlockId}
+          editor={editor}
+          config={aiSession}
+          onClose={() => setAiSession(null)}
+          toastInfo={(m) => toast.info(m)}
+          toastError={(m) => toast.error(m)}
+          dialog={dialog}
+          portalElement={floatingRootRef.current}
+        />
+      )}
     </>
   );
 
@@ -630,15 +660,13 @@ function DocView(
           {menus}
         </BlockNoteView>
       </div>
-      {/* AI panel — rendered outside the .dali-doc wrapper so it stacks above
-          the editor chrome at the page level. Keyed by a stable per-session id
-          so a new session always mounts a fresh AiPanel (clean state, fresh
-          AbortController, fresh auto-run). State lives in DocView so it is
-          destroyed on unmount/navigation, preventing stale results leaking to
-          a different document.
-          v1: hosted in Modal (Escape/backdrop = discard, with abort).
-          Phase 2: re-host inside a BlockPopover without changing AiPanel. */}
-      {aiSession && (
+      {/* AI panel fallback — Modal host for when the anchor block id is
+          undefined (block was deleted mid-session, or edge-case toolbar
+          selection with no captured block ids). Keeps the session alive so
+          the user's in-flight result is not silently lost.
+          The inline card path (AiCardHost inside menus) handles the normal
+          case; this branch is only reached when anchorBlockId is undefined. */}
+      {aiSession && !anchorBlockId && (
         <Modal
           open
           onClose={() => setAiSession(null)}
