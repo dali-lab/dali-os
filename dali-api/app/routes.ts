@@ -424,6 +424,9 @@ export default [
   route("api/comments", "routes/api.comments.ts"),
   route("api/comments/:id", "routes/api.comments.$id.ts"),
 
+  // Batch user resolver — used by comments rail / presence avatars.
+  route("api/users/resolve", "routes/api.users.resolve.ts"),
+
   // Per-page documentation guides + the member search that backs @-mentions
   route("api/page-docs/:key", "routes/api.page-docs.$key.ts"),
   route("api/mentions/search", "routes/api.mentions.search.ts"),

@@ -13,13 +13,19 @@ const CURATED = [
 
 export function PageIconPicker({
   iconEmoji,
-  editing,
+  canEdit,
   onChange,
+  // Legacy compat: editing was the old prop name — if canEdit is absent but
+  // editing is present, treat them the same. Callers should migrate to canEdit.
+  editing,
 }: {
   iconEmoji: string | null;
-  editing: boolean;
+  canEdit?: boolean;
   onChange: (emoji: string | null) => void;
+  /** @deprecated use canEdit */
+  editing?: boolean;
 }) {
+  const editable = canEdit ?? editing ?? false;
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
 
@@ -32,9 +38,9 @@ export function PageIconPicker({
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
 
-  // Read-only view: show the icon if set, otherwise render nothing so the title
+  // Read-only: show the icon if set, otherwise render nothing so the title
   // sits flush.
-  if (!editing) {
+  if (!editable) {
     return iconEmoji ? (
       <span className="text-4xl leading-none" aria-hidden>
         {iconEmoji}

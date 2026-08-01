@@ -83,7 +83,7 @@ describe("pages + files tools", () => {
   });
 
   it("read_page derives the doc:{id}:body room for app-created pages", async () => {
-    vi.mocked(authorizeCollabDoc).mockResolvedValue(true);
+    vi.mocked(authorizeCollabDoc).mockResolvedValue({ allowed: true, readOnly: false });
     mockPrisma.page.findUnique.mockResolvedValue({
       id: "pg1",
       title: "Notes",
@@ -110,7 +110,7 @@ describe("pages + files tools", () => {
   });
 
   it("read_page prefers contentDocId when set (seeded pages)", async () => {
-    vi.mocked(authorizeCollabDoc).mockResolvedValue(true);
+    vi.mocked(authorizeCollabDoc).mockResolvedValue({ allowed: true, readOnly: false });
     mockPrisma.page.findUnique.mockResolvedValue({
       id: "pg1",
       title: "Handbook",
@@ -132,7 +132,7 @@ describe("pages + files tools", () => {
   });
 
   it("read_page denies callers not authorized on the page's workspace", async () => {
-    vi.mocked(authorizeCollabDoc).mockResolvedValue(false);
+    vi.mocked(authorizeCollabDoc).mockResolvedValue({ allowed: false, readOnly: false });
     mockPrisma.page.findUnique.mockResolvedValue({
       id: "pg1",
       title: "Secret",

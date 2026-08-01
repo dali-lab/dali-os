@@ -221,6 +221,12 @@ export const prisma = {
     create: vi.fn(),
     findUnique: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
+    update: vi.fn(),
+    delete: vi.fn(),
+  },
+  pageDoc: {
+    findUnique: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
   },
   taskFileLink: {
     createMany: vi.fn().mockResolvedValue({ count: 1 }),

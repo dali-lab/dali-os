@@ -1,15 +1,31 @@
 import type { Route } from "./+types/api.comments.$id";
+import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth, forbidden } from "~/lib/auth";
-import { isCore } from "~/lib/roles";
+import { isCore, isLabMember } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
+import { getPageAccess } from "~/lib/pageAccess.server";
 
-// POST   /api/comments/:id  { intent: "resolve" | "reopen" }  — toggle resolved
-// DELETE /api/comments/:id                                    — delete (cascades replies)
+// POST   /api/comments/:id  { intent: "resolve" | "reopen" | "edit" | "set-anchor" }
+// DELETE /api/comments/:id
 //
-// Auth is target- and action-dependent: doc/file threads stay on the Core gate.
-// Page-doc FAQ authors may delete their own comments, but only that PageDoc's
-// maintainer may resolve or reopen a thread.
+// Permission matrix per action:
+//
+//   resolve/reopen:
+//     doc     → canResolve per getPageAccess (canEdit || Core)
+//     file    → Core
+//     pagedoc → pagedoc maintainer
+//
+//   edit (body update, author-only):
+//     all target types → comment author only
+//
+//   set-anchor (stamp Yjs range after BlockNote places the mark):
+//     doc only → comment author only
+//
+//   DELETE:
+//     doc     → Core, or comment author (members + partners may delete own)
+//     file    → Core only
+//     pagedoc → Core, or comment author
 
 export async function action({ request, params }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
@@ -23,23 +39,24 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const comment = await prisma.docComment.findUnique({
     where: { id: params.id },
-    select: { id: true, authorId: true, targetType: true, targetId: true },
+    select: { id: true, authorId: true, targetType: true, targetId: true, parentId: true },
   });
   if (!comment) {
     return withCors(request, Response.json({ error: "Comment not found" }, { status: 404 }));
   }
 
+  const core = await isCore(auth.user.sub);
+  const isAuthor = comment.authorId === auth.user.sub;
+
   if (request.method === "DELETE") {
-    const core = await isCore(auth.user.sub);
-    const isAuthor = comment.authorId === auth.user.sub;
-    // Authors delete their own on the shared surfaces (page-doc FAQs, and
-    // partner comments on shared docs); doc/file threads otherwise stay Core.
-    const canDelete =
-      comment.targetType === "pagedoc"
-        ? core || isAuthor
-        : comment.targetType === "doc"
-          ? core || (auth.user.type === "partner" && isAuthor)
-          : core;
+    let canDelete: boolean;
+    if (comment.targetType === "file") {
+      // File artifact feedback is a Core-managed surface.
+      canDelete = core;
+    } else {
+      // doc + pagedoc: author can always delete their own; Core can delete any.
+      canDelete = core || isAuthor;
+    }
     if (!canDelete) return forbidden(request);
 
     await prisma.docComment.delete({ where: { id: comment.id } });
@@ -52,19 +69,30 @@ export async function action({ request, params }: Route.ActionArgs) {
   } catch {
     return withCors(request, Response.json({ error: "Invalid JSON" }, { status: 400 }));
   }
-  const body = raw as { intent?: string; anchor?: unknown } | null;
+  const body = raw as { intent?: string; anchor?: unknown; body?: unknown } | null;
   const intent = body?.intent;
 
-  // "set-anchor" is called by DaliThreadStore.addThreadToDocument after
-  // BlockNote places the comment mark in the doc; it stamps the anchor column
-  // so the rail can identify inline BlockNote threads vs doc-level ones.
-  // Auth: only the comment's own author may set the anchor (the store calls
-  // this immediately after createThread, so it's always the same user).
+  // "edit" — author updates body, bumps updatedAt. Any target type.
+  if (intent === "edit") {
+    if (!isAuthor) return forbidden(request);
+    const newBody = z.string().trim().min(1).max(5000).safeParse(body?.body);
+    if (!newBody.success) {
+      return withCors(request, Response.json({ error: "Invalid body" }, { status: 400 }));
+    }
+    await prisma.docComment.update({
+      where: { id: comment.id },
+      data: { body: newBody.data },
+    });
+    return withCors(request, Response.json({ ok: true }));
+  }
+
+  // "set-anchor" — DaliThreadStore stamps the anchor column after BlockNote
+  // places the comment mark in the doc. Author-only; doc target only.
   if (intent === "set-anchor") {
     if (comment.targetType !== "doc") {
       return withCors(request, Response.json({ error: "anchor only on docs" }, { status: 400 }));
     }
-    if (comment.authorId !== auth.user.sub) {
+    if (!isAuthor) {
       return forbidden(request);
     }
     const anchor = body?.anchor ?? null;
@@ -75,7 +103,11 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ ok: true }));
   }
 
-  // resolve / reopen require Core or pagedoc maintainer.
+  // resolve / reopen
+  if (intent !== "resolve" && intent !== "reopen") {
+    return withCors(request, Response.json({ error: "Invalid intent" }, { status: 400 }));
+  }
+
   if (comment.targetType === "pagedoc") {
     const pageDoc = await prisma.pageDoc.findUnique({
       where: { id: comment.targetId },
@@ -84,12 +116,13 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (!pageDoc || pageDoc.maintainerId !== auth.user.sub) {
       return forbidden(request);
     }
-  } else if (!(await isCore(auth.user.sub))) {
-    return forbidden(request);
-  }
-
-  if (intent !== "resolve" && intent !== "reopen") {
-    return withCors(request, Response.json({ error: "Invalid intent" }, { status: 400 }));
+  } else if (comment.targetType === "doc") {
+    // canResolve = canEdit || Core (per getPageAccess)
+    const access = await getPageAccess(auth.user.sub, comment.targetId);
+    if (!access.canResolve) return forbidden(request);
+  } else {
+    // file: Core only
+    if (!core) return forbidden(request);
   }
 
   await prisma.docComment.update({

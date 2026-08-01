@@ -7,13 +7,18 @@ import { uploadEditorImage, IMAGE_UPLOAD_ACCEPT } from "~/components/doc";
 // the host's job via onChange.
 export function PageCover({
   coverImageUrl,
-  editing,
+  canEdit,
   onChange,
+  // Legacy compat
+  editing,
 }: {
   coverImageUrl: string | null;
-  editing: boolean;
+  canEdit?: boolean;
   onChange: (url: string | null) => void;
+  /** @deprecated use canEdit */
+  editing?: boolean;
 }) {
+  const editable = canEdit ?? editing ?? false;
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [uploading, setUploading] = useState(false);
 
@@ -33,17 +38,19 @@ export function PageCover({
   }
 
   // Nothing to show and can't edit → render nothing (no empty band).
-  if (!coverImageUrl && !editing) return null;
+  if (!coverImageUrl && !editable) return null;
 
   if (!coverImageUrl) {
-    // Editing, no cover yet: a slim "Add cover" affordance.
+    // Editable, no cover yet: the "Add cover" affordance is revealed via
+    // parent hover — this component just renders the button, the parent
+    // controls opacity via the hover-reveal row.
     return (
-      <div className="mb-3">
+      <>
         <button
           type="button"
           onClick={() => inputRef.current?.click()}
           disabled={uploading}
-          className="inline-flex items-center gap-1 rounded border border-dashed border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+          className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs text-muted-foreground/70 hover:bg-muted hover:text-foreground disabled:opacity-50"
         >
           <ImagePlus className="h-3.5 w-3.5" /> {uploading ? "Uploading…" : "Add cover"}
         </button>
@@ -54,14 +61,14 @@ export function PageCover({
           className="hidden"
           onChange={(e) => void onPicked(e.target.files)}
         />
-      </div>
+      </>
     );
   }
 
   return (
     <div className="group relative mb-4 h-40 w-full overflow-hidden rounded-lg sm:h-48">
       <img src={coverImageUrl} alt="" className="h-full w-full object-cover" />
-      {editing && (
+      {editable && (
         <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
           <button
             type="button"

@@ -28,13 +28,30 @@ vi.mock("~/hiring/lib/confidentiality", () => ({
   getCycleConfidentialityState: vi.fn().mockResolvedValue({ status: "signed", activeVersionId: "v1" }),
 }));
 
+// The doc: branch now delegates to getPageAccess. Mock it so collabAuth tests
+// stay focused on the entity-routing logic rather than re-testing page access
+// rules (those live in pageAccess.server.test.ts).
+vi.mock("~/lib/pageAccess.server", () => ({
+  getPageAccess: vi.fn(),
+}));
+
 import { prisma } from "~/lib/db";
 import { isDomainLead, isCore, isProjectMember, isLabMember } from "~/lib/roles";
 import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
+import { getPageAccess } from "~/lib/pageAccess.server";
 import { authorizeCollabDoc } from "../collabAuth";
 
 const mockPrisma = prisma as any;
+
+// Helper: expect allowed=true, readOnly=false
+function allowed() {
+  return { allowed: true, readOnly: false };
+}
+// Helper: expect denied (readOnly value doesn't matter when denied)
+function denied() {
+  return expect.objectContaining({ allowed: false });
+}
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -45,17 +62,23 @@ beforeEach(() => {
   (partnerHasProjectAccess as any).mockResolvedValue(false);
   (getCycleConfidentialityState as any).mockResolvedValue({ status: "signed", activeVersionId: "v1" });
   (prisma as any).interview.findUnique.mockResolvedValue({ applicationCycleId: "cycle1" });
+  vi.mocked(getPageAccess).mockResolvedValue({
+    canView: false,
+    canEdit: false,
+    canComment: false,
+    canResolve: false,
+  });
 });
 
 describe("authorizeCollabDoc", () => {
   it("rejects malformed names", async () => {
-    expect(await authorizeCollabDoc("user1", "bad")).toBe(false);
-    expect(await authorizeCollabDoc("user1", "a:b:c:d")).toBe(false);
-    expect(await authorizeCollabDoc("user1", "")).toBe(false);
+    expect(await authorizeCollabDoc("user1", "bad")).toMatchObject(denied());
+    expect(await authorizeCollabDoc("user1", "a:b:c:d")).toMatchObject(denied());
+    expect(await authorizeCollabDoc("user1", "")).toMatchObject(denied());
   });
 
   it("rejects unknown entity types", async () => {
-    expect(await authorizeCollabDoc("user1", "unknown:id:field")).toBe(false);
+    expect(await authorizeCollabDoc("user1", "unknown:id:field")).toMatchObject(denied());
   });
 
   describe("review docs", () => {
@@ -64,8 +87,7 @@ describe("authorizeCollabDoc", () => {
         id: "r1",
         cycleReviewer: { userId: "user1" },
       });
-
-      expect(await authorizeCollabDoc("user1", "review:r1:feedback")).toBe(true);
+      expect(await authorizeCollabDoc("user1", "review:r1:feedback")).toEqual(allowed());
     });
 
     it("rejects non-owner non-lead", async () => {
@@ -73,8 +95,7 @@ describe("authorizeCollabDoc", () => {
         id: "r1",
         cycleReviewer: { userId: "other-user" },
       });
-
-      expect(await authorizeCollabDoc("user1", "review:r1:feedback")).toBe(false);
+      expect(await authorizeCollabDoc("user1", "review:r1:feedback")).toMatchObject(denied());
     });
 
     it("allows domain leads", async () => {
@@ -83,8 +104,7 @@ describe("authorizeCollabDoc", () => {
         cycleReviewer: { userId: "other-user" },
       });
       (isDomainLead as any).mockResolvedValue(true);
-
-      expect(await authorizeCollabDoc("user1", "review:r1:feedback")).toBe(true);
+      expect(await authorizeCollabDoc("user1", "review:r1:feedback")).toEqual(allowed());
     });
 
     it("allows hiring leads", async () => {
@@ -93,34 +113,30 @@ describe("authorizeCollabDoc", () => {
         cycleReviewer: { userId: "other-user" },
       });
       (isCore as any).mockResolvedValue(true);
-
-      expect(await authorizeCollabDoc("user1", "review:r1:feedback")).toBe(true);
+      expect(await authorizeCollabDoc("user1", "review:r1:feedback")).toEqual(allowed());
     });
 
     it("rejects when review not found", async () => {
       mockPrisma.applicationReview.findUnique.mockResolvedValue(null);
-      expect(await authorizeCollabDoc("user1", "review:missing:feedback")).toBe(false);
+      expect(await authorizeCollabDoc("user1", "review:missing:feedback")).toMatchObject(denied());
     });
   });
 
   describe("interview docs", () => {
     it("allows assigned interviewer", async () => {
       mockPrisma.interviewAssignment.findFirst.mockResolvedValue({ id: "a1" });
-
-      expect(await authorizeCollabDoc("user1", "interview:int1:notes")).toBe(true);
+      expect(await authorizeCollabDoc("user1", "interview:int1:notes")).toEqual(allowed());
     });
 
     it("rejects unassigned non-lead", async () => {
       mockPrisma.interviewAssignment.findFirst.mockResolvedValue(null);
-
-      expect(await authorizeCollabDoc("user1", "interview:int1:notes")).toBe(false);
+      expect(await authorizeCollabDoc("user1", "interview:int1:notes")).toMatchObject(denied());
     });
 
     it("allows hiring leads even when not assigned", async () => {
       mockPrisma.interviewAssignment.findFirst.mockResolvedValue(null);
       (isCore as any).mockResolvedValue(true);
-
-      expect(await authorizeCollabDoc("user1", "interview:int1:notes")).toBe(true);
+      expect(await authorizeCollabDoc("user1", "interview:int1:notes")).toEqual(allowed());
     });
   });
 
@@ -131,7 +147,7 @@ describe("authorizeCollabDoc", () => {
       mockPrisma.domainApplication.findUnique.mockResolvedValue(null);
       expect(
         await authorizeCollabDoc("user1", "domainApplication:da1:prepNote"),
-      ).toBe(false);
+      ).toMatchObject(denied());
     });
 
     it("rejects when confidentiality is not signed", async () => {
@@ -143,14 +159,14 @@ describe("authorizeCollabDoc", () => {
       (isCore as any).mockResolvedValue(true);
       expect(
         await authorizeCollabDoc("user1", "domainApplication:da1:prepNote"),
-      ).toBe(false);
+      ).toMatchObject(denied());
     });
 
     it("rejects a signed non-lead", async () => {
       mockPrisma.domainApplication.findUnique.mockResolvedValue(found);
       expect(
         await authorizeCollabDoc("user1", "domainApplication:da1:prepNote"),
-      ).toBe(false);
+      ).toMatchObject(denied());
     });
 
     it("allows a signed domain lead", async () => {
@@ -158,7 +174,7 @@ describe("authorizeCollabDoc", () => {
       (isDomainLead as any).mockResolvedValue(true);
       expect(
         await authorizeCollabDoc("user1", "domainApplication:da1:prepNote"),
-      ).toBe(true);
+      ).toEqual(allowed());
     });
 
     it("allows a signed hiring lead", async () => {
@@ -166,138 +182,116 @@ describe("authorizeCollabDoc", () => {
       (isCore as any).mockResolvedValue(true);
       expect(
         await authorizeCollabDoc("user1", "domainApplication:da1:prepNote"),
-      ).toBe(true);
+      ).toEqual(allowed());
     });
   });
 
   describe("page docs (doc:{pageId}:body)", () => {
-    const projectPage = (over: Record<string, unknown> = {}) => ({
-      archivedAt: null,
-      workspaceType: "Project",
-      workspaceId: "proj1",
-      partnerVisible: false,
-      ...over,
-    });
+    function setPage(overrides: Record<string, unknown> = {}) {
+      mockPrisma.page.findUnique.mockResolvedValue({
+        archivedAt: null,
+        workspaceType: "Project",
+        workspaceId: "proj1",
+        partnerVisible: false,
+        createdById: null,
+        ...overrides,
+      });
+    }
 
     it("rejects when the page is missing or archived", async () => {
       mockPrisma.page.findUnique.mockResolvedValue(null);
-      expect(await authorizeCollabDoc("user1", "doc:p1:body")).toBe(false);
+      expect(await authorizeCollabDoc("user1", "doc:p1:body")).toMatchObject(denied());
 
-      mockPrisma.page.findUnique.mockResolvedValue(
-        projectPage({ archivedAt: new Date() }),
-      );
-      expect(await authorizeCollabDoc("user1", "doc:p1:body")).toBe(false);
+      setPage({ archivedAt: new Date() });
+      expect(await authorizeCollabDoc("user1", "doc:p1:body")).toMatchObject(denied());
     });
 
-    it("allows Core on any workspace", async () => {
-      (isCore as any).mockResolvedValue(true);
-      mockPrisma.page.findUnique.mockResolvedValue(
-        projectPage({ workspaceType: "Lab", workspaceId: null }),
-      );
-      expect(await authorizeCollabDoc("user1", "doc:p1:body")).toBe(true);
+    it("returns allowed=true, readOnly=false when canView and canEdit", async () => {
+      setPage();
+      vi.mocked(getPageAccess).mockResolvedValue({
+        canView: true,
+        canEdit: true,
+        canComment: true,
+        canResolve: true,
+      });
+      expect(await authorizeCollabDoc("user1", "doc:p1:body")).toEqual({
+        allowed: true,
+        readOnly: false,
+      });
     });
 
-    it("allows a lab member on Lab pages", async () => {
-      (isLabMember as any).mockResolvedValue(true);
-      mockPrisma.page.findUnique.mockResolvedValue(
-        projectPage({ workspaceType: "Lab", workspaceId: null }),
-      );
-      expect(await authorizeCollabDoc("user1", "doc:p1:body")).toBe(true);
-      expect(isLabMember).toHaveBeenCalledWith("user1");
+    it("returns allowed=true, readOnly=true when canView but not canEdit (viewer-only)", async () => {
+      setPage({ partnerVisible: true });
+      vi.mocked(getPageAccess).mockResolvedValue({
+        canView: true,
+        canEdit: false,
+        canComment: true,
+        canResolve: false,
+      });
+      expect(await authorizeCollabDoc("user1", "doc:p1:body")).toEqual({
+        allowed: true,
+        readOnly: true,
+      });
     });
 
-    it("rejects a non-member on Lab pages", async () => {
-      mockPrisma.page.findUnique.mockResolvedValue(
-        projectPage({ workspaceType: "Lab", workspaceId: null }),
-      );
-      expect(await authorizeCollabDoc("user1", "doc:p1:body")).toBe(false);
-    });
-
-    it("allows a staffed project member on project pages", async () => {
-      mockPrisma.page.findUnique.mockResolvedValue(projectPage());
-      (isProjectMember as any).mockResolvedValue(true);
-      expect(await authorizeCollabDoc("user1", "doc:p1:body")).toBe(true);
-      expect(isProjectMember).toHaveBeenCalledWith("user1", "proj1");
-    });
-
-    it("rejects partners on unshared project pages", async () => {
-      mockPrisma.page.findUnique.mockResolvedValue(projectPage());
-      (partnerHasProjectAccess as any).mockResolvedValue(true);
-      expect(await authorizeCollabDoc("user1", "doc:p1:body")).toBe(false);
-      expect(partnerHasProjectAccess).not.toHaveBeenCalled();
-    });
-
-    it("allows partners with project access on shared pages", async () => {
-      mockPrisma.page.findUnique.mockResolvedValue(
-        projectPage({ partnerVisible: true }),
-      );
-      (partnerHasProjectAccess as any).mockResolvedValue(true);
-      expect(await authorizeCollabDoc("user1", "doc:p1:body")).toBe(true);
-      expect(partnerHasProjectAccess).toHaveBeenCalledWith("user1", "proj1");
-    });
-
-    it("rejects partners without project access even on shared pages", async () => {
-      mockPrisma.page.findUnique.mockResolvedValue(
-        projectPage({ partnerVisible: true }),
-      );
-      expect(await authorizeCollabDoc("user1", "doc:p1:body")).toBe(false);
+    it("rejects when getPageAccess denies (canView=false)", async () => {
+      setPage();
+      vi.mocked(getPageAccess).mockResolvedValue({
+        canView: false,
+        canEdit: false,
+        canComment: false,
+        canResolve: false,
+      });
+      expect(await authorizeCollabDoc("user1", "doc:p1:body")).toMatchObject(denied());
     });
   });
 
   describe("partner SOW docs (partnersow:{applicationId}:body)", () => {
     it("rejects when the application is missing", async () => {
       mockPrisma.partnerApplication.findUnique.mockResolvedValue(null);
-      expect(await authorizeCollabDoc("user1", "partnersow:app1:body")).toBe(false);
+      expect(await authorizeCollabDoc("user1", "partnersow:app1:body")).toMatchObject(denied());
     });
 
     it("allows Core", async () => {
-      mockPrisma.partnerApplication.findUnique.mockResolvedValue({
-        partnerOrgId: "org1",
-      });
+      mockPrisma.partnerApplication.findUnique.mockResolvedValue({ partnerOrgId: "org1" });
       (isCore as any).mockResolvedValue(true);
-      expect(await authorizeCollabDoc("user1", "partnersow:app1:body")).toBe(true);
+      expect(await authorizeCollabDoc("user1", "partnersow:app1:body")).toEqual(allowed());
     });
 
     it("allows a partner in the owning org", async () => {
-      mockPrisma.partnerApplication.findUnique.mockResolvedValue({
-        partnerOrgId: "org1",
-      });
+      mockPrisma.partnerApplication.findUnique.mockResolvedValue({ partnerOrgId: "org1" });
       mockPrisma.partnerUser.findUnique.mockResolvedValue({ partnerOrgId: "org1" });
-      expect(await authorizeCollabDoc("user1", "partnersow:app1:body")).toBe(true);
+      expect(await authorizeCollabDoc("user1", "partnersow:app1:body")).toEqual(allowed());
     });
 
     it("rejects a partner from another org", async () => {
-      mockPrisma.partnerApplication.findUnique.mockResolvedValue({
-        partnerOrgId: "org1",
-      });
+      mockPrisma.partnerApplication.findUnique.mockResolvedValue({ partnerOrgId: "org1" });
       mockPrisma.partnerUser.findUnique.mockResolvedValue({ partnerOrgId: "org2" });
-      expect(await authorizeCollabDoc("user1", "partnersow:app1:body")).toBe(false);
+      expect(await authorizeCollabDoc("user1", "partnersow:app1:body")).toMatchObject(denied());
     });
 
     it("rejects non-partner non-Core users", async () => {
-      mockPrisma.partnerApplication.findUnique.mockResolvedValue({
-        partnerOrgId: "org1",
-      });
+      mockPrisma.partnerApplication.findUnique.mockResolvedValue({ partnerOrgId: "org1" });
       mockPrisma.partnerUser.findUnique.mockResolvedValue(null);
-      expect(await authorizeCollabDoc("user1", "partnersow:app1:body")).toBe(false);
+      expect(await authorizeCollabDoc("user1", "partnersow:app1:body")).toMatchObject(denied());
     });
   });
 
   describe("epic description docs", () => {
     it("rejects when no epic has that descriptionDocId", async () => {
       mockPrisma.epic.findFirst.mockResolvedValue(null);
-      expect(await authorizeCollabDoc("user1", "epic:abc:description")).toBe(false);
+      expect(await authorizeCollabDoc("user1", "epic:abc:description")).toMatchObject(denied());
     });
 
     it("rejects non-leads even when the epic exists", async () => {
       mockPrisma.epic.findFirst.mockResolvedValue({ id: "e1" });
-      expect(await authorizeCollabDoc("user1", "epic:abc:description")).toBe(false);
+      expect(await authorizeCollabDoc("user1", "epic:abc:description")).toMatchObject(denied());
     });
 
     it("allows hiring leads when the epic exists", async () => {
       mockPrisma.epic.findFirst.mockResolvedValue({ id: "e1" });
       (isCore as any).mockResolvedValue(true);
-      expect(await authorizeCollabDoc("user1", "epic:abc:description")).toBe(true);
+      expect(await authorizeCollabDoc("user1", "epic:abc:description")).toEqual(allowed());
     });
   });
 });

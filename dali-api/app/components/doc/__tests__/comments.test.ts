@@ -7,6 +7,7 @@ import {
   serializeBody,
   deserializeBody,
   apiCommentsToThreadMap,
+  DaliThreadStoreAuth,
 } from "../comments/DaliThreadStore";
 
 const blocknoteAnchor = { kind: "blocknote" };
@@ -149,5 +150,68 @@ describe("apiCommentsToThreadMap", () => {
     const map = apiCommentsToThreadMap([c]);
     const comment = map.get("c-body")!.comments[0];
     expect(comment.body).toEqual(blocks);
+  });
+});
+
+describe("DaliThreadStoreAuth", () => {
+  // Minimal CommentData shape for auth tests.
+  function makeCommentData(userId: string, reactions = []) {
+    return {
+      type: "comment" as const,
+      id: "c1",
+      userId,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      reactions,
+      metadata: {},
+      body: [],
+    };
+  }
+
+  function makeThreadData() {
+    return {
+      type: "thread" as const,
+      id: "t1",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      comments: [],
+      resolved: false,
+      metadata: {},
+    };
+  }
+
+  describe("editor role", () => {
+    const auth = new DaliThreadStoreAuth("u-me", "editor");
+
+    it("can create threads", () => expect(auth.canCreateThread()).toBe(true));
+    it("can add comments", () => expect(auth.canAddComment(makeThreadData())).toBe(true));
+    it("can update own comment", () => expect(auth.canUpdateComment(makeCommentData("u-me"))).toBe(true));
+    it("cannot update others comment", () => expect(auth.canUpdateComment(makeCommentData("u-other"))).toBe(false));
+    it("can delete any comment", () => expect(auth.canDeleteComment(makeCommentData("u-other"))).toBe(true));
+    it("can delete any thread", () => expect(auth.canDeleteThread(makeThreadData())).toBe(true));
+    it("can resolve threads", () => expect(auth.canResolveThread(makeThreadData())).toBe(true));
+    it("can unresolve threads", () => expect(auth.canUnresolveThread(makeThreadData())).toBe(true));
+    it("cannot add reactions (reactions disabled)", () => {
+      expect(auth.canAddReaction(makeCommentData("u-other"))).toBe(false);
+    });
+    it("cannot delete reactions (reactions disabled)", () => {
+      expect(auth.canDeleteReaction(makeCommentData("u-other"))).toBe(false);
+    });
+  });
+
+  describe("comment role", () => {
+    const auth = new DaliThreadStoreAuth("u-me", "comment");
+
+    it("can create threads", () => expect(auth.canCreateThread()).toBe(true));
+    it("can add comments", () => expect(auth.canAddComment(makeThreadData())).toBe(true));
+    it("can update own comment", () => expect(auth.canUpdateComment(makeCommentData("u-me"))).toBe(true));
+    it("cannot delete others comment", () => expect(auth.canDeleteComment(makeCommentData("u-other"))).toBe(false));
+    it("can delete own comment", () => expect(auth.canDeleteComment(makeCommentData("u-me"))).toBe(true));
+    it("cannot delete thread", () => expect(auth.canDeleteThread(makeThreadData())).toBe(false));
+    // canResolve / canUnresolve are gated by role now (only "editor" role)
+    it("cannot resolve thread (comment role)", () => expect(auth.canResolveThread(makeThreadData())).toBe(false));
+    it("cannot unresolve thread (comment role)", () => expect(auth.canUnresolveThread(makeThreadData())).toBe(false));
+    it("cannot add reactions", () => expect(auth.canAddReaction(makeCommentData("u-other"))).toBe(false));
+    it("cannot delete reactions", () => expect(auth.canDeleteReaction(makeCommentData("u-other"))).toBe(false));
   });
 });

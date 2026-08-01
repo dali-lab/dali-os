@@ -30,6 +30,10 @@ export interface DocCommentsConfig {
   canComment: boolean;
   /** Whether the viewer may resolve / reopen threads. */
   canResolve: boolean;
+  /** Whether the comments panel is currently open (W2 uses for sidebar sync). */
+  panelOpen?: boolean;
+  /** The DOM id of the comments panel — BlockNote anchors jump to it. */
+  panelTargetId?: string;
 }
 
 export interface DocEditorProps {

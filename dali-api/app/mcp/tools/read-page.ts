@@ -59,7 +59,7 @@ export async function runReadPage(callerId: string, input: Input) {
   // authenticated session. Without this, any mcp:read caller could read a
   // page's Markdown for a project they aren't on, or an instructor-only
   // EducationOffering page.
-  if (!(await authorizeCollabDoc(callerId, pageDocName(page.id)))) {
+  if (!(await authorizeCollabDoc(callerId, pageDocName(page.id))).allowed) {
     throw new ReadPageError("Forbidden", 403);
   }
 

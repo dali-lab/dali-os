@@ -128,3 +128,118 @@
   > .bn-block-group {
   margin-left: 28px;
 }
+
+/* ── 4. Inline comment marks ──────────────────────────────────────────────── */
+/*
+ * .bn-thread-mark       — text span produced by BlockNote's CommentMark
+ * .bn-thread-mark-selected — added as a ProseMirror decoration when the thread
+ *                            is the selectedThreadId in CommentsExtension state
+ * [data-orphan="true"]  — set on the mark when its thread is deleted/resolved;
+ *                          CommentsExtension manages this automatically on store
+ *                          subscription updates.
+ *
+ * Colours use color-mix so they adapt to the app's semantic tokens without
+ * requiring a separate dark-mode rule — the underlying accent tokens already
+ * flip under html.dark (see app.css).
+ */
+.dali-doc .bn-thread-mark {
+  background-color: color-mix(in srgb, var(--color-accent-yellow, #eab308) 28%, transparent);
+  border-radius: 2px;
+  padding-block: 1px;
+  transition: background-color 150ms ease;
+  cursor: pointer;
+}
+
+.dali-doc .bn-thread-mark-selected,
+.dali-doc .bn-thread-mark:hover {
+  background-color: color-mix(in srgb, var(--color-accent-yellow, #eab308) 55%, transparent);
+}
+
+/* Orphaned marks: thread deleted or resolved and mark not yet removed.
+ * Subtle gray-blue distinguishes "stale" from "active" without being alarming. */
+.dali-doc .bn-thread-mark[data-orphan="true"] {
+  background-color: color-mix(in srgb, var(--color-muted-foreground, #94a3b8) 18%, transparent);
+  cursor: default;
+}
+
+/* Dark-mode variant: yellow with less opacity to avoid eye-strain on dark bg. */
+html.dark .dali-doc .bn-thread-mark {
+  background-color: color-mix(in srgb, var(--color-accent-yellow, #ca8a04) 22%, transparent);
+}
+
+html.dark .dali-doc .bn-thread-mark-selected,
+html.dark .dali-doc .bn-thread-mark:hover {
+  background-color: color-mix(in srgb, var(--color-accent-yellow, #ca8a04) 42%, transparent);
+}
+
+html.dark .dali-doc .bn-thread-mark[data-orphan="true"] {
+  background-color: color-mix(in srgb, var(--color-muted-foreground, #64748b) 20%, transparent);
+}
+
+/* Floating portal root: zero-size overlay inside .dali-doc so the floating
+ * composer and thread popover have a DOM ancestor inside the editor tree.
+ * Floating UI's useDismiss checks containment — this is the key fix. */
+.dali-doc .dali-doc-floating-root {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+/* ThreadsSidebar portaled into the panel: reset BlockNote's sidebar defaults
+ * that assume a fixed-width aside. The panel width is set by the panel itself. */
+#doc-comments-panel .bn-threads-sidebar,
+[id^="doc-comments-"] .bn-threads-sidebar {
+  width: 100%;
+  padding: 0;
+}
+
+#doc-comments-panel .bn-thread,
+[id^="doc-comments-"] .bn-thread {
+  border-radius: var(--bn-border-radius, var(--radius));
+}
+
+/* ── W1: Page-surface styles (paper canvas, top bar, title) ────────────────
+ * W2 appends comment-specific styles BELOW this section — keep the sections
+ * clearly separated so concurrent edits don't collide. */
+
+/* The tinted outer background behind the paper canvas. The app shell itself
+ * sets the bg, so this only ensures the canvas area has enough breathing room
+ * in edge cases (e.g. rendered inside an iframe without the full shell). */
+.doc-surface {
+  background-color: var(--color-background);
+}
+
+/* Paper card: centred, max ~868px (760px body text + BlockNote's 54px gutter
+ * on each side), white surface, light hairline, soft brand-1 shadow. */
+.doc-canvas {
+  /* max-width enforced via Tailwind max-w-[868px] in JSX */
+}
+
+/* Contenteditable title — suppresses the box that the global
+ * `input { background-color: var(--color-card) }` rule in app.css paints.
+ * Because this is a <h1[contenteditable]>, not an <input>, that rule doesn't
+ * apply here — no override needed. The :empty pseudo + content attr shows the
+ * placeholder text without a JS-managed value attribute. */
+.doc-title-editable:focus {
+  outline: none;
+}
+.doc-title-editable:empty::before {
+  content: attr(data-placeholder);
+  color: var(--color-muted-foreground);
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* Top bar: stays anchored above the canvas, inherits the surface bg.
+ * Minimal — breadcrumb/back are handled by the outer shell pill row. */
+.doc-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background-color: var(--color-background);
+  border-bottom: 1px solid var(--color-border);
+}

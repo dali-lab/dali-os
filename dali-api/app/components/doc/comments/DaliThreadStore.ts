@@ -23,7 +23,7 @@
 
 import {
   ThreadStore,
-  DefaultThreadStoreAuth,
+  ThreadStoreAuth,
   type ThreadData,
   type CommentData,
   type CommentBody,
@@ -143,6 +143,37 @@ export function apiCommentsToThreadMap(
   return map;
 }
 
+// ── DaliThreadStoreAuth — reactions disabled, resolve gated ─────────────────
+//
+// DefaultThreadStoreAuth allows reactions, which we silently no-op in the
+// store. The cleaner fix: subclass and return false from canAddReaction /
+// canDeleteReaction so the emoji picker UI is never shown in the first place.
+// We also let canResolve / canUnresolve gate on the config flag.
+
+export class DaliThreadStoreAuth extends ThreadStoreAuth {
+  constructor(
+    private readonly userId: string,
+    private readonly role: "comment" | "editor",
+  ) {
+    super();
+  }
+
+  canCreateThread(): boolean { return true; }
+  canAddComment(_thread: ThreadData): boolean { return true; }
+  canUpdateComment(comment: CommentData): boolean { return comment.userId === this.userId; }
+  canDeleteComment(comment: CommentData): boolean {
+    return comment.userId === this.userId || this.role === "editor";
+  }
+  canDeleteThread(_thread: ThreadData): boolean { return this.role === "editor"; }
+  canResolveThread(_thread: ThreadData): boolean { return this.role === "editor"; }
+  canUnresolveThread(_thread: ThreadData): boolean { return this.role === "editor"; }
+
+  // Reactions are not supported — returning false hides the emoji picker button
+  // and reaction badges without needing any CSS overrides.
+  canAddReaction(_comment: CommentData, _emoji?: string): boolean { return false; }
+  canDeleteReaction(_comment: CommentData, _emoji?: string): boolean { return false; }
+}
+
 // ── DaliThreadStore ──────────────────────────────────────────────────────────
 
 export interface DaliThreadStoreConfig {
@@ -165,10 +196,11 @@ export class DaliThreadStore extends ThreadStore {
   private listeners: Set<(threads: Map<string, ThreadData>) => void> = new Set();
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private didMount = false;
+  private fetchError: string | null = null;
 
   constructor(config: DaliThreadStoreConfig) {
     super(
-      new DefaultThreadStoreAuth(
+      new DaliThreadStoreAuth(
         config.currentUserId,
         config.canResolve ? "editor" : "comment",
       ),
@@ -212,6 +244,11 @@ export class DaliThreadStore extends ThreadStore {
         this.didMount = false;
       }
     };
+  }
+
+  /** Last fetch error, mapped to user-friendly language. Null if none. */
+  getError(): string | null {
+    return this.fetchError;
   }
 
   // ── Write interface ─────────────────────────────────────────────────────
@@ -348,15 +385,26 @@ export class DaliThreadStore extends ThreadStore {
     return comment;
   }
 
-  async updateComment(_options: {
+  async updateComment(options: {
     comment: { body: CommentBody; metadata?: unknown };
     threadId: string;
     commentId: string;
   }): Promise<void> {
-    // DocComment has no update endpoint. No-op; BlockNote won't surface this
-    // unless canUpdateComment returns true (which it does for own comments via
-    // DefaultThreadStoreAuth) so we optimistically apply but silently skip.
-    // If an update API is added later, wire it here.
+    // W3's API adds intent:"edit" {body} to POST /api/comments/:id.
+    // bodyToPlainText keeps comments as plain text (existing decision).
+    const bodyText = bodyToPlainText(options.comment.body);
+    const res = await fetch(`/api/comments/${options.commentId}`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ intent: "edit", body: bodyText }),
+    });
+    if (!res.ok) {
+      // If the endpoint doesn't exist yet (W3 not deployed), swallow silently —
+      // the store state will still reflect the old body until next refetch.
+      return;
+    }
+    await this.refetch();
   }
 
   async deleteComment(options: {
@@ -373,6 +421,8 @@ export class DaliThreadStore extends ThreadStore {
 
   async deleteThread(options: { threadId: string }): Promise<void> {
     // Deleting the root comment cascades replies (see schema).
+    // The CommentsExtension's subscribe callback detects the thread is gone and
+    // marks the orphan attribute on the ProseMirror mark automatically.
     const res = await fetch(`/api/comments/${options.threadId}`, {
       method: "DELETE",
       credentials: "include",
@@ -403,9 +453,9 @@ export class DaliThreadStore extends ThreadStore {
     await this.refetch();
   }
 
-  // Reactions are not implemented (no DocComment equivalent). These are
-  // abstract in ThreadStoreAuth so we must define them, but DefaultThreadStoreAuth
-  // allows them while we silently skip the server call.
+  // Reactions are disabled via DaliThreadStoreAuth (canAddReaction → false).
+  // These no-ops exist to satisfy the abstract contract in case the auth check
+  // is ever bypassed or the type system requires them.
   async addReaction(_options: {
     threadId: string;
     commentId: string;
@@ -426,7 +476,14 @@ export class DaliThreadStore extends ThreadStore {
         `/api/comments?targetType=doc&targetId=${encodeURIComponent(this.pageId)}`,
         { credentials: "include" },
       );
-      if (!res.ok) return;
+      if (!res.ok) {
+        this.fetchError =
+          res.status === 403
+            ? "You don't have access to comments here."
+            : `Failed to load comments (${res.status}).`;
+        return;
+      }
+      this.fetchError = null;
       const { comments } = (await res.json()) as { comments: ApiComment[] };
       this.threads = apiCommentsToThreadMap(comments);
       for (const cb of this.listeners) {
@@ -436,4 +493,56 @@ export class DaliThreadStore extends ThreadStore {
       // Network errors during polling are not fatal.
     }
   }
+}
+
+// ── User resolver ────────────────────────────────────────────────────────────
+//
+// W3 provides GET /api/users/resolve?ids=a,b,c → {users:[{id,name,photoUrl?}]}.
+// We call it for any ids not already known from thread comment metadata, then
+// cache in a module-level Map so repeated calls are cheap (page reload clears).
+
+const resolvedUserCache = new Map<string, { username: string; avatarUrl: string }>();
+
+export async function resolveDocUsers(
+  userIds: string[],
+  store: DaliThreadStore,
+): Promise<{ id: string; username: string; avatarUrl: string }[]> {
+  // Seed cache from thread metadata (already fetched, no extra round-trip).
+  for (const thread of store.getThreads().values()) {
+    for (const comment of thread.comments) {
+      if (!resolvedUserCache.has(comment.userId) && comment.metadata) {
+        const meta = comment.metadata as { author?: string; authorPhotoUrl?: string | null };
+        resolvedUserCache.set(comment.userId, {
+          username: meta.author ?? comment.userId,
+          avatarUrl: meta.authorPhotoUrl ?? "",
+        });
+      }
+    }
+  }
+
+  const missing = userIds.filter((id) => !resolvedUserCache.has(id));
+  if (missing.length > 0) {
+    try {
+      const res = await fetch(
+        `/api/users/resolve?ids=${encodeURIComponent(missing.join(","))}`,
+        { credentials: "include" },
+      );
+      if (res.ok) {
+        const { users } = (await res.json()) as {
+          users: { id: string; name: string; photoUrl?: string | null }[];
+        };
+        for (const u of users) {
+          resolvedUserCache.set(u.id, { username: u.name, avatarUrl: u.photoUrl ?? "" });
+        }
+      }
+    } catch {
+      // If the resolve endpoint isn't available yet, degrade gracefully:
+      // known users still render; unknown get bare initials.
+    }
+  }
+
+  return userIds.flatMap((id) => {
+    const known = resolvedUserCache.get(id);
+    return known ? [{ id, ...known }] : [];
+  });
 }

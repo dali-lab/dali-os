@@ -4,9 +4,9 @@ import type { Route } from "./+types/documents.$pageId";
 import { prisma } from "~/lib/db";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { parseSessionCookie } from "~/lib/cookies";
-import { isCore, isProjectMember, isLabMember } from "~/lib/roles";
 import { fullName } from "~/lib/display";
 import { getPresenceUser } from "~/lib/presence-user";
+import { getPageAccess } from "~/lib/pageAccess.server";
 import { DocumentEditor } from "~/components/DocumentEditor";
 import { AttendanceChecklist, type AttendanceRow } from "~/components/AttendanceChecklist";
 import { CheckInPanel } from "~/components/CheckInPanel";
@@ -106,40 +106,21 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     throw new Response("Not found", { status: 404 });
   }
 
-  // Mirrors the doc gate in authorizeCollabDoc: Core everywhere, plus anyone
-  // staffed on the project for Project-workspace pages (the same gate the
-  // document API routes use — without this the editor rendered enabled but
-  // the collab handshake rejected members), plus the offering's instructors
-  // for EducationOffering-workspace pages.
-  // Personal notes are the one workspace with a real READ gate. Every other
-  // page type is openable by any signed-in member (the checks below only
-  // decide who may edit), which is fine for lab/project/offering docs but
-  // would make "private" meaningless here. Core gets no bypass.
+  // Personal notes have a real read gate: only the owner (or a share) may view.
   if (page.workspaceType === "Member") {
     const { noteAccess } = await import("~/members/lib/personal-notes.server");
     const access = await noteAccess(page.id, auth.user.sub).catch(() => null);
     if (!access?.canView) throw new Response("Not found", { status: 404 });
   }
 
-  let canEdit = await isCore(auth.user.sub);
-  if (!canEdit && page.workspaceType === "Lab") {
-    canEdit = await isLabMember(auth.user.sub);
-  }
-  if (!canEdit && page.workspaceType === "Project" && page.workspaceId) {
-    canEdit = await isProjectMember(auth.user.sub, page.workspaceId);
-  }
-  if (page.workspaceType === "Member") {
-    // Sharing is read-only: a personal note is someone's own notebook page,
-    // not a collaborative doc. This overrides the Core default above.
-    canEdit = page.workspaceId === auth.user.sub;
-  }
-  if (!canEdit && page.workspaceType === "EducationOffering" && page.workspaceId) {
-    const instructor = await prisma.instructorAssignment.findFirst({
-      where: { userId: auth.user.sub, offeringId: page.workspaceId },
-      select: { id: true },
-    });
-    canEdit = instructor !== null;
-  }
+  // Unified permission resolution — single call replaces the old inline block.
+  const access = await getPageAccess(auth.user.sub, {
+    id: page.id,
+    workspaceType: page.workspaceType,
+    workspaceId: page.workspaceId,
+    archivedAt: page.archivedAt,
+  });
+  const { canEdit, canComment, canResolve } = access;
 
   const allTags = await prisma.docTag.findMany({
     where: { archivedAt: null },
@@ -255,12 +236,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     hubIconEmoji,
     iconEmoji: page.iconEmoji,
     coverImageUrl: page.coverImageUrl,
-    createdByName: page.createdBy ? fullName(page.createdBy) : null,
-    lastEditedByName: page.lastEditedBy ? fullName(page.lastEditedBy) : null,
     updatedAt: page.updatedAt.toISOString(),
     tags: page.tags.map((t) => t.tag).sort((a, b) => a.label.localeCompare(b.label)),
     allTags,
     canEdit,
+    canComment,
+    canResolve,
     collabToken,
     userName: presenceUser?.name ?? fallbackName,
     currentUserId: auth.user.sub,
@@ -277,6 +258,8 @@ export default function DocumentPage() {
     tags,
     allTags,
     canEdit,
+    canComment,
+    canResolve,
     collabToken,
     userName,
     currentUserId,
@@ -284,14 +267,12 @@ export default function DocumentPage() {
     subtitle,
     iconEmoji,
     coverImageUrl,
-    createdByName,
-    lastEditedByName,
     updatedAt,
     attendance,
   } = useLoaderData() as Exclude<Awaited<ReturnType<typeof loader>>, Response>;
 
-  // Arriving from a comment-mention notification (?comment=<id>): scroll to +
-  // flash that comment in the rail once threads load.
+  // Arriving from a comment-mention notification (?comment=<id>): open the
+  // comments panel and scroll to that comment once threads load.
   const [searchParams] = useSearchParams();
   const focusCommentId = searchParams.get("comment") ?? undefined;
 
@@ -324,12 +305,12 @@ export default function DocumentPage() {
         photoUrl={photoUrl}
         subtitle={subtitle}
         canEdit={canEdit}
+        canComment={canComment}
+        canResolve={canResolve}
         tags={tags}
         allTags={allTags}
         iconEmoji={iconEmoji}
         coverImageUrl={coverImageUrl}
-        createdByName={createdByName}
-        lastEditedByName={lastEditedByName}
         updatedAt={updatedAt}
         focusCommentId={focusCommentId}
       />

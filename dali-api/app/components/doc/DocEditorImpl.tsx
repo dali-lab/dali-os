@@ -22,6 +22,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { createPortal } from "react-dom";
 import type { ReactNode } from "react";
 import type { EditorState } from "prosemirror-state";
 import type * as Y from "yjs";
@@ -34,12 +35,13 @@ import {
   useCreateBlockNote,
   FloatingComposerController,
   FloatingThreadController,
+  ThreadsSidebar,
 } from "@blocknote/react";
 import { BlockNoteView } from "@blocknote/shadcn";
 
 import { countWords, extractHeadings, normalizeInitialContent } from "./blocks-util";
 import { acquireCollabDoc, nameToHexColor, releaseCollabDoc, type CollabDocEntry } from "./collab-doc";
-import { DaliThreadStore } from "./comments/DaliThreadStore";
+import { DaliThreadStore, resolveDocUsers } from "./comments/DaliThreadStore";
 import { DocEditorFallback } from "./DocEditor";
 import { resolveFeatures, type Features } from "./features";
 import { buildSchema, type DocEditorInstance, type DocPartialBlock } from "./schema/build";
@@ -212,35 +214,15 @@ function useThreadStore(comments: DocCommentsConfig | undefined): DaliThreadStor
 
 /**
  * Returns a resolveUsers callback for CommentsExtension. BlockNote calls it
- * with `(userIds, store)` and expects `Promise<User[]>` where User is
- * `{ id, username, avatarUrl }`.
+ * with `(userIds, store)` and expects `Promise<User[]>`.
  *
- * We scan the thread store's comment metadata (author name + photoUrl stored
- * by DaliThreadStore) — no separate request needed since that data arrives
- * with the initial comments fetch.
+ * We use W3's /api/users/resolve endpoint (with a metadata-seed shortcut so
+ * known users don't need an extra round-trip).
  */
 function makeResolveDocUsers(store: DaliThreadStore) {
   return async (userIds: string[]): Promise<User[]> => {
-    const threads = store.getThreads();
-    const knownUsers = new Map<string, { username: string; avatarUrl: string }>();
-    for (const thread of threads.values()) {
-      for (const comment of thread.comments) {
-        if (!knownUsers.has(comment.userId) && comment.metadata) {
-          const meta = comment.metadata as { author?: string; authorPhotoUrl?: string | null };
-          knownUsers.set(comment.userId, {
-            username: meta.author ?? comment.userId,
-            avatarUrl: meta.authorPhotoUrl ?? "",
-          });
-        }
-      }
-    }
-    const resolved: User[] = [];
-    for (const id of userIds) {
-      const known = knownUsers.get(id);
-      if (known) resolved.push({ id, ...known });
-      // Unknown: skip; BlockNote retries after the next subscribe callback fires.
-    }
-    return resolved;
+    const resolved = await resolveDocUsers(userIds, store);
+    return resolved as User[];
   };
 }
 
@@ -260,6 +242,43 @@ function DocView(props: ResolvedProps & { editor: DocEditorInstance }) {
   }, [editor]);
 
   const hasComments = Boolean(props.comments);
+  const panelOpen = props.comments?.panelOpen ?? false;
+  const panelTargetId = props.comments?.panelTargetId;
+
+  // The floating comment composer and thread popover portal into a div that
+  // lives INSIDE the .dali-doc wrapper. This is the La Suite / BlockNote 0.52
+  // fix for the "composer can't receive input" bug:
+  //
+  // Root cause: when portalElement is undefined, FloatingPortal (used internally
+  // by GenericPopover) falls back to document.body. Floating UI's useDismiss
+  // then watches for mousedown events outside the floating element — but the
+  // editor's .bn-editor div is also "outside" document.body's subtree from
+  // useDismiss's perspective (it's a sibling, not an ancestor). So a mousedown
+  // on the composer triggers dismiss before the click lands.
+  //
+  // Fix: pass a portalElement that is INSIDE the .dali-doc subtree. BlockNoteView
+  // accepts `portalElements={{ comments: element }}` and passes it through to
+  // both FloatingComposerController and FloatingThreadController. The floating
+  // container is now a sibling of the editor content (inside .dali-doc), so
+  // useDismiss's reference tracking sees clicks in the composer as "inside".
+  //
+  // We use a ref-attached div rendered as a sibling of <BlockNoteView> inside
+  // .dali-doc; the ref is stable across renders.
+  const floatingRootRef = useRef<HTMLDivElement | null>(null);
+
+  // Portal target for ThreadsSidebar: when the panel is open, we want
+  // <ThreadsSidebar> to render inside the panel's #panelTargetId div.
+  // We must stay inside a BlockNoteView context, so DocEditorImpl creates the
+  // portal here (inside the editor's React tree) rather than from the panel.
+  const [panelTarget, setPanelTarget] = useState<Element | null>(null);
+  useEffect(() => {
+    if (panelOpen && panelTargetId) {
+      const el = document.getElementById(panelTargetId);
+      setPanelTarget(el);
+    } else {
+      setPanelTarget(null);
+    }
+  }, [panelOpen, panelTargetId]);
 
   const menus: ReactNode = (
     <>
@@ -277,9 +296,26 @@ function DocView(props: ResolvedProps & { editor: DocEditorInstance }) {
       {/* Inline comment floating UI — only active when CommentsExtension is
           wired (i.e. props.comments is set and mode is collab).
           FloatingComposerController: new-thread composer floating above selection.
-          FloatingThreadController: selected-thread popover anchored to the mark. */}
-      {hasComments && <FloatingComposerController />}
-      {hasComments && <FloatingThreadController />}
+          FloatingThreadController: selected-thread popover anchored to the mark.
+          Both receive portalElement=floatingRootRef.current so they portal into
+          the .dali-doc wrapper — this is what makes clicks inside the composer
+          NOT trigger useDismiss's outside-press detection. */}
+      {hasComments && (
+        <FloatingComposerController portalElement={floatingRootRef.current ?? undefined} />
+      )}
+      {/* Suppress FloatingThreadController when panel is open: the sidebar
+          already shows the thread inline, showing both is redundant. */}
+      {hasComments && !panelOpen && (
+        <FloatingThreadController portalElement={floatingRootRef.current ?? undefined} />
+      )}
+      {/* ThreadsSidebar portaled into the panel when it's open. Stays inside
+          the BlockNoteView context (required for editor/store access). */}
+      {hasComments && panelTarget &&
+        createPortal(
+          <ThreadsSidebar filter={panelOpen ? "open" : "all"} sort="position" />,
+          panelTarget,
+        )
+      }
     </>
   );
 
@@ -294,6 +330,11 @@ function DocView(props: ResolvedProps & { editor: DocEditorInstance }) {
           .filter(Boolean)
           .join(" ")}
       >
+        {/* Floating portal root — must be INSIDE .dali-doc so useDismiss sees
+            composer clicks as within-editor. Size/position are irrelevant; the
+            floating UI positions itself via Floating UI's own logic. */}
+        <div ref={floatingRootRef} className="dali-doc-floating-root" />
+
         <BlockNoteView
           editor={editor}
           // String theme only: BlockNote's default follows the SYSTEM color
@@ -305,6 +346,10 @@ function DocView(props: ResolvedProps & { editor: DocEditorInstance }) {
           // Compact fields don't need the drag-handle side menu (and its wide
           // gutter — see .dali-doc--compact in theme.css).
           sideMenu={props.density !== "compact"}
+          // Disable BlockNoteDefaultUI's built-in comments controllers — we
+          // mount FloatingComposerController and FloatingThreadController
+          // manually as children (with our portalElement override).
+          comments={false}
         >
           {menus}
         </BlockNoteView>
