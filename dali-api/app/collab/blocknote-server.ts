@@ -15,6 +15,7 @@ import {
   BlockNoteSchema,
   createBlockSpec,
   createInlineContentSpec,
+  createPageBreakBlockSpec,
   defaultBlockSpecs,
   defaultInlineContentSpecs,
   defaultStyleSpecs,
@@ -126,7 +127,7 @@ const calloutSpec = createBlockSpec(calloutConfig, {
 })();
 
 export const serverSchema = BlockNoteSchema.create({
-  blockSpecs: { ...defaultBlockSpecs, callout: calloutSpec },
+  blockSpecs: { ...defaultBlockSpecs, callout: calloutSpec, pageBreak: createPageBreakBlockSpec() },
   inlineContentSpecs: {
     ...defaultInlineContentSpecs,
     mention: mentionSpec,

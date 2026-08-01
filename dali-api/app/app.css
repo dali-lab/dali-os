@@ -527,3 +527,56 @@ select:not(:disabled) {
   }
 }
 
+/* ── Print stylesheet: ⌘P / "Print / Save as PDF" ───────────────────────
+ * Hides ALL app chrome so only the document paper prints. The BlockNote /
+ * doc-canvas-specific print rules live in theme.css (section 7) — this block
+ * covers the outer shell (sidebar, mobile nav, top bar, floating command palette,
+ * presence, doc-surface chrome, comments, format popover, version history). */
+@media print {
+  /* Outer shell: sidebar + mobile nav header */
+  [class*="sidebar"],
+  .sidebar-scroll,
+  [class*="bg-sidebar-bg"] {
+    display: none !important;
+  }
+
+  /* Fixed/sticky chrome: top bars, presence, floating elements */
+  .doc-topbar,
+  [class*="fixed"],
+  [class*="sticky"] {
+    display: none !important;
+    position: static !important;
+  }
+
+  /* "Aa" format popover */
+  .dali-doc-format-popover {
+    display: none !important;
+  }
+
+  /* Command palette */
+  [role="dialog"][class*="Command"],
+  [class*="CommandPalette"] {
+    display: none !important;
+  }
+
+  /* Doc surface: remove flex overhead, let paper fill the page */
+  .doc-surface {
+    display: block !important;
+    background: white !important;
+    min-height: unset !important;
+  }
+
+  /* Make the body full-width with sensible print margins */
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: white !important;
+    color: #000 !important;
+  }
+
+  /* Ensure links stay readable and suppress URL printing for decorative links */
+  a[href]::after {
+    content: none !important;
+  }
+}
+

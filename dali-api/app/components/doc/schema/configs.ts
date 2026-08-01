@@ -20,6 +20,13 @@
 export const BLOCKNOTE_FRAGMENT = "blocknote";
 export const LEGACY_PM_FRAGMENT = "default";
 
+// Page break: no props, no content — a pure structural separator.
+export const pageBreakConfig = {
+  type: "pageBreak" as const,
+  propSchema: {} as const,
+  content: "none" as const,
+};
+
 export const mentionConfig = {
   type: "mention",
   propSchema: {

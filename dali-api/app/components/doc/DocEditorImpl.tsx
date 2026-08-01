@@ -480,7 +480,7 @@ function useDocSchema(features: Features) {
     () => buildSchema(features),
     // Individual flags, not the object: hosts typically pass a fresh literal
     // every render and a schema rebuild recreates the whole editor.
-    [features.mentions, features.images, features.richBlocks, Boolean(features.signing)],
+    [features.mentions, features.images, features.richBlocks, features.pageBreak, Boolean(features.signing)],
   );
 }
 

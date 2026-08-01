@@ -9,7 +9,7 @@
 // group header (appending created a duplicate group, and with it the spike's
 // duplicate React key bug).
 
-import { filterSuggestionItems, insertOrUpdateBlockForSlashMenu } from "@blocknote/core";
+import { filterSuggestionItems, getPageBreakSlashMenuItems, insertOrUpdateBlockForSlashMenu } from "@blocknote/core";
 import { getDefaultReactSlashMenuItems } from "@blocknote/react";
 import type { DefaultReactSuggestionItem } from "@blocknote/react";
 import { insertItemIntoGroup } from "../blocks-util";
@@ -35,6 +35,7 @@ const ALLOWED_KEYS = new Set([
   "toggle_list",
   "table",
   "image",
+  // page_break is handled separately via getPageBreakSlashMenuItems
 ]);
 
 function calloutItem(editor: DocEditorInstance): KeyedItem {
@@ -65,8 +66,20 @@ export function getDocSlashMenuItems(
   const defaults = (getDefaultReactSlashMenuItems(editor) as KeyedItem[]).filter(
     (item) => item.key !== undefined && ALLOWED_KEYS.has(item.key),
   );
-  if (!features.richBlocks) return defaults;
-  return insertItemIntoGroup(defaults, calloutItem(editor));
+  let items = defaults;
+  if (features.richBlocks) {
+    items = insertItemIntoGroup(items, calloutItem(editor));
+  }
+  if (features.pageBreak) {
+    // getPageBreakSlashMenuItems returns [] when the block isn't in the schema.
+    // Cast via unknown: the core item type is compatible but the BlockNote
+    // generic parameters don't overlap with DocEditorInstance's narrow schema.
+    const pbItems = getPageBreakSlashMenuItems(editor as unknown as Parameters<typeof getPageBreakSlashMenuItems>[0]);
+    for (const pb of pbItems) {
+      items = [...items, pb as unknown as DefaultReactSuggestionItem];
+    }
+  }
+  return items;
 }
 
 /** getItems for SuggestionMenuController (query-filtered on title/aliases). */

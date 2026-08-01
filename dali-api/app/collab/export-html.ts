@@ -114,6 +114,8 @@ function renderNode(node: PMNode): string {
       )}</code></pre>`;
     case "horizontalRule":
       return "<hr />";
+    case "pageBreak":
+      return '<div class="page-break" style="break-after:page;page-break-after:always;border-top:1px dashed #bbb;margin:24px 0;" aria-hidden="true"></div>';
     case "hardBreak":
       return "<br />";
     case "image": {
@@ -201,6 +203,7 @@ export function buildExportHtml(title: string, bodyHtml: string): string {
   table { border-collapse: collapse; width: 100%; margin: 12px 0; }
   th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; vertical-align: top; }
   th { background: #f2f2f2; font-weight: 600; }
+  .page-break { break-after: page; page-break-after: always; }
 </style>
 </head>
 <body>

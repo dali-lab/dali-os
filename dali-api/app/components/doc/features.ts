@@ -12,6 +12,8 @@ export interface Features {
   images?: boolean;
   /** Rich extras: callout, table, toggle list — and their slash-menu items. */
   richBlocks?: boolean;
+  /** Page-break block + slash item (full document surfaces only). */
+  pageBreak?: boolean;
   /**
    * Signing field family + merge variables. Boolean here only gates the schema
    * (the nodes must be registered on EVERY surface that reads a signing body,
@@ -28,8 +30,8 @@ export const EDITOR_PRESETS: Record<EditorPresetName, Features> = {
   field: {}, // short structured input
   notes: { images: true }, // mentorship notes/templates, hiring notes
   agreement: { images: true, signing: true }, // signing document body
-  guide: { mentions: true, images: true }, // page-doc guides
-  document: { mentions: true, images: true, richBlocks: true }, // full document
+  guide: { mentions: true, images: true, pageBreak: true }, // page-doc guides
+  document: { mentions: true, images: true, richBlocks: true, pageBreak: true }, // full document
 };
 
 export function resolveFeatures(input: EditorPresetName | Features | undefined): Features {
