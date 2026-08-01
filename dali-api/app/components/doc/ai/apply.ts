@@ -1,13 +1,30 @@
-// Shared apply helpers used by AiPreviewDialog (on explicit user approval) and
-// as the legacy-path stub for tests. Extracted here so the slash-menu module,
-// toolbar, and preview dialog never duplicate the collaborator-race guard.
+// Shared types and apply helpers for the AI panel flow.
+// Extracted here so AiSlashMenuItems, AiFormattingToolbar, and AiPanel can all
+// import from this module without circular dependencies.
 //
-// The guard:  replaceBlocks/insertBlocks are wrapped in try/catch because a
-// collaborator may have deleted or restructured the scope blocks while the AI
-// request was in flight. On exception we fall back to inserting at the current
-// cursor with a toast.info; if that also throws we toast.error and give up.
+// Collaborator-race guard: replaceBlocks/insertBlocks are wrapped in try/catch
+// because a collaborator may have deleted or restructured the scope blocks while
+// the AI request was in flight. On exception we fall back to inserting at the
+// current cursor with a toast.info; if that also throws we toast.error and give up.
 
+import type { AiDocAction } from "~/routes/api.ai.doc";
 import type { DocEditorInstance, DocPartialBlock } from "../schema/build";
+
+// ── AI session config ─────────────────────────────────────────────────────────
+//
+// Captured at slash/toolbar click time (before the panel opens) so cursor
+// position and selection ids are locked in even if the user's cursor moves.
+
+export interface AiSessionConfig {
+  action: AiDocAction;
+  origin: "slash" | "toolbar";
+  /** Captured at slash-item click time (cursor may move after dialog opens). */
+  cursorBlockId: string | null;
+  /** Captured at toolbar-item click time (selection is lost once dialog opens). */
+  selectionBlockIds: string[] | null;
+  /** Whether the cursor block was empty at invoke time (drives default scope). */
+  cursorBlockWasEmpty: boolean;
+}
 
 /**
  * The structured result handed from runAiAction to the preview layer instead

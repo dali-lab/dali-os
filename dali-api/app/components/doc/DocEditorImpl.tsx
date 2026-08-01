@@ -17,6 +17,7 @@ import "./theme.css";
 import {
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -50,7 +51,8 @@ import {
   ThreadsSidebar,
 } from "@blocknote/react";
 import { buildAiFormattingToolbar } from "./ai/AiFormattingToolbar";
-import { AiPreviewDialog } from "./ai/AiPreviewDialog";
+import { AiPanel } from "./ai/AiPanel";
+import type { AiSessionConfig } from "./ai/apply";
 import { DocCommentsRail } from "./comments/DocCommentsRail";
 import { BlockNoteView } from "@blocknote/shadcn";
 
@@ -70,8 +72,7 @@ import { usePresence, useRegisterCollabEditor } from "../collab/PresenceProvider
 import type { DocCollabConfig, DocCommentsConfig, DocEditorProps } from "./types";
 import { uploadEditorImage } from "./upload";
 import { useAiSlashMenuItems } from "./ai/AiSlashMenuItems";
-import type { AiPendingResult } from "./ai/apply";
-import { useDialog } from "~/components/ui/dialog";
+import { Modal } from "~/components/Modal";
 import { useToast } from "~/components/ui/toast";
 
 export default function DocEditorImpl(props: DocEditorProps) {
@@ -260,37 +261,31 @@ function DocView(
   const { editor, features, collabEntry } = props;
   useDocChrome(editor, props);
   const isDark = useIsDark();
-  const dialog = useDialog();
   const toast = useToast();
   const aiEnabled = props.aiEnabled ?? false;
   const editable = props.editable ?? true;
 
-  // Pending AI result — set when the AI returns, cleared when the user
-  // approves (Apply/Insert below) or discards. Nothing touches the document
-  // until the user acts in AiPreviewDialog.
-  const [pendingAiResult, setPendingAiResult] = useState<AiPendingResult | null>(null);
+  // AI session — set when a slash or toolbar AI item is clicked; cleared when
+  // the user applies, inserts, or discards. AiPanel owns the full lifecycle.
+  const [aiSession, setAiSession] = useState<AiSessionConfig | null>(null);
+  const aiPanelTitleId = useId();
 
-  // Stable callback passed down into the slash-items hook and toolbar factory.
-  const handleAiResult = useCallback(
-    (result: AiPendingResult) => setPendingAiResult(result),
+  // Stable callback: opening a session clears any prior one (there's only ever
+  // one AI panel open at a time; a previous in-flight request is aborted by
+  // AiPanel's useEffect cleanup when it unmounts).
+  const openSession = useCallback(
+    (config: AiSessionConfig) => setAiSession(config),
     [],
   );
 
-  const aiItems = useAiSlashMenuItems(
-    editor,
-    aiEnabled,
-    dialog.prompt,
-    dialog.choice,
-    handleAiResult,
-  );
+  const aiItems = useAiSlashMenuItems(editor, aiEnabled, openSession);
 
   // Build a stable FormattingToolbar component reference so the controller
   // doesn't remount on every render when aiEnabled/editable change.
-  // handleAiResult is stable (useCallback with no deps), so it's safe to
-  // include in the useMemo deps without causing needless remounts.
+  // openSession is stable (useCallback with no deps), so it's safe in useMemo deps.
   const aiFormattingToolbar = useMemo(
-    () => buildAiFormattingToolbar(aiEnabled, editable, handleAiResult),
-    [aiEnabled, editable, handleAiResult],
+    () => buildAiFormattingToolbar(aiEnabled, editable, openSession),
+    [aiEnabled, editable, openSession],
   );
 
   // Hand hosts the live instance (ref-routed so a new callback identity per
@@ -635,18 +630,30 @@ function DocView(
           {menus}
         </BlockNoteView>
       </div>
-      {/* AI preview dialog — rendered outside the .dali-doc wrapper so it
-          stacks above the editor chrome at the page level. State lives here
-          (DocView) so it dies with the editor on unmount/navigation, preventing
-          stale results from leaking to a different document. */}
-      {pendingAiResult && (
-        <AiPreviewDialog
-          editor={editor}
-          result={pendingAiResult}
-          onClose={() => setPendingAiResult(null)}
-          toastInfo={(m) => toast.info(m)}
-          toastError={(m) => toast.error(m)}
-        />
+      {/* AI panel — rendered outside the .dali-doc wrapper so it stacks above
+          the editor chrome at the page level. Keyed by a stable per-session id
+          so a new session always mounts a fresh AiPanel (clean state, fresh
+          AbortController, fresh auto-run). State lives in DocView so it is
+          destroyed on unmount/navigation, preventing stale results leaking to
+          a different document.
+          v1: hosted in Modal (Escape/backdrop = discard, with abort).
+          Phase 2: re-host inside a BlockPopover without changing AiPanel. */}
+      {aiSession && (
+        <Modal
+          open
+          onClose={() => setAiSession(null)}
+          labelledBy={aiPanelTitleId}
+          containerClassName="bg-card rounded-2xl shadow-brand-2 max-w-2xl w-full p-5 sm:p-6 my-auto"
+        >
+          <AiPanel
+            key={`${aiSession.action}-${aiSession.cursorBlockId ?? "toolbar"}`}
+            editor={editor}
+            config={aiSession}
+            onClose={() => setAiSession(null)}
+            toastInfo={(m) => toast.info(m)}
+            toastError={(m) => toast.error(m)}
+          />
+        </Modal>
       )}
     </SigningContext.Provider>
   );
