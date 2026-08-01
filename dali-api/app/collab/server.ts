@@ -6,6 +6,7 @@ import { loadDocument, maybeSnapshot, storeDocument } from "./persistence";
 import { isPresenceRoom } from "./roomName";
 import { authorizeCollabDoc } from "~/lib/collabAuth";
 import { notifyCollabDocMentions } from "./mentions.server";
+import { reconcilePageLinks } from "./page-links.server";
 
 const WS_MAX_PAYLOAD_BYTES = 1_048_576; // 1 MB
 const WS_MAX_CONNECTIONS = 100;
@@ -138,6 +139,10 @@ export function startCollabServer() {
       void notifyCollabDocMentions(documentName, document, authors).catch((err) =>
         console.error(`[collab:server] mention notify failed doc=${documentName}`, err),
       );
+      // Reconcile the backlink index for page mentions (best-effort).
+      void reconcilePageLinks(documentName, document).catch((err) =>
+        console.error(`[collab:server] page-link reconcile failed doc=${documentName}`, err),
+      );
       try {
         const wrote = await maybeSnapshot(documentName, stored, authors);
         if (!wrote) for (const a of authors) recordAuthor(documentName, a);
@@ -161,6 +166,9 @@ export function startCollabServer() {
       const authors = drainAuthors(documentName);
       void notifyCollabDocMentions(documentName, document, authors).catch((err) =>
         console.error(`[collab:server] mention notify failed doc=${documentName}`, err),
+      );
+      void reconcilePageLinks(documentName, document).catch((err) =>
+        console.error(`[collab:server] page-link reconcile failed doc=${documentName}`, err),
       );
       try {
         const wrote = await maybeSnapshot(documentName, stored, authors);

@@ -23,7 +23,7 @@ import {
 import { codeBlockOptions } from "@blocknote/code-block";
 import type { Features } from "../features";
 import { CalloutSpec } from "./callout";
-import { MentionSpec } from "./mention";
+import { MentionSpec, PageMentionSpec } from "./mention";
 import { signingInlineSpecs } from "./signing";
 
 function fullBlockSpecs() {
@@ -47,6 +47,7 @@ function fullInlineSpecs() {
   return {
     ...defaultInlineContentSpecs,
     mention: MentionSpec,
+    pageMention: PageMentionSpec,
     ...signingInlineSpecs,
   };
 }
@@ -64,7 +65,10 @@ export function buildSchema(features: Features = {}) {
     delete blocks.toggleListItem;
     delete blocks.callout;
   }
-  if (!features.mentions) delete inline.mention;
+  if (!features.mentions) {
+    delete inline.mention;
+    delete inline.pageMention;
+  }
   if (!features.signing) {
     for (const key of Object.keys(signingInlineSpecs)) delete inline[key];
   }

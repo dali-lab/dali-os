@@ -3760,8 +3760,30 @@ model Page {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  // Backlink index: pages that link TO this page via a @page-mention inline node.
+  incomingLinks PageLink[] @relation("PageLinkTarget")
+  outgoingLinks PageLink[] @relation("PageLinkSource")
+
   @@index([workspaceType, workspaceId, parentPageId])
   @@index([archivedAt])
+}
+
+// Directed page→page reference maintained by the collab store hook whenever a
+// doc body is saved. One row per (from, to) pair — re-mentioning the same page
+// multiple times in one doc is still one edge. Cascade-deletes when either page
+// is hard-deleted (soft-deleted / archived pages keep their links so the
+// backlinks affordance can still show archived sources).
+model PageLink {
+  id         String   @id @default(cuid())
+  fromPageId String
+  toPageId   String
+  createdAt  DateTime @default(now())
+
+  fromPage Page @relation("PageLinkSource", fields: [fromPageId], references: [id], onDelete: Cascade)
+  toPage   Page @relation("PageLinkTarget", fields: [toPageId], references: [id], onDelete: Cascade)
+
+  @@unique([fromPageId, toPageId])
+  @@index([toPageId])
 }
 
 // Who a personal note has been shared with, beyond its own profileVisible

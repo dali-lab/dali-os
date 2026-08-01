@@ -25,6 +25,7 @@ import type * as Y from "yjs";
 import {
   calloutConfig,
   mentionConfig,
+  pageMentionConfig,
   signingFieldConfigs,
   variableConfig,
 } from "~/components/doc/schema/configs";
@@ -89,6 +90,15 @@ const mentionSpec = createInlineContentSpec(mentionConfig, {
   },
 });
 
+const pageMentionSpec = createInlineContentSpec(pageMentionConfig, {
+  render: (ic) => {
+    const dom = document.createElement("span");
+    dom.setAttribute("data-page-mention-id", ic.props.pageId);
+    dom.textContent = ic.props.label || "Untitled";
+    return { dom };
+  },
+});
+
 const signingFieldSpecs = Object.fromEntries(
   signingFieldConfigs.map((config) => [
     config.type,
@@ -130,6 +140,7 @@ export const serverSchema = BlockNoteSchema.create({
   inlineContentSpecs: {
     ...defaultInlineContentSpecs,
     mention: mentionSpec,
+    pageMention: pageMentionSpec,
     ...signingFieldSpecs,
     variable: variableSpec,
   },

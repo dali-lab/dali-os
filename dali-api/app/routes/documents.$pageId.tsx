@@ -227,6 +227,19 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     [auth.user.firstName, auth.user.lastName].filter(Boolean).join(" ") || auth.user.email;
   const presenceUser = await getPresenceUser(auth.user.sub, fallbackName);
 
+  // Backlinks: pages that mention this page via a @pageMention inline node.
+  const backlinkRows = await prisma.pageLink.findMany({
+    where: { toPageId: page.id, fromPage: { archivedAt: null } },
+    select: {
+      fromPage: { select: { id: true, title: true, iconEmoji: true } },
+    },
+  });
+  const backlinks = backlinkRows.map((r) => ({
+    id: r.fromPage.id,
+    title: r.fromPage.title,
+    iconEmoji: r.fromPage.iconEmoji,
+  }));
+
   return {
     pageId: page.id,
     title: page.title,
@@ -248,6 +261,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     photoUrl: presenceUser?.photoUrl ?? null,
     subtitle: presenceUser?.subtitle ?? null,
     attendance,
+    backlinks,
   };
 }
 
@@ -269,6 +283,7 @@ export default function DocumentPage() {
     coverImageUrl,
     updatedAt,
     attendance,
+    backlinks,
   } = useLoaderData() as Exclude<Awaited<ReturnType<typeof loader>>, Response>;
 
   // Arriving from a comment-mention notification (?comment=<id>): open the
@@ -313,6 +328,7 @@ export default function DocumentPage() {
         coverImageUrl={coverImageUrl}
         updatedAt={updatedAt}
         focusCommentId={focusCommentId}
+        backlinks={backlinks}
       />
     </div>
   );

@@ -29,6 +29,21 @@ export const mentionConfig = {
   content: "none",
 } as const;
 
+// Page-mention inline node: links to another Page by id + a snapshot of its
+// title at insert time. Separate from `mention` (user mention) so the server
+// walkers can distinguish them without inspecting props — existing persisted
+// docs that carry "mention" nodes (user mentions) are unaffected because they
+// use a different node type string. `pageId` and `label` default to "" so old
+// docs that predate this node type render without crashing.
+export const pageMentionConfig = {
+  type: "pageMention",
+  propSchema: {
+    pageId: { default: "" }, // Page.id
+    label: { default: "" },  // snapshot of Page.title at insert time
+  },
+  content: "none",
+} as const;
+
 // Callout: colored container with an emoji icon. Representation decision from
 // the spike (Phase 0, item 6): content is INLINE; additional paragraphs live
 // as nested children, painted into the box via CSS on the child blockGroup
@@ -106,6 +121,7 @@ interface AnyBlock {
 function inlineText(inline: AnyInline): string {
   if (typeof inline.text === "string") return inline.text;
   if (inline.type === "mention") return `@${String(inline.props?.label ?? "")}`;
+  if (inline.type === "pageMention") return String(inline.props?.label ?? "");
   if (inline.type === "link" && Array.isArray(inline.content)) {
     return inline.content.map(inlineText).join("");
   }
