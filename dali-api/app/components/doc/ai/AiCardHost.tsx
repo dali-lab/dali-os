@@ -151,7 +151,7 @@ export function AiCardHost({
       // Disable BlockNote's built-in dismiss so our mousedown handler is the
       // sole outside-click path (we need the hasResult confirm gate).
       useDismissProps={{ enabled: false }}
-      // Disable focus trap — AiBar manages focus naturally via autoFocus on input.
+      // Disable focus trap — AiBar owns focus (deferred preventScroll focus in an effect).
       focusManagerProps={{ disabled: true }}
       elementProps={{ style: { zIndex: 50 } }}
     >

@@ -573,9 +573,21 @@ export const AiBar = forwardRef<AiBarHandle, AiBarProps>(function AiBar(
   // ── Autofocus input in idle ──────────────────────────────────────────────
 
   useEffect(() => {
-    if (phase === "idle") {
-      setTimeout(() => inputRef.current?.focus(), 0);
-    }
+    if (phase !== "idle") return;
+    // Double-rAF: the BlockPopover renders unpositioned (top of page) for a
+    // frame before Floating UI computes coordinates — focusing during that
+    // frame makes the browser scroll the page to the top. preventScroll
+    // covers browsers that would still try to scroll the input into view.
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        inputRef.current?.focus({ preventScroll: true });
+      });
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+    };
   }, [phase]);
 
   // ── Suggestion list based on origin ──────────────────────────────────────
@@ -593,7 +605,7 @@ export const AiBar = forwardRef<AiBarHandle, AiBarProps>(function AiBar(
             setTimeout(() => {
               const inp = inputRef.current;
               if (inp) {
-                inp.focus();
+                inp.focus({ preventScroll: true });
                 inp.setSelectionRange(inp.value.length, inp.value.length);
               }
             }, 0);
@@ -609,7 +621,7 @@ export const AiBar = forwardRef<AiBarHandle, AiBarProps>(function AiBar(
         {
           label: "Write Anything…",
           action: () => {
-            setTimeout(() => inputRef.current?.focus(), 0);
+            setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 0);
           },
           Icon: PenLine,
         },
@@ -686,7 +698,6 @@ export const AiBar = forwardRef<AiBarHandle, AiBarProps>(function AiBar(
                 : "Ask AI anything…"
           }
           className="flex-1 min-w-0 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
-          autoFocus
         />
         {inputValue.trim() && (
           <button
