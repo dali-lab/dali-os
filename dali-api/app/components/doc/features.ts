@@ -20,6 +20,13 @@ export interface Features {
    * accepted for compatibility and coerced to `true` by resolveFeatures.
    */
   signing?: boolean | Record<string, unknown>;
+  /**
+   * AI slash-menu items ("Ask AI…", "Continue writing", etc.).
+   * Only available on the full document surface when ANTHROPIC_API_KEY is set
+   * server-side. The route loader resolves this and passes it through
+   * DocEditorProps.aiEnabled — features.ai is never checked client-side alone.
+   */
+  ai?: boolean;
 }
 
 export type EditorPresetName = "field" | "notes" | "agreement" | "guide" | "document";

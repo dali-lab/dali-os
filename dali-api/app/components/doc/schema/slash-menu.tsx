@@ -61,12 +61,16 @@ function calloutItem(editor: DocEditorInstance): KeyedItem {
 export function getDocSlashMenuItems(
   editor: DocEditorInstance,
   features: Features,
+  aiItems: DefaultReactSuggestionItem[] = [],
 ): DefaultReactSuggestionItem[] {
   const defaults = (getDefaultReactSlashMenuItems(editor) as KeyedItem[]).filter(
     (item) => item.key !== undefined && ALLOWED_KEYS.has(item.key),
   );
-  if (!features.richBlocks) return defaults;
-  return insertItemIntoGroup(defaults, calloutItem(editor));
+  const standard = features.richBlocks
+    ? insertItemIntoGroup(defaults, calloutItem(editor))
+    : defaults;
+  // AI items go first so they appear above "Basic blocks" — same order as Notion.
+  return aiItems.length > 0 ? [...aiItems, ...standard] : standard;
 }
 
 /** getItems for SuggestionMenuController (query-filtered on title/aliases). */
@@ -74,6 +78,7 @@ export async function getFilteredDocSlashMenuItems(
   editor: DocEditorInstance,
   features: Features,
   query: string,
+  aiItems: DefaultReactSuggestionItem[] = [],
 ): Promise<DefaultReactSuggestionItem[]> {
-  return filterSuggestionItems(getDocSlashMenuItems(editor, features), query);
+  return filterSuggestionItems(getDocSlashMenuItems(editor, features, aiItems), query);
 }

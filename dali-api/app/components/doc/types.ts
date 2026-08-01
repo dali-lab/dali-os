@@ -98,4 +98,10 @@ export interface DocEditorProps {
    * stays active regardless. */
   formatPopoverTargetId?: string;
   formatPopoverOpen?: boolean;
+  /**
+   * When true, AI slash-menu items ("Ask AI…", etc.) appear in the "/" menu.
+   * Resolved server-side by checking ANTHROPIC_API_KEY; never shown when false.
+   * Only meaningful on surfaces with features "document" (full editable body).
+   */
+  aiEnabled?: boolean;
 }

@@ -58,6 +58,8 @@ import { getFilteredDocSlashMenuItems } from "./schema/slash-menu";
 import { DEFAULT_SIGNING_CTX, SigningContext } from "./signing-context";
 import type { DocCollabConfig, DocCommentsConfig, DocEditorProps } from "./types";
 import { uploadEditorImage } from "./upload";
+import { useAiSlashMenuItems } from "./ai/AiSlashMenuItems";
+import { useDialog } from "~/components/ui/dialog";
 
 export default function DocEditorImpl(props: DocEditorProps) {
   const features = resolveFeatures(props.features);
@@ -241,6 +243,12 @@ function DocView(props: ResolvedProps & { editor: DocEditorInstance }) {
   const { editor, features } = props;
   useDocChrome(editor, props);
   const isDark = useIsDark();
+  const dialog = useDialog();
+  const aiItems = useAiSlashMenuItems(
+    editor,
+    props.aiEnabled ?? false,
+    dialog.prompt,
+  );
 
   // Hand hosts the live instance (ref-routed so a new callback identity per
   // render doesn't re-fire the effect).
@@ -319,10 +327,12 @@ function DocView(props: ResolvedProps & { editor: DocEditorInstance }) {
 
   const menus: ReactNode = (
     <>
-      {/* Custom "/" menu: defaults trimmed to the app command set + callout. */}
+      {/* Custom "/" menu: AI items first (when enabled), then the standard set. */}
       <SuggestionMenuController
         triggerCharacter="/"
-        getItems={(query) => getFilteredDocSlashMenuItems(editor, features, query)}
+        getItems={(query) =>
+          getFilteredDocSlashMenuItems(editor, features, query, aiItems ?? [])
+        }
       />
       {features.mentions && (
         <SuggestionMenuController
