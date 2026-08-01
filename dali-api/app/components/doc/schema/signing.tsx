@@ -7,7 +7,7 @@
 // Interactivity is driven by SigningContext (React context, not .configure()):
 // the spike proved context propagation reaches BlockNote's inline node views —
 // including across editable-invariant transitions like fill<->view — and that
-// tiptap's stopEvent lets inputs/checkboxes inside inline content stay live
+// TipTap's stopEvent (BlockNote's underlying engine) lets inputs/checkboxes inside inline content stay live
 // under editable:false. Fill values live in HOST state via ctx.onFieldChange.
 
 import { createReactInlineContentSpec } from "@blocknote/react";

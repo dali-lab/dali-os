@@ -253,7 +253,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     })),
   );
 
-  // Interview notes live in CollabDocumentVersion (Yjs/Tiptap), not in the
+  // Interview notes live in CollabDocumentVersion (Yjs/BlockNote), not in the
   // legacy InterviewNoteVersion table. There are two doc kinds per interview:
   //   interview:{id}:notes                          — joint, shared by both
   //                                                   interviewers

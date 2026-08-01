@@ -197,7 +197,7 @@ function CollabDocInner(
   // ydoc.destroy(). Found by duck-typing over the live plugin list rather than
   // yUndoPluginKey.getState() — the prod bundle can inline y-prosemirror's key
   // module twice, making key-based lookup silently return null (the same trap
-  // the legacy CollaborativeEditor documents).
+  // the deleted TipTap CollaborativeEditor hit).
   useEffect(() => {
     const um = findCollabUndoManager(editor.prosemirrorState);
     if (um) um.destroy = () => {};
