@@ -19,20 +19,24 @@
 //   "summarize"         → insert after last selected block
 //   "ask"               → prompt → replaceBlocks(selection, newBlocks)
 //
+// Preview flow:
+//   runAiAction no longer applies immediately. It returns an AiPendingResult
+//   (or null on cancel/error) that is handed to the host via onAiResult. The
+//   host (DocView) renders AiPreviewDialog; the user reviews and approves.
+//
 // Loading state: insert a placeholder "✦ Thinking…" paragraph immediately
 // AFTER the scope (never touching scope content before a successful response).
-// On success: remove placeholder + replaceBlocks / insertBlocks.
+// On success: remove placeholder + hand result to host.
 // On failure: remove placeholder, toast error, content untouched.
 //
-// Collaborator-race guard: replaceBlocks/insertBlocks wrapped in try/catch.
-// On exception we fall back to inserting the result at the cursor with a toast
-// warning rather than silently losing the AI output.
+// Collaborator-race guard: handled at apply time in apply.ts (applyAiResult).
 
 import React from "react";
 import type { DefaultReactSuggestionItem } from "@blocknote/react";
 import { useToast } from "~/components/ui/toast";
 import type { DocEditorInstance } from "../schema/build";
 import type { AiDocAction } from "~/routes/api.ai.doc";
+import type { AiPendingResult } from "./apply";
 
 // DefaultReactSuggestionItem's type omits `key` but runtime objects carry it —
 // same pattern as slash-menu.tsx.
@@ -177,15 +181,28 @@ async function callAi(opts: {
 
 export type AiScope = "block" | "document";
 
+// ── Action label mapping ──────────────────────────────────────────────────────
+
+export function actionLabel(action: AiDocAction): string {
+  switch (action) {
+    case "prompt":    return "Ask AI";
+    case "continue":  return "Continue writing";
+    case "improve":   return "Improve writing";
+    case "fix":       return "Fix spelling & grammar";
+    case "summarize": return "Summarize";
+  }
+}
+
 // ── Core run-action helper (shared by slash menu and toolbar) ─────────────────
 
 /**
  * Run an AI action with explicit scope/context information.
  *
- * For REPLACE actions (improve, fix): replaceBlocks(scopeBlockIds, newBlocks).
- * For INSERT actions (continue, summarize, prompt): insert after afterBlock.
- * Collaborator-race guard: if replaceBlocks/insertBlocks throws, we fall back
- * to inserting at the current cursor and toast a warning.
+ * Returns an AiPendingResult on success (for the host to show the preview
+ * dialog), or null if the action was aborted due to an error.
+ *
+ * The placeholder "✦ Thinking…" is inserted while the request is in flight;
+ * it is always removed before this function returns (success or failure).
  */
 export async function runAiAction(opts: {
   editor: DocEditorInstance;
@@ -198,9 +215,10 @@ export async function runAiAction(opts: {
   // The block immediately AFTER which we insert the placeholder / result
   // (always a block OUTSIDE the scope so we don't touch scope content early).
   afterBlock: { id: string };
+  scopeLabel: string;
   toastError: (msg: string) => void;
-  toastWarn?: (msg: string) => void;
-}) {
+  toastInfo?: (msg: string) => void;
+}): Promise<AiPendingResult | null> {
   const {
     editor,
     action,
@@ -208,56 +226,40 @@ export async function runAiAction(opts: {
     context,
     scopeBlockIds,
     afterBlock,
+    scopeLabel,
     toastError,
-    toastWarn,
+    toastInfo,
   } = opts;
 
   const placeholderId = insertPlaceholderAfter(editor, afterBlock);
 
   try {
     const markdown = await callAi({ action, instruction, context });
-    const newBlocks = await editor.tryParseMarkdownToBlocks(markdown);
-    if (!newBlocks.length) {
-      removePlaceholder(editor, placeholderId);
-      return;
+    removePlaceholder(editor, placeholderId);
+
+    if (!markdown.trim()) {
+      toastInfo?.("AI returned nothing.");
+      return null;
     }
 
     // Determine whether this is a replace-in-place action.
     const isReplace =
       (action === "improve" || action === "fix") && scopeBlockIds.length > 0;
-    // Summarize with scope replaces nothing — it always inserts after scope.
-    // Ask AI (prompt) in selection mode replaces the selection (Notion behavior).
-    const isSelectionAsk =
-      action === "prompt" && scopeBlockIds.length > 0;
+    // Selection-scoped Ask AI replaces the selection (Notion behavior).
+    const isSelectionAsk = action === "prompt" && scopeBlockIds.length > 0;
 
-    try {
-      if (isReplace || isSelectionAsk) {
-        // Replace scope content, then remove the placeholder that was
-        // inserted after the scope.
-        editor.replaceBlocks(scopeBlockIds, newBlocks);
-        removePlaceholder(editor, placeholderId);
-      } else {
-        // Insert: replace the placeholder with the result blocks.
-        editor.replaceBlocks([placeholderId], newBlocks);
-      }
-    } catch {
-      // Collaborator-race: scope blocks were deleted/changed mid-request.
-      // Fall back to inserting the result at the cursor rather than losing it.
-      removePlaceholder(editor, placeholderId);
-      try {
-        const cursor = editor.getTextCursorPosition().block;
-        editor.insertBlocks(newBlocks, cursor, "after");
-        toastWarn?.(
-          "AI result inserted at cursor — original blocks were modified by a collaborator.",
-        );
-      } catch {
-        // Total failure — just toast.
-        toastError("AI result could not be applied. Please try again.");
-      }
-    }
+    return {
+      mode: isReplace || isSelectionAsk ? "replace" : "insert",
+      scopeBlockIds,
+      afterBlockId: afterBlock.id,
+      actionLabel: actionLabel(action),
+      scopeLabel,
+      markdown,
+    };
   } catch (err) {
     removePlaceholder(editor, placeholderId);
     toastError(err instanceof Error ? err.message : "AI request failed.");
+    return null;
   }
 }
 
@@ -327,6 +329,7 @@ export function useAskAiPrompt(editor: DocEditorInstance) {
       options: { value: string; label: string; description?: string }[];
       cancelLabel?: string;
     }) => Promise<string | null>,
+    onAiResult: (result: AiPendingResult) => void,
   ) => {
     const instruction = await dialogPrompt({
       title: "Ask AI",
@@ -345,16 +348,18 @@ export function useAskAiPrompt(editor: DocEditorInstance) {
         ? await getBlockScopeContext(editor)
         : await getDocumentScopeContext(editor);
 
-    await runAiAction({
+    const result = await runAiAction({
       editor,
       action: "prompt",
       instruction,
       context,
       scopeBlockIds,
       afterBlock,
+      scopeLabel: scope === "block" ? "current block" : "entire document",
       toastError: (m) => toast.error(m),
-      toastWarn: (m) => toast.info(m),
+      toastInfo: (m) => toast.info(m),
     });
+    if (result) onAiResult(result);
   };
 }
 
@@ -384,7 +389,8 @@ export function buildAiSlashMenuItems(
     cancelLabel?: string;
   }) => Promise<string | null>,
   toastError: (msg: string) => void,
-  toastWarn: (msg: string) => void,
+  toastInfo: (msg: string) => void,
+  onAiResult: (result: AiPendingResult) => void,
 ): DefaultReactSuggestionItem[] {
   // ── Continue writing ──────────────────────────────────────────────────────
   // Context = doc start → cursor block (tail-capped). Result inserted AFTER the
@@ -400,15 +406,17 @@ export function buildAiSlashMenuItems(
       void (async () => {
         const afterBlock = getSlashMenuAfterBlock(editor);
         const context = await getContinueContext(editor);
-        await runAiAction({
+        const result = await runAiAction({
           editor,
           action: "continue",
           context,
           scopeBlockIds: [],
           afterBlock,
+          scopeLabel: "after cursor",
           toastError,
-          toastWarn,
+          toastInfo,
         });
+        if (result) onAiResult(result);
       })();
     },
   };
@@ -434,15 +442,17 @@ export function buildAiSlashMenuItems(
             ? await getBlockScopeContext(editor)
             : await getDocumentScopeContext(editor);
 
-        await runAiAction({
+        const result = await runAiAction({
           editor,
           action: "improve",
           context,
           scopeBlockIds,
           afterBlock,
+          scopeLabel: scope === "block" ? "current block" : "entire document",
           toastError,
-          toastWarn,
+          toastInfo,
         });
+        if (result) onAiResult(result);
       })();
     },
   };
@@ -468,15 +478,17 @@ export function buildAiSlashMenuItems(
             ? await getBlockScopeContext(editor)
             : await getDocumentScopeContext(editor);
 
-        await runAiAction({
+        const result = await runAiAction({
           editor,
           action: "fix",
           context,
           scopeBlockIds,
           afterBlock,
+          scopeLabel: scope === "block" ? "current block" : "entire document",
           toastError,
-          toastWarn,
+          toastInfo,
         });
+        if (result) onAiResult(result);
       })();
     },
   };
@@ -504,7 +516,7 @@ export function buildAiSlashMenuItems(
 
         // Summarize never replaces — pass empty scopeBlockIds so runAiAction
         // uses the insert-after path for both scopes.
-        await runAiAction({
+        const result = await runAiAction({
           editor,
           action: "summarize",
           context,
@@ -514,10 +526,12 @@ export function buildAiSlashMenuItems(
               ? // Insert at end of document: after the last block.
                 editor.document[editor.document.length - 1] ?? afterBlock
               : afterBlock,
+          scopeLabel: scope === "block" ? "current block" : "entire document",
           toastError,
-          toastWarn,
+          toastInfo,
         });
         void scopeBlockIds; // consumed only for context, not for replacement
+        if (result) onAiResult(result);
       })();
     },
   };
@@ -552,16 +566,18 @@ export function buildAiSlashMenuItems(
             : await getDocumentScopeContext(editor);
 
         // Slash-menu Ask AI inserts after cursor; never replaces (scopeBlockIds=[]).
-        await runAiAction({
+        const result = await runAiAction({
           editor,
           action: "prompt",
           instruction,
           context,
           scopeBlockIds: [],
           afterBlock,
+          scopeLabel: scope === "block" ? "current block" : "entire document",
           toastError,
-          toastWarn,
+          toastInfo,
         });
+        if (result) onAiResult(result);
       })();
     },
   };
@@ -585,6 +601,7 @@ export function useAiSlashMenuItems(
     options: { value: string; label: string; description?: string }[];
     cancelLabel?: string;
   }) => Promise<string | null>,
+  onAiResult: (result: AiPendingResult) => void,
 ): DefaultReactSuggestionItem[] | null {
   const toast = useToast();
 
@@ -596,6 +613,6 @@ export function useAiSlashMenuItems(
     dialogChoice,
     (m) => toast.error(m),
     (m) => toast.info(m),
+    onAiResult,
   );
 }
-

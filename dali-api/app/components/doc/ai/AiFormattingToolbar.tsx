@@ -6,11 +6,10 @@
 // toolbar — no "/" was typed).
 //
 // Selection-scoped AI actions:
-//   Improve writing   → replaceBlocks(selectedBlockIds, newBlocks) — single undo step
-//   Fix spelling      → replaceBlocks(selectedBlockIds, newBlocks) — single undo step
-//   Summarize         → insert after last selected block (never destroys content)
-//   Ask AI…           → prompt → replaceBlocks(selectedBlockIds, newBlocks)
-//                       (selection-scoped Ask AI rewrites the selection, Notion parity)
+//   Improve writing   → preview dialog → replaceBlocks(selectedBlockIds, newBlocks)
+//   Fix spelling      → preview dialog → replaceBlocks(selectedBlockIds, newBlocks)
+//   Summarize         → preview dialog → insert after last selected block
+//   Ask AI…           → prompt → preview dialog → replaceBlocks(selectedBlockIds, newBlocks)
 //
 // The AI dropdown is built with useComponentsContext()!.Generic.Menu.* so it
 // inherits the BlockNote/shadcn styling automatically.
@@ -42,30 +41,33 @@ import { useDialog } from "~/components/ui/dialog";
 import {
   runAiAction,
   getSelectionContext,
-  type AiScope,
 } from "./AiSlashMenuItems";
 import type { DocEditorInstance } from "../schema/build";
+import type { AiPendingResult } from "./apply";
 
 // ── Prop types ────────────────────────────────────────────────────────────────
 
 interface AiFormattingToolbarProps {
   aiEnabled?: boolean;
   editable?: boolean;
+  onAiResult?: (result: AiPendingResult) => void;
 }
 
 // ── AI dropdown menu ──────────────────────────────────────────────────────────
 
 function AiToolbarMenu({
   editor,
+  onAiResult,
 }: {
   editor: DocEditorInstance;
+  onAiResult: (result: AiPendingResult) => void;
 }) {
   const Components = useComponentsContext()!;
   const toast = useToast();
   const dialog = useDialog();
 
   const toastError = (m: string) => toast.error(m);
-  const toastWarn = (m: string) => toast.info(m);
+  const toastInfo = (m: string) => toast.info(m);
 
   /**
    * Get the selection context and determine the "after block" for placeholder
@@ -85,8 +87,6 @@ function AiToolbarMenu({
       return null;
     }
     // afterBlock = the last selected block. The placeholder goes after it.
-    // On success, for replace actions: replaceBlocks(blockIds, newBlocks) then
-    // remove placeholder; for insert: replace placeholder.
     const lastBlockId = blockIds[blockIds.length - 1];
     return fn({
       context: markdown,
@@ -96,47 +96,53 @@ function AiToolbarMenu({
   }
 
   const handleImprove = () => {
-    void withSelectionContext(({ context, scopeBlockIds, afterBlock }) =>
-      runAiAction({
+    void withSelectionContext(async ({ context, scopeBlockIds, afterBlock }) => {
+      const result = await runAiAction({
         editor,
         action: "improve",
         context,
         scopeBlockIds,
         afterBlock,
+        scopeLabel: "selection",
         toastError,
-        toastWarn,
-      }),
-    );
+        toastInfo,
+      });
+      if (result) onAiResult(result);
+    });
   };
 
   const handleFix = () => {
-    void withSelectionContext(({ context, scopeBlockIds, afterBlock }) =>
-      runAiAction({
+    void withSelectionContext(async ({ context, scopeBlockIds, afterBlock }) => {
+      const result = await runAiAction({
         editor,
         action: "fix",
         context,
         scopeBlockIds,
         afterBlock,
+        scopeLabel: "selection",
         toastError,
-        toastWarn,
-      }),
-    );
+        toastInfo,
+      });
+      if (result) onAiResult(result);
+    });
   };
 
   const handleSummarize = () => {
-    void withSelectionContext(({ context, scopeBlockIds, afterBlock }) => {
+    void withSelectionContext(async ({ context, scopeBlockIds, afterBlock }) => {
       // Summarize never replaces selection — insert after last selected block.
-      return runAiAction({
+      const result = await runAiAction({
         editor,
         action: "summarize",
         context,
         // Empty scopeBlockIds → runAiAction uses the insert-after path.
         scopeBlockIds: [],
         afterBlock,
+        scopeLabel: "selection",
         toastError,
-        toastWarn,
+        toastInfo,
       });
       void scopeBlockIds; // used only to confirm selection exists
+      if (result) onAiResult(result);
     });
   };
 
@@ -149,8 +155,8 @@ function AiToolbarMenu({
       });
       if (!instruction) return;
 
-      await withSelectionContext(({ context, scopeBlockIds, afterBlock }) =>
-        runAiAction({
+      await withSelectionContext(async ({ context, scopeBlockIds, afterBlock }) => {
+        const result = await runAiAction({
           editor,
           action: "prompt",
           instruction,
@@ -158,10 +164,12 @@ function AiToolbarMenu({
           // Selection Ask AI replaces the selection (Notion parity).
           scopeBlockIds,
           afterBlock,
+          scopeLabel: "selection",
           toastError,
-          toastWarn,
-        }),
-      );
+          toastInfo,
+        });
+        if (result) onAiResult(result);
+      });
     })();
   };
 
@@ -230,22 +238,35 @@ export function AiFormattingToolbar(props: AiFormattingToolbarProps) {
       <CreateLinkButton key="createLinkButton" />
       <AddCommentButton key="addCommentButton" />
       <AddTiptapCommentButton key="addTiptapCommentButton" />
-      {showAi && <AiToolbarMenu key="aiMenu" editor={editor} />}
+      {showAi && (
+        <AiToolbarMenu
+          key="aiMenu"
+          editor={editor}
+          onAiResult={props.onAiResult ?? (() => {})}
+        />
+      )}
     </FormattingToolbar>
   );
 }
 
-// Factory that captures aiEnabled/editable in a stable component identity
-// so FormattingToolbarController doesn't see a new component ref each render
-// (which would cause the toolbar to remount on every editor state change).
+// Factory that captures aiEnabled/editable/onAiResult in a stable component
+// identity so FormattingToolbarController doesn't see a new component ref each
+// render (which would cause the toolbar to remount on every editor state change).
 //
-// Usage: buildAiFormattingToolbar(aiEnabled, editable) → component, memoized
-// by the caller with useMemo.
+// Usage: buildAiFormattingToolbar(aiEnabled, editable, onAiResult) → component,
+// memoized by the caller with useMemo.
 export function buildAiFormattingToolbar(
   aiEnabled: boolean,
   editable: boolean,
+  onAiResult: (result: AiPendingResult) => void,
 ): () => React.JSX.Element {
   return function AiFormattingToolbarInstance() {
-    return <AiFormattingToolbar aiEnabled={aiEnabled} editable={editable} />;
+    return (
+      <AiFormattingToolbar
+        aiEnabled={aiEnabled}
+        editable={editable}
+        onAiResult={onAiResult}
+      />
+    );
   };
 }

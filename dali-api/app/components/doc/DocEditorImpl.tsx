@@ -50,6 +50,7 @@ import {
   ThreadsSidebar,
 } from "@blocknote/react";
 import { buildAiFormattingToolbar } from "./ai/AiFormattingToolbar";
+import { AiPreviewDialog } from "./ai/AiPreviewDialog";
 import { DocCommentsRail } from "./comments/DocCommentsRail";
 import { BlockNoteView } from "@blocknote/shadcn";
 
@@ -69,7 +70,9 @@ import { usePresence, useRegisterCollabEditor } from "../collab/PresenceProvider
 import type { DocCollabConfig, DocCommentsConfig, DocEditorProps } from "./types";
 import { uploadEditorImage } from "./upload";
 import { useAiSlashMenuItems } from "./ai/AiSlashMenuItems";
+import type { AiPendingResult } from "./ai/apply";
 import { useDialog } from "~/components/ui/dialog";
+import { useToast } from "~/components/ui/toast";
 
 export default function DocEditorImpl(props: DocEditorProps) {
   const features = resolveFeatures(props.features);
@@ -258,20 +261,36 @@ function DocView(
   useDocChrome(editor, props);
   const isDark = useIsDark();
   const dialog = useDialog();
+  const toast = useToast();
   const aiEnabled = props.aiEnabled ?? false;
   const editable = props.editable ?? true;
+
+  // Pending AI result — set when the AI returns, cleared when the user
+  // approves (Apply/Insert below) or discards. Nothing touches the document
+  // until the user acts in AiPreviewDialog.
+  const [pendingAiResult, setPendingAiResult] = useState<AiPendingResult | null>(null);
+
+  // Stable callback passed down into the slash-items hook and toolbar factory.
+  const handleAiResult = useCallback(
+    (result: AiPendingResult) => setPendingAiResult(result),
+    [],
+  );
+
   const aiItems = useAiSlashMenuItems(
     editor,
     aiEnabled,
     dialog.prompt,
     dialog.choice,
+    handleAiResult,
   );
 
   // Build a stable FormattingToolbar component reference so the controller
   // doesn't remount on every render when aiEnabled/editable change.
+  // handleAiResult is stable (useCallback with no deps), so it's safe to
+  // include in the useMemo deps without causing needless remounts.
   const aiFormattingToolbar = useMemo(
-    () => buildAiFormattingToolbar(aiEnabled, editable),
-    [aiEnabled, editable],
+    () => buildAiFormattingToolbar(aiEnabled, editable, handleAiResult),
+    [aiEnabled, editable, handleAiResult],
   );
 
   // Hand hosts the live instance (ref-routed so a new callback identity per
@@ -616,6 +635,19 @@ function DocView(
           {menus}
         </BlockNoteView>
       </div>
+      {/* AI preview dialog — rendered outside the .dali-doc wrapper so it
+          stacks above the editor chrome at the page level. State lives here
+          (DocView) so it dies with the editor on unmount/navigation, preventing
+          stale results from leaking to a different document. */}
+      {pendingAiResult && (
+        <AiPreviewDialog
+          editor={editor}
+          result={pendingAiResult}
+          onClose={() => setPendingAiResult(null)}
+          toastInfo={(m) => toast.info(m)}
+          toastError={(m) => toast.error(m)}
+        />
+      )}
     </SigningContext.Provider>
   );
 }
