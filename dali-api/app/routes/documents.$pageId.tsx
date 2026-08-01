@@ -264,6 +264,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     subtitle: presenceUser?.subtitle ?? null,
     attendance,
     backlinks,
+    aiEnabled: Boolean(process.env.ANTHROPIC_API_KEY),
   };
 }
 
@@ -287,6 +288,7 @@ export default function DocumentPage() {
     updatedAt,
     attendance,
     backlinks,
+    aiEnabled,
   } = useLoaderData() as Exclude<Awaited<ReturnType<typeof loader>>, Response>;
 
   // Arriving from a comment-mention notification (?comment=<id>): open the
@@ -337,6 +339,7 @@ export default function DocumentPage() {
         focusCommentId={focusCommentId}
         backlinks={backlinks}
         focusMentionUserId={focusMentionUserId}
+        aiEnabled={aiEnabled}
       />
     </div>
   );

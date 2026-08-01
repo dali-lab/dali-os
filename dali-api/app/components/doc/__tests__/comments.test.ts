@@ -191,11 +191,11 @@ describe("DaliThreadStoreAuth", () => {
     it("can delete any thread", () => expect(auth.canDeleteThread(makeThreadData())).toBe(true));
     it("can resolve threads", () => expect(auth.canResolveThread(makeThreadData())).toBe(true));
     it("can unresolve threads", () => expect(auth.canUnresolveThread(makeThreadData())).toBe(true));
-    it("cannot add reactions (reactions disabled)", () => {
-      expect(auth.canAddReaction(makeCommentData("u-other"))).toBe(false);
+    it("can add reactions", () => {
+      expect(auth.canAddReaction(makeCommentData("u-other"))).toBe(true);
     });
-    it("cannot delete reactions (reactions disabled)", () => {
-      expect(auth.canDeleteReaction(makeCommentData("u-other"))).toBe(false);
+    it("cannot delete a reaction that is not their own", () => {
+      expect(auth.canDeleteReaction(makeCommentData("u-other"), "\u{1F44D}")).toBe(false);
     });
   });
 
@@ -211,7 +211,7 @@ describe("DaliThreadStoreAuth", () => {
     // canResolve / canUnresolve are gated by role now (only "editor" role)
     it("cannot resolve thread (comment role)", () => expect(auth.canResolveThread(makeThreadData())).toBe(false));
     it("cannot unresolve thread (comment role)", () => expect(auth.canUnresolveThread(makeThreadData())).toBe(false));
-    it("cannot add reactions", () => expect(auth.canAddReaction(makeCommentData("u-other"))).toBe(false));
-    it("cannot delete reactions", () => expect(auth.canDeleteReaction(makeCommentData("u-other"))).toBe(false));
+    it("can add reactions", () => expect(auth.canAddReaction(makeCommentData("u-other"))).toBe(true));
+    it("cannot delete reactions without an emoji arg", () => expect(auth.canDeleteReaction(makeCommentData("u-other"))).toBe(false));
   });
 });

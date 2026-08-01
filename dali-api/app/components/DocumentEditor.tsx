@@ -61,6 +61,7 @@ export function DocumentEditor({
   isTemplate = false,
   backlinks = [],
   focusMentionUserId,
+  aiEnabled = false,
 }: {
   pageId: string;
   initialTitle: string;
@@ -87,6 +88,8 @@ export function DocumentEditor({
   // When set (arriving from an @-mention notification), scroll to and flash the
   // first mention chip for that user once the collab doc syncs.
   focusMentionUserId?: string;
+  // True when the server has an ANTHROPIC_API_KEY — shows the AI slash items.
+  aiEnabled?: boolean;
 }) {
   const revalidator = useRevalidator();
   const navigate = useNavigate();
@@ -829,7 +832,7 @@ export function DocumentEditor({
               <DocEditor
                 features="document"
                 editable={canEdit}
-                onEditorReady={(editor) => { editorRef.current = editor; }}
+                onEditorReady={(ed) => { editorRef.current = ed; liveEditorRef.current = ed; }}
                 collab={{
                   documentName,
                   token: collabToken,
@@ -853,7 +856,7 @@ export function DocumentEditor({
                 formatPopoverOpen={formatOpen}
                 formatPopoverTargetId="doc-format-popover"
                 findOpen={findOpen}
-                onEditorReady={(ed) => { liveEditorRef.current = ed; }}
+                aiEnabled={aiEnabled}
                 onWordCountChange={setWordCount}
                 onHeadingsChange={setHeadings}
                 onChange={() => setLocallyEdited(true)}
