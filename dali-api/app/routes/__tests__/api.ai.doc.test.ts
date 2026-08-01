@@ -1,6 +1,6 @@
-// Tests for POST /api/ai/doc
-// Focuses on gating (auth, missing key, bad input) since the Anthropic SDK
-// call itself requires a live key and is not mocked here.
+// Tests for POST /api/ai/doc (new streaming + conversation contract).
+// Focuses on gating (auth, missing key, bad input) and the pure history
+// validator, since the Anthropic SDK call itself requires a live key.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
@@ -9,7 +9,7 @@ vi.mock("~/lib/auth", () => ({
 }));
 
 import { requireAuth } from "~/lib/auth";
-import { action } from "~/routes/api.ai.doc";
+import { action, validateHistory } from "~/routes/api.ai.doc";
 
 const AUTH_OK = {
   ok: true as const,
@@ -26,11 +26,12 @@ const AUTH_FAIL = {
   reason: "no_session" as const,
 };
 
-function postReq(body: unknown): Request {
+function postReq(body: unknown, signal?: AbortSignal): Request {
   return new Request("http://localhost/api/ai/doc", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    signal,
   });
 }
 
@@ -49,18 +50,24 @@ afterEach(() => {
   delete process.env.AI_PROVIDER;
 });
 
+// ── Auth gate ─────────────────────────────────────────────────────────────────
+
 describe("POST /api/ai/doc — auth gate", () => {
   it("returns 401 when not authenticated", async () => {
     vi.mocked(requireAuth).mockResolvedValue(AUTH_FAIL);
-    const res = await action({ request: postReq({ action: "continue", context: "hi" }) } as any);
+    const res = await action({
+      request: postReq({ instruction: "hi" }),
+    } as any);
     expect(res.status).toBe(401);
   });
 });
 
+// ── Key gate (503) ────────────────────────────────────────────────────────────
+
 describe("POST /api/ai/doc — key gate", () => {
   it("returns 503 with aiEnabled:false when no provider key is set", async () => {
     const res = await action({
-      request: postReq({ action: "continue", context: "hello world" }),
+      request: postReq({ instruction: "hello world" }),
     } as any);
     expect(res.status).toBe(503);
     const body = await res.json();
@@ -73,77 +80,23 @@ describe("POST /api/ai/doc — key gate", () => {
     // the 503 gate is skipped (response is NOT 503 with aiEnabled:false).
     process.env.ANTHROPIC_API_KEY = "sk-ant-test-key";
     const res = await action({
-      request: postReq({ action: "continue", context: "hello world" }),
+      request: postReq({ instruction: "hello world" }),
     } as any);
-    // 502 (SDK error) or any non-503 is acceptable here.
     const body = await res.json();
     expect((body as { aiEnabled?: false }).aiEnabled).not.toBe(false);
-    delete process.env.ANTHROPIC_API_KEY;
   });
 
   it("does not 503 when only DARTMOUTH_CHAT_API_KEY is set", async () => {
-    // The Dartmouth gateway path drives the same SDK; without a live key the
-    // call fails upstream — we only verify the 503 gate is skipped.
     process.env.DARTMOUTH_CHAT_API_KEY = "dartmouth-test-key";
     const res = await action({
-      request: postReq({ action: "continue", context: "hello world" }),
+      request: postReq({ instruction: "hello world" }),
     } as any);
     const body = await res.json();
     expect((body as { aiEnabled?: false }).aiEnabled).not.toBe(false);
   });
 });
 
-describe("POST /api/ai/doc — input validation", () => {
-  beforeEach(() => {
-    // Set a key so validation is reached.
-    // The Anthropic client will fail to connect, but input validation runs first.
-    // We test validation paths that return before the SDK call.
-  });
-
-  it("returns 400 for invalid action", async () => {
-    delete process.env.ANTHROPIC_API_KEY;
-    // Key unset → 503 before validation, but we can still test by setting the key
-    // and checking the 400 branch. Since network will fail here, just test without key
-    // expecting 503 (shows validation doesn't matter when gated).
-    const res = await action({
-      request: postReq({ action: "invalid-action", context: "hi" }),
-    } as any);
-    // With key unset, we get 503 (gated before validation).
-    expect(res.status).toBe(503);
-  });
-
-  it("returns 400 for missing instruction on prompt action when key is set (network will 502)", async () => {
-    process.env.ANTHROPIC_API_KEY = "sk-ant-test";
-    const res = await action({
-      request: postReq({ action: "prompt", context: "doc content here" }),
-    } as any);
-    // instruction is required for prompt action → 400 before SDK call.
-    expect(res.status).toBe(400);
-    const body = await res.json();
-    expect(body.error).toMatch(/instruction/i);
-    delete process.env.ANTHROPIC_API_KEY;
-  });
-
-  it("returns 400 for invalid action when key is set", async () => {
-    process.env.ANTHROPIC_API_KEY = "sk-ant-test";
-    const res = await action({
-      request: postReq({ action: "not-valid", context: "doc" }),
-    } as any);
-    expect(res.status).toBe(400);
-    const body = await res.json();
-    expect(body.error).toMatch(/action/i);
-    delete process.env.ANTHROPIC_API_KEY;
-  });
-
-  it("returns 400 when context is not a string and key is set", async () => {
-    process.env.ANTHROPIC_API_KEY = "sk-ant-test";
-    const res = await action({
-      request: postReq({ action: "continue", context: 42 }),
-    } as any);
-    expect(res.status).toBe(400);
-    delete process.env.ANTHROPIC_API_KEY;
-  });
-});
+// ── Method gate ───────────────────────────────────────────────────────────────
 
 describe("POST /api/ai/doc — method gate", () => {
   it("returns 405 for GET", async () => {
@@ -151,5 +104,268 @@ describe("POST /api/ai/doc — method gate", () => {
       request: new Request("http://localhost/api/ai/doc", { method: "GET" }),
     } as any);
     expect(res.status).toBe(405);
+  });
+});
+
+// ── Input validation ──────────────────────────────────────────────────────────
+
+describe("POST /api/ai/doc — input validation", () => {
+  beforeEach(() => {
+    // Set a key so validation is reached before the 503 gate.
+    process.env.ANTHROPIC_API_KEY = "sk-ant-test";
+  });
+
+  it("returns 400 when instruction is missing", async () => {
+    const res = await action({
+      request: postReq({ context: "some context" }),
+    } as any);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/instruction/i);
+  });
+
+  it("returns 400 when instruction is empty string", async () => {
+    const res = await action({
+      request: postReq({ instruction: "   " }),
+    } as any);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/instruction/i);
+  });
+
+  it("returns 400 when instruction is not a string", async () => {
+    const res = await action({
+      request: postReq({ instruction: 42 }),
+    } as any);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/instruction/i);
+  });
+
+  it("accepts a valid instruction with no context or history (SDK call will 502)", async () => {
+    const res = await action({
+      request: postReq({ instruction: "Write a summary" }),
+    } as any);
+    // Should NOT be 400 or 503 — reaches SDK, which will fail with 502 in CI
+    expect(res.status).not.toBe(400);
+    expect(res.status).not.toBe(503);
+  });
+
+  it("returns 400 when history has more than 12 entries", async () => {
+    const history = Array.from({ length: 13 }, (_, i) => ({
+      role: i % 2 === 0 ? "user" : "assistant",
+      content: "msg",
+    }));
+    const res = await action({
+      request: postReq({ instruction: "hi", history }),
+    } as any);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/12/);
+  });
+
+  it("returns 400 when history starts with an assistant entry", async () => {
+    const res = await action({
+      request: postReq({
+        instruction: "hi",
+        history: [{ role: "assistant", content: "oops" }],
+      }),
+    } as any);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/user/i);
+  });
+
+  it("returns 400 when history roles do not alternate", async () => {
+    const res = await action({
+      request: postReq({
+        instruction: "hi",
+        history: [
+          { role: "user", content: "first" },
+          { role: "user", content: "second" }, // should be assistant
+        ],
+      }),
+    } as any);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/alternate/i);
+  });
+
+  it("returns 400 when a history entry is missing role", async () => {
+    const res = await action({
+      request: postReq({
+        instruction: "hi",
+        history: [{ content: "no role" }],
+      }),
+    } as any);
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 when history is not an array", async () => {
+    const res = await action({
+      request: postReq({
+        instruction: "hi",
+        history: "not an array",
+      }),
+    } as any);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/array/i);
+  });
+});
+
+// ── Streaming gate ────────────────────────────────────────────────────────────
+
+describe("POST /api/ai/doc — stream:true gate", () => {
+  it("with a key set, stream:true responds with text/event-stream (or 502 if SDK fails, not 503/400)", async () => {
+    // The SSE response starts with 200 text/event-stream BEFORE SDK call outcomes.
+    // With a fake key the SDK will fail, but the error ends up as an SSE event,
+    // not as a different HTTP status — so we just verify the response is NOT 503/400.
+    process.env.ANTHROPIC_API_KEY = "sk-ant-test";
+    const res = await action({
+      request: postReq({ instruction: "Write something", stream: true }),
+    } as any);
+    // Content-type should be text/event-stream OR this is some other non-503/400 response.
+    expect(res.status).not.toBe(503);
+    expect(res.status).not.toBe(400);
+    const ct = res.headers.get("content-type") ?? "";
+    // Either SSE or a 502 JSON error (if the stream setup itself threw pre-response).
+    expect(ct.includes("text/event-stream") || res.status === 502).toBe(true);
+  });
+
+  it("stream:true gating still returns 503 JSON (not SSE) when no key", async () => {
+    const res = await action({
+      request: postReq({ instruction: "hi", stream: true }),
+    } as any);
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body).toEqual({ aiEnabled: false });
+  });
+
+  it("stream:true gating still returns 400 JSON (not SSE) for bad instruction", async () => {
+    process.env.ANTHROPIC_API_KEY = "sk-ant-test";
+    const res = await action({
+      request: postReq({ instruction: "", stream: true }),
+    } as any);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/instruction/i);
+  });
+
+  it("stream:true gating still returns 400 JSON (not SSE) for bad history", async () => {
+    process.env.ANTHROPIC_API_KEY = "sk-ant-test";
+    const res = await action({
+      request: postReq({
+        instruction: "hi",
+        stream: true,
+        history: [{ role: "assistant", content: "bad" }],
+      }),
+    } as any);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/user/i);
+  });
+});
+
+// ── validateHistory (pure unit tests) ────────────────────────────────────────
+
+describe("validateHistory", () => {
+  it("returns ok with empty entries for undefined", () => {
+    const r = validateHistory(undefined);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.entries).toEqual([]);
+  });
+
+  it("returns ok with empty entries for null", () => {
+    const r = validateHistory(null);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.entries).toEqual([]);
+  });
+
+  it("returns ok with empty entries for empty array", () => {
+    const r = validateHistory([]);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.entries).toEqual([]);
+  });
+
+  it("returns ok for a valid alternating sequence", () => {
+    const r = validateHistory([
+      { role: "user", content: "hello" },
+      { role: "assistant", content: "world" },
+      { role: "user", content: "again" },
+    ]);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.entries).toHaveLength(3);
+      expect(r.entries[0].role).toBe("user");
+      expect(r.entries[1].role).toBe("assistant");
+      expect(r.entries[2].role).toBe("user");
+    }
+  });
+
+  it("caps each entry content at 8000 chars", () => {
+    const long = "x".repeat(9000);
+    const r = validateHistory([{ role: "user", content: long }]);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.entries[0].content.length).toBe(8000);
+  });
+
+  it("rejects non-array", () => {
+    const r = validateHistory("not an array");
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.message).toMatch(/array/i);
+  });
+
+  it("rejects > 12 entries", () => {
+    const entries = Array.from({ length: 13 }, (_, i) => ({
+      role: i % 2 === 0 ? "user" : "assistant",
+      content: "msg",
+    }));
+    const r = validateHistory(entries);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.message).toMatch(/12/);
+  });
+
+  it("rejects when first entry is assistant", () => {
+    const r = validateHistory([{ role: "assistant", content: "oops" }]);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.message).toMatch(/user/i);
+  });
+
+  it("rejects non-alternating roles (user, user)", () => {
+    const r = validateHistory([
+      { role: "user", content: "a" },
+      { role: "user", content: "b" },
+    ]);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.message).toMatch(/alternate/i);
+  });
+
+  it("rejects non-alternating roles (user, assistant, assistant)", () => {
+    const r = validateHistory([
+      { role: "user", content: "a" },
+      { role: "assistant", content: "b" },
+      { role: "assistant", content: "c" },
+    ]);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.message).toMatch(/alternate/i);
+  });
+
+  it("rejects entry with invalid role", () => {
+    const r = validateHistory([{ role: "system", content: "hi" }]);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.message).toMatch(/role/i);
+  });
+
+  it("rejects entry where content is not a string", () => {
+    const r = validateHistory([{ role: "user", content: 42 }]);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.message).toMatch(/content/i);
+  });
+
+  it("rejects entry that is not an object", () => {
+    const r = validateHistory(["not-an-object"]);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.message).toMatch(/object/i);
   });
 });
