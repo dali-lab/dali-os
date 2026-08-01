@@ -1,5 +1,6 @@
 import { prisma } from "~/lib/db";
-import { collabDocToProseMirror } from "~/collab/export";
+import { readDocAsBlocks } from "~/collab/read";
+import { blocksToPlainText } from "~/components/doc/schema/configs";
 
 // Published education offerings for dali.website's offerings calendar.
 // Response shape matches the site's `Offering` interface (shared/api.ts).
@@ -52,18 +53,6 @@ function toDateParts(d: Date): PublicOffering["date"] {
   };
 }
 
-// The description lives in a collab doc; the site's calendar cards show a
-// plain-text blurb, so flatten rather than shipping blocks it can't render.
-function plainText(node: { type: string; text?: string; content?: unknown[] }): string {
-  if (node.type === "text") return node.text ?? "";
-  const children = (node.content ?? []) as typeof node[];
-  const inner = children.map(plainText).join("");
-  // Block-level nodes need a separator or paragraphs run together.
-  return node.type === "doc" || node.type === "paragraph" || node.type === "heading"
-    ? `${inner}\n`
-    : inner;
-}
-
 export async function listPublicOfferings(): Promise<PublicOffering[]> {
   const rows = await prisma.educationOffering.findMany({
     where: { status: "Published" },
@@ -80,8 +69,11 @@ export async function listPublicOfferings(): Promise<PublicOffering[]> {
 
   return Promise.all(
     rows.map(async (o) => {
+      // The description lives in a collab doc; the site's calendar cards show
+      // a plain-text blurb, so flatten rather than shipping blocks it can't
+      // render.
       const description = o.descriptionDocId
-        ? plainText(await collabDocToProseMirror(o.descriptionDocId)).trim()
+        ? blocksToPlainText(await readDocAsBlocks(o.descriptionDocId)).trim()
         : "";
       return {
         id: o.id,

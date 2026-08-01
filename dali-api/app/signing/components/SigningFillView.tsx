@@ -1,11 +1,10 @@
-import { useMemo, useRef, useState } from "react";
-import { useEditor, EditorContent } from "@tiptap/react";
+import { useState } from "react";
 import { Form as RRForm } from "react-router";
-import { EDITOR_VIEWER_CONTENT_CLASS } from "~/components/editor/shared";
-import { buildExtensions } from "~/components/editor/presets";
+import { DocEditor } from "~/components/doc";
 import { isCheckboxChecked, type SigningFieldRef } from "~/lib/signing-fields";
 
 interface SigningFillViewProps {
+  /** BlockNote block JSON — the loader normalizes legacy bodies on read. */
   body: unknown;
   variables: Record<string, string>;
   // The member-role fields, used to seed date values and validate required ones.
@@ -14,51 +13,26 @@ interface SigningFillViewProps {
 }
 
 // Renders the agreement read-only except the current member's fields, which are
-// interactive. Values are collected in a ref (uncontrolled inputs) and posted as
-// JSON; the submit button unlocks once every required member field is filled.
+// interactive (fill mode keeps them live under editable=false). Captured values
+// live in host React state keyed by fieldId — never in the document — and are
+// posted as JSON; the submit button unlocks once every required member field is
+// filled (the hard gate, re-checked server-side by recordSignature).
 export function SigningFillView({ body, variables, fields, next }: SigningFillViewProps) {
   const memberFields = fields.filter((f) => f.role === "member");
 
   // Seed date fields with the resolved sign date so they're captured too.
-  const initial = useMemo(() => {
+  const [values, setValues] = useState<Record<string, unknown>>(() => {
     const seed: Record<string, unknown> = {};
     for (const f of memberFields) {
       if (f.type === "dateField") seed[f.fieldId] = variables.today ?? "";
     }
     return seed;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const valuesRef = useRef<Record<string, unknown>>({ ...initial });
-  const [tick, setTick] = useState(0);
-
-  const editor = useEditor({
-    immediatelyRender: false,
-    editable: false,
-    extensions: buildExtensions(
-      { images: true, signing: { variables, values: valuesRef.current } },
-      {
-        side: "viewer",
-        signingCtx: {
-          mode: "fill",
-          signerRole: "member",
-          onFieldChange: (fieldId, value) => {
-            valuesRef.current[fieldId] = value;
-            setTick((t) => t + 1);
-          },
-        },
-      },
-    ),
-    content: (body as object) ?? "",
-    editorProps: { attributes: { class: EDITOR_VIEWER_CONTENT_CLASS } },
   });
-
-  void tick; // re-render on value change so the button enable-state tracks input
 
   const allRequiredFilled = memberFields
     .filter((f) => f.required)
     .every((f) => {
-      const v = valuesRef.current[f.fieldId];
+      const v = values[f.fieldId];
       return f.type === "checkboxField"
         ? isCheckboxChecked(v)
         : v != null && String(v).trim() !== "";
@@ -67,13 +41,25 @@ export function SigningFillView({ body, variables, fields, next }: SigningFillVi
   return (
     <div className="space-y-6">
       <article className="bg-card border border-border rounded-lg p-6">
-        <EditorContent editor={editor} />
+        <DocEditor
+          features="agreement"
+          editable={false}
+          initialContent={body}
+          signing={{
+            mode: "fill",
+            signerRole: "member",
+            variables,
+            values,
+            onFieldChange: (fieldId, value) =>
+              setValues((prev) => ({ ...prev, [fieldId]: value })),
+          }}
+        />
       </article>
 
       <RRForm method="post" className="flex items-center justify-end gap-3">
         <input type="hidden" name="intent" value="sign" />
         {next && <input type="hidden" name="next" value={next} />}
-        <input type="hidden" name="fieldValues" value={JSON.stringify(valuesRef.current)} />
+        <input type="hidden" name="fieldValues" value={JSON.stringify(values)} />
         {!allRequiredFilled && (
           <span className="text-sm text-muted-foreground">
             Complete all required fields to sign.

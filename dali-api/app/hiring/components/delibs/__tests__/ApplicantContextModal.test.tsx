@@ -132,7 +132,7 @@ describe("InterviewPrepNoteSection", () => {
       note: null,
     });
     expect(html).toContain("Interview Prep Note");
-    // CollaborativeEditor mounts client-side; SSR shows its loading placeholder.
+    // DocEditor mounts client-side; SSR shows its DocEditorFallback shell.
     expect(html).toContain("Loading editor…");
     expect(html).not.toContain("Session expired");
   });

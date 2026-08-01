@@ -5,7 +5,7 @@ import {
   getAssignmentForStudent,
   submitAssignment,
 } from "~/education/lib/assignments.server";
-import { collabDocToProseMirror } from "~/collab/export";
+import { readDocAsBlocks } from "~/collab/read";
 import { AssignmentWorkArea } from "~/education/components/AssignmentWorkArea";
 import { formatDateTime } from "~/lib/display";
 
@@ -27,7 +27,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!result) throw new Response("Not found", { status: 404 });
 
   const instructionsContent = result.assignment.instructionsDocId
-    ? await collabDocToProseMirror(result.assignment.instructionsDocId)
+    ? await readDocAsBlocks(result.assignment.instructionsDocId)
     : null;
 
   return {

@@ -3,17 +3,20 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
+import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { canViewMentorship } from "../lib/visibility";
 
-// GET    /api/mentorship/templates/:id  — read (any lab mentor / Core)
-// PATCH  /api/mentorship/templates/:id  — update name/contentJson/isDefault. Core only.
+// GET    /api/mentorship/templates/:id  — read (any lab mentor / Core).
+//                                        contentJson is normalized to block JSON.
+// PATCH  /api/mentorship/templates/:id  — update name/isDefault. Core only.
 //                                        Setting isDefault=true clears the flag on
-//                                        any other template in the same call.
+//                                        any other template in the same call. The
+//                                        body is a collaborative document
+//                                        (Hocuspocus sync-back owns contentJson).
 // DELETE /api/mentorship/templates/:id  — delete. Core only.
 
 type PatchBody = {
   name?: string;
-  contentJson?: unknown;
   isDefault?: boolean;
 };
 
@@ -45,7 +48,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!tpl) {
     return withCors(request, Response.json({ error: "Not found" }, { status: 404 }));
   }
-  return withCors(request, Response.json(tpl));
+  return withCors(
+    request,
+    Response.json({ ...tpl, contentJson: ensureBlocks(tpl.contentJson) }),
+  );
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -85,7 +91,6 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const data: {
     name?: string;
-    contentJson?: object;
     isDefault?: boolean;
     lastUpdatedBy?: string;
   } = { lastUpdatedBy: auth.user.sub };
@@ -95,9 +100,6 @@ export async function action({ request, params }: Route.ActionArgs) {
       return withCors(request, Response.json({ error: "Name is required" }, { status: 400 }));
     }
     data.name = name;
-  }
-  if (Object.prototype.hasOwnProperty.call(body, "contentJson")) {
-    data.contentJson = (body.contentJson ?? {}) as object;
   }
   if (body.isDefault !== undefined) {
     data.isDefault = body.isDefault;

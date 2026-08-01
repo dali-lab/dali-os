@@ -13,7 +13,8 @@ import {
   Inbox,
 } from "lucide-react";
 import { FormBuilderTab } from "~/components/form-builder/FormBuilder";
-import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
+import { DocEditor } from "~/components/doc";
+import { isEmptyBlocks } from "~/lib/blocks";
 import { Button, buttonClasses } from "~/components/ui/Button";
 import { Tooltip } from "~/components/ui/IconButton";
 import type { Question } from "~/types";
@@ -132,7 +133,7 @@ export function FormDetail() {
     fd.set("intent", "save-draft");
     fd.set("id", form.id);
     fd.set("questions", JSON.stringify(questions));
-    fd.set("description", description ? JSON.stringify(description) : "");
+    fd.set("description", isEmptyBlocks(description) ? "" : JSON.stringify(description));
     saveFetcher.submit(fd, { method: "post" });
   }
 
@@ -147,7 +148,7 @@ export function FormDetail() {
     fd.set("intent", "save-version");
     fd.set("id", form.id);
     fd.set("questions", JSON.stringify(questions));
-    fd.set("description", description ? JSON.stringify(description) : "");
+    fd.set("description", isEmptyBlocks(description) ? "" : JSON.stringify(description));
     saveFetcher.submit(fd, { method: "post" });
   }
 
@@ -427,9 +428,17 @@ export function FormDetail() {
               </div>
 
               <div className="p-6 space-y-4">
-                {!isEmptyDoc(selectedVersion.description) && (
+                {!isEmptyBlocks(selectedVersion.description) && (
                   <div className="px-4 py-3 rounded-lg border border-border bg-muted/30">
-                    <RichTextViewer content={selectedVersion.description} enableImages />
+                    {/* Keyed per version: DocEditor reads initialContent once,
+                        so switching versions must remount it. */}
+                    <DocEditor
+                      key={selectedVersion.id}
+                      features="notes"
+                      density="compact"
+                      editable={false}
+                      initialContent={selectedVersion.description}
+                    />
                   </div>
                 )}
                 {selectedVersion.questions.map((q, index) => (

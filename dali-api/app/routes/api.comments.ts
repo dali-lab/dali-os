@@ -2,7 +2,7 @@ import type { Route } from "./+types/api.comments";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { requireAuth, forbidden, type AuthSuccess } from "~/lib/auth";
-import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
+import { isLabMember, isProjectMember } from "~/lib/roles";
 import { notifyFileComment } from "~/projects/lib/file-notifications.server";
 import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
 import { withCors, handlePreflight } from "~/lib/cors";
@@ -10,15 +10,23 @@ import { parseJson } from "~/lib/validate";
 import { hydrateAuthors } from "~/lib/collabAuth";
 import { notify } from "~/lib/notify.server";
 import { extractHandlesFromText, resolveHandles, notifyMentions, pageDocLink } from "~/lib/mentions";
+import { getPageAccess } from "~/lib/pageAccess.server";
+import { publishCommentChange } from "~/lib/comment-events.server";
 
 // Comments + inline annotations on documents (Pages) and files (ProjectFile).
-//   GET  /api/comments?targetType=doc|file&targetId=...   → threads (roots + replies)
+//   GET  /api/comments?targetType=doc|file|pagedoc&targetId=...   → threads (roots + replies)
 //   POST /api/comments  { targetType, targetId, body, parentId?, anchor? }
 //
 // `anchor` (doc only) carries a Yjs relative-position range so an inline
 // comment survives collaborative edits; null = a doc/file-level comment.
-// Read + write mirror the project-edit gate (isCore === Admin || Core), the
-// same surface that can open the doc/file.
+//
+// Permission matrix:
+//   doc target   — read/create/reply: canView (any member, partner-visible partner)
+//                  resolve/reopen: canResolve (canEdit || Core)
+//   file target  — read/create/reply: Core or project member of owning project
+//                  resolve/reopen: Core
+//   pagedoc      — read/create/reply: any lab member (open FAQ threads)
+//                  resolve/reopen: pagedoc maintainer
 
 const AnchorSchema = z
   .object({ from: z.string(), to: z.string() })
@@ -41,14 +49,15 @@ const CreateSchema = z.object({
 
 type CommentTarget = "doc" | "file" | "pagedoc";
 
-// Confirm the target exists and is live, matching authorizeCollabDoc's doc gate.
+// Confirm the target exists and is live. Accepts ALL page workspace types
+// (not just Project) so Lab/Education/personal pages don't 404.
 async function targetExists(targetType: CommentTarget, targetId: string): Promise<boolean> {
   if (targetType === "doc") {
     const page = await prisma.page.findUnique({
       where: { id: targetId },
-      select: { workspaceType: true, archivedAt: true },
+      select: { archivedAt: true },
     });
-    return !!page && page.workspaceType === "Project" && page.archivedAt === null;
+    return !!page && page.archivedAt === null;
   }
   if (targetType === "pagedoc") {
     const doc = await prisma.pageDoc.findUnique({
@@ -64,40 +73,22 @@ async function targetExists(targetType: CommentTarget, targetId: string): Promis
   return !!file && file.archivedAt === null;
 }
 
-// A partner may comment on a `doc` only when it's a live, partner-visible page
-// in a project their org actively partners on — the same gate that lets them
-// open the page (partner.projects.$id.pages.$pageId) and its collab socket.
-async function partnerCanAccessDoc(userSub: string, pageId: string): Promise<boolean> {
-  const page = await prisma.page.findFirst({
-    where: {
-      id: pageId,
-      workspaceType: "Project",
-      archivedAt: null,
-      partnerVisible: true,
-    },
-    select: { workspaceId: true },
-  });
-  if (!page?.workspaceId) return false;
-  return partnerHasProjectAccess(userSub, page.workspaceId);
-}
-
-// Auth split by target: page-doc FAQ threads are open to any lab member (so
-// anyone can ask a question); doc comments stay on the project-edit gate
-// (Core/Admin), plus partners on that page's shared surface; file comments
-// are open to Core and members of the owning project — the artifact feedback
-// loop (upload → mentor comment → re-upload) runs on project members.
-async function canAccessTarget(
+// Auth split by target type:
+//   pagedoc — any lab member (open FAQ)
+//   doc     — canView per getPageAccess (any member, or partner on partner-visible page)
+//   file    — Core or project member of the owning project
+async function canReadTarget(
   auth: AuthSuccess,
   targetType: CommentTarget,
   targetId: string,
 ): Promise<boolean> {
   if (targetType === "pagedoc") return isLabMember(auth.user.sub);
   if (targetType === "doc") {
-    if (await isCore(auth.user.sub)) return true;
-    return auth.user.type === "partner"
-      ? partnerCanAccessDoc(auth.user.sub, targetId)
-      : false;
+    const access = await getPageAccess(auth.user.sub, targetId);
+    return access.canComment;
   }
+  // file: Core or project member
+  const { isCore } = await import("~/lib/roles");
   if (await isCore(auth.user.sub)) return true;
   const file = await prisma.projectFile.findUnique({
     where: { id: targetId },
@@ -122,7 +113,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   ) {
     return withCors(request, Response.json({ error: "Invalid target" }, { status: 400 }));
   }
-  if (!(await canAccessTarget(auth, targetType, targetId))) {
+  if (!(await canReadTarget(auth, targetType, targetId))) {
     return forbidden(request);
   }
 
@@ -138,6 +129,11 @@ export async function loader({ request }: Route.LoaderArgs) {
       resolvedAt: true,
       createdAt: true,
       versionId: true,
+      updatedAt: true,
+      reactions: {
+        select: { userId: true, emoji: true, createdAt: true },
+        orderBy: { createdAt: "asc" },
+      },
     },
   });
 
@@ -155,7 +151,9 @@ export async function loader({ request }: Route.LoaderArgs) {
     anchor: r.anchor as { from: string; to: string } | null,
     resolved: r.resolvedAt !== null,
     createdAt: r.createdAt.toISOString(),
+    updatedAt: r.updatedAt.toISOString(),
     versionId: r.versionId,
+    reactions: r.reactions,
   }));
 
   return withCors(request, Response.json({ comments }));
@@ -174,7 +172,7 @@ export async function action({ request }: Route.ActionArgs) {
   const body = await parseJson(request, CreateSchema);
   if (body instanceof Response) return withCors(request, body);
 
-  if (!(await canAccessTarget(auth, body.targetType, body.targetId))) {
+  if (!(await canReadTarget(auth, body.targetType, body.targetId))) {
     return forbidden(request);
   }
 
@@ -240,6 +238,11 @@ export async function action({ request }: Route.ActionArgs) {
     select: { id: true },
   });
 
+  // Nudge any open comment-stream listeners for this page so they refetch.
+  if (body.targetType === "doc") {
+    publishCommentChange(body.targetId);
+  }
+
   // Root comments on a file notify its audience (uploaders + linked-task
   // assignees). Replies are covered by the thread-reply path below.
   if (body.targetType === "file" && !body.parentId) {
@@ -294,9 +297,7 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 // A reply notifies everyone already in the thread (root author + prior
-// repliers), except the reply's own author. True @-mentions need mention
-// capture in the composer first — this covers the "nobody hears about
-// replies" gap the comment pipeline has today.
+// repliers), except the reply's own author.
 async function notifyThreadReply(args: {
   targetType: CommentTarget;
   targetId: string;

@@ -5,6 +5,7 @@ import { requireAuth } from "~/lib/auth";
 import { isCore, isLabMember } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
 import { getDownloadUrl, isS3Configured } from "~/lib/s3";
+import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { notify } from "~/lib/notify.server";
 import { extractMentionUserIds, notifyMentions, pageDocLink } from "~/lib/mentions";
 import { fullName } from "~/lib/display";
@@ -47,7 +48,9 @@ async function serializeSections(sections: StoredPageDocSection[]) {
     sections.map(async (s) => ({
       id: s.id,
       title: s.title,
-      body: s.body,
+      // Legacy ProseMirror bodies convert to block JSON on read; new saves
+      // store blocks directly (the client's DocEditor posts block arrays).
+      body: ensureBlocks(s.body),
       videoUrl: await resolveVideoUrl(s.videoKey),
       hasVideo: s.videoKey !== null,
     })),

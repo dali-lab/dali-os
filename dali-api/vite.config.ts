@@ -17,7 +17,6 @@ export default defineConfig({
       "@hocuspocus/provider",
       "@tiptap/core",
       "@tiptap/pm",
-      "@tiptap/react",
     ],
   },
   optimizeDeps: {
@@ -25,6 +24,13 @@ export default defineConfig({
       "yjs",
       "y-prosemirror",
       "@hocuspocus/provider",
+      "@blocknote/core",
+      "@blocknote/core/yjs",
+      "@blocknote/core/locales",
+      "@blocknote/react",
+      "@blocknote/shadcn",
+      "@blocknote/code-block",
+      "y-indexeddb",
     ],
   },
   ssr: {

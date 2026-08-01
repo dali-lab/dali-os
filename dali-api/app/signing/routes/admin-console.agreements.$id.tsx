@@ -9,6 +9,7 @@ import { requireAuth } from "~/lib/auth";
 import { getUserRoles, isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { fullName } from "~/lib/display";
+import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { resolveAdminScope } from "~/signing/lib/scope.server";
 import { notifySignRequest } from "~/signing/lib/notify.server";
 import { AUDIENCE_RESOLVERS } from "~/signing/lib/audiences";
@@ -95,7 +96,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     rosters[b.id] = rosterFor(audience, b);
   }
 
-  return { document, isAdmin: roles.isAdmin, rosters };
+  // Convert-on-read: pre-migration version bodies are legacy ProseMirror JSON;
+  // the client (DocEditor) only ever sees block JSON. Never touches the DB row.
+  const document_ = {
+    ...document,
+    versions: document.versions.map((v) => ({ ...v, body: ensureBlocks(v.body) })),
+  };
+
+  return { document: document_, isAdmin: roles.isAdmin, rosters };
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -115,6 +123,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     } catch {
       return { error: "Body must be valid JSON" };
     }
+    // New/edited versions store BLOCK JSON: block arrays pass through, a stale
+    // client posting legacy ProseMirror gets converted, junk becomes empty.
+    body = ensureBlocks(body);
     const roles = parseRoles(formData.get("roles") as string | null);
     const last = await prisma.signingDocumentVersion.findFirst({
       where: { documentId: params.id },

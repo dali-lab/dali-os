@@ -11,7 +11,7 @@ import {
   type FormAnswerRow,
 } from "~/forms/lib/answer-rows.server";
 import type { Question } from "~/types";
-import { CollaborativeEditor } from "~/components/CollaborativeEditor";
+import { DocEditor } from "~/components/doc";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import {
   PARTNER_APPLICATION_STATUS_LABELS,
@@ -82,6 +82,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     canEditDetails: PARTNER_EDITABLE_STATUSES.includes(application.status),
     collabToken: parseSessionCookie(request),
     userName: presenceUser?.name ?? fallbackName,
+    currentUserId: auth.user.sub,
   };
 }
 
@@ -142,7 +143,7 @@ function StatusTimeline({ status }: { status: PartnerApplicationStatus }) {
 export default function PartnerApplicationDetail({
   actionData,
 }: Route.ComponentProps) {
-  const { application, formAnswers, canEditDetails, collabToken, userName } =
+  const { application, formAnswers, canEditDetails, collabToken, userName, currentUserId } =
     useLoaderData<typeof loader>();
   const navigation = useNavigation();
   const submitting = navigation.state === "submitting";
@@ -274,14 +275,16 @@ export default function PartnerApplicationDetail({
             token={collabToken}
             userName={userName}
           >
-            <CollaborativeEditor
-              editorId={documentName}
-              documentName={documentName}
-              token={collabToken}
-              userName={userName}
-              enableImages
+            <DocEditor
+              features="notes"
               placeholder="Draft the statement of work…"
-              className="border border-border rounded-md"
+              className="border border-border rounded-md bg-card py-2"
+              collab={{
+                documentName,
+                token: collabToken,
+                userName,
+                userId: currentUserId,
+              }}
             />
           </PresenceProvider>
         ) : (

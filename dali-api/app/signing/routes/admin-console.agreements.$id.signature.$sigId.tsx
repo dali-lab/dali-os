@@ -1,6 +1,6 @@
 // Admin view of ONE member's completed, signed copy of an agreement — the
 // frozen archival body (captured field values + resolved variables baked in)
-// plus signing metadata. `?format=pdf` streams the same copy as a PDF.
+// plus signing metadata. PDF download lives at the sibling resource route.
 
 import { redirect, Link, useLoaderData } from "react-router";
 import { ArrowLeft, Download, ShieldCheck } from "lucide-react";
@@ -10,9 +10,9 @@ import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { fullName, formatDateTime } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
-import { RichTextViewer } from "~/components/RichTextViewer";
-import { renderProseMirrorToPdf } from "~/collab/export-pdf";
-import type { PMNode } from "~/collab/export-html";
+import { DocEditor, looksLikeProseMirrorDoc } from "~/components/doc";
+import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
+import { renderNodes, type PMNode } from "~/collab/export-html";
 
 export const meta: Route.MetaFunction = () => [{ title: "Signed copy · Admin · DALI OS" }];
 
@@ -47,21 +47,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     return redirect(`/admin-console/agreements/${params.id}`);
   }
 
-  const body = (sig.frozenBody ?? sig.version.body) as PMNode;
+  // The frozen archival body is NEVER transcoded: pre-migration rows are
+  // legacy ProseMirror JSON and render via the legacy PM walker; post-migration
+  // rows are block JSON and render via the block viewer. Format-sniff on read.
+  const body = sig.frozenBody ?? sig.version.body;
 
-  const url = new URL(request.url);
-  if (url.searchParams.get("format") === "pdf") {
-    const title = sig.version.document.name;
-    const pdf = await renderProseMirrorToPdf(title, body);
-    const filename = `${safeFilename(title)}-${safeFilename(sig.typedName || fullName(sig.signer))}.pdf`;
-    return new Response(new Uint8Array(pdf), {
-      headers: {
-        "Content-Type": "application/pdf",
-        "Content-Disposition": `inline; filename="${filename}"`,
-      },
-    });
-  }
-
+  const isLegacy = looksLikeProseMirrorDoc(body);
   return {
     documentId: params.id,
     signatureId: sig.id,
@@ -72,7 +63,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     signedAt: sig.signedAt,
     ip: sig.ip,
     userAgent: sig.userAgent,
-    body,
+    legacyHtml: isLegacy ? renderNodes((body as PMNode).content) : null,
+    blocks: isLegacy ? null : ensureBlocks(body),
   };
 }
 
@@ -107,7 +99,7 @@ export default function SignatureViewPage() {
           )}
         </div>
         <a
-          href={`/admin-console/agreements/${data.documentId}/signature/${data.signatureId}?format=pdf`}
+          href={`/admin-console/agreements/${data.documentId}/signature/${data.signatureId}/pdf`}
           className="inline-flex items-center gap-1 px-3 py-2 text-sm font-medium rounded-lg text-foreground bg-card border border-border hover:bg-muted/50 shrink-0"
         >
           <Download className="w-4 h-4" /> PDF
@@ -115,7 +107,21 @@ export default function SignatureViewPage() {
       </div>
 
       <article className="bg-card border border-border rounded-lg p-8 shadow-sm">
-        <RichTextViewer content={data.body} enableImages enableSigningFields />
+        {data.legacyHtml != null ? (
+          // Pre-migration frozen copy: server-rendered by the legacy PM walker
+          // (renderNodes escapes all text/attrs).
+          <div
+            className="prose prose-sm dark:prose-invert max-w-none"
+            dangerouslySetInnerHTML={{ __html: data.legacyHtml }}
+          />
+        ) : (
+          <DocEditor
+            features="agreement"
+            editable={false}
+            initialContent={data.blocks ?? []}
+            signing={{ mode: "view" }}
+          />
+        )}
       </article>
     </div>
   );

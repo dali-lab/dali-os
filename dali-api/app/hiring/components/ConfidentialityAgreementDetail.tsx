@@ -2,12 +2,10 @@ import { useState } from "react";
 import { Form, useLoaderData } from "react-router";
 import { Plus, Clock, UserIcon, Pencil } from "lucide-react";
 import type { loader } from "~/hiring/routes/confidentiality-agreements.$id";
-import { RichTextEditor } from "~/components/RichTextEditor";
-import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
+import { DocEditor } from "~/components/doc";
+import { isEmptyBody } from "~/lib/signing-fields";
 import { formatDateTime, fullName, UNKNOWN_LABEL } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
-
-const EMPTY_DOC = { type: "doc", content: [{ type: "paragraph" }] };
 
 export function ConfidentialityAgreementDetail() {
   const { agreement, canEdit } = useLoaderData<typeof loader>();
@@ -22,13 +20,13 @@ export function ConfidentialityAgreementDetail() {
   const selectedVersion =
     agreement.versions.find((v) => v.id === selectedVersionId) ?? null;
 
-  const [draftBody, setDraftBody] = useState<unknown>(
-    selectedVersion?.body ?? EMPTY_DOC,
-  );
+  // Bodies arrive from the loader as BlockNote block JSON (legacy rows are
+  // converted on read) — a new version starts from the converted blocks.
+  const [draftBody, setDraftBody] = useState<unknown>(selectedVersion?.body ?? []);
   const [draftName, setDraftName] = useState(agreement.name);
 
   const handleStartCreate = () => {
-    setDraftBody(selectedVersion?.body ?? EMPTY_DOC);
+    setDraftBody(selectedVersion?.body ?? []);
     setIsCreatingVersion(true);
   };
 
@@ -162,11 +160,16 @@ export function ConfidentialityAgreementDetail() {
                 <label className="block text-sm font-medium text-foreground/80 mb-1">
                   Body
                 </label>
-                <RichTextEditor
-                  value={draftBody}
-                  onChange={setDraftBody}
-                  placeholder="Write the confidentiality agreement…"
-                />
+                <div className="rounded-lg border border-border bg-card">
+                  <DocEditor
+                    features="agreement"
+                    signing={{ mode: "author" }}
+                    initialContent={draftBody}
+                    onChange={setDraftBody}
+                    placeholder="Write the confidentiality agreement…"
+                    className="py-2"
+                  />
+                </div>
               </div>
               <div className="flex justify-end gap-2">
                 <button
@@ -178,7 +181,7 @@ export function ConfidentialityAgreementDetail() {
                 </button>
                 <button
                   type="submit"
-                  disabled={isEmptyDoc(draftBody)}
+                  disabled={isEmptyBody(draftBody)}
                   className="px-3 py-2 text-sm font-medium text-white bg-accent-coral rounded-md hover:bg-accent-coral/90 disabled:opacity-50"
                 >
                   Save Version
@@ -187,8 +190,14 @@ export function ConfidentialityAgreementDetail() {
             </Form>
           ) : selectedVersion ? (
             <div className="space-y-4">
-              <RichTextViewer content={selectedVersion.body} />
-              {isEmptyDoc(selectedVersion.body) && (
+              <DocEditor
+                key={selectedVersion.id}
+                features="agreement"
+                editable={false}
+                initialContent={selectedVersion.body}
+                signing={{ mode: "view" }}
+              />
+              {isEmptyBody(selectedVersion.body) && (
                 <p className="text-sm text-muted-foreground italic">
                   This version has no content.
                 </p>

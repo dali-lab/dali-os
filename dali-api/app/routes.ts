@@ -17,6 +17,7 @@ export default [
     // required agreement is unsigned.
     route("sign", "signing/routes/sign._index.tsx"),
     route("sign/:bindingId", "signing/routes/sign.$bindingId.tsx"),
+    route("sign/:bindingId/pdf", "signing/routes/sign.$bindingId.pdf.ts"),
 
     // Hiring section. /hiring is the role-aware hub; the tools below are
     // reached via its pill row (the sidebar carries a single Hiring entry).
@@ -62,6 +63,7 @@ export default [
     route("admin-console/attendance", "admin-console/routes/admin-console.attendance.tsx"),
     route("admin-console/activity", "admin-console/routes/admin-console.activity.tsx"),
     route("admin-console/analytics", "admin-console/routes/admin-console.analytics.tsx"),
+    route("admin-console/ai-usage", "admin-console/routes/admin-console.ai-usage.tsx"),
     route("admin-console/jobs", "admin-console/routes/admin-console.jobs.tsx"),
     route("admin-console/email-senders", "admin-console/routes/admin-console.email-senders.tsx"),
     route("admin-console/email-templates", "admin-console/routes/admin-console.email-templates.tsx"),
@@ -71,6 +73,7 @@ export default [
     route("admin-console/agreements", "signing/routes/admin-console.agreements.tsx"),
     route("admin-console/agreements/:id", "signing/routes/admin-console.agreements.$id.tsx"),
     route("admin-console/agreements/:id/signature/:sigId", "signing/routes/admin-console.agreements.$id.signature.$sigId.tsx"),
+    route("admin-console/agreements/:id/signature/:sigId/pdf", "signing/routes/admin-console.agreements.$id.signature.$sigId.pdf.ts"),
     route("admin-console/payroll-export", "admin-console/routes/admin-console.payroll-export.tsx"),
     route("admin-console/payroll", "admin-console/routes/admin-console.payroll.tsx"),
 
@@ -408,6 +411,10 @@ export default [
   route("api/notes", "members/routes/api.notes.ts"),
   route("api/pages/:id/pin", "projects/routes/api.pages.$id.pin.ts"),
   route("api/pages/:id/move", "projects/routes/api.pages.$id.move.ts"),
+  route("api/pages/:id/duplicate", "routes/api.pages.$id.duplicate.ts"),
+  route("api/pages/:id/template", "routes/api.pages.$id.template.ts"),
+  route("api/pages/:id/typography", "routes/api.pages.$id.typography.ts"),
+  route("api/page-templates", "routes/api.page-templates.ts"),
 
   // Project files (standalone uploads with versions)
   route("api/projects/:id/files", "projects/routes/api.projects.$id.files.ts"),
@@ -421,10 +428,16 @@ export default [
   // Comments + inline annotations on documents and files
   route("api/comments", "routes/api.comments.ts"),
   route("api/comments/:id", "routes/api.comments.$id.ts"),
+  // SSE stream: pushes a `change` nudge when comments mutate for a doc page.
+  route("api/comments/:pageId/stream", "routes/api.comments.$pageId.stream.ts"),
+
+  // Batch user resolver — used by comments rail / presence avatars.
+  route("api/users/resolve", "routes/api.users.resolve.ts"),
 
   // Per-page documentation guides + the member search that backs @-mentions
   route("api/page-docs/:key", "routes/api.page-docs.$key.ts"),
   route("api/mentions/search", "routes/api.mentions.search.ts"),
+  route("api/mentions/pages", "routes/api.mentions.pages.ts"),
 
   // Document export (server-rendered PDF / Word)
   route("documents/:pageId/export", "routes/documents.$pageId.export.ts"),
@@ -530,4 +543,8 @@ export default [
   route("api/mentorship/templates", "mentorship/routes/api.mentorship.templates.ts"),
   route("api/mentorship/templates/:id", "mentorship/routes/api.mentorship.templates.$id.ts"),
   route("api/mentorship/pairs", "mentorship/routes/api.mentorship.pairs.ts"),
+
+  // AI document-writing assistant — requires an AI provider key to be active
+  // (ANTHROPIC_API_KEY, or DARTMOUTH_CHAT_API_KEY for the Dartmouth Chat gateway).
+  route("api/ai/doc", "routes/api.ai.doc.ts"),
 ] satisfies RouteConfig;

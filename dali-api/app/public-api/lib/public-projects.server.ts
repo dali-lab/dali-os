@@ -1,7 +1,8 @@
 import { prisma } from "~/lib/db";
 import { fullName } from "~/lib/display";
-import { collabDocToProseMirror } from "~/collab/export";
-import { proseMirrorToBlocks, type PublicBlock } from "./pm-to-blocks";
+import { readDocAsBlocks } from "~/collab/read";
+import { docBlocksToPublicBlocks } from "./blocknote-to-public";
+import type { PublicBlock } from "./pm-to-blocks";
 import { publicMediaUrl } from "./public-media";
 
 // The shape dali.website's `Project` interface (shared/api.ts) expects. Held
@@ -163,7 +164,7 @@ export async function getPublicProject(
   // DocumentEditor / documents.$pageId.export.ts) — not Page.contentDocId,
   // which is unset for pages the editor created directly.
   const pageContent = page
-    ? proseMirrorToBlocks(await collabDocToProseMirror(`doc:${page.id}:body`))
+    ? docBlocksToPublicBlocks(await readDocAsBlocks(`doc:${page.id}:body`))
     : [];
 
   return {

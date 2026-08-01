@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest";
 // Import the pure renderers from export-html (no DB import) so this unit test
 // doesn't pull in the Prisma client via export.ts → ~/lib/db.
 import { renderNodes, buildExportHtml, type PMNode } from "../export-html";
-import { renderProseMirrorToPdf } from "../export-pdf";
+import { renderBlocksToPdf, renderProseMirrorToPdf } from "../export-pdf";
+import { mapPmDocToBlocks } from "../legacy/pm-to-blocknote";
 
 describe("renderNodes (ProseMirror JSON → HTML)", () => {
   it("renders headings, paragraphs, and marks", () => {
@@ -181,8 +182,8 @@ describe("buildExportHtml", () => {
   });
 });
 
-describe("renderProseMirrorToPdf", () => {
-  it("produces a non-empty PDF buffer with a valid header", async () => {
+describe("renderProseMirrorToPdf (compat: accepts PM JSON or blocks)", () => {
+  it("produces a non-empty PDF buffer with a valid header from PM JSON", async () => {
     const json: PMNode = {
       type: "doc",
       content: [
@@ -198,6 +199,79 @@ describe("renderProseMirrorToPdf", () => {
 
   it("handles an empty document without throwing", async () => {
     const buf = await renderProseMirrorToPdf("Empty", { type: "doc", content: [] });
+    expect(buf.subarray(0, 4).toString("latin1")).toBe("%PDF");
+  });
+});
+
+describe("renderBlocksToPdf", () => {
+  it("renders a kitchen-sink block document without throwing", async () => {
+    const { blocks, losses } = mapPmDocToBlocks({
+      type: "doc",
+      content: [
+        { type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: "Doc" }] },
+        { type: "paragraph", content: [{ type: "text", text: "intro", marks: [{ type: "bold" }] }] },
+        {
+          type: "bulletList",
+          content: [
+            { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "li" }] }] },
+          ],
+        },
+        {
+          type: "orderedList",
+          content: [
+            { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "one" }] }] },
+            { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "two" }] }] },
+          ],
+        },
+        {
+          type: "taskList",
+          content: [
+            { type: "taskItem", attrs: { checked: true }, content: [{ type: "paragraph", content: [{ type: "text", text: "t" }] }] },
+          ],
+        },
+        { type: "blockquote", content: [{ type: "paragraph", content: [{ type: "text", text: "q" }] }] },
+        { type: "codeBlock", attrs: { language: "js" }, content: [{ type: "text", text: "x()" }] },
+        { type: "horizontalRule" },
+        { type: "image", attrs: { src: "https://x.test/i.png", alt: "chart" } },
+        {
+          type: "toggleBlock",
+          content: [
+            { type: "toggleSummary", content: [{ type: "text", text: "sum" }] },
+            { type: "paragraph", content: [{ type: "text", text: "body" }] },
+          ],
+        },
+        { type: "callout", attrs: { emoji: "💡" }, content: [{ type: "paragraph", content: [{ type: "text", text: "note" }] }] },
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [
+                { type: "tableHeader", content: [{ type: "paragraph", content: [{ type: "text", text: "A" }] }] },
+              ],
+            },
+          ],
+        },
+        {
+          type: "paragraph",
+          content: [
+            { type: "mention", attrs: { id: "u1", label: "k" } },
+            { type: "signatureField", attrs: { fieldId: "f1", role: "member" } },
+            { type: "checkboxField", attrs: { fieldId: "f2", role: "member", value: true } },
+            { type: "variable", attrs: { name: "term" } },
+            { type: "text", text: "linked", marks: [{ type: "link", attrs: { href: "https://d.test" } }] },
+          ],
+        },
+      ],
+    });
+    expect(losses).toEqual([]);
+    const buf = await renderBlocksToPdf("Kitchen Sink", blocks);
+    expect(buf.subarray(0, 4).toString("latin1")).toBe("%PDF");
+    expect(buf.length).toBeGreaterThan(1000);
+  });
+
+  it("renders the empty-document placeholder for no blocks", async () => {
+    const buf = await renderBlocksToPdf("Empty", []);
     expect(buf.subarray(0, 4).toString("latin1")).toBe("%PDF");
   });
 });

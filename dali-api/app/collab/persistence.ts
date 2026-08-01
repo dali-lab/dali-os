@@ -1,8 +1,18 @@
 import * as Y from "yjs";
+import { yDocToProsemirrorJSON } from "y-prosemirror";
 import type { Server as HocuspocusServer } from "@hocuspocus/server";
 import { prisma } from "~/lib/db";
+import { blocksToPlainText } from "~/components/doc/schema/configs";
 import { isPresenceRoom } from "./roomName";
 import { seedRegistryDoc, syncRegistryDocBack } from "./sources";
+import {
+  BLOCKNOTE_FRAGMENT,
+  LEGACY_PM_FRAGMENT,
+  blocksToFragment,
+  plainTextToBlocks,
+} from "./blocknote-server";
+import { mapPmDocToBlocks } from "./legacy/pm-to-blocknote";
+import { ydocToBlocks } from "./read";
 
 const SNAPSHOT_MIN_INTERVAL_MS = 30_000;
 
@@ -84,8 +94,41 @@ async function seedContent(name: string): Promise<string | null> {
 }
 
 /**
+ * LAZY CONVERSION — the in-app migration mechanism. If a loaded doc has legacy
+ * Tiptap content in "default" but nothing in "blocknote" yet, map the PM JSON
+ * to blocks and write them into the "blocknote" fragment the BlockNote editor
+ * binds. The "default" fragment is left untouched (it simply goes stale) so
+ * the conversion is one-way and re-runnable. Runs in-process on the
+ * Hocuspocus-owned doc, so there is no cross-writer race.
+ */
+function convertLegacyFragment(name: string, doc: Y.Doc): boolean {
+  const blocknote = doc.getXmlFragment(BLOCKNOTE_FRAGMENT);
+  if (blocknote.length > 0) return false;
+  if (doc.getXmlFragment(LEGACY_PM_FRAGMENT).length === 0) return false;
+
+  try {
+    const pmJson = yDocToProsemirrorJSON(doc, LEGACY_PM_FRAGMENT);
+    const { blocks, losses } = mapPmDocToBlocks(pmJson);
+    doc.transact(() => {
+      blocksToFragment(blocks, blocknote);
+    });
+    console.log(
+      `[collab:convert] converted ${name} to blocknote (${blocks.length} blocks)` +
+        (losses.length > 0 ? ` — losses: ${losses.join("; ")}` : ""),
+    );
+    return true;
+  } catch (err) {
+    // A failed conversion must not block the load — the doc opens empty for
+    // BlockNote clients and the legacy state stays intact for another attempt.
+    console.error(`[collab:convert] conversion failed for ${name}`, err);
+    return false;
+  }
+}
+
+/**
  * Load a Y.Doc's state from the database. If no CollabDocument row exists,
- * seed the doc from the source field content.
+ * seed the doc from the source field content. Stored legacy (Tiptap) docs are
+ * converted to the "blocknote" fragment on load — see convertLegacyFragment.
  */
 export async function loadDocument(name: string, doc: Y.Doc): Promise<void> {
   // Presence rooms are awareness-only; no doc content to load.
@@ -95,58 +138,96 @@ export async function loadDocument(name: string, doc: Y.Doc): Promise<void> {
 
   if (existing) {
     Y.applyUpdate(doc, new Uint8Array(existing.state));
+    if (convertLegacyFragment(name, doc)) {
+      // Persist the converted state right away so the conversion is durable
+      // (a view-only session never fires onStoreDocument) and so a second
+      // instance loading this doc sees a populated "blocknote" fragment
+      // instead of running its own conversion.
+      await storeDocument(name, doc);
+    }
     return;
   }
 
   // Registry-backed rich surfaces (mentorship notes/templates, …) seed from
-  // their source ProseMirror JSON via pmJsonToYDoc, preserving marks/nodes.
+  // their source column (block JSON, or legacy ProseMirror JSON via the
+  // mapper).
   const parsed = parseDocName(name);
   if (parsed && (await seedRegistryDoc(parsed.entity, parsed.id, doc))) return;
 
-  // First time — seed from existing content into the XmlFragment that
-  // y-prosemirror / Tiptap binds to. A minimal ProseMirror doc is a single
-  // <paragraph> element wrapping a text node. Note: Y.XmlText() constructor
-  // does NOT accept initial content — text must be inserted via .insert().
+  // First time — seed one paragraph block per line of the legacy plain-text
+  // source field.
   const content = await seedContent(name);
   if (content) {
-    const fragment = doc.getXmlFragment("default");
-    for (const line of content.split("\n")) {
-      const p = new Y.XmlElement("paragraph");
-      if (line.length > 0) {
-        const t = new Y.XmlText();
-        t.insert(0, line);
-        p.insert(0, [t]);
+    doc.transact(() => {
+      blocksToFragment(plainTextToBlocks(content), doc.getXmlFragment(BLOCKNOTE_FRAGMENT));
+    });
+  }
+}
+
+/**
+ * Strip inline-comment format attributes from every Y.XmlText node inside
+ * `element`. The `comment` ProseMirror mark is stored by y-prosemirror as
+ * attributes whose keys start with `"comment"` (e.g. `"comment--<hash>"`).
+ * The server's BlockNote schema does not include the comment mark, so when
+ * y-prosemirror tries to deserialise those attributes it throws and then
+ * *deletes the Y.XmlText item* from the doc — corrupting the live document
+ * and causing Hocuspocus to broadcast the deletion to clients.
+ *
+ * Call this on a **temporary clone** of the doc before reading plain text so
+ * the deletion side-effect never touches the live document.
+ */
+function stripCommentFormats(element: Y.XmlFragment | Y.XmlElement): void {
+  for (let i = 0; i < element.length; i++) {
+    const child = element.get(i);
+    if (child instanceof Y.XmlText) {
+      const delta = child.toDelta() as Array<{
+        insert?: string;
+        attributes?: Record<string, unknown>;
+      }>;
+      let pos = 0;
+      for (const op of delta) {
+        const len = typeof op.insert === "string" ? op.insert.length : 1;
+        if (op.attributes) {
+          const commentKeys = Object.keys(op.attributes).filter((k) =>
+            k.startsWith("comment"),
+          );
+          if (commentKeys.length > 0) {
+            const nullAttrs: Record<string, null> = {};
+            for (const k of commentKeys) nullAttrs[k] = null;
+            child.format(pos, len, nullAttrs);
+          }
+        }
+        pos += len;
       }
-      fragment.push([p]);
+    } else if (child instanceof Y.XmlElement) {
+      stripCommentFormats(child);
     }
   }
 }
 
 /**
- * Extract the plain text from a Y.Doc's "default" XmlFragment.
- * Walks the ProseMirror-style XML tree and joins paragraph content with newlines.
+ * Extract the plain text of a Y.Doc's body. Reads the "blocknote" fragment
+ * (falling back to an in-memory conversion of legacy "default" content) and
+ * flattens the blocks — one line per block, table cells joined by spaces.
+ *
+ * Works on a **temporary clone** of the doc so that the server-side BlockNote
+ * schema (which does not include the `comment` mark) cannot trigger y-prosemirror's
+ * destructive error-recovery path — which deletes Y.XmlText items from the live
+ * document and causes Hocuspocus to broadcast that deletion to all clients.
  */
 export function getPlainText(doc: Y.Doc): string {
-  const fragment = doc.getXmlFragment("default");
-  const lines: string[] = [];
-  for (let i = 0; i < fragment.length; i++) {
-    const node = fragment.get(i);
-    lines.push(node.toString());
+  const clone = new Y.Doc();
+  try {
+    Y.applyUpdate(clone, Y.encodeStateAsUpdate(doc));
+    // Strip comment-format attributes before reading through the server schema.
+    const fragment = clone.getXmlFragment(BLOCKNOTE_FRAGMENT);
+    if (fragment.length > 0) {
+      clone.transact(() => stripCommentFormats(fragment));
+    }
+    return blocksToPlainText(ydocToBlocks(clone).blocks);
+  } finally {
+    clone.destroy();
   }
-  // XmlElement.toString() wraps in tags like <paragraph>text</paragraph>,
-  // so strip them to get plain text. Loop until stable to handle malformed
-  // nested fragments like `<scr<script>ipt>`.
-  return lines
-    .map((l) => {
-      let prev: string;
-      let cur = l;
-      do {
-        prev = cur;
-        cur = prev.replace(/<[^>]+>/g, "");
-      } while (cur !== prev);
-      return cur;
-    })
-    .join("\n");
 }
 
 export interface StoredDocState {
@@ -181,8 +262,8 @@ export async function storeDocument(
   const parsed = parseDocName(name);
   if (!parsed) return { state, plainText };
 
-  // Registry-backed surfaces sync full ProseMirror JSON back to their source
-  // column; skip the legacy plain-text sync below.
+  // Registry-backed surfaces sync full block JSON back to their source column;
+  // skip the legacy plain-text sync below.
   if (await syncRegistryDocBack(parsed.entity, parsed.id, doc)) {
     return { state, plainText };
   }
@@ -279,8 +360,9 @@ export async function maybeSnapshot(
  * inside Hocuspocus's normal sync pipeline — connected clients receive the
  * new state through the websocket and update without reconnecting.
  *
- * Marks/attributes survive because we deep-clone XmlElement children rather
- * than reseeding from plain text.
+ * The snapshot is decoded to blocks (mapping legacy pre-migration snapshots
+ * through the PM→blocks converter) and written into the "blocknote" fragment,
+ * so version history spans the migration boundary.
  */
 export async function restoreVersion(
   server: HocuspocusServer,
@@ -299,20 +381,18 @@ export async function restoreVersion(
   }
 
   const tmp = new Y.Doc();
-  Y.applyUpdate(tmp, new Uint8Array(version.state));
-  const sourceFragment = tmp.getXmlFragment("default");
+  let blocks;
+  try {
+    Y.applyUpdate(tmp, new Uint8Array(version.state));
+    blocks = ydocToBlocks(tmp).blocks;
+  } finally {
+    tmp.destroy();
+  }
 
   const conn = await server.hocuspocus.openDirectConnection(name);
   try {
     await conn.transact((doc) => {
-      const liveFragment = doc.getXmlFragment("default");
-      liveFragment.delete(0, liveFragment.length);
-      const cloned: Y.XmlElement[] = [];
-      for (let i = 0; i < sourceFragment.length; i++) {
-        const node = sourceFragment.get(i);
-        if (node instanceof Y.XmlElement) cloned.push(node.clone());
-      }
-      if (cloned.length > 0) liveFragment.push(cloned);
+      blocksToFragment(blocks, doc.getXmlFragment(BLOCKNOTE_FRAGMENT));
     });
   } finally {
     await conn.disconnect();

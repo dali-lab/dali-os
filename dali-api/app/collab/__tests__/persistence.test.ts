@@ -23,6 +23,8 @@ vi.mock("~/collab/server", () => ({
 
 import { prisma } from "~/lib/db";
 import { getPlainText, loadDocument, storeDocument, maybeSnapshot } from "../persistence";
+import { fragmentToBlocks } from "../blocknote-server";
+import { blocksToPlainText } from "~/components/doc/schema/configs";
 
 const mockPrisma = prisma as any;
 
@@ -143,6 +145,86 @@ describe("loadDocument", () => {
     await loadDocument("domainApplication:da1:prepNote", doc);
 
     expect(getPlainText(doc)).toBe("");
+  });
+
+  it("seeds new rooms into the blocknote fragment (not the legacy default)", async () => {
+    mockPrisma.collabDocument.findUnique.mockResolvedValue(null);
+    mockPrisma.applicationReview.findUnique.mockResolvedValue({
+      id: "r1",
+      feedback: "seed me",
+      rejectionRationale: null,
+    });
+
+    const doc = new Y.Doc();
+    await loadDocument("review:r1:feedback", doc);
+
+    expect(doc.getXmlFragment("default").length).toBe(0);
+    expect(blocksToPlainText(fragmentToBlocks(doc.getXmlFragment("blocknote")))).toBe("seed me");
+  });
+
+  it("LAZY-CONVERTS a stored legacy doc into the blocknote fragment on load", async () => {
+    // Stored state shaped like a legacy Tiptap doc: content in "default",
+    // nothing in "blocknote".
+    const original = new Y.Doc();
+    const frag = original.getXmlFragment("default");
+    original.transact(() => {
+      const h = new Y.XmlElement("heading");
+      h.setAttribute("level", "2" as any);
+      const ht = new Y.XmlText();
+      ht.insert(0, "Old Title");
+      h.insert(0, [ht]);
+      frag.push([h]);
+
+      const p = new Y.XmlElement("paragraph");
+      const t = new Y.XmlText();
+      t.insert(0, "old body");
+      p.insert(0, [t]);
+      frag.push([p]);
+    });
+    mockPrisma.collabDocument.findUnique.mockResolvedValue({
+      name: "doc:pg1:body",
+      state: Buffer.from(Y.encodeStateAsUpdate(original)),
+    });
+
+    const doc = new Y.Doc();
+    await loadDocument("doc:pg1:body", doc);
+
+    const blocks = fragmentToBlocks(doc.getXmlFragment("blocknote"));
+    expect(blocks.map((b) => b.type)).toEqual(["heading", "paragraph"]);
+    expect(blocksToPlainText(blocks)).toBe("Old Title\nold body");
+    // The legacy fragment is left untouched (goes stale, never deleted).
+    expect(doc.getXmlFragment("default").length).toBe(2);
+    // The converted state persists immediately — a second loader must see a
+    // populated blocknote fragment rather than converting again.
+    expect(mockPrisma.collabDocument.upsert).toHaveBeenCalledOnce();
+  });
+
+  it("does NOT re-convert a doc whose blocknote fragment is already populated", async () => {
+    // A converted doc: blocknote has newer content, default is stale.
+    const original = new Y.Doc();
+    await (async () => {
+      const { blocksToFragment, plainTextToBlocks } = await import("../blocknote-server");
+      original.transact(() => {
+        blocksToFragment(plainTextToBlocks("current"), original.getXmlFragment("blocknote"));
+      });
+      const legacy = original.getXmlFragment("default");
+      original.transact(() => {
+        const p = new Y.XmlElement("paragraph");
+        const t = new Y.XmlText();
+        t.insert(0, "stale");
+        p.insert(0, [t]);
+        legacy.push([p]);
+      });
+    })();
+    mockPrisma.collabDocument.findUnique.mockResolvedValue({
+      name: "doc:pg1:body",
+      state: Buffer.from(Y.encodeStateAsUpdate(original)),
+    });
+
+    const doc = new Y.Doc();
+    await loadDocument("doc:pg1:body", doc);
+
+    expect(getPlainText(doc)).toBe("current");
   });
 });
 

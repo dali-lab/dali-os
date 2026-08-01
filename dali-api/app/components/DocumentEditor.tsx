@@ -1,27 +1,50 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useRevalidator } from "react-router";
-import { FileDown, Check, RotateCcw, Trash2 } from "lucide-react";
-import { CollaborativeEditor, type CommentAnchor, type EditorApi, type TocHeading } from "./CollaborativeEditor";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type RefObject,
+} from "react";
+import { useNavigate, useRevalidator } from "react-router";
+import { Copy, FileDown, History, LayoutTemplate, Link, MessageSquare, MoreHorizontal, Printer, Search, Upload } from "lucide-react";
+import { DocEditor, type TocHeading } from "~/components/doc";
+import type { DocEditorInstance } from "~/components/doc/schema/build";
+import { DocCommentsPanel, useDocThreadCounts } from "~/components/doc/comments";
+import { pageDocName } from "~/collab/roomName";
 import { PresenceProvider } from "./collab/PresenceProvider";
 import { PresenceBar } from "./collab/PresenceBar";
-import { CommentsRail, formatCommentDate, type Comment, type ThreadActions } from "./collab/CommentsRail";
+import { VersionHistoryPanel } from "./collab/VersionHistoryPanel";
 import { TagPicker, type DocTag } from "./TagPicker";
-import { MentionTextInput } from "./editor/MentionTextInput";
-import { useEditMode, EditModeToggle } from "./EditModeToggle";
-import { PageIconPicker } from "./editor/PageIconPicker";
-import { PageCover } from "./editor/PageCover";
-import { DocToc } from "./editor/DocToc";
+import { PageIconPicker } from "./doc-chrome/PageIconPicker";
+import { PageCover } from "./doc-chrome/PageCover";
+import { DocToc } from "./doc-chrome/DocToc";
 import { relativeTime } from "~/lib/relative-time";
+import { FindReplaceBar } from "./doc/find";
+import {
+  DEFAULT_TYPOGRAPHY,
+  type PageTypography,
+} from "~/lib/page-typography";
 
 // Reusable, abstract document surface: a Notion-style large title, a
-// collaborative rich-text body, lab tags, inline + doc-level comments, and
-// PDF/Word export. Keyed off a Page id so it can be dropped onto any FreeForm
-// page (project docs today; meeting notes / PRDs / etc. later) — it knows
-// nothing about projects.
+// collaborative rich-text body, lab tags, doc-level comments, and PDF/Word
+// export. Keyed off a Page id so it can be dropped onto any FreeForm page
+// (project docs today; meeting notes / PRDs / etc. later) — it knows nothing
+// about projects.
 //
-// The body lives in the collab room `doc:{pageId}:body` (same room the project
-// overview/PRD already use). The title is the Page.title field, saved via
-// onSaveTitle (debounced by the host's API).
+// The body lives in the collab room `doc:{pageId}:body`. The title is the
+// Page.title field, saved via a debounced API call.
+//
+// Edit mode is GONE: the editor renders once with editable={canEdit}. There is
+// no pencil, no "Done editing", no read/edit reflow. Read-only users see the
+// same layout, inert.
+export type BacklinkPage = {
+  id: string;
+  title: string;
+  iconEmoji?: string | null;
+};
+
 export function DocumentEditor({
   pageId,
   initialTitle,
@@ -31,15 +54,19 @@ export function DocumentEditor({
   photoUrl,
   subtitle,
   canEdit,
+  canComment,
+  canResolve,
   tags,
   allTags,
   iconEmoji: initialIcon = null,
   coverImageUrl: initialCover = null,
-  createdByName,
-  lastEditedByName,
   updatedAt,
-  focusMentionUserId,
   focusCommentId,
+  isTemplate = false,
+  typography: initialTypography = null,
+  backlinks = [],
+  focusMentionUserId,
+  aiEnabled = false,
 }: {
   pageId: string;
   initialTitle: string;
@@ -49,34 +76,231 @@ export function DocumentEditor({
   photoUrl?: string | null;
   subtitle?: string | null;
   canEdit: boolean;
+  canComment: boolean;
+  canResolve: boolean;
   tags: DocTag[];
   allTags: DocTag[];
   iconEmoji?: string | null;
   coverImageUrl?: string | null;
-  createdByName?: string | null;
-  lastEditedByName?: string | null;
   updatedAt?: string | null;
-  // When set (arriving from a mention notification), scroll to + flash this
-  // user's mention in the body once it syncs.
-  focusMentionUserId?: string;
-  // When set (arriving from a comment-mention notification), scroll to + flash
-  // this comment in the rail.
+  // When true, the page is a template (shown in "Start from template" picker).
+  isTemplate?: boolean;
+  // Per-page display prefs (Aa menu) — null renders defaults.
+  typography?: PageTypography | null;
+  // When set (arriving from a comment-mention notification), open the comments
+  // panel and scroll to this comment.
   focusCommentId?: string;
+  // Pages that link TO this page via a @pageMention node.
+  backlinks?: BacklinkPage[];
+  // When set (arriving from an @-mention notification), scroll to and flash the
+  // first mention chip for that user once the collab doc syncs.
+  focusMentionUserId?: string;
+  // True when the server has an AI provider key configured — shows the AI slash items.
+  aiEnabled?: boolean;
 }) {
   const revalidator = useRevalidator();
-  // Read/edit gate: docs open in a clean reading view even for editors; the
-  // header toggle or the first click/keystroke in the body flips to edit.
-  const { editing, editMode, setEditMode } = useEditMode(canEdit);
-  const [title, setTitle] = useState(initialTitle);
+  const navigate = useNavigate();
+  // Editor instance captured via onEditorReady — used for the Import Markdown action.
+  const editorRef = useRef<DocEditorInstance | null>(null);
+  // Hidden file input for the Import Markdown menu action.
+  const mdImportInputRef = useRef<HTMLInputElement | null>(null);
+  // FIX 5: title is uncontrolled — we never feed state back into the DOM while
+  // the h1 is focused, which prevents caret-at-0 "backwards typing" caused by
+  // React re-rendering contentEditable with the controlled value on every input.
+  // pendingTitle ref tracks the latest text for the debounced save; the DOM is
+  // the single source of truth while the user is typing.
   const [savingTitle, setSavingTitle] = useState(false);
-  const [pendingAnchor, setPendingAnchor] = useState<CommentAnchor | null>(null);
+  const pendingTitleRef = useRef(initialTitle);
+  const titleFocusedRef = useRef(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [commentsOpen, setCommentsOpen] = useState(!!focusCommentId);
+  const [panelFilter, setPanelFilter] = useState<"open" | "resolved">("open");
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  // Optimistic local reflection of isTemplate — revalidator syncs server truth.
+  const [templateMarked, setTemplateMarked] = useState(isTemplate);
+  const [backlinksOpen, setBacklinksOpen] = useState(false);
+  const backlinksRef = useRef<HTMLDivElement | null>(null);
+  // Find & replace bar state.
+  const [findOpen, setFindOpen] = useState(false);
+  const [findInitialQuery, setFindInitialQuery] = useState("");
+  // Live editor instance captured via onEditorReady — needed to pass to FindReplaceBar.
+  // Using `any` here keeps this file free of BlockNote type imports.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const liveEditorRef = useRef<any>(null);
+  const commentsBubbleRef = useRef<HTMLDivElement | null>(null);
+  const [locallyEdited, setLocallyEdited] = useState(false);
+  // "Aa" page-typography menu (Notion's Style section): per-page font /
+  // small-text / full-width, persisted on Page.typography via the API route.
+  // Optimistic local state — the revalidator syncs server truth.
+  const [typo, setTypo] = useState<PageTypography>(
+    initialTypography ?? DEFAULT_TYPOGRAPHY,
+  );
+  const [typoOpen, setTypoOpen] = useState(false);
+  const typoRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!typoOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (typoRef.current && !typoRef.current.contains(e.target as Node)) {
+        setTypoOpen(false);
+      }
+    };
+    // globalThis: the React KeyboardEvent type import shadows the DOM one.
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape") setTypoOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [typoOpen]);
+
+  async function saveTypography(next: PageTypography) {
+    setTypo(next);
+    try {
+      await fetch(`/api/pages/${pageId}/typography`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(next),
+      });
+    } catch {
+      // Keep the optimistic value; the next load resyncs from the server.
+    }
+  }
+
+  // ⌘F / Ctrl-F — open find bar when focus is inside the doc surface.
+  // We attach to the document-level keydown so it fires regardless of which
+  // child element has focus, but only when the event target is inside the
+  // doc surface (bodyRef or its ancestors in this component).
+  const docSurfaceRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const onKeyDown = (e: globalThis.KeyboardEvent) => {
+      const isMod = e.metaKey || e.ctrlKey;
+      if (!isMod || e.key !== "f") return;
+      // Only intercept when the focused element is inside the doc surface.
+      const surface = docSurfaceRef.current;
+      if (!surface) return;
+      const active = document.activeElement;
+      // The doc surface itself, the title, or the editor body.
+      if (!surface.contains(active)) return;
+      e.preventDefault();
+      // Pre-fill with the editor's current text selection if any.
+      let selText = "";
+      const view = liveEditorRef.current?.prosemirrorView;
+      if (view) {
+        const { from, to } = view.state.selection;
+        if (from !== to) {
+          selText = view.state.doc.textBetween(from, to);
+        }
+      }
+      setFindInitialQuery(selText);
+      setFindOpen(true);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  const { open: openThreadCount } = useDocThreadCounts(pageId);
+
+  // ── Rail (wide-screen comments column) ───────────────────────────────────
+  // canvasContainerRef: the flex row that holds the paper + rail.
+  const canvasContainerRef = useRef<HTMLDivElement | null>(null);
+  // paperCardRef: the bg-card paper element (also used as the rail's canvasRef).
+  const paperCardRef = useRef<HTMLDivElement | null>(null);
+
+  // Whether the container is wide enough for the rail (≥ 1150px).
+  const [containerWide, setContainerWide] = useState(false);
+
+  useEffect(() => {
+    const el = canvasContainerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width ?? el.offsetWidth;
+      setContainerWide(w >= 1150);
+    });
+    ro.observe(el);
+    // Seed immediately without waiting for a resize event.
+    setContainerWide(el.offsetWidth >= 1150);
+    return () => ro.disconnect();
+  }, []);
+
+  // Rail visibility: persisted in localStorage, default visible when wide + has open threads.
+  const [railUserVisible, setRailUserVisible] = useState<boolean | null>(() => {
+    if (typeof window === "undefined") return null;
+    const stored = localStorage.getItem("dali-doc-rail-visible");
+    if (stored === "0") return false;
+    if (stored === "1") return true;
+    return null; // null = use default (open when threads exist)
+  });
+
+  // Effective rail visibility: wide + user pref (default: visible when there are open threads).
+  const railVisible =
+    containerWide &&
+    (railUserVisible === null ? openThreadCount > 0 : railUserVisible);
+
+  function toggleRail() {
+    if (containerWide) {
+      setRailUserVisible((v) => {
+        const next = !(v === null ? openThreadCount > 0 : v);
+        localStorage.setItem("dali-doc-rail-visible", next ? "1" : "0");
+        return next;
+      });
+    } else {
+      // Narrow: toggle the existing dropdown.
+      setCommentsOpen((o) => !o);
+    }
+  }
+
+  const [railFilter, setRailFilter] = useState<"open" | "resolved">("open");
+
+  const RAIL_TARGET_ID = "doc-comments-rail";
 
   // Page chrome — optimistic local state, persisted via the documents API.
   const [iconEmoji, setIconEmoji] = useState<string | null>(initialIcon);
   const [coverImageUrl, setCoverImageUrl] = useState<string | null>(initialCover);
   const [wordCount, setWordCount] = useState(0);
   const [headings, setHeadings] = useState<TocHeading[]>([]);
-  const editorApiRef = useRef<EditorApi | null>(null);
+
+  const documentName = pageDocName(pageId);
+
+  // Deep-link: when rail is visible, select the thread there; otherwise open dropdown.
+  useEffect(() => {
+    if (!focusCommentId) return;
+    if (containerWide) {
+      // Rail handles selection via selectThread — ensure rail is visible.
+      setRailUserVisible(true);
+    } else {
+      setCommentsOpen(true);
+    }
+  }, [focusCommentId, containerWide]);
+
+  // Deep-link: ?mention=<userId> — poll for the first mention chip for that
+  // user, scroll it into view, and briefly flash it. Mirrors the comment deep-
+  // link pattern from DocCommentsRail (up to 40 × 250 ms = 10 s of polling so
+  // the collab doc has time to sync before we give up).
+  const mentionFocusedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!focusMentionUserId || mentionFocusedRef.current === focusMentionUserId) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let tries = 0;
+    const attempt = () => {
+      const el = document.querySelector<HTMLElement>(
+        `[data-mention-id="${CSS.escape(focusMentionUserId)}"]`,
+      );
+      if (el) {
+        mentionFocusedRef.current = focusMentionUserId;
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.classList.add("dali-mention-flash");
+        setTimeout(() => el.classList.remove("dali-mention-flash"), 1500);
+      } else if (++tries < 40) {
+        timer = setTimeout(attempt, 250);
+      }
+    };
+    attempt();
+    return () => { if (timer) clearTimeout(timer); };
+  }, [focusMentionUserId]);
 
   async function savePageMeta(patch: { iconEmoji?: string | null; coverImageUrl?: string | null }) {
     if (patch.iconEmoji !== undefined) setIconEmoji(patch.iconEmoji);
@@ -94,23 +318,42 @@ export function DocumentEditor({
     }
   }
 
-  // Bridge between the comments rail (owns the data) and the editor (needs the
-  // anchors to highlight + a way to refetch after a new inline comment).
-  const refreshRef = useRef<(() => void) | null>(null);
-  const getThreadsRef = useRef<(() => Comment[]) | null>(null);
-  const focusAnchorRef = useRef<((a: CommentAnchor) => void) | null>(null);
-  const actionsRef = useRef<ThreadActions | null>(null);
-  const [anchors, setAnchors] = useState<{ id: string; anchor: CommentAnchor }[]>([]);
+  async function duplicateDoc() {
+    setMoreMenuOpen(false);
+    const res = await fetch(`/api/pages/${pageId}/duplicate`, {
+      method: "POST",
+      credentials: "include",
+    });
+    if (!res.ok) return;
+    const { id } = (await res.json()) as { id: string };
+    navigate(`/documents/${id}`);
+  }
 
-  // Debounced title save.
+  async function toggleTemplate() {
+    const next = !templateMarked;
+    setTemplateMarked(next);
+    setMoreMenuOpen(false);
+    await fetch(`/api/pages/${pageId}/template`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isTemplate: next }),
+    });
+    revalidator.revalidate();
+  }
+
+  // Debounced title save — fires at most once per 800ms burst.
   const titleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (titleTimer.current) clearTimeout(titleTimer.current); }, []);
 
-  function onTitleChange(next: string) {
-    setTitle(next);
+  // FIX 5: read textContent from the DOM directly (not React state) to avoid
+  // feeding state back into the controlled h1 which resets the caret to 0.
+  function scheduleTitleSave(text: string) {
+    pendingTitleRef.current = text;
+    setLocallyEdited(true);
     if (titleTimer.current) clearTimeout(titleTimer.current);
     titleTimer.current = setTimeout(async () => {
-      const trimmed = next.trim();
+      const trimmed = pendingTitleRef.current.trim();
       if (!trimmed) return;
       setSavingTitle(true);
       try {
@@ -122,11 +365,7 @@ export function DocumentEditor({
         });
         // Refresh breadcrumb / tab title elsewhere on the page.
         revalidator.revalidate();
-        // This tab's own loader/tab-label refresh from the line above, but a
-        // sibling tab showing this doc (e.g. the project hub's Documents
-        // list, opened split-screen) has its own loader that only reruns in
-        // response to its own actions. Tell the shell to relay this to every
-        // open tab so any that care about this page can refresh themselves.
+        // Relay to sibling tabs (e.g. a project hub opened split-screen).
         if (typeof window !== "undefined" && window.self !== window.top) {
           window.parent.postMessage(
             { type: "dali:documentTitleChanged", pageId, title: trimmed },
@@ -136,176 +375,602 @@ export function DocumentEditor({
       } finally {
         setSavingTitle(false);
       }
-    }, 600);
+    }, 800);
   }
 
-  const registerRefresh = useCallback(
-    (refresh: () => void, threads: () => Comment[], actions: ThreadActions) => {
-      refreshRef.current = refresh;
-      getThreadsRef.current = threads;
-      actionsRef.current = actions;
-      // Recompute the editor's highlight anchors from the latest root threads.
-      const list = threads()
-        .filter((c) => c.parentId === null && c.anchor && !c.resolved)
-        .map((c) => ({ id: c.id, anchor: c.anchor as CommentAnchor }));
-      setAnchors(list);
-    },
-    [],
-  );
+  // FIX 5: Set the h1 DOM text once on mount and when pageId changes (cross-tab
+  // navigation). When NOT focused, also accept external title updates (e.g. from
+  // postMessage relay). Never write to the DOM while the user is typing — doing
+  // so resets the caret to offset 0.
+  useLayoutEffect(() => {
+    if (titleRef.current) {
+      titleRef.current.textContent = initialTitle;
+      pendingTitleRef.current = initialTitle;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageId]);
 
-  // Renders inside the CollaborativeEditor's popover when an inline highlight
-  // is clicked — reuses the rail's fetched data + mutation actions (via the
-  // refs above) instead of duplicating fetch/mutate logic, so this stays a
-  // thin read+act view rather than a second source of truth.
-  function getThreadNode(id: string, close: () => void) {
-    const all = getThreadsRef.current?.() ?? [];
-    const root = all.find((c) => c.id === id && c.parentId === null);
-    if (!root) return null;
-    const replies = all.filter((c) => c.parentId === id);
-    return (
-      <InlineThreadPopover
-        root={root}
-        replies={replies}
-        currentUserId={currentUserId}
-        canComment={canEdit}
-        actions={actionsRef.current}
-        close={close}
-      />
-    );
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+
+  // ToC jump — ordinals from the block tree, re-resolved on live DOM.
+  const jumpToHeading = useCallback((ordinal: number) => {
+    const root = bodyRef.current;
+    if (!root) return;
+    const headingEls = Array.from(
+      root.querySelectorAll('[data-content-type="heading"]'),
+    ).filter((el) => Number(el.getAttribute("data-level") ?? "1") <= 3);
+    headingEls[ordinal]?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+
+  // Title contenteditable ref — needed to focus from the editor's back-tab.
+  const titleRef = useRef<HTMLHeadingElement | null>(null);
+
+  // "Enter" in the title moves focus into the first editor block.
+  function onTitleKeyDown(e: KeyboardEvent<HTMLHeadingElement>) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      // Focus the BlockNote editor's first block. BlockNote's root div carries
+      // [data-bn-editor] or we just target the .ProseMirror element it renders.
+      const editorEl = bodyRef.current?.querySelector<HTMLElement>(
+        "[contenteditable='true']",
+      );
+      editorEl?.focus();
+    }
   }
 
-  const metaSegments = [
-    createdByName ? `Created by ${createdByName}` : null,
-    lastEditedByName || createdByName
-      ? `Last edited by ${lastEditedByName ?? createdByName}`
-      : null,
-    updatedAt ? relativeTime(updatedAt) : null,
-    `${wordCount} ${wordCount === 1 ? "word" : "words"}`,
-  ].filter(Boolean);
+  // Import Markdown: reads the picked .md/.markdown/.txt file client-side,
+  // converts to blocks via editor.tryParseMarkdownToBlocks (BlockNote 0.52 API —
+  // synchronous), then replaces an empty doc or appends to an existing one.
+  // Both replaceBlocks/insertBlocks are single ProseMirror transactions so the
+  // entire import is one undo step.
+  async function handleMarkdownImport(file: File) {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const text = await file.text();
+    const newBlocks = editor.tryParseMarkdownToBlocks(text);
+    if (!newBlocks.length) return;
 
-  const body = (
-    <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
-      <div className="min-w-0">
-        <PageCover
-          coverImageUrl={coverImageUrl}
-          editing={editing}
-          onChange={(url) => savePageMeta({ coverImageUrl: url })}
-        />
-        {/* Notion-style title — large, bold, borderless; doubles as the doc
-            title (Page.title). */}
-        <div className="mb-3">
-          <div className="flex items-center gap-3">
-            <PageIconPicker
-              iconEmoji={iconEmoji}
-              editing={editing}
-              onChange={(e) => savePageMeta({ iconEmoji: e })}
-            />
-            <input
-              value={title}
-              onChange={(e) => onTitleChange(e.target.value)}
-              disabled={!editing}
-              placeholder="Untitled"
-              aria-label="Document title"
-              className="w-full font-heading text-3xl font-bold text-foreground bg-transparent border-none focus:outline-none placeholder:text-muted-foreground/50 disabled:opacity-100"
-            />
-          </div>
-          <div className="mt-2 flex items-center justify-between gap-3 flex-wrap">
-            <TagPicker
-              targetType="doc"
-              targetId={pageId}
-              applied={tags}
-              allTags={allTags}
-              canEdit={editing}
-              canCreate={editing}
-              onChange={() => revalidator.revalidate()}
-            />
-            <div className="flex items-center gap-2 text-xs">
-              {savingTitle && <span className="text-muted-foreground">Saving…</span>}
-              <DocToc
-                headings={headings}
-                onJump={(ordinal) => editorApiRef.current?.scrollToHeading(ordinal)}
+    const doc = editor.document;
+    const isEmpty =
+      doc.length === 1 &&
+      doc[0].type === "paragraph" &&
+      (!Array.isArray(doc[0].content) || doc[0].content.length === 0);
+
+    if (isEmpty) {
+      // Replace the single empty paragraph.
+      editor.replaceBlocks(editor.document, newBlocks);
+    } else {
+      // Append after the last block.
+      const lastBlock = doc[doc.length - 1];
+      editor.insertBlocks(newBlocks, lastBlock, "after");
+    }
+  }
+
+  // ⋯ More menu dismiss on outside click.
+  const moreMenuRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!moreMenuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) {
+        setMoreMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [moreMenuOpen]);
+
+  useEffect(() => {
+    if (!backlinksOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (backlinksRef.current && !backlinksRef.current.contains(e.target as Node)) {
+        setBacklinksOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [backlinksOpen]);
+
+  // Narrow-mode dropdown dismiss on outside click.
+  useEffect(() => {
+    if (!commentsOpen || containerWide) return;
+    const onDown = (e: MouseEvent) => {
+      if (commentsBubbleRef.current && !commentsBubbleRef.current.contains(e.target as Node)) {
+        setCommentsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [commentsOpen, containerWide]);
+
+  const editedLabel = locallyEdited
+    ? "Edited just now"
+    : updatedAt
+      ? `Edited ${relativeTime(updatedAt)}`
+      : null;
+
+  // ── Top bar ───────────────────────────────────────────────────────────────
+  const topBar = (
+    <div className="doc-topbar flex items-center gap-2 px-4 py-2 text-xs text-muted-foreground">
+      {/* Breadcrumb/back rendered by the outer shell — we just add meta here */}
+      {editedLabel && (
+        <span className="shrink-0">{editedLabel}</span>
+      )}
+      {savingTitle && <span className="shrink-0 italic">Saving…</span>}
+
+      <div className="flex-1" />
+
+      {/* Presence chips */}
+      <PresenceBar />
+
+      {/* ToC control */}
+      <DocToc headings={headings} onJump={jumpToHeading} />
+
+      {/* "Aa" page-typography menu — per-page font / small-text / full-width
+          (what the Aa glyph promises; selection formatting lives in the
+          floating toolbar). Shared prefs: every viewer sees the same doc. */}
+      {canEdit && (
+        <div ref={typoRef} className="relative">
+          <button
+            type="button"
+            onClick={() => setTypoOpen((o) => !o)}
+            aria-expanded={typoOpen}
+            aria-label="Page typography"
+            className={`inline-flex items-center rounded-md border px-2 py-1 text-[11px] font-semibold transition-colors ${
+              typoOpen
+                ? "border-accent-coral/40 bg-accent-coral/10 text-accent-coral"
+                : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+            }`}
+          >
+            Aa
+          </button>
+          {typoOpen && (
+            <div className="absolute right-0 z-30 mt-1 w-56 rounded-md border border-border bg-card p-2 shadow-brand-2 text-sm">
+              <div className="grid grid-cols-3 gap-1">
+                {(
+                  [
+                    { key: "default", label: "Default", preview: "font-sans" },
+                    { key: "serif", label: "Serif", preview: "font-serif" },
+                    { key: "mono", label: "Mono", preview: "font-mono" },
+                  ] as const
+                ).map((f) => (
+                  <button
+                    key={f.key}
+                    type="button"
+                    onClick={() => void saveTypography({ ...typo, font: f.key })}
+                    aria-pressed={typo.font === f.key}
+                    className={`rounded-md border px-1 py-1.5 text-center transition-colors ${
+                      typo.font === f.key
+                        ? "border-accent-coral/40 bg-accent-coral/10"
+                        : "border-border hover:bg-muted"
+                    }`}
+                  >
+                    <span className={`block text-lg leading-none text-foreground ${f.preview}`}>
+                      Ag
+                    </span>
+                    <span className="mt-1 block text-[10px] text-muted-foreground">
+                      {f.label}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <div className="my-2 border-t border-border" />
+              <TypographyToggle
+                label="Small text"
+                checked={typo.smallText}
+                onToggle={() =>
+                  void saveTypography({ ...typo, smallText: !typo.smallText })
+                }
               />
-              <PresenceBar />
-              <EditModeToggle canEdit={canEdit} editMode={editMode} setEditMode={setEditMode} />
-              <a
-                href={`/documents/${pageId}/export?format=pdf`}
-                className="inline-flex items-center gap-1 px-2 py-1 rounded border border-border hover:bg-muted text-muted-foreground hover:text-foreground"
-              >
-                <FileDown className="w-3.5 h-3.5" /> PDF
-              </a>
-              <a
-                href={`/documents/${pageId}/export?format=docx`}
-                className="inline-flex items-center gap-1 px-2 py-1 rounded border border-border hover:bg-muted text-muted-foreground hover:text-foreground"
-              >
-                <FileDown className="w-3.5 h-3.5" /> Word
-              </a>
-              <a
-                href={`/documents/${pageId}/export?format=md`}
-                className="inline-flex items-center gap-1 px-2 py-1 rounded border border-border hover:bg-muted text-muted-foreground hover:text-foreground"
-              >
-                <FileDown className="w-3.5 h-3.5" /> Markdown
-              </a>
+              <TypographyToggle
+                label="Full width"
+                checked={typo.fullWidth}
+                onToggle={() =>
+                  void saveTypography({ ...typo, fullWidth: !typo.fullWidth })
+                }
+              />
             </div>
-          </div>
-          {metaSegments.length > 0 && (
-            <p className="mt-1.5 text-xs text-muted-foreground">{metaSegments.join(" · ")}</p>
           )}
         </div>
+      )}
 
-        {collabToken ? (
-          <CollaborativeEditor
-            editorId={`doc:${pageId}:body`}
-            documentName={`doc:${pageId}:body`}
-            token={collabToken}
-            userName={userName}
-            disabled={!editing}
-            onBeginEdit={canEdit ? () => setEditMode(true) : undefined}
-            onWordCountChange={setWordCount}
-            onHeadingsChange={setHeadings}
-            onReady={(api) => {
-              editorApiRef.current = api;
-            }}
-            enableMentions
-            enableImages
-            enableRichBlocks
-            chromeless
-            focusMentionUserId={focusMentionUserId}
-            placeholder="Write something, or press '/' for commands"
-            inlineComments={{
-              enabled: true,
-              anchors,
-              onRequestComment: (a) => setPendingAnchor(a),
-              onReady: (api) => {
-                focusAnchorRef.current = api.focusAnchor;
-              },
-              getThreadNode,
-            }}
-          />
-        ) : (
-          <p className="text-sm text-muted-foreground italic">
-            Sign in again to edit this document.
-          </p>
+      {/* Comments bubble → rail toggle (wide) or compact dropdown (narrow) */}
+      {(canComment || openThreadCount > 0) && (
+        <div ref={commentsBubbleRef} className="relative">
+          <button
+            type="button"
+            onClick={toggleRail}
+            aria-pressed={containerWide ? railVisible : commentsOpen}
+            aria-label={`Comments${openThreadCount > 0 ? ` (${openThreadCount} open)` : ""}`}
+            className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 transition-colors ${
+              (containerWide ? railVisible : commentsOpen)
+                ? "border-accent-coral/40 bg-accent-coral/10 text-accent-coral"
+                : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+            }`}
+          >
+            <MessageSquare className="h-3.5 w-3.5" />
+            {openThreadCount > 0 && <span>{openThreadCount}</span>}
+          </button>
+          {/* Dropdown only on narrow screens */}
+          {!containerWide && commentsOpen && (
+            <DocCommentsPanel
+              pageId={pageId}
+              currentUserId={currentUserId}
+              canComment={canComment}
+              canResolve={canResolve}
+              open={commentsOpen}
+              onClose={() => setCommentsOpen(false)}
+              targetId="doc-comments-panel"
+              onFilterChange={setPanelFilter}
+            />
+          )}
+        </div>
+      )}
+
+      {/* ⋯ More menu */}
+      <div ref={moreMenuRef} className="relative">
+        <button
+          type="button"
+          onClick={() => setMoreMenuOpen((o) => !o)}
+          aria-haspopup="true"
+          aria-expanded={moreMenuOpen}
+          aria-label="More options"
+          className="inline-flex items-center justify-center rounded-md border border-border p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          <MoreHorizontal className="h-3.5 w-3.5" />
+        </button>
+        {moreMenuOpen && (
+          <div className="absolute right-0 z-30 mt-1 w-52 rounded-md border border-border bg-card p-1 shadow-brand-2 text-sm">
+            <button
+              type="button"
+              onClick={() => { setFindInitialQuery(""); setFindOpen(true); setMoreMenuOpen(false); }}
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-muted"
+            >
+              <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              Find &amp; replace
+            </button>
+            {collabToken && (
+              <button
+                type="button"
+                onClick={() => { setHistoryOpen(true); setMoreMenuOpen(false); }}
+                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-muted"
+              >
+                <History className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                Version history
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => void duplicateDoc()}
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-muted"
+            >
+              <Copy className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              Duplicate
+            </button>
+            {canEdit && (
+              <button
+                type="button"
+                onClick={() => void toggleTemplate()}
+                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-muted"
+              >
+                <LayoutTemplate className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                {templateMarked ? "Unmark as template" : "Mark as template"}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => { window.print(); setMoreMenuOpen(false); }}
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-muted"
+            >
+              <Printer className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              Print / Save as PDF
+            </button>
+            {canEdit && (
+              <button
+                type="button"
+                onClick={() => { mdImportInputRef.current?.click(); setMoreMenuOpen(false); }}
+                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-muted"
+              >
+                <Upload className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                Import Markdown
+              </button>
+            )}
+            <div className="my-1 border-t border-border" />
+            <a
+              href={`/documents/${pageId}/export?format=pdf`}
+              className="flex items-center gap-2 rounded px-2 py-1.5 text-foreground hover:bg-muted"
+              onClick={() => setMoreMenuOpen(false)}
+            >
+              <FileDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              Export as PDF
+            </a>
+            <a
+              href={`/documents/${pageId}/export?format=docx`}
+              className="flex items-center gap-2 rounded px-2 py-1.5 text-foreground hover:bg-muted"
+              onClick={() => setMoreMenuOpen(false)}
+            >
+              <FileDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              Export as Word
+            </a>
+            <a
+              href={`/documents/${pageId}/export?format=md`}
+              className="flex items-center gap-2 rounded px-2 py-1.5 text-foreground hover:bg-muted"
+              onClick={() => setMoreMenuOpen(false)}
+            >
+              <FileDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              Export as Markdown
+            </a>
+            <div className="my-1 border-t border-border" />
+            <div className="px-2 py-1.5 text-muted-foreground text-xs tabular-nums">
+              {wordCount} {wordCount === 1 ? "word" : "words"}
+            </div>
+          </div>
         )}
       </div>
-
-      <aside className="lg:border-l lg:border-border lg:pl-6">
-        <CommentsRail
-          targetType="doc"
-          targetId={pageId}
-          currentUserId={currentUserId}
-          canComment={canEdit}
-          pendingAnchor={pendingAnchor}
-          onClearPendingAnchor={() => setPendingAnchor(null)}
-          onFocusAnchor={(a) => focusAnchorRef.current?.(a)}
-          registerRefresh={registerRefresh}
-          focusCommentId={focusCommentId}
-        />
-      </aside>
     </div>
   );
 
-  // Provider wraps the whole surface so PresenceBar (in the header row) and
-  // the editor share one presence room.
+  // ── Paper canvas ──────────────────────────────────────────────────────────
+  // SMALL B: bg-page tint token for light-mode canvas contrast (mirrors dark)
+  const canvas = (
+    <div
+      ref={canvasContainerRef}
+      className="doc-canvas-outer flex justify-center gap-6 px-6 pb-12 pt-4 bg-page"
+    >
+      {/* Paper card — shrinks to make room for the rail when wide */}
+      <div
+        ref={paperCardRef}
+        className={`doc-canvas rounded-xl border border-border bg-card shadow-brand-1 ${
+          railVisible
+            ? "flex-1 min-w-0"
+            : typo.fullWidth
+              ? "w-full"
+              : "w-full max-w-[1400px]"
+        }${typo.font !== "default" ? ` doc-canvas--${typo.font}` : ""}${
+          typo.smallText ? " doc-canvas--small" : ""
+        }`}
+      >
+        {/* Cover lives at the top edge of the canvas, full-bleed.
+            FIX 6: Only render PageCover here when a cover IS set (so it shows
+            the image + change/remove controls). When no cover, the hover-reveal
+            row below owns the "Add cover" affordance — rendering PageCover here
+            with no cover would produce a second "Add cover" button. */}
+        {coverImageUrl && (
+          <PageCover
+            coverImageUrl={coverImageUrl}
+            canEdit={canEdit}
+            onChange={(url) => savePageMeta({ coverImageUrl: url })}
+          />
+        )}
+
+        <div className="px-[54px] pt-12 pb-6">
+          {/* Hover-reveal row: icon · Add icon · Add cover · Add tag
+              The header/title block adds an extra pl-[54px] to match the body
+              text, which sits at the 54px outer padding PLUS BlockNote's own
+              54px .bn-editor drag-handle gutter (padding-inline:54px in core
+              CSS). Together that puts both at 108px from the card edge (±0). */}
+          <div className="group/header relative mb-1 pl-[54px]">
+            {/* FIX 6: One source of truth for the icon + cover affordances.
+                - When icon IS set: show it always (not in the hover row).
+                - When icon is NOT set: show "Add icon" only in the hover row.
+                - When cover is NOT set: show "Add cover" only in the hover row.
+                The hover-reveal row is always reserved (h-6) so the title does
+                not shift when hovering; items appear with opacity transition. */}
+            {canEdit && (
+              <div className="flex items-center gap-1 h-6 mb-2 opacity-0 transition-opacity duration-150 group-hover/header:opacity-100">
+                {!iconEmoji && (
+                  <PageIconPicker
+                    iconEmoji={null}
+                    canEdit={true}
+                    onChange={(e) => savePageMeta({ iconEmoji: e })}
+                  />
+                )}
+                {!coverImageUrl && (
+                  <PageCover
+                    coverImageUrl={null}
+                    canEdit={true}
+                    onChange={(url) => savePageMeta({ coverImageUrl: url })}
+                  />
+                )}
+              </div>
+            )}
+
+            {/* Title — FIX 5: rendered uncontrolled (no children re-rendered
+                from state) so React never resets textContent mid-keystroke.
+                useLayoutEffect seeds DOM text on mount/pageId change. */}
+            <div className="flex items-start gap-3">
+              {iconEmoji && (
+                // h-[50px] = the title's first-line height (40px × 1.25
+                // leading-tight), so the icon stays centered on line one even
+                // when the title wraps.
+                <div className="flex h-[50px] shrink-0 items-center">
+                  <PageIconPicker
+                    iconEmoji={iconEmoji}
+                    canEdit={canEdit}
+                    onChange={(e) => savePageMeta({ iconEmoji: e })}
+                  />
+                </div>
+              )}
+              {canEdit ? (
+                <h1
+                  ref={titleRef}
+                  contentEditable
+                  suppressContentEditableWarning
+                  role="textbox"
+                  aria-label="Document title"
+                  aria-multiline="false"
+                  data-placeholder="Untitled"
+                  onFocus={() => { titleFocusedRef.current = true; }}
+                  onBlur={(e) => {
+                    titleFocusedRef.current = false;
+                    // Save on blur in addition to the debounce.
+                    const text = (e.currentTarget.textContent ?? "").replace(/\n/g, "");
+                    scheduleTitleSave(text);
+                  }}
+                  onInput={(e) => scheduleTitleSave((e.currentTarget.textContent ?? "").replace(/\n/g, ""))}
+                  onKeyDown={onTitleKeyDown}
+                  className="doc-title doc-title-editable min-w-0 flex-1 font-heading text-[40px] font-bold leading-tight text-foreground outline-none empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground/50"
+                />
+              ) : (
+                <h1 className="doc-title min-w-0 flex-1 font-heading text-[40px] font-bold leading-tight text-foreground select-text">
+                  {initialTitle}
+                </h1>
+              )}
+            </div>
+
+            {/* Tags row — just below the title */}
+            <div className="mt-3">
+              <TagPicker
+                targetType="doc"
+                targetId={pageId}
+                applied={tags}
+                allTags={allTags}
+                canEdit={canEdit}
+                canCreate={canEdit}
+                onChange={() => revalidator.revalidate()}
+              />
+            </div>
+
+            {/* Backlinks affordance — shown only when N > 0 (Notion-style) */}
+            {backlinks.length > 0 && (
+              <div ref={backlinksRef} className="relative mt-2">
+                <button
+                  type="button"
+                  onClick={() => setBacklinksOpen((o) => !o)}
+                  className="inline-flex items-center gap-1.5 rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                  aria-expanded={backlinksOpen}
+                  aria-label={`${backlinks.length} backlink${backlinks.length === 1 ? "" : "s"}`}
+                >
+                  <Link className="h-3 w-3 shrink-0" />
+                  {backlinks.length} backlink{backlinks.length === 1 ? "" : "s"}
+                </button>
+                {backlinksOpen && (
+                  <div className="absolute left-0 top-full z-30 mt-1 w-64 rounded-md border border-border bg-card p-1 shadow-brand-2 text-sm">
+                    {backlinks.map((bl) => (
+                      <a
+                        key={bl.id}
+                        href={`/documents/${bl.id}`}
+                        className="flex items-center gap-2 rounded px-2 py-1.5 text-foreground hover:bg-muted truncate"
+                      >
+                        <span className="shrink-0 text-base leading-none">
+                          {bl.iconEmoji ?? "📄"}
+                        </span>
+                        <span className="truncate">{bl.title || "Untitled"}</span>
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Hidden file input for "Import Markdown" ⋯ menu action.
+              Accepts .md/.markdown/.txt; value is reset after each pick so
+              selecting the same file twice still triggers onChange. */}
+          <input
+            ref={mdImportInputRef}
+            type="file"
+            accept=".md,.markdown,.txt,text/plain,text/markdown"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.currentTarget.files?.[0];
+              e.currentTarget.value = "";
+              if (file) handleMarkdownImport(file).catch(console.error);
+            }}
+          />
+
+          {/* Body */}
+          <div className="mt-4 relative" ref={bodyRef}>
+            {/* Find & replace bar: floats at the top-right of the document area,
+                above the editor, below the top bar. Unmounted when closed so
+                cleanup decorations fire via the FindReplaceBar unmount effect. */}
+            {findOpen && liveEditorRef.current && (
+              <FindReplaceBar
+                editor={liveEditorRef.current}
+                canEdit={canEdit}
+                onClose={() => setFindOpen(false)}
+                initialQuery={findInitialQuery}
+              />
+            )}
+            {collabToken ? (
+              <DocEditor
+                features="document"
+                editable={canEdit}
+                onEditorReady={(ed) => { editorRef.current = ed; liveEditorRef.current = ed; }}
+                collab={{
+                  documentName,
+                  token: collabToken,
+                  userName,
+                  userId: currentUserId,
+                }}
+                comments={{
+                  pageId,
+                  currentUserId,
+                  canComment,
+                  canResolve,
+                  panelOpen: !containerWide && commentsOpen,
+                  panelTargetId: "doc-comments-dropdown",
+                  panelFilter: railVisible ? railFilter : panelFilter,
+                  railVisible,
+                  railTargetId: RAIL_TARGET_ID,
+                  editorContentRef: paperCardRef as RefObject<HTMLElement | null>,
+                  onRailFilterChange: setRailFilter,
+                  focusCommentId,
+                }}
+                findOpen={findOpen}
+                aiEnabled={aiEnabled}
+                onWordCountChange={setWordCount}
+                onHeadingsChange={setHeadings}
+                onChange={() => setLocallyEdited(true)}
+                placeholder="Write something, or press '/' for commands"
+                className="min-h-[70vh]"
+              />
+            ) : (
+              <p className="text-sm text-muted-foreground italic">
+                Sign in again to edit this document.
+              </p>
+            )}
+
+            {/* Empty read state: visible only when read-only + no content yet.
+                Word count starts at 0 before the collab doc loads, so we also
+                wait for a mounted collab connection (collabToken present). */}
+            {!canEdit && collabToken && wordCount === 0 && (
+              <p className="mt-12 text-center text-sm text-muted-foreground/60 italic select-none">
+                This page is empty.
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Right-hand comments rail — only rendered when the container is wide */}
+      {railVisible && (
+        <div
+          id={RAIL_TARGET_ID}
+          className="dali-doc-rail-container bn-root bn-shadcn"
+          aria-label="Comments rail"
+        />
+      )}
+    </div>
+  );
+
+  // ── Version history ───────────────────────────────────────────────────────
+  const versionHistory = historyOpen && (
+    <VersionHistoryPanel
+      documentName={documentName}
+      onClose={() => setHistoryOpen(false)}
+    />
+  );
+
+  const body = (
+    <div ref={docSurfaceRef} className="doc-surface flex flex-col min-h-screen">
+      {topBar}
+      {canvas}
+      {versionHistory}
+    </div>
+  );
+
+  // Provider wraps the whole surface so PresenceBar (in the top bar) and the
+  // editor share one presence room.
   return collabToken ? (
     <PresenceProvider
       pageId={`doc:${pageId}`}
@@ -322,114 +987,35 @@ export function DocumentEditor({
   );
 }
 
-// Compact single-thread view rendered inside the editor's floating popover
-// (see getThreadNode above). Read + act, not a second source of truth: data
-// comes from the rail's live fetch, mutations go through the rail's own
-// actions, so both views update from the same refresh.
-function InlineThreadPopover({
-  root,
-  replies,
-  currentUserId,
-  canComment,
-  actions,
-  close,
+function TypographyToggle({
+  label,
+  checked,
+  onToggle,
 }: {
-  root: Comment;
-  replies: Comment[];
-  currentUserId: string;
-  canComment: boolean;
-  actions: ThreadActions | null;
-  close: () => void;
+  label: string;
+  checked: boolean;
+  onToggle: () => void;
 }) {
-  const [replyDraft, setReplyDraft] = useState("");
-  const [busy, setBusy] = useState(false);
-
   return (
-    <div className="flex flex-col gap-2 p-3 text-sm max-h-96 overflow-y-auto">
-      <div>
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-xs font-medium text-foreground">{root.author}</span>
-          <span className="text-[10px] text-muted-foreground">{formatCommentDate(root.createdAt)}</span>
-        </div>
-        <p className="text-sm text-foreground whitespace-pre-wrap mt-0.5">{root.body}</p>
-      </div>
-
-      {replies.map((r) => (
-        <div key={r.id} className="ml-3 pl-2 border-l border-border">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-medium text-foreground">{r.author}</span>
-            <span className="text-[10px] text-muted-foreground">{formatCommentDate(r.createdAt)}</span>
-          </div>
-          <p className="text-sm text-foreground whitespace-pre-wrap mt-0.5">{r.body}</p>
-        </div>
-      ))}
-
-      {canComment && (
-        <>
-          <div className="flex items-end gap-1">
-            <MentionTextInput
-              autoFocus
-              value={replyDraft}
-              onChange={setReplyDraft}
-              placeholder="Reply… "
-              wrapperClassName="relative flex-1"
-              className="w-full px-2 py-1 text-xs border border-border rounded bg-background focus:outline-none focus:ring-1 focus:ring-accent-coral/40"
-              onKeyDown={async (e) => {
-                if (e.key !== "Enter" || !replyDraft.trim()) return;
-                e.preventDefault();
-                setBusy(true);
-                const ok = await actions?.reply(root.id, replyDraft.trim());
-                setBusy(false);
-                if (ok) setReplyDraft("");
-              }}
-            />
-            <button
-              type="button"
-              disabled={busy || !replyDraft.trim()}
-              onClick={async () => {
-                setBusy(true);
-                const ok = await actions?.reply(root.id, replyDraft.trim());
-                setBusy(false);
-                if (ok) setReplyDraft("");
-              }}
-              className="text-xs px-2 py-1 rounded bg-accent-coral text-white disabled:opacity-50"
-            >
-              Reply
-            </button>
-          </div>
-
-          <div className="flex items-center gap-3 pt-1 border-t border-border">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={async () => {
-                setBusy(true);
-                await actions?.resolve(root.id, !root.resolved);
-                setBusy(false);
-                close();
-              }}
-              className="text-[11px] text-muted-foreground hover:text-foreground flex items-center gap-0.5"
-            >
-              {root.resolved ? <><RotateCcw className="w-3 h-3" /> Reopen</> : <><Check className="w-3 h-3" /> Resolve</>}
-            </button>
-            {root.authorId === currentUserId && (
-              <button
-                type="button"
-                disabled={busy}
-                onClick={async () => {
-                  setBusy(true);
-                  await actions?.remove(root.id);
-                  setBusy(false);
-                  close();
-                }}
-                className="text-[11px] text-destructive hover:underline flex items-center gap-0.5"
-              >
-                <Trash2 className="w-3 h-3" /> Delete
-              </button>
-            )}
-          </div>
-        </>
-      )}
-    </div>
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={onToggle}
+      className="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-foreground hover:bg-muted"
+    >
+      <span>{label}</span>
+      <span
+        className={`relative h-4 w-7 shrink-0 rounded-full transition-colors ${
+          checked ? "bg-accent-coral" : "bg-muted-foreground/30"
+        }`}
+      >
+        <span
+          className={`absolute left-0 top-0.5 h-3 w-3 rounded-full bg-white transition-transform ${
+            checked ? "translate-x-3.5" : "translate-x-0.5"
+          }`}
+        />
+      </span>
+    </button>
   );
 }

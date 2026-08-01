@@ -5,6 +5,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
 import { presignAnswers } from "~/hiring/lib/presign";
+import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { ChevronDown } from "lucide-react";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { Avatar } from "~/components/ui/Avatar";
@@ -236,11 +237,25 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   return {
       domainApplication: {
         ...da,
+        // Immutable ChallengeVersion rows: legacy ProseMirror descriptions
+        // convert to block JSON on read (ApplicationViewer expects blocks).
+        challengeVersion: da.challengeVersion
+          ? { ...da.challengeVersion, description: ensureBlocks(da.challengeVersion.description) }
+          : da.challengeVersion,
         answers: presignedChallengeAnswers,
         interviews: interviewsWithNotes,
         reviews: reviewsWithPhotos,
       },
-      application: { ...da.application, answers: presignedGeneralAnswers },
+      application: {
+        ...da.application,
+        answers: presignedGeneralAnswers,
+        generalChallengeVersion: da.application.generalChallengeVersion
+          ? {
+              ...da.application.generalChallengeVersion,
+              description: ensureBlocks(da.application.generalChallengeVersion.description),
+            }
+          : da.application.generalChallengeVersion,
+      },
       inferredStatus,
       criteriaByKey,
     };

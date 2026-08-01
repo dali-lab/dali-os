@@ -7,31 +7,32 @@
 // A room open is an EDIT grant (there is no read-only collab connection), so
 // `authorize` is the write gate; non-editors read the always-synced source
 // column (or a server-side snapshot decode) instead.
+//
+// Post-BlockNote-migration, source columns hold BLOCK JSON (an array of
+// blocks). Legacy ProseMirror JSON (`{type:"doc"}`) still seeds correctly —
+// ensureBlocks maps it — and the first sync-back rewrites the column as
+// blocks.
 
 import * as Y from "yjs";
-import { yDocToProsemirrorJSON } from "y-prosemirror";
 import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
-import { pmJsonToYDoc, replaceFragment } from "./pm-to-y";
-import type { PMNode } from "./export-html";
+import {
+  BLOCKNOTE_FRAGMENT,
+  blocksToFragment,
+  type DocBlock,
+} from "./blocknote-server";
+import { ensureBlocks } from "./legacy/pm-to-blocknote";
+import { ydocToBlocks } from "./read";
 
 export interface CollabSource {
-  // Initial content for a brand-new room (no CollabDocument row yet). Return
-  // null to start empty.
-  seed(id: string): Promise<PMNode | null>;
+  // Initial content for a brand-new room (no CollabDocument row yet). Returns
+  // the raw source column value — block JSON or legacy PM JSON; the seeder
+  // normalizes via ensureBlocks. Return null to start empty.
+  seed(id: string): Promise<unknown>;
   // Persist the live doc back to the source column after each store.
-  syncBack(id: string, json: PMNode): Promise<void>;
+  syncBack(id: string, blocks: DocBlock[]): Promise<void>;
   // May this user open (== edit) the room?
   authorize(userSub: string, id: string): Promise<boolean>;
-}
-
-// A ProseMirror doc is `{ type: "doc", content: [...] }`. The MentorNote /
-// template columns default to `{}` (empty object) — not a valid doc — so guard
-// before seeding, or prosemirrorJSONToYDoc throws on schema validation.
-function asPmDoc(value: unknown): PMNode | null {
-  return value && typeof value === "object" && (value as { type?: string }).type === "doc"
-    ? (value as PMNode)
-    : null;
 }
 
 export const COLLAB_SOURCES: Record<string, CollabSource> = {
@@ -45,12 +46,12 @@ export const COLLAB_SOURCES: Record<string, CollabSource> = {
         where: { id },
         select: { contentJson: true },
       });
-      return note ? asPmDoc(note.contentJson) : null;
+      return note?.contentJson ?? null;
     },
-    async syncBack(id, json) {
+    async syncBack(id, blocks) {
       await prisma.mentorNote.update({
         where: { id },
-        data: { contentJson: json as object },
+        data: { contentJson: blocks as unknown as object },
       });
     },
     async authorize(userSub, id) {
@@ -70,12 +71,12 @@ export const COLLAB_SOURCES: Record<string, CollabSource> = {
         where: { id },
         select: { contentJson: true },
       });
-      return tpl ? asPmDoc(tpl.contentJson) : null;
+      return tpl?.contentJson ?? null;
     },
-    async syncBack(id, json) {
+    async syncBack(id, blocks) {
       await prisma.mentorNoteTemplate.update({
         where: { id },
-        data: { contentJson: json as object },
+        data: { contentJson: blocks as unknown as object },
       });
     },
     async authorize(userSub) {
@@ -84,9 +85,9 @@ export const COLLAB_SOURCES: Record<string, CollabSource> = {
   },
 };
 
-// Seed a new room's fragment from its source's ProseMirror JSON. Returns true if
-// `entity` is registry-backed (so the caller skips the legacy plain-text seed),
-// even when there is nothing to seed yet (the room starts empty).
+// Seed a new room's "blocknote" fragment from its source column. Returns true
+// if `entity` is registry-backed (so the caller skips the legacy plain-text
+// seed), even when there is nothing to seed yet (the room starts empty).
 export async function seedRegistryDoc(
   entity: string,
   id: string,
@@ -94,17 +95,18 @@ export async function seedRegistryDoc(
 ): Promise<boolean> {
   const source = COLLAB_SOURCES[entity];
   if (!source) return false;
-  const json = await source.seed(id);
-  if (json) {
-    const tmp = pmJsonToYDoc(json);
-    replaceFragment(doc.getXmlFragment("default"), tmp.getXmlFragment("default"));
-    tmp.destroy();
+  const blocks = ensureBlocks(await source.seed(id));
+  if (blocks.length > 0) {
+    doc.transact(() => {
+      blocksToFragment(blocks, doc.getXmlFragment(BLOCKNOTE_FRAGMENT));
+    });
   }
   return true;
 }
 
-// Sync a registry surface's live doc back to its source column. Returns true if
-// `entity` is registry-backed (so the caller skips the legacy plain-text sync).
+// Sync a registry surface's live doc back to its source column as block JSON.
+// Returns true if `entity` is registry-backed (so the caller skips the legacy
+// plain-text sync).
 export async function syncRegistryDocBack(
   entity: string,
   id: string,
@@ -112,7 +114,6 @@ export async function syncRegistryDocBack(
 ): Promise<boolean> {
   const source = COLLAB_SOURCES[entity];
   if (!source) return false;
-  const json = yDocToProsemirrorJSON(doc, "default") as PMNode;
-  await source.syncBack(id, json);
+  await source.syncBack(id, ydocToBlocks(doc).blocks);
   return true;
 }

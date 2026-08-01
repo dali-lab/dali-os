@@ -13,6 +13,7 @@ import {
 import { OfferingApplyForm } from "~/education/components/OfferingApplyForm";
 import { MyStatusChip, TypeBadge } from "~/education/components/OfferingCard";
 import { buttonClasses } from "~/components/ui/Button";
+import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 
 export const meta: Route.MetaFunction = ({ data }) => [
   { title: `Apply · ${data?.offering.title ?? "Offering"} · DALI` },
@@ -49,7 +50,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     open: registrationOpen(offering) && !decided && form !== null,
     myStatus: myApplication?.status ?? null,
     questions: form?.questions ?? [],
-    description: form?.description ?? null,
+    // Form intros are stored as ProseMirror JSON until the forms editor
+    // migrates; normalize to block JSON for the read-only DocEditor.
+    description: ensureBlocks(form?.description ?? null),
     defaultAnswers:
       myApplication?.status === "Submitted"
         ? ((myApplication.formSubmission?.answers ?? {}) as Record<string, string>)

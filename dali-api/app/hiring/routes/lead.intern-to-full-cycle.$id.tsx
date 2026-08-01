@@ -8,8 +8,9 @@ import type { Question } from "~/types";
 import type { Prisma } from "~/generated/prisma/client";
 import { CycleSetupSection as Section } from "~/hiring/components/CycleSetupSection";
 import { ChallengePreviewModal } from "~/hiring/components/ChallengePreviewModal";
-import { RichTextEditor } from "~/components/RichTextEditor";
+import { DocEditor } from "~/components/doc";
 import { hasInfoBody } from "~/components/form-builder/info-body";
+import { normalizeQuestionBodies } from "~/lib/question-blocks.server";
 import { renderEmail } from "~/lib/email";
 import {
   TEMPLATE_VARIABLES,
@@ -163,7 +164,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         ? {
             id: cycle.internToFullFormVersion.id,
             version: cycle.internToFullFormVersion.version,
-            questions: (cycle.internToFullFormVersion.questions as unknown as Question[]) ?? [],
+            // Frozen versions may hold legacy ProseMirror info bodies —
+            // convert on read so the preview only ever sees string | blocks.
+            questions: normalizeQuestionBodies(
+              (cycle.internToFullFormVersion.questions as unknown as Question[]) ?? [],
+            ),
           }
         : null,
       generalRubricVersionId: cycle.generalRubricVersionId,
@@ -778,10 +783,14 @@ function CreateFormVersionModal({
                   </div>
                 </div>
                 {isInfo ? (
-                  <RichTextEditor
-                    value={q.data.body}
+                  // New info bodies are stored as BlockNote block JSON inside
+                  // the draft question array (hasInfoBody handles both shapes).
+                  <DocEditor
+                    density="compact"
+                    initialContent={q.data.body}
                     onChange={(body) => update(idx, { data: { body } })}
                     placeholder="Free-form text shown to the applicant (e.g. instructions or context)."
+                    className="rounded-md border border-border bg-card py-2"
                   />
                 ) : (
                   <>

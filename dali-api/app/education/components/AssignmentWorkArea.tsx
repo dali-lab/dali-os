@@ -1,13 +1,14 @@
 import { useState } from "react";
 import { useSubmit, useActionData, useNavigation } from "react-router";
-import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
+import { DocEditor, countWords } from "~/components/doc";
 import { Button } from "~/components/ui/Button";
 import { formatDateTime } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 
-// Student-side assignment view: instructions (server-rendered), text/file
-// submission with resubmit, and returned grade/feedback. Files go straight to
-// S3 via the existing presign flow; the submit action receives S3 keys only.
+// Student-side assignment view: instructions (blocks read server-side, shown
+// read-only), text/file submission with resubmit, and returned grade/feedback.
+// Files go straight to S3 via the existing presign flow; the submit action
+// receives S3 keys only.
 
 export type AssignmentView = {
   id: string;
@@ -103,12 +104,16 @@ export function AssignmentWorkArea({
 
   return (
     <div className="flex flex-col gap-5 max-w-3xl">
-      {assignment.instructionsContent != null &&
-        !isEmptyDoc(assignment.instructionsContent) && (
-          <section className="bg-card border border-border rounded-lg p-5">
-            <RichTextViewer content={assignment.instructionsContent} enableImages />
-          </section>
-        )}
+      {/* instructionsContent is block JSON (loaders read via readDocAsBlocks). */}
+      {countWords(assignment.instructionsContent) > 0 && (
+        <section className="bg-card border border-border rounded-lg p-5">
+          <DocEditor
+            features="notes"
+            editable={false}
+            initialContent={assignment.instructionsContent}
+          />
+        </section>
+      )}
 
       {submission?.feedbackText != null && (
         <section className="bg-accent-teal/5 border border-accent-teal/30 rounded-lg p-4">

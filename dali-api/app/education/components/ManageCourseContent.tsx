@@ -1,7 +1,7 @@
 import { Form, Link } from "react-router";
 import { Button, buttonClasses } from "~/components/ui/Button";
 import { useConfirmSubmit } from "~/components/ui/dialog";
-import { CollaborativeEditor } from "~/components/CollaborativeEditor";
+import { DocEditor } from "~/components/doc";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { formatDateTime } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
@@ -173,12 +173,14 @@ export function ManageAssignments({
                   token={collabToken}
                   userName={userName}
                 >
-                  <CollaborativeEditor
-                    editorId={a.instructionsDocId}
-                    documentName={a.instructionsDocId}
-                    token={collabToken}
-                    userName={userName}
-                    enableImages
+                  <DocEditor
+                    features="notes"
+                    aiEnabled
+                    collab={{
+                      documentName: a.instructionsDocId,
+                      token: collabToken,
+                      userName,
+                    }}
                     placeholder="What students should build or hand in…"
                     className="mt-1 border border-border rounded-md"
                   />
