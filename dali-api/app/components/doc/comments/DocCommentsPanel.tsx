@@ -13,7 +13,7 @@
 // reads comments.panelOpen + comments.panelTargetId to drive the portal.
 
 import { useEffect, useRef, useState, useSyncExternalStore, useCallback } from "react";
-import { X, MessageSquare, Check, RotateCcw, Trash2 } from "lucide-react";
+import { MessageSquare, Check, RotateCcw, Trash2 } from "lucide-react";
 
 import { Avatar } from "~/components/ui/Avatar";
 import { MentionTextInput } from "~/components/MentionTextInput";
@@ -195,56 +195,47 @@ export function DocCommentsPanel({
 
   return (
     <div
-      className="fixed inset-y-0 right-0 z-40 flex w-[360px] flex-col bg-card border-l border-border shadow-xl"
+      className="absolute right-0 top-full z-30 mt-1 w-[380px] rounded-md border border-border bg-card shadow-brand-2 flex flex-col"
+      style={{ maxHeight: "60vh" }}
       aria-label="Comments panel"
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-border shrink-0">
         <div className="flex items-center gap-2">
-          <MessageSquare className="w-4 h-4 text-muted-foreground" />
-          <span className="text-sm font-semibold text-foreground">Comments</span>
+          <MessageSquare className="w-3.5 h-3.5 text-muted-foreground" />
+          <span className="text-xs font-semibold text-foreground">Comments</span>
         </div>
-        <div className="flex items-center gap-2">
-          {/* Open / Resolved filter pills */}
-          <div className="flex rounded-md border border-border overflow-hidden text-xs">
-            <button
-              type="button"
-              onClick={() => handleFilterChange("open")}
-              className={`px-2 py-1 ${filter === "open" ? "bg-accent text-accent-foreground font-medium" : "text-muted-foreground hover:bg-muted"}`}
-            >
-              Open
-            </button>
-            <button
-              type="button"
-              onClick={() => handleFilterChange("resolved")}
-              className={`px-2 py-1 border-l border-border ${filter === "resolved" ? "bg-accent text-accent-foreground font-medium" : "text-muted-foreground hover:bg-muted"}`}
-            >
-              Resolved
-            </button>
-          </div>
+        {/* Open / Resolved filter pills */}
+        <div className="flex rounded-md border border-border overflow-hidden text-xs">
           <button
             type="button"
-            onClick={onClose}
-            aria-label="Close comments"
-            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+            onClick={() => handleFilterChange("open")}
+            className={`px-2 py-1 ${filter === "open" ? "bg-accent text-accent-foreground font-medium" : "text-muted-foreground hover:bg-muted"}`}
           >
-            <X className="w-4 h-4" />
+            Open
+          </button>
+          <button
+            type="button"
+            onClick={() => handleFilterChange("resolved")}
+            className={`px-2 py-1 border-l border-border ${filter === "resolved" ? "bg-accent text-accent-foreground font-medium" : "text-muted-foreground hover:bg-muted"}`}
+          >
+            Resolved
           </button>
         </div>
       </div>
 
       {fetchErr && (
-        <div className="px-4 py-2 text-xs text-destructive">{fetchErr}</div>
+        <div className="px-3 py-2 text-xs text-destructive">{fetchErr}</div>
       )}
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto min-h-0">
         {/* ── Inline threads section ───────────────────────────────────── */}
-        {/* W2/DocEditorImpl portals <ThreadsSidebar filter=… /> into this div
+        {/* DocEditorImpl portals <ThreadsSidebar filter=… /> into this div
             when panelOpen is true. The div carries bn-root + bn-shadcn so
             BlockNote's component-tree styles apply without the full BlockNoteView
             wrapper duplicating in the DOM. */}
-        <div className="px-3 pt-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+        <div className="px-3 pt-2">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">
             Inline
           </p>
           <div
@@ -255,8 +246,8 @@ export function DocCommentsPanel({
         </div>
 
         {/* ── Doc-level threads section ────────────────────────────────── */}
-        <div className="px-3 pt-3 pb-4">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+        <div className="px-3 pt-2 pb-3">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">
             Document
           </p>
 
@@ -400,9 +391,9 @@ export function DocCommentsPanel({
         </div>
       </div>
 
-      {/* Doc-level composer — Notion's under-title pattern: in the panel for v1 */}
+      {/* Doc-level composer */}
       {canComment && filter === "open" && (
-        <div className="border-t border-border px-3 py-3 shrink-0">
+        <div className="border-t border-border px-3 py-2 shrink-0">
           <form
             onSubmit={async (e) => {
               e.preventDefault();
@@ -418,7 +409,7 @@ export function DocCommentsPanel({
               onChange={setDraft}
               rows={2}
               placeholder="Add a document comment…"
-              className="w-full px-2 py-1 text-sm border border-border rounded bg-background focus:outline-none focus:ring-1 focus:ring-accent-teal/40"
+              className="w-full px-2 py-1 text-xs border border-border rounded bg-background focus:outline-none focus:ring-1 focus:ring-accent-teal/40"
             />
             <div className="flex justify-end">
               <button

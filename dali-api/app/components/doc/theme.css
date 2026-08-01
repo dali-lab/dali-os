@@ -225,10 +225,10 @@ html.dark .dali-doc .bn-thread-mark[data-orphan="true"] {
   background-color: var(--color-page);
 }
 
-/* Paper card: centred, max ~868px (760px body text + BlockNote's 54px gutter
- * on each side), white surface, light hairline, soft brand-1 shadow. */
+/* Paper card: fluid, capped at 1400px, white surface, light hairline, soft
+ * brand-1 shadow. Fills available width with ~24px margins on each side. */
 .doc-canvas {
-  /* max-width enforced via Tailwind max-w-[868px] in JSX */
+  /* max-width enforced via Tailwind max-w-[1400px] in JSX */
 }
 
 /* Contenteditable title — suppresses the box that the global

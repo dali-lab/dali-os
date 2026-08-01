@@ -316,11 +316,12 @@ function DocView(props: ResolvedProps & { editor: DocEditorInstance }) {
       {hasComments && (
         <FloatingComposerController portalElement={floatingRootRef.current ?? undefined} />
       )}
-      {/* Suppress FloatingThreadController when panel is open: the sidebar
-          already shows the thread inline, showing both is redundant.
-          focusManagerProps.disabled=false enables Floating UI's focus trap so
-          the reply box receives focus when the popover opens. */}
-      {hasComments && !panelOpen && (
+      {/* FloatingThreadController: mark clicks open an anchored thread popover.
+          Always rendered (whether or not the dropdown is open) — the dropdown
+          and mark popover are independent UI. focusManagerProps.disabled=false
+          enables Floating UI's focus trap so the reply box receives focus when
+          the popover opens. */}
+      {hasComments && (
         <FloatingThreadController
           portalElement={floatingRootRef.current ?? undefined}
           floatingUIOptions={{ focusManagerProps: { disabled: false } }}

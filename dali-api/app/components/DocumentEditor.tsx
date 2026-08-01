@@ -82,6 +82,7 @@ export function DocumentEditor({
   const [commentsOpen, setCommentsOpen] = useState(!!focusCommentId);
   const [panelFilter, setPanelFilter] = useState<"open" | "resolved">("open");
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const commentsBubbleRef = useRef<HTMLDivElement | null>(null);
   const [locallyEdited, setLocallyEdited] = useState(false);
   // FIX 7: toggleable static formatting toolbar, persisted in localStorage.
   const [staticToolbar, setStaticToolbar] = useState(() => {
@@ -216,6 +217,18 @@ export function DocumentEditor({
     return () => document.removeEventListener("mousedown", onDown);
   }, [moreMenuOpen]);
 
+  // Comments dropdown dismiss on outside click.
+  useEffect(() => {
+    if (!commentsOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (commentsBubbleRef.current && !commentsBubbleRef.current.contains(e.target as Node)) {
+        setCommentsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [commentsOpen]);
+
   const editedLabel = locallyEdited
     ? "Edited just now"
     : updatedAt
@@ -239,22 +252,36 @@ export function DocumentEditor({
       {/* ToC control */}
       <DocToc headings={headings} onJump={jumpToHeading} />
 
-      {/* Comments bubble */}
+      {/* Comments bubble → compact anchored dropdown (not a slide-over) */}
       {(canComment || openThreadCount > 0) && (
-        <button
-          type="button"
-          onClick={() => setCommentsOpen((o) => !o)}
-          aria-pressed={commentsOpen}
-          aria-label={`Comments${openThreadCount > 0 ? ` (${openThreadCount} open)` : ""}`}
-          className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 transition-colors ${
-            commentsOpen
-              ? "border-accent-coral/40 bg-accent-coral/10 text-accent-coral"
-              : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
-          }`}
-        >
-          <MessageSquare className="h-3.5 w-3.5" />
-          {openThreadCount > 0 && <span>{openThreadCount}</span>}
-        </button>
+        <div ref={commentsBubbleRef} className="relative">
+          <button
+            type="button"
+            onClick={() => setCommentsOpen((o) => !o)}
+            aria-pressed={commentsOpen}
+            aria-label={`Comments${openThreadCount > 0 ? ` (${openThreadCount} open)` : ""}`}
+            className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 transition-colors ${
+              commentsOpen
+                ? "border-accent-coral/40 bg-accent-coral/10 text-accent-coral"
+                : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+            }`}
+          >
+            <MessageSquare className="h-3.5 w-3.5" />
+            {openThreadCount > 0 && <span>{openThreadCount}</span>}
+          </button>
+          {commentsOpen && (
+            <DocCommentsPanel
+              pageId={pageId}
+              currentUserId={currentUserId}
+              canComment={canComment}
+              canResolve={canResolve}
+              open={commentsOpen}
+              onClose={() => setCommentsOpen(false)}
+              targetId="doc-comments-panel"
+              onFilterChange={setPanelFilter}
+            />
+          )}
+        </div>
       )}
 
       {/* ⋯ More menu */}
@@ -330,8 +357,8 @@ export function DocumentEditor({
   // ── Paper canvas ──────────────────────────────────────────────────────────
   // SMALL B: bg-page tint token for light-mode canvas contrast (mirrors dark)
   const canvas = (
-    <div className="doc-canvas-outer flex justify-center px-4 pb-12 pt-4 bg-page">
-      <div className="doc-canvas w-full max-w-[868px] rounded-xl border border-border bg-card shadow-brand-1">
+    <div className="doc-canvas-outer flex justify-center px-6 pb-12 pt-4 bg-page">
+      <div className="doc-canvas w-full max-w-[1400px] rounded-xl border border-border bg-card shadow-brand-1">
         {/* Cover lives at the top edge of the canvas, full-bleed.
             FIX 6: Only render PageCover here when a cover IS set (so it shows
             the image + change/remove controls). When no cover, the hover-reveal
@@ -448,7 +475,7 @@ export function DocumentEditor({
                   canComment,
                   canResolve,
                   panelOpen: commentsOpen,
-                  panelTargetId: "doc-comments-panel",
+                  panelTargetId: "doc-comments-dropdown",
                   panelFilter,
                 }}
                 staticToolbar={staticToolbar}
@@ -486,26 +513,11 @@ export function DocumentEditor({
     />
   );
 
-  // ── Comments panel (right slide-over) ────────────────────────────────────
-  const commentsPanel = (
-    <DocCommentsPanel
-      pageId={pageId}
-      currentUserId={currentUserId}
-      canComment={canComment}
-      canResolve={canResolve}
-      open={commentsOpen}
-      onClose={() => setCommentsOpen(false)}
-      targetId="doc-comments-panel"
-      onFilterChange={setPanelFilter}
-    />
-  );
-
   const body = (
     <div className="doc-surface flex flex-col min-h-screen">
       {topBar}
       {canvas}
       {versionHistory}
-      {commentsPanel}
     </div>
   );
 
