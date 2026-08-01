@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
+  type RefObject,
 } from "react";
 import { useRevalidator } from "react-router";
 import { History, MessageSquare, MoreHorizontal, FileDown } from "lucide-react";
@@ -97,6 +98,61 @@ export function DocumentEditor({
     });
   }
 
+  const { open: openThreadCount } = useDocThreadCounts(pageId);
+
+  // ── Rail (wide-screen comments column) ───────────────────────────────────
+  // canvasContainerRef: the flex row that holds the paper + rail.
+  const canvasContainerRef = useRef<HTMLDivElement | null>(null);
+  // paperCardRef: the bg-card paper element (also used as the rail's canvasRef).
+  const paperCardRef = useRef<HTMLDivElement | null>(null);
+
+  // Whether the container is wide enough for the rail (≥ 1150px).
+  const [containerWide, setContainerWide] = useState(false);
+
+  useEffect(() => {
+    const el = canvasContainerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width ?? el.offsetWidth;
+      setContainerWide(w >= 1150);
+    });
+    ro.observe(el);
+    // Seed immediately without waiting for a resize event.
+    setContainerWide(el.offsetWidth >= 1150);
+    return () => ro.disconnect();
+  }, []);
+
+  // Rail visibility: persisted in localStorage, default visible when wide + has open threads.
+  const [railUserVisible, setRailUserVisible] = useState<boolean | null>(() => {
+    if (typeof window === "undefined") return null;
+    const stored = localStorage.getItem("dali-doc-rail-visible");
+    if (stored === "0") return false;
+    if (stored === "1") return true;
+    return null; // null = use default (open when threads exist)
+  });
+
+  // Effective rail visibility: wide + user pref (default: visible when there are open threads).
+  const railVisible =
+    containerWide &&
+    (railUserVisible === null ? openThreadCount > 0 : railUserVisible);
+
+  function toggleRail() {
+    if (containerWide) {
+      setRailUserVisible((v) => {
+        const next = !(v === null ? openThreadCount > 0 : v);
+        localStorage.setItem("dali-doc-rail-visible", next ? "1" : "0");
+        return next;
+      });
+    } else {
+      // Narrow: toggle the existing dropdown.
+      setCommentsOpen((o) => !o);
+    }
+  }
+
+  const [railFilter, setRailFilter] = useState<"open" | "resolved">("open");
+
+  const RAIL_TARGET_ID = "doc-comments-rail";
+
   // Page chrome — optimistic local state, persisted via the documents API.
   const [iconEmoji, setIconEmoji] = useState<string | null>(initialIcon);
   const [coverImageUrl, setCoverImageUrl] = useState<string | null>(initialCover);
@@ -105,12 +161,16 @@ export function DocumentEditor({
 
   const documentName = pageDocName(pageId);
 
-  // Open comments panel when ?comment= deep-link arrives.
+  // Deep-link: when rail is visible, select the thread there; otherwise open dropdown.
   useEffect(() => {
-    if (focusCommentId) setCommentsOpen(true);
-  }, [focusCommentId]);
-
-  const { open: openThreadCount } = useDocThreadCounts(pageId);
+    if (!focusCommentId) return;
+    if (containerWide) {
+      // Rail handles selection via selectThread — ensure rail is visible.
+      setRailUserVisible(true);
+    } else {
+      setCommentsOpen(true);
+    }
+  }, [focusCommentId, containerWide]);
 
   async function savePageMeta(patch: { iconEmoji?: string | null; coverImageUrl?: string | null }) {
     if (patch.iconEmoji !== undefined) setIconEmoji(patch.iconEmoji);
@@ -217,9 +277,9 @@ export function DocumentEditor({
     return () => document.removeEventListener("mousedown", onDown);
   }, [moreMenuOpen]);
 
-  // Comments dropdown dismiss on outside click.
+  // Narrow-mode dropdown dismiss on outside click.
   useEffect(() => {
-    if (!commentsOpen) return;
+    if (!commentsOpen || containerWide) return;
     const onDown = (e: MouseEvent) => {
       if (commentsBubbleRef.current && !commentsBubbleRef.current.contains(e.target as Node)) {
         setCommentsOpen(false);
@@ -227,7 +287,7 @@ export function DocumentEditor({
     };
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
-  }, [commentsOpen]);
+  }, [commentsOpen, containerWide]);
 
   const editedLabel = locallyEdited
     ? "Edited just now"
@@ -252,16 +312,16 @@ export function DocumentEditor({
       {/* ToC control */}
       <DocToc headings={headings} onJump={jumpToHeading} />
 
-      {/* Comments bubble → compact anchored dropdown (not a slide-over) */}
+      {/* Comments bubble → rail toggle (wide) or compact dropdown (narrow) */}
       {(canComment || openThreadCount > 0) && (
         <div ref={commentsBubbleRef} className="relative">
           <button
             type="button"
-            onClick={() => setCommentsOpen((o) => !o)}
-            aria-pressed={commentsOpen}
+            onClick={toggleRail}
+            aria-pressed={containerWide ? railVisible : commentsOpen}
             aria-label={`Comments${openThreadCount > 0 ? ` (${openThreadCount} open)` : ""}`}
             className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 transition-colors ${
-              commentsOpen
+              (containerWide ? railVisible : commentsOpen)
                 ? "border-accent-coral/40 bg-accent-coral/10 text-accent-coral"
                 : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
             }`}
@@ -269,7 +329,8 @@ export function DocumentEditor({
             <MessageSquare className="h-3.5 w-3.5" />
             {openThreadCount > 0 && <span>{openThreadCount}</span>}
           </button>
-          {commentsOpen && (
+          {/* Dropdown only on narrow screens */}
+          {!containerWide && commentsOpen && (
             <DocCommentsPanel
               pageId={pageId}
               currentUserId={currentUserId}
@@ -357,8 +418,17 @@ export function DocumentEditor({
   // ── Paper canvas ──────────────────────────────────────────────────────────
   // SMALL B: bg-page tint token for light-mode canvas contrast (mirrors dark)
   const canvas = (
-    <div className="doc-canvas-outer flex justify-center px-6 pb-12 pt-4 bg-page">
-      <div className="doc-canvas w-full max-w-[1400px] rounded-xl border border-border bg-card shadow-brand-1">
+    <div
+      ref={canvasContainerRef}
+      className="doc-canvas-outer flex justify-center gap-6 px-6 pb-12 pt-4 bg-page"
+    >
+      {/* Paper card — shrinks to make room for the rail when wide */}
+      <div
+        ref={paperCardRef}
+        className={`doc-canvas rounded-xl border border-border bg-card shadow-brand-1 ${
+          railVisible ? "flex-1 min-w-0" : "w-full max-w-[1400px]"
+        }`}
+      >
         {/* Cover lives at the top edge of the canvas, full-bleed.
             FIX 6: Only render PageCover here when a cover IS set (so it shows
             the image + change/remove controls). When no cover, the hover-reveal
@@ -474,9 +544,14 @@ export function DocumentEditor({
                   currentUserId,
                   canComment,
                   canResolve,
-                  panelOpen: commentsOpen,
+                  panelOpen: !containerWide && commentsOpen,
                   panelTargetId: "doc-comments-dropdown",
-                  panelFilter,
+                  panelFilter: railVisible ? railFilter : panelFilter,
+                  railVisible,
+                  railTargetId: RAIL_TARGET_ID,
+                  editorContentRef: paperCardRef as RefObject<HTMLElement | null>,
+                  onRailFilterChange: setRailFilter,
+                  focusCommentId,
                 }}
                 staticToolbar={staticToolbar}
                 onWordCountChange={setWordCount}
@@ -502,6 +577,15 @@ export function DocumentEditor({
           </div>
         </div>
       </div>
+
+      {/* Right-hand comments rail — only rendered when the container is wide */}
+      {railVisible && (
+        <div
+          id={RAIL_TARGET_ID}
+          className="dali-doc-rail-container bn-root bn-shadcn"
+          aria-label="Comments rail"
+        />
+      )}
     </div>
   );
 

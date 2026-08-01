@@ -3,6 +3,7 @@
 // module — or the DocEditor wrapper — never pulls BlockNote into a route's
 // server/entry chunk.
 
+import type React from "react";
 import type { TocHeading } from "./blocks-util";
 import type { Features, EditorPresetName } from "./features";
 import type { DocBlock, DocEditorInstance, DocPartialBlock } from "./schema/build";
@@ -37,6 +38,17 @@ export interface DocCommentsConfig {
   /** Which thread filter to apply to the ThreadsSidebar portal — mirrors the
    * panel's Open/Resolved tab so the inline sidebar matches the active tab. */
   panelFilter?: "open" | "resolved";
+  /** When true, the right-hand rail is visible; FloatingThreadController is
+   * suppressed and the rail handles thread selection display instead. */
+  railVisible?: boolean;
+  /** DOM id of the rail container div owned by DocumentEditor. */
+  railTargetId?: string;
+  /** Ref to the paper card element (mark measurement + resize watch). */
+  editorContentRef?: React.RefObject<HTMLElement | null>;
+  /** Called when the rail's Open/Resolved filter changes. */
+  onRailFilterChange?: (filter: "open" | "resolved") => void;
+  /** Deep-linked comment id (?comment=) for the rail to select once loaded. */
+  focusCommentId?: string;
 }
 
 export interface DocEditorProps {

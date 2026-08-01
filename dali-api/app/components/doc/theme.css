@@ -285,3 +285,66 @@ html.dark .dali-doc .bn-thread-mark[data-orphan="true"] {
   flex-wrap: wrap;
   gap: 2px;
 }
+
+/* ── 5. Right-hand comments rail ────────────────────────────────────────── */
+
+/* Rail container: a 320px transparent margin column in the SAME page flow as
+ * the paper (no sticky, no inner scrollbar) — it stretches to the flex row
+ * height (align-items default: stretch) and scrolls WITH the document, so the
+ * absolutely-positioned cards keep their mark alignment at every scroll
+ * position, like Google Docs margin comments. */
+.dali-doc-rail-container {
+  width: 320px;
+  flex: none;
+  position: relative;
+}
+
+.dali-doc-rail {
+  position: relative;
+  height: 100%;
+}
+
+/* Anchor for the absolutely-positioned cards; sits right below the header and
+ * is the coordinate origin measure() uses, so the header height never skews
+ * card offsets. min-height (inline) pushes the General section below it. */
+.dali-doc-rail__region {
+  position: relative;
+}
+
+/* Card wrapper: anchored cards get position:absolute + top inline. */
+.dali-doc-rail__card {
+  cursor: pointer;
+}
+
+/* BlockNote Thread inside the rail: compact card with border + shadow.
+ * width/padding/gap override the shadcn Card slot utilities (w-[300px],
+ * py-6, gap-6) — two-class specificity beats the single-class utility. */
+.dali-doc-rail-container .bn-thread {
+  width: 100%;
+  padding-block: 12px;
+  gap: 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--color-border);
+  background-color: var(--color-card);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.04);
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+/* Selected card: stronger border + shadow */
+.dali-doc-rail__card--selected .bn-thread {
+  border-color: var(--color-accent-teal, #0d9488);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent-teal, #0d9488) 20%, transparent),
+              0 2px 8px rgb(0 0 0 / 0.08);
+}
+
+/* Mark flash: temporary bright highlight when navigating to a mark from a
+ * card — instant on, eased fade back to the resting mark color. */
+.bn-thread-mark-flash {
+  animation: dali-mark-flash 1.5s ease;
+}
+
+@keyframes dali-mark-flash {
+  0%, 40% {
+    background-color: color-mix(in srgb, var(--color-accent-yellow, #eab308) 75%, transparent);
+  }
+}

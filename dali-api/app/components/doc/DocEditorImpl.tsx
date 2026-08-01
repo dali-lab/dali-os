@@ -41,6 +41,7 @@ import {
   BasicTextStyleButton,
   ThreadsSidebar,
 } from "@blocknote/react";
+import { DocCommentsRail } from "./comments/DocCommentsRail";
 import { BlockNoteView } from "@blocknote/shadcn";
 
 import { countWords, extractHeadings, normalizeInitialContent } from "./blocks-util";
@@ -250,6 +251,9 @@ function DocView(props: ResolvedProps & { editor: DocEditorInstance }) {
   const hasComments = Boolean(props.comments);
   const panelOpen = props.comments?.panelOpen ?? false;
   const panelTargetId = props.comments?.panelTargetId;
+  const railVisible = props.comments?.railVisible ?? false;
+  const railTargetId = props.comments?.railTargetId;
+  const editorContentRef = props.comments?.editorContentRef;
 
   // The floating comment composer and thread popover portal into a div that
   // lives INSIDE the .dali-doc wrapper. This is the La Suite / BlockNote 0.52
@@ -286,6 +290,18 @@ function DocView(props: ResolvedProps & { editor: DocEditorInstance }) {
     }
   }, [panelOpen, panelTargetId]);
 
+  // Portal target for DocCommentsRail: when rail is visible, portal the rail
+  // component into the host-owned rail container div.
+  const [railTarget, setRailTarget] = useState<Element | null>(null);
+  useEffect(() => {
+    if (railVisible && railTargetId) {
+      const el = document.getElementById(railTargetId);
+      setRailTarget(el);
+    } else {
+      setRailTarget(null);
+    }
+  }, [railVisible, railTargetId]);
+
   const staticToolbar = props.staticToolbar ?? false;
 
   const menus: ReactNode = (
@@ -317,11 +333,10 @@ function DocView(props: ResolvedProps & { editor: DocEditorInstance }) {
         <FloatingComposerController portalElement={floatingRootRef.current ?? undefined} />
       )}
       {/* FloatingThreadController: mark clicks open an anchored thread popover.
-          Always rendered (whether or not the dropdown is open) — the dropdown
-          and mark popover are independent UI. focusManagerProps.disabled=false
-          enables Floating UI's focus trap so the reply box receives focus when
-          the popover opens. */}
-      {hasComments && (
+          Suppressed when the rail is visible — the rail replaces the popover.
+          focusManagerProps.disabled=false enables Floating UI's focus trap so
+          the reply box receives focus when the popover opens. */}
+      {hasComments && !railVisible && (
         <FloatingThreadController
           portalElement={floatingRootRef.current ?? undefined}
           floatingUIOptions={{ focusManagerProps: { disabled: false } }}
@@ -335,6 +350,18 @@ function DocView(props: ResolvedProps & { editor: DocEditorInstance }) {
           // "open" when the panel is newly opened (no tab state yet).
           <ThreadsSidebar filter={props.comments?.panelFilter ?? "open"} sort="position" />,
           panelTarget,
+        )
+      }
+      {/* DocCommentsRail portaled into the host-owned rail container when wide. */}
+      {hasComments && railVisible && railTarget && editorContentRef &&
+        createPortal(
+          <DocCommentsRail
+            filter={props.comments?.panelFilter ?? "open"}
+            onFilterChange={props.comments?.onRailFilterChange ?? (() => {})}
+            editorContentRef={editorContentRef}
+            focusCommentId={props.comments?.focusCommentId}
+          />,
+          railTarget,
         )
       }
     </>
