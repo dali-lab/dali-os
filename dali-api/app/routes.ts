@@ -435,6 +435,7 @@ export default [
   // Per-page documentation guides + the member search that backs @-mentions
   route("api/page-docs/:key", "routes/api.page-docs.$key.ts"),
   route("api/mentions/search", "routes/api.mentions.search.ts"),
+  route("api/mentions/pages", "routes/api.mentions.pages.ts"),
 
   // Document export (server-rendered PDF / Word)
   route("documents/:pageId/export", "routes/documents.$pageId.export.ts"),

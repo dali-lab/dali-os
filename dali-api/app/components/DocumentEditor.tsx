@@ -8,7 +8,7 @@ import {
   type RefObject,
 } from "react";
 import { useNavigate, useRevalidator } from "react-router";
-import { Copy, FileDown, History, LayoutTemplate, MessageSquare, MoreHorizontal, Printer, Upload } from "lucide-react";
+import { Copy, FileDown, History, LayoutTemplate, Link, MessageSquare, MoreHorizontal, Printer, Upload } from "lucide-react";
 import { DocEditor, type TocHeading } from "~/components/doc";
 import type { DocEditorInstance } from "~/components/doc/schema/build";
 import { DocCommentsPanel, useDocThreadCounts } from "~/components/doc/comments";
@@ -34,6 +34,12 @@ import { relativeTime } from "~/lib/relative-time";
 // Edit mode is GONE: the editor renders once with editable={canEdit}. There is
 // no pencil, no "Done editing", no read/edit reflow. Read-only users see the
 // same layout, inert.
+export type BacklinkPage = {
+  id: string;
+  title: string;
+  iconEmoji?: string | null;
+};
+
 export function DocumentEditor({
   pageId,
   initialTitle,
@@ -52,6 +58,7 @@ export function DocumentEditor({
   updatedAt,
   focusCommentId,
   isTemplate = false,
+  backlinks = [],
 }: {
   pageId: string;
   initialTitle: string;
@@ -73,6 +80,8 @@ export function DocumentEditor({
   // When set (arriving from a comment-mention notification), open the comments
   // panel and scroll to this comment.
   focusCommentId?: string;
+  // Pages that link TO this page via a @pageMention node.
+  backlinks?: BacklinkPage[];
 }) {
   const revalidator = useRevalidator();
   const navigate = useNavigate();
@@ -94,6 +103,8 @@ export function DocumentEditor({
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   // Optimistic local reflection of isTemplate — revalidator syncs server truth.
   const [templateMarked, setTemplateMarked] = useState(isTemplate);
+  const [backlinksOpen, setBacklinksOpen] = useState(false);
+  const backlinksRef = useRef<HTMLDivElement | null>(null);
   const commentsBubbleRef = useRef<HTMLDivElement | null>(null);
   const [locallyEdited, setLocallyEdited] = useState(false);
   // "Aa" formatting popover (replaced the static-toolbar toggle). Stays open
@@ -352,6 +363,17 @@ export function DocumentEditor({
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, [moreMenuOpen]);
+
+  useEffect(() => {
+    if (!backlinksOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (backlinksRef.current && !backlinksRef.current.contains(e.target as Node)) {
+        setBacklinksOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [backlinksOpen]);
 
   // Narrow-mode dropdown dismiss on outside click.
   useEffect(() => {
@@ -663,6 +685,38 @@ export function DocumentEditor({
                 onChange={() => revalidator.revalidate()}
               />
             </div>
+
+            {/* Backlinks affordance — shown only when N > 0 (Notion-style) */}
+            {backlinks.length > 0 && (
+              <div ref={backlinksRef} className="relative mt-2">
+                <button
+                  type="button"
+                  onClick={() => setBacklinksOpen((o) => !o)}
+                  className="inline-flex items-center gap-1.5 rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                  aria-expanded={backlinksOpen}
+                  aria-label={`${backlinks.length} backlink${backlinks.length === 1 ? "" : "s"}`}
+                >
+                  <Link className="h-3 w-3 shrink-0" />
+                  {backlinks.length} backlink{backlinks.length === 1 ? "" : "s"}
+                </button>
+                {backlinksOpen && (
+                  <div className="absolute left-0 top-full z-30 mt-1 w-64 rounded-md border border-border bg-card p-1 shadow-brand-2 text-sm">
+                    {backlinks.map((bl) => (
+                      <a
+                        key={bl.id}
+                        href={`/documents/${bl.id}`}
+                        className="flex items-center gap-2 rounded px-2 py-1.5 text-foreground hover:bg-muted truncate"
+                      >
+                        <span className="shrink-0 text-base leading-none">
+                          {bl.iconEmoji ?? "📄"}
+                        </span>
+                        <span className="truncate">{bl.title || "Untitled"}</span>
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Hidden file input for "Import Markdown" ⋯ menu action.
