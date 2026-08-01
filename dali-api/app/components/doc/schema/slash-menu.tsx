@@ -26,6 +26,10 @@ const ALLOWED_KEYS = new Set([
   "heading",
   "heading_2",
   "heading_3",
+  // Toggle headings (h1–h3 only; h4–h6 not allowed per Notion convention).
+  "toggle_heading",
+  "toggle_heading_2",
+  "toggle_heading_3",
   "bullet_list",
   "numbered_list",
   "check_list",
