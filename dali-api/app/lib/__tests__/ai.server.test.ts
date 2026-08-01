@@ -46,7 +46,7 @@ describe("resolveAiProvider", () => {
     process.env.DARTMOUTH_CHAT_API_KEY = "dartmouth-test";
     const p = resolveAiProvider();
     expect(p?.name).toBe("dartmouth");
-    expect(p?.model).toBe("anthropic.claude-3-5-haiku-20241022");
+    expect(p?.model).toBe("anthropic.claude-haiku-4-5-20251001");
     expect(p?.adaptiveThinking).toBe(false);
     expect(p?.client.baseURL).toBe("https://chat.dartmouth.edu/api");
     expect(isAiEnabled()).toBe(true);

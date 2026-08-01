@@ -30,7 +30,7 @@ export interface AiProvider {
 }
 
 const DARTMOUTH_DEFAULT_BASE_URL = "https://chat.dartmouth.edu/api";
-const DARTMOUTH_DEFAULT_MODEL = "anthropic.claude-3-5-haiku-20241022";
+const DARTMOUTH_DEFAULT_MODEL = "anthropic.claude-haiku-4-5-20251001";
 
 export function resolveAiProvider(): AiProvider | null {
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
