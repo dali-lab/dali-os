@@ -12,7 +12,11 @@ vi.mock("~/lib/db");
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { _resetForTests as resetRateLimits } from "~/lib/rate-limit";
-import { action, validateHistory } from "~/routes/api.ai.doc";
+import {
+  action,
+  recordTokenUsage,
+  validateHistory,
+} from "~/routes/api.ai.doc";
 
 const AUTH_OK = {
   ok: true as const,
@@ -218,6 +222,40 @@ describe("POST /api/ai/doc — daily quota", () => {
     const res = await action({ request: postReq({ instruction: "hi" }) } as any);
     expect(res.status).toBe(503);
     expect(prisma.aiUsage.upsert).not.toHaveBeenCalled();
+  });
+});
+
+// ── Token accounting ─────────────────────────────────────────────────────────
+
+describe("recordTokenUsage", () => {
+  it("increments the day row's token counters", async () => {
+    await recordTokenUsage("u1", "2026-08-01", 120, 456);
+    expect(prisma.aiUsage.update).toHaveBeenCalledWith({
+      where: { userId_day: { userId: "u1", day: "2026-08-01" } },
+      data: {
+        inputTokens: { increment: 120 },
+        outputTokens: { increment: 456 },
+      },
+    });
+  });
+
+  it("skips the write when both counts are zero", async () => {
+    await recordTokenUsage("u1", "2026-08-01", 0, 0);
+    expect(prisma.aiUsage.update).not.toHaveBeenCalled();
+  });
+
+  it("writes when only output tokens are known", async () => {
+    await recordTokenUsage("u1", "2026-08-01", 0, 42);
+    expect(prisma.aiUsage.update).toHaveBeenCalledTimes(1);
+  });
+
+  it("never throws when the DB write fails", async () => {
+    vi.mocked(prisma.aiUsage.update).mockRejectedValueOnce(
+      new Error("db down"),
+    );
+    await expect(
+      recordTokenUsage("u1", "2026-08-01", 1, 1),
+    ).resolves.toBeUndefined();
   });
 });
 

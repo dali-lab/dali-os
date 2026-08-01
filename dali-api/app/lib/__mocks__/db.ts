@@ -532,6 +532,7 @@ export const prisma = {
   },
   aiUsage: {
     upsert: vi.fn(),
+    update: vi.fn(),
   },
   $transaction: vi.fn(),
   $queryRaw: vi.fn().mockResolvedValue([]),

@@ -63,6 +63,32 @@ function secondsToUtcMidnight(): number {
   return Math.max(1, Math.ceil((next - now.getTime()) / 1000));
 }
 
+/**
+ * Best-effort token accounting on the caller's AiUsage row (created by the
+ * daily-quota upsert earlier in the same request). Never throws — a failed
+ * write must not break an otherwise successful AI response.
+ * Exported for unit tests.
+ */
+export async function recordTokenUsage(
+  userId: string,
+  day: string,
+  inputTokens: number,
+  outputTokens: number,
+): Promise<void> {
+  if (inputTokens <= 0 && outputTokens <= 0) return;
+  try {
+    await prisma.aiUsage.update({
+      where: { userId_day: { userId, day } },
+      data: {
+        inputTokens: { increment: inputTokens },
+        outputTokens: { increment: outputTokens },
+      },
+    });
+  } catch {
+    // Telemetry only.
+  }
+}
+
 // ── System prompt ─────────────────────────────────────────────────────────────
 
 const SYSTEM_PROMPT = `You are a concise, helpful writing assistant embedded in a lab-management platform. \
@@ -287,6 +313,13 @@ export async function action({ request }: Route.ActionArgs) {
         .map((block) => (block as { type: "text"; text: string }).text)
         .join("\n");
 
+      await recordTokenUsage(
+        auth.user.sub,
+        day,
+        message.usage?.input_tokens ?? 0,
+        message.usage?.output_tokens ?? 0,
+      );
+
       return Response.json({ markdown: textContent } satisfies AiDocResponse);
     } catch (err) {
       if (err instanceof Anthropic.APIError) {
@@ -326,6 +359,11 @@ export async function action({ request }: Route.ActionArgs) {
       // Wire up client-disconnect → SDK abort.
       let sdkStream: Awaited<ReturnType<typeof provider.client.messages.stream>> | null = null;
 
+      // Token usage seen so far — recorded in the finally so aborted and
+      // fallback runs are counted too (the provider bills them regardless).
+      let usageIn = 0;
+      let usageOut = 0;
+
       const onAbort = () => {
         sdkStream?.abort();
         try {
@@ -342,8 +380,13 @@ export async function action({ request }: Route.ActionArgs) {
         for await (const event of sdkStream) {
           if (request.signal.aborted) break;
 
-          // Only emit text_delta events; skip thinking_delta and others.
-          if (
+          if (event.type === "message_start") {
+            usageIn = event.message.usage?.input_tokens ?? 0;
+          } else if (event.type === "message_delta") {
+            // output_tokens is cumulative across message_delta events.
+            usageOut = event.usage?.output_tokens ?? usageOut;
+          } else if (
+            // Only emit text_delta events; skip thinking_delta and others.
             event.type === "content_block_delta" &&
             event.delta.type === "text_delta"
           ) {
@@ -376,6 +419,10 @@ export async function action({ request }: Route.ActionArgs) {
             .filter((block) => block.type === "text")
             .map((block) => (block as { type: "text"; text: string }).text)
             .join("\n");
+          // Add (not overwrite): a partial stream before the failure was
+          // billed too.
+          usageIn += fallbackMsg.usage?.input_tokens ?? 0;
+          usageOut += fallbackMsg.usage?.output_tokens ?? 0;
           enqueue({ delta: text });
           enqueue({ done: true });
         } catch (fallbackErr) {
@@ -387,6 +434,7 @@ export async function action({ request }: Route.ActionArgs) {
         }
       } finally {
         request.signal.removeEventListener("abort", onAbort);
+        await recordTokenUsage(auth.user.sub, day, usageIn, usageOut);
         try {
           controller.close();
         } catch {

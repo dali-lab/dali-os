@@ -1514,11 +1514,14 @@ model ClientError {
 // Per-user daily AI request counter — enforces the /api/ai/doc daily quota
 // (accurate across machines, unlike the in-memory burst limiter) and doubles
 // as usage data for a future admin view. One row per user per UTC day.
+// Token counts are best-effort telemetry recorded after each model call.
 model AiUsage {
-  id     String @id @default(cuid())
-  userId String
-  day    String // UTC date "YYYY-MM-DD"
-  count  Int    @default(0)
+  id           String @id @default(cuid())
+  userId       String
+  day          String // UTC date "YYYY-MM-DD"
+  count        Int    @default(0)
+  inputTokens  Int    @default(0)
+  outputTokens Int    @default(0)
 
   @@unique([userId, day])
 }
