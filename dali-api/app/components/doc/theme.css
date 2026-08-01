@@ -628,10 +628,23 @@ html.dark .dali-find-match--current {
   cursor: not-allowed;
 }
 
-/* ── 11. AI streaming caret + pending-content highlight ──────────────────────
+/* ── 11. AI streaming caret + pending-content highlight + flow spacer ────────
  * AiCursorPlugin injects these decorations. All styles are self-contained —
  * no dependency on BlockNote's collab-cursor classes.
  */
+
+/* Flow spacer: reserves document height equal to the AI card stack so following
+ * content is pushed down instead of occluded by the floating card.
+ * Height is driven by --dali-ai-bar-h (set by AiCardHost's ResizeObserver on
+ * editor.prosemirrorView.dom). transition keeps the spacer smooth as the card
+ * grows (idle → streaming → result phases). pointer-events: none ensures the
+ * empty space is click-through. */
+.dali-ai-spacer {
+  height: var(--dali-ai-bar-h, 0px);
+  transition: height 120ms ease;
+  pointer-events: none;
+  display: block;
+}
 
 /* Pending-content highlight: applied as a NODE decoration while AI has
  * written content and the user hasn't yet accepted/reverted. Depending on

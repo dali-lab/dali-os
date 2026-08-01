@@ -108,6 +108,36 @@ export function AiCardHost({
     return () => document.removeEventListener("mousedown", onMouseDown, true);
   }, [dialog, handleClose, portalElement]);
 
+  // Measure the full card stack height and sync it to --dali-ai-bar-h on the
+  // editor DOM element so the flow spacer (dali-ai-spacer) matches the card.
+  // We target editor.prosemirrorView.dom (the ProseMirror contenteditable) —
+  // it is a stable ancestor inside .dali-doc that the spacer div also lives
+  // inside, so setting the CSS var there makes it inherit to the spacer.
+  const stackRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const stack = stackRef.current;
+    const editorDom = barProps.editor.prosemirrorView?.dom as HTMLElement | undefined;
+    if (!stack || !editorDom) return;
+
+    const observer = new ResizeObserver((entries) => {
+      const height = entries[0]?.contentRect.height ?? stack.offsetHeight;
+      // 12px extra breathing room between card bottom and next block.
+      editorDom.style.setProperty("--dali-ai-bar-h", `${height + 12}px`);
+    });
+    observer.observe(stack);
+
+    // Set initial value synchronously so the spacer has height before the
+    // first ResizeObserver callback fires.
+    editorDom.style.setProperty("--dali-ai-bar-h", `${stack.offsetHeight + 12}px`);
+
+    return () => {
+      observer.disconnect();
+      editorDom.style.removeProperty("--dali-ai-bar-h");
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <BlockPopover
       blockId={anchorBlockId}
@@ -125,19 +155,23 @@ export function AiCardHost({
       focusManagerProps={{ disabled: true }}
       elementProps={{ style: { zIndex: 50 } }}
     >
-      {/* Sizing wrapper only — AiBar's individual cards provide their own chrome. */}
+      {/* Sizing wrapper — AiBar's individual cards provide their own chrome.
+          stackRef measures the total height for the ResizeObserver. */}
       <div
-        ref={cardRef}
+        ref={stackRef}
         className="w-[min(680px,90vw)] py-2 px-2"
       >
-        <AiBar
-          ref={aiBarRef}
-          {...barProps}
-          onClose={handleClose}
-          dialog={dialog}
-          onHasResultChange={handleHasResultChange}
-          onAnchorChange={onAnchorChange}
-        />
+        <div ref={cardRef}>
+          <AiBar
+            ref={aiBarRef}
+            {...barProps}
+            onClose={handleClose}
+            dialog={dialog}
+            onHasResultChange={handleHasResultChange}
+            onAnchorChange={onAnchorChange}
+            anchorBlockId={anchorBlockId}
+          />
+        </div>
       </div>
     </BlockPopover>
   );

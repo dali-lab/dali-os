@@ -1,7 +1,11 @@
 // AI streaming cursor plugin — renders a self-contained caret widget decoration
-// at the write-head position while streaming, and node decorations highlighting
-// AI-owned blocks (pending-accept state) during streaming AND result phases.
-// Registered while the AI session is active; unregistered on Accept/Revert/close.
+// at the write-head position while streaming, node decorations highlighting
+// AI-owned blocks (pending-accept state) during streaming AND result phases,
+// and a flow-spacer widget after the anchor block so following content is
+// pushed down instead of occluded by the floating AI card.
+// Registered for the entire AI bar lifetime (not just during a run); unregistered
+// on bar close (Accept/Revert/discard/unmount). The spacer is needed even in the
+// idle phase so the bar never overlays document content below the anchor.
 
 import { Plugin, PluginKey } from "prosemirror-state";
 import { Decoration, DecorationSet } from "prosemirror-view";
@@ -14,6 +18,13 @@ export interface AiCursorPluginState {
   pos: number;
   /** Block IDs that AI has written (pending accept/revert) — highlighted. */
   pendingBlockIds: string[];
+  /**
+   * Block ID after which the flow-spacer widget is placed. The spacer reserves
+   * document flow space equal to the AI card stack's measured height so
+   * following content is pushed down instead of occluded by the floating card.
+   * null = no spacer (modal fallback or bar not yet anchored).
+   */
+  spacerAfterBlockId: string | null;
   decorations: DecorationSet;
 }
 
@@ -22,6 +33,8 @@ export interface AiCursorUpdate {
   pos?: number;
   /** If provided, update the pending block id set. */
   pendingBlockIds?: string[];
+  /** If provided, update the spacer anchor block id. */
+  spacerAfterBlockId?: string | null;
 }
 
 export const aiCursorKey = new PluginKey<AiCursorPluginState>("dali-ai-cursor");
@@ -30,6 +43,7 @@ function buildDecorations(
   doc: Node,
   pos: number,
   pendingBlockIds: string[],
+  spacerAfterBlockId: string | null,
 ): DecorationSet {
   const decos: Decoration[] = [];
 
@@ -57,11 +71,14 @@ function buildDecorations(
     decos.push(widget);
   }
 
-  // ── Pending-block node decorations ──────────────────────────────────────────
-  if (pendingBlockIds.length > 0) {
-    const idSet = new Set(pendingBlockIds);
+  // ── Pending-block node decorations + spacer ──────────────────────────────────
+  const pendingIdSet = pendingBlockIds.length > 0 ? new Set(pendingBlockIds) : null;
+  const needSpacer = spacerAfterBlockId !== null;
+
+  if (pendingIdSet || needSpacer) {
     doc.descendants((node, nodePos) => {
-      if (node.attrs?.id && idSet.has(node.attrs.id as string)) {
+      const blockId = node.attrs?.id as string | undefined;
+      if (pendingIdSet && blockId && pendingIdSet.has(blockId)) {
         decos.push(
           Decoration.node(nodePos, nodePos + node.nodeSize, {
             class: "dali-ai-pending",
@@ -69,6 +86,28 @@ function buildDecorations(
         );
         // Don't return false — there may be nested blocks with matching ids,
         // though in practice BlockNote uses flat block ids.
+      }
+      if (needSpacer && blockId === spacerAfterBlockId) {
+        // Place the spacer widget immediately AFTER the anchor block's node
+        // (pos + nodeSize). side:1 puts it after content at that position.
+        // The stable key prevents PM from re-creating the div on every update,
+        // which would cause a flash — PM reuses the DOM node as long as key
+        // and position match.
+        const spacerPos = nodePos + node.nodeSize;
+        if (spacerPos <= doc.content.size) {
+          decos.push(
+            Decoration.widget(
+              spacerPos,
+              () => {
+                const spacer = document.createElement("div");
+                spacer.className = "dali-ai-spacer";
+                spacer.contentEditable = "false";
+                return spacer;
+              },
+              { side: 1, key: "dali-ai-spacer" },
+            ),
+          );
+        }
       }
       return true;
     });
@@ -84,7 +123,12 @@ export function createAiCursorPlugin(): Plugin<AiCursorPluginState> {
 
     state: {
       init(_config, state) {
-        return { pos: -1, pendingBlockIds: [], decorations: DecorationSet.empty };
+        return {
+          pos: -1,
+          pendingBlockIds: [],
+          spacerAfterBlockId: null,
+          decorations: DecorationSet.empty,
+        };
       },
 
       apply(tr, pluginState, _oldState, newState) {
@@ -95,8 +139,12 @@ export function createAiCursorPlugin(): Plugin<AiCursorPluginState> {
             meta.pendingBlockIds !== undefined
               ? meta.pendingBlockIds
               : pluginState.pendingBlockIds;
-          const decorations = buildDecorations(newState.doc, pos, pendingBlockIds);
-          return { pos, pendingBlockIds, decorations };
+          const spacerAfterBlockId =
+            meta.spacerAfterBlockId !== undefined
+              ? meta.spacerAfterBlockId
+              : pluginState.spacerAfterBlockId;
+          const decorations = buildDecorations(newState.doc, pos, pendingBlockIds, spacerAfterBlockId);
+          return { pos, pendingBlockIds, spacerAfterBlockId, decorations };
         }
         // Map positions through document changes.
         const mappedPos = tr.docChanged
@@ -109,8 +157,14 @@ export function createAiCursorPlugin(): Plugin<AiCursorPluginState> {
           newState.doc,
           mappedPos,
           pluginState.pendingBlockIds,
+          pluginState.spacerAfterBlockId,
         );
-        return { pos: mappedPos, pendingBlockIds: pluginState.pendingBlockIds, decorations };
+        return {
+          pos: mappedPos,
+          pendingBlockIds: pluginState.pendingBlockIds,
+          spacerAfterBlockId: pluginState.spacerAfterBlockId,
+          decorations,
+        };
       },
     },
 

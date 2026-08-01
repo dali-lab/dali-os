@@ -73,6 +73,12 @@ export interface AiBarProps {
   dialog?: DialogApi;
   /** Called when the anchor block changes during streaming (dynamic anchor). */
   onAnchorChange?: (blockId: string) => void;
+  /**
+   * The effective anchor block id (static initial anchor + any dynamic updates
+   * from the parent). Used to set the spacer position on mount and anchor
+   * changes. Undefined in the modal fallback path — no spacer is needed there.
+   */
+  anchorBlockId?: string;
 }
 
 export interface AiBarHandle {
@@ -159,7 +165,7 @@ type SuggestionEntry = {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export const AiBar = forwardRef<AiBarHandle, AiBarProps>(function AiBar(
-  { editor, config, onClose, toastInfo, toastError, onHasResultChange, dialog, onAnchorChange },
+  { editor, config, onClose, toastInfo, toastError, onHasResultChange, dialog, onAnchorChange, anchorBlockId },
   ref,
 ) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -194,8 +200,16 @@ export const AiBar = forwardRef<AiBarHandle, AiBarProps>(function AiBar(
   }, [hasResult]);
 
   // ── Cursor plugin management ─────────────────────────────────────────────
+  // The plugin is registered for the ENTIRE bar lifetime so the spacer is
+  // present even in idle phase (before any run). It is unregistered only on
+  // Accept, Revert, discard, or unmount. Follow-up runs must NOT re-register
+  // (the plugin is already live); they only need to update meta state.
 
-  function registerCursorPlugin() {
+  const pluginRegisteredRef = useRef(false);
+
+  function ensureCursorPlugin() {
+    if (pluginRegisteredRef.current) return;
+    pluginRegisteredRef.current = true;
     editor.registerExtension({
       key: AI_CURSOR_EXT_KEY,
       prosemirrorPlugins: [createAiCursorPlugin()],
@@ -203,6 +217,7 @@ export const AiBar = forwardRef<AiBarHandle, AiBarProps>(function AiBar(
   }
 
   function unregisterCursorPlugin() {
+    pluginRegisteredRef.current = false;
     editor.unregisterExtension(AI_CURSOR_EXT_KEY);
   }
 
@@ -222,6 +237,30 @@ export const AiBar = forwardRef<AiBarHandle, AiBarProps>(function AiBar(
       onAnchorChange?.(blockIds[blockIds.length - 1]);
     }
   }
+
+  // ── Plugin lifecycle: register on mount, update spacer on anchor change ──
+  // The plugin must be live for the ENTIRE bar lifetime so the spacer
+  // reserves flow space even before any run starts. It is unregistered only
+  // on Accept / Revert / discard / unmount. The spacer anchor is synced
+  // whenever anchorBlockId (the effective anchor resolved by the parent) changes.
+
+  useEffect(() => {
+    // Register immediately so the spacer exists from the first render.
+    ensureCursorPlugin();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    // Sync spacer anchor whenever the effective anchor changes.
+    // Guard: only when the plugin is live and we have a valid anchor.
+    if (!pluginRegisteredRef.current) return;
+    const view = editor.prosemirrorView;
+    if (!view) return;
+    updateAiPluginState(view, {
+      spacerAfterBlockId: anchorBlockId ?? null,
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [anchorBlockId]);
 
   // ── Snapshot capture ─────────────────────────────────────────────────────
 
@@ -299,8 +338,8 @@ export const AiBar = forwardRef<AiBarHandle, AiBarProps>(function AiBar(
     hasContentRef.current = false;
     setPhase("streaming");
 
-    // Register cursor plugin.
-    registerCursorPlugin();
+    // Ensure cursor plugin is registered (no-op if already live from bar mount).
+    ensureCursorPlugin();
 
     // Create the streaming apply engine.
     const engine = createStreamApplyEngine({
