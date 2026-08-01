@@ -8,8 +8,9 @@ import {
   type RefObject,
 } from "react";
 import { useNavigate, useRevalidator } from "react-router";
-import { Copy, FileDown, History, LayoutTemplate, MessageSquare, MoreHorizontal } from "lucide-react";
+import { Copy, FileDown, History, LayoutTemplate, MessageSquare, MoreHorizontal, Printer, Upload } from "lucide-react";
 import { DocEditor, type TocHeading } from "~/components/doc";
+import type { DocEditorInstance } from "~/components/doc/schema/build";
 import { DocCommentsPanel, useDocThreadCounts } from "~/components/doc/comments";
 import { pageDocName } from "~/collab/roomName";
 import { PresenceProvider } from "./collab/PresenceProvider";
@@ -75,6 +76,10 @@ export function DocumentEditor({
 }) {
   const revalidator = useRevalidator();
   const navigate = useNavigate();
+  // Editor instance captured via onEditorReady — used for the Import Markdown action.
+  const editorRef = useRef<DocEditorInstance | null>(null);
+  // Hidden file input for the Import Markdown menu action.
+  const mdImportInputRef = useRef<HTMLInputElement | null>(null);
   // FIX 5: title is uncontrolled — we never feed state back into the DOM while
   // the h1 is focused, which prevents caret-at-0 "backwards typing" caused by
   // React re-rendering contentEditable with the controlled value on every input.
@@ -307,6 +312,34 @@ export function DocumentEditor({
     }
   }
 
+  // Import Markdown: reads the picked .md/.markdown/.txt file client-side,
+  // converts to blocks via editor.tryParseMarkdownToBlocks (BlockNote 0.52 API —
+  // synchronous), then replaces an empty doc or appends to an existing one.
+  // Both replaceBlocks/insertBlocks are single ProseMirror transactions so the
+  // entire import is one undo step.
+  async function handleMarkdownImport(file: File) {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const text = await file.text();
+    const newBlocks = editor.tryParseMarkdownToBlocks(text);
+    if (!newBlocks.length) return;
+
+    const doc = editor.document;
+    const isEmpty =
+      doc.length === 1 &&
+      doc[0].type === "paragraph" &&
+      (!Array.isArray(doc[0].content) || doc[0].content.length === 0);
+
+    if (isEmpty) {
+      // Replace the single empty paragraph.
+      editor.replaceBlocks(editor.document, newBlocks);
+    } else {
+      // Append after the last block.
+      const lastBlock = doc[doc.length - 1];
+      editor.insertBlocks(newBlocks, lastBlock, "after");
+    }
+  }
+
   // ⋯ More menu dismiss on outside click.
   const moreMenuRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -463,6 +496,24 @@ export function DocumentEditor({
                 {templateMarked ? "Unmark as template" : "Mark as template"}
               </button>
             )}
+            <button
+              type="button"
+              onClick={() => { window.print(); setMoreMenuOpen(false); }}
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-muted"
+            >
+              <Printer className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              Print / Save as PDF
+            </button>
+            {canEdit && (
+              <button
+                type="button"
+                onClick={() => { mdImportInputRef.current?.click(); setMoreMenuOpen(false); }}
+                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-muted"
+              >
+                <Upload className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                Import Markdown
+              </button>
+            )}
             <div className="my-1 border-t border-border" />
             <a
               href={`/documents/${pageId}/export?format=pdf`}
@@ -614,12 +665,28 @@ export function DocumentEditor({
             </div>
           </div>
 
+          {/* Hidden file input for "Import Markdown" ⋯ menu action.
+              Accepts .md/.markdown/.txt; value is reset after each pick so
+              selecting the same file twice still triggers onChange. */}
+          <input
+            ref={mdImportInputRef}
+            type="file"
+            accept=".md,.markdown,.txt,text/plain,text/markdown"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.currentTarget.files?.[0];
+              e.currentTarget.value = "";
+              if (file) handleMarkdownImport(file).catch(console.error);
+            }}
+          />
+
           {/* Body */}
           <div className="mt-4" ref={bodyRef}>
             {collabToken ? (
               <DocEditor
                 features="document"
                 editable={canEdit}
+                onEditorReady={(editor) => { editorRef.current = editor; }}
                 collab={{
                   documentName,
                   token: collabToken,

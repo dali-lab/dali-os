@@ -337,3 +337,90 @@ html.dark .dali-doc .bn-thread-mark[data-orphan="true"] {
     background-color: color-mix(in srgb, var(--color-accent-yellow, #eab308) 75%, transparent);
   }
 }
+
+/* ── 6. Page-break block (screen appearance) ────────────────────────────── */
+
+/* The pageBreak block renders a <div data-page-break> inside .bn-block-content.
+ * Screen: dashed line with a small "Page break" label so the block is visible
+ * while editing.  Print: invisible itself — the @media print block below
+ * applies the real break-after:page. */
+.dali-doc .bn-block-content[data-content-type="pageBreak"],
+.dali-doc .bn-block-content[data-content-type="pageBreak"] [data-page-break] {
+  display: block;
+  width: 100%;
+}
+
+.dali-doc .bn-block-content[data-content-type="pageBreak"] [data-page-break] {
+  position: relative;
+  border-top: 1.5px dashed var(--color-border);
+  margin: 8px 0;
+  pointer-events: none;
+}
+
+.dali-doc .bn-block-content[data-content-type="pageBreak"] [data-page-break]::after {
+  content: "Page break";
+  position: absolute;
+  top: -9px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  font-family: var(--font-sans);
+  color: var(--color-muted-foreground);
+  background: var(--color-card);
+  padding: 0 8px;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* ── 7. Print stylesheet (⌘P / Save as PDF) ─────────────────────────────── */
+
+/* Rules in theme.css cover the BlockNote-specific elements inside .dali-doc.
+ * The app chrome (sidebar, top-bar, doc top-bar, presence, Aa, comments,
+ * rails, ToC, etc.) is hidden in app.css @media print block. */
+
+@media print {
+  /* Paper fills the full page — no card shadow or border. */
+  .doc-canvas {
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    max-width: 100% !important;
+    width: 100% !important;
+  }
+
+  /* Outer canvas: no background tint, no padding, no centering offset. */
+  .doc-canvas-outer {
+    padding: 0 !important;
+    background: white !important;
+    display: block !important;
+  }
+
+  /* Remove inner padding so the first line meets the paper margin. */
+  .doc-canvas > div:first-child {
+    padding-top: 0 !important;
+  }
+
+  /* Editor area: full-width, black text. */
+  .dali-doc .bn-editor {
+    color: #000 !important;
+    background: white !important;
+  }
+
+  /* Page-break block: trigger the actual CSS page break and hide the dashed
+     label decoration (the print target has no "Page break" label). */
+  .dali-doc .bn-block-content[data-content-type="pageBreak"] {
+    break-after: page !important;
+    page-break-after: always !important;
+  }
+  .dali-doc .bn-block-content[data-content-type="pageBreak"] [data-page-break] {
+    border: none !important;
+  }
+  .dali-doc .bn-block-content[data-content-type="pageBreak"] [data-page-break]::after {
+    display: none !important;
+  }
+
+  /* Comments rail: hidden on print. */
+  .dali-doc-rail-container {
+    display: none !important;
+  }
+}

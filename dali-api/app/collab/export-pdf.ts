@@ -196,6 +196,9 @@ function renderBlock(doc: PDFKit.PDFDocument, block: DocBlock, listPrefix?: stri
         .stroke();
       doc.moveDown(0.5);
       break;
+    case "pageBreak":
+      doc.addPage();
+      break;
     case "image": {
       // Fetching + embedding the binary is out of scope for the PDF pipeline;
       // degrade to a labelled placeholder so the reader knows content exists.

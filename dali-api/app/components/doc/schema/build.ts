@@ -19,6 +19,7 @@ import {
   BlockNoteSchema,
   createCodeBlockSpec,
   createHeadingBlockSpec,
+  createPageBreakBlockSpec,
   defaultBlockSpecs,
   defaultInlineContentSpecs,
 } from "@blocknote/core";
@@ -56,6 +57,7 @@ function fullBlockSpecs() {
     table: defaultBlockSpecs.table,
     toggleListItem: defaultBlockSpecs.toggleListItem,
     callout: CalloutSpec,
+    pageBreak: createPageBreakBlockSpec(),
   };
 }
 
@@ -74,6 +76,7 @@ export function buildSchema(features: Features = {}) {
   // Runtime trim (static type stays the superset — see TYPE NOTE above).
   const blocks = blockSpecs as Record<string, unknown>;
   const inline = inlineContentSpecs as Record<string, unknown>;
+  if (!features.pageBreak) delete blocks.pageBreak;
   if (!features.images) delete blocks.image;
   if (!features.files) {
     delete blocks.file;
