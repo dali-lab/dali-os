@@ -13,11 +13,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { requireAuth } from "~/lib/auth";
 import { resolveAiProvider } from "~/lib/ai.server";
 
-// ── Deprecated: kept for client-side components that import AiDocAction until
-// Stage 2 rewrites them. Remove when AiPanel / AiSlashMenuItems are rewritten.
-export type AiDocAction = "prompt" | "improve" | "fix" | "summarize" | "continue";
-
-// ── New contract ──────────────────────────────────────────────────────────────
+// ── Contract ──────────────────────────────────────────────────────────────────
 
 export interface AiHistoryEntry {
   role: "user" | "assistant";

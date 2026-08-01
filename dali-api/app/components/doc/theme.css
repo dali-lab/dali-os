@@ -627,3 +627,16 @@ html.dark .dali-find-match--current {
   opacity: 0.4;
   cursor: not-allowed;
 }
+
+/* ── 11. AI streaming cursor ─────────────────────────────────────────────────
+ * Widget decoration injected by AiCursorPlugin while content is streaming.
+ * Reuses the collab caret classes so it looks like a collaborator named "AI"
+ * is typing. The --bn-user-color CSS variable drives the caret/label color;
+ * we set it to violet-500 (#8b5cf6) on the base element via the plugin.
+ *
+ * The "AI" label should always be visible (BlockNote's showCursorLabels="activity"
+ * hides labels when inactive; the AI cursor should always show its label).
+ */
+.dali-doc .dali-ai-cursor .bn-collaboration-cursor__label {
+  opacity: 1 !important;
+}

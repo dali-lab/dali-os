@@ -1,15 +1,11 @@
 // AiFormattingToolbar — replaces the plain <FormattingToolbar /> in DocEditorImpl.
 //
 // Renders all default BlockNote toolbar children (via getFormattingToolbarItems)
-// PLUS, when AI is enabled and the editor is editable, an "AI ✦" dropdown button
-// that operates on the CURRENT TEXT SELECTION (which survives in the floating
-// toolbar — no "/" was typed).
+// PLUS, when AI is enabled and the editor is editable, a single "✦" sparkle
+// button that opens the AI bar with the current text selection.
 //
 // Selection block ids are captured AT CLICK TIME before opening the session,
-// because the selection is cleared as soon as focus moves to the AiPanel input.
-//
-// The AI dropdown is built with useComponentsContext()!.Generic.Menu.* so it
-// inherits the BlockNote/shadcn styling automatically.
+// because the selection is cleared as soon as focus moves to the AiBar input.
 
 import React from "react";
 import {
@@ -35,77 +31,48 @@ import {
 } from "@blocknote/react";
 import { useToast } from "~/components/ui/toast";
 import type { DocEditorInstance } from "../schema/build";
-import type { AiSessionConfig } from "./apply";
+import type { AiBarConfig } from "./AiBar";
 
 // ── Prop types ────────────────────────────────────────────────────────────────
 
 interface AiFormattingToolbarProps {
   aiEnabled?: boolean;
   editable?: boolean;
-  openSession?: (config: AiSessionConfig) => void;
+  openSession?: (config: AiBarConfig) => void;
 }
 
-// ── AI dropdown menu ──────────────────────────────────────────────────────────
+// ── AI sparkle button ─────────────────────────────────────────────────────────
 
-function AiToolbarMenu({
+function AiToolbarButton({
   editor,
   openSession,
 }: {
   editor: DocEditorInstance;
-  openSession: (config: AiSessionConfig) => void;
+  openSession: (config: AiBarConfig) => void;
 }) {
   const Components = useComponentsContext()!;
   const toast = useToast();
 
-  /**
-   * Capture the current selection block ids synchronously at click time.
-   * The selection is cleared when the panel's input steals focus, so we must
-   * capture it before opening the session.
-   */
-  function captureSelection(): string[] | null {
+  function handleClick() {
     const sel = editor.getSelection();
-    if (!sel?.blocks?.length) return null;
-    return sel.blocks.map((b) => b.id);
-  }
-
-  function toolbarSession(action: AiSessionConfig["action"]) {
-    const selectionBlockIds = captureSelection();
+    const selectionBlockIds = sel?.blocks?.length ? sel.blocks.map((b) => b.id) : null;
     if (!selectionBlockIds) {
       toast.error("No text selected.");
       return;
     }
     openSession({
-      action,
       origin: "toolbar",
       cursorBlockId: null,
       selectionBlockIds,
-      cursorBlockWasEmpty: false,
     });
   }
 
-  const handleImprove = () => toolbarSession("improve");
-  const handleFix = () => toolbarSession("fix");
-  const handleSummarize = () => toolbarSession("summarize");
-  const handleAskAi = () => toolbarSession("prompt");
-
-  const Menu = Components.Generic.Menu;
-
   return (
-    <Menu.Root>
-      <Menu.Trigger>
-        <Components.FormattingToolbar.Button
-          mainTooltip="AI actions"
-          label="AI ✦"
-        />
-      </Menu.Trigger>
-      <Menu.Dropdown>
-        <Menu.Item onClick={handleImprove}>Improve writing</Menu.Item>
-        <Menu.Item onClick={handleFix}>Fix spelling &amp; grammar</Menu.Item>
-        <Menu.Item onClick={handleSummarize}>Summarize</Menu.Item>
-        <Menu.Divider />
-        <Menu.Item onClick={handleAskAi}>Ask AI…</Menu.Item>
-      </Menu.Dropdown>
-    </Menu.Root>
+    <Components.FormattingToolbar.Button
+      mainTooltip="Edit with AI"
+      label="✦"
+      onClick={handleClick}
+    />
   );
 }
 
@@ -113,7 +80,7 @@ function AiToolbarMenu({
 
 /**
  * Custom FormattingToolbar that reproduces all BlockNote default toolbar items
- * and appends an AI dropdown when aiEnabled=true and editor is editable.
+ * and appends a single AI sparkle button when aiEnabled=true and editor is editable.
  *
  * Default toolbar items (from getFormattingToolbarItems / FormattingToolbar.tsx):
  *   BlockTypeSelect, TableCellMergeButton, FileCaptionButton, FileReplaceButton,
@@ -154,8 +121,8 @@ export function AiFormattingToolbar(props: AiFormattingToolbarProps) {
       <AddCommentButton key="addCommentButton" />
       <AddTiptapCommentButton key="addTiptapCommentButton" />
       {showAi && (
-        <AiToolbarMenu
-          key="aiMenu"
+        <AiToolbarButton
+          key="aiButton"
           editor={editor}
           openSession={props.openSession!}
         />
@@ -173,7 +140,7 @@ export function AiFormattingToolbar(props: AiFormattingToolbarProps) {
 export function buildAiFormattingToolbar(
   aiEnabled: boolean,
   editable: boolean,
-  openSession: (config: AiSessionConfig) => void,
+  openSession: (config: AiBarConfig) => void,
 ): () => React.JSX.Element {
   return function AiFormattingToolbarInstance() {
     return (

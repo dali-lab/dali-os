@@ -1,6 +1,6 @@
-// AiCardHost — Notion-style inline card host for AiPanel.
+// AiCardHost — Notion-style inline card host for AiBar.
 //
-// Renders AiPanel inside a BlockPopover anchored below the block that triggered
+// Renders AiBar inside a BlockPopover anchored below the block that triggered
 // the AI session (slash origin → cursorBlockId; toolbar origin → last selected
 // block id). Must be mounted INSIDE BlockNoteView children so useBlockNoteEditor
 // is in scope (required by BlockPopover).
@@ -11,22 +11,23 @@
 // rendering the original Modal host instead.
 //
 // Dismissal contract:
-//   - Escape while card is open: close immediately (abort in-flight request via
-//     AiPanel's unmount useEffect that calls abortRef.current?.abort()).
-//   - Click outside card: if no result yet → close immediately (abort).
+//   - Escape: AiBar owns this internally via useImperativeHandle. AiCardHost
+//     delegates to aiBarRef.current.handleEscape().
+//   - Click outside card: if no result yet → close immediately.
 //                         If result showing → confirm("Discard AI response?").
-//   - Apply / Insert below / Discard buttons: close as usual (via onClose prop).
+//   - Accept / Revert buttons inside AiBar: close as usual (via onClose prop).
 //   - Clicks INSIDE the card (including portaled children) are never treated as
 //     outside — guarded via card div contains() and the portalElement contains().
 
 import { offset } from "@floating-ui/react";
 import { useCallback, useEffect, useRef } from "react";
 import { BlockPopover } from "@blocknote/react";
-import { AiPanel } from "./AiPanel";
-import type { AiPanelProps } from "./AiPanel";
+import { AiBar } from "./AiBar";
+import type { AiBarProps } from "./AiBar";
 import type { DialogApi } from "~/components/ui/dialog";
+import type { AiBarHandle } from "./AiBar";
 
-interface AiCardHostProps extends AiPanelProps {
+interface AiCardHostProps extends AiBarProps {
   /** The block id to anchor to (already resolved by the caller). */
   anchorBlockId: string;
   /** dialog.confirm accessor — threaded from DocView which has DialogProvider. */
@@ -42,11 +43,12 @@ export function AiCardHost({
   dialog,
   portalElement,
   onClose,
-  ...panelProps
+  ...barProps
 }: AiCardHostProps) {
   const cardRef = useRef<HTMLDivElement>(null);
+  const aiBarRef = useRef<AiBarHandle | null>(null);
 
-  // Track whether AiPanel has a result via a ref so the mousedown handler always
+  // Track whether AiBar has a result via a ref so the mousedown handler always
   // reads the latest value without being re-attached on every state change.
   const hasResultRef = useRef(false);
   const handleHasResultChange = useCallback((v: boolean) => {
@@ -57,18 +59,18 @@ export function AiCardHost({
     onClose();
   }, [onClose]);
 
-  // Escape: close immediately (AiPanel unmount cleanup aborts any in-flight fetch).
+  // Escape: delegate to AiBar's imperative handle which owns all phase logic.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
         e.stopPropagation();
-        handleClose();
+        void aiBarRef.current?.handleEscape();
       }
     };
     document.addEventListener("keydown", onKeyDown, true);
     return () => document.removeEventListener("keydown", onKeyDown, true);
-  }, [handleClose]);
+  }, []);
 
   // Outside-click dismissal via mousedown (captures before focus moves).
   useEffect(() => {
@@ -81,9 +83,7 @@ export function AiCardHost({
       // Clicks inside the card div itself — pass through.
       if (card.contains(target)) return;
 
-      // Clicks inside the portal root — could be the card's portaled preview
-      // editor (read-only DocEditor which portals into floatingRootRef via its
-      // own BlockNote instance) or inline suggestion menus. Pass through.
+      // Clicks inside the portal root — could be portaled content. Pass through.
       if (portalElement && portalElement.contains(target)) return;
 
       // Actual outside click.
@@ -95,7 +95,9 @@ export function AiCardHost({
           confirmLabel: "Discard",
           cancelLabel: "Keep open",
         });
-        if (confirmed) handleClose();
+        if (confirmed) {
+          await aiBarRef.current?.revertAndClose();
+        }
       }
     };
 
@@ -116,20 +118,20 @@ export function AiCardHost({
       // Disable BlockNote's built-in dismiss so our mousedown handler is the
       // sole outside-click path (we need the hasResult confirm gate).
       useDismissProps={{ enabled: false }}
-      // Disable focus trap — conflicts with the read-only DocEditor preview
-      // inside the card, and the card manages focus naturally.
+      // Disable focus trap — AiBar manages focus naturally via autoFocus on input.
       focusManagerProps={{ disabled: true }}
       elementProps={{ style: { zIndex: 50 } }}
     >
       {/* Card chrome */}
       <div
         ref={cardRef}
-        className="bg-card border border-border rounded-lg shadow-brand-2 w-[min(600px,90vw)] p-4"
+        className="bg-card border border-border rounded-lg shadow-brand-2 w-[min(560px,90vw)] p-4"
       >
-        <AiPanel
-          {...panelProps}
+        <AiBar
+          ref={aiBarRef}
+          {...barProps}
           onClose={handleClose}
-          previewMaxHeight="35vh"
+          dialog={dialog}
           onHasResultChange={handleHasResultChange}
         />
       </div>

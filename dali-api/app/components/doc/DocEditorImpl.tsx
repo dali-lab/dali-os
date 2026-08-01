@@ -51,9 +51,9 @@ import {
   ThreadsSidebar,
 } from "@blocknote/react";
 import { buildAiFormattingToolbar } from "./ai/AiFormattingToolbar";
-import { AiPanel } from "./ai/AiPanel";
+import { AiBar } from "./ai/AiBar";
 import { AiCardHost } from "./ai/AiCardHost";
-import type { AiSessionConfig } from "./ai/apply";
+import type { AiBarConfig } from "./ai/AiBar";
 import { DocCommentsRail } from "./comments/DocCommentsRail";
 import { BlockNoteView } from "@blocknote/shadcn";
 
@@ -269,8 +269,8 @@ function DocView(
   const editable = props.editable ?? true;
 
   // AI session — set when a slash or toolbar AI item is clicked; cleared when
-  // the user applies, inserts, or discards. AiPanel owns the full lifecycle.
-  const [aiSession, setAiSession] = useState<AiSessionConfig | null>(null);
+  // the user accepts, reverts, or dismisses. AiBar owns the full lifecycle.
+  const [aiSession, setAiSession] = useState<AiBarConfig | null>(null);
   const aiPanelTitleId = useId();
 
   // Anchor block id for the inline card: slash origin → cursorBlockId;
@@ -283,10 +283,10 @@ function DocView(
     : undefined;
 
   // Stable callback: opening a session clears any prior one (there's only ever
-  // one AI panel open at a time; a previous in-flight request is aborted by
-  // AiPanel's useEffect cleanup when it unmounts).
+  // one AI bar open at a time; a previous in-flight request is aborted by
+  // AiBar's useEffect cleanup when it unmounts).
   const openSession = useCallback(
-    (config: AiSessionConfig) => setAiSession(config),
+    (config: AiBarConfig) => setAiSession(config),
     [],
   );
 
@@ -603,7 +603,7 @@ function DocView(
           case where anchorBlockId is undefined (deleted block, edge case). */}
       {aiSession && anchorBlockId && (
         <AiCardHost
-          key={`${aiSession.action}-${anchorBlockId}`}
+          key={anchorBlockId}
           anchorBlockId={anchorBlockId}
           editor={editor}
           config={aiSession}
@@ -660,7 +660,7 @@ function DocView(
           {menus}
         </BlockNoteView>
       </div>
-      {/* AI panel fallback — Modal host for when the anchor block id is
+      {/* AI bar fallback — Modal host for when the anchor block id is
           undefined (block was deleted mid-session, or edge-case toolbar
           selection with no captured block ids). Keeps the session alive so
           the user's in-flight result is not silently lost.
@@ -673,13 +673,14 @@ function DocView(
           labelledBy={aiPanelTitleId}
           containerClassName="bg-card rounded-2xl shadow-brand-2 max-w-2xl w-full p-5 sm:p-6 my-auto"
         >
-          <AiPanel
-            key={`${aiSession.action}-${aiSession.cursorBlockId ?? "toolbar"}`}
+          <AiBar
+            key={aiSession.cursorBlockId ?? "toolbar"}
             editor={editor}
             config={aiSession}
             onClose={() => setAiSession(null)}
             toastInfo={(m) => toast.info(m)}
             toastError={(m) => toast.error(m)}
+            dialog={dialog}
           />
         </Modal>
       )}
