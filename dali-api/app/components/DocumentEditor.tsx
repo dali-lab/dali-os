@@ -22,6 +22,10 @@ import { PageCover } from "./doc-chrome/PageCover";
 import { DocToc } from "./doc-chrome/DocToc";
 import { relativeTime } from "~/lib/relative-time";
 import { FindReplaceBar } from "./doc/find";
+import {
+  DEFAULT_TYPOGRAPHY,
+  type PageTypography,
+} from "~/lib/page-typography";
 
 // Reusable, abstract document surface: a Notion-style large title, a
 // collaborative rich-text body, lab tags, doc-level comments, and PDF/Word
@@ -59,6 +63,7 @@ export function DocumentEditor({
   updatedAt,
   focusCommentId,
   isTemplate = false,
+  typography: initialTypography = null,
   backlinks = [],
   focusMentionUserId,
   aiEnabled = false,
@@ -80,6 +85,8 @@ export function DocumentEditor({
   updatedAt?: string | null;
   // When true, the page is a template (shown in "Start from template" picker).
   isTemplate?: boolean;
+  // Per-page display prefs (Aa menu) — null renders defaults.
+  typography?: PageTypography | null;
   // When set (arriving from a comment-mention notification), open the comments
   // panel and scroll to this comment.
   focusCommentId?: string;
@@ -122,23 +129,24 @@ export function DocumentEditor({
   const liveEditorRef = useRef<any>(null);
   const commentsBubbleRef = useRef<HTMLDivElement | null>(null);
   const [locallyEdited, setLocallyEdited] = useState(false);
-  // "Aa" formatting popover (replaced the static-toolbar toggle). Stays open
-  // while the user works in the editor — dismissed by the Aa button, Escape,
-  // or clicking other chrome; clicks inside the editor body do NOT close it,
-  // so select-then-format round trips don't need reopening.
-  const [formatOpen, setFormatOpen] = useState(false);
-  const formatRef = useRef<HTMLDivElement | null>(null);
+  // "Aa" page-typography menu (Notion's Style section): per-page font /
+  // small-text / full-width, persisted on Page.typography via the API route.
+  // Optimistic local state — the revalidator syncs server truth.
+  const [typo, setTypo] = useState<PageTypography>(
+    initialTypography ?? DEFAULT_TYPOGRAPHY,
+  );
+  const [typoOpen, setTypoOpen] = useState(false);
+  const typoRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    if (!formatOpen) return;
+    if (!typoOpen) return;
     const onDown = (e: MouseEvent) => {
-      const t = e.target as HTMLElement;
-      if (formatRef.current?.contains(t)) return;
-      if (t.closest(".bn-editor")) return;
-      setFormatOpen(false);
+      if (typoRef.current && !typoRef.current.contains(e.target as Node)) {
+        setTypoOpen(false);
+      }
     };
     // globalThis: the React KeyboardEvent type import shadows the DOM one.
     const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key === "Escape") setFormatOpen(false);
+      if (e.key === "Escape") setTypoOpen(false);
     };
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
@@ -146,7 +154,21 @@ export function DocumentEditor({
       document.removeEventListener("mousedown", onDown);
       document.removeEventListener("keydown", onKey);
     };
-  }, [formatOpen]);
+  }, [typoOpen]);
+
+  async function saveTypography(next: PageTypography) {
+    setTypo(next);
+    try {
+      await fetch(`/api/pages/${pageId}/typography`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(next),
+      });
+    } catch {
+      // Keep the optimistic value; the next load resyncs from the server.
+    }
+  }
 
   // ⌘F / Ctrl-F — open find bar when focus is inside the doc surface.
   // We attach to the document-level keydown so it fires regardless of which
@@ -483,35 +505,70 @@ export function DocumentEditor({
       {/* ToC control */}
       <DocToc headings={headings} onJump={jumpToHeading} />
 
-      {/* "Aa" text-format popover — visible standard text options without the
-          old static-bar mode. onMouseDown preventDefault keeps the editor
-          selection alive when the button is clicked. */}
+      {/* "Aa" page-typography menu — per-page font / small-text / full-width
+          (what the Aa glyph promises; selection formatting lives in the
+          floating toolbar). Shared prefs: every viewer sees the same doc. */}
       {canEdit && (
-        <div ref={formatRef} className="relative">
+        <div ref={typoRef} className="relative">
           <button
             type="button"
-            onClick={() => setFormatOpen((o) => !o)}
-            onMouseDown={(e) => e.preventDefault()}
-            aria-pressed={formatOpen}
-            aria-label="Text formatting"
+            onClick={() => setTypoOpen((o) => !o)}
+            aria-expanded={typoOpen}
+            aria-label="Page typography"
             className={`inline-flex items-center rounded-md border px-2 py-1 text-[11px] font-semibold transition-colors ${
-              formatOpen
+              typoOpen
                 ? "border-accent-coral/40 bg-accent-coral/10 text-accent-coral"
                 : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
             }`}
           >
             Aa
           </button>
-          {formatOpen && (
-            <div
-              id="doc-format-popover"
-              // bn-root + bn-shadcn: BlockNote component styling requires an
-              // ancestor with these classes (same as the panel/rail targets).
-              // No mousedown preventDefault here: the link button's URL input
-              // needs real focus, and toolbar commands act on the editor's
-              // STATE selection, which survives the editor blurring.
-              className="dali-doc-format-popover bn-root bn-shadcn absolute right-0 top-full z-30 mt-1 w-max max-w-[360px] rounded-md border border-border bg-card p-2 shadow-brand-2"
-            />
+          {typoOpen && (
+            <div className="absolute right-0 z-30 mt-1 w-56 rounded-md border border-border bg-card p-2 shadow-brand-2 text-sm">
+              <div className="grid grid-cols-3 gap-1">
+                {(
+                  [
+                    { key: "default", label: "Default", preview: "font-sans" },
+                    { key: "serif", label: "Serif", preview: "font-serif" },
+                    { key: "mono", label: "Mono", preview: "font-mono" },
+                  ] as const
+                ).map((f) => (
+                  <button
+                    key={f.key}
+                    type="button"
+                    onClick={() => void saveTypography({ ...typo, font: f.key })}
+                    aria-pressed={typo.font === f.key}
+                    className={`rounded-md border px-1 py-1.5 text-center transition-colors ${
+                      typo.font === f.key
+                        ? "border-accent-coral/40 bg-accent-coral/10"
+                        : "border-border hover:bg-muted"
+                    }`}
+                  >
+                    <span className={`block text-lg leading-none text-foreground ${f.preview}`}>
+                      Ag
+                    </span>
+                    <span className="mt-1 block text-[10px] text-muted-foreground">
+                      {f.label}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <div className="my-2 border-t border-border" />
+              <TypographyToggle
+                label="Small text"
+                checked={typo.smallText}
+                onToggle={() =>
+                  void saveTypography({ ...typo, smallText: !typo.smallText })
+                }
+              />
+              <TypographyToggle
+                label="Full width"
+                checked={typo.fullWidth}
+                onToggle={() =>
+                  void saveTypography({ ...typo, fullWidth: !typo.fullWidth })
+                }
+              />
+            </div>
           )}
         </div>
       )}
@@ -663,7 +720,13 @@ export function DocumentEditor({
       <div
         ref={paperCardRef}
         className={`doc-canvas rounded-xl border border-border bg-card shadow-brand-1 ${
-          railVisible ? "flex-1 min-w-0" : "w-full max-w-[1400px]"
+          railVisible
+            ? "flex-1 min-w-0"
+            : typo.fullWidth
+              ? "w-full"
+              : "w-full max-w-[1400px]"
+        }${typo.font !== "default" ? ` doc-canvas--${typo.font}` : ""}${
+          typo.smallText ? " doc-canvas--small" : ""
         }`}
       >
         {/* Cover lives at the top edge of the canvas, full-bleed.
@@ -745,10 +808,10 @@ export function DocumentEditor({
                   }}
                   onInput={(e) => scheduleTitleSave((e.currentTarget.textContent ?? "").replace(/\n/g, ""))}
                   onKeyDown={onTitleKeyDown}
-                  className="doc-title-editable min-w-0 flex-1 font-heading text-[40px] font-bold leading-tight text-foreground outline-none empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground/50"
+                  className="doc-title doc-title-editable min-w-0 flex-1 font-heading text-[40px] font-bold leading-tight text-foreground outline-none empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground/50"
                 />
               ) : (
-                <h1 className="min-w-0 flex-1 font-heading text-[40px] font-bold leading-tight text-foreground select-text">
+                <h1 className="doc-title min-w-0 flex-1 font-heading text-[40px] font-bold leading-tight text-foreground select-text">
                   {initialTitle}
                 </h1>
               )}
@@ -853,8 +916,6 @@ export function DocumentEditor({
                   onRailFilterChange: setRailFilter,
                   focusCommentId,
                 }}
-                formatPopoverOpen={formatOpen}
-                formatPopoverTargetId="doc-format-popover"
                 findOpen={findOpen}
                 aiEnabled={aiEnabled}
                 onWordCountChange={setWordCount}
@@ -923,5 +984,38 @@ export function DocumentEditor({
     </PresenceProvider>
   ) : (
     body
+  );
+}
+
+function TypographyToggle({
+  label,
+  checked,
+  onToggle,
+}: {
+  label: string;
+  checked: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={onToggle}
+      className="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-foreground hover:bg-muted"
+    >
+      <span>{label}</span>
+      <span
+        className={`relative h-4 w-7 shrink-0 rounded-full transition-colors ${
+          checked ? "bg-accent-coral" : "bg-muted-foreground/30"
+        }`}
+      >
+        <span
+          className={`absolute left-0 top-0.5 h-3 w-3 rounded-full bg-white transition-transform ${
+            checked ? "translate-x-3.5" : "translate-x-0.5"
+          }`}
+        />
+      </span>
+    </button>
   );
 }

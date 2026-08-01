@@ -7,6 +7,7 @@ import { parseSessionCookie } from "~/lib/cookies";
 import { fullName } from "~/lib/display";
 import { getPresenceUser } from "~/lib/presence-user";
 import { getPageAccess } from "~/lib/pageAccess.server";
+import { normalizePageTypography } from "~/lib/page-typography";
 import { DocumentEditor } from "~/components/DocumentEditor";
 import { AttendanceChecklist, type AttendanceRow } from "~/components/AttendanceChecklist";
 import { CheckInPanel } from "~/components/CheckInPanel";
@@ -90,6 +91,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       iconEmoji: true,
       coverImageUrl: true,
       isTemplate: true,
+      typography: true,
       updatedAt: true,
       createdBy: { select: { firstName: true, lastName: true } },
       lastEditedBy: { select: { firstName: true, lastName: true } },
@@ -251,6 +253,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     iconEmoji: page.iconEmoji,
     coverImageUrl: page.coverImageUrl,
     isTemplate: page.isTemplate,
+    typography: normalizePageTypography(page.typography),
     updatedAt: page.updatedAt.toISOString(),
     tags: page.tags.map((t) => t.tag).sort((a, b) => a.label.localeCompare(b.label)),
     allTags,
@@ -284,6 +287,7 @@ export default function DocumentPage() {
     iconEmoji,
     coverImageUrl,
     isTemplate,
+    typography,
     updatedAt,
     attendance,
     backlinks,
@@ -333,6 +337,7 @@ export default function DocumentPage() {
         iconEmoji={iconEmoji}
         coverImageUrl={coverImageUrl}
         isTemplate={isTemplate}
+        typography={typography}
         updatedAt={updatedAt}
         focusCommentId={focusCommentId}
         backlinks={backlinks}

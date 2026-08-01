@@ -256,23 +256,37 @@ html.dark .dali-doc .bn-thread-mark[data-orphan="true"] {
   border-bottom: 1px solid var(--color-border);
 }
 
-/* "Aa" formatting popover — anchored under the top bar's Aa button (replaced
- * the static-toolbar mode, which as a flow child of .bn-container ended up
- * hovering at the last block whenever its sticky offset failed). The popover
- * div lives in the top bar (OUTSIDE .dali-doc), so this class is not nested.
- * The FormattingToolbar inside must not use its floating-overlay positioning;
- * buttons wrap to rows within the popover width. */
-.dali-doc-format-popover .bn-toolbar {
-  position: static !important;
-  transform: none !important;
-  box-shadow: none !important;
-  border-radius: 0 !important;
-  padding: 0 !important;
-  background: transparent !important;
-  border: none !important;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px;
+/* Page typography (the top bar's "Aa" menu) — per-page display prefs stored
+ * on Page.typography. Classes land on the paper card (.doc-canvas), an
+ * ancestor of both the title and .dali-doc; the extra selector depth beats
+ * the .dali-doc custom-property defaults and the title's Tailwind utilities.
+ * Full width is handled in JSX (max-w cap swap on the same element). */
+.doc-canvas--serif {
+  --doc-font: ui-serif, Georgia, Cambria, "Times New Roman", serif;
+}
+.doc-canvas--mono {
+  --doc-font: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+/* .bn-root declares --bn-font-family directly (section 1 above), so the
+ * override must land on .bn-root itself — an inherited value from a wrapper
+ * would lose to that own-element declaration. */
+.doc-canvas--serif .bn-root,
+.doc-canvas--mono .bn-root {
+  --bn-font-family: var(--doc-font);
+}
+.doc-canvas--serif .doc-title,
+.doc-canvas--mono .doc-title {
+  font-family: var(--doc-font);
+}
+
+/* Small text: BlockNote sizes headings and spacing in em, so one base
+ * font-size scales the whole body (default is 16px). The title drops from
+ * 40px to match. */
+.doc-canvas--small .dali-doc .bn-editor {
+  font-size: 14px;
+}
+.doc-canvas--small .doc-title {
+  font-size: 32px;
 }
 
 /* ── 5. Right-hand comments rail ────────────────────────────────────────── */

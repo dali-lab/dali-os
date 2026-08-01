@@ -548,11 +548,6 @@ select:not(:disabled) {
     position: static !important;
   }
 
-  /* "Aa" format popover */
-  .dali-doc-format-popover {
-    display: none !important;
-  }
-
   /* Command palette */
   [role="dialog"][class*="Command"],
   [class*="CommandPalette"] {

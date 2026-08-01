@@ -42,12 +42,7 @@ import {
   useCreateBlockNote,
   FloatingComposerController,
   FloatingThreadController,
-  FormattingToolbar,
   FormattingToolbarController,
-  BlockTypeSelect,
-  BasicTextStyleButton,
-  ColorStyleButton,
-  CreateLinkButton,
   ThreadsSidebar,
 } from "@blocknote/react";
 import { buildAiFormattingToolbar } from "./ai/AiFormattingToolbar";
@@ -502,19 +497,6 @@ function DocView(
     }
   }, [railVisible, railTargetId]);
 
-  // "Aa" popover: portal a FormattingToolbar into the host-owned popover div
-  // while open (same portal pattern as the panel/rail targets below).
-  const formatOpen = props.formatPopoverOpen ?? false;
-  const formatTargetId = props.formatPopoverTargetId;
-  const [formatTarget, setFormatTarget] = useState<Element | null>(null);
-  useEffect(() => {
-    if (formatOpen && formatTargetId) {
-      setFormatTarget(document.getElementById(formatTargetId));
-    } else {
-      setFormatTarget(null);
-    }
-  }, [formatOpen, formatTargetId]);
-
   const menus: ReactNode = (
     <>
       {/* Custom "/" menu: AI items first (when enabled), then the standard set. */}
@@ -549,22 +531,6 @@ function DocView(
           enabled. The component is memoized in DocView so its identity is stable
           and FormattingToolbarController doesn't remount on every state tick. */}
       <FormattingToolbarController formattingToolbar={aiFormattingToolbar} />
-      {/* "Aa" popover: standard text options applying to the current
-          selection/caret. Coexists with the floating toolbar. */}
-      {formatTarget &&
-        createPortal(
-          <FormattingToolbar>
-            <BlockTypeSelect />
-            <BasicTextStyleButton basicTextStyle="bold" />
-            <BasicTextStyleButton basicTextStyle="italic" />
-            <BasicTextStyleButton basicTextStyle="underline" />
-            <BasicTextStyleButton basicTextStyle="strike" />
-            <ColorStyleButton />
-            <CreateLinkButton />
-          </FormattingToolbar>,
-          formatTarget,
-        )
-      }
       {/* Inline comment floating UI — only active when CommentsExtension is
           wired (i.e. props.comments is set and mode is collab).
           FloatingComposerController: new-thread composer floating above selection.

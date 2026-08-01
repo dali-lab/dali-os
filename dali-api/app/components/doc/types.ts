@@ -92,12 +92,6 @@ export interface DocEditorProps {
   /** When provided, wires BlockNote's inline comment system for this doc.
    * Other surfaces omit this prop — no comments feature is enabled. */
   comments?: DocCommentsConfig;
-  /** "Aa" formatting popover: while open, DocEditorImpl portals a
-   * FormattingToolbar into the host element with this id (a popover the host
-   * anchors under its top-bar Aa button). The floating-on-selection toolbar
-   * stays active regardless. */
-  formatPopoverTargetId?: string;
-  formatPopoverOpen?: boolean;
   /** When true, the find/replace ProseMirror plugin is registered on the
    * editor. The host (DocumentEditor) owns open/close state; toggling this
    * prop registers or unregisters the decoration plugin accordingly. */

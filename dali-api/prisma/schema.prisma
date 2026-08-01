@@ -3706,6 +3706,10 @@ model Page {
   // Notion-style page metadata.
   iconEmoji     String?
   coverImageUrl String?
+  // Per-page display prefs (Notion's Style section): { font: "default" |
+  // "serif" | "mono", smallText: boolean, fullWidth: boolean }. Null = all
+  // defaults. Shared — every viewer sees the same rendering.
+  typography    Json?
 
   // Distinct from createdById; updated on every edit. Used in breadcrumb
   // tooltips, page lists, and mention previews.

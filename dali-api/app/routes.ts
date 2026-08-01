@@ -413,6 +413,7 @@ export default [
   route("api/pages/:id/move", "projects/routes/api.pages.$id.move.ts"),
   route("api/pages/:id/duplicate", "routes/api.pages.$id.duplicate.ts"),
   route("api/pages/:id/template", "routes/api.pages.$id.template.ts"),
+  route("api/pages/:id/typography", "routes/api.pages.$id.typography.ts"),
   route("api/page-templates", "routes/api.page-templates.ts"),
 
   // Project files (standalone uploads with versions)
