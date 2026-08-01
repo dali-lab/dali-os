@@ -17,7 +17,7 @@ import { X, MessageSquare, Check, RotateCcw, Trash2 } from "lucide-react";
 
 import { Avatar } from "~/components/ui/Avatar";
 import { MentionTextInput } from "~/components/MentionTextInput";
-import { DaliThreadStore } from "./DaliThreadStore";
+import { DaliThreadStore, getOrCreateStore } from "./DaliThreadStore";
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
@@ -30,36 +30,17 @@ export interface DocCommentsPanelProps {
   onClose: () => void;
   /** DOM id of the div inside the panel where ThreadsSidebar should portal. */
   targetId?: string;
+  /** Called when the Open/Resolved tab changes so the editor's ThreadsSidebar
+   * portal can mirror the same filter (Fix 4). */
+  onFilterChange?: (filter: "open" | "resolved") => void;
 }
 
 // ── useDocThreadCounts ───────────────────────────────────────────────────────
 //
 // Lightweight hook used by W1 to show a bubble count on the Comments button.
-// Shares the DaliThreadStore instance keyed by pageId — we keep a module-level
-// registry so DocEditorImpl's store and this hook see the same data.
-//
-// Design: the store is created lazily on first call, cleaned up when the last
-// subscriber unsubscribes. This works because DaliThreadStore.subscribe already
-// boots the fetch + polling on first subscription.
-
-const storeRegistry = new Map<string, DaliThreadStore>();
-
-function getOrCreateStore(pageId: string): DaliThreadStore {
-  let store = storeRegistry.get(pageId);
-  if (!store) {
-    // Lightweight read-only store — canResolve=false so auth subclass is
-    // "comment" role (count hook only reads, never writes).
-    store = new DaliThreadStore({
-      pageId,
-      currentUserId: "",
-      canComment: false,
-      canResolve: false,
-      pollIntervalMs: 30_000,
-    });
-    storeRegistry.set(pageId, store);
-  }
-  return store;
-}
+// Uses the shared getOrCreateStore registry from DaliThreadStore.ts so this
+// hook, DocEditorImpl's CommentsExtension store, and DocCommentsPanel all read
+// from the same in-memory thread map — mutations update the count immediately.
 
 export function useDocThreadCounts(pageId: string): { open: number; resolved: number } {
   const store = getOrCreateStore(pageId);
@@ -114,8 +95,14 @@ export function DocCommentsPanel({
   open,
   onClose,
   targetId = "doc-comments-threads-sidebar",
+  onFilterChange,
 }: DocCommentsPanelProps) {
   const [filter, setFilter] = useState<"open" | "resolved">("open");
+
+  function handleFilterChange(next: "open" | "resolved") {
+    setFilter(next);
+    onFilterChange?.(next);
+  }
 
   // Doc-level comments (anchor = null): independent fetch, not in ThreadStore.
   const [docComments, setDocComments] = useState<ApiComment[]>([]);
@@ -222,14 +209,14 @@ export function DocCommentsPanel({
           <div className="flex rounded-md border border-border overflow-hidden text-xs">
             <button
               type="button"
-              onClick={() => setFilter("open")}
+              onClick={() => handleFilterChange("open")}
               className={`px-2 py-1 ${filter === "open" ? "bg-accent text-accent-foreground font-medium" : "text-muted-foreground hover:bg-muted"}`}
             >
               Open
             </button>
             <button
               type="button"
-              onClick={() => setFilter("resolved")}
+              onClick={() => handleFilterChange("resolved")}
               className={`px-2 py-1 border-l border-border ${filter === "resolved" ? "bg-accent text-accent-foreground font-medium" : "text-muted-foreground hover:bg-muted"}`}
             >
               Resolved

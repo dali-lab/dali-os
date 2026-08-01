@@ -495,6 +495,43 @@ export class DaliThreadStore extends ThreadStore {
   }
 }
 
+// ── Module-level store registry ──────────────────────────────────────────────
+//
+// One DaliThreadStore per pageId is shared between:
+//   - DocEditorImpl (drives CommentsExtension + ThreadsSidebar)
+//   - useDocThreadCounts (bubble count on the Comments button)
+//   - DocCommentsPanel (open/resolved doc-level comment list)
+//
+// All three must see the same in-memory thread map so that mutations from the
+// editor (create/add/resolve) update the count immediately instead of waiting
+// for the next 30-second poll.  The registry lazily creates a store on first
+// access and cleans up when all subscribers unsubscribe.
+
+const _storeRegistry = new Map<string, DaliThreadStore>();
+
+/**
+ * Return the shared DaliThreadStore for `pageId`, creating it with the given
+ * config on first call.  Subsequent calls for the same pageId return the cached
+ * instance regardless of the config argument (the first caller wins).
+ */
+export function getOrCreateStore(
+  pageId: string,
+  config?: Omit<DaliThreadStoreConfig, "pageId">,
+): DaliThreadStore {
+  let store = _storeRegistry.get(pageId);
+  if (!store) {
+    store = new DaliThreadStore({
+      pageId,
+      currentUserId: config?.currentUserId ?? "",
+      canComment: config?.canComment ?? false,
+      canResolve: config?.canResolve ?? false,
+      pollIntervalMs: config?.pollIntervalMs,
+    });
+    _storeRegistry.set(pageId, store);
+  }
+  return store;
+}
+
 // ── User resolver ────────────────────────────────────────────────────────────
 //
 // W3 provides GET /api/users/resolve?ids=a,b,c → {users:[{id,name,photoUrl?}]}.

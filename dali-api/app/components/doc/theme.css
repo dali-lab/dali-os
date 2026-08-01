@@ -178,7 +178,13 @@ html.dark .dali-doc .bn-thread-mark[data-orphan="true"] {
 
 /* Floating portal root: zero-size overlay inside .dali-doc so the floating
  * composer and thread popover have a DOM ancestor inside the editor tree.
- * Floating UI's useDismiss checks containment — this is the key fix. */
+ * Floating UI's useDismiss checks containment — this is the key fix.
+ * The root itself is pointer-events: none (zero-size, nothing to click on),
+ * but ALL descendants (the actual floating panels and every element inside
+ * them) restore pointer-events so buttons, inputs, and scroll areas are
+ * mouse-reachable. FIX 1: was `> *` (direct children only) which failed
+ * because BlockNote nests composer/popover inside extra wrapper divs, leaving
+ * inner buttons and inputs un-clickable. Changed to `*` (all descendants). */
 .dali-doc .dali-doc-floating-root {
   position: absolute;
   top: 0;
@@ -187,6 +193,9 @@ html.dark .dali-doc .bn-thread-mark[data-orphan="true"] {
   height: 0;
   overflow: visible;
   pointer-events: none;
+}
+.dali-doc .dali-doc-floating-root * {
+  pointer-events: auto;
 }
 
 /* ThreadsSidebar portaled into the panel: reset BlockNote's sidebar defaults
@@ -206,11 +215,14 @@ html.dark .dali-doc .bn-thread-mark[data-orphan="true"] {
  * W2 appends comment-specific styles BELOW this section — keep the sections
  * clearly separated so concurrent edits don't collide. */
 
-/* The tinted outer background behind the paper canvas. The app shell itself
- * sets the bg, so this only ensures the canvas area has enough breathing room
- * in edge cases (e.g. rendered inside an iframe without the full shell). */
+/* The tinted outer background behind the paper canvas. Uses --color-page (the
+ * route-wash token) so the canvas area has a slight tint in light mode
+ * (hsl 200 60% 98%) that reads against the white card — dark mode already
+ * contrasts via the same token flipping to a deep navy. The app shell itself
+ * also sets this bg, but the rule here ensures the wash appears even when the
+ * editor is embedded in an iframe or rendered without the full shell. */
 .doc-surface {
-  background-color: var(--color-background);
+  background-color: var(--color-page);
 }
 
 /* Paper card: centred, max ~868px (760px body text + BlockNote's 54px gutter
@@ -242,4 +254,34 @@ html.dark .dali-doc .bn-thread-mark[data-orphan="true"] {
   z-index: 20;
   background-color: var(--color-background);
   border-bottom: 1px solid var(--color-border);
+}
+
+/* FIX 7: static formatting toolbar — sticky below .doc-topbar (approx 41px),
+ * above the editor content. The .dali-doc-static-toolbar wrapper lives inside
+ * BlockNoteView's .bn-container; we override BlockNote's toolbar positioning
+ * to make it a normal flow element. The BlockNote FormattingToolbar normally
+ * lives in a floating overlay; when rendered as a non-floating child it renders
+ * inline. We pin it sticky so it scrolls with the page but stays at the top. */
+.dali-doc .dali-doc-static-toolbar {
+  position: sticky;
+  top: 41px;
+  z-index: 15;
+  background-color: var(--color-card);
+  border-bottom: 1px solid var(--color-border);
+  padding: 4px 8px;
+}
+
+/* The FormattingToolbar inside the static bar must NOT use absolute/fixed
+ * positioning — override BlockNote's toolbar defaults so it renders inline. */
+.dali-doc .dali-doc-static-toolbar .bn-toolbar {
+  position: static !important;
+  transform: none !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border: none !important;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
 }

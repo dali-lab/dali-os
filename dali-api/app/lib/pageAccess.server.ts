@@ -140,6 +140,13 @@ export async function getPageAccess(
         return { canView: true, canEdit: false, canComment: true, canResolve: false };
       }
     }
+    // Lab members can view (and comment) any project page — they are not
+    // members of the project but still lab staff who have read access to all
+    // project work. canComment = canView per the approved rule.
+    const labMember = await isLabMember(userSub);
+    if (labMember) {
+      return { canView: true, canEdit: false, canComment: true, canResolve: false };
+    }
     return { canView: false, canEdit: false, canComment: false, canResolve: false };
   }
 

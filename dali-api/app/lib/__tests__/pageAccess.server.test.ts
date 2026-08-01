@@ -177,7 +177,16 @@ describe("Project workspace", () => {
     expect(result).toEqual(denied());
   });
 
-  it("denies stranger", async () => {
+  it("grants view+comment (no edit, no resolve) to non-member lab member", async () => {
+    vi.mocked(isLabMember).mockResolvedValue(true);
+    const result = await getPageAccess("lab-member", projectPage());
+    expect(result.canView).toBe(true);
+    expect(result.canEdit).toBe(false);
+    expect(result.canComment).toBe(true);
+    expect(result.canResolve).toBe(false);
+  });
+
+  it("denies stranger (non-lab-member)", async () => {
     const result = await getPageAccess("stranger", projectPage());
     expect(result).toEqual(denied());
   });

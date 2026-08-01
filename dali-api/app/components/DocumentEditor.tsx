@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type KeyboardEvent,
@@ -69,12 +70,31 @@ export function DocumentEditor({
   focusCommentId?: string;
 }) {
   const revalidator = useRevalidator();
-  const [title, setTitle] = useState(initialTitle);
+  // FIX 5: title is uncontrolled — we never feed state back into the DOM while
+  // the h1 is focused, which prevents caret-at-0 "backwards typing" caused by
+  // React re-rendering contentEditable with the controlled value on every input.
+  // pendingTitle ref tracks the latest text for the debounced save; the DOM is
+  // the single source of truth while the user is typing.
   const [savingTitle, setSavingTitle] = useState(false);
+  const pendingTitleRef = useRef(initialTitle);
+  const titleFocusedRef = useRef(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(!!focusCommentId);
+  const [panelFilter, setPanelFilter] = useState<"open" | "resolved">("open");
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [locallyEdited, setLocallyEdited] = useState(false);
+  // FIX 7: toggleable static formatting toolbar, persisted in localStorage.
+  const [staticToolbar, setStaticToolbar] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("dali-doc-static-toolbar") === "1";
+  });
+  function toggleStaticToolbar() {
+    setStaticToolbar((v) => {
+      const next = !v;
+      localStorage.setItem("dali-doc-static-toolbar", next ? "1" : "0");
+      return next;
+    });
+  }
 
   // Page chrome — optimistic local state, persisted via the documents API.
   const [iconEmoji, setIconEmoji] = useState<string | null>(initialIcon);
@@ -107,16 +127,18 @@ export function DocumentEditor({
     }
   }
 
-  // Debounced title save.
+  // Debounced title save — fires at most once per 800ms burst.
   const titleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (titleTimer.current) clearTimeout(titleTimer.current); }, []);
 
-  function onTitleChange(next: string) {
-    setTitle(next);
+  // FIX 5: read textContent from the DOM directly (not React state) to avoid
+  // feeding state back into the controlled h1 which resets the caret to 0.
+  function scheduleTitleSave(text: string) {
+    pendingTitleRef.current = text;
     setLocallyEdited(true);
     if (titleTimer.current) clearTimeout(titleTimer.current);
     titleTimer.current = setTimeout(async () => {
-      const trimmed = next.trim();
+      const trimmed = pendingTitleRef.current.trim();
       if (!trimmed) return;
       setSavingTitle(true);
       try {
@@ -138,8 +160,20 @@ export function DocumentEditor({
       } finally {
         setSavingTitle(false);
       }
-    }, 600);
+    }, 800);
   }
+
+  // FIX 5: Set the h1 DOM text once on mount and when pageId changes (cross-tab
+  // navigation). When NOT focused, also accept external title updates (e.g. from
+  // postMessage relay). Never write to the DOM while the user is typing — doing
+  // so resets the caret to offset 0.
+  useLayoutEffect(() => {
+    if (titleRef.current) {
+      titleRef.current.textContent = initialTitle;
+      pendingTitleRef.current = initialTitle;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageId]);
 
   const bodyRef = useRef<HTMLDivElement | null>(null);
 
@@ -237,6 +271,17 @@ export function DocumentEditor({
         </button>
         {moreMenuOpen && (
           <div className="absolute right-0 z-30 mt-1 w-52 rounded-md border border-border bg-card p-1 shadow-brand-2 text-sm">
+            {/* FIX 7: static formatting toolbar toggle */}
+            {canEdit && (
+              <button
+                type="button"
+                onClick={() => { toggleStaticToolbar(); setMoreMenuOpen(false); }}
+                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-muted"
+              >
+                <span className="h-3.5 w-3.5 shrink-0 text-muted-foreground text-xs font-bold">B</span>
+                {staticToolbar ? "Hide formatting bar" : "Show formatting bar"}
+              </button>
+            )}
             {collabToken && (
               <button
                 type="button"
@@ -283,29 +328,46 @@ export function DocumentEditor({
   );
 
   // ── Paper canvas ──────────────────────────────────────────────────────────
+  // SMALL B: bg-page tint token for light-mode canvas contrast (mirrors dark)
   const canvas = (
-    <div className="doc-canvas-outer flex justify-center px-4 pb-12 pt-4">
+    <div className="doc-canvas-outer flex justify-center px-4 pb-12 pt-4 bg-page">
       <div className="doc-canvas w-full max-w-[868px] rounded-xl border border-border bg-card shadow-brand-1">
-        {/* Cover lives at the top edge of the canvas, full-bleed */}
-        <PageCover
-          coverImageUrl={coverImageUrl}
-          canEdit={canEdit}
-          onChange={(url) => savePageMeta({ coverImageUrl: url })}
-        />
+        {/* Cover lives at the top edge of the canvas, full-bleed.
+            FIX 6: Only render PageCover here when a cover IS set (so it shows
+            the image + change/remove controls). When no cover, the hover-reveal
+            row below owns the "Add cover" affordance — rendering PageCover here
+            with no cover would produce a second "Add cover" button. */}
+        {coverImageUrl && (
+          <PageCover
+            coverImageUrl={coverImageUrl}
+            canEdit={canEdit}
+            onChange={(url) => savePageMeta({ coverImageUrl: url })}
+          />
+        )}
 
         <div className="px-[54px] pt-12 pb-6">
-          {/* Hover-reveal row: icon · Add icon · Add cover · Add tag */}
-          <div className="group/header relative mb-1">
-            {/* Always-rendered icon (when set) or Add-icon affordance */}
-            <div className="mb-2">
-              <PageIconPicker
-                iconEmoji={iconEmoji}
-                canEdit={canEdit}
-                onChange={(e) => savePageMeta({ iconEmoji: e })}
-              />
-            </div>
+          {/* Hover-reveal row: icon · Add icon · Add cover · Add tag
+              The header/title block adds an extra pl-[54px] to match the body
+              text, which sits at the 54px outer padding PLUS BlockNote's own
+              54px .bn-editor drag-handle gutter (padding-inline:54px in core
+              CSS). Together that puts both at 108px from the card edge (±0). */}
+          <div className="group/header relative mb-1 pl-[54px]">
+            {/* FIX 6: One source of truth for the icon + cover affordances.
+                - When icon IS set: show it always (not in the hover row).
+                - When icon is NOT set: show "Add icon" only in the hover row.
+                - When cover is NOT set: show "Add cover" only in the hover row.
+                The hover-reveal row is always reserved (h-6) so the title does
+                not shift when hovering; items appear with opacity transition. */}
+            {iconEmoji && (
+              <div className="mb-2">
+                <PageIconPicker
+                  iconEmoji={iconEmoji}
+                  canEdit={canEdit}
+                  onChange={(e) => savePageMeta({ iconEmoji: e })}
+                />
+              </div>
+            )}
 
-            {/* Hover-reveal affordance row — reserved height, opacity-transitions */}
             {canEdit && (
               <div className="flex items-center gap-1 h-6 mb-2 opacity-0 transition-opacity duration-150 group-hover/header:opacity-100">
                 {!iconEmoji && (
@@ -325,7 +387,9 @@ export function DocumentEditor({
               </div>
             )}
 
-            {/* Title */}
+            {/* Title — FIX 5: rendered uncontrolled (no children re-rendered
+                from state) so React never resets textContent mid-keystroke.
+                useLayoutEffect seeds DOM text on mount/pageId change. */}
             {canEdit ? (
               <h1
                 ref={titleRef}
@@ -335,15 +399,20 @@ export function DocumentEditor({
                 aria-label="Document title"
                 aria-multiline="false"
                 data-placeholder="Untitled"
-                onInput={(e) => onTitleChange((e.currentTarget.textContent ?? "").replace(/\n/g, ""))}
+                onFocus={() => { titleFocusedRef.current = true; }}
+                onBlur={(e) => {
+                  titleFocusedRef.current = false;
+                  // Save on blur in addition to the debounce.
+                  const text = (e.currentTarget.textContent ?? "").replace(/\n/g, "");
+                  scheduleTitleSave(text);
+                }}
+                onInput={(e) => scheduleTitleSave((e.currentTarget.textContent ?? "").replace(/\n/g, ""))}
                 onKeyDown={onTitleKeyDown}
                 className="doc-title-editable block w-full font-heading text-[40px] font-bold leading-tight text-foreground outline-none empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground/50"
-              >
-                {title}
-              </h1>
+              />
             ) : (
               <h1 className="font-heading text-[40px] font-bold leading-tight text-foreground select-text">
-                {title}
+                {initialTitle}
               </h1>
             )}
 
@@ -380,7 +449,9 @@ export function DocumentEditor({
                   canResolve,
                   panelOpen: commentsOpen,
                   panelTargetId: "doc-comments-panel",
+                  panelFilter,
                 }}
+                staticToolbar={staticToolbar}
                 onWordCountChange={setWordCount}
                 onHeadingsChange={setHeadings}
                 onChange={() => setLocallyEdited(true)}
@@ -425,6 +496,7 @@ export function DocumentEditor({
       open={commentsOpen}
       onClose={() => setCommentsOpen(false)}
       targetId="doc-comments-panel"
+      onFilterChange={setPanelFilter}
     />
   );
 

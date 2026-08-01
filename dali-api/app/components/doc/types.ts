@@ -34,6 +34,9 @@ export interface DocCommentsConfig {
   panelOpen?: boolean;
   /** The DOM id of the comments panel — BlockNote anchors jump to it. */
   panelTargetId?: string;
+  /** Which thread filter to apply to the ThreadsSidebar portal — mirrors the
+   * panel's Open/Resolved tab so the inline sidebar matches the active tab. */
+  panelFilter?: "open" | "resolved";
 }
 
 export interface DocEditorProps {
@@ -77,4 +80,9 @@ export interface DocEditorProps {
   /** When provided, wires BlockNote's inline comment system for this doc.
    * Other surfaces omit this prop — no comments feature is enabled. */
   comments?: DocCommentsConfig;
+  /** FIX 7: When true, renders a static formatting toolbar pinned above the
+   * editor body (instead of the default floating-on-selection toolbar).
+   * Preference is owned + persisted by the host (DocumentEditor via
+   * localStorage); DocEditorImpl just reads the flag. */
+  staticToolbar?: boolean;
 }

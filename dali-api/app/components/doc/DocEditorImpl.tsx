@@ -35,13 +35,17 @@ import {
   useCreateBlockNote,
   FloatingComposerController,
   FloatingThreadController,
+  FormattingToolbar,
+  FormattingToolbarController,
+  BlockTypeSelect,
+  BasicTextStyleButton,
   ThreadsSidebar,
 } from "@blocknote/react";
 import { BlockNoteView } from "@blocknote/shadcn";
 
 import { countWords, extractHeadings, normalizeInitialContent } from "./blocks-util";
 import { acquireCollabDoc, nameToHexColor, releaseCollabDoc, type CollabDocEntry } from "./collab-doc";
-import { DaliThreadStore, resolveDocUsers } from "./comments/DaliThreadStore";
+import { DaliThreadStore, getOrCreateStore, resolveDocUsers } from "./comments/DaliThreadStore";
 import { DocEditorFallback } from "./DocEditor";
 import { resolveFeatures, type Features } from "./features";
 import { buildSchema, type DocEditorInstance, type DocPartialBlock } from "./schema/build";
@@ -196,14 +200,16 @@ function findCollabUndoManager(state: EditorState): Y.UndoManager | null {
 // ─── Comments helpers ────────────────────────────────────────────────────────
 
 /**
- * Stable DaliThreadStore per (pageId, currentUserId, canComment, canResolve).
- * Returns null when comments config is absent (CommentsExtension not wired).
+ * Returns the shared DaliThreadStore for (pageId, currentUserId, canComment,
+ * canResolve) — or null when comments config is absent. Uses the module-level
+ * registry so the editor, the count hook, and the panel all read/write the
+ * same in-memory thread map; mutations update the bubble count immediately
+ * without waiting for the next poll cycle.
  */
 function useThreadStore(comments: DocCommentsConfig | undefined): DaliThreadStore | null {
   return useMemo(() => {
     if (!comments) return null;
-    return new DaliThreadStore({
-      pageId: comments.pageId,
+    return getOrCreateStore(comments.pageId, {
       currentUserId: comments.currentUserId,
       canComment: comments.canComment,
       canResolve: comments.canResolve,
@@ -280,6 +286,8 @@ function DocView(props: ResolvedProps & { editor: DocEditorInstance }) {
     }
   }, [panelOpen, panelTargetId]);
 
+  const staticToolbar = props.staticToolbar ?? false;
+
   const menus: ReactNode = (
     <>
       {/* Custom "/" menu: defaults trimmed to the app command set + callout. */}
@@ -293,6 +301,11 @@ function DocView(props: ResolvedProps & { editor: DocEditorInstance }) {
           getItems={(query) => getMentionMenuItems(editor, query)}
         />
       )}
+      {/* FIX 7: floating formatting toolbar — suppressed when static bar is ON
+          to avoid duplication; active by default (no static bar) */}
+      {!staticToolbar && (
+        <FormattingToolbarController />
+      )}
       {/* Inline comment floating UI — only active when CommentsExtension is
           wired (i.e. props.comments is set and mode is collab).
           FloatingComposerController: new-thread composer floating above selection.
@@ -304,15 +317,22 @@ function DocView(props: ResolvedProps & { editor: DocEditorInstance }) {
         <FloatingComposerController portalElement={floatingRootRef.current ?? undefined} />
       )}
       {/* Suppress FloatingThreadController when panel is open: the sidebar
-          already shows the thread inline, showing both is redundant. */}
+          already shows the thread inline, showing both is redundant.
+          focusManagerProps.disabled=false enables Floating UI's focus trap so
+          the reply box receives focus when the popover opens. */}
       {hasComments && !panelOpen && (
-        <FloatingThreadController portalElement={floatingRootRef.current ?? undefined} />
+        <FloatingThreadController
+          portalElement={floatingRootRef.current ?? undefined}
+          floatingUIOptions={{ focusManagerProps: { disabled: false } }}
+        />
       )}
       {/* ThreadsSidebar portaled into the panel when it's open. Stays inside
           the BlockNoteView context (required for editor/store access). */}
       {hasComments && panelTarget &&
         createPortal(
-          <ThreadsSidebar filter={panelOpen ? "open" : "all"} sort="position" />,
+          // panelFilter mirrors the panel's Open/Resolved tab; fall back to
+          // "open" when the panel is newly opened (no tab state yet).
+          <ThreadsSidebar filter={props.comments?.panelFilter ?? "open"} sort="position" />,
           panelTarget,
         )
       }
@@ -346,11 +366,32 @@ function DocView(props: ResolvedProps & { editor: DocEditorInstance }) {
           // Compact fields don't need the drag-handle side menu (and its wide
           // gutter — see .dali-doc--compact in theme.css).
           sideMenu={props.density !== "compact"}
+          // Disable BlockNoteDefaultUI's built-in formatting toolbar — we
+          // mount FormattingToolbarController manually as a child (either
+          // floating when static bar is OFF, or suppressed when static bar is ON
+          // because we render FormattingToolbar directly below the top bar).
+          formattingToolbar={false}
           // Disable BlockNoteDefaultUI's built-in comments controllers — we
           // mount FloatingComposerController and FloatingThreadController
           // manually as children (with our portalElement override).
           comments={false}
         >
+          {/* FIX 7: static formatting toolbar — rendered as a child of
+              BlockNoteView so it inherits the editor context. It is pinned via
+              CSS (dali-doc-static-toolbar in theme.css) above the .bn-editor.
+              When static bar is OFF, FormattingToolbarController (floating) is
+              mounted instead (inside menus below). */}
+          {staticToolbar && (
+            <div className="dali-doc-static-toolbar">
+              <FormattingToolbar>
+                <BlockTypeSelect />
+                <BasicTextStyleButton basicTextStyle="bold" />
+                <BasicTextStyleButton basicTextStyle="italic" />
+                <BasicTextStyleButton basicTextStyle="underline" />
+                <BasicTextStyleButton basicTextStyle="strike" />
+              </FormattingToolbar>
+            </div>
+          )}
           {menus}
         </BlockNoteView>
       </div>
