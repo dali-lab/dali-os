@@ -73,6 +73,7 @@ import { usePresence, useRegisterCollabEditor } from "../collab/PresenceProvider
 import type { DocCollabConfig, DocCommentsConfig, DocEditorProps } from "./types";
 import { uploadEditorImage } from "./upload";
 import { useAiSlashMenuItems } from "./ai/AiSlashMenuItems";
+import { isAiEnvEnabled } from "./ai/env";
 import { Modal } from "~/components/Modal";
 import { useToast } from "~/components/ui/toast";
 import { useDialog } from "~/components/ui/dialog";
@@ -265,7 +266,8 @@ function DocView(
   const isDark = useIsDark();
   const toast = useToast();
   const dialog = useDialog();
-  const aiEnabled = props.aiEnabled ?? false;
+  // Per-mount opt-in AND the server-published env flag (see ai/env.ts).
+  const aiEnabled = (props.aiEnabled ?? false) && isAiEnvEnabled();
   const editable = props.editable ?? true;
 
   // AI session — set when a slash or toolbar AI item is clicked; cleared when

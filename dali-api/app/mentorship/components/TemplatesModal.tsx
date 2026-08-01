@@ -363,6 +363,10 @@ function TemplateDetail({
         {collabToken ? (
           <DocEditor
             features="notes"
+            // AI on templates but NOT on mentor notes: templates are generic
+            // lab-wide scaffolding with no mentee data, so the privacy concern
+            // that keeps AI off mentorship.notes doesn't apply here.
+            aiEnabled
             collab={{
               documentName: `mentorNoteTemplate:${id}:body`,
               token: collabToken,

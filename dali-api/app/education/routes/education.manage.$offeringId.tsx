@@ -537,6 +537,7 @@ export default function ManageOffering() {
               >
                 <DocEditor
                   features="notes"
+                  aiEnabled
                   collab={{
                     documentName: offering.descriptionDocId,
                     token: collabToken,

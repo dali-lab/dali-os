@@ -567,6 +567,7 @@ export function FormBuilderTab({
         <DocEditor
           features="notes"
           density="compact"
+          aiEnabled
           initialContent={initialDescription ?? undefined}
           onChange={setDescription}
           placeholder="Describe this challenge for applicants…"

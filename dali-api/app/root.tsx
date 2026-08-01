@@ -61,6 +61,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
           .querySelector('meta[name="collab-url"]')
           ?.getAttribute("content") ?? "";
 
+  // Same meta-tag pattern: whether an AI provider key is configured (the
+  // boolean only — never the key). Surfaces still opt in per-mount via the
+  // DocEditor aiEnabled prop; this is the env half of the gate.
+  const aiEnabled =
+    typeof window === "undefined"
+      ? Boolean(process.env.ANTHROPIC_API_KEY || process.env.DARTMOUTH_CHAT_API_KEY)
+      : document.querySelector('meta[name="dali-ai-enabled"]')?.getAttribute("content") === "1";
+
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -71,6 +79,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           content="s4kefSeLQR8Y2pXHEif-nQKDZXN5ZZ8GcD2r8X1ixC4"
         />
         <meta name="collab-url" content={collabUrl} suppressHydrationWarning />
+        <meta name="dali-ai-enabled" content={aiEnabled ? "1" : "0"} suppressHydrationWarning />
         {/* Blocking boot so theme applies before first paint (CSP-safe static file). */}
         <script src={THEME_BOOT_SRC} />
         <Meta />

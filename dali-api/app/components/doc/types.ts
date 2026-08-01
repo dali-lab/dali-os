@@ -103,9 +103,11 @@ export interface DocEditorProps {
    * prop registers or unregisters the decoration plugin accordingly. */
   findOpen?: boolean;
   /**
-   * When true, AI slash-menu items ("Ask AI…", etc.) appear in the "/" menu.
-   * Resolved server-side (isAiEnabled — any configured provider key); never shown when false.
-   * Only meaningful on surfaces with features "document" (full editable body).
+   * Per-surface opt-in for the AI assistant (/ai slash item + "Edit with AI"
+   * toolbar button). The env half of the gate (does the server have a provider
+   * key?) is read from the root meta tag inside the editor — hosts just pass
+   * true on surfaces where AI belongs. Never opt in on external-facing
+   * (applicant/partner) or signing surfaces.
    */
   aiEnabled?: boolean;
 }

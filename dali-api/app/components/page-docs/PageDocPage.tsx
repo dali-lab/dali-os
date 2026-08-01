@@ -638,6 +638,7 @@ function SectionEditPanel({
         <DocEditor
           key={section.id}
           features="guide"
+          aiEnabled
           initialContent={section.body}
           onChange={(body) => onChange({ body })}
           placeholder="Explain this section of the page."

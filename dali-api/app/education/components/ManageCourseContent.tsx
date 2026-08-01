@@ -175,6 +175,7 @@ export function ManageAssignments({
                 >
                   <DocEditor
                     features="notes"
+                    aiEnabled
                     collab={{
                       documentName: a.instructionsDocId,
                       token: collabToken,
