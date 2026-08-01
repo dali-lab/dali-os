@@ -89,6 +89,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       meetingNoteId: true,
       iconEmoji: true,
       coverImageUrl: true,
+      isTemplate: true,
       updatedAt: true,
       createdBy: { select: { firstName: true, lastName: true } },
       lastEditedBy: { select: { firstName: true, lastName: true } },
@@ -236,6 +237,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     hubIconEmoji,
     iconEmoji: page.iconEmoji,
     coverImageUrl: page.coverImageUrl,
+    isTemplate: page.isTemplate,
     updatedAt: page.updatedAt.toISOString(),
     tags: page.tags.map((t) => t.tag).sort((a, b) => a.label.localeCompare(b.label)),
     allTags,
@@ -267,6 +269,7 @@ export default function DocumentPage() {
     subtitle,
     iconEmoji,
     coverImageUrl,
+    isTemplate,
     updatedAt,
     attendance,
   } = useLoaderData() as Exclude<Awaited<ReturnType<typeof loader>>, Response>;
@@ -311,6 +314,7 @@ export default function DocumentPage() {
         allTags={allTags}
         iconEmoji={iconEmoji}
         coverImageUrl={coverImageUrl}
+        isTemplate={isTemplate}
         updatedAt={updatedAt}
         focusCommentId={focusCommentId}
       />
