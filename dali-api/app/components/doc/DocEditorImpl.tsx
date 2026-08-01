@@ -52,6 +52,7 @@ import { countWords, extractHeadings, normalizeInitialContent } from "./blocks-u
 import { acquireCollabDoc, nameToHexColor, releaseCollabDoc, type CollabDocEntry } from "./collab-doc";
 import { DaliThreadStore, getOrCreateStore, resolveDocUsers } from "./comments/DaliThreadStore";
 import { DocEditorFallback } from "./DocEditor";
+import { DaliSideMenuController } from "./DocSideMenu";
 import { resolveFeatures, type Features } from "./features";
 import { buildSchema, type DocEditorInstance, type DocPartialBlock } from "./schema/build";
 import { BLOCKNOTE_FRAGMENT } from "./schema/configs";
@@ -341,6 +342,13 @@ function DocView(props: ResolvedProps & { editor: DocEditorInstance }) {
         getItems={(query) => getDefaultReactEmojiPickerItems(editor, query)}
         columns={10}
       />
+      {/* Custom drag-handle side menu (Notion-ordered: Duplicate / Colors /
+          Comment / Delete). Compact surfaces suppress the side menu entirely
+          via sideMenu={false} on BlockNoteView — this controller is a no-op
+          there since the SideMenuExtension never shows without the gutter. */}
+      {props.density !== "compact" && (
+        <DaliSideMenuController canComment={props.comments?.canComment ?? false} />
+      )}
       <FormattingToolbarController />
       {/* "Aa" popover: standard text options applying to the current
           selection/caret. Coexists with the floating toolbar. */}
@@ -427,12 +435,12 @@ function DocView(props: ResolvedProps & { editor: DocEditorInstance }) {
           editable={props.editable ?? true}
           slashMenu={false}
           // emojiPicker={false} removed — emoji shortcode suggestions are now
-          // handled by the GridSuggestionMenuController child above. The built-in
-          // emojiPicker prop on BlockNoteView controls a *separate* toolbar button;
-          // we leave it at its default (true) so the toolbar also exposes emoji.
-          // Compact fields don't need the drag-handle side menu (and its wide
-          // gutter — see .dali-doc--compact in theme.css).
-          sideMenu={props.density !== "compact"}
+          // handled by the GridSuggestionMenuController child above.
+          // Disable BlockNoteDefaultUI's built-in side menu — we mount
+          // DaliSideMenuController manually as a child (above) so we can
+          // inject the custom Notion-ordered drag-handle menu. Compact surfaces
+          // never show the side menu regardless (no gutter).
+          sideMenu={false}
           // Disable BlockNoteDefaultUI's built-in formatting toolbar — we
           // mount FormattingToolbarController manually as a child (plus the
           // "Aa" popover portal in menus).
