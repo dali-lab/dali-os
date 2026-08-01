@@ -136,6 +136,15 @@ export function blocksToPlainText(blocks: readonly unknown[] | undefined | null)
             .join(" "),
         )
         .join("\n");
+    } else if (block.type === "file" || block.type === "video") {
+      // File and video blocks carry their display name + URL in props, not
+      // inline content. Emit "name (url)" matching the image caption convention
+      // so search indexers and notification previews surface meaningful text.
+      const name = typeof block.props?.name === "string" ? block.props.name : "";
+      const url = typeof block.props?.url === "string" ? block.props.url : "";
+      const caption = typeof block.props?.caption === "string" ? block.props.caption : "";
+      const label = caption || name;
+      line = label && url ? `${label} (${url})` : label || url;
     }
     if (line.trim()) lines.push(line);
     for (const child of block.children ?? []) walk(child);

@@ -21,6 +21,7 @@ import type { DocEditorInstance } from "./build";
 // handle for filtering.
 type KeyedItem = DefaultReactSuggestionItem & { key?: string };
 
+// Base set: always shown when the block is registered.
 const ALLOWED_KEYS = new Set([
   "paragraph",
   "heading",
@@ -39,6 +40,8 @@ const ALLOWED_KEYS = new Set([
   "toggle_list",
   "table",
   "image",
+  "file",
+  "video",
 ]);
 
 function calloutItem(editor: DocEditorInstance): KeyedItem {

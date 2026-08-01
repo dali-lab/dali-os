@@ -89,7 +89,7 @@ function LocalDoc(props: ResolvedProps) {
       schema,
       initialContent,
       dictionary,
-      uploadFile: props.features.images ? uploadEditorImage : undefined,
+      uploadFile: (props.features.images || props.features.files) ? uploadEditorImage : undefined,
       tables: { splitCells: true, cellBackgroundColor: true, cellTextColor: true, headers: true },
     },
     [schema, dictionary],
@@ -136,7 +136,7 @@ function CollabDocInner(
     withCollaboration({
       schema,
       dictionary,
-      uploadFile: props.features.images ? uploadEditorImage : undefined,
+      uploadFile: (props.features.images || props.features.files) ? uploadEditorImage : undefined,
       tables: { splitCells: true, cellBackgroundColor: true, cellTextColor: true, headers: true },
       // Wire CommentsExtension when a threadStore is available. Extensions are
       // passed through withCollaboration unchanged (see dist/yjs.js).
@@ -494,7 +494,7 @@ function useDocSchema(features: Features) {
     () => buildSchema(features),
     // Individual flags, not the object: hosts typically pass a fresh literal
     // every render and a schema rebuild recreates the whole editor.
-    [features.mentions, features.images, features.richBlocks, Boolean(features.signing)],
+    [features.mentions, features.images, features.files, features.richBlocks, Boolean(features.signing)],
   );
 }
 
