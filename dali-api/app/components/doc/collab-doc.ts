@@ -1,6 +1,6 @@
 // Shared Y.Doc / HocuspocusProvider / y-indexeddb lifecycle for collaborative
-// DocEditors — the same module-level refcounted cache CollaborativeEditor
-// uses, and for the same reason: React StrictMode double-mounts effects, and
+// DocEditors — the same module-level refcounted cache the pre-BlockNote
+// CollaborativeEditor used, and for the same reason: React StrictMode double-mounts effects, and
 // without the cache the editor binds to one Y.Doc while a duplicate provider
 // leaks, silently breaking sync. Disposal is deferred 500ms so the simulated
 // unmount+remount reuses the same instance.

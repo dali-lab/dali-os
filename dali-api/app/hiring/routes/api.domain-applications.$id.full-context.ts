@@ -99,7 +99,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     pinnedVersionIds: da.reviews.map((r) => r.rubricVersionId),
   });
 
-  // Interview notes live in CollabDocumentVersion (Yjs/Tiptap), keyed by doc
+  // Interview notes live in CollabDocumentVersion (Yjs/BlockNote), keyed by doc
   // name — mirror the domain-lead applicant-detail view:
   //   interview:{id}:notes                     — joint, shared by interviewers
   //   interview:{id}:rec-notes-{assignmentId}  — per-interviewer rec notes

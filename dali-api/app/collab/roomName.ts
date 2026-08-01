@@ -1,7 +1,7 @@
 /**
  * Naming for collaborative rooms. Used by both the client (PresenceProvider,
- * CollaborativeEditor) and the server (persistence) so the prefix and shape
- * stay in sync.
+ * DocEditor collab wiring) and the server (persistence) so the prefix and
+ * shape stay in sync.
  *
  * Naming conventions:
  *   review:{reviewId}:feedback

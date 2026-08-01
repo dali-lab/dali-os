@@ -1,6 +1,7 @@
-// Capability model for the shared DocEditor — successor of the legacy
-// EditorFeatures/EDITOR_PRESETS in app/components/editor/presets.ts, with the
-// same feature keys and preset names so surface ports are mechanical.
+// Capability model for the shared DocEditor — successor of the TipTap-era
+// EditorFeatures/EDITOR_PRESETS (deleted app/components/editor/presets.ts),
+// keeping the same feature keys and preset names so surface ports were
+// mechanical.
 //
 // Pure data (no React, no BlockNote): safe to import anywhere, including
 // server loaders that need to decide a surface's capabilities.
