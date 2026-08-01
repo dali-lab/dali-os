@@ -98,16 +98,21 @@ export async function notifyCollabDocMentions(
       where: { id: pageId },
       select: { title: true },
     });
+    // Each recipient gets a personalised link (?mention=<userId>) so the
+    // document page can locate and flash their own @-mention chip on arrival.
+    // NotifyRecipient extends Partial<NotifyMessage>, so `link` on the
+    // recipient overrides the shared message.link in notify()'s merged().
     await notify({
       eventType: "pagedoc.mention",
       message: {
-        // ?mention=1 tells the document page to scroll to (and flash) this
-        // reader's own mention once the collab doc syncs.
         title: `You were mentioned in: ${page?.title ?? "a document"}`,
         body: "You were tagged in a document.",
-        link: `/documents/${pageId}?mention=1`,
+        link: `/documents/${pageId}?mention=`, // fallback; per-recipient link wins
       },
-      recipients: fresh.map((userId) => ({ userId })),
+      recipients: fresh.map((userId) => ({
+        userId,
+        link: `/documents/${pageId}?mention=${userId}`,
+      })),
     });
   }
 

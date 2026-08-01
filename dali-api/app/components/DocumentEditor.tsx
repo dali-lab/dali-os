@@ -59,6 +59,7 @@ export function DocumentEditor({
   focusCommentId,
   isTemplate = false,
   backlinks = [],
+  focusMentionUserId,
 }: {
   pageId: string;
   initialTitle: string;
@@ -82,6 +83,9 @@ export function DocumentEditor({
   focusCommentId?: string;
   // Pages that link TO this page via a @pageMention node.
   backlinks?: BacklinkPage[];
+  // When set (arriving from an @-mention notification), scroll to and flash the
+  // first mention chip for that user once the collab doc syncs.
+  focusMentionUserId?: string;
 }) {
   const revalidator = useRevalidator();
   const navigate = useNavigate();
@@ -206,6 +210,32 @@ export function DocumentEditor({
       setCommentsOpen(true);
     }
   }, [focusCommentId, containerWide]);
+
+  // Deep-link: ?mention=<userId> — poll for the first mention chip for that
+  // user, scroll it into view, and briefly flash it. Mirrors the comment deep-
+  // link pattern from DocCommentsRail (up to 40 × 250 ms = 10 s of polling so
+  // the collab doc has time to sync before we give up).
+  const mentionFocusedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!focusMentionUserId || mentionFocusedRef.current === focusMentionUserId) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let tries = 0;
+    const attempt = () => {
+      const el = document.querySelector<HTMLElement>(
+        `[data-mention-id="${CSS.escape(focusMentionUserId)}"]`,
+      );
+      if (el) {
+        mentionFocusedRef.current = focusMentionUserId;
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.classList.add("dali-mention-flash");
+        setTimeout(() => el.classList.remove("dali-mention-flash"), 1500);
+      } else if (++tries < 40) {
+        timer = setTimeout(attempt, 250);
+      }
+    };
+    attempt();
+    return () => { if (timer) clearTimeout(timer); };
+  }, [focusMentionUserId]);
 
   async function savePageMeta(patch: { iconEmoji?: string | null; coverImageUrl?: string | null }) {
     if (patch.iconEmoji !== undefined) setIconEmoji(patch.iconEmoji);

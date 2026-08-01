@@ -22,10 +22,14 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import * as Y from "yjs";
+import {
+  relativePositionToAbsolutePosition,
+  ySyncPluginKey,
+} from "y-prosemirror";
 import { createPortal } from "react-dom";
 import type { ReactNode } from "react";
 import type { EditorState } from "prosemirror-state";
-import type * as Y from "yjs";
 import { withCollaboration } from "@blocknote/core/yjs";
 import { en } from "@blocknote/core/locales";
 import { CommentsExtension } from "@blocknote/core/comments";
@@ -59,6 +63,7 @@ import { BLOCKNOTE_FRAGMENT } from "./schema/configs";
 import { getMentionMenuItems } from "./schema/mention";
 import { getFilteredDocSlashMenuItems } from "./schema/slash-menu";
 import { DEFAULT_SIGNING_CTX, SigningContext } from "./signing-context";
+import { usePresence, useRegisterCollabEditor } from "../collab/PresenceProvider";
 import type { DocCollabConfig, DocCommentsConfig, DocEditorProps } from "./types";
 import { uploadEditorImage } from "./upload";
 
@@ -192,7 +197,7 @@ function CollabDocInner(
     if (um) um.destroy = () => {};
   }, [editor]);
 
-  return <DocView {...props} editor={editor} />;
+  return <DocView {...props} editor={editor} collabEntry={entry} />;
 }
 
 function findCollabUndoManager(state: EditorState): Y.UndoManager | null {
@@ -242,8 +247,10 @@ function makeResolveDocUsers(store: DaliThreadStore) {
 
 // ─── Shared view + chrome ───────────────────────────────────────────────────
 
-function DocView(props: ResolvedProps & { editor: DocEditorInstance }) {
-  const { editor, features } = props;
+function DocView(
+  props: ResolvedProps & { editor: DocEditorInstance; collabEntry?: CollabDocEntry },
+) {
+  const { editor, features, collabEntry } = props;
   useDocChrome(editor, props);
   const isDark = useIsDark();
 
@@ -253,6 +260,117 @@ function DocView(props: ResolvedProps & { editor: DocEditorInstance }) {
   onReadyRef.current = props.onEditorReady;
   useEffect(() => {
     onReadyRef.current?.(editor);
+  }, [editor]);
+
+  // ── Jump-to-cursor (Feature B4-1) ─────────────────────────────────────────
+  // One-shot scroll to a remote peer's current cursor position when their
+  // avatar is clicked in the PresenceBar. NOT continuous follow (Notion parity).
+  //
+  // Implementation: the collab doc awareness (yCursorPlugin) stores
+  // `cursor: { anchor, head }` as Yjs relative positions, keyed by collab-doc
+  // clientId. The PresenceProvider's `followPeer` passes the SIDECAR presence-
+  // room clientId, which is a different Y.Doc and a different clientId. We
+  // bridge via `user.userId`, which both rooms carry on awareness state.
+  // Finding the collab-doc entry for the peer: scan collab-doc awareness for
+  // the entry whose `user.userId` matches the sidecar peer's userId.
+  const editorRef = useRef(editor);
+  editorRef.current = editor;
+
+  // Sidecar peers list — used to bridge sidecar clientId → userId.
+  const presence = usePresence();
+  const presenceRef = useRef(presence);
+  presenceRef.current = presence;
+
+  const followPeer = useCallback(
+    (sidecarClientId: number) => {
+      const collabAwareness = collabEntry?.provider.awareness;
+      if (!collabAwareness) return;
+
+      // Resolve the sidecar clientId → userId via the sidecar peers list.
+      const sidecarPeer = presenceRef.current?.peers.find(
+        (p) => p.clientId === sidecarClientId,
+      );
+      const targetUserId = sidecarPeer?.userId;
+      if (!targetUserId) return;
+
+      // Find the collab-doc awareness entry for this userId.
+      let cursor: { anchor: unknown; head: unknown } | null = null;
+      for (const [, state] of collabAwareness.getStates()) {
+        const u = state.user as { userId?: string } | undefined;
+        if (u?.userId === targetUserId && state.cursor) {
+          cursor = state.cursor as { anchor: unknown; head: unknown };
+          break;
+        }
+      }
+      // Graceful no-op: peer hasn't placed their cursor in this editor yet.
+      if (!cursor) return;
+
+      try {
+        const ed = editorRef.current;
+        const pmView = ed.prosemirrorView;
+        // ySyncPluginKey.getState() is untyped in the d.ts — cast to the known
+        // runtime shape (verified in y-prosemirror/src/plugins/sync-plugin.js).
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const syncState = ySyncPluginKey.getState(pmView.state) as any;
+        if (!syncState?.doc || !syncState?.type || !syncState?.binding) return;
+
+        const absPos = relativePositionToAbsolutePosition(
+          syncState.doc as Y.Doc,
+          syncState.type as Y.XmlFragment,
+          Y.createRelativePositionFromJSON(cursor.head),
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          syncState.binding.mapping as any,
+        );
+        if (absPos === null) return;
+
+        const clamped = Math.max(
+          0,
+          Math.min(absPos, pmView.state.doc.content.size - 1),
+        );
+        const { node } = pmView.domAtPos(clamped);
+        const el = node instanceof Element ? node : node.parentElement;
+        el?.scrollIntoView({ behavior: "smooth", block: "center" });
+
+        // Flash the cursor caret element so the user can spot the exact
+        // location. The collab caret is inside a .bn-collaboration-cursor__base
+        // span inserted by BlockNote's yCursorPlugin.
+        const caret = el?.closest<HTMLElement>(".bn-collaboration-cursor__base");
+        if (caret) {
+          caret.classList.add("dali-cursor-flash");
+          setTimeout(() => caret.classList.remove("dali-cursor-flash"), 1500);
+        }
+      } catch {
+        // Defensive: position resolution can fail if the collab doc hasn't
+        // fully synced. Graceful no-op — next click will work.
+      }
+    },
+    [collabEntry],
+  );
+
+  // scrollIntoView for the editor container: called by PresenceProvider before
+  // followPeer so the editor is in view before we scroll to the cursor.
+  const viewRef = useRef<HTMLDivElement | null>(null);
+  const scrollIntoView = useCallback(() => {
+    viewRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, []);
+
+  const editorId = props.collab?.documentName ?? "local";
+
+  // reportFocus tells PresenceProvider which editor is active, enabling the
+  // PresenceBar's "Jump to cursor" button for this editor's peers.
+  const { reportFocus } = useRegisterCollabEditor({ editorId, followPeer, scrollIntoView });
+
+  // Notify PresenceProvider when the editor gains focus so the avatar chip
+  // becomes followable while this editor is the active one.
+  const reportFocusRef = useRef(reportFocus);
+  reportFocusRef.current = reportFocus;
+  useEffect(() => {
+    const pmView = editor.prosemirrorView;
+    if (!pmView) return;
+    const dom = pmView.dom as HTMLElement;
+    const onFocus = () => reportFocusRef.current();
+    dom.addEventListener("focus", onFocus, true);
+    return () => dom.removeEventListener("focus", onFocus, true);
   }, [editor]);
 
   const hasComments = Boolean(props.comments);
@@ -414,6 +532,7 @@ function DocView(props: ResolvedProps & { editor: DocEditorInstance }) {
   return (
     <SigningContext.Provider value={props.signing ?? DEFAULT_SIGNING_CTX}>
       <div
+        ref={viewRef}
         className={[
           "dali-doc",
           props.density === "compact" ? "dali-doc--compact" : "",

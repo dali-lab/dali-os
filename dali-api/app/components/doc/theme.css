@@ -424,3 +424,32 @@ html.dark .dali-doc .bn-thread-mark[data-orphan="true"] {
     display: none !important;
   }
 }
+
+/* ── 8. Jump-to-cursor flash ───────────────────────────────────────────────── */
+/* Applied to the .bn-collaboration-cursor__base element when a peer's avatar
+ * is clicked in the PresenceBar (one-shot jump, not continuous follow). */
+.dali-cursor-flash {
+  animation: dali-cursor-flash 1.5s ease;
+}
+
+@keyframes dali-cursor-flash {
+  0%, 30% {
+    outline: 3px solid currentColor;
+    border-radius: 2px;
+  }
+}
+
+/* ── 9. @-mention deep-link flash ──────────────────────────────────────────── */
+/* Applied by DocumentEditor when navigating from a ?mention= notification link.
+ * Reuses the coral accent (mention chip colour) so the flash is on-brand. */
+.dali-mention-flash {
+  animation: dali-mention-flash 1.5s ease;
+}
+
+@keyframes dali-mention-flash {
+  0%, 40% {
+    background-color: color-mix(in srgb, var(--color-accent-coral, #e11d48) 45%, transparent);
+    outline: 2px solid color-mix(in srgb, var(--color-accent-coral, #e11d48) 60%, transparent);
+    border-radius: 3px;
+  }
+}
