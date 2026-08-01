@@ -17,6 +17,8 @@ const BodySchema = z.object({
   font: z.enum(["default", "serif", "mono"]),
   smallText: z.boolean(),
   fullWidth: z.boolean(),
+  // default(false): tolerate clients bundled before this field existed.
+  nestingGuides: z.boolean().default(false),
 });
 
 export async function action({ request, params }: Route.ActionArgs) {

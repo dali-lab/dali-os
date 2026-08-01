@@ -312,6 +312,26 @@ html.dark .dali-doc .bn-thread-mark[data-orphan="true"] {
   font-size: 32px;
 }
 
+/* Nesting guides: the shadcn theme draws a 1px vertical rule per nesting
+ * level on nested block groups. Notion draws none, so guides are OFF by
+ * default everywhere DocEditor renders; the Aa menu's per-page toggle
+ * re-enables them via .doc-canvas--guides. Both selectors mirror the
+ * library rule (specificity 0,7,0) — the re-enable wins by source order. */
+.dali-doc
+  .bn-block-group
+  .bn-block:not(:has(.bn-toggle-wrapper))
+  .bn-block-group
+  .bn-block-outer:not([data-prev-depth-changed])::before {
+  border-left: none;
+}
+.doc-canvas--guides
+  .bn-block-group
+  .bn-block:not(:has(.bn-toggle-wrapper))
+  .bn-block-group
+  .bn-block-outer:not([data-prev-depth-changed])::before {
+  border-left: 1px solid var(--bn-colors-side-menu);
+}
+
 /* ── 5. Right-hand comments rail ────────────────────────────────────────── */
 
 /* Rail container: a 320px transparent margin column in the SAME page flow as
