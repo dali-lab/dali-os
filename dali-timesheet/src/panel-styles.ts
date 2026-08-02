@@ -101,6 +101,9 @@ select, input, textarea { font: inherit; font-size: 12px; padding: 8px 10px; bor
 .entry-note { resize: vertical; min-height: 2.2rem; }
 .refresh { margin-left: auto; }
 .pill { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: #E6F7F6; color: var(--teal-deep); }
+/* The period total sits next to the entry count; tabular figures stop it
+   jittering as the number changes between pulls. */
+.pill.total { background: var(--teal-deep); color: #fff; font-variant-numeric: tabular-nums; }
 .result { display: flex; justify-content: space-between; font-size: 12px; padding: 6px 0; border-bottom: 1px solid var(--line); }
 .result .ok { color: var(--teal-deep); font-weight: 600; }
 .result .bad { color: #C0392B; font-weight: 600; }

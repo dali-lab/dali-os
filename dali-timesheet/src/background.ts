@@ -123,6 +123,14 @@ chrome.runtime.onMessage.addListener((req: PanelRequest, _sender, sendResponse) 
 });
 
 // Clicking the toolbar icon toggles the panel on the active JobX tab.
+//
+// Note both chrome.tabs uses here are permission-free, which is why the
+// manifest asks for "storage" only. tabs.create() never needs a permission,
+// and messaging the tab that action.onClicked hands us is covered by
+// host_permissions. The "tabs" permission exists to unlock sensitive tab
+// properties (url, pendingUrl, title, favIconUrl) — we read none of them, and
+// requesting it makes Chrome warn users that the extension can "read your
+// browsing history".
 chrome.action.onClicked.addListener(async (tab) => {
   if (tab.id == null) return;
   try {
