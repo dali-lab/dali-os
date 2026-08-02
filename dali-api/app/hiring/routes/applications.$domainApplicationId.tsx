@@ -6,6 +6,7 @@ import { getUserRoles } from "~/lib/roles";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
 import { presignAnswers } from "~/hiring/lib/presign";
+import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { ApplicationViewer } from "~/hiring/components/ApplicationViewer";
 import { ReviewSummary } from "~/hiring/components/ReviewSummary";
 import { DetailCard } from "~/hiring/components/DetailCard";
@@ -252,7 +253,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     })),
   );
 
-  // Interview notes live in CollabDocumentVersion (Yjs/Tiptap), not in the
+  // Interview notes live in CollabDocumentVersion (Yjs/BlockNote), not in the
   // legacy InterviewNoteVersion table. There are two doc kinds per interview:
   //   interview:{id}:notes                          — joint, shared by both
   //                                                   interviewers
@@ -391,12 +392,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // domainApplication (this one), plus general answers.
   const domainName =
     da.domain?.displayName ?? da.challengeVersion?.domain?.displayName ?? "Domain";
+  // Immutable ChallengeVersion rows: legacy ProseMirror descriptions convert
+  // to block JSON on read (ApplicationViewer expects blocks).
   const application = {
     answers: generalAnswers,
     generalChallengeVersion: da.application.generalChallengeVersion
       ? {
           questions: da.application.generalChallengeVersion.questions,
-          description: da.application.generalChallengeVersion.description,
+          description: ensureBlocks(da.application.generalChallengeVersion.description),
         }
       : null,
     domainApplications: [
@@ -405,7 +408,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         answers: domainAnswers,
         challengeVersion: {
           questions: da.challengeVersion?.questions ?? [],
-          description: da.challengeVersion?.description,
+          description: ensureBlocks(da.challengeVersion?.description),
           domain: { name: da.challengeVersion?.domain?.name ?? domainName },
           challenge: { name: da.challengeVersion?.challenge?.name ?? "Challenge" },
         },

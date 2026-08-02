@@ -5,7 +5,9 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
-import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
+import { DocEditor } from "~/components/doc";
+import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
+import { isEmptyBody } from "~/lib/signing-fields";
 
 export const meta: Route.MetaFunction = () => [
   { title: "Confidentiality agreement · DALI OS" },
@@ -49,7 +51,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       agreementVersion = {
         id: v.id,
         versionNumber: v.versionNumber,
-        body: v.body,
+        // Convert-on-read: legacy ProseMirror bodies → block JSON for DocEditor.
+        body: ensureBlocks(v.body),
         agreement: { name: v.document.name },
       };
     }
@@ -168,7 +171,7 @@ export default function CycleConfidentialityPage() {
   }
 
   // unsigned
-  const empty = !agreementVersion || isEmptyDoc(agreementVersion.body);
+  const empty = !agreementVersion || isEmptyBody(agreementVersion.body);
 
   return (
     <div className="max-w-3xl mx-auto py-10 space-y-6">
@@ -192,7 +195,12 @@ export default function CycleConfidentialityPage() {
             published version.
           </p>
         ) : (
-          <RichTextViewer content={agreementVersion!.body} />
+          <DocEditor
+            features="agreement"
+            editable={false}
+            initialContent={agreementVersion!.body}
+            signing={{ mode: "view" }}
+          />
         )}
       </article>
 

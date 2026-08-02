@@ -1,13 +1,14 @@
 // MCP `set_page_content` — replaces a FreeForm page's body with content
 // rendered from Markdown. The write goes through the collab pipeline
-// (~/collab/write.ts): markdown → ProseMirror JSON → Yjs, applied via a
-// Hocuspocus direct connection so open editors sync live and a version
-// snapshot is kept (the previous body stays restorable from Version history).
-// Gate mirrors web project-edit access: Core, or staffed on the page's project.
+// (~/collab/write.ts): markdown → BlockNote blocks → Yjs "blocknote"
+// fragment, applied via a Hocuspocus direct connection so open editors sync
+// live and a version snapshot is kept (the previous body stays restorable
+// from Version history). Gate mirrors web project-edit access: Core, or
+// staffed on the page's project.
 
 import { prisma } from "~/lib/db";
 import { canEditProject } from "./access";
-import { markdownToProseMirror } from "~/collab/import-markdown";
+import { markdownToBlocks } from "~/collab/blocknote-server";
 import { replaceCollabDocContent } from "~/collab/write";
 import { pageDocName } from "~/collab/roomName";
 
@@ -69,20 +70,20 @@ export async function runSetPageContent(callerId: string, input: Input) {
     throw new SetPageContentError("Page is archived — unarchive it first (update_page)", 400);
   }
 
-  let doc;
+  let blocks;
   try {
-    doc = markdownToProseMirror(input.markdown);
+    blocks = await markdownToBlocks(input.markdown);
   } catch {
     throw new SetPageContentError("Markdown could not be parsed", 400);
   }
 
   // Same doc-name derivation as read_page so the two tools round-trip.
-  await replaceCollabDocContent(page.contentDocId ?? pageDocName(page.id), doc, callerId);
+  await replaceCollabDocContent(page.contentDocId ?? pageDocName(page.id), blocks, callerId);
 
   await prisma.page.update({
     where: { id: page.id },
     data: { lastEditedById: callerId },
   });
 
-  return { id: page.id, blockCount: doc.content?.length ?? 0 };
+  return { id: page.id, blockCount: blocks.length };
 }

@@ -6,7 +6,7 @@
 
 import { prisma } from "~/lib/db";
 import { canEditProject } from "./access";
-import { markdownToProseMirror } from "~/collab/import-markdown";
+import { markdownToBlocks } from "~/collab/blocknote-server";
 import { replaceCollabDocContent } from "~/collab/write";
 import { pageDocName } from "~/collab/roomName";
 
@@ -114,10 +114,10 @@ export async function runCreatePage(callerId: string, input: Input) {
   }
 
   // Parse before creating so bad markdown doesn't leave an empty page behind.
-  let doc = null;
+  let blocks = null;
   if (input.content !== undefined && input.content !== "") {
     try {
-      doc = markdownToProseMirror(input.content);
+      blocks = await markdownToBlocks(input.content);
     } catch {
       throw new CreatePageError("content markdown could not be parsed", 400);
     }
@@ -144,13 +144,13 @@ export async function runCreatePage(callerId: string, input: Input) {
       position,
       iconEmoji: input.iconEmoji && input.iconEmoji !== "" ? input.iconEmoji : null,
       createdById: callerId,
-      lastEditedById: doc ? callerId : null,
+      lastEditedById: blocks ? callerId : null,
     },
     select: { id: true },
   });
 
-  if (doc) {
-    await replaceCollabDocContent(pageDocName(page.id), doc, callerId);
+  if (blocks) {
+    await replaceCollabDocContent(pageDocName(page.id), blocks, callerId);
   }
 
   return { id: page.id, kind, parentPageId, position };

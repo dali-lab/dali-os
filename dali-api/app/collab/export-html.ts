@@ -1,8 +1,10 @@
-// Pure ProseMirror-JSON → HTML rendering for the document export pipeline.
+// LEGACY pure ProseMirror-JSON → HTML rendering, plus the shared PMNode type
+// and the buildExportHtml document shell (both still current). The live HTML
+// export path is blocks-based (blocksToHtml in blocknote-server.ts);
+// renderNodes remains for PM-JSON inputs that are never transcoded — signing
+// frozen bodies — and as the reference renderer for legacy fixtures.
 // Deliberately free of any DB / Prisma import so it can be unit-tested and
-// reused without loading the database client. The DB-coupled decode functions
-// live in export.ts (which re-exports these); the PDF renderer in export-pdf.ts
-// walks the same node/mark set so the two formats stay visually consistent.
+// reused without loading the database client.
 
 import {
   isSigningFieldType,
@@ -112,6 +114,8 @@ function renderNode(node: PMNode): string {
       )}</code></pre>`;
     case "horizontalRule":
       return "<hr />";
+    case "pageBreak":
+      return '<div class="page-break" style="break-after:page;page-break-after:always;border-top:1px dashed #bbb;margin:24px 0;" aria-hidden="true"></div>';
     case "hardBreak":
       return "<br />";
     case "image": {
@@ -123,6 +127,29 @@ function renderNode(node: PMNode): string {
       const alignAttr = align === "left" || align === "right" ? ` data-align="${align}"` : "";
       const widthStyle = typeof width === "number" && width > 0 ? ` style="width:${width}px"` : "";
       return `<img src="${src}" alt="${alt}"${alignAttr}${widthStyle} />`;
+    }
+    case "file": {
+      // Render as a download link; fall back gracefully when no URL is stored.
+      const url = typeof node.attrs?.url === "string" ? node.attrs.url : "";
+      const name =
+        typeof node.attrs?.name === "string" && node.attrs.name
+          ? node.attrs.name
+          : url.split("/").pop() ?? "File";
+      const caption = typeof node.attrs?.caption === "string" ? node.attrs.caption : "";
+      if (!url) return "";
+      const label = escapeHtml(caption || name);
+      return `<p><a href="${escapeHtml(url)}" download="${escapeHtml(name)}">${label}</a></p>`;
+    }
+    case "video": {
+      // Render as a native <video> when a URL is present; degrade to a link
+      // when it is missing.
+      const url = typeof node.attrs?.url === "string" ? node.attrs.url : "";
+      const caption = typeof node.attrs?.caption === "string" ? node.attrs.caption : "";
+      if (!url) return "";
+      const captionHtml = caption
+        ? `<figcaption>${escapeHtml(caption)}</figcaption>`
+        : "";
+      return `<figure><video src="${escapeHtml(url)}" controls style="max-width:100%;border-radius:6px;"></video>${captionHtml}</figure>`;
     }
     case "toggleBlock": {
       // First child may be a toggleSummary; the rest is the collapsible body.
@@ -199,6 +226,7 @@ export function buildExportHtml(title: string, bodyHtml: string): string {
   table { border-collapse: collapse; width: 100%; margin: 12px 0; }
   th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; vertical-align: top; }
   th { background: #f2f2f2; font-weight: 600; }
+  .page-break { break-after: page; page-break-after: always; }
 </style>
 </head>
 <body>

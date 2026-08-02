@@ -7,6 +7,7 @@ import { prisma } from "~/lib/db";
 import { logAuditEvent } from "~/lib/audit";
 import { getClientIp } from "~/lib/request-meta";
 import { fullName } from "~/lib/display";
+import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { bakeSigningBody, collectSigningFields } from "~/lib/signing-fields";
 import { resolveSigningVariablesForSigner } from "./variables.server";
 
@@ -30,7 +31,12 @@ export async function recordSignature(
   });
   if (!binding) return { ok: false, error: "Agreement not found." };
 
-  const fields = collectSigningFields(binding.version.body);
+  // Normalize the in-force body to block JSON first (legacy ProseMirror
+  // version rows convert on read; fieldIds survive conversion 1:1) so every
+  // NEW frozen snapshot is block JSON. Existing frozenBody rows are never
+  // touched — they render via the legacy PM walker forever.
+  const body = ensureBlocks(binding.version.body);
+  const fields = collectSigningFields(body);
 
   // Validate every required field for the member role is filled.
   for (const f of fields) {
@@ -56,7 +62,7 @@ export async function recordSignature(
   }
 
   const variables = await resolveSigningVariablesForSigner(args.signerUserId);
-  const frozenBody = bakeSigningBody(binding.version.body, {
+  const frozenBody = bakeSigningBody(body, {
     fieldValues: args.fieldValues,
     variables,
   });

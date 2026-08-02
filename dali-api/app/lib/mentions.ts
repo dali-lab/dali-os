@@ -15,24 +15,33 @@ export function extractHandlesFromText(text: string): string[] {
   return [...out];
 }
 
-type ProseMirrorNode = {
+type RichTextNode = {
   type?: string;
+  // Legacy ProseMirror mentions carry the user id in attrs.id …
   attrs?: Record<string, unknown>;
-  content?: ProseMirrorNode[];
+  // … BlockNote mentions carry it in props.id (same key, 1:1 port).
+  props?: Record<string, unknown>;
+  content?: RichTextNode[];
+  children?: RichTextNode[];
 };
 
-/** Walk a ProseMirror doc for mention nodes and collect the user ids they
- * carry (the mention extension stores the tagged user's id in attrs.id). */
+/** Walk a rich-text body for mention nodes and collect the user ids they
+ * carry. Handles both shapes the JSON columns can hold: legacy ProseMirror
+ * docs ({type:"doc"} tree, id in attrs.id) and BlockNote block arrays
+ * (content + children arrays, id in props.id). */
 export function extractMentionUserIds(json: unknown): string[] {
   const ids = new Set<string>();
-  const walk = (node: ProseMirrorNode | null | undefined) => {
+  const walk = (node: RichTextNode | null | undefined) => {
     if (!node || typeof node !== "object") return;
-    if (node.type === "mention" && typeof node.attrs?.id === "string") {
-      ids.add(node.attrs.id);
+    if (node.type === "mention") {
+      const id = node.attrs?.id ?? node.props?.id;
+      if (typeof id === "string" && id) ids.add(id);
     }
     if (Array.isArray(node.content)) node.content.forEach(walk);
+    if (Array.isArray(node.children)) node.children.forEach(walk);
   };
-  walk(json as ProseMirrorNode);
+  if (Array.isArray(json)) (json as RichTextNode[]).forEach(walk);
+  else walk(json as RichTextNode);
   return [...ids];
 }
 

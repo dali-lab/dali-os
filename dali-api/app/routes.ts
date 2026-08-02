@@ -17,6 +17,7 @@ export default [
     // required agreement is unsigned.
     route("sign", "signing/routes/sign._index.tsx"),
     route("sign/:bindingId", "signing/routes/sign.$bindingId.tsx"),
+    route("sign/:bindingId/pdf", "signing/routes/sign.$bindingId.pdf.ts"),
 
     // Hiring section. /hiring is the role-aware hub; the tools below are
     // reached via its pill row (the sidebar carries a single Hiring entry).
@@ -54,25 +55,32 @@ export default [
     route("hiring/interviews/:interviewId", "hiring/routes/interviews.$interviewId.tsx"),
     route("hiring/analytics", "hiring/routes/analytics.tsx"),
 
-    // Operations (top-level, not hiring)
-    route("admin-console", "admin-console/routes/admin-console.tsx"),
-    route("admin-console/members", "admin-console/routes/admin-console.members.tsx"),
-    route("admin-console/domains", "admin-console/routes/admin-console.domains.tsx"),
-    route("admin-console/announcements", "admin-console/routes/admin-console.announcements.tsx"),
-    route("admin-console/attendance", "admin-console/routes/admin-console.attendance.tsx"),
-    route("admin-console/activity", "admin-console/routes/admin-console.activity.tsx"),
-    route("admin-console/analytics", "admin-console/routes/admin-console.analytics.tsx"),
-    route("admin-console/jobs", "admin-console/routes/admin-console.jobs.tsx"),
-    route("admin-console/email-senders", "admin-console/routes/admin-console.email-senders.tsx"),
-    route("admin-console/email-templates", "admin-console/routes/admin-console.email-templates.tsx"),
-    route("admin-console/email-templates/:id", "admin-console/routes/admin-console.email-templates.$id.tsx"),
+    // Operations (top-level, not hiring). /admin is the nested hub; the three
+    // multi-section clusters have their own landing hubs (Documents & Finance
+    // are single-section and link straight to their tool from the hub).
+    route("admin", "admin/routes/admin.tsx"),
+    route("admin/people", "admin/routes/admin.people.tsx"),
+    route("admin/communications", "admin/routes/admin.communications.tsx"),
+    route("admin/system", "admin/routes/admin.system.tsx"),
+    route("admin/members", "admin/routes/admin.members.tsx"),
+    route("admin/domains", "admin/routes/admin.domains.tsx"),
+    route("admin/announcements", "admin/routes/admin.announcements.tsx"),
+    route("admin/attendance", "admin/routes/admin.attendance.tsx"),
+    route("admin/activity", "admin/routes/admin.activity.tsx"),
+    route("admin/analytics", "admin/routes/admin.analytics.tsx"),
+    route("admin/ai-usage", "admin/routes/admin.ai-usage.tsx"),
+    route("admin/jobs", "admin/routes/admin.jobs.tsx"),
+    route("admin/email-senders", "admin/routes/admin.email-senders.tsx"),
+    route("admin/email-templates", "admin/routes/admin.email-templates.tsx"),
+    route("admin/email-templates/:id", "admin/routes/admin.email-templates.$id.tsx"),
     // Document signing: author agreements, place fields, put versions in force,
     // track signatories.
-    route("admin-console/agreements", "signing/routes/admin-console.agreements.tsx"),
-    route("admin-console/agreements/:id", "signing/routes/admin-console.agreements.$id.tsx"),
-    route("admin-console/agreements/:id/signature/:sigId", "signing/routes/admin-console.agreements.$id.signature.$sigId.tsx"),
-    route("admin-console/payroll-export", "admin-console/routes/admin-console.payroll-export.tsx"),
-    route("admin-console/payroll", "admin-console/routes/admin-console.payroll.tsx"),
+    route("admin/agreements", "signing/routes/admin.agreements.tsx"),
+    route("admin/agreements/:id", "signing/routes/admin.agreements.$id.tsx"),
+    route("admin/agreements/:id/signature/:sigId", "signing/routes/admin.agreements.$id.signature.$sigId.tsx"),
+    route("admin/agreements/:id/signature/:sigId/pdf", "signing/routes/admin.agreements.$id.signature.$sigId.pdf.ts"),
+    route("admin/payroll-export", "admin/routes/admin.payroll-export.tsx"),
+    route("admin/payroll", "admin/routes/admin.payroll.tsx"),
 
     // Projects. The bare /projects route is the area hub (the project list).
     route("projects", "projects/routes/projects.hub.tsx"),
@@ -116,7 +124,7 @@ export default [
     route("documents/file/:fileId", "routes/documents.file.$fileId.tsx"),
     route("documents/:pageId", "routes/documents.$pageId.tsx"),
 
-    // Members directory (separate from admin-console/members)
+    // Members directory (separate from admin/members)
     route("members", "members/routes/members.tsx"),
     route("members/groups", "members/routes/members.groups.tsx"),
     route("members/:id", "members/routes/members.$id.tsx"),
@@ -294,26 +302,26 @@ export default [
   route("api/search", "routes/api.search.ts"),
 
   // Domain & member management API
-  route("api/domains", "admin-console/routes/api.domains.ts"),
-  route("api/domains/:domainId", "admin-console/routes/api.domains.$domainId.ts"),
-  route("api/domains/:domainId/leads", "admin-console/routes/api.domains.$domainId.leads.ts"),
-  route("api/members", "admin-console/routes/api.members.ts"),
-  route("api/members/:memberId/roles", "admin-console/routes/api.members.$memberId.roles.ts"),
+  route("api/domains", "admin/routes/api.domains.ts"),
+  route("api/domains/:domainId", "admin/routes/api.domains.$domainId.ts"),
+  route("api/domains/:domainId/leads", "admin/routes/api.domains.$domainId.leads.ts"),
+  route("api/members", "admin/routes/api.members.ts"),
+  route("api/members/:memberId/roles", "admin/routes/api.members.$memberId.roles.ts"),
 
   // Groups (admin) and notifications (per-user + admin send)
-  route("api/groups", "admin-console/routes/api.groups.ts"),
-  route("api/groups/:groupId", "admin-console/routes/api.groups.$groupId.ts"),
+  route("api/groups", "admin/routes/api.groups.ts"),
+  route("api/groups/:groupId", "admin/routes/api.groups.$groupId.ts"),
   route("api/tour/complete", "routes/api.tour.complete.ts"),
   route("api/timezone/update", "routes/api.timezone.update.ts"),
   route("api/notifications", "routes/api.notifications.ts"),
   route("api/notifications/stream", "routes/api.notifications.stream.ts"),
-  route("api/notifications/send", "admin-console/routes/api.notifications.send.ts"),
+  route("api/notifications/send", "admin/routes/api.notifications.send.ts"),
   route("api/notifications/:id/read", "routes/api.notifications.$id.read.ts"),
   route("api/notifications/:id/rsvp", "routes/api.notifications.$id.rsvp.ts"),
 
   // Background jobs: admin controls + the manual tick trigger (secret header
   // or admin session; the in-process 60s interval is the primary driver).
-  route("api/jobs/:name", "admin-console/routes/api.jobs.$name.ts"),
+  route("api/jobs/:name", "admin/routes/api.jobs.$name.ts"),
   route("internal/jobs/tick", "jobs/routes/internal.jobs.tick.ts"),
 
   // Public showcase API — the read surface dali.website renders from. No
@@ -408,6 +416,10 @@ export default [
   route("api/notes", "members/routes/api.notes.ts"),
   route("api/pages/:id/pin", "projects/routes/api.pages.$id.pin.ts"),
   route("api/pages/:id/move", "projects/routes/api.pages.$id.move.ts"),
+  route("api/pages/:id/duplicate", "routes/api.pages.$id.duplicate.ts"),
+  route("api/pages/:id/template", "routes/api.pages.$id.template.ts"),
+  route("api/pages/:id/typography", "routes/api.pages.$id.typography.ts"),
+  route("api/page-templates", "routes/api.page-templates.ts"),
 
   // Project files (standalone uploads with versions)
   route("api/projects/:id/files", "projects/routes/api.projects.$id.files.ts"),
@@ -421,26 +433,32 @@ export default [
   // Comments + inline annotations on documents and files
   route("api/comments", "routes/api.comments.ts"),
   route("api/comments/:id", "routes/api.comments.$id.ts"),
+  // SSE stream: pushes a `change` nudge when comments mutate for a doc page.
+  route("api/comments/:pageId/stream", "routes/api.comments.$pageId.stream.ts"),
+
+  // Batch user resolver — used by comments rail / presence avatars.
+  route("api/users/resolve", "routes/api.users.resolve.ts"),
 
   // Per-page documentation guides + the member search that backs @-mentions
   route("api/page-docs/:key", "routes/api.page-docs.$key.ts"),
   route("api/mentions/search", "routes/api.mentions.search.ts"),
+  route("api/mentions/pages", "routes/api.mentions.pages.ts"),
 
   // Document export (server-rendered PDF / Word)
   route("documents/:pageId/export", "routes/documents.$pageId.export.ts"),
 
   // Payroll CSV export (resource route — registered OUTSIDE the app layout so
   // the Response streams as a bare CSV body, not wrapped in an HTML shell).
-  route("admin-console/payroll-export.csv", "admin-console/routes/admin-console.payroll-export.csv.ts"),
+  route("admin/payroll-export.csv", "admin/routes/admin.payroll-export.csv.ts"),
 
   // Form responses CSV export (resource route — same bare-body reasoning).
   route("forms/responses/:formId/export.csv", "forms/routes/forms.responses.$formId.export.csv.ts"),
 
   // Payroll reconcile — upload (multipart action) + per-view CSV export.
   // Resource routes registered OUTSIDE the app layout (bare bodies, no shell).
-  route("admin-console/payroll/upload", "admin-console/routes/admin-console.payroll.upload.ts"),
-  route("admin-console/payroll/budget", "admin-console/routes/admin-console.payroll.budget.ts"),
-  route("admin-console/payroll.csv", "admin-console/routes/admin-console.payroll.csv.ts"),
+  route("admin/payroll/upload", "admin/routes/admin.payroll.upload.ts"),
+  route("admin/payroll/budget", "admin/routes/admin.payroll.budget.ts"),
+  route("admin/payroll.csv", "admin/routes/admin.payroll.csv.ts"),
 
   // Partner application status (board drag-and-drop) + domain scope
   route("api/partner-applications/:id/status", "partners/routes/api.partner-applications.$id.status.ts"),
@@ -515,7 +533,7 @@ export default [
   route("api/check-url", "routes/api.check-url.ts"),
 
   // Audit logs (admin)
-  route("api/audit-logs", "admin-console/routes/api.audit-logs.ts"),
+  route("api/audit-logs", "admin/routes/api.audit-logs.ts"),
 
   // Site analytics (client error beacon)
   route("api/analytics/error", "routes/api.analytics.error.ts"),
@@ -530,4 +548,8 @@ export default [
   route("api/mentorship/templates", "mentorship/routes/api.mentorship.templates.ts"),
   route("api/mentorship/templates/:id", "mentorship/routes/api.mentorship.templates.$id.ts"),
   route("api/mentorship/pairs", "mentorship/routes/api.mentorship.pairs.ts"),
+
+  // AI document-writing assistant — requires an AI provider key to be active
+  // (ANTHROPIC_API_KEY, or DARTMOUTH_CHAT_API_KEY for the Dartmouth Chat gateway).
+  route("api/ai/doc", "routes/api.ai.doc.ts"),
 ] satisfies RouteConfig;

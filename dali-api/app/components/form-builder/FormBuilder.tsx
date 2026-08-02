@@ -11,7 +11,7 @@ import {
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { Question } from '~/types'
-import { RichTextEditor } from '~/components/RichTextEditor'
+import { DocEditor } from '~/components/doc'
 import { Tooltip } from '~/components/ui/IconButton'
 import { referenceSourceChoices, referenceSourceNeedsTerm } from '~/forms/lib/reference-sources.shared'
 
@@ -561,11 +561,17 @@ export function FormBuilderTab({
         <p className="text-xs text-muted-foreground mb-2">
           Shown to applicants and reviewers above the question list.
         </p>
-        <RichTextEditor
-          value={description}
+        {/* Block JSON from here on: onChange hands back the BlockNote block
+            tree, and that's what drafts/versions persist. Callers pass
+            loader-normalized blocks as initialDescription. */}
+        <DocEditor
+          features="notes"
+          density="compact"
+          aiEnabled
+          initialContent={initialDescription ?? undefined}
           onChange={setDescription}
-          enableImages
           placeholder="Describe this challenge for applicants…"
+          className="rounded-md border border-gray-300 bg-card py-2 focus-within:border-blue-500"
         />
       </div>
       <div className="space-y-2">

@@ -17,7 +17,10 @@ import type { Question } from "~/types";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 import { Modal } from "~/components/Modal";
 import { QuestionList } from "~/hiring/components/ApplicationAnswers";
-import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
+import { DocEditor } from "~/components/doc";
+import { isEmptyBlocks } from "~/lib/blocks";
+import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
+import { normalizeQuestionBodies } from "~/lib/question-blocks.server";
 import { type UrlCheckState } from "~/components/form-builder/QuestionField";
 import { FormField } from "~/forms/components/FormField";
 import { useToast } from "~/components/ui/toast";
@@ -62,9 +65,13 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   if (!generalCvac) return redirect("/portal");
 
+  // Immutable ChallengeVersion rows: legacy ProseMirror descriptions/info
+  // bodies convert to block JSON on read — the portal only ever sees blocks.
   const generalChallengeVersionId = generalCvac.challengeVersionId;
-  const formQuestions = (generalCvac.challengeVersion.questions as unknown as Question[]) ?? [];
-  const generalDescription = generalCvac.challengeVersion.description ?? null;
+  const formQuestions = normalizeQuestionBodies(
+    (generalCvac.challengeVersion.questions as unknown as Question[]) ?? [],
+  );
+  const generalDescription = ensureBlocks(generalCvac.challengeVersion.description);
 
   // Build domain info with all linked challenge versions (applicant picks one).
   const domains = cycle.domains.map(dac => {
@@ -77,8 +84,10 @@ export async function loader({ request }: Route.LoaderArgs) {
       challenges: linked.map(cvc => ({
         challengeVersionId: cvc.challengeVersionId,
         challengeName: (cvc.challengeVersion as any).challenge?.name ?? "Challenge",
-        description: (cvc.challengeVersion as any).description ?? null,
-        questions: ((cvc.challengeVersion.questions as unknown) as Question[]) ?? [],
+        description: ensureBlocks((cvc.challengeVersion as any).description),
+        questions: normalizeQuestionBodies(
+          ((cvc.challengeVersion.questions as unknown) as Question[]) ?? [],
+        ),
       })),
     };
   });
@@ -1352,9 +1361,14 @@ export default function PortalApply() {
           return beforeQuestions.length > 0 ? (
             <div id="section-general-before" className="rounded-2xl bg-brand-tint px-6 py-5 space-y-6 scroll-mt-24">
               <h3 className="font-heading text-sm font-bold text-dark-blue uppercase tracking-wider">General Questions</h3>
-              {!isEmptyDoc(generalDescription) && (
+              {!isEmptyBlocks(generalDescription) && (
                 <div className="text-dark-blue">
-                  <RichTextViewer content={generalDescription} enableImages />
+                  <DocEditor
+                    features="notes"
+                    density="compact"
+                    editable={false}
+                    initialContent={generalDescription}
+                  />
                 </div>
               )}
               {beforeQuestions.map(q => (
@@ -1444,9 +1458,17 @@ export default function PortalApply() {
                 <>
                   {(() => {
                     const pickedChallenge = domain.challenges.find(c => c.challengeVersionId === pickedCvId);
-                    return !isEmptyDoc(pickedChallenge?.description) ? (
+                    return !isEmptyBlocks(pickedChallenge?.description) ? (
                       <div className="text-dark-blue">
-                        <RichTextViewer content={pickedChallenge!.description} enableImages />
+                        {/* Keyed per picked challenge: DocEditor reads
+                            initialContent once, so switching must remount. */}
+                        <DocEditor
+                          key={pickedCvId}
+                          features="notes"
+                          density="compact"
+                          editable={false}
+                          initialContent={pickedChallenge!.description}
+                        />
                       </div>
                     ) : null;
                   })()}

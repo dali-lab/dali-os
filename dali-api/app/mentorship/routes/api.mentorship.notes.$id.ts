@@ -3,25 +3,25 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
+import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { canViewMentorship, canViewMentorNote } from "../lib/visibility";
 
-// GET    /api/mentorship/notes/:id  — read one (author, same-domain mentor, or Core/Admin)
-// PATCH  /api/mentorship/notes/:id  — update contentJson. Author or Core only.
+// GET    /api/mentorship/notes/:id  — read one (author, same-domain mentor, or Core/Admin).
+//                                     contentJson is normalized to block JSON.
+// PATCH  /api/mentorship/notes/:id  — update vibe. Author or Core only. The body
+//                                     is a collaborative document (Hocuspocus
+//                                     sync-back owns contentJson writes).
 // DELETE /api/mentorship/notes/:id  — delete. Author or Core only.
 
-// A patch may carry a content edit, a vibe change, or both. At least one must
-// be present.
-type PatchBody = { contentJson?: unknown; vibe?: "Good" | "Ok" | "Bad" | null };
+type PatchBody = { vibe?: "Good" | "Ok" | "Bad" | null };
 
 const VIBES = ["Good", "Ok", "Bad"] as const;
 
 function isPatchBody(x: unknown): x is PatchBody {
   if (!x || typeof x !== "object") return false;
   const o = x as Record<string, unknown>;
-  const hasContent = Object.prototype.hasOwnProperty.call(o, "contentJson");
-  const hasVibe = Object.prototype.hasOwnProperty.call(o, "vibe");
-  if (!hasContent && !hasVibe) return false;
-  if (hasVibe && o.vibe !== null && !VIBES.includes(o.vibe as never)) return false;
+  if (!Object.prototype.hasOwnProperty.call(o, "vibe")) return false;
+  if (o.vibe !== null && !VIBES.includes(o.vibe as never)) return false;
   return true;
 }
 
@@ -72,6 +72,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     request,
     Response.json({
       ...note,
+      contentJson: ensureBlocks(note.contentJson),
       weekOf: note.weekOf.toISOString(),
       updatedAt: note.updatedAt.toISOString(),
       project,
@@ -117,13 +118,9 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!isPatchBody(body)) {
     return withCors(request, Response.json({ error: "Invalid body" }, { status: 400 }));
   }
-  const data: Record<string, unknown> = {};
-  if (Object.prototype.hasOwnProperty.call(body, "contentJson")) {
-    data.contentJson = (body.contentJson ?? {}) as object;
-  }
-  if (Object.prototype.hasOwnProperty.call(body, "vibe")) {
-    data.vibe = body.vibe ?? null;
-  }
-  await prisma.mentorNote.update({ where: { id: note.id }, data });
+  await prisma.mentorNote.update({
+    where: { id: note.id },
+    data: { vibe: body.vibe ?? null },
+  });
   return withCors(request, Response.json({ ok: true }));
 }

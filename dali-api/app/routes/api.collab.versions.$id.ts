@@ -29,7 +29,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
   if (!version) return Response.json({ error: "Not found" }, { status: 404 });
 
-  const allowed = await authorizeCollabDoc(auth.user.sub, version.name);
+  const { allowed } = await authorizeCollabDoc(auth.user.sub, version.name);
   if (!allowed) return forbidden(request);
 
   return Response.json({
@@ -60,7 +60,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   });
   if (!version) return Response.json({ error: "Not found" }, { status: 404 });
 
-  const allowed = await authorizeCollabDoc(auth.user.sub, version.name);
+  const { allowed } = await authorizeCollabDoc(auth.user.sub, version.name);
   if (!allowed) return forbidden(request);
 
   const server = getCollabServer();

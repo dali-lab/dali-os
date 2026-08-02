@@ -2,7 +2,7 @@ import { test, expect } from './fixtures';
 
 // Payroll: Reconcile — admin uploads a synthetic TimesheetX CSV, sees the
 // reconciled Payroll Data row, edits a Budget revenue cell (totals update),
-// exports a CSV, and confirms a non-admin is bounced to /admin-console/members.
+// exports a CSV, and confirms a non-admin is bounced to /admin/members.
 //
 // PII rule: every name/netid here is synthetic (Ada Lovelace / f00pay01, the
 // seed's payroll fixture student). No real export is ever read.
@@ -90,7 +90,7 @@ test.describe('payroll: reconcile', () => {
     const payPeriod = activePayPeriodName();
 
     await loginAs({ daliEmail: ADMIN_EMAIL });
-    await page.goto('/admin-console/payroll?embed=1');
+    await page.goto('/admin/payroll?embed=1');
 
     // Header + empty state before any upload for this term.
     await expect(
@@ -145,15 +145,15 @@ test.describe('payroll: reconcile', () => {
     expect(download.suggestedFilename()).toMatch(/\.csv$/);
   });
 
-  test('non-admin is redirected to /admin-console/members', async ({
+  test('non-admin is redirected to /admin/members', async ({
     page,
     loginAs,
   }) => {
-    // jordan.taylor is Core (can reach admin-console/members) but not Admin, so
+    // jordan.taylor is Core (can reach admin/members) but not Admin, so
     // the admin-only payroll page bounces them there.
     await loginAs({ daliEmail: 'jordan.taylor@dali.dartmouth.edu' });
-    await page.goto('/admin-console/payroll');
-    await expect(page).toHaveURL(/\/admin-console\/members/);
-    await expect(page).not.toHaveURL(/\/admin-console\/payroll/);
+    await page.goto('/admin/payroll');
+    await expect(page).toHaveURL(/\/admin\/members/);
+    await expect(page).not.toHaveURL(/\/admin\/payroll/);
   });
 });

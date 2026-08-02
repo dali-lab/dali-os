@@ -11,6 +11,7 @@ import {
   currentInternDomains,
 } from "~/hiring/lib/intern-eligibility";
 import type { Question } from "~/types";
+import { normalizeQuestionBodies } from "~/lib/question-blocks.server";
 import { FormFieldList } from "~/forms/components/FormField";
 import { findMissingRequired } from "~/lib/form-answers";
 import { APPLICATION_TZ, APPLICATION_TZ_LABEL } from "~/lib/timezone";
@@ -74,7 +75,11 @@ export async function loader({ request }: Route.LoaderArgs) {
       currentStatus: active.currentStatus,
       closeDate: cycle.closeDate ? cycle.closeDate.toISOString() : null,
       formVersionId: cycle.internToFullFormVersionId!,
-      questions: (cycle.internToFullFormVersion.questions as unknown as Question[]) ?? [],
+      // Frozen versions may hold legacy ProseMirror info bodies — convert on
+      // read so the fill UI only ever sees string | blocks.
+      questions: normalizeQuestionBodies(
+        (cycle.internToFullFormVersion.questions as unknown as Question[]) ?? [],
+      ),
       targetDomains: cycle.domains.map((d) => ({
         id: d.domainId,
         code: d.domain.code,

@@ -28,19 +28,25 @@ vi.mock("~/partners/lib/partner-access", () => ({
 vi.mock("~/projects/lib/file-notifications.server", () => ({
   notifyFileComment: vi.fn().mockResolvedValue(undefined),
 }));
+vi.mock("~/lib/pageAccess.server", () => ({
+  getPageAccess: vi.fn(),
+}));
 
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
-import { isCore } from "~/lib/roles";
+import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
 import { notifyFileComment } from "~/projects/lib/file-notifications.server";
-import { action } from "~/routes/api.comments";
+import { getPageAccess } from "~/lib/pageAccess.server";
+import { action, loader } from "~/routes/api.comments";
 
 const FILE_ID = "file-1";
+const PAGE_ID = "page-1";
 const CALLER = "mentor-1";
 
 const mockPrisma = prisma as unknown as {
   projectFile: { findUnique: ReturnType<typeof vi.fn> };
   projectFileVersion: { findFirst: ReturnType<typeof vi.fn> };
+  page: { findUnique: ReturnType<typeof vi.fn> };
   docComment: {
     create: ReturnType<typeof vi.fn>;
     findUnique: ReturnType<typeof vi.fn>;
@@ -57,6 +63,12 @@ function post(body: unknown) {
   return action({ request, params: {} } as any);
 }
 
+function get(params: Record<string, string>) {
+  const url = new URL("http://localhost/api/comments");
+  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+  return loader({ request: new Request(url), params: {} } as any);
+}
+
 function fileComment(overrides: Record<string, unknown> = {}) {
   return {
     targetType: "file",
@@ -66,23 +78,47 @@ function fileComment(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function docComment(overrides: Record<string, unknown> = {}) {
+  return {
+    targetType: "doc",
+    targetId: PAGE_ID,
+    body: "Great section",
+    ...overrides,
+  };
+}
+
+function memberAuth(sub = CALLER) {
+  return { ok: true, user: { sub, type: "member" } };
+}
+
+function partnerAuth(sub = "partner-1") {
+  return { ok: true, user: { sub, type: "partner" } };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(requireAuth).mockResolvedValue({
-    ok: true,
-    user: { sub: CALLER, type: "member" },
-  } as any);
+  vi.mocked(requireAuth).mockResolvedValue(memberAuth() as any);
   vi.mocked(isCore).mockResolvedValue(true);
-  // Serves both the targetExists gate (archivedAt) and the currentVersionId
-  // fallback — the route selects each separately.
+  vi.mocked(isLabMember).mockResolvedValue(false);
+  vi.mocked(isProjectMember).mockResolvedValue(false);
+  // Serves both targetExists gate (archivedAt) and currentVersionId fallback.
   mockPrisma.projectFile.findUnique.mockResolvedValue({
     archivedAt: null,
+    projectId: "proj-1",
     currentVersionId: "v-current",
   });
+  mockPrisma.page.findUnique.mockResolvedValue({ archivedAt: null });
   mockPrisma.docComment.create.mockResolvedValue({ id: "c1" });
   mockPrisma.docComment.findMany.mockResolvedValue([]);
+  vi.mocked(getPageAccess).mockResolvedValue({
+    canView: true,
+    canEdit: true,
+    canComment: true,
+    canResolve: true,
+  });
 });
 
+// ── File version pinning (existing tests, preserved) ────────────────────────
 describe("POST /api/comments (file version pinning)", () => {
   it("stamps the version the commenter was viewing", async () => {
     mockPrisma.projectFileVersion.findFirst.mockResolvedValue({ id: "v-old" });
@@ -128,5 +164,96 @@ describe("POST /api/comments (file version pinning)", () => {
     });
     await post(fileComment({ versionId: "v-old", parentId: "root-1" }));
     expect(notifyFileComment).not.toHaveBeenCalled();
+  });
+});
+
+// ── Doc comments — permission model ─────────────────────────────────────────
+describe("doc comments permission model", () => {
+  it("allows a member who canView to POST a doc comment", async () => {
+    vi.mocked(getPageAccess).mockResolvedValue({
+      canView: true,
+      canEdit: false,
+      canComment: true,
+      canResolve: false,
+    });
+    const res = (await post(docComment())) as Response;
+    expect(res.status).toBe(201);
+    expect(getPageAccess).toHaveBeenCalledWith(CALLER, PAGE_ID);
+  });
+
+  it("denies a member who cannot canComment on a doc", async () => {
+    vi.mocked(getPageAccess).mockResolvedValue({
+      canView: false,
+      canEdit: false,
+      canComment: false,
+      canResolve: false,
+    });
+    const res = (await post(docComment())) as Response;
+    expect(res.status).toBe(403);
+    expect(mockPrisma.docComment.create).not.toHaveBeenCalled();
+  });
+
+  it("allows a partner who canComment (partner-visible page)", async () => {
+    vi.mocked(requireAuth).mockResolvedValue(partnerAuth() as any);
+    vi.mocked(getPageAccess).mockResolvedValue({
+      canView: true,
+      canEdit: false,
+      canComment: true,
+      canResolve: false,
+    });
+    const res = (await post(docComment())) as Response;
+    expect(res.status).toBe(201);
+  });
+
+  it("denies a partner who cannot canComment (non-partner-visible)", async () => {
+    vi.mocked(requireAuth).mockResolvedValue(partnerAuth() as any);
+    vi.mocked(getPageAccess).mockResolvedValue({
+      canView: false,
+      canEdit: false,
+      canComment: false,
+      canResolve: false,
+    });
+    const res = (await post(docComment())) as Response;
+    expect(res.status).toBe(403);
+  });
+});
+
+// ── targetExists: any workspace type (P0-4 fix) ─────────────────────────────
+describe("targetExists accepts all workspace types", () => {
+  it("accepts a Lab-workspace page", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue({ archivedAt: null });
+    const res = (await post(docComment())) as Response;
+    // If workspaceType were still checked for "Project", this would 404.
+    expect(res.status).toBe(201);
+  });
+
+  it("rejects an archived page (still checks archivedAt)", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue({ archivedAt: new Date() });
+    const res = (await post(docComment())) as Response;
+    expect(res.status).toBe(404);
+    expect(mockPrisma.docComment.create).not.toHaveBeenCalled();
+  });
+});
+
+// ── GET loader includes updatedAt ────────────────────────────────────────────
+describe("GET /api/comments loader", () => {
+  it("returns updatedAt on each comment", async () => {
+    const now = new Date();
+    mockPrisma.docComment.findMany.mockResolvedValue([
+      {
+        id: "c1",
+        parentId: null,
+        authorId: "u1",
+        body: "hello",
+        anchor: null,
+        resolvedAt: null,
+        createdAt: now,
+        updatedAt: now,
+        versionId: null,
+      },
+    ]);
+    const res = (await get({ targetType: "file", targetId: FILE_ID })) as Response;
+    const data = await res.json();
+    expect(data.comments[0]).toHaveProperty("updatedAt");
   });
 });

@@ -15,7 +15,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { Modal } from "~/components/Modal";
 import { Button } from "~/components/ui/Button";
 import { useDialog } from "~/components/ui/dialog";
-import { CollaborativeEditor } from "~/components/CollaborativeEditor";
+import { DocEditor } from "~/components/doc";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { EpicsTimeline, type TimelineEpic, type SprintDependencyEdge } from "./EpicsTimeline";
 
@@ -93,7 +93,7 @@ type Props = {
   canManage: boolean;
   // Hocuspocus WebSocket auth token; userName labels the presence cursor.
   // Both are forwarded into the EpicDetail modal where the description
-  // CollaborativeEditor lives. Null token = signed-out / no-cookie state;
+  // collab DocEditor lives. Null token = signed-out / no-cookie state;
   // the editor's read-only fallback handles it.
   collabToken: string | null;
   userName: string;
@@ -1088,12 +1088,13 @@ function EpicDetail({
             token={collabToken}
             userName={userName}
           >
-            <CollaborativeEditor
-              editorId={`epic:${descriptionDocId}:description`}
-              documentName={`epic:${descriptionDocId}:description`}
-              token={collabToken}
-              userName={userName}
-              disabled={!canEditContent}
+            <DocEditor
+              collab={{
+                documentName: `epic:${descriptionDocId}:description`,
+                token: collabToken,
+                userName,
+              }}
+              editable={canEditContent}
               placeholder="What is this epic about?"
               className="border border-border rounded-md"
             />

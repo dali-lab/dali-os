@@ -13,10 +13,8 @@ import { requirePartner } from "~/partners/lib/partner-auth.server";
 import { partnerProjectsWhere } from "~/partners/lib/partner-access";
 import { userInitials } from "~/lib/display";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
-import {
-  PortalProfileMenu,
-  useDismissableMenu,
-} from "~/components/PortalProfileMenu";
+import { PortalProfileMenu } from "~/components/PortalProfileMenu";
+import { useDismissableMenu } from "~/hooks/useDismissableMenu";
 
 // Partner portal chrome: fixed top navbar, no member sidebar — the same
 // shape as the applicant portal. NOTE: this loader's requirePartner does NOT

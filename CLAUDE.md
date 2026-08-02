@@ -6,7 +6,8 @@ Project conventions for Claude when running inside `anthropics/claude-code-actio
 
 - **App**: `dali-api/` — React Router 7 (full-stack), TypeScript, React 19.
 - **DB**: Postgres 16 via Prisma 7 ORM. Hosted on Neon (serverless). Adapters: `@prisma/adapter-neon` (prod-ish), `@prisma/adapter-pg` (local).
-- **Realtime collab**: Hocuspocus server + Yjs CRDT + Tiptap editor.
+- **Realtime collab**: Hocuspocus server + Yjs CRDT + BlockNote editor (one shared `<DocEditor>` in `dali-api/app/components/doc/`, capability presets in `features.ts`). Legacy TipTap-era content converts lazily on load (`app/collab/persistence.ts`); server reads go through `app/collab/read.ts`.
+- **AI (docs)**: BlockNote writing assistant at `POST /api/ai/doc` — provider from `ANTHROPIC_API_KEY` (first-party) or `DARTMOUTH_CHAT_API_KEY` (Dartmouth Chat gateway, same Anthropic SDK via `resolveAiProvider()` in `app/lib/ai.server.ts`); per-user rate limits (in-memory burst + Postgres `AiUsage` daily quota) with token usage on the same table (Admin → AI Usage). Surfaces opt in per-mount via the `aiEnabled` prop on `DocEditor`.
 - **Background jobs**: in-process 60s runner (`dali-api/app/jobs/`), cross-machine dedup via a Postgres CAS lease on `ScheduledJob` rows (no Redis). Per-job toggles/intervals/settings live in Admin → Jobs.
 - **Notifications**: three channels (in-app, email/digest, Slack DM) dispatched by `notify()` per user preference — see "Background jobs & notifications" below. The desktop app layers native banners on the in-app feed: gated per event by the `desktop` sub-preference and flagged urgent via registry `timeSensitive`, resolved at feed-read time (`/api/notifications`), with `/api/notifications/stream` (SSE) for live delivery.
 - **Auth**: Google OAuth, Dartmouth CAS, JWT via `jose`.
@@ -58,7 +59,9 @@ These live in `.github/workflows/` — treat their failures as blocking:
 
 ## Realtime / collab caveats
 
-- The `@tiptap/*`, `@hocuspocus/*`, and `yjs` bits are CRDT-based. Schema changes to collaboratively edited documents need extra care — tests may pass locally but break document sync in production. Flag any such change in the PR description.
+- The `@blocknote/*`, `@hocuspocus/*`, and `yjs` bits are CRDT-based. Schema changes to collaboratively edited documents need extra care — tests may pass locally but break document sync in production. Flag any such change in the PR description.
+- `@tiptap/*` remains a dependency ONLY for the legacy decode layer (`dali-api/app/collab/legacy/` reads pre-BlockNote `"default"` fragments forever) — don't remove it, and don't use it for new editor work.
+- Never decode a live Y.Doc server-side without cloning it first — y-prosemirror deletes content it can't decode and Hocuspocus broadcasts the deletion (`persistence.ts` enforces the clone rule).
 
 ## Background jobs & notifications
 

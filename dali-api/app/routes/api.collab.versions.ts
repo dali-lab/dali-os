@@ -18,7 +18,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     return Response.json({ error: "name query param required" }, { status: 400 });
   }
 
-  const allowed = await authorizeCollabDoc(auth.user.sub, name);
+  const { allowed } = await authorizeCollabDoc(auth.user.sub, name);
   if (!allowed) return forbidden(request);
 
   const versions = await prisma.collabDocumentVersion.findMany({

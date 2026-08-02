@@ -136,9 +136,9 @@ export interface Question {
     // save-version rebuilds `data` and drops it.
     referenceOptions?: { value: string; label: string }[]
     // For type === 'info': free-form prose rendered as a non-question text
-    // block in the form. Stored as a ProseMirror JSON doc (Tiptap StarterKit
-    // + Link). Legacy rows written before the rich-text upgrade may still be
-    // a plain string; readers should handle both.
+    // block in the form. New rows store BlockNote block JSON; legacy rows are
+    // ProseMirror JSON (old TipTap editor) or, before the rich-text upgrade,
+    // a plain string — readers format-sniff all three.
     body?: unknown
   }
 }
@@ -152,7 +152,8 @@ export interface ChallengeVersion {
   createdAt: string
   createdById: string
   questions: Question[]
-  // ProseMirror JSON document (Tiptap StarterKit). Null/undefined for versions
+  // BlockNote block JSON on new rows; legacy rows are ProseMirror JSON (old
+  // TipTap editor) — readers format-sniff. Null/undefined for versions
   // created before #273.
   description?: unknown
 }

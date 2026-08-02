@@ -258,7 +258,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
     { key: 'partners', label: 'Partners', to: '/partners', icon: Handshake, show: true },
     { key: 'education', label: 'Education', to: '/education', icon: GraduationCap, show: true },
     { key: 'internal-processes', label: 'Lab Processes', to: '/internal-processes', icon: Workflow, show: true },
-    { key: 'admin-console', label: 'Admin', to: '/admin-console', icon: Settings, show: isCore },
+    { key: 'admin', label: 'Admin', to: '/admin', icon: Settings, show: isCore },
   ].filter((e) => e.show)
 
   const isEntryActive = (entry: NavEntry) => path.startsWith(entry.to)
@@ -717,7 +717,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
         onClose={() => setPaletteOpen(false)}
         tabless={tabless}
         focusMode={focusMode}
-        roles={{ isCore, canViewForms, canViewStaffing, hasHiringAccess, isLabMentor }}
+        roles={{ isCore, isAdmin, canViewForms, canViewStaffing, hasHiringAccess, isLabMentor }}
         onOpen={openFromPalette}
       />
     </div>

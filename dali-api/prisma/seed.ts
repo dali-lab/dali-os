@@ -24,11 +24,12 @@ async function main() {
   // confers the legacy "HiringLead" semantic.
   const admin = await prisma.user.upsert({
     where: { daliEmail: "admin@dali.dartmouth.edu" },
-    update: { firstName: "Admin", lastName: "User" },
+    update: { firstName: "Admin", lastName: "User", handle: "adminuser" },
     create: {
       daliEmail: "admin@dali.dartmouth.edu",
       firstName: "Admin",
       lastName: "User",
+      handle: "adminuser",
       daliMember: { create: {} },
     },
   });
@@ -1908,11 +1909,12 @@ async function main() {
   // ── Domain lead user ──────────────────────────────────────────────────────
   const engLead = await prisma.user.upsert({
     where: { daliEmail: "eng.lead@dali.dartmouth.edu" },
-    update: { firstName: "Mira", lastName: "Chen" },
+    update: { firstName: "Mira", lastName: "Chen", handle: "mirachen" },
     create: {
       daliEmail: "eng.lead@dali.dartmouth.edu",
       firstName: "Mira",
       lastName: "Chen",
+      handle: "mirachen",
       daliMember: { create: {} },
     },
   });
@@ -1942,11 +1944,12 @@ async function main() {
   // ── Jordan Taylor (Hiring Lead + Engineering Domain Lead) ──────────────────
   const jordan = await prisma.user.upsert({
     where: { daliEmail: "jordan.taylor@dali.dartmouth.edu" },
-    update: { firstName: "Jordan", lastName: "Taylor" },
+    update: { firstName: "Jordan", lastName: "Taylor", handle: "jordantaylor" },
     create: {
       daliEmail: "jordan.taylor@dali.dartmouth.edu",
       firstName: "Jordan",
       lastName: "Taylor",
+      handle: "jordantaylor",
       daliMember: { create: {} },
     },
     include: { daliMember: true },
@@ -2085,12 +2088,12 @@ async function main() {
   // reviewer3 and pm.lead intentionally left unsigned to seed the "pending"
   // state visible in the hiring-lead signatures list.
   const reviewerData = [
-    { email: "reviewer1@dali.dartmouth.edu", first: "Riley", last: "Okonkwo", domainId: engDomain.id, signed: true },
-    { email: "reviewer2@dali.dartmouth.edu", first: "Sam", last: "Alvarez", domainId: designDomain.id, signed: true },
-    { email: "reviewer3@dali.dartmouth.edu", first: "Pat", last: "Mikhailov", domainId: pmDomain.id, signed: false },
-    { email: "eng.lead@dali.dartmouth.edu", first: "Mira", last: "Chen", domainId: engDomain.id, signed: true },
-    { email: "design.lead@dali.dartmouth.edu", first: "Isabela", last: "Ferreira", domainId: designDomain.id, signed: true },
-    { email: "pm.lead@dali.dartmouth.edu", first: "Theo", last: "Abernathy", domainId: pmDomain.id, signed: false },
+    { email: "reviewer1@dali.dartmouth.edu", first: "Riley", last: "Okonkwo", handle: "rileyokonkwo", domainId: engDomain.id, signed: true },
+    { email: "reviewer2@dali.dartmouth.edu", first: "Sam", last: "Alvarez", handle: "samalvarez", domainId: designDomain.id, signed: true },
+    { email: "reviewer3@dali.dartmouth.edu", first: "Pat", last: "Mikhailov", handle: "patmikhailov", domainId: pmDomain.id, signed: false },
+    { email: "eng.lead@dali.dartmouth.edu", first: "Mira", last: "Chen", handle: "mirachen", domainId: engDomain.id, signed: true },
+    { email: "design.lead@dali.dartmouth.edu", first: "Isabela", last: "Ferreira", handle: "isabelaferreira", domainId: designDomain.id, signed: true },
+    { email: "pm.lead@dali.dartmouth.edu", first: "Theo", last: "Abernathy", handle: "theoabernathy", domainId: pmDomain.id, signed: false },
   ];
 
   const reviewerUsers: Array<{ id: string; domainId: string }> = [];
@@ -2098,11 +2101,12 @@ async function main() {
   for (const r of reviewerData) {
     const user = await prisma.user.upsert({
       where: { daliEmail: r.email },
-      update: { firstName: r.first, lastName: r.last },
+      update: { firstName: r.first, lastName: r.last, handle: r.handle },
       create: {
         daliEmail: r.email,
         firstName: r.first,
         lastName: r.last,
+        handle: r.handle,
         daliMember: { create: {} },
       },
     });
@@ -4061,11 +4065,12 @@ async function main() {
         });
         const payrollStudent = await prisma.user.upsert({
           where: { netId: "f00pay01" },
-          update: { firstName: "Ada", lastName: "Lovelace" },
+          update: { firstName: "Ada", lastName: "Lovelace", handle: "adalovelace" },
           create: {
             netId: "f00pay01",
             firstName: "Ada",
             lastName: "Lovelace",
+            handle: "adalovelace",
             daliMember: { create: {} },
           },
         });

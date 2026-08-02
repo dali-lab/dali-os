@@ -18,7 +18,8 @@ import { parseSessionCookie } from '~/lib/cookies'
 import { getPresenceUser } from '~/lib/presence-user'
 import { requirePageSignedOrRedirect } from '~/hiring/lib/confidentiality'
 import { presignAnswers } from '~/hiring/lib/presign'
-import { CollaborativeEditor } from '~/components/CollaborativeEditor'
+import { ensureBlocks } from '~/collab/legacy/pm-to-blocknote'
+import { DocEditor } from '~/components/doc'
 import { PresenceProvider } from '~/components/collab/PresenceProvider'
 import { PresenceBar } from '~/components/collab/PresenceBar'
 import { useSharedString } from '~/components/collab/useSharedString'
@@ -155,15 +156,31 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       reviewerPhotoUrl: await resolvePhotoUrl(r.cycleReviewer?.user?.photoUrl),
     })),
   )
+  // Immutable ChallengeVersion rows: legacy ProseMirror descriptions convert
+  // to block JSON on read (ApplicationViewer expects blocks).
   const interviewWithPresignedAnswers = {
     ...interview,
     domainApplication: {
       ...interview.domainApplication,
+      challengeVersion: interview.domainApplication.challengeVersion
+        ? {
+            ...interview.domainApplication.challengeVersion,
+            description: ensureBlocks(interview.domainApplication.challengeVersion.description),
+          }
+        : interview.domainApplication.challengeVersion,
       answers: presignedChallengeAnswers,
       reviews: reviewsWithPhotos,
       application: {
         ...interview.domainApplication.application,
         answers: presignedGeneralAnswers,
+        generalChallengeVersion: interview.domainApplication.application.generalChallengeVersion
+          ? {
+              ...interview.domainApplication.application.generalChallengeVersion,
+              description: ensureBlocks(
+                interview.domainApplication.application.generalChallengeVersion.description,
+              ),
+            }
+          : interview.domainApplication.application.generalChallengeVersion,
       },
     },
   }
@@ -531,14 +548,21 @@ export default function InterviewDetailPage() {
           Shared notes — both interviewers edit this document in real-time.
         </p>
         {collabToken ? (
-          <CollaborativeEditor
-            editorId="notes"
-            documentName={`interview:${interview.id}:notes`}
-            token={collabToken}
-            userName={userName}
-            enableImages
-            disabled={isCompleted}
+          <DocEditor
+            features="notes"
+            editable={!isCompleted}
             placeholder="Write your interview notes here..."
+            className={`rounded-lg border ${
+              isCompleted
+                ? 'border-border bg-muted/50 opacity-75'
+                : 'border-gray-300 bg-card focus-within:ring-2 focus-within:ring-accent-coral focus-within:border-transparent'
+            }`}
+            collab={{
+              documentName: `interview:${interview.id}:notes`,
+              token: collabToken,
+              userName,
+              userId: currentUserId,
+            }}
           />
         ) : (
           <div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200 text-sm text-yellow-800">

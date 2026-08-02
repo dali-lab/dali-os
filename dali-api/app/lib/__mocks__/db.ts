@@ -221,6 +221,16 @@ export const prisma = {
     create: vi.fn(),
     findUnique: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
+    update: vi.fn(),
+    delete: vi.fn(),
+  },
+  docCommentReaction: {
+    upsert: vi.fn().mockResolvedValue({}),
+    deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+  },
+  pageDoc: {
+    findUnique: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
   },
   taskFileLink: {
     createMany: vi.fn().mockResolvedValue({ count: 1 }),
@@ -519,6 +529,10 @@ export const prisma = {
     update: vi.fn(),
     delete: vi.fn(),
     deleteMany: vi.fn(),
+  },
+  aiUsage: {
+    upsert: vi.fn(),
+    update: vi.fn(),
   },
   $transaction: vi.fn(),
   $queryRaw: vi.fn().mockResolvedValue([]),

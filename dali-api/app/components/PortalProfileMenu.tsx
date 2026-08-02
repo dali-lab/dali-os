@@ -1,33 +1,6 @@
-import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { ChevronDown } from "lucide-react";
-
-// Shared open/close state for portal navbar dropdowns: closes on outside
-// click or Escape.
-export function useDismissableMenu() {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function onPointerDown(e: PointerEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
-    }
-    document.addEventListener("pointerdown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [open]);
-
-  return { open, setOpen, ref };
-}
+import { useDismissableMenu } from "~/hooks/useDismissableMenu";
 
 // The account menu the external portals (partner, applicant) hang off the
 // profile chip: Settings lives here (not a nav tab) plus sign out. `subtitle`

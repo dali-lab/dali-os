@@ -49,16 +49,34 @@ export interface PromptOptions {
   validate?: (value: string) => string | null;
 }
 
+export interface ChoiceOption {
+  value: string;
+  label: string;
+  description?: string;
+}
+
+export interface ChoiceOptions {
+  title: string;
+  description?: ReactNode;
+  /** Rendered as a vertical list of buttons; picking one resolves its value. */
+  options: ChoiceOption[];
+  cancelLabel?: string;
+}
+
 export interface DialogApi {
   confirm: (opts: ConfirmOptions) => Promise<boolean>;
   prompt: (opts: PromptOptions) => Promise<string | null>;
+  /** Multi-option chooser. Resolves the picked option's value, or null on
+   * cancel/dismiss — dismiss is NEVER coerced into an option. */
+  choice: (opts: ChoiceOptions) => Promise<string | null>;
 }
 
 const DialogContext = createContext<DialogApi | null>(null);
 
 type ActiveDialog =
   | { kind: "confirm"; opts: ConfirmOptions }
-  | { kind: "prompt"; opts: PromptOptions };
+  | { kind: "prompt"; opts: PromptOptions }
+  | { kind: "choice"; opts: ChoiceOptions };
 
 export function DialogProvider({ children }: { children: ReactNode }) {
   const [active, setActive] = useState<ActiveDialog | null>(null);
@@ -94,7 +112,20 @@ export function DialogProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  const value = useMemo(() => ({ confirm, prompt }), [confirm, prompt]);
+  const choice = useCallback(
+    (opts: ChoiceOptions) =>
+      new Promise<string | null>((resolve) => {
+        resolverRef.current?.(null);
+        resolverRef.current = resolve as (v: boolean | string | null) => void;
+        setActive({ kind: "choice", opts });
+      }),
+    [],
+  );
+
+  const value = useMemo(
+    () => ({ confirm, prompt, choice }),
+    [confirm, prompt, choice],
+  );
 
   return (
     <DialogContext.Provider value={value}>
@@ -111,6 +142,13 @@ export function DialogProvider({ children }: { children: ReactNode }) {
           opts={active.opts}
           onCancel={() => settle(null)}
           onConfirm={(v) => settle(v)}
+        />
+      )}
+      {active?.kind === "choice" && (
+        <ChoiceDialogView
+          opts={active.opts}
+          onCancel={() => settle(null)}
+          onPick={(v) => settle(v)}
         />
       )}
     </DialogContext.Provider>
@@ -253,6 +291,50 @@ function PromptDialogView({
           </button>
         </div>
       </form>
+    </Modal>
+  );
+}
+
+function ChoiceDialogView({
+  opts,
+  onCancel,
+  onPick,
+}: {
+  opts: ChoiceOptions;
+  onCancel: () => void;
+  onPick: (value: string) => void;
+}) {
+  const titleId = useId();
+  return (
+    <Modal open onClose={onCancel} labelledBy={titleId}>
+      <h2 id={titleId} className="font-heading text-lg font-bold text-foreground">
+        {opts.title}
+      </h2>
+      {opts.description && (
+        <div className="mt-1 text-sm text-muted-foreground">{opts.description}</div>
+      )}
+      <div className="mt-4 flex flex-col gap-2">
+        {opts.options.map((o) => (
+          <button
+            key={o.value}
+            type="button"
+            onClick={() => onPick(o.value)}
+            className="w-full rounded-md border border-border bg-card px-3 py-2 text-left text-sm text-foreground transition-colors hover:border-accent-coral/40 hover:bg-accent-coral/5"
+          >
+            <span className="font-medium">{o.label}</span>
+            {o.description && (
+              <span className="mt-0.5 block text-xs text-muted-foreground">
+                {o.description}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+      <div className="mt-6 flex items-center justify-end">
+        <button type="button" onClick={onCancel} className={buttonClasses("secondary")}>
+          {opts.cancelLabel ?? "Cancel"}
+        </button>
+      </div>
     </Modal>
   );
 }

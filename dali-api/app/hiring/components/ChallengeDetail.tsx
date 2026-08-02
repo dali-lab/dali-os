@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { useLoaderData, useSubmit, useSearchParams, useNavigation, Form } from 'react-router'
 import { Plus, FileText, Clock, UserIcon, Eye } from 'lucide-react'
 import { FormBuilderTab } from '~/components/form-builder/FormBuilder'
-import { RichTextViewer, isEmptyDoc } from '~/components/RichTextViewer'
+import { DocEditor } from '~/components/doc'
+import { isEmptyBlocks } from '~/lib/blocks'
 import { ChallengePreviewModal } from '~/hiring/components/ChallengePreviewModal'
 import { Tooltip } from '~/components/ui/IconButton'
 import type { Question } from '~/types'
@@ -99,7 +100,7 @@ export function ChallengeDetail() {
     formData.set('intent', 'create-version')
     formData.set('domainId', selectedDomainId)
     formData.set('questions', JSON.stringify(questions))
-    formData.set('description', description ? JSON.stringify(description) : '')
+    formData.set('description', isEmptyBlocks(description) ? '' : JSON.stringify(description))
     submit(formData, { method: 'post' })
   }
 
@@ -240,9 +241,17 @@ export function ChallengeDetail() {
               {/* Rubrics are now assigned at the domain+cycle level, not per challenge version */}
 
               <div className="p-6 space-y-4">
-                {!isEmptyDoc(selectedVersion.description) && (
+                {!isEmptyBlocks(selectedVersion.description) && (
                   <div className="px-4 py-3 rounded-lg border border-border bg-muted/30">
-                    <RichTextViewer content={selectedVersion.description} enableImages />
+                    {/* Keyed per version: DocEditor reads initialContent once,
+                        so switching versions must remount it. */}
+                    <DocEditor
+                      key={selectedVersion.id}
+                      features="notes"
+                      density="compact"
+                      editable={false}
+                      initialContent={selectedVersion.description}
+                    />
                   </div>
                 )}
                 {(selectedVersion.questions as unknown as Question[]).map((q, index) => (

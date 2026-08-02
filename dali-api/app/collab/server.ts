@@ -5,8 +5,8 @@ import { verifyCollabToken } from "./auth";
 import { loadDocument, maybeSnapshot, storeDocument } from "./persistence";
 import { isPresenceRoom } from "./roomName";
 import { authorizeCollabDoc } from "~/lib/collabAuth";
-import { isPartnerUser } from "~/partners/lib/partner-access";
 import { notifyCollabDocMentions } from "./mentions.server";
+import { reconcilePageLinks } from "./page-links.server";
 
 const WS_MAX_PAYLOAD_BYTES = 1_048_576; // 1 MB
 const WS_MAX_CONNECTIONS = 100;
@@ -84,17 +84,17 @@ export function startCollabServer() {
       // Presence rooms are accessible to any authenticated user — they carry
       // no document content, only ephemeral awareness state.
       if (!isPresenceRoom(documentName)) {
-        const allowed = await authorizeCollabDoc(user.sub, documentName);
-        if (!allowed) {
+        const auth = await authorizeCollabDoc(user.sub, documentName);
+        if (!auth.allowed) {
           throw new Error(
             `User ${user.sub} not authorized for document ${documentName}`,
           );
         }
-        // Shared project pages (doc:*) are read-only for partner accounts —
-        // they view and comment, but the team owns the body. Members have no
-        // PartnerUser row so they're unaffected; partnersow:* (co-drafted SOWs)
-        // is intentionally left editable.
-        if (documentName.startsWith("doc:") && (await isPartnerUser(user.sub))) {
+        // readOnly is set by authorizeCollabDoc for viewer-only connections
+        // (e.g. partners on doc:* pages, non-instructor lab members on
+        // EducationOffering pages). The server drops their writes while still
+        // delivering the document for reading.
+        if (auth.readOnly) {
           connectionConfig.readOnly = true;
         }
       }
@@ -139,6 +139,10 @@ export function startCollabServer() {
       void notifyCollabDocMentions(documentName, document, authors).catch((err) =>
         console.error(`[collab:server] mention notify failed doc=${documentName}`, err),
       );
+      // Reconcile the backlink index for page mentions (best-effort).
+      void reconcilePageLinks(documentName, document).catch((err) =>
+        console.error(`[collab:server] page-link reconcile failed doc=${documentName}`, err),
+      );
       try {
         const wrote = await maybeSnapshot(documentName, stored, authors);
         if (!wrote) for (const a of authors) recordAuthor(documentName, a);
@@ -162,6 +166,9 @@ export function startCollabServer() {
       const authors = drainAuthors(documentName);
       void notifyCollabDocMentions(documentName, document, authors).catch((err) =>
         console.error(`[collab:server] mention notify failed doc=${documentName}`, err),
+      );
+      void reconcilePageLinks(documentName, document).catch((err) =>
+        console.error(`[collab:server] page-link reconcile failed doc=${documentName}`, err),
       );
       try {
         const wrote = await maybeSnapshot(documentName, stored, authors);

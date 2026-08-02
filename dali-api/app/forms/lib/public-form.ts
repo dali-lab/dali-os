@@ -7,6 +7,8 @@
 import { prisma } from "~/lib/db";
 import type { FormAudience } from "~/generated/prisma/client";
 import type { Question } from "~/types";
+import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
+import { normalizeQuestionBodies } from "~/lib/question-blocks.server";
 import { resolveReferenceOptions } from "./reference-sources";
 import { safeParseJsonString } from "./forms-data";
 import { currentTerm, requireMember } from "~/lib/roles";
@@ -91,8 +93,10 @@ export async function loadPublicForm(
     formId: form.id,
     name: form.name,
     versionId: version.id,
-    description: safeParseJsonString(version.intro),
-    questions: resolved,
+    // Frozen versions may hold legacy ProseMirror JSON — convert on read so
+    // fill surfaces only ever see block JSON.
+    description: ensureBlocks(safeParseJsonString(version.intro)),
+    questions: normalizeQuestionBodies(resolved),
   };
 }
 

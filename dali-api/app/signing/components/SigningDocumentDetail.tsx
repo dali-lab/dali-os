@@ -11,18 +11,117 @@ import {
   Archive,
   PenLine,
 } from "lucide-react";
-import { adminPills } from "~/admin-console/adminPills";
-import { AreaPillNav } from "~/components/AreaPillNav";
-import { RichTextEditor } from "~/components/RichTextEditor";
-import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
+import {
+  DocEditor,
+  insertSigningField,
+  insertVariable,
+  type DocEditorInstance,
+} from "~/components/doc";
+import {
+  FIELD_LABEL,
+  SIGNING_FIELD_TYPES,
+  isEmptyBody,
+  type SigningFieldType,
+} from "~/lib/signing-fields";
+import { ALL_SIGNING_VARIABLES } from "~/lib/signing-variables";
 import { formatDateTime, fullName, UNKNOWN_LABEL } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
-import type { loader } from "~/signing/routes/admin-console.agreements.$id";
-
-const EMPTY_DOC = { type: "doc", content: [{ type: "paragraph" }] };
+import type { loader } from "~/signing/routes/admin.agreements.$id";
 
 function asRoles(raw: unknown): string[] {
   return Array.isArray(raw) ? (raw as string[]) : [];
+}
+
+// Sample values for "Preview as signer" — matches the legacy preview.
+function previewVariables(): Record<string, string> {
+  return {
+    term: "26S",
+    today: new Date().toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    }),
+    memberName: "Jane Member",
+    supervisorName: "DALI Staff",
+  };
+}
+
+// Insert-field controls for authoring, ported from the legacy toolbar's
+// SigningInsertControls: pick the signer role, drop a field for it, or insert
+// a merge variable — all at the caret via the live editor instance.
+function SigningInsertControls({
+  editor,
+  roles,
+}: {
+  editor: DocEditorInstance | null;
+  roles: string[];
+}) {
+  const [role, setRole] = useState(roles[0] ?? "member");
+  // The roles input is live-editable while the controls are mounted — never
+  // insert a role that's no longer in the list.
+  const effectiveRole = roles.includes(role) ? role : (roles[0] ?? "member");
+
+  const insertField = (type: SigningFieldType) => {
+    if (!editor) return;
+    editor.focus();
+    insertSigningField(editor, { type, role: effectiveRole });
+  };
+
+  const handleVariable = (name: string) => {
+    if (!editor || !name) return;
+    editor.focus();
+    insertVariable(editor, name);
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-1 border-b border-border px-2 py-1.5">
+      <span className="text-xs font-medium text-muted-foreground mr-1">Insert:</span>
+      <select
+        value={effectiveRole}
+        onChange={(e) => setRole(e.target.value)}
+        title="Signer role for inserted fields"
+        className="rounded border border-border bg-card px-1.5 py-1 text-xs text-foreground"
+      >
+        {roles.map((r) => (
+          <option key={r} value={r}>
+            {r}
+          </option>
+        ))}
+      </select>
+      {SIGNING_FIELD_TYPES.map((type) => (
+        <button
+          key={type}
+          type="button"
+          disabled={!editor}
+          title={`Insert ${FIELD_LABEL[type]} field (${effectiveRole})`}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            insertField(type);
+          }}
+          className="rounded px-1.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+        >
+          {FIELD_LABEL[type]}
+        </button>
+      ))}
+      <select
+        value=""
+        disabled={!editor}
+        onChange={(e) => {
+          handleVariable(e.target.value);
+          e.currentTarget.value = "";
+        }}
+        title="Insert a merge variable"
+        className="rounded border border-border bg-card px-1.5 py-1 text-xs text-muted-foreground disabled:opacity-40"
+      >
+        <option value="">+ Variable</option>
+        {ALL_SIGNING_VARIABLES.map((v) => (
+          <option key={v} value={v}>
+            {`{{${v}}}`}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
 }
 
 export function SigningDocumentDetail() {
@@ -36,12 +135,16 @@ export function SigningDocumentDetail() {
   const [isRenaming, setIsRenaming] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [draftName, setDraftName] = useState(document.name);
+  const [editorInstance, setEditorInstance] = useState<DocEditorInstance | null>(null);
 
   const selectedVersion =
     document.versions.find((v) => v.id === selectedVersionId) ?? null;
 
   const prevRoles = asRoles(selectedVersion?.roles);
-  const [draftBody, setDraftBody] = useState<unknown>(selectedVersion?.body ?? EMPTY_DOC);
+  // Bodies arrive from the loader as BlockNote block JSON (legacy PM rows are
+  // converted on read) — a new version authored from an old one starts from
+  // the converted blocks.
+  const [draftBody, setDraftBody] = useState<unknown>(selectedVersion?.body ?? []);
   const [rolesText, setRolesText] = useState(
     prevRoles.length ? prevRoles.join(", ") : "member, supervisor",
   );
@@ -52,15 +155,14 @@ export function SigningDocumentDetail() {
     .filter(Boolean);
 
   const startCreate = () => {
-    setDraftBody(selectedVersion?.body ?? EMPTY_DOC);
+    setDraftBody(selectedVersion?.body ?? []);
     setRolesText(prevRoles.length ? prevRoles.join(", ") : "member, supervisor");
     setIsCreating(true);
+    setPreviewing(false);
   };
 
   return (
     <div className="space-y-6">
-      <AreaPillNav items={adminPills({ isAdmin, active: "agreements" })} />
-
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           {isRenaming ? (
@@ -213,20 +315,11 @@ export function SigningDocumentDetail() {
                   </div>
                   {previewing ? (
                     <div className="rounded-lg border border-border bg-card p-6">
-                      <RichTextViewer
-                        content={draftBody}
-                        enableImages
-                        enableSigningFields
-                        signingVariables={{
-                          term: "26S",
-                          today: new Date().toLocaleDateString("en-US", {
-                            year: "numeric",
-                            month: "long",
-                            day: "numeric",
-                          }),
-                          memberName: "Jane Member",
-                          supervisorName: "DALI Staff",
-                        }}
+                      <DocEditor
+                        features="agreement"
+                        editable={false}
+                        initialContent={draftBody}
+                        signing={{ mode: "view", variables: previewVariables() }}
                       />
                       <p className="mt-4 text-xs text-muted-foreground italic">
                         Preview with sample values — signature/date/checkbox fields appear as blank
@@ -234,14 +327,21 @@ export function SigningDocumentDetail() {
                       </p>
                     </div>
                   ) : (
-                    <RichTextEditor
-                      value={draftBody}
-                      onChange={setDraftBody}
-                      placeholder="Write the agreement… use the Insert group to place signature/date/checkbox fields and {{term}} variables."
-                      richToolbar
-                      enableImages
-                      signingRoles={editorRoles.length ? editorRoles : ["member"]}
-                    />
+                    <div className="rounded-lg border border-border bg-card">
+                      <SigningInsertControls
+                        editor={editorInstance}
+                        roles={editorRoles.length ? editorRoles : ["member"]}
+                      />
+                      <DocEditor
+                        features="agreement"
+                        signing={{ mode: "author" }}
+                        initialContent={draftBody}
+                        onChange={setDraftBody}
+                        onEditorReady={setEditorInstance}
+                        placeholder="Write the agreement… use the Insert controls to place signature/date/checkbox fields and {{term}} variables."
+                        className="py-2"
+                      />
+                    </div>
                   )}
                 </div>
                 <div className="flex justify-end gap-2">
@@ -254,7 +354,7 @@ export function SigningDocumentDetail() {
                   </button>
                   <button
                     type="submit"
-                    disabled={isEmptyDoc(draftBody)}
+                    disabled={isEmptyBody(draftBody)}
                     className="px-3 py-2 text-sm font-medium text-white bg-accent-coral rounded-md hover:bg-accent-coral/90 disabled:opacity-50"
                   >
                     Save Version
@@ -295,8 +395,14 @@ export function SigningDocumentDetail() {
                     )}
                   </div>
                 </div>
-                <RichTextViewer content={selectedVersion.body} enableImages enableSigningFields />
-                {isEmptyDoc(selectedVersion.body) && (
+                <DocEditor
+                  key={selectedVersion.id}
+                  features="agreement"
+                  editable={false}
+                  initialContent={selectedVersion.body}
+                  signing={{ mode: "view" }}
+                />
+                {isEmptyBody(selectedVersion.body) && (
                   <p className="text-sm text-muted-foreground italic">This version has no content.</p>
                 )}
               </div>
@@ -392,7 +498,7 @@ function BindingsPanel() {
                     roster.signed.map((s) => (
                       <li key={s.signatureId}>
                         <Link
-                          to={`/admin-console/agreements/${document.id}/signature/${s.signatureId}`}
+                          to={`/admin/agreements/${document.id}/signature/${s.signatureId}`}
                           className="block truncate text-xs text-accent-coral hover:underline"
                           title="View signed copy"
                         >

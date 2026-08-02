@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Form, redirect, useLoaderData, useNavigation } from "react-router";
-import { Calendar, Globe, Plus, Users, X } from "lucide-react";
+import { Calendar, Globe, History, Plus, Users, X } from "lucide-react";
 import type { Route } from "./+types/projects.$id.public-view";
 import { prisma } from "~/lib/db";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
@@ -10,7 +10,9 @@ import { ensurePublicWriteupPage } from "~/lib/pages";
 import { parseSessionCookie } from "~/lib/cookies";
 import { getPresenceUser } from "~/lib/presence-user";
 import { fullName } from "~/lib/display";
-import { CollaborativeEditor } from "~/components/CollaborativeEditor";
+import { DocEditor } from "~/components/doc";
+import { VersionHistoryPanel } from "~/components/collab/VersionHistoryPanel";
+import { pageDocName } from "~/collab/roomName";
 import { ProjectImageBanner } from "../components/ProjectImageBanner";
 import { ProjectViewSwitch } from "../components/ProjectViewSwitch";
 import { loadPublicProjectView } from "../lib/public-project-view.server";
@@ -291,6 +293,7 @@ export default function ProjectPublicView() {
   } = data;
   const navigation = useNavigation();
   const saving = navigation.state !== "idle";
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   return (
     <div className="flex flex-col gap-4 p-4 sm:p-6 w-full">
@@ -479,7 +482,20 @@ export default function ProjectPublicView() {
         {/* Write-up. The same collab editor the Documents tab uses, so images
             paste and drop in anywhere and the order is whatever you type. */}
         <section className="flex flex-col gap-2 flex-1 min-w-0 w-full">
-          <h2 className="font-heading font-semibold text-foreground">Write-up</h2>
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="font-heading font-semibold text-foreground">Write-up</h2>
+            {writeup && collabToken && (
+              <button
+                type="button"
+                onClick={() => setHistoryOpen(true)}
+                title="Version history"
+                aria-label="Version history"
+                className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded border border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <History className="w-3.5 h-3.5" /> History
+              </button>
+            )}
+          </div>
           {writeup && collabToken ? (
             <>
               <p className="text-xs text-muted-foreground">
@@ -487,24 +503,24 @@ export default function ProjectPublicView() {
                 anywhere in the text; type <code>/</code> for headings, lists,
                 quotes, and callouts. Saves as you type.
               </p>
-              {/* `chromeless` matches the full-page document surface: without
-                  it the editor draws its own bordered card, which then sits
-                  inside this one as a box in a box. One frame, and the write-up
-                  reads as page content rather than as a widget. */}
               <div className="border border-border rounded-lg bg-card px-4 py-2">
-                <CollaborativeEditor
-                  documentName={`doc:${writeup.id}:body`}
-                  editorId={`doc:${writeup.id}:body`}
-                  token={collabToken}
-                  userName={userName}
-                  disabled={!canEdit}
-                  enableImages
-                  enableRichBlocks
-                  enableMentions
-                  chromeless
+                <DocEditor
+                  features="document"
+                  editable={canEdit}
+                  collab={{
+                    documentName: pageDocName(writeup.id),
+                    token: collabToken,
+                    userName,
+                  }}
                   placeholder="Tell the story of this project…"
                 />
               </div>
+              {historyOpen && (
+                <VersionHistoryPanel
+                  documentName={pageDocName(writeup.id)}
+                  onClose={() => setHistoryOpen(false)}
+                />
+              )}
             </>
           ) : writeup ? (
             // Session cookie missing (an expired tab): the editor can't connect,

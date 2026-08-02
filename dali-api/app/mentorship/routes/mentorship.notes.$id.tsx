@@ -6,8 +6,8 @@ import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
 import { parseSessionCookie } from "~/lib/cookies";
-import { CollaborativeEditor } from "~/components/CollaborativeEditor";
-import { RichTextViewer } from "~/components/RichTextViewer";
+import { DocEditor } from "~/components/doc";
+import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { Tooltip } from "~/components/ui/IconButton";
 import { useDialog } from "~/components/ui/dialog";
 import { AreaPillNav } from "~/components/AreaPillNav";
@@ -97,7 +97,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const data: LoaderData = {
     id: note.id,
     weekOfIso: note.weekOf.toISOString(),
-    contentJson: note.contentJson,
+    // Read view renders blocks; legacy rows still hold ProseMirror JSON until
+    // their first collab edit, so normalize server-side.
+    contentJson: ensureBlocks(note.contentJson),
     vibe: note.vibe,
     mentor: note.mentor,
     mentee: note.mentee,
@@ -240,19 +242,21 @@ export default function MentorNoteEditor() {
       </div>
 
       {data.canEdit && data.collabToken ? (
-        <CollaborativeEditor
-          editorId="body"
-          documentName={`mentorNote:${data.id}:body`}
-          token={data.collabToken}
-          userName={data.userName}
-          enableImages
+        <DocEditor
+          features="notes"
+          collab={{
+            documentName: `mentorNote:${data.id}:body`,
+            token: data.collabToken,
+            userName: data.userName,
+          }}
           placeholder="What went well, what's blocked, what to follow up on…"
           className="min-h-[24rem] w-full"
         />
       ) : (
-        <RichTextViewer
-          content={data.contentJson}
-          enableImages
+        <DocEditor
+          features="notes"
+          editable={false}
+          initialContent={data.contentJson}
           className="min-h-[24rem] w-full"
         />
       )}

@@ -4,6 +4,7 @@ import type { Route } from "./+types/lead.cycle.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
+import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { parseSessionCookie } from "~/lib/cookies";
 import { getPresenceUser } from "~/lib/presence-user";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
@@ -410,8 +411,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       })
     : [];
   const cvNumberMap = buildVersionNumberMap(cvSiblings);
-  const withCvNumber = <T extends { id: string }>(cv: T) => ({
+  // description: immutable ChallengeVersion rows — legacy ProseMirror converts
+  // to block JSON on read (ChallengePreviewModal's viewer expects blocks).
+  const withCvNumber = <T extends { id: string; description?: unknown }>(cv: T) => ({
     ...cv,
+    description: ensureBlocks(cv.description),
     versionNumber: cvNumberMap.get(cv.id) ?? null,
   });
   const cycleWithCvNumbers = {

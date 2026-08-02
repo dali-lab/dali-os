@@ -166,8 +166,9 @@ export async function action({ request }: Route.ActionArgs) {
     return withCors(request, Response.json({ id: existing.id, created: false }));
   }
 
-  // Seed from the current default template when present. Otherwise leave the
-  // ProseMirror doc empty ({}). The editor will render an empty StarterKit doc.
+  // Seed from the current default template when present — block JSON once the
+  // template has been collab-edited, legacy ProseMirror JSON before that; the
+  // collab seed path normalizes both. Otherwise {} reads as an empty document.
   const template = await prisma.mentorNoteTemplate.findFirst({
     where: { isDefault: true },
     select: { contentJson: true },
