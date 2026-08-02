@@ -17,14 +17,14 @@ test.describe('admin domain management', () => {
 
     await page.goto('/admin/domains');
     const frame = domainsFrame(page);
-    await expect(frame.getByText(/^Domains \(/)).toBeVisible();
+    await expect(frame.getByRole('heading', { name: 'Domains' })).toBeVisible();
 
     await frame.getByLabel('New domain name').fill(name);
-    await frame.getByRole('button', { name: 'Create' }).click();
+    await frame.getByRole('button', { name: 'Add domain' }).click();
 
     const row = frame.getByRole('listitem').filter({ hasText: name });
     await expect(row).toBeVisible();
-    await expect(row.getByText(/Not in use/)).toBeVisible();
+    await expect(row.getByText('Unused')).toBeVisible();
 
     await row.getByRole('button', { name: 'Delete' }).click();
     await expect(row).toHaveCount(0);

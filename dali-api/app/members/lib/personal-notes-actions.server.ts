@@ -8,6 +8,13 @@ import { prisma } from "~/lib/db";
 import { logAuditEvent } from "~/lib/audit";
 import { pageDocName } from "~/collab/roomName";
 import {
+  addPageShare,
+  listPageShares,
+  removePageShare,
+  SharePrincipalError,
+  type ShareRow,
+} from "~/lib/page-sharing.server";
+import {
   NoteForbiddenError,
   NoteNotFoundError,
   requireNoteOwner,
@@ -103,39 +110,21 @@ export async function addNoteShare(
   principalId: string,
 ): Promise<{ ok: true; alreadyShared: boolean }> {
   await requireNoteOwner(pageId, ownerId);
-
-  if (principalType === "User") {
-    if (principalId === ownerId) {
-      throw new NoteForbiddenError("You already have access to your own note");
-    }
-    const user = await prisma.user.findUnique({
-      where: { id: principalId },
-      select: { id: true },
-    });
-    if (!user) throw new NoteNotFoundError();
-  } else {
-    const group = await prisma.groupDefinition.findUnique({
-      where: { id: principalId },
-      select: { id: true, archivedAt: true },
-    });
-    if (!group) throw new NoteNotFoundError();
-    if (group.archivedAt) {
-      throw new NoteForbiddenError("That group is archived");
-    }
+  if (principalType === "User" && principalId === ownerId) {
+    throw new NoteForbiddenError("You already have access to your own note");
   }
-
-  const existing = await prisma.pageShare.findUnique({
-    where: {
-      pageId_principalType_principalId: { pageId, principalType, principalId },
-    },
-    select: { id: true },
-  });
-  if (existing) return { ok: true, alreadyShared: true };
-
-  await prisma.pageShare.create({
-    data: { pageId, principalType, principalId, createdById: ownerId },
-  });
-  return { ok: true, alreadyShared: false };
+  try {
+    return await addPageShare(pageId, ownerId, principalType, principalId);
+  } catch (err) {
+    if (err instanceof SharePrincipalError) {
+      // "no longer exists" reads as a missing note to the caller's error
+      // mapping; an archived group is a rejected choice, not a 404.
+      throw err.message.includes("archived")
+        ? new NoteForbiddenError(err.message)
+        : new NoteNotFoundError();
+    }
+    throw err;
+  }
 }
 
 export async function removeNoteShare(
@@ -144,48 +133,16 @@ export async function removeNoteShare(
   shareId: string,
 ): Promise<void> {
   await requireNoteOwner(pageId, ownerId);
-  await prisma.pageShare.deleteMany({ where: { id: shareId, pageId } });
+  await removePageShare(pageId, shareId);
 }
 
 /** Who a note is currently shared with, resolved to display names. */
 export async function listNoteShares(
   pageId: string,
   ownerId: string,
-): Promise<{ id: string; principalType: string; principalId: string; label: string }[]> {
+): Promise<ShareRow[]> {
   await requireNoteOwner(pageId, ownerId);
-  const shares = await prisma.pageShare.findMany({
-    where: { pageId },
-    orderBy: { createdAt: "asc" },
-    select: { id: true, principalType: true, principalId: true },
-  });
-  if (shares.length === 0) return [];
-
-  const userIds = shares.filter((s) => s.principalType === "User").map((s) => s.principalId);
-  const groupIds = shares.filter((s) => s.principalType === "Group").map((s) => s.principalId);
-  const [users, groups] = await Promise.all([
-    userIds.length
-      ? prisma.user.findMany({
-          where: { id: { in: userIds } },
-          select: { id: true, firstName: true, lastName: true },
-        })
-      : Promise.resolve([]),
-    groupIds.length
-      ? prisma.groupDefinition.findMany({
-          where: { id: { in: groupIds } },
-          select: { id: true, name: true },
-        })
-      : Promise.resolve([]),
-  ]);
-  const userName = new Map(users.map((u) => [u.id, `${u.firstName} ${u.lastName}`.trim()]));
-  const groupName = new Map(groups.map((g) => [g.id, g.name]));
-
-  return shares.map((s) => ({
-    ...s,
-    label:
-      s.principalType === "User"
-        ? (userName.get(s.principalId) ?? "Unknown member")
-        : (groupName.get(s.principalId) ?? "Unknown group"),
-  }));
+  return listPageShares(pageId);
 }
 
 /**

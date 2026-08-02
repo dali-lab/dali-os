@@ -1,13 +1,19 @@
 import { useState, type MouseEvent } from "react";
-import { redirect, useLoaderData, useRevalidator } from "react-router";
+import { Link, redirect, useLoaderData, useRevalidator } from "react-router";
 import {
+  AlignLeft,
   ListTodo,
   ListChecks,
   Check,
   CalendarDays,
+  ChevronLeft,
+  ChevronRight,
   ExternalLink,
   FileText,
   CalendarClock,
+  MapPin,
+  UserRound,
+  X,
 } from "lucide-react";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { prisma } from "~/lib/db";
@@ -38,8 +44,19 @@ export async function loader({ request }: Route.LoaderArgs) {
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) return partnerRedirect;
 
-  // Current week (Sunday→following Sunday) in the viewer's timezone, used both to
-  // build the day columns and to window the calendar fetch.
+  // Which week to show. ?week=<n> is an offset from the current one (0 = this
+  // week, -1 = last, 1 = next) so the panel can page without a client-side
+  // calendar: the loader already computes the window, it just needed a shift.
+  const weekOffset = (() => {
+    const raw = Number(new URL(request.url).searchParams.get("week"));
+    if (!Number.isFinite(raw)) return 0;
+    // Bounded so a hand-edited URL can't ask the ICS expander for an absurd
+    // window.
+    return Math.trunc(Math.min(52, Math.max(-52, raw)));
+  })();
+
+  // The chosen week (Sunday→following Sunday) in the viewer's timezone, used
+  // both to build the day columns and to window the calendar fetch.
   const me = await prisma.user.findUnique({
     where: { id: auth.user.sub },
     select: { timeZone: true },
@@ -49,7 +66,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   const ymd = getZonedYMD(now, tz);
   const todayMidnightUtc = new Date(Date.UTC(ymd.year, ymd.month - 1, ymd.day));
   const dow = todayMidnightUtc.getUTCDay();
-  const sundayUtc = new Date(todayMidnightUtc.getTime() - dow * 86_400_000);
+  const sundayUtc = new Date(
+    todayMidnightUtc.getTime() + (weekOffset * 7 - dow) * 86_400_000,
+  );
   const weekStart = zonedDayStartUtc(
     sundayUtc.getUTCFullYear(),
     sundayUtc.getUTCMonth() + 1,
@@ -147,11 +166,17 @@ export async function loader({ request }: Route.LoaderArgs) {
     rsvp: n.rsvp,
   }));
 
-  // Day columns (Sun..Sat) with the calendar date number shown in each header.
+  // Day columns (Sun..Sat): the date number in each header, plus whether the
+  // column is today so the grid can mark it.
+  const todayYmd = getZonedYMD(now, tz);
   const weekDays: WeekDayDTO[] = Array.from({ length: 7 }).map((_, i) => {
     const dayUtc = new Date(weekStart.getTime() + i * 86_400_000);
     const dy = getZonedYMD(dayUtc, tz);
-    return { num: dy.day };
+    return {
+      num: dy.day,
+      isToday:
+        dy.year === todayYmd.year && dy.month === todayYmd.month && dy.day === todayYmd.day,
+    };
   });
 
   const weekEvents: HomeWeekEvent[] = [];
@@ -163,10 +188,36 @@ export async function loader({ request }: Route.LoaderArgs) {
     if (colIdx < 0 || colIdx > 6) continue;
     const startHour = (ev.start.getTime() - dayMidnight.getTime()) / 3_600_000;
     const duration = Math.max(0.5, (ev.end.getTime() - ev.start.getTime()) / 3_600_000);
-    weekEvents.push({ colIdx, startHour, duration, label: ev.summary });
+    weekEvents.push({
+      colIdx,
+      startHour,
+      duration,
+      label: ev.summary,
+      startAt: ev.start.toISOString(),
+      endAt: ev.end.toISOString(),
+      location: ev.location,
+      description: ev.description,
+      organizer: ev.organizer,
+      url: ev.url,
+    });
   }
 
-  return { user: auth.user, notifications, tasks, myProjectTasks, weekDays, weekEvents, formsForYou };
+  // Label for the range being shown, formatted server-side in the viewer's zone
+  // so the client doesn't re-derive it in the browser's.
+  const weekLabel = formatWeekRange(weekStart, tz);
+
+  return {
+    user: auth.user,
+    notifications,
+    tasks,
+    myProjectTasks,
+    weekDays,
+    weekEvents,
+    weekOffset,
+    weekLabel,
+    timeZone: tz,
+    formsForYou,
+  };
 }
 
 type MyProjectTask = {
@@ -179,17 +230,33 @@ type MyProjectTask = {
   priority: "Low" | "Normal" | "High" | "Urgent";
 };
 
-type WeekDayDTO = { num: number };
+type WeekDayDTO = { num: number; isToday: boolean };
 type HomeWeekEvent = {
   colIdx: number;
   startHour: number;
   duration: number;
   label: string;
+  startAt: string;
+  endAt: string;
+  location: string | null;
+  description: string | null;
+  organizer: string | null;
+  url: string | null;
 };
 
 export default function Home() {
-  const { user, notifications, tasks, myProjectTasks, weekDays, weekEvents, formsForYou } =
-    useLoaderData<typeof loader>();
+  const {
+    user,
+    notifications,
+    tasks,
+    myProjectTasks,
+    weekDays,
+    weekEvents,
+    weekOffset,
+    weekLabel,
+    timeZone,
+    formsForYou,
+  } = useLoaderData<typeof loader>();
   const firstName = user.firstName || user.email.split("@")[0];
 
   return (
@@ -199,7 +266,7 @@ export default function Home() {
           Welcome back, {firstName}
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Here's what's happening in the lab this week.
+          Here&apos;s what&apos;s happening in the lab.
         </p>
       </header>
 
@@ -210,7 +277,13 @@ export default function Home() {
       <FormsForYouPanel forms={formsForYou} />
 
       <div className="flex flex-col gap-6">
-        <WeekCalendarPanel days={weekDays} events={weekEvents} />
+        <WeekCalendarPanel
+          days={weekDays}
+          events={weekEvents}
+          weekOffset={weekOffset}
+          weekLabel={weekLabel}
+          timeZone={timeZone}
+        />
       </div>
     </div>
   );
@@ -688,21 +761,61 @@ const EVENT_FILLS = [
 function WeekCalendarPanel({
   days,
   events,
+  weekOffset,
+  weekLabel,
+  timeZone,
 }: {
   days: WeekDayDTO[];
   events: HomeWeekEvent[];
+  weekOffset: number;
+  weekLabel: string;
+  timeZone: string;
 }) {
   const hasEvents = events.length > 0;
+  const [selected, setSelected] = useState<HomeWeekEvent | null>(null);
+  // Paging is a plain link, so the loader re-windows the ICS fetch server-side
+  // and the week survives a refresh or a shared URL.
+  const weekHref = (offset: number) => (offset === 0 ? "/" : `/?week=${offset}`);
   return (
     <section className="bg-card border border-border shadow-brand-1 rounded-lg p-4 flex flex-col">
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
         <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
           <CalendarDays className="w-4 h-4 text-accent-coral" />
-          This Week
+          {weekOffset === 0 ? "This Week" : weekLabel}
           <span className="text-xs font-normal text-muted-foreground">
             · DALI General Calendar
           </span>
         </h2>
+        <div className="flex items-center gap-1">
+          {weekOffset !== 0 && (
+            <Link
+              to={weekHref(0)}
+              prefetch="intent"
+              className="rounded-md border border-border px-2 py-1 text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              Today
+            </Link>
+          )}
+          <span className="px-1 text-xs text-muted-foreground tabular-nums">
+            {weekOffset === 0 ? weekLabel : ""}
+          </span>
+          <Link
+            to={weekHref(weekOffset - 1)}
+            prefetch="intent"
+            aria-label="Previous week"
+            className="inline-flex items-center rounded-md border border-border p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Link>
+          <Link
+            to={weekHref(weekOffset + 1)}
+            prefetch="intent"
+            aria-label="Next week"
+            className="inline-flex items-center rounded-md border border-border p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Link>
+        </div>
       </div>
       {!hasEvents && (
         <p className="mb-2 text-xs text-muted-foreground">
@@ -720,11 +833,25 @@ function WeekCalendarPanel({
         </div>
         {DAY_KEYS.map((key, idx) => (
           <div key={key} className="flex-1 min-w-0 border-r last:border-r-0 border-border flex flex-col">
-            <div className="flex flex-col items-center justify-center border-b border-border h-9">
-              <div className="text-[9px] font-semibold text-muted-foreground tracking-wide">
+            <div
+              className={`flex flex-col items-center justify-center border-b border-border h-9 ${
+                days[idx]?.isToday ? "bg-accent-coral/10" : ""
+              }`}
+            >
+              <div
+                className={`text-[9px] font-semibold tracking-wide ${
+                  days[idx]?.isToday ? "text-accent-coral" : "text-muted-foreground"
+                }`}
+              >
                 {key}
               </div>
-              <div className="text-xs font-bold text-foreground">{days[idx]?.num ?? ""}</div>
+              <div
+                className={`text-xs font-bold ${
+                  days[idx]?.isToday ? "text-accent-coral" : "text-foreground"
+                }`}
+              >
+                {days[idx]?.num ?? ""}
+              </div>
             </div>
             <div className="relative" style={{ height: HOURS.length * HOUR_PX }}>
               {HOURS.map((_, i) => (
@@ -746,11 +873,13 @@ function WeekCalendarPanel({
                   const start = formatBlockTime(e.startHour);
                   const end = formatBlockTime(e.startHour + e.duration);
                   return (
-                    <div
+                    <button
                       key={i}
+                      type="button"
+                      onClick={() => setSelected(e)}
                       // Inset left edge gives the flat tint some depth and mirrors
                       // the /calendar blocks, so home reads as the same system.
-                      className={`absolute left-0 right-0 mx-0.5 px-1.5 py-0.5 rounded-sm overflow-hidden shadow-[inset_3px_0_0_0_rgba(0,0,0,0.16)] ${
+                      className={`absolute left-0 right-0 mx-0.5 px-1.5 py-0.5 rounded-sm overflow-hidden text-left shadow-[inset_3px_0_0_0_rgba(0,0,0,0.16)] transition-shadow hover:shadow-[inset_3px_0_0_0_rgba(0,0,0,0.32)] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-coral ${
                         EVENT_FILLS[i % EVENT_FILLS.length]
                       }`}
                       style={{ top, height }}
@@ -766,14 +895,116 @@ function WeekCalendarPanel({
                           {start}
                         </span>
                       )}
-                    </div>
+                    </button>
                   );
                 })}
             </div>
           </div>
         ))}
       </div>
+      {selected && (
+        <EventDetailPanel
+          event={selected}
+          timeZone={timeZone}
+          onClose={() => setSelected(null)}
+        />
+      )}
     </section>
+  );
+}
+
+// Google-Calendar-style detail popover for one event. Anchored bottom-right of
+// the panel rather than as a modal: the grid stays visible behind it, so you can
+// read an event without losing your place in the week.
+//
+// Everything here comes from the ICS feed, and most VEVENTs carry only a
+// summary and times — each field is rendered only when the feed actually
+// supplied it, so a sparse event shows a small card rather than a list of
+// blanks.
+function EventDetailPanel({
+  event,
+  timeZone,
+  onClose,
+}: {
+  event: HomeWeekEvent;
+  timeZone: string;
+  onClose: () => void;
+}) {
+  const start = new Date(event.startAt);
+  const end = new Date(event.endAt);
+  const dayLabel = new Intl.DateTimeFormat("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    timeZone,
+  }).format(start);
+  const time = (d: Date) =>
+    new Intl.DateTimeFormat("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      timeZone,
+    }).format(d);
+
+  return (
+    <div
+      role="dialog"
+      aria-label={event.label}
+      className="mt-3 rounded-lg border border-border bg-card p-4 shadow-brand-2"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="font-heading text-base font-semibold text-foreground break-words">
+            {event.label}
+          </h3>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            {dayLabel} · {time(start)} – {time(end)}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close event details"
+          className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      <dl className="mt-3 flex flex-col gap-2 text-sm">
+        {event.location && (
+          <div className="flex items-start gap-2">
+            <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <dd className="min-w-0 break-words text-foreground">{event.location}</dd>
+          </div>
+        )}
+        {event.organizer && (
+          <div className="flex items-start gap-2">
+            <UserRound className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <dd className="min-w-0 break-words text-foreground">{event.organizer}</dd>
+          </div>
+        )}
+        {event.description && (
+          <div className="flex items-start gap-2">
+            <AlignLeft className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <dd className="min-w-0 whitespace-pre-wrap break-words text-muted-foreground">
+              {event.description}
+            </dd>
+          </div>
+        )}
+      </dl>
+
+      {event.url && (
+        <a
+          href={event.url}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-accent-coral hover:underline"
+        >
+          <ExternalLink className="h-3.5 w-3.5" />
+          Open in Google Calendar
+        </a>
+      )}
+    </div>
   );
 }
 
@@ -786,6 +1017,20 @@ function formatBlockTime(hour: number) {
   return mins === 0
     ? `${h12} ${period}`
     : `${h12}:${String(mins).padStart(2, "0")} ${period}`;
+}
+
+// "May 24 – 30" / "Jun 28 – Jul 4" — the month repeats only when the week
+// straddles two of them.
+function formatWeekRange(weekStartUtc: Date, tz: string): string {
+  const endUtc = new Date(weekStartUtc.getTime() + 6 * 86_400_000);
+  const month = (d: Date) =>
+    new Intl.DateTimeFormat("en-US", { month: "short", timeZone: tz }).format(d);
+  const day = (d: Date) =>
+    new Intl.DateTimeFormat("en-US", { day: "numeric", timeZone: tz }).format(d);
+  const sameMonth = month(weekStartUtc) === month(endUtc);
+  return sameMonth
+    ? `${month(weekStartUtc)} ${day(weekStartUtc)} – ${day(endUtc)}`
+    : `${month(weekStartUtc)} ${day(weekStartUtc)} – ${month(endUtc)} ${day(endUtc)}`;
 }
 
 function formatHour(h: number) {

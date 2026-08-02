@@ -13,7 +13,7 @@ import {
   applyEligibilityWithNotify,
   removeEligibility,
 } from "~/admin/lib/eligibility.server";
-import { ChevronDown, Trash2, Plus, X } from "lucide-react";
+import { ChevronDown, Compass, Trash2, Plus, X } from "lucide-react";
 import { Tooltip } from "~/components/ui/IconButton";
 import {
   type DomainWithCounts,
@@ -508,18 +508,24 @@ function DomainRowItem({
   const isDeleting = fetcher.state !== "idle";
 
   return (
-    <li className="px-4 py-3 flex items-start justify-between gap-3">
-      <div className="flex flex-col gap-1.5 min-w-0 flex-1">
-        <span className="text-sm font-medium text-foreground">{domain.name}</span>
-        {inUse ? (
-          <span className="text-xs text-muted-foreground">In use by {inUseBy.join(", ")}</span>
-        ) : (
-          <span className="text-xs text-muted-foreground/70">Not in use</span>
-        )}
+    <li className="flex items-start justify-between gap-3 px-4 py-3.5 transition-colors hover:bg-muted/40">
+      <div className="flex min-w-0 flex-1 flex-col gap-2">
+        <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+          <span className="font-heading text-sm font-semibold text-foreground">{domain.name}</span>
+          {/* Usage is why a domain can't be deleted, so it's stated as the
+              reason rather than as a sentence to parse. */}
+          {inUse ? (
+            <span className="text-xs text-muted-foreground">In use by {inUseBy.join(", ")}</span>
+          ) : (
+            <span className="rounded-md border border-border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Unused
+            </span>
+          )}
+        </div>
         <DomainLeadsForDomain domain={domain} members={members} />
         <DomainMembersForDomain domain={domain} members={members} />
         {fetcher.data?.error && (
-          <span className="text-xs text-red-700">{fetcher.data.error}</span>
+          <span className="text-xs text-destructive">{fetcher.data.error}</span>
         )}
       </div>
       {viewerIsAdmin && (
@@ -532,7 +538,7 @@ function DomainRowItem({
               disabled={inUse || isDeleting}
               title={inUse ? `Cannot delete — in use by ${inUseBy.join(", ")}` : "Delete domain"}
               aria-label="Delete"
-              className="inline-flex items-center justify-center p-1.5 rounded-md text-xs font-medium bg-red-50 text-red-700 hover:bg-red-100 disabled:bg-muted disabled:text-muted-foreground/60 disabled:cursor-not-allowed"
+              className="inline-flex items-center justify-center rounded-md border border-border p-1.5 text-muted-foreground transition-colors hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-border disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
             >
               <Trash2 className="w-3 h-3" />
             </button>
@@ -559,43 +565,60 @@ export default function AdminConsoleDomains() {
   }, [isCreating, createFetcher.data]);
 
   return (
-    <div className="space-y-6">
-      <div className="bg-card border border-border rounded-lg overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/50">
-          <h2 className="text-sm font-medium text-muted-foreground">Domains ({domains.length})</h2>
-          {viewerIsAdmin && (
-            <createFetcher.Form method="post" className="flex items-center gap-2">
-              <input type="hidden" name="intent" value="create-domain" />
-              <label htmlFor="new-domain-name" className="sr-only">New domain name</label>
-              <input
-                id="new-domain-name"
-                type="text"
-                name="name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="New domain name"
-                className="px-2 py-1 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-                disabled={isCreating}
-              />
-              <button
-                type="submit"
-                disabled={isCreating || !name.trim()}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors disabled:opacity-50"
-              >
-                <Plus className="w-3 h-3" />
-                Create
-              </button>
-            </createFetcher.Form>
-          )}
+    <div className="flex flex-col gap-5">
+      <header className="flex flex-col gap-4">
+        <div className="flex items-start gap-3">
+          <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent-coral/10 text-accent-coral">
+            <Compass className="h-4.5 w-4.5" />
+          </span>
+          <div className="min-w-0">
+            <h1 className="font-heading text-xl font-bold text-foreground">Domains</h1>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              The disciplines members are hired into. Each one carries its own leads and
+              eligibility list.
+            </p>
+          </div>
         </div>
+
+        {viewerIsAdmin && (
+          <createFetcher.Form method="post" className="flex flex-wrap items-center gap-2">
+            <input type="hidden" name="intent" value="create-domain" />
+            <label htmlFor="new-domain-name" className="sr-only">
+              New domain name
+            </label>
+            <input
+              id="new-domain-name"
+              type="text"
+              name="name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Add a domain — e.g. Design"
+              className="min-w-0 flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 sm:max-w-xs"
+              disabled={isCreating}
+            />
+            <button
+              type="submit"
+              disabled={isCreating || !name.trim()}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-accent-coral px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-coral/90 disabled:opacity-50"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Add domain
+            </button>
+          </createFetcher.Form>
+        )}
+      </header>
+
+      <div className="overflow-hidden rounded-lg border border-border bg-card shadow-brand-1">
         {createFetcher.data?.error && (
-          <div className="px-4 py-2 text-sm text-red-700 bg-red-50 border-b border-red-200">
+          <div className="border-b border-destructive/30 bg-destructive/10 px-4 py-2 text-sm text-destructive">
             {createFetcher.data.error}
           </div>
         )}
-        <ul className="divide-y divide-gray-100">
+        <ul className="divide-y divide-border">
           {domains.length === 0 && (
-            <li className="px-4 py-6 text-center text-sm text-muted-foreground/70">No domains yet.</li>
+            <li className="px-4 py-12 text-center text-sm text-muted-foreground">
+              No domains yet. Add the first one above.
+            </li>
           )}
           {domains.map((d) => (
             <DomainRowItem key={d.id} domain={d} members={members} viewerIsAdmin={viewerIsAdmin} />

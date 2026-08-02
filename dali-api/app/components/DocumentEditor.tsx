@@ -8,7 +8,7 @@ import {
   type RefObject,
 } from "react";
 import { useNavigate, useRevalidator } from "react-router";
-import { Copy, FileDown, History, LayoutTemplate, Link, MessageSquare, MoreHorizontal, Printer, Search, Upload } from "lucide-react";
+import { Copy, FileDown, History, LayoutTemplate, Link, MessageSquare, MoreHorizontal, Printer, Search, Upload, Users } from "lucide-react";
 import { DocEditor, type TocHeading } from "~/components/doc";
 import type { DocEditorInstance } from "~/components/doc/schema/build";
 import { DocCommentsPanel, useDocThreadCounts } from "~/components/doc/comments";
@@ -21,6 +21,8 @@ import { PageIconPicker } from "./doc-chrome/PageIconPicker";
 import { PageCover } from "./doc-chrome/PageCover";
 import { DocToc } from "./doc-chrome/DocToc";
 import { relativeTime } from "~/lib/relative-time";
+import { Tooltip } from "~/components/ui/IconButton";
+import { LabDocAccessModal } from "~/components/documents/LabDocAccessModal";
 import { FindReplaceBar } from "./doc/find";
 import {
   DEFAULT_TYPOGRAPHY,
@@ -67,6 +69,7 @@ export function DocumentEditor({
   backlinks = [],
   focusMentionUserId,
   aiEnabled = false,
+  canManageAccess = false,
 }: {
   pageId: string;
   initialTitle: string;
@@ -95,6 +98,9 @@ export function DocumentEditor({
   // When set (arriving from an @-mention notification), scroll to and flash the
   // first mention chip for that user once the collab doc syncs.
   focusMentionUserId?: string;
+  // Lab-wide documents only: viewer may change who can read this one. False for
+  // project/member pages, whose audience follows the workspace, not the page.
+  canManageAccess?: boolean;
   // True when the server has an AI provider key configured — shows the AI slash items.
   aiEnabled?: boolean;
 }) {
@@ -113,9 +119,9 @@ export function DocumentEditor({
   const pendingTitleRef = useRef(initialTitle);
   const titleFocusedRef = useRef(false);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [commentsOpen, setCommentsOpen] = useState(!!focusCommentId);
   const [panelFilter, setPanelFilter] = useState<"open" | "resolved">("open");
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const [accessOpen, setAccessOpen] = useState(false);
   // Optimistic local reflection of isTemplate — revalidator syncs server truth.
   const [templateMarked, setTemplateMarked] = useState(isTemplate);
   const [backlinksOpen, setBacklinksOpen] = useState(false);
@@ -127,7 +133,6 @@ export function DocumentEditor({
   // Using `any` here keeps this file free of BlockNote type imports.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const liveEditorRef = useRef<any>(null);
-  const commentsBubbleRef = useRef<HTMLDivElement | null>(null);
   const [locallyEdited, setLocallyEdited] = useState(false);
   // "Aa" page-typography menu (Notion's Style section): per-page font /
   // small-text / full-width, persisted on Page.typography via the API route.
@@ -226,32 +231,12 @@ export function DocumentEditor({
     return () => ro.disconnect();
   }, []);
 
-  // Rail visibility: persisted in localStorage, default visible when wide + has open threads.
-  const [railUserVisible, setRailUserVisible] = useState<boolean | null>(() => {
-    if (typeof window === "undefined") return null;
-    const stored = localStorage.getItem("dali-doc-rail-visible");
-    if (stored === "0") return false;
-    if (stored === "1") return true;
-    return null; // null = use default (open when threads exist)
-  });
-
-  // Effective rail visibility: wide + user pref (default: visible when there are open threads).
-  const railVisible =
-    containerWide &&
-    (railUserVisible === null ? openThreadCount > 0 : railUserVisible);
-
-  function toggleRail() {
-    if (containerWide) {
-      setRailUserVisible((v) => {
-        const next = !(v === null ? openThreadCount > 0 : v);
-        localStorage.setItem("dali-doc-rail-visible", next ? "1" : "0");
-        return next;
-      });
-    } else {
-      // Narrow: toggle the existing dropdown.
-      setCommentsOpen((o) => !o);
-    }
-  }
+  // Comments live in the right-hand rail on a wide container and at the foot of
+  // the document otherwise. The top-bar toggle hides both surfaces at once, for
+  // readers who want the page without the margin chatter.
+  const hasComments = canComment || openThreadCount > 0;
+  const [commentsOpen, setCommentsOpen] = useState(true);
+  const railVisible = commentsOpen && containerWide && hasComments;
 
   const [railFilter, setRailFilter] = useState<"open" | "resolved">("open");
 
@@ -268,12 +253,8 @@ export function DocumentEditor({
   // Deep-link: when rail is visible, select the thread there; otherwise open dropdown.
   useEffect(() => {
     if (!focusCommentId) return;
-    if (containerWide) {
-      // Rail handles selection via selectThread — ensure rail is visible.
-      setRailUserVisible(true);
-    } else {
-      setCommentsOpen(true);
-    }
+    // Both surfaces are always mounted now — the rail when wide, the inline
+    // panel at the foot otherwise — so a deep link only has to scroll, not open.
   }, [focusCommentId, containerWide]);
 
   // Deep-link: ?mention=<userId> — poll for the first mention chip for that
@@ -470,18 +451,6 @@ export function DocumentEditor({
     return () => document.removeEventListener("mousedown", onDown);
   }, [backlinksOpen]);
 
-  // Narrow-mode dropdown dismiss on outside click.
-  useEffect(() => {
-    if (!commentsOpen || containerWide) return;
-    const onDown = (e: MouseEvent) => {
-      if (commentsBubbleRef.current && !commentsBubbleRef.current.contains(e.target as Node)) {
-        setCommentsOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [commentsOpen, containerWide]);
-
   const editedLabel = locallyEdited
     ? "Edited just now"
     : updatedAt
@@ -490,7 +459,7 @@ export function DocumentEditor({
 
   // ── Top bar ───────────────────────────────────────────────────────────────
   const topBar = (
-    <div className="doc-topbar flex items-center gap-2 px-4 py-2 text-xs text-muted-foreground">
+    <div className="doc-topbar flex items-center gap-2 py-2 text-xs text-muted-foreground">
       {/* Breadcrumb/back rendered by the outer shell — we just add meta here */}
       {editedLabel && (
         <span className="shrink-0">{editedLabel}</span>
@@ -510,19 +479,21 @@ export function DocumentEditor({
           floating toolbar). Shared prefs: every viewer sees the same doc. */}
       {canEdit && (
         <div ref={typoRef} className="relative">
-          <button
-            type="button"
-            onClick={() => setTypoOpen((o) => !o)}
-            aria-expanded={typoOpen}
-            aria-label="Page typography"
-            className={`inline-flex items-center rounded-md border px-2 py-1 text-[11px] font-semibold transition-colors ${
-              typoOpen
-                ? "border-accent-coral/40 bg-accent-coral/10 text-accent-coral"
-                : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
-            }`}
-          >
-            Aa
-          </button>
+          <Tooltip label="Page style">
+            <button
+              type="button"
+              onClick={() => setTypoOpen((o) => !o)}
+              aria-expanded={typoOpen}
+              aria-label="Page typography"
+              className={`inline-flex items-center rounded-md border px-2 py-1 text-[11px] font-semibold transition-colors ${
+                typoOpen
+                  ? "border-accent-coral/40 bg-accent-coral/10 text-accent-coral"
+                  : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+              }`}
+            >
+              Aa
+            </button>
+          </Tooltip>
           {typoOpen && (
             <div className="absolute right-0 z-30 mt-1 w-56 rounded-md border border-border bg-card p-2 shadow-brand-2 text-sm">
               <div className="grid grid-cols-3 gap-1">
@@ -583,37 +554,38 @@ export function DocumentEditor({
         </div>
       )}
 
-      {/* Comments bubble → rail toggle (wide) or compact dropdown (narrow) */}
-      {(canComment || openThreadCount > 0) && (
-        <div ref={commentsBubbleRef} className="relative">
+      {hasComments && (
+        <Tooltip label={commentsOpen ? "Hide comments" : "Show comments"}>
           <button
             type="button"
-            onClick={toggleRail}
-            aria-pressed={containerWide ? railVisible : commentsOpen}
-            aria-label={`Comments${openThreadCount > 0 ? ` (${openThreadCount} open)` : ""}`}
-            className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 transition-colors ${
-              (containerWide ? railVisible : commentsOpen)
+            onClick={() => setCommentsOpen((o) => !o)}
+            aria-pressed={commentsOpen}
+            aria-label={commentsOpen ? "Hide comments" : "Show comments"}
+            className={`inline-flex items-center rounded-md border px-2 py-1 transition-colors ${
+              commentsOpen
                 ? "border-accent-coral/40 bg-accent-coral/10 text-accent-coral"
                 : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
             }`}
           >
             <MessageSquare className="h-3.5 w-3.5" />
-            {openThreadCount > 0 && <span>{openThreadCount}</span>}
           </button>
-          {/* Dropdown only on narrow screens */}
-          {!containerWide && commentsOpen && (
-            <DocCommentsPanel
-              pageId={pageId}
-              currentUserId={currentUserId}
-              canComment={canComment}
-              canResolve={canResolve}
-              open={commentsOpen}
-              onClose={() => setCommentsOpen(false)}
-              targetId="doc-comments-panel"
-              onFilterChange={setPanelFilter}
-            />
-          )}
-        </div>
+        </Tooltip>
+      )}
+
+      {/* Manage access — lab documents only. Its own control rather than a ⋯
+          entry: who can read a document is a property of the document, not a
+          rarely-reached utility. */}
+      {canManageAccess && (
+        <Tooltip label="Manage access">
+          <button
+            type="button"
+            onClick={() => setAccessOpen(true)}
+            aria-label="Manage access"
+            className="inline-flex items-center rounded-md border border-border px-2 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <Users className="h-3.5 w-3.5" />
+          </button>
+        </Tooltip>
       )}
 
       {/* ⋯ More menu */}
@@ -724,7 +696,7 @@ export function DocumentEditor({
   const canvas = (
     <div
       ref={canvasContainerRef}
-      className="doc-canvas-outer flex justify-center gap-6 px-6 pb-12 pt-4 bg-page"
+      className="doc-canvas-outer flex justify-center gap-6 pb-12 pt-4 bg-page"
     >
       {/* Paper card — shrinks to make room for the rail when wide */}
       <div
@@ -917,7 +889,7 @@ export function DocumentEditor({
                   currentUserId,
                   canComment,
                   canResolve,
-                  panelOpen: !containerWide && commentsOpen,
+                  panelOpen: false,
                   panelTargetId: "doc-comments-dropdown",
                   panelFilter: railVisible ? railFilter : panelFilter,
                   railVisible,
@@ -971,11 +943,40 @@ export function DocumentEditor({
     />
   );
 
+  // Comments at the foot of the document whenever there's no room for the rail.
+  const inlineComments = commentsOpen && !containerWide && hasComments && (
+    // Centred on the same column as the paper card so the thread list lines up
+    // with the text it's about.
+    <div className="flex justify-center pb-12">
+      <div className={typo.fullWidth ? "w-full" : "w-full max-w-[1400px]"}>
+        <DocCommentsPanel
+          pageId={pageId}
+          currentUserId={currentUserId}
+          canComment={canComment}
+          canResolve={canResolve}
+          open
+          onClose={() => {}}
+          onFilterChange={setPanelFilter}
+          variant="inline"
+        />
+      </div>
+    </div>
+  );
+
   const body = (
     <div ref={docSurfaceRef} className="doc-surface flex flex-col min-h-screen">
       {topBar}
       {canvas}
+      {inlineComments}
       {versionHistory}
+      {canManageAccess && (
+        <LabDocAccessModal
+          doc={{ id: pageId, title: initialTitle }}
+          open={accessOpen}
+          onClose={() => setAccessOpen(false)}
+          onChanged={() => {}}
+        />
+      )}
     </div>
   );
 

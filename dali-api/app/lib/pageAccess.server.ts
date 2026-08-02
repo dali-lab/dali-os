@@ -30,6 +30,7 @@ export interface PageShape {
   archivedAt?: Date | null;
   createdById?: string | null;
   partnerVisible?: boolean | null;
+  labRestricted?: boolean | null;
   [key: string]: unknown;
 }
 
@@ -67,6 +68,7 @@ export async function getPageAccess(
         archivedAt: true,
         partnerVisible: true,
         createdById: true,
+        labRestricted: true,
       },
     });
     if (!row) {
@@ -113,14 +115,23 @@ export async function getPageAccess(
   const core = await isCore(userSub);
 
   // ── Lab-workspace pages ──────────────────────────────────────────────────
-  // Any lab member can view AND edit Lab pages.
+  // Any lab member can view AND edit Lab pages, unless the document has been
+  // restricted to its creator plus an explicit share list.
   if (page.workspaceType === "Lab") {
-    const member = core || (await isLabMember(userSub));
+    const { labDocAccess } = await import("~/lib/lab-documents.server");
+    const access = await labDocAccess(
+      {
+        id: page.id,
+        createdById: page.createdById ?? null,
+        labRestricted: (page.labRestricted as boolean | undefined) ?? false,
+      },
+      userSub,
+    );
     return {
-      canView: member,
-      canEdit: member,
-      canComment: member,
-      canResolve: member,
+      canView: access.canView,
+      canEdit: access.canEdit,
+      canComment: access.canView,
+      canResolve: access.canEdit,
     };
   }
 

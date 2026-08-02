@@ -316,6 +316,18 @@ input::placeholder, textarea::placeholder {
   border-color: var(--color-border);
 }
 
+/* Scroll without the track. For rows that must stay on one line (the underline
+ * tab bar) where a visible scrollbar under the tabs reads as page chrome. The
+ * content still scrolls by wheel, trackpad and keyboard. */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 html {
   background-color: var(--color-background);
   color-scheme: light dark;

@@ -150,12 +150,20 @@ export async function getReconciliation(
     totalEarnings: decimalToNumber(e.totalEarnings),
   }));
 
-  const lookups: CollationLookup[] = lookupRows.map((l) => ({
-    jobCode: l.jobCode,
-    assignmentType: l.assignmentType,
-    level: l.level,
-    payRateUsdHour: l.payRateUsdHour === null ? null : decimalToNumber(l.payRateUsdHour),
-  }));
+  const lookups: CollationLookup[] = lookupRows
+    // A member's non-DALI job has no DALI job code and is never on the lab's
+    // payroll, so it can't take part in collation. The AssignmentType enum
+    // admits "Custom"; CollationLookup deliberately doesn't.
+    .filter(
+      (l): l is typeof l & { assignmentType: CollationLookup["assignmentType"] } =>
+        l.assignmentType !== "Custom",
+    )
+    .map((l) => ({
+      jobCode: l.jobCode,
+      assignmentType: l.assignmentType,
+      level: l.level,
+      payRateUsdHour: l.payRateUsdHour === null ? null : decimalToNumber(l.payRateUsdHour),
+    }));
 
   // Users referenced by the assignment fan-out (netId → person). Collect the
   // distinct netIds from both assignments and timesheet entries so unknown

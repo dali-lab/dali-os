@@ -249,6 +249,7 @@ model User {
 
   // ─── Payroll: Reconcile back-relation ─────────────────────────────────────
   timesheetImports TimesheetImport[]
+  customHires      CustomHire[]
 
   // ─── Public showcase ──────────────────────────────────────────────────────
   projectShowcasesUpdated ProjectShowcase[] @relation("ProjectShowcaseUpdatedBy")
@@ -2039,6 +2040,38 @@ model UserAvailabilitySettings {
   user User @relation(fields: [userId], references: [id])
 }
 
+// A paid job the member holds outside DALI — a library shift, a research
+// assistantship, another department's hourly role.
+//
+// The lab has no assignment table for these (it doesn't staff them and can't
+// verify them), but members still log the hours and still have to file them in
+// JobX, which is per-job. Without somewhere to put them, non-DALI time either
+// lands in the "unassigned" export bucket or doesn't get logged here at all.
+//
+// Owned by the member: they create, rename and archive their own. Nothing else
+// in the app reads these — they exist to give TimeEntry.roleRefId a target when
+// assignmentType is Custom, and to become a hire tag the timesheet extension
+// can fill against.
+model CustomHire {
+  id     String @id @default(cuid())
+  userId String
+  label  String
+
+  // Soft delete: entries already attributed to a hire keep resolving their
+  // label after the member stops using it. Archived hires drop out of the
+  // picker but stay in past exports.
+  archivedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // One label per person — re-adding the same name should reuse the row rather
+  // than split a member's hours across two identical-looking hires.
+  @@unique([userId, label])
+  @@index([userId, archivedAt])
+}
+
 // One row per user per weekday. startMinute/endMinute are minutes-from-local-midnight
 // (0–1440), applied in the user's UserAvailabilitySettings.timezone.
 // Working-hours segment. A user can have multiple segments per day-of-week, e.g.
@@ -2349,6 +2382,10 @@ enum AssignmentType {
   Instructor
   DomainLead
   Admin
+  // A job the member holds outside DALI. Unlike every other variant this one
+  // points at CustomHire rather than an assignment table the lab controls —
+  // see that model for why it exists.
+  Custom
 }
 
 // ─── Project workspace ───────────────────────────────────────────────────────
@@ -3746,6 +3783,19 @@ model Page {
   // Deliberately NOT `publicVisible`, which already means "published to
   // dali.website" for project pages. Two different publics.
   profileVisible Boolean @default(false)
+
+  // ─── Lab-workspace visibility (meaningless elsewhere; stays false) ───────
+  //
+  // Lab documents are readable and editable by every lab member by default —
+  // that's what "lab-wide" means, and the default keeps it true for every doc
+  // that existed before this column. Flipping it narrows the doc to its
+  // creator plus whoever is on the PageShare list, the same additive model
+  // personal notes use.
+  //
+  // Core keeps access either way: the hub is lab property that Core curates,
+  // so this is "not on the lab's shelf", not "sealed from leadership". The
+  // manage-access dialog says so rather than implying a privacy it can't give.
+  labRestricted Boolean @default(false)
 
   // Owner-proposed, Core-approved promotion of a personal note onto the
   // lab-wide Documents hub. The hub is the lab's curated shelf, so the owner

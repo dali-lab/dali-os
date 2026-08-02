@@ -89,6 +89,7 @@ export const AUDIT_ACTIONS = [
   "note.lab-listing.propose",
   "note.lab-listing.review",
   "note.delete",
+  "lab-document.access",
   "page.pin",
   "project.showcase-status",
   "education.offering.create",
