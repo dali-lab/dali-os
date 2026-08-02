@@ -8,8 +8,7 @@ import { redirect, useFetcher, useLoaderData, useRevalidator } from "react-route
 import { useEffect, useState } from "react";
 import { Play } from "lucide-react";
 import type { Route } from "./+types/admin.jobs";
-import { adminPills } from "~/admin/adminPills";
-import { AreaPillNav } from "~/components/AreaPillNav";
+import { AdminPathBar } from "~/admin/adminPills";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
@@ -268,7 +267,7 @@ export default function AdminJobs() {
   const { jobs } = useLoaderData<typeof loader>();
   return (
     <div className="flex flex-col gap-4">
-      <AreaPillNav items={adminPills({ isAdmin: true, active: "jobs" })} />
+      <AdminPathBar active="jobs" />
       <header>
         <h1 className="font-heading text-2xl font-bold text-foreground">Jobs</h1>
         <p className="mt-1 text-sm text-muted-foreground">

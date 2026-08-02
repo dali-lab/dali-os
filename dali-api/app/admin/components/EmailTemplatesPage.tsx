@@ -8,8 +8,7 @@ import { Link, Form, useLoaderData } from 'react-router'
 import { Plus, Mail, ChevronRight } from 'lucide-react'
 import { Button } from '~/components/ui/Button'
 import { Modal, ModalHeader } from '~/components/Modal'
-import { adminPills, SectionSubtabs } from '~/admin/adminPills'
-import { AreaPillNav } from '~/components/AreaPillNav'
+import { AdminPathBar, SectionSubtabs } from '~/admin/adminPills';
 import type { loader } from '~/admin/routes/admin.email-templates'
 
 export function EmailTemplatesPage() {
@@ -19,7 +18,7 @@ export function EmailTemplatesPage() {
 
   return (
     <div className="space-y-8">
-      <AreaPillNav items={adminPills({ isAdmin, active: 'email-templates' })} />
+      <AdminPathBar active="email-templates" />
       <SectionSubtabs active="email-templates" />
 
       <div className="flex justify-between items-center">

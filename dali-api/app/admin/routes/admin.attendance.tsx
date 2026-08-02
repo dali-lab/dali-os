@@ -6,8 +6,7 @@ import {
   useLoaderData,
 } from "react-router";
 import type { Route } from "./+types/admin.attendance";
-import { adminPills } from "~/admin/adminPills";
-import { AreaPillNav } from "~/components/AreaPillNav";
+import { AdminPathBar } from "~/admin/adminPills";
 import { TermFilter } from "~/components/TermFilter";
 import { Tooltip } from "~/components/ui/IconButton";
 import { useConfirmSubmit } from "~/components/ui/dialog";
@@ -265,9 +264,7 @@ export default function AdminAttendancePage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <AreaPillNav
-        items={adminPills({ isAdmin: viewerIsAdmin, active: "attendance" })}
-      />
+      <AdminPathBar active="attendance" />
 
       <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>

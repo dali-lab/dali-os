@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { redirect, useLoaderData, useFetcher } from "react-router";
 import type { Route } from "./+types/admin.domains";
-import { adminPills } from "~/admin/adminPills";
-import { AreaPillNav } from "~/components/AreaPillNav";
+import { AdminPathBar } from "~/admin/adminPills";
 import { prisma } from "~/lib/db";
 import { ensureDomainGroup } from "~/lib/groups";
 import { requireAuth, forbidden } from "~/lib/auth";
@@ -561,7 +560,7 @@ export default function AdminConsoleDomains() {
 
   return (
     <div className="space-y-6">
-      <AreaPillNav items={adminPills({ isAdmin: viewerIsAdmin, active: "domains" })} />
+      <AdminPathBar active="domains" />
       <div className="bg-card border border-border rounded-lg overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/50">
           <h2 className="text-sm font-medium text-muted-foreground">Domains ({domains.length})</h2>

@@ -1,7 +1,6 @@
 import { Link, redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/admin.analytics";
-import { adminPills } from "~/admin/adminPills";
-import { AreaPillNav } from "~/components/AreaPillNav";
+import { AdminPathBar } from "~/admin/adminPills";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
@@ -228,7 +227,7 @@ export default function AdminConsoleAnalytics() {
 
   return (
     <div className="space-y-6">
-      <AreaPillNav items={adminPills({ isAdmin: true, active: "analytics" })} />
+      <AdminPathBar active="analytics" />
       <div className="flex items-center gap-3">
         <BarChart3 className="w-6 h-6 text-foreground/80" />
         <h1 className="text-2xl font-bold text-foreground">Site analytics</h1>

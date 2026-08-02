@@ -1,11 +1,13 @@
 import {
   Activity,
   BarChart3,
+  Check,
+  ChevronDown,
+  ChevronRight,
   Clock,
   FileSignature,
   ClipboardCheck,
   Globe,
-  LayoutGrid,
   Mail,
   Megaphone,
   Receipt,
@@ -14,8 +16,8 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
-import { Link } from "react-router";
-import { AreaPillNav, type AreaPill } from "~/components/AreaPillNav";
+import { Link, useRouteLoaderData } from "react-router";
+import { useDismissableMenu } from "~/hooks/useDismissableMenu";
 import { cn } from "~/lib/cn";
 
 // The Admin area is a nested hub: /admin groups its tools into five clusters,
@@ -215,32 +217,137 @@ function resolve(active: string): { cluster: AdminCluster; section: AdminSection
   return null;
 }
 
-// The pill row for the cluster containing `active`: a leading "Hub" pill — the
-// way back up to /admin, matching every other area's pill row — followed by the
-// cluster's sections. (The Hub pill also lifts single-section clusters above
-// AreaPillNav's lone-pill hiding, so Documents/Finance keep a visible row.)
-// `isAdmin` is accepted for call-site compatibility but unused — cluster
-// membership already encodes access.
-const HUB_PILL: AreaPill = { label: "Hub", to: "/admin", icon: LayoutGrid };
+// A single crumb whose ▾ opens a menu of sibling destinations — the path bar's
+// lateral-navigation affordance. Reuses the shared dismissable-menu hook
+// (click-outside + Escape + ARIA).
+function CrumbDropdown({
+  label,
+  items,
+  currentKey,
+}: {
+  label: string;
+  items: { key: string; label: string; to: string }[];
+  currentKey: string;
+}) {
+  const { open, setOpen, ref } = useDismissableMenu();
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="inline-flex items-center gap-1 rounded-md px-2 py-1 font-semibold font-heading text-foreground transition hover:bg-muted/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-coral"
+      >
+        {label}
+        <ChevronDown
+          className={cn(
+            "h-3.5 w-3.5 text-muted-foreground transition-transform",
+            open && "rotate-180",
+          )}
+          aria-hidden
+        />
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute left-0 top-full z-50 mt-1 min-w-[13rem] rounded-md border border-border bg-card py-1 shadow-lg"
+        >
+          {items.map((item) => (
+            <Link
+              key={item.key}
+              to={item.to}
+              role="menuitem"
+              onClick={() => setOpen(false)}
+              className={cn(
+                "flex items-center gap-2 px-3 py-1.5 text-sm transition hover:bg-muted/50",
+                item.key === currentKey
+                  ? "font-medium text-foreground"
+                  : "text-muted-foreground",
+              )}
+            >
+              <Check
+                className={cn(
+                  "h-3.5 w-3.5 shrink-0 text-accent-coral",
+                  item.key === currentKey ? "opacity-100" : "opacity-0",
+                )}
+                aria-hidden
+              />
+              {item.label}
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
-export function adminPills(args: { active: string; isAdmin?: boolean }): AreaPill[] {
-  if (args.active === "hub") return [];
-  const cluster = clusterByKey(args.active);
-  if (cluster) {
-    // A cluster hub: the row with nothing active except the way back up.
-    return [HUB_PILL, ...cluster.sections.map((s) => ({ label: s.label, to: s.to, icon: s.icon }))];
-  }
-  const found = resolve(args.active);
-  if (!found) return [];
-  return [
-    HUB_PILL,
-    ...found.cluster.sections.map((s) => ({
-      label: s.label,
-      to: s.to,
-      icon: s.icon,
-      active: s.key === found.section.key,
-    })),
-  ];
+// The admin area's wayfinding: a compact path bar where each crumb is a
+// dropdown. The trail gives depth + a way back up ("Admin" links to the hub);
+// each ▾ switches to a sibling cluster or section. Renders in the pill row's
+// old slot — pages keep handle.areaPills (which suppresses the site breadcrumb
+// and zeroes the top padding). `active` is a section, sub-tab, or cluster key.
+export function AdminPathBar({ active }: { active: string }) {
+  const layout = useRouteLoaderData("routes/layout") as
+    | { isAdmin?: boolean }
+    | undefined;
+  const isAdmin = layout?.isAdmin ?? false;
+
+  if (active === "hub") return null;
+  const direct = clusterByKey(active);
+  const found = direct ? null : resolve(active);
+  const cluster = direct ?? found?.cluster;
+  if (!cluster) return null;
+  const section = found?.section ?? null;
+
+  // Cluster switcher is access-filtered (Finance is Admin-only); sibling
+  // sections within a cluster all share the cluster's access tier.
+  const clusterItems = ADMIN_CLUSTERS.filter((c) => isAdmin || !c.adminOnly).map(
+    (c) => ({ key: c.key, label: c.label, to: c.hubPath ?? c.sections[0]!.to }),
+  );
+  const sectionItems = cluster.sections.map((s) => ({
+    key: s.key,
+    label: s.label,
+    to: s.to,
+  }));
+
+  return (
+    <nav
+      aria-label="Breadcrumb"
+      className="-mx-3 mb-6 border-b border-border sm:-mx-6 sm:mb-8 lg:-mx-10"
+    >
+      <div className="flex flex-wrap items-center gap-1 px-3 py-2 text-sm sm:px-6 lg:px-10">
+        <Link
+          to="/admin"
+          className="rounded-md px-2 py-1 font-semibold font-heading text-muted-foreground transition hover:bg-muted/50 hover:text-foreground"
+        >
+          Admin
+        </Link>
+        <ChevronRight
+          className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50"
+          aria-hidden
+        />
+        <CrumbDropdown
+          label={cluster.label}
+          items={clusterItems}
+          currentKey={cluster.key}
+        />
+        {section && (
+          <>
+            <ChevronRight
+              className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50"
+              aria-hidden
+            />
+            <CrumbDropdown
+              label={section.label}
+              items={sectionItems}
+              currentKey={section.key}
+            />
+          </>
+        )}
+      </div>
+    </nav>
+  );
 }
 
 // The in-page sub-tab strip for a consolidated section (Email, Payroll), or
@@ -291,7 +398,7 @@ export function AdminClusterHub({ clusterKey }: { clusterKey: AdminClusterKey })
   if (!cluster) return null;
   return (
     <div className="flex flex-col gap-4">
-      <AreaPillNav items={adminPills({ active: cluster.key })} />
+      <AdminPathBar active={clusterKey} />
       <header>
         <h1 className="font-heading text-2xl font-bold text-foreground">
           {cluster.label}

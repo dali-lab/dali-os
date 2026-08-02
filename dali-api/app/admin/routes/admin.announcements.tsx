@@ -7,8 +7,7 @@ import {
   useSearchParams,
 } from "react-router";
 import type { Route } from "./+types/admin.announcements";
-import { adminPills } from "~/admin/adminPills";
-import { AreaPillNav } from "~/components/AreaPillNav";
+import { AdminPathBar } from "~/admin/adminPills";
 import { prisma } from "~/lib/db";
 import { listVisibleGroupsForUser } from "~/lib/groups";
 import { requireAuth } from "~/lib/auth";
@@ -254,7 +253,7 @@ export default function AnnouncementsPage() {
 
   return (
     <div className="flex flex-col gap-5">
-      <AreaPillNav items={adminPills({ isAdmin: viewerIsAdmin, active: "announcements" })} />
+      <AdminPathBar active="announcements" />
       <div className="flex flex-col gap-5 max-w-3xl">
       <header className="flex items-start gap-3">
         <Megaphone className="w-6 h-6 text-accent-coral mt-0.5" />

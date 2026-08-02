@@ -11,8 +11,7 @@ import {
   Archive,
   PenLine,
 } from "lucide-react";
-import { adminPills } from "~/admin/adminPills";
-import { AreaPillNav } from "~/components/AreaPillNav";
+import { AdminPathBar } from "~/admin/adminPills";
 import {
   DocEditor,
   insertSigningField,
@@ -165,7 +164,7 @@ export function SigningDocumentDetail() {
 
   return (
     <div className="space-y-6">
-      <AreaPillNav items={adminPills({ isAdmin, active: "agreements" })} />
+      <AdminPathBar active="agreements" />
 
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
