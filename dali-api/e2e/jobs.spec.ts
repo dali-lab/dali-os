@@ -5,7 +5,7 @@ import { test, expect } from "./fixtures";
 
 const ADMIN = { daliEmail: "admin@dali.dartmouth.edu" };
 
-// /admin-console/jobs renders inside the workspace iframe (same convention
+// /admin/jobs renders inside the workspace iframe (same convention
 // as the other admin specs).
 const adminFrame = (page: import("@playwright/test").Page) =>
   page.frameLocator('iframe[title="Admin"]');
@@ -16,7 +16,7 @@ test.describe("admin jobs panel", () => {
   });
 
   test("lists registered jobs with controls", async ({ page }) => {
-    await page.goto("/admin-console/jobs");
+    await page.goto("/admin/jobs");
     const frame = adminFrame(page);
 
     for (const name of [
@@ -37,7 +37,7 @@ test.describe("admin jobs panel", () => {
   });
 
   test("toggle persists across reload", async ({ page }) => {
-    await page.goto("/admin-console/jobs");
+    await page.goto("/admin/jobs");
     const frame = adminFrame(page);
 
     const row = frame.locator("tr", { hasText: "session-feedback-sweep" });
@@ -56,7 +56,7 @@ test.describe("admin jobs panel", () => {
   });
 
   test("Run now executes a job and records the run", async ({ page }) => {
-    await page.goto("/admin-console/jobs");
+    await page.goto("/admin/jobs");
     const frame = adminFrame(page);
 
     const row = frame.locator("tr", { hasText: "scheduled-announcements" });

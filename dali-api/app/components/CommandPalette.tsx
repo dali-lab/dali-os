@@ -36,9 +36,11 @@ import { Avatar } from "~/components/ui/Avatar";
 import { setTablessPreference } from "~/lib/tabless";
 import { setFocusPreference } from "~/lib/focus-mode";
 import type { SearchResult, SearchResultType } from "~/lib/search";
+import { ADMIN_CLUSTERS } from "~/admin/adminNav";
 
 export interface CommandPaletteRoles {
   isCore?: boolean;
+  isAdmin?: boolean;
   canViewForms?: boolean;
   canViewStaffing?: boolean;
   hasHiringAccess?: boolean;
@@ -167,7 +169,7 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles, onOpe
       navItem("Partners", "/partners", Handshake),
       navItem("Education", "/education", GraduationCap),
       navItem("Lab Processes", "/internal-processes", Workflow),
-      roles.isCore ? navItem("Admin", "/admin-console", Settings) : null,
+      roles.isCore ? navItem("Admin", "/admin", Settings) : null,
       navItem("Settings", "/settings", Settings),
       navItem("Help", "/help", HelpCircle),
     ].filter((x): x is PaletteItem => x !== null);
@@ -215,14 +217,35 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles, onOpe
       },
     ];
 
+    // Admin tools, generated from the same cluster registry the /admin hub and
+    // pill rows use. Gated exactly like the pages: any Core member sees every
+    // cluster except Finance, which is Admin-only.
+    const admin: PaletteItem[] = roles.isCore
+      ? ADMIN_CLUSTERS.filter((c) => roles.isAdmin || !c.adminOnly).flatMap((c) =>
+          c.sections.map((s) => ({
+            id: `admin-${s.key}`,
+            title: s.label,
+            subtitle: c.label,
+            icon: s.icon,
+            action: { kind: "navigate", url: s.to, label: s.label } as const,
+          })),
+        )
+      : [];
+
     const q = query.trim().toLowerCase();
     const match = (i: PaletteItem) => !q || i.title.toLowerCase().includes(q);
-    return { nav: nav.filter(match), commands: commands.filter(match) };
+    return {
+      nav: nav.filter(match),
+      admin: admin.filter(match),
+      commands: commands.filter(match),
+    };
   }, [roles, tabless, focusMode, query]);
 
   const sections = useMemo(() => {
     const out: { key: string; label: string; items: PaletteItem[] }[] = [];
     if (staticSections.nav.length) out.push({ key: "nav", label: "Go to", items: staticSections.nav });
+    if (staticSections.admin.length)
+      out.push({ key: "admin", label: "Admin", items: staticSections.admin });
     if (staticSections.commands.length)
       out.push({ key: "cmd", label: "Commands", items: staticSections.commands });
     for (const section of SECTION_ORDER) {

@@ -597,7 +597,7 @@ export default function ManageOffering() {
               Pick a template to email applicants when their status changes.
               Unbound statuses fall back to a short built-in message.
               Templates are shared across areas — manage them in{" "}
-              <Link to="/admin-console/email-templates" className="underline">
+              <Link to="/admin/email-templates" className="underline">
                 Admin → Email Templates
               </Link>
               . <code className="text-[11px]">{"{{domain}}"}</code> carries the

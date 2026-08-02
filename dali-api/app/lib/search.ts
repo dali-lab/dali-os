@@ -50,7 +50,7 @@ export const buildUrl: Record<SearchResultType, (id: string) => string> = {
   challenge: (id) => `/hiring/challenges/${id}`,
   rubric: (id) => `/hiring/rubrics/${id}`,
   // /hiring/emails/:id just redirects here — link straight to the canonical page.
-  emailTemplate: (id) => `/admin-console/email-templates/${id}`,
+  emailTemplate: (id) => `/admin/email-templates/${id}`,
   confidentialityAgreement: (id) => `/hiring/confidentiality-agreements/${id}`,
   partnerApplication: (id) => `/partners/applications/${id}`,
   cycle: (id) => `/hiring/lead/cycle/${id}`,

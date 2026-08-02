@@ -28,7 +28,7 @@ import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { PresenceBar } from "~/components/collab/PresenceBar";
 import { PersonalNotesRail } from "./PersonalNotesRail";
 import { buttonClasses } from "~/components/ui/Button";
-import type { Level } from "~/admin-console/lib/eligibility";
+import type { Level } from "~/admin/lib/eligibility";
 import { APPLICATION_TZ, formatZoneLabel } from "~/lib/timezone";
 import type {
   ProfileMember,

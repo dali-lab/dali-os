@@ -1,6 +1,6 @@
 import { prisma } from "~/lib/db";
-import { addOrUpdateEligibility } from "~/admin-console/lib/eligibility.server";
-import type { Level } from "~/admin-console/lib/eligibility";
+import { addOrUpdateEligibility } from "~/admin/lib/eligibility.server";
+import type { Level } from "~/admin/lib/eligibility";
 
 // Promote an existing User to a lab member (DALIMember marker row), optionally
 // granting domain eligibility. Used by:
