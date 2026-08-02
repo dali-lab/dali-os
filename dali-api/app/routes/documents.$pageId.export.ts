@@ -2,20 +2,18 @@ import type { Route } from "./+types/documents.$pageId.export";
 import { prisma } from "~/lib/db";
 import { requireAuth, isPartnerAccount } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
-import {
-  collabDocToProseMirror,
-  collabDocToHtml,
-  buildExportHtml,
-} from "~/collab/export";
-import { renderProseMirrorToPdf } from "~/collab/export-pdf";
-import { renderMarkdown } from "~/collab/export-markdown";
+import { buildExportHtml } from "~/collab/export";
+import { readDocAsBlocks } from "~/collab/read";
+import { blocksToHtml, blocksToMarkdown } from "~/collab/blocknote-server";
+import { renderBlocksToPdf } from "~/collab/export-pdf";
 
 // GET /documents/:pageId/export?format=pdf|docx|md
 //
 // Server-renders the document to PDF (pdfkit — pure JS, runs under --omit=dev
 // on the Alpine runtime), Word .docx (html-to-docx), or Markdown. The body is
-// decoded from the persisted Yjs snapshot (see app/collab/export.ts). Same read
-// gate as the document page (live Project page + isCore).
+// decoded from the persisted Yjs snapshot as BlockNote blocks (see
+// app/collab/read.ts). Same read gate as the document page (live Project page
+// + isCore).
 
 function safeFilename(title: string): string {
   return title.replace(/[^A-Za-z0-9 ._-]/g, "").trim().replace(/\s+/g, "_") || "document";
@@ -43,10 +41,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
 
   const filename = safeFilename(page.title);
+  const blocks = await readDocAsBlocks(`doc:${page.id}:body`);
 
   if (format === "md") {
-    const json = await collabDocToProseMirror(`doc:${page.id}:body`);
-    const body = json.content?.length ? renderMarkdown(json) : "";
+    const body = blocks.length ? await blocksToMarkdown(blocks) : "";
     const markdown = `# ${page.title}\n\n${body}`;
     return new Response(markdown, {
       headers: {
@@ -57,8 +55,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
 
   if (format === "docx") {
-    const bodyHtml = await collabDocToHtml(`doc:${page.id}:body`);
-    const html = buildExportHtml(page.title, bodyHtml);
+    const html = buildExportHtml(page.title, await blocksToHtml(blocks));
     const HTMLtoDOCX = (await import("html-to-docx")).default;
     const out = await HTMLtoDOCX(html, null, {
       title: page.title,
@@ -74,8 +71,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     });
   }
 
-  const json = await collabDocToProseMirror(`doc:${page.id}:body`);
-  const pdf = await renderProseMirrorToPdf(page.title, json);
+  const pdf = await renderBlocksToPdf(page.title, blocks);
   return new Response(new Uint8Array(pdf), {
     headers: {
       "Content-Type": "application/pdf",

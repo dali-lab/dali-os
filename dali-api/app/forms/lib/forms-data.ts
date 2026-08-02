@@ -10,6 +10,7 @@
 
 import { z } from "zod";
 import { prisma, Prisma } from "~/lib/db";
+import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import type { Question } from "~/types";
 import { isReferenceSourceKey, referenceSourceNeedsTerm } from "./reference-sources.shared";
 import type { FolderOption } from "./folder-tree.shared";
@@ -142,15 +143,18 @@ export async function loadFormForEdit(
       createdAt: v.createdAt.toISOString(),
       createdByName: `${v.createdBy.firstName} ${v.createdBy.lastName}`.trim(),
       questions: (v.questions as unknown as Question[]) ?? [],
-      // intro holds serialized ProseMirror JSON (see module note).
-      description: v.intro ? safeParseJsonString(v.intro) : null,
+      // intro holds serialized rich-text JSON: block JSON going forward,
+      // ProseMirror on frozen legacy versions — normalized on read (frozen
+      // versions are immutable, so this conversion runs forever).
+      description: v.intro ? ensureBlocks(safeParseJsonString(v.intro)) : null,
       submissionCount: v._count.submissions,
     })),
     draft: draftQuestions
       ? {
           questions: draftQuestions,
-          // draftIntro mirrors FormVersion.intro (serialized ProseMirror JSON).
-          description: safeParseJsonString(form.draftIntro),
+          // draftIntro mirrors FormVersion.intro. Drafts are rewritten in
+          // block format on the next save; legacy PM drafts convert on read.
+          description: ensureBlocks(safeParseJsonString(form.draftIntro)),
         }
       : null,
   };

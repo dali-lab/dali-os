@@ -4,9 +4,10 @@ import type { Route } from "./+types/documents.$pageId";
 import { prisma } from "~/lib/db";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { parseSessionCookie } from "~/lib/cookies";
-import { isCore, isProjectMember, isLabMember } from "~/lib/roles";
 import { fullName } from "~/lib/display";
 import { getPresenceUser } from "~/lib/presence-user";
+import { getPageAccess } from "~/lib/pageAccess.server";
+import { normalizePageTypography } from "~/lib/page-typography";
 import { DocumentEditor } from "~/components/DocumentEditor";
 import { AttendanceChecklist, type AttendanceRow } from "~/components/AttendanceChecklist";
 import { CheckInPanel } from "~/components/CheckInPanel";
@@ -89,6 +90,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       meetingNoteId: true,
       iconEmoji: true,
       coverImageUrl: true,
+      isTemplate: true,
+      typography: true,
       updatedAt: true,
       createdBy: { select: { firstName: true, lastName: true } },
       lastEditedBy: { select: { firstName: true, lastName: true } },
@@ -106,25 +109,21 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     throw new Response("Not found", { status: 404 });
   }
 
-  // Mirrors the doc gate in authorizeCollabDoc: Core everywhere, plus anyone
-  // staffed on the project for Project-workspace pages (the same gate the
-  // document API routes use — without this the editor rendered enabled but
-  // the collab handshake rejected members), plus the offering's instructors
-  // for EducationOffering-workspace pages.
-  let canEdit = await isCore(auth.user.sub);
-  if (!canEdit && page.workspaceType === "Lab") {
-    canEdit = await isLabMember(auth.user.sub);
+  // Personal notes have a real read gate: only the owner (or a share) may view.
+  if (page.workspaceType === "Member") {
+    const { noteAccess } = await import("~/members/lib/personal-notes.server");
+    const access = await noteAccess(page.id, auth.user.sub).catch(() => null);
+    if (!access?.canView) throw new Response("Not found", { status: 404 });
   }
-  if (!canEdit && page.workspaceType === "Project" && page.workspaceId) {
-    canEdit = await isProjectMember(auth.user.sub, page.workspaceId);
-  }
-  if (!canEdit && page.workspaceType === "EducationOffering" && page.workspaceId) {
-    const instructor = await prisma.instructorAssignment.findFirst({
-      where: { userId: auth.user.sub, offeringId: page.workspaceId },
-      select: { id: true },
-    });
-    canEdit = instructor !== null;
-  }
+
+  // Unified permission resolution — single call replaces the old inline block.
+  const access = await getPageAccess(auth.user.sub, {
+    id: page.id,
+    workspaceType: page.workspaceType,
+    workspaceId: page.workspaceId,
+    archivedAt: page.archivedAt,
+  });
+  const { canEdit, canComment, canResolve } = access;
 
   const allTags = await prisma.docTag.findMany({
     where: { archivedAt: null },
@@ -231,6 +230,19 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     [auth.user.firstName, auth.user.lastName].filter(Boolean).join(" ") || auth.user.email;
   const presenceUser = await getPresenceUser(auth.user.sub, fallbackName);
 
+  // Backlinks: pages that mention this page via a @pageMention inline node.
+  const backlinkRows = await prisma.pageLink.findMany({
+    where: { toPageId: page.id, fromPage: { archivedAt: null } },
+    select: {
+      fromPage: { select: { id: true, title: true, iconEmoji: true } },
+    },
+  });
+  const backlinks = backlinkRows.map((r) => ({
+    id: r.fromPage.id,
+    title: r.fromPage.title,
+    iconEmoji: r.fromPage.iconEmoji,
+  }));
+
   return {
     pageId: page.id,
     title: page.title,
@@ -240,18 +252,21 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     hubIconEmoji,
     iconEmoji: page.iconEmoji,
     coverImageUrl: page.coverImageUrl,
-    createdByName: page.createdBy ? fullName(page.createdBy) : null,
-    lastEditedByName: page.lastEditedBy ? fullName(page.lastEditedBy) : null,
+    isTemplate: page.isTemplate,
+    typography: normalizePageTypography(page.typography),
     updatedAt: page.updatedAt.toISOString(),
     tags: page.tags.map((t) => t.tag).sort((a, b) => a.label.localeCompare(b.label)),
     allTags,
     canEdit,
+    canComment,
+    canResolve,
     collabToken,
     userName: presenceUser?.name ?? fallbackName,
     currentUserId: auth.user.sub,
     photoUrl: presenceUser?.photoUrl ?? null,
     subtitle: presenceUser?.subtitle ?? null,
     attendance,
+    backlinks,
   };
 }
 
@@ -262,6 +277,8 @@ export default function DocumentPage() {
     tags,
     allTags,
     canEdit,
+    canComment,
+    canResolve,
     collabToken,
     userName,
     currentUserId,
@@ -269,18 +286,20 @@ export default function DocumentPage() {
     subtitle,
     iconEmoji,
     coverImageUrl,
-    createdByName,
-    lastEditedByName,
+    isTemplate,
+    typography,
     updatedAt,
     attendance,
+    backlinks,
   } = useLoaderData() as Exclude<Awaited<ReturnType<typeof loader>>, Response>;
 
-  // Arriving from a mention notification (?mention=1): scroll to this reader's
-  // own mention in the body once collab syncs.
+  // Arriving from a comment-mention notification (?comment=<id>): open the
+  // comments panel and scroll to that comment once threads load.
+  // Arriving from an @-mention notification (?mention=<userId>): scroll to and
+  // flash the first mention chip for that user once the collab doc syncs.
   const [searchParams] = useSearchParams();
-  const focusMentionUserId =
-    searchParams.get("mention") === "1" ? currentUserId : undefined;
   const focusCommentId = searchParams.get("comment") ?? undefined;
+  const focusMentionUserId = searchParams.get("mention") ?? undefined;
 
   return (
     <div className="flex flex-col gap-4">
@@ -311,15 +330,19 @@ export default function DocumentPage() {
         photoUrl={photoUrl}
         subtitle={subtitle}
         canEdit={canEdit}
+        canComment={canComment}
+        canResolve={canResolve}
         tags={tags}
         allTags={allTags}
         iconEmoji={iconEmoji}
         coverImageUrl={coverImageUrl}
-        createdByName={createdByName}
-        lastEditedByName={lastEditedByName}
+        isTemplate={isTemplate}
+        typography={typography}
         updatedAt={updatedAt}
-        focusMentionUserId={focusMentionUserId}
         focusCommentId={focusCommentId}
+        backlinks={backlinks}
+        focusMentionUserId={focusMentionUserId}
+        aiEnabled
       />
     </div>
   );

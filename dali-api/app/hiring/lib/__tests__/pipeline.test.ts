@@ -30,8 +30,9 @@ beforeEach(() => {
     ]),
   };
   mockPrisma.domainApplication = { findMany: vi.fn().mockResolvedValue([]) };
-  mockPrisma.cycleConfidentialityAgreement = { findUnique: vi.fn() };
-  mockPrisma.confidentialityAgreementSignature = { findUnique: vi.fn() };
+  // Confidentiality state now reads the generalized signing tables.
+  mockPrisma.signingBinding = { findFirst: vi.fn() };
+  mockPrisma.signingSignature = { findFirst: vi.fn() };
 });
 
 function callPipeline(search = "") {
@@ -40,10 +41,8 @@ function callPipeline(search = "") {
 
 describe("getPipelineData — confidentiality gating", () => {
   it("returns 'unsigned' and empty rows/slices when the user has not signed the bound agreement", async () => {
-    mockPrisma.cycleConfidentialityAgreement.findUnique.mockResolvedValue({
-      confidentialityAgreementVersionId: CAV_ID,
-    });
-    mockPrisma.confidentialityAgreementSignature.findUnique.mockResolvedValue(null);
+    mockPrisma.signingBinding.findFirst.mockResolvedValue({ versionId: CAV_ID });
+    mockPrisma.signingSignature.findFirst.mockResolvedValue(null);
 
     const data = await callPipeline();
 
@@ -59,8 +58,8 @@ describe("getPipelineData — confidentiality gating", () => {
   });
 
   it("returns 'no_agreement' and empty rows/slices when the cycle has no bound agreement", async () => {
-    mockPrisma.cycleConfidentialityAgreement.findUnique.mockResolvedValue(null);
-    mockPrisma.confidentialityAgreementSignature.findUnique.mockResolvedValue(null);
+    mockPrisma.signingBinding.findFirst.mockResolvedValue(null);
+    mockPrisma.signingSignature.findFirst.mockResolvedValue(null);
 
     const data = await callPipeline();
 
@@ -71,12 +70,8 @@ describe("getPipelineData — confidentiality gating", () => {
   });
 
   it("returns the populated payload when the user has signed the bound agreement", async () => {
-    mockPrisma.cycleConfidentialityAgreement.findUnique.mockResolvedValue({
-      confidentialityAgreementVersionId: CAV_ID,
-    });
-    mockPrisma.confidentialityAgreementSignature.findUnique.mockResolvedValue({
-      confidentialityAgreementVersionId: CAV_ID,
-    });
+    mockPrisma.signingBinding.findFirst.mockResolvedValue({ versionId: CAV_ID });
+    mockPrisma.signingSignature.findFirst.mockResolvedValue({ versionId: CAV_ID });
     mockPrisma.domainApplication.findMany.mockResolvedValue([
       {
         id: "da-1",

@@ -290,8 +290,8 @@ async function searchRubrics(q: string, like: Like): Promise<SearchResult[]> {
 }
 
 async function searchAgreements(q: string, like: Like): Promise<SearchResult[]> {
-  const rows = await prisma.confidentialityAgreement.findMany({
-    where: { name: like },
+  const rows = await prisma.signingDocument.findMany({
+    where: { name: like, kind: "Confidentiality", archivedAt: null },
     select: { id: true, name: true },
     take: RAW_TAKE,
   });

@@ -5,6 +5,7 @@ import { listCalendarsForLink } from "~/lib/google-calendar";
 import { loadProfilePage } from "~/members/lib/profile-page.server";
 import { isAdmin } from "~/lib/roles";
 import { jobByName, resolveJobSettings } from "~/jobs/registry";
+import { listOutstandingBindings, listMySignedDocuments } from "~/signing/lib/state.server";
 
 export type CalendarLinkDTO = {
   id: string;
@@ -85,8 +86,18 @@ export async function loadSettingsPageData(request: Request) {
 
   const userId = auth.user.sub;
 
-  const [profile, links, user, sessionRows, grants, notificationPrefs, digestRows, viewerIsAdmin] =
-    await Promise.all([
+  const [
+    profile,
+    links,
+    user,
+    sessionRows,
+    grants,
+    notificationPrefs,
+    digestRows,
+    viewerIsAdmin,
+    outstandingAgreements,
+    signedAgreements,
+  ] = await Promise.all([
     loadProfilePage({ request, targetId: userId }),
     prisma.userCalendarLink.findMany({
       where: { userId },
@@ -133,6 +144,8 @@ export async function loadSettingsPageData(request: Request) {
       select: { name: true, settings: true },
     }),
     isAdmin(userId),
+    listOutstandingBindings(userId),
+    listMySignedDocuments(userId),
   ]);
 
   // Render the digest schedule as actually configured (Admin → Jobs), not a
@@ -221,6 +234,13 @@ export async function loadSettingsPageData(request: Request) {
         weeklyWeekday: weekly.sendWeekday ?? 1,
       },
       isAdmin: viewerIsAdmin,
+    },
+    agreements: {
+      outstanding: outstandingAgreements.map((o) => ({
+        bindingId: o.bindingId,
+        documentName: o.documentName,
+      })),
+      signed: signedAgreements,
     },
   };
 }

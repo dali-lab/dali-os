@@ -1,0 +1,759 @@
+/* DALI theming for the shared DocEditor (BlockNote). Imported by
+ * DocEditorImpl AFTER @blocknote/shadcn/style.css and blocknote.tailwind.css
+ * so these overrides win cascade ties.
+ *
+ * Three parts:
+ *   1. --bn-* variables on .bn-root pointed at the app's semantic tokens —
+ *      the tokens themselves flip under html.dark (app.css), so dark mode
+ *      comes for free. The second selector matters: the base sheet's dark
+ *      defaults live on .bn-root[data-color-scheme=dark] (specificity 0,2,0),
+ *      which would beat a plain .bn-root override in dark mode.
+ *   2. Density / layout tweaks scoped to the .dali-doc wrapper.
+ *   3. Callout "styled nesting": the colored box is painted on the .bn-block
+ *      (blockContainer) that CONTAINS a callout blockContent — the child
+ *      .bn-block-group is a sibling of the blockContent inside that same
+ *      .bn-block, so nested children sit on the same painted surface (one
+ *      background, one border, no seams). Every rule is doubled with the
+ *      .react-renderer wrapper variant, exactly like BlockNote's own shipped
+ *      toggle-block CSS. Non-default props serialize to data-* attributes on
+ *      .bn-block-content (documented behavior), which drives the emoji tints.
+ */
+
+/* ── 1. BlockNote variables → DALI tokens ──────────────────────────────── */
+.bn-root,
+.bn-root[data-color-scheme="dark"] {
+  --bn-colors-editor-text: var(--color-foreground);
+  --bn-colors-editor-background: transparent;
+  --bn-colors-menu-text: var(--color-popover-foreground);
+  --bn-colors-menu-background: var(--color-popover);
+  --bn-colors-tooltip-text: var(--color-brand-white);
+  --bn-colors-tooltip-background: var(--color-navy-deep);
+  --bn-colors-hovered-text: var(--color-accent-foreground);
+  --bn-colors-hovered-background: var(--color-accent);
+  --bn-colors-selected-text: var(--color-brand-white);
+  --bn-colors-selected-background: var(--color-accent-teal);
+  --bn-colors-disabled-text: var(--color-muted-foreground);
+  --bn-colors-disabled-background: var(--color-muted);
+  --bn-colors-shadow: rgb(8 35 48 / 0.2); /* navy-deep ink, matches --shadow-* */
+  --bn-colors-border: var(--color-border);
+  --bn-colors-side-menu: var(--color-muted-foreground);
+
+  /* DALI-fied highlight swatches (colored text + background pickers). */
+  --bn-colors-highlights-red-text: var(--color-accent-coral);
+  --bn-colors-highlights-red-background: color-mix(in srgb, var(--color-accent-coral) 25%, var(--color-card));
+  --bn-colors-highlights-blue-text: var(--color-dali-teal-dark);
+  --bn-colors-highlights-blue-background: color-mix(in srgb, var(--color-accent-teal) 22%, var(--color-card));
+  --bn-colors-highlights-yellow-text: var(--color-foreground);
+  --bn-colors-highlights-yellow-background: color-mix(in srgb, var(--color-accent-yellow) 40%, var(--color-card));
+
+  --bn-border-radius: var(--radius);
+  --bn-font-family: var(--font-sans);
+}
+
+/* ── 2. Density / layout ───────────────────────────────────────────────── */
+.dali-doc .bn-editor {
+  min-height: 6rem;
+}
+
+/* Compact: no side menu (disabled via the sideMenu prop), so the wide
+ * drag-handle gutter is dead space — pull the default 54px inline padding in. */
+.dali-doc--compact .bn-editor {
+  padding-inline: 0.875rem;
+}
+
+/* ── 3. Callout block ──────────────────────────────────────────────────── */
+
+/* The colored box (default 💡 = amber). */
+.dali-doc .bn-block:has(> .bn-block-content[data-content-type="callout"]),
+.dali-doc .bn-block:has(> .react-renderer > .bn-block-content[data-content-type="callout"]) {
+  background: color-mix(in srgb, #eab308 9%, var(--color-card));
+  border: 1px solid color-mix(in srgb, #eab308 30%, transparent);
+  border-left: 3px solid #eab308;
+  border-radius: 8px;
+  padding: 6px 12px;
+  margin: 4px 0;
+}
+
+/* Emoji-driven tint variants (prop → data-emoji on .bn-block-content). */
+.dali-doc .bn-block:has(> .bn-block-content[data-emoji="🚨"]),
+.dali-doc .bn-block:has(> .react-renderer > .bn-block-content[data-emoji="🚨"]) {
+  background: color-mix(in srgb, #dc2626 8%, var(--color-card));
+  border-color: color-mix(in srgb, #dc2626 30%, transparent);
+  border-left-color: #dc2626;
+}
+
+.dali-doc .bn-block:has(> .bn-block-content[data-emoji="✅"]),
+.dali-doc .bn-block:has(> .react-renderer > .bn-block-content[data-emoji="✅"]) {
+  background: color-mix(in srgb, #16a34a 8%, var(--color-card));
+  border-color: color-mix(in srgb, #16a34a 30%, transparent);
+  border-left-color: #16a34a;
+}
+
+.dali-doc .bn-block:has(> .bn-block-content[data-emoji="📌"]),
+.dali-doc .bn-block:has(> .react-renderer > .bn-block-content[data-emoji="📌"]) {
+  background: color-mix(in srgb, var(--color-accent-teal) 9%, var(--color-card));
+  border-color: color-mix(in srgb, var(--color-accent-teal) 30%, transparent);
+  border-left-color: var(--color-accent-teal);
+}
+
+/* Inner layout of the content row: emoji gutter + editable body. */
+.dali-callout {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+}
+
+.dali-callout__emoji {
+  flex: none;
+  width: 20px;
+  text-align: center;
+  cursor: pointer;
+  user-select: none;
+}
+
+.dali-callout__body {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Child blocks: keep them visually inside the box and aligned with the callout
+ * text instead of the default 24px indent-guide offset (core Block.css).
+ * 28px = 20px emoji gutter + 8px gap. */
+.dali-doc
+  .bn-block:has(> .bn-block-content[data-content-type="callout"])
+  > .bn-block-group,
+.dali-doc
+  .bn-block:has(> .react-renderer > .bn-block-content[data-content-type="callout"])
+  > .bn-block-group {
+  margin-left: 28px;
+}
+
+/* ── 4. Inline comment marks ──────────────────────────────────────────────── */
+/*
+ * .bn-thread-mark       — text span produced by BlockNote's CommentMark
+ * .bn-thread-mark-selected — added as a ProseMirror decoration when the thread
+ *                            is the selectedThreadId in CommentsExtension state
+ * [data-orphan="true"]  — set on the mark when its thread is deleted/resolved;
+ *                          CommentsExtension manages this automatically on store
+ *                          subscription updates.
+ *
+ * Colours use color-mix so they adapt to the app's semantic tokens without
+ * requiring a separate dark-mode rule — the underlying accent tokens already
+ * flip under html.dark (see app.css).
+ */
+.dali-doc .bn-thread-mark {
+  background-color: color-mix(in srgb, var(--color-accent-yellow, #eab308) 28%, transparent);
+  border-radius: 2px;
+  padding-block: 1px;
+  transition: background-color 150ms ease;
+  cursor: pointer;
+}
+
+.dali-doc .bn-thread-mark-selected,
+.dali-doc .bn-thread-mark:hover {
+  background-color: color-mix(in srgb, var(--color-accent-yellow, #eab308) 55%, transparent);
+}
+
+/* Orphaned marks: thread deleted or resolved and mark not yet removed.
+ * Subtle gray-blue distinguishes "stale" from "active" without being alarming. */
+.dali-doc .bn-thread-mark[data-orphan="true"] {
+  background-color: color-mix(in srgb, var(--color-muted-foreground, #94a3b8) 18%, transparent);
+  cursor: default;
+}
+
+/* Dark-mode variant: yellow with less opacity to avoid eye-strain on dark bg. */
+html.dark .dali-doc .bn-thread-mark {
+  background-color: color-mix(in srgb, var(--color-accent-yellow, #ca8a04) 22%, transparent);
+}
+
+html.dark .dali-doc .bn-thread-mark-selected,
+html.dark .dali-doc .bn-thread-mark:hover {
+  background-color: color-mix(in srgb, var(--color-accent-yellow, #ca8a04) 42%, transparent);
+}
+
+html.dark .dali-doc .bn-thread-mark[data-orphan="true"] {
+  background-color: color-mix(in srgb, var(--color-muted-foreground, #64748b) 20%, transparent);
+}
+
+/* Floating portal root: zero-size overlay inside .dali-doc so the floating
+ * composer and thread popover have a DOM ancestor inside the editor tree.
+ * Floating UI's useDismiss checks containment — this is the key fix.
+ * The root itself is pointer-events: none (zero-size, nothing to click on),
+ * but ALL descendants (the actual floating panels and every element inside
+ * them) restore pointer-events so buttons, inputs, and scroll areas are
+ * mouse-reachable. FIX 1: was `> *` (direct children only) which failed
+ * because BlockNote nests composer/popover inside extra wrapper divs, leaving
+ * inner buttons and inputs un-clickable. Changed to `*` (all descendants). */
+.dali-doc .dali-doc-floating-root {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+.dali-doc .dali-doc-floating-root * {
+  pointer-events: auto;
+}
+
+/* Comment bodies and the "Add comment…" composer are NESTED BlockNote
+ * editors; without this reset they inherit the document's 6rem min-height
+ * (section 2), so a one-line comment renders with ~90px of empty space —
+ * the chunky floating popover. Covers threads anywhere inside .dali-doc and
+ * everything portaled into the floating root (thread popover + composer). */
+.dali-doc .bn-thread .bn-editor,
+.dali-doc .dali-doc-floating-root .bn-editor {
+  min-height: 0;
+}
+
+/* Floating thread popover (mark click outside the rail view): same compact
+ * card treatment as the rail cards — width/padding/gap override the shadcn
+ * Card slot utilities (w-[300px], py-6, gap-6). */
+.dali-doc-floating-root .bn-thread {
+  width: 340px;
+  padding-block: 12px;
+  gap: 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--color-border);
+  background-color: var(--color-card);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.1);
+}
+
+/* ThreadsSidebar portaled into the panel: reset BlockNote's sidebar defaults
+ * that assume a fixed-width aside. The panel width is set by the panel itself. */
+#doc-comments-panel .bn-threads-sidebar,
+[id^="doc-comments-"] .bn-threads-sidebar {
+  width: 100%;
+  padding: 0;
+}
+
+#doc-comments-panel .bn-thread,
+[id^="doc-comments-"] .bn-thread {
+  border-radius: var(--bn-border-radius, var(--radius));
+}
+
+/* ── W1: Page-surface styles (paper canvas, top bar, title) ────────────────
+ * W2 appends comment-specific styles BELOW this section — keep the sections
+ * clearly separated so concurrent edits don't collide. */
+
+/* The tinted outer background behind the paper canvas. Uses --color-page (the
+ * route-wash token) so the canvas area has a slight tint in light mode
+ * (hsl 200 60% 98%) that reads against the white card — dark mode already
+ * contrasts via the same token flipping to a deep navy. The app shell itself
+ * also sets this bg, but the rule here ensures the wash appears even when the
+ * editor is embedded in an iframe or rendered without the full shell. */
+.doc-surface {
+  background-color: var(--color-page);
+}
+
+/* Paper card: fluid, capped at 1400px, white surface, light hairline, soft
+ * brand-1 shadow. Fills available width with ~24px margins on each side. */
+.doc-canvas {
+  /* max-width enforced via Tailwind max-w-[1400px] in JSX */
+}
+
+/* Contenteditable title — suppresses the box that the global
+ * `input { background-color: var(--color-card) }` rule in app.css paints.
+ * Because this is a <h1[contenteditable]>, not an <input>, that rule doesn't
+ * apply here — no override needed. The :empty pseudo + content attr shows the
+ * placeholder text without a JS-managed value attribute. */
+.doc-title-editable:focus {
+  outline: none;
+}
+.doc-title-editable:empty::before {
+  content: attr(data-placeholder);
+  color: var(--color-muted-foreground);
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* Top bar: stays anchored above the canvas, inherits the surface bg.
+ * Minimal — breadcrumb/back are handled by the outer shell pill row. */
+.doc-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background-color: var(--color-background);
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* Page typography (the top bar's "Aa" menu) — per-page display prefs stored
+ * on Page.typography. Classes land on the paper card (.doc-canvas), an
+ * ancestor of both the title and .dali-doc; the extra selector depth beats
+ * the .dali-doc custom-property defaults and the title's Tailwind utilities.
+ * Full width is handled in JSX (max-w cap swap on the same element). */
+.doc-canvas--serif {
+  --doc-font: ui-serif, Georgia, Cambria, "Times New Roman", serif;
+}
+.doc-canvas--mono {
+  --doc-font: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+/* .bn-root declares --bn-font-family directly (section 1 above), so the
+ * override must land on .bn-root itself — an inherited value from a wrapper
+ * would lose to that own-element declaration. */
+.doc-canvas--serif .bn-root,
+.doc-canvas--mono .bn-root {
+  --bn-font-family: var(--doc-font);
+}
+.doc-canvas--serif .doc-title,
+.doc-canvas--mono .doc-title {
+  font-family: var(--doc-font);
+}
+
+/* Small text: BlockNote sizes headings and spacing in em, so one base
+ * font-size scales the whole body (default is 16px). The title drops from
+ * 40px to match. */
+.doc-canvas--small .dali-doc .bn-editor {
+  font-size: 14px;
+}
+.doc-canvas--small .doc-title {
+  font-size: 32px;
+}
+
+/* Nesting guides: the shadcn theme draws a 1px vertical rule per nesting
+ * level on nested block groups. Notion draws none, so guides are OFF by
+ * default everywhere DocEditor renders; the Aa menu's per-page toggle
+ * re-enables them via .doc-canvas--guides. Both selectors mirror the
+ * library rule (specificity 0,7,0) — the re-enable wins by source order. */
+.dali-doc
+  .bn-block-group
+  .bn-block:not(:has(.bn-toggle-wrapper))
+  .bn-block-group
+  .bn-block-outer:not([data-prev-depth-changed])::before {
+  border-left: none;
+}
+.doc-canvas--guides
+  .bn-block-group
+  .bn-block:not(:has(.bn-toggle-wrapper))
+  .bn-block-group
+  .bn-block-outer:not([data-prev-depth-changed])::before {
+  border-left: 1px solid var(--bn-colors-side-menu);
+}
+
+/* ── 5. Right-hand comments rail ────────────────────────────────────────── */
+
+/* Rail container: a 320px transparent margin column in the SAME page flow as
+ * the paper (no sticky, no inner scrollbar) — it stretches to the flex row
+ * height (align-items default: stretch) and scrolls WITH the document, so the
+ * absolutely-positioned cards keep their mark alignment at every scroll
+ * position, like Google Docs margin comments. */
+.dali-doc-rail-container {
+  width: 320px;
+  flex: none;
+  position: relative;
+}
+
+.dali-doc-rail {
+  position: relative;
+  height: 100%;
+}
+
+/* Anchor for the absolutely-positioned cards; sits right below the header and
+ * is the coordinate origin measure() uses, so the header height never skews
+ * card offsets. min-height (inline) pushes the General section below it. */
+.dali-doc-rail__region {
+  position: relative;
+}
+
+/* Card wrapper: anchored cards get position:absolute + top inline. */
+.dali-doc-rail__card {
+  cursor: pointer;
+}
+
+/* BlockNote Thread inside the rail: compact card with border + shadow.
+ * width/padding/gap override the shadcn Card slot utilities (w-[300px],
+ * py-6, gap-6) — two-class specificity beats the single-class utility. */
+.dali-doc-rail-container .bn-thread {
+  width: 100%;
+  padding-block: 12px;
+  gap: 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--color-border);
+  background-color: var(--color-card);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.04);
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+/* Selected card: stronger border + shadow */
+.dali-doc-rail__card--selected .bn-thread {
+  border-color: var(--color-accent-teal, #0d9488);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent-teal, #0d9488) 20%, transparent),
+              0 2px 8px rgb(0 0 0 / 0.08);
+}
+
+/* Mark flash: temporary bright highlight when navigating to a mark from a
+ * card — instant on, eased fade back to the resting mark color. */
+.bn-thread-mark-flash {
+  animation: dali-mark-flash 1.5s ease;
+}
+
+@keyframes dali-mark-flash {
+  0%, 40% {
+    background-color: color-mix(in srgb, var(--color-accent-yellow, #eab308) 75%, transparent);
+  }
+}
+
+/* ── 6. Page-break block (screen appearance) ────────────────────────────── */
+
+/* The pageBreak block renders a <div data-page-break> inside .bn-block-content.
+ * Screen: dashed line with a small "Page break" label so the block is visible
+ * while editing.  Print: invisible itself — the @media print block below
+ * applies the real break-after:page. */
+.dali-doc .bn-block-content[data-content-type="pageBreak"],
+.dali-doc .bn-block-content[data-content-type="pageBreak"] [data-page-break] {
+  display: block;
+  width: 100%;
+}
+
+.dali-doc .bn-block-content[data-content-type="pageBreak"] [data-page-break] {
+  position: relative;
+  border-top: 1.5px dashed var(--color-border);
+  margin: 8px 0;
+  pointer-events: none;
+}
+
+.dali-doc .bn-block-content[data-content-type="pageBreak"] [data-page-break]::after {
+  content: "Page break";
+  position: absolute;
+  top: -9px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  font-family: var(--font-sans);
+  color: var(--color-muted-foreground);
+  background: var(--color-card);
+  padding: 0 8px;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* ── 7. Print stylesheet (⌘P / Save as PDF) ─────────────────────────────── */
+
+/* Rules in theme.css cover the BlockNote-specific elements inside .dali-doc.
+ * The app chrome (sidebar, top-bar, doc top-bar, presence, Aa, comments,
+ * rails, ToC, etc.) is hidden in app.css @media print block. */
+
+@media print {
+  /* Paper fills the full page — no card shadow or border. */
+  .doc-canvas {
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    max-width: 100% !important;
+    width: 100% !important;
+  }
+
+  /* Outer canvas: no background tint, no padding, no centering offset. */
+  .doc-canvas-outer {
+    padding: 0 !important;
+    background: white !important;
+    display: block !important;
+  }
+
+  /* Remove inner padding so the first line meets the paper margin. */
+  .doc-canvas > div:first-child {
+    padding-top: 0 !important;
+  }
+
+  /* Editor area: full-width, black text. */
+  .dali-doc .bn-editor {
+    color: #000 !important;
+    background: white !important;
+  }
+
+  /* Page-break block: trigger the actual CSS page break and hide the dashed
+     label decoration (the print target has no "Page break" label). */
+  .dali-doc .bn-block-content[data-content-type="pageBreak"] {
+    break-after: page !important;
+    page-break-after: always !important;
+  }
+  .dali-doc .bn-block-content[data-content-type="pageBreak"] [data-page-break] {
+    border: none !important;
+  }
+  .dali-doc .bn-block-content[data-content-type="pageBreak"] [data-page-break]::after {
+    display: none !important;
+  }
+
+  /* Comments rail: hidden on print. */
+  .dali-doc-rail-container {
+    display: none !important;
+  }
+}
+
+/* ── 8. Jump-to-cursor flash ───────────────────────────────────────────────── */
+/* Applied to the .bn-collaboration-cursor__base element when a peer's avatar
+ * is clicked in the PresenceBar (one-shot jump, not continuous follow). */
+.dali-cursor-flash {
+  animation: dali-cursor-flash 1.5s ease;
+}
+
+@keyframes dali-cursor-flash {
+  0%, 30% {
+    outline: 3px solid currentColor;
+    border-radius: 2px;
+  }
+}
+
+/* ── 9. @-mention deep-link flash ──────────────────────────────────────────── */
+/* Applied by DocumentEditor when navigating from a ?mention= notification link.
+ * Reuses the coral accent (mention chip colour) so the flash is on-brand. */
+.dali-mention-flash {
+  animation: dali-mention-flash 1.5s ease;
+}
+
+@keyframes dali-mention-flash {
+  0%, 40% {
+    background-color: color-mix(in srgb, var(--color-accent-coral, #e11d48) 45%, transparent);
+    outline: 2px solid color-mix(in srgb, var(--color-accent-coral, #e11d48) 60%, transparent);
+    border-radius: 3px;
+  }
+}
+
+/* ── 10. Find & Replace ──────────────────────────────────────────────────────
+ *
+ * Decorations painted by FindReplacePlugin (ProseMirror inline decorations).
+ * Uses accent-yellow (consistent with comment thread marks) for non-current
+ * matches and accent-teal for the current/active match — matches the
+ * selected-background token used elsewhere in the theme.
+ */
+
+/* All match highlights */
+.dali-find-match {
+  background-color: color-mix(in srgb, var(--color-accent-yellow, #eab308) 35%, transparent);
+  border-radius: 2px;
+  padding-block: 1px;
+}
+
+/* Active (current) match — distinctly different from the others */
+.dali-find-match--current {
+  background-color: color-mix(in srgb, var(--color-accent-teal, #0d9488) 40%, transparent);
+  border-radius: 2px;
+  outline: 1px solid color-mix(in srgb, var(--color-accent-teal, #0d9488) 70%, transparent);
+}
+
+html.dark .dali-find-match {
+  background-color: color-mix(in srgb, var(--color-accent-yellow, #ca8a04) 28%, transparent);
+}
+
+html.dark .dali-find-match--current {
+  background-color: color-mix(in srgb, var(--color-accent-teal, #0d9488) 35%, transparent);
+}
+
+/* Find & Replace bar — floats at top-right of the body area (position:absolute
+ * on the .relative wrapper in DocumentEditor). Similar altitude to the Aa popover. */
+.dali-find-bar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 25;
+  background-color: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-brand-2, 0 4px 16px rgb(0 0 0 / 0.12));
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 320px;
+  max-width: 420px;
+}
+
+.dali-find-bar__row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Expand/collapse toggle button */
+.dali-find-bar__toggle {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: calc(var(--radius) - 2px);
+  color: var(--color-muted-foreground);
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.dali-find-bar__toggle:hover {
+  background-color: var(--color-muted);
+  color: var(--color-foreground);
+}
+
+/* Search / replace input */
+.dali-find-bar__input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  font-size: 13px;
+  line-height: 1;
+  background-color: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: calc(var(--radius) - 2px);
+  color: var(--color-foreground);
+  outline: none;
+  transition: border-color 120ms ease;
+}
+
+.dali-find-bar__input:focus {
+  border-color: var(--color-accent-teal, #0d9488);
+}
+
+.dali-find-bar__input--replace {
+  /* Same visual; separate class for replace row layout adjustments. */
+}
+
+/* "n of m" count */
+.dali-find-bar__count {
+  flex: none;
+  font-size: 11px;
+  color: var(--color-muted-foreground);
+  white-space: nowrap;
+  min-width: 54px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Prev/next navigation buttons */
+.dali-find-bar__nav {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: calc(var(--radius) - 2px);
+  color: var(--color-muted-foreground);
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.dali-find-bar__nav:hover:not(:disabled) {
+  background-color: var(--color-muted);
+  color: var(--color-foreground);
+}
+
+.dali-find-bar__nav:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Close (X) button */
+.dali-find-bar__close {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: calc(var(--radius) - 2px);
+  color: var(--color-muted-foreground);
+  margin-left: 2px;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.dali-find-bar__close:hover {
+  background-color: var(--color-muted);
+  color: var(--color-foreground);
+}
+
+/* Replace row action buttons */
+.dali-find-bar__action {
+  flex: none;
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: calc(var(--radius) - 2px);
+  background-color: var(--color-muted);
+  color: var(--color-foreground);
+  white-space: nowrap;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.dali-find-bar__action:hover:not(:disabled) {
+  background-color: var(--color-accent);
+  border-color: var(--color-accent-teal, #0d9488);
+}
+
+.dali-find-bar__action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── 11. AI streaming caret + pending-content highlight + flow spacer ────────
+ * AiCursorPlugin injects these decorations. All styles are self-contained —
+ * no dependency on BlockNote's collab-cursor classes.
+ */
+
+/* Flow spacer: reserves document height equal to the AI card stack so following
+ * content is pushed down instead of occluded by the floating card.
+ * Height is driven by --dali-ai-bar-h (set by AiCardHost's ResizeObserver on
+ * editor.prosemirrorView.dom). transition keeps the spacer smooth as the card
+ * grows (idle → streaming → result phases). pointer-events: none ensures the
+ * empty space is click-through. */
+.dali-ai-spacer {
+  height: var(--dali-ai-bar-h, 0px);
+  transition: height 120ms ease;
+  pointer-events: none;
+  display: block;
+}
+
+/* Pending-content highlight: applied as a NODE decoration while AI has
+ * written content and the user hasn't yet accepted/reverted. Depending on
+ * where PM attaches the class in BlockNote's block nesting, either the node
+ * itself or its .bn-block-content is the visible surface — cover both (the
+ * descendant rule wins visually when the outer div has no painted area). */
+.dali-doc .dali-ai-pending,
+.dali-doc .dali-ai-pending .bn-block-content,
+.dali-doc .dali-ai-pending.bn-block-content {
+  background-color: color-mix(in srgb, #8b5cf6 8%, transparent);
+  border-radius: 4px;
+  transition: background-color 200ms ease;
+}
+
+/* AI caret: inline widget at the write head. */
+.dali-doc .dali-ai-caret {
+  display: inline;
+  position: relative;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* The 2px vertical bar */
+.dali-doc .dali-ai-caret__bar {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background-color: #8b5cf6;
+  vertical-align: text-bottom;
+  border-radius: 1px;
+  animation: dali-ai-caret-blink 1s step-start infinite;
+}
+
+@keyframes dali-ai-caret-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* "AI" chip above the caret */
+.dali-doc .dali-ai-caret__chip {
+  position: absolute;
+  bottom: calc(1em + 2px);
+  left: 0;
+  background-color: #8b5cf6;
+  color: #ffffff;
+  font-size: 9px;
+  font-family: var(--font-sans);
+  font-weight: 600;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 3px;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+}

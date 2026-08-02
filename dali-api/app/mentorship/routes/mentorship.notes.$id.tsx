@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { redirect, useLoaderData } from "react-router";
 import { Trash2, Smile, Meh, Frown } from "lucide-react";
 import type { Route } from "./+types/mentorship.notes.$id";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
-import { RichTextEditor } from "~/components/RichTextEditor";
+import { parseSessionCookie } from "~/lib/cookies";
+import { DocEditor } from "~/components/doc";
+import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { Tooltip } from "~/components/ui/IconButton";
 import { useDialog } from "~/components/ui/dialog";
 import { AreaPillNav } from "~/components/AreaPillNav";
@@ -24,6 +26,8 @@ type LoaderData = {
   termCode: string;
   domainDisplay: string;
   canEdit: boolean;
+  collabToken: string | null;
+  userName: string;
 };
 
 function fullName(u: { firstName: string; lastName: string }) {
@@ -70,7 +74,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     throw new Response("Forbidden", { status: 403 });
   }
 
-  const [project, term, domain, core] = await Promise.all([
+  const [project, term, domain, core, me] = await Promise.all([
     prisma.project.findUnique({
       where: { id: note.projectId },
       select: { name: true },
@@ -84,12 +88,18 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       select: { displayName: true },
     }),
     isCore(auth.user.sub),
+    prisma.user.findUnique({
+      where: { id: auth.user.sub },
+      select: { firstName: true, lastName: true },
+    }),
   ]);
 
   const data: LoaderData = {
     id: note.id,
     weekOfIso: note.weekOf.toISOString(),
-    contentJson: note.contentJson,
+    // Read view renders blocks; legacy rows still hold ProseMirror JSON until
+    // their first collab edit, so normalize server-side.
+    contentJson: ensureBlocks(note.contentJson),
     vibe: note.vibe,
     mentor: note.mentor,
     mentee: note.mentee,
@@ -97,6 +107,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     termCode: term?.code ?? "?",
     domainDisplay: domain?.displayName ?? "Unknown",
     canEdit: note.mentorId === auth.user.sub || core,
+    collabToken: parseSessionCookie(request),
+    userName: [me?.firstName, me?.lastName].filter(Boolean).join(" ") || "Mentor",
   };
   return data;
 }
@@ -114,12 +126,10 @@ const VIBE_ICON = { Good: Smile, Ok: Meh, Bad: Frown } as const;
 export default function MentorNoteEditor() {
   const data = useLoaderData() as LoaderData;
   const dialog = useDialog();
-  const [value, setValue] = useState<unknown>(data.contentJson);
   const [vibe, setVibe] = useState<Vibe | null>(data.vibe);
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">(
     "idle",
   );
-  const saveTimer = useRef<number | null>(null);
 
   // The vibe is a discrete choice, so persist it immediately (no debounce).
   // Clicking the active vibe again clears it back to "no vibe set".
@@ -140,30 +150,6 @@ export default function MentorNoteEditor() {
       setStatus("error");
     }
   }
-
-  // Debounced autosave on edit. Authoritative state is server-side; if we miss
-  // a flush, the next edit re-triggers it.
-  useEffect(() => {
-    if (!data.canEdit) return;
-    if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(async () => {
-      setStatus("saving");
-      try {
-        const res = await fetch(`/api/mentorship/notes/${data.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ contentJson: value }),
-        });
-        if (!res.ok) throw new Error(`save failed: ${res.status}`);
-        setStatus("saved");
-      } catch {
-        setStatus("error");
-      }
-    }, 800);
-    return () => {
-      if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    };
-  }, [value, data.id, data.canEdit]);
 
   async function handleDelete() {
     if (
@@ -255,13 +241,25 @@ export default function MentorNoteEditor() {
         )}
       </div>
 
-      <RichTextEditor
-        value={value}
-        onChange={setValue}
-        disabled={!data.canEdit}
-        placeholder="What went well, what's blocked, what to follow up on…"
-        className="min-h-[24rem] w-full"
-      />
+      {data.canEdit && data.collabToken ? (
+        <DocEditor
+          features="notes"
+          collab={{
+            documentName: `mentorNote:${data.id}:body`,
+            token: data.collabToken,
+            userName: data.userName,
+          }}
+          placeholder="What went well, what's blocked, what to follow up on…"
+          className="min-h-[24rem] w-full"
+        />
+      ) : (
+        <DocEditor
+          features="notes"
+          editable={false}
+          initialContent={data.contentJson}
+          className="min-h-[24rem] w-full"
+        />
+      )}
     </main>
   );
 }

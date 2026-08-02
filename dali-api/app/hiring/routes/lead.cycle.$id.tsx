@@ -4,6 +4,7 @@ import type { Route } from "./+types/lead.cycle.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
+import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { parseSessionCookie } from "~/lib/cookies";
 import { getPresenceUser } from "~/lib/presence-user";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
@@ -222,23 +223,40 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     orderBy: { createdAt: "desc" },
   });
 
-  const confidentialityAgreementOptions = await prisma.confidentialityAgreement.findMany({
+  // Confidentiality agreements are SigningDocuments (kind Confidentiality),
+  // bound to the cycle via a SigningBinding (scopeKey "cycle:<id>") and signed
+  // as SigningSignatures (roleKey "member"). Reshaped to the picker's original
+  // shape so its UI is unchanged.
+  const confidentialityAgreementOptions = await prisma.signingDocument.findMany({
+    where: { kind: "Confidentiality", archivedAt: null },
     include: { versions: { orderBy: { versionNumber: "desc" } } },
     orderBy: { name: "asc" },
   });
-  const currentConfidentialityBinding = await prisma.cycleConfidentialityAgreement.findUnique({
-    where: { applicationCycleId: params.id },
+  const confidentialityBindingRow = await prisma.signingBinding.findFirst({
+    where: { cycleId: params.id, document: { kind: "Confidentiality" } },
     include: {
-      confidentialityAgreementVersion: {
-        include: { agreement: { select: { name: true } } },
-      },
+      version: { include: { document: { select: { name: true } } } },
     },
   });
-  const confidentialitySignatures = await prisma.confidentialityAgreementSignature.findMany({
-    where: { applicationCycleId: params.id },
-    include: { user: { select: { firstName: true, lastName: true } } },
-    orderBy: { signedAt: "asc" },
-  });
+  const currentConfidentialityBinding = confidentialityBindingRow
+    ? {
+        confidentialityAgreementVersion: {
+          id: confidentialityBindingRow.version.id,
+          versionNumber: confidentialityBindingRow.version.versionNumber,
+          agreement: { name: confidentialityBindingRow.version.document.name },
+        },
+      }
+    : null;
+  const confidentialitySignatures = (
+    await prisma.signingSignature.findMany({
+      where: {
+        roleKey: "member",
+        binding: { cycleId: params.id, document: { kind: "Confidentiality" } },
+      },
+      include: { signer: { select: { firstName: true, lastName: true } } },
+      orderBy: { signedAt: "asc" },
+    })
+  ).map((s) => ({ user: s.signer }));
 
   // Even the count of reviews on this cycle is sensitive — it tells anyone
   // pre-signature how far review has progressed. Zero it out when unsigned;
@@ -393,8 +411,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       })
     : [];
   const cvNumberMap = buildVersionNumberMap(cvSiblings);
-  const withCvNumber = <T extends { id: string }>(cv: T) => ({
+  // description: immutable ChallengeVersion rows — legacy ProseMirror converts
+  // to block JSON on read (ChallengePreviewModal's viewer expects blocks).
+  const withCvNumber = <T extends { id: string; description?: unknown }>(cv: T) => ({
     ...cv,
+    description: ensureBlocks(cv.description),
     versionNumber: cvNumberMap.get(cv.id) ?? null,
   });
   const cycleWithCvNumbers = {
@@ -632,19 +653,35 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (intent === "set-confidentiality-agreement") {
     const versionId =
       (formData.get("confidentialityAgreementVersionId") as string) || null;
+    const cycleId = params.id!;
+    const scopeKey = `cycle:${cycleId}`;
+    const existing = await prisma.signingBinding.findFirst({
+      where: { cycleId, document: { kind: "Confidentiality" } },
+      select: { id: true },
+    });
     if (versionId) {
-      await prisma.cycleConfidentialityAgreement.upsert({
-        where: { applicationCycleId: params.id },
-        update: { confidentialityAgreementVersionId: versionId },
-        create: {
-          applicationCycleId: params.id,
-          confidentialityAgreementVersionId: versionId,
-        },
+      const version = await prisma.signingDocumentVersion.findUnique({
+        where: { id: versionId },
+        select: { documentId: true },
       });
-    } else {
-      await prisma.cycleConfidentialityAgreement.deleteMany({
-        where: { applicationCycleId: params.id },
-      });
+      if (version) {
+        if (existing) {
+          // Update in place so existing signatures survive the version bump
+          // (they no longer match the new version → members re-sign).
+          await prisma.signingBinding.update({
+            where: { id: existing.id },
+            data: { versionId, documentId: version.documentId, scopeKey },
+          });
+        } else {
+          await prisma.signingBinding.create({
+            data: { documentId: version.documentId, versionId, scopeKey, cycleId },
+          });
+        }
+      }
+    } else if (existing) {
+      // Unbind: removing the binding returns the cycle to the no_agreement
+      // state (cascades away its signatures).
+      await prisma.signingBinding.delete({ where: { id: existing.id } });
     }
     return cycleRedirect(request, params.id!);
   }

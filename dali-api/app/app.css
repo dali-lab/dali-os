@@ -3,6 +3,15 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
+/* @blocknote/shadcn ships ZERO compiled UI styles — its editor chrome is
+   Tailwind classes embedded in the dist JS, and the consumer build must
+   generate them. This @source MUST live here, in the app's single Tailwind
+   pass: a separate utilities emission in the lazy editor chunk (the original
+   approach) loads after this sheet and its plain utilities (.flex/.hidden)
+   win same-layer cascade ties over our responsive variants (md:hidden /
+   md:flex), breaking the app shell once any editor page has loaded. */
+@source "../node_modules/@blocknote/shadcn/dist";
+
 /* Class-based dark mode (html.dark) so settings can override system preference. */
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -379,6 +388,30 @@ select:not(:disabled) {
 
 /* Slow recurring coral glow that draws the eye to the page Guide button.
    Pauses on hover/focus — once it's found there's no need to keep nagging. */
+/* `flow-root` contains floated export-HTML images inside the prose container. */
+.prose { display: flow-root; }
+
+/* Floated images in server-rendered export HTML carry data-align on the <img>. */
+.prose img[data-align="left"] {
+  float: left;
+  max-width: 50%;
+  margin: 0.25rem 1.25rem 0.75rem 0;
+}
+
+.prose img[data-align="right"] {
+  float: right;
+  max-width: 50%;
+  margin: 0.25rem 0 0.75rem 1.25rem;
+}
+
+/* Headings shouldn't start halfway down a floated image. */
+.prose :is(h1, h2, h3) { clear: both; }
+
+/* Narrow screens have no room for a column of text beside a picture. */
+@media (max-width: 640px) {
+  .prose img[data-align] { float: none; max-width: 100%; margin: 1rem 0; }
+}
+
 @keyframes guide-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(255, 139, 129, 0); }
   50%      { box-shadow: 0 0 0 4px rgba(255, 139, 129, 0.28); }
@@ -390,158 +423,55 @@ select:not(:disabled) {
   .guide-pulse { animation: none !important; }
 }
 
-/* Collapsible "toggle" block in the collaborative editor (see ToggleBlock).
-   Flex row: chevron in the gutter, then the editable summary (first child) and
-   body in the content column. Flex (not absolute positioning) keeps the caret
-   and summary reliably to the right of the chevron. */
-.toggle-block {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.375rem;
-  margin: 0.25rem 0;
+/* ── Signing fields + merge variables ──────────────────────────────────── */
+.signing-field {
+  display: inline-flex;
+  align-items: baseline;
+  vertical-align: baseline;
+  white-space: nowrap;
 }
-.toggle-block__chevron {
-  flex: 0 0 auto;
-  margin-top: 0.2rem;
-  padding: 0;
-  background: none;
+/* Authoring: a coral pill naming the placeable field, mirroring the mention
+   pill so authors can see where signers will act. */
+.signing-field--author {
+  border-radius: 0.25rem;
+  background: rgba(255, 111, 97, 0.15);
+  color: var(--color-accent-coral, #ff6f61);
+  padding: 0.05rem 0.35rem;
+  font-weight: 500;
+  font-size: 0.9em;
+  cursor: default;
+}
+.signing-field--input .signing-field__text {
   border: none;
-  font-size: 0.7em;
-  line-height: 1;
-  opacity: 0.6;
-  cursor: pointer;
-  user-select: none;
-  transition: transform 120ms ease;
+  border-bottom: 1px solid var(--color-foreground, #1a1a1a);
+  background: transparent;
+  padding: 0 0.25rem;
+  min-width: 12rem;
+  font: inherit;
+  color: inherit;
 }
-.toggle-block[data-open="true"] .toggle-block__chevron {
-  transform: rotate(90deg);
-}
-.toggle-block__content {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-.toggle-block__content > [data-type="toggle-summary"] {
-  position: relative;
-  font-weight: 600;
+.signing-field--input .signing-field__text:focus {
   outline: none;
-  min-height: 1.5em;
+  border-bottom-color: var(--color-accent-coral, #ff6f61);
 }
-/* "Toggle" placeholder shown over an empty (or legacy, summary-less) header. */
-.toggle-block[data-summary-empty="true"] .toggle-block__content > [data-type="toggle-summary"]::before {
-  content: "Toggle";
-  position: absolute;
-  left: 0;
-  top: 0;
-  opacity: 0.5;
-  font-weight: 600;
-  pointer-events: none;
+.signing-field__value {
+  border-bottom: 1px solid var(--color-foreground, #1a1a1a);
+  padding: 0 0.25rem;
+  font-style: italic;
 }
-.toggle-block[data-open="false"] .toggle-block__content > *:not([data-type="toggle-summary"]) {
-  display: none;
+/* An unfilled field in read-only/other-role rendering: a signature line. */
+.signing-field__line {
+  display: inline-block;
+  min-width: 10rem;
+  border-bottom: 1px solid var(--color-foreground, #1a1a1a);
 }
-
-/* Editor placeholder: @tiptap/extension-placeholder only sets data-placeholder +
-   the is-editor-empty class; the visible text is up to the app. Scope to the
-   empty document's first block so it never leaks into empty table cells,
-   callout bodies, or toggle summaries. */
-.ProseMirror > .is-editor-empty:first-child::before {
-  content: attr(data-placeholder);
+.signing-variable--token {
+  border-radius: 0.25rem;
+  background: rgba(128, 128, 128, 0.14);
+  padding: 0.05rem 0.3rem;
+  font-size: 0.9em;
   color: var(--color-muted-foreground);
-  float: left;
-  height: 0;
-  pointer-events: none;
 }
-
-/* ── Callout block ─────────────────────────────────────────────────────── */
-.callout {
-  display: flex;
-  gap: 0.625rem;
-  padding: 0.75rem 0.875rem;
-  margin: 0.5rem 0;
-  border-radius: 0.5rem;
-  border: 1px solid rgba(128, 128, 128, 0.2);
-  background: rgba(128, 128, 128, 0.08);
-}
-.callout__icon {
-  flex-shrink: 0;
-  font-size: 1.1rem;
-  line-height: 1.5;
-  user-select: none;
-}
-.callout__content {
-  flex: 1;
-  min-width: 0;
-}
-.callout__content > :first-child { margin-top: 0; }
-.callout__content > :last-child { margin-bottom: 0; }
-
-/* ── Task list (checkboxes) ────────────────────────────────────────────── */
-ul[data-type="taskList"] {
-  list-style: none;
-  margin-left: 0;
-  padding-left: 0;
-}
-ul[data-type="taskList"] li {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.5rem;
-}
-ul[data-type="taskList"] li > label {
-  flex-shrink: 0;
-  margin-top: 0.2rem;
-  user-select: none;
-}
-ul[data-type="taskList"] li > div {
-  flex: 1;
-  min-width: 0;
-}
-ul[data-type="taskList"] li > div > p { margin: 0; }
-ul[data-type="taskList"] li[data-checked="true"] > div {
-  opacity: 0.6;
-  text-decoration: line-through;
-}
-
-/* ── Tables ────────────────────────────────────────────────────────────── */
-.ProseMirror table {
-  border-collapse: collapse;
-  table-layout: fixed;
-  width: 100%;
-  margin: 0.5rem 0;
-  overflow: hidden;
-}
-.ProseMirror td,
-.ProseMirror th {
-  border: 1px solid rgba(128, 128, 128, 0.35);
-  padding: 0.375rem 0.5rem;
-  vertical-align: top;
-  position: relative;
-  min-width: 3rem;
-}
-.ProseMirror th {
-  background: rgba(128, 128, 128, 0.1);
-  font-weight: 600;
-  text-align: left;
-}
-.ProseMirror td > p,
-.ProseMirror th > p { margin: 0; }
-/* Column-resize + cell-selection affordances from @tiptap/extension-table. */
-.ProseMirror .selectedCell::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: rgba(59, 125, 216, 0.15);
-  pointer-events: none;
-}
-.ProseMirror .column-resize-handle {
-  position: absolute;
-  right: -2px;
-  top: 0;
-  bottom: 0;
-  width: 4px;
-  background: var(--accent-coral, #ff8b81);
-  cursor: col-resize;
-}
-.ProseMirror.resize-cursor { cursor: col-resize; }
 
 /* Brand elevation utilities (paired with neutral surfaces, guide §3.2/§6) */
 .shadow-brand-1 { box-shadow: var(--shadow-1); }
@@ -594,6 +524,54 @@ ul[data-type="taskList"] li[data-checked="true"] > div {
   .shake-on-hover, .shake-on-hover:hover, .shake-on-hover:focus-visible {
     animation: none !important;
     transition: none !important;
+  }
+}
+
+/* ── Print stylesheet: ⌘P / "Print / Save as PDF" ───────────────────────
+ * Hides ALL app chrome so only the document paper prints. The BlockNote /
+ * doc-canvas-specific print rules live in theme.css (section 7) — this block
+ * covers the outer shell (sidebar, mobile nav, top bar, floating command palette,
+ * presence, doc-surface chrome, comments, format popover, version history). */
+@media print {
+  /* Outer shell: sidebar + mobile nav header */
+  [class*="sidebar"],
+  .sidebar-scroll,
+  [class*="bg-sidebar-bg"] {
+    display: none !important;
+  }
+
+  /* Fixed/sticky chrome: top bars, presence, floating elements */
+  .doc-topbar,
+  [class*="fixed"],
+  [class*="sticky"] {
+    display: none !important;
+    position: static !important;
+  }
+
+  /* Command palette */
+  [role="dialog"][class*="Command"],
+  [class*="CommandPalette"] {
+    display: none !important;
+  }
+
+  /* Doc surface: remove flex overhead, let paper fill the page */
+  .doc-surface {
+    display: block !important;
+    background: white !important;
+    min-height: unset !important;
+  }
+
+  /* Make the body full-width with sensible print margins */
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: white !important;
+    color: #000 !important;
+  }
+
+  /* Ensure links stay readable and suppress URL printing for decorative links */
+  a[href]::after {
+    content: none !important;
   }
 }
 

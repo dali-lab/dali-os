@@ -92,9 +92,16 @@ export const handle = {
 // TabWorkspace iframe, so we ask the parent shell to open /documents/:id in a
 // second pane beside the project (dali:openTabToSide → Layout). When somehow
 // rendered standalone (no iframe), fall back to a normal same-tab navigation.
+// Document panes this page asked the shell to open, so switching subtabs can
+// retract them (see closeOpenedDocumentTabs). Module-scoped because the open
+// calls happen deep in the Overview tree, and the iframe reloads — dropping
+// this set — whenever the page itself goes away.
+const openedDocumentUrls = new Set<string>();
+
 function openDocumentTab(pageId: string, label: string) {
   const url = `/documents/${pageId}`;
   if (typeof window !== "undefined" && window.self !== window.top) {
+    openedDocumentUrls.add(url);
     window.parent.postMessage(
       { type: "dali:openTabToSide", url, label },
       window.location.origin,
@@ -102,6 +109,21 @@ function openDocumentTab(pageId: string, label: string) {
   } else if (typeof window !== "undefined") {
     window.location.assign(url);
   }
+}
+
+// Documents are reachable only from Overview, so a doc pane left open while the
+// user reads Board or Planning is orphaned UI next to content it has nothing to
+// do with. Retract on subtab change; the shell no-ops for any the user already
+// closed, and keeps the rest reopenable via mod+shift+T.
+function closeOpenedDocumentTabs() {
+  if (typeof window === "undefined" || window.self === window.top) return;
+  for (const url of openedDocumentUrls) {
+    window.parent.postMessage(
+      { type: "dali:closeTab", url },
+      window.location.origin,
+    );
+  }
+  openedDocumentUrls.clear();
 }
 
 const STATUSES = ["Active", "Paused", "Archived"] as const;
@@ -747,14 +769,44 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const boardCurrentTermId =
     current && boardTermIds.has(current.id) ? current.id : null;
 
-  // Board option lists for the TaskModal: members assignable on this project
-  // (deduped across terms — same person across multiple terms shows once) and
-  // every active domain (reuses the `allDomains` fetch above).
+  // Board option lists for the TaskModal: members assignable on this project,
+  // and every active domain (reuses the `allDomains` fetch above).
+  //
+  // Assignments accumulate term after term, so deduping across all of them
+  // offered everyone who had ever been staffed here — including people who
+  // left the project terms ago. Scope to the current term's team instead, with
+  // two deliberate additions:
+  //   - a project not staffed this term falls back to its most recent staffed
+  //     term, so tasks on a finished project can still be reassigned rather
+  //     than facing an empty picker;
+  //   - anyone already assigned to one of this project's tasks stays listed.
+  //     The picker doubles as the un-assign control (TaskModal renders its
+  //     checkbox list from this set), so dropping them would strand the task
+  //     with an assignee nobody could remove.
+  const currentTermAssignments = current
+    ? project.assignments.filter((a) => a.termId === current.id)
+    : [];
+  const latestStaffedSortKey = project.assignments.reduce<number | null>(
+    (max, a) => (max === null || a.term.sortKey > max ? a.term.sortKey : max),
+    null,
+  );
+  const assignableAssignments =
+    currentTermAssignments.length > 0
+      ? currentTermAssignments
+      : latestStaffedSortKey === null
+        ? []
+        : project.assignments.filter((a) => a.term.sortKey === latestStaffedSortKey);
+
   const memberMap = new Map<string, string>();
-  for (const a of project.assignments) {
+  for (const a of assignableAssignments) {
     const id = a.user.id;
     if (!memberMap.has(id)) {
       memberMap.set(id, fullName(a.user));
+    }
+  }
+  for (const t of tasks) {
+    for (const a of t.assignees) {
+      if (!memberMap.has(a.id)) memberMap.set(a.id, a.name);
     }
   }
   const sprintFilterOrder = { Active: 0, Planned: 1, Closed: 2 } as const;
@@ -1333,6 +1385,8 @@ export default function ProjectDetail() {
       ? tabParam
       : "overview";
   const setTab = (next: Tab) => {
+    if (next === tab) return;
+    closeOpenedDocumentTabs();
     setSearchParams(
       (prev) => {
         prev.set("tab", next);
@@ -3050,24 +3104,20 @@ function DocumentsBlock({
     return () => window.removeEventListener("message", onMessage);
   }, [documents, revalidator]);
 
-  // Share/unshare a page with the project's partner org(s), or mark it as the
-  // project's public write-up on dali.website. Two independent audiences, one
-  // API shape (/api/pages/:id/<field-kebab>), so one function. Persisted via
-  // its own API route; the badge state comes back through the loader.
-  async function toggleVisibility(
-    id: string,
-    field: "partnerVisible" | "publicVisible",
-    next: boolean,
-  ) {
-    const path = field === "partnerVisible" ? "partner-visible" : "public-visible";
+  // Share/unshare a page with the project's partner org(s). The public
+  // write-up is not toggled from here — the Public view owns nominating it
+  // (ensurePublicWriteupPage), so there's no second control for it in the
+  // Documents list. Persisted via its own API route; the badge state comes
+  // back through the loader.
+  async function togglePartnerVisible(id: string, next: boolean) {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(`/api/pages/${id}/${path}`, {
+      const res = await fetch(`/api/pages/${id}/partner-visible`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ [field]: next }),
+        body: JSON.stringify({ partnerVisible: next }),
       });
       if (!res.ok) {
         const b = (await res.json().catch(() => ({}))) as { error?: string };
@@ -3279,14 +3329,21 @@ function DocumentsBlock({
               </span>
             </Tooltip>
           )}
-          {doc.publicVisible && !canEdit && (
+          {/* Read-only marker. Which page is the public write-up is decided on
+              the Public view, so this says which one it is without offering a
+              second way to change it. */}
+          {doc.publicVisible && (
             <Tooltip label="Public write-up — rendered on this project's page on dali.website">
               <span className="flex items-center text-accent-coral">
                 <Globe className="w-3.5 h-3.5" />
               </span>
             </Tooltip>
           )}
-          {canEdit && (hasActivePartner || doc.partnerVisible) && (
+          {/* Shown whenever the viewer can edit, not only once a partner org is
+              linked: teams routinely prepare shared docs before the partner
+              account exists, and gating the control on an active partnership
+              made it vanish from most projects. */}
+          {canEdit && (
             <Tooltip
               label={
                 doc.partnerVisible
@@ -3297,9 +3354,7 @@ function DocumentsBlock({
               <button
                 type="button"
                 disabled={busy}
-                onClick={() =>
-                  void toggleVisibility(doc.id, "partnerVisible", !doc.partnerVisible)
-                }
+                onClick={() => void togglePartnerVisible(doc.id, !doc.partnerVisible)}
                 // Accessible name must stay exactly "Shared with partner" /
                 // "Share with partner": it's the toggle's only name now that the
                 // label is icon-only, and it's the contract partner-portal.spec
@@ -3312,34 +3367,6 @@ function DocumentsBlock({
                 }`}
               >
                 <Handshake className="w-3.5 h-3.5" />
-              </button>
-            </Tooltip>
-          )}
-          {/* Public write-up: the page dali.website renders in this project's
-              detail modal. Independent of partner sharing — the visitor-facing
-              story is rarely the doc the partner works out of. */}
-          {canEdit && (
-            <Tooltip
-              label={
-                doc.publicVisible
-                  ? "Public write-up on dali.website — click to unpublish"
-                  : "Use as the public write-up on dali.website"
-              }
-            >
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() =>
-                  void toggleVisibility(doc.id, "publicVisible", !doc.publicVisible)
-                }
-                aria-label={doc.publicVisible ? "Public write-up" : "Make public write-up"}
-                className={`flex items-center disabled:opacity-60 ${
-                  doc.publicVisible
-                    ? "text-accent-coral"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <Globe className="w-3.5 h-3.5" />
               </button>
             </Tooltip>
           )}
@@ -3773,7 +3800,9 @@ function FilesBlock({
                     </span>
                   </Tooltip>
                 )}
-                {canEdit && (hasActivePartner || f.partnerVisible) && (
+                {/* Same as the Documents toggle: available to any editor, not
+                    only once a partner org is linked. */}
+                {canEdit && (
                   <Tooltip
                     label={
                       f.partnerVisible

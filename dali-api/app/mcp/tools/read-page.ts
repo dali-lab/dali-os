@@ -1,7 +1,8 @@
 // MCP `read_page` — returns a Page's body as Markdown. Reads the persisted
-// Yjs binary from CollabDocument, decodes to ProseMirror JSON, and renders to
-// Markdown via export-markdown.ts. The doc name is derived from the page id
-// (doc:{pageId}:body — the room DocumentEditor writes to); Page.contentDocId
+// Yjs binary from CollabDocument as BlockNote blocks (readDocAsBlocks handles
+// legacy pre-migration docs transparently) and renders Markdown via the
+// server BlockNote codec. The doc name is derived from the page id
+// (doc:{pageId}:body — the room DocEditor writes to); Page.contentDocId
 // only overrides for seeded pages that point at a custom doc. Read access
 // mirrors the web `authorizeCollabDoc` gate on the same doc room: Core
 // everywhere, lab members on Lab pages, project members (or partner-visible
@@ -9,15 +10,15 @@
 // EducationOffering pages.
 
 import { prisma } from "~/lib/db";
-import { collabDocToProseMirror } from "~/collab/export";
-import { renderMarkdown } from "~/collab/export-markdown";
+import { readDocAsBlocks } from "~/collab/read";
+import { blocksToMarkdown } from "~/collab/blocknote-server";
 import { pageDocName } from "~/collab/roomName";
 import { authorizeCollabDoc } from "~/lib/collabAuth";
 
 export const READ_PAGE_TOOL = {
   name: "read_page",
   description:
-    "Read a workspace page's content as Markdown (StarterKit set + images). Lossy for blocks outside that set (tables, embeds render as plain text fallback). Round-trips with set_page_content.",
+    "Read a workspace page's content as Markdown (headings, lists, check lists, quotes, code, tables, images). Lossy for editor-only blocks (callouts/toggles flatten; mentions render as @handle). Round-trips with set_page_content.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -58,12 +59,12 @@ export async function runReadPage(callerId: string, input: Input) {
   // authenticated session. Without this, any mcp:read caller could read a
   // page's Markdown for a project they aren't on, or an instructor-only
   // EducationOffering page.
-  if (!(await authorizeCollabDoc(callerId, pageDocName(page.id)))) {
+  if (!(await authorizeCollabDoc(callerId, pageDocName(page.id))).allowed) {
     throw new ReadPageError("Forbidden", 403);
   }
 
-  const doc = await collabDocToProseMirror(page.contentDocId ?? pageDocName(page.id));
-  const markdown = doc.content?.length ? renderMarkdown(doc) : "";
+  const blocks = await readDocAsBlocks(page.contentDocId ?? pageDocName(page.id));
+  const markdown = blocks.length ? await blocksToMarkdown(blocks) : "";
 
   return {
     id: page.id,

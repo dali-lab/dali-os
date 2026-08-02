@@ -145,6 +145,18 @@ export const EVENT_TYPES = {
     description: "When you're made the maintainer of a page's guide.",
     defaults: { inApp: true, desktop: true, slackDm: true, email: "Off" },
   },
+  "document.sign_request": {
+    kind: "General",
+    area: "Documents",
+    label: "Documents to sign",
+    description:
+      "When you're required to review and sign an agreement (e.g. a term or mentorship agreement).",
+    // The in-app row is the workflow surface (links to the signing page) and is
+    // a hard-gate requirement, so it can't be muted.
+    lockedInApp: true,
+    timeSensitive: true,
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
   "staffing.assigned": {
     kind: "General",
     area: "Staffing",

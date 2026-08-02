@@ -1,8 +1,19 @@
 import type { ReactNode } from 'react'
 import { Link, useMatches, useLocation } from 'react-router'
-import { ChevronRight } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight } from 'lucide-react'
+import { cn } from '~/lib/cn'
+import { useDismissableMenu } from '~/hooks/useDismissableMenu'
 
-export type Crumb = { label: string; to?: string; icon?: ReactNode }
+export type Crumb = {
+  label: string
+  to?: string
+  icon?: ReactNode
+  // When set, the crumb renders as a dropdown "switcher" listing sibling
+  // destinations (nested areas like Admin use this for lateral navigation).
+  // `current` marks the active sibling. Purely additive — crumbs without
+  // `siblings` render exactly as before.
+  siblings?: { label: string; to: string; current?: boolean }[]
+}
 
 // A route opts into a dynamic leaf crumb by exporting:
 //   export const handle = { breadcrumb: (data) => data.application.applicantName }
@@ -64,7 +75,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   emails: 'Emails',
   interviews: 'Interviews',
 
-  'admin-console': 'Admin',
+  'admin': 'Admin',
   members: 'People',
   groups: 'Groups',
   domains: 'Domains',
@@ -149,6 +160,66 @@ function isOpaqueId(seg: string) {
   return /^[a-z0-9]{20,}$/i.test(seg) || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(seg)
 }
 
+// A breadcrumb crumb that is also a switcher: clicking it opens a menu of
+// sibling destinations. Dismisses on outside-click / Escape via the shared hook.
+function CrumbSwitcher({
+  label,
+  siblings,
+}: {
+  label: string
+  siblings: NonNullable<Crumb['siblings']>
+}) {
+  const { open, setOpen, ref } = useDismissableMenu()
+  return (
+    <span ref={ref} className="relative inline-flex">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium text-foreground transition hover:bg-muted/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-coral"
+      >
+        {label}
+        <ChevronDown
+          className={cn(
+            'h-3.5 w-3.5 text-muted-foreground transition-transform',
+            open && 'rotate-180',
+          )}
+          aria-hidden
+        />
+      </button>
+      {open && (
+        <span
+          role="menu"
+          className="absolute left-0 top-full z-50 mt-1 flex min-w-[13rem] flex-col rounded-md border border-border bg-card py-1 shadow-lg"
+        >
+          {siblings.map((s) => (
+            <Link
+              key={s.to}
+              to={s.to}
+              role="menuitem"
+              onClick={() => setOpen(false)}
+              className={cn(
+                'flex items-center gap-2 px-3 py-1.5 text-sm transition hover:bg-muted/50',
+                s.current ? 'font-medium text-foreground' : 'text-muted-foreground',
+              )}
+            >
+              <Check
+                className={cn(
+                  'h-3.5 w-3.5 shrink-0 text-accent-coral',
+                  s.current ? 'opacity-100' : 'opacity-0',
+                )}
+                aria-hidden
+              />
+              {s.label}
+            </Link>
+          ))}
+        </span>
+      )}
+    </span>
+  )
+}
+
 export function Breadcrumbs() {
   const matches = useMatches()
   const { pathname } = useLocation()
@@ -194,7 +265,7 @@ export function Breadcrumbs() {
   if (fullTrail) {
     fullTrail.forEach((c, i) => {
       const leaf = i === fullTrail!.length - 1
-      crumbs.push({ label: c.label, to: leaf ? undefined : c.to, icon: c.icon })
+      crumbs.push({ label: c.label, to: leaf ? undefined : c.to, icon: c.icon, siblings: c.siblings })
     })
   }
   let afterDroppedId = false
@@ -215,7 +286,7 @@ export function Breadcrumbs() {
         // must never end on a link.
         dynamicLabel.forEach((c, j) => {
           const leaf = isLast && j === dynamicLabel.length - 1
-          crumbs.push({ label: c.label, to: leaf ? undefined : c.to, icon: c.icon })
+          crumbs.push({ label: c.label, to: leaf ? undefined : c.to, icon: c.icon, siblings: c.siblings })
         })
       } else {
         crumbs.push({ label: dynamicLabel, to: linkable ? to : undefined })
@@ -258,7 +329,9 @@ export function Breadcrumbs() {
           <span key={i} className="flex items-center gap-1">
             {i > 0 && <ChevronRight className="w-3.5 h-3.5 opacity-50" />}
             {c.icon}
-            {c.to ? (
+            {c.siblings ? (
+              <CrumbSwitcher label={c.label} siblings={c.siblings} />
+            ) : c.to ? (
               <Link to={c.to} className="hover:text-foreground transition-colors">
                 {c.label}
               </Link>

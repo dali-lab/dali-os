@@ -5,7 +5,9 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
-import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
+import { DocEditor } from "~/components/doc";
+import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
+import { isEmptyBody } from "~/lib/signing-fields";
 
 export const meta: Route.MetaFunction = () => [
   { title: "Confidentiality agreement · DALI OS" },
@@ -41,16 +43,17 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     agreement: { name: string };
   } | null = null;
   if (state.activeVersionId) {
-    const v = await prisma.confidentialityAgreementVersion.findUnique({
+    const v = await prisma.signingDocumentVersion.findUnique({
       where: { id: state.activeVersionId },
-      include: { agreement: { select: { name: true } } },
+      include: { document: { select: { name: true } } },
     });
     if (v) {
       agreementVersion = {
         id: v.id,
         versionNumber: v.versionNumber,
-        body: v.body,
-        agreement: { name: v.agreement.name },
+        // Convert-on-read: legacy ProseMirror bodies → block JSON for DocEditor.
+        body: ensureBlocks(v.body),
+        agreement: { name: v.document.name },
       };
     }
   }
@@ -70,31 +73,38 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   if (intent !== "sign") return null;
 
-  const binding = await prisma.cycleConfidentialityAgreement.findUnique({
-    where: { applicationCycleId: cycleId },
-    select: { confidentialityAgreementVersionId: true },
+  const binding = await prisma.signingBinding.findFirst({
+    where: { cycleId, document: { kind: "Confidentiality" } },
+    select: { id: true, versionId: true },
   });
   if (!binding) {
     return { error: "No confidentiality agreement is bound to this cycle" };
   }
 
-  const versionId = binding.confidentialityAgreementVersionId;
-  await prisma.confidentialityAgreementSignature.upsert({
+  const versionId = binding.versionId;
+  const signer = await prisma.user.findUnique({
+    where: { id: auth.user.sub },
+    select: { firstName: true, lastName: true },
+  });
+  await prisma.signingSignature.upsert({
     where: {
-      userId_applicationCycleId: {
-        userId: auth.user.sub,
-        applicationCycleId: cycleId,
+      bindingId_signerUserId_roleKey: {
+        bindingId: binding.id,
+        signerUserId: auth.user.sub,
+        roleKey: "member",
       },
     },
     create: {
-      userId: auth.user.sub,
-      applicationCycleId: cycleId,
-      confidentialityAgreementVersionId: versionId,
+      bindingId: binding.id,
+      versionId,
+      signerUserId: auth.user.sub,
+      roleKey: "member",
+      typedName: signer ? `${signer.firstName} ${signer.lastName}`.trim() : "",
+      ip: request.headers.get("fly-client-ip") || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null,
+      userAgent: request.headers.get("user-agent") || null,
+      fieldValues: {},
     },
-    update: {
-      confidentialityAgreementVersionId: versionId,
-      signedAt: new Date(),
-    },
+    update: { versionId, signedAt: new Date() },
   });
 
   await logAuditEvent({
@@ -161,7 +171,7 @@ export default function CycleConfidentialityPage() {
   }
 
   // unsigned
-  const empty = !agreementVersion || isEmptyDoc(agreementVersion.body);
+  const empty = !agreementVersion || isEmptyBody(agreementVersion.body);
 
   return (
     <div className="max-w-3xl mx-auto py-10 space-y-6">
@@ -185,7 +195,12 @@ export default function CycleConfidentialityPage() {
             published version.
           </p>
         ) : (
-          <RichTextViewer content={agreementVersion!.body} />
+          <DocEditor
+            features="agreement"
+            editable={false}
+            initialContent={agreementVersion!.body}
+            signing={{ mode: "view" }}
+          />
         )}
       </article>
 

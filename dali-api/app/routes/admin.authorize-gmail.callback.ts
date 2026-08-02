@@ -41,7 +41,7 @@ function emailFromIdToken(idToken: string | undefined): string | null {
 // All purposes land back on the Email Senders page, where the connect
 // buttons live.
 function landing(_purpose: EmailPurposeKey): string {
-  return '/admin-console/email-senders'
+  return '/admin/email-senders'
 }
 
 export async function loader({ request }: { request: Request }) {

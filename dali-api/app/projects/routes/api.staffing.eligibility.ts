@@ -5,7 +5,7 @@ import { canManageStaffing } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent } from "~/lib/audit";
 import { isLevel, type Level } from "~/lib/level";
-import { addOrUpdateEligibility } from "~/admin-console/lib/eligibility.server";
+import { addOrUpdateEligibility } from "~/admin/lib/eligibility.server";
 import { publishCycleChange } from "../lib/staffing-events.server";
 import { dedupeLiveAssignments } from "../lib/staffing-board";
 

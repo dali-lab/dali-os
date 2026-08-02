@@ -36,7 +36,7 @@ const TRACKED_PREFIXES = [
   "/partners",
   "/education",
   "/forms",
-  "/admin-console",
+  "/admin",
   "/internal-processes",
   "/calendar",
   "/profile",

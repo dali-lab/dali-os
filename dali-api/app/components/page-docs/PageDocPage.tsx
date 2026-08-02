@@ -10,13 +10,15 @@ import {
   ChevronDown,
   X,
 } from "lucide-react";
-import { RichTextEditor } from "~/components/RichTextEditor";
-import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
+import { DocEditor } from "~/components/doc";
+import { isEmptyBlocks } from "~/lib/blocks";
 import { CommentsRail } from "~/components/collab/CommentsRail";
 import { buttonClasses } from "~/components/ui/Button";
 import { uploadFileToS3 } from "~/lib/upload-client";
 import { MAX_UPLOAD_LABEL } from "~/lib/file-validation";
-import { searchMentionableUsers, type MentionUser } from "~/components/editor/mention";
+// PageDocPage is lazy-loaded (see PageDocContext), so importing from the doc
+// schema package here doesn't drag BlockNote into any route's initial chunk.
+import { searchMentionableUsers, type MentionUser } from "~/components/doc/schema/mention";
 import { Tooltip } from "~/components/ui/IconButton";
 
 type Maintainer = { id: string; name: string; handle: string | null };
@@ -246,15 +248,40 @@ export function PageDocPage({
   return (
     <div className="flex min-h-[70vh] flex-col gap-5" aria-labelledby={TITLE_ID}>
       <header className="flex items-start justify-between gap-4 border-b border-border pb-4">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
+          {/* The input lives inside the h1 so the heading — and the
+              aria-labelledby that points at it — survives edit mode; a text
+              input's value carries into the accessible name. */}
           <h1 id={TITLE_ID} className="font-heading text-xl font-bold text-foreground sm:text-2xl">
-            {editing ? draftTitle || fallbackTitle : (data?.doc.title ?? fallbackTitle)}
+            {editing ? (
+              <input
+                value={draftTitle}
+                onChange={(e) => setDraftTitle(e.target.value)}
+                placeholder={fallbackTitle}
+                aria-label="Guide title"
+                className="w-full rounded-md border border-transparent bg-transparent px-1.5 py-0.5 -ml-1.5 font-heading text-xl font-bold text-foreground hover:border-border focus:border-border focus:bg-background focus:outline-none focus:ring-2 focus:ring-accent-coral/30 sm:text-2xl"
+              />
+            ) : (
+              (data?.doc.title ?? fallbackTitle)
+            )}
           </h1>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {data?.maintainer
-              ? `Maintained by ${data.maintainer.name}${data.maintainer.handle ? ` · @${data.maintainer.handle}` : ""}`
-              : "No maintainer assigned yet"}
-          </p>
+          {editing && data?.canAssignMaintainer ? (
+            <div className="mt-1.5 max-w-sm">
+              <MaintainerPicker
+                currentLabel={maintainerLabel}
+                onSelect={(u) => {
+                  setMaintainerId(u?.id ?? null);
+                  setMaintainerLabel(u?.name ?? null);
+                }}
+              />
+            </div>
+          ) : (
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {data?.maintainer
+                ? `Maintained by ${data.maintainer.name}${data.maintainer.handle ? ` · @${data.maintainer.handle}` : ""}`
+                : "No maintainer assigned yet"}
+            </p>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           {headerActions}
@@ -281,31 +308,6 @@ export function PageDocPage({
 
       {status === "ready" && data && (
         <div className="flex flex-col gap-5">
-          {editing && (
-            <div className="flex flex-col gap-3 rounded-lg border border-border bg-muted/20 p-3">
-              <label className="flex flex-col gap-1">
-                <span className={SECTION_LABEL_CLASS}>Guide title</span>
-                <input
-                  value={draftTitle}
-                  onChange={(e) => setDraftTitle(e.target.value)}
-                  className="rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-                />
-              </label>
-              {data.canAssignMaintainer && (
-                <div className="flex flex-col gap-1">
-                  <span className={SECTION_LABEL_CLASS}>Maintainer</span>
-                  <MaintainerPicker
-                    currentLabel={maintainerLabel}
-                    onSelect={(u) => {
-                      setMaintainerId(u?.id ?? null);
-                      setMaintainerLabel(u?.name ?? null);
-                    }}
-                  />
-                </div>
-              )}
-            </div>
-          )}
-
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
             <SectionSidebar
               sections={sections.map((s) => ({ id: s.id, title: s.title }))}
@@ -436,8 +438,14 @@ function SectionSidebar({
           return (
             <div
               key={s.id}
-              className={`group flex min-w-[8rem] flex-col gap-1 rounded-md sm:min-w-0 ${
-                selected ? "bg-muted/70" : "hover:bg-muted/40"
+              // Selection follows the app's active-nav convention (accent-coral
+              // edge + text, as in AreaPillNav) rather than a muted tint, which
+              // was too faint to read as selected in light mode. The
+              // transparent edge on unselected rows keeps the text aligned.
+              className={`group flex min-w-[8rem] flex-col gap-1 rounded-md border-l-2 sm:min-w-0 ${
+                selected
+                  ? "border-accent-coral bg-accent-coral/10"
+                  : "border-transparent hover:bg-muted/40"
               }`}
             >
               {editing ? (
@@ -484,7 +492,7 @@ function SectionSidebar({
                   type="button"
                   onClick={() => onSelect(s.id)}
                   className={`w-full truncate px-2.5 py-1.5 text-left text-sm ${
-                    selected ? "font-semibold text-foreground" : "text-foreground/80"
+                    selected ? "font-semibold text-accent-coral" : "text-foreground/80"
                   }`}
                 >
                   {s.title}
@@ -499,17 +507,30 @@ function SectionSidebar({
 }
 
 function SectionReadPanel({ section }: { section: SectionData }) {
-  const emptyBody = isEmptyDoc(section.body);
+  const emptyBody = isEmptyBlocks(section.body);
   return (
     <div className="flex flex-col gap-4">
-      <h3 className="font-heading text-base font-semibold text-foreground">{section.title}</h3>
+      {/* One step below the guide's own h1 (text-xl/2xl), so the section you're
+          reading is legible as the heading of this pane rather than sitting at
+          body size. */}
+      <h3 className="font-heading text-lg font-bold text-foreground sm:text-xl">
+        {section.title}
+      </h3>
       {section.videoUrl && (
         <video src={section.videoUrl} controls className="w-full rounded-lg bg-black" />
       )}
       {emptyBody ? (
         <p className={EMPTY_CLASS}>No guide written for this section yet.</p>
       ) : (
-        <RichTextViewer content={section.body} enableMentions />
+        // Keyed per section: DocEditor reads initialContent once, so switching
+        // sections must remount it. "guide" = mentions + images.
+        <DocEditor
+          key={section.id}
+          features="guide"
+          density="compact"
+          editable={false}
+          initialContent={section.body}
+        />
       )}
     </div>
   );
@@ -612,13 +633,16 @@ function SectionEditPanel({
 
       <div className="flex flex-col gap-1.5">
         <span className={SECTION_LABEL_CLASS}>Guide</span>
-        <RichTextEditor
+        {/* Section bodies save as BlockNote block JSON (the API converts
+            legacy ProseMirror on read, so initialContent is always blocks). */}
+        <DocEditor
           key={section.id}
-          value={section.body}
+          features="guide"
+          aiEnabled
+          initialContent={section.body}
           onChange={(body) => onChange({ body })}
-          enableMentions
-          richToolbar
           placeholder="Explain this section of the page."
+          className="rounded-md border border-border bg-card py-2"
         />
       </div>
 

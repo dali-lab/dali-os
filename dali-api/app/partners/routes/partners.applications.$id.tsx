@@ -23,11 +23,11 @@ import {
 } from "../lib/partner-application";
 import { formAnswerRows } from "~/forms/lib/answer-rows.server";
 import type { Question } from "~/types";
-import { CollaborativeEditor } from "~/components/CollaborativeEditor";
+import { DocEditor } from "~/components/doc";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { EditModeToggle, useEditMode } from "~/components/EditModeToggle";
-import { RichTextEditor } from "~/components/RichTextEditor";
-import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
+import { isEmptyBlocks } from "~/lib/blocks";
+import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { useDialog, useConfirmSubmit } from "~/components/ui/dialog";
 
 export const meta: Route.MetaFunction = ({ data }) => {
@@ -139,7 +139,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         id: d.id,
         domainId: d.domainId,
         domainName: d.domain.displayName,
-        expectedChallenges: d.expectedChallenges,
+        // Legacy ProseMirror scope docs convert to block JSON on read; edits
+        // save blocks back to the same column.
+        expectedChallenges: ensureBlocks(d.expectedChallenges),
         expectedMembers: d.expectedMembers,
       })),
     },
@@ -833,9 +835,13 @@ function DomainScopeBlock({
                         {d.expectedMembers === 1 ? "member" : "members"}
                       </span>
                     </div>
-                    {!isEmptyDoc(d.expectedChallenges) ? (
-                      <RichTextViewer
-                        content={d.expectedChallenges}
+                    {!isEmptyBlocks(d.expectedChallenges) ? (
+                      <DocEditor
+                        key={d.id}
+                        features="notes"
+                        density="compact"
+                        editable={false}
+                        initialContent={d.expectedChallenges}
                         className="text-sm text-muted-foreground mt-1"
                       />
                     ) : (
@@ -916,7 +922,7 @@ function DomainScopeEditRow({
       onSubmit={(e) => {
         e.preventDefault();
         const n = Math.max(0, Number(members) || 0);
-        onSave(n, isEmptyDoc(challenges) ? null : challenges);
+        onSave(n, isEmptyBlocks(challenges) ? null : challenges);
       }}
       className="py-3 flex flex-col gap-2"
     >
@@ -955,10 +961,13 @@ function DomainScopeEditRow({
         <span className="text-muted-foreground">
           Expected challenges / scope
         </span>
-        <RichTextEditor
-          value={challenges}
+        <DocEditor
+          features="notes"
+          density="compact"
+          initialContent={row.expectedChallenges}
           onChange={setChallenges}
           placeholder="What does the partner expect this domain to deliver?"
+          className="rounded-md border border-border bg-card py-2"
         />
       </label>
     </form>
@@ -999,14 +1008,16 @@ function SowBlock({
           token={collabToken}
           userName={userName}
         >
-          <CollaborativeEditor
-            editorId={documentName}
-            documentName={documentName}
-            token={collabToken}
-            userName={userName}
-            disabled={!canEdit}
+          <DocEditor
+            features="notes"
+            editable={canEdit}
             placeholder="Draft the statement of work…"
-            className="border border-border rounded-md"
+            className="border border-border rounded-md bg-card py-2"
+            collab={{
+              documentName,
+              token: collabToken,
+              userName,
+            }}
           />
         </PresenceProvider>
       ) : (

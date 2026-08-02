@@ -1,6 +1,7 @@
 import * as Y from "yjs";
 import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
+import { ydocToBlocks } from "./read";
 
 // @-mention notifications for collaborative document *bodies*. Comment mentions
 // go through api.comments; page-doc guide bodies through api.page-docs. This is
@@ -17,22 +18,52 @@ function parseDocRoom(documentName: string): string | null {
   return m ? m[1]! : null;
 }
 
-// Walk the Y.XmlFragment for `mention` elements and collect their user ids.
-// y-prosemirror serializes the ProseMirror mention node's `id` attr onto the
-// Y.XmlElement, so getAttribute("id") is the tagged user id.
+// Collect the user ids of every `mention` inline node in the doc body. Reads
+// the block JSON via ydocToBlocks on a *clone* of the doc — the server schema
+// does not know the `comment` mark, so reading the live doc through y-prosemirror
+// would delete Y.XmlText items that carry comment marks (a destructive side-effect
+// inside y-prosemirror's error handler). Using a clone means any such deletion
+// happens to a throwaway doc and never propagates to connected clients.
 export function extractMentionUserIds(doc: Y.Doc): string[] {
-  const fragment = doc.getXmlFragment("default");
   const ids = new Set<string>();
-  const walk = (node: Y.XmlElement | Y.XmlText | Y.XmlHook) => {
-    if (node instanceof Y.XmlElement) {
-      if (node.nodeName === "mention") {
-        const id = node.getAttribute("id");
-        if (typeof id === "string" && id) ids.add(id);
-      }
-      for (let i = 0; i < node.length; i++) walk(node.get(i));
+  type InlineNode = { type?: string; props?: Record<string, unknown>; content?: unknown };
+  const walkInline = (node: unknown) => {
+    if (node == null || typeof node !== "object") return;
+    const inline = node as InlineNode;
+    if (inline.type === "mention") {
+      const id = inline.props?.id;
+      if (typeof id === "string" && id) ids.add(id);
     }
+    if (Array.isArray(inline.content)) inline.content.forEach(walkInline);
   };
-  for (let i = 0; i < fragment.length; i++) walk(fragment.get(i));
+  const walkBlock = (block: {
+    content?: unknown;
+    children?: unknown[];
+  }) => {
+    const content = block.content;
+    if (Array.isArray(content)) {
+      content.forEach(walkInline);
+    } else if (content && typeof content === "object") {
+      const rows = (content as { rows?: { cells?: unknown[] }[] }).rows ?? [];
+      for (const row of rows) {
+        for (const cell of row.cells ?? []) {
+          if (Array.isArray(cell)) cell.forEach(walkInline);
+          else if (cell && typeof cell === "object") {
+            const cellContent = (cell as { content?: unknown[] }).content;
+            if (Array.isArray(cellContent)) cellContent.forEach(walkInline);
+          }
+        }
+      }
+    }
+    for (const child of block.children ?? []) walkBlock(child as typeof block);
+  };
+  const clone = new Y.Doc();
+  try {
+    Y.applyUpdate(clone, Y.encodeStateAsUpdate(doc));
+    for (const block of ydocToBlocks(clone).blocks) walkBlock(block);
+  } finally {
+    clone.destroy();
+  }
   return [...ids];
 }
 
@@ -67,16 +98,21 @@ export async function notifyCollabDocMentions(
       where: { id: pageId },
       select: { title: true },
     });
+    // Each recipient gets a personalised link (?mention=<userId>) so the
+    // document page can locate and flash their own @-mention chip on arrival.
+    // NotifyRecipient extends Partial<NotifyMessage>, so `link` on the
+    // recipient overrides the shared message.link in notify()'s merged().
     await notify({
       eventType: "pagedoc.mention",
       message: {
-        // ?mention=1 tells the document page to scroll to (and flash) this
-        // reader's own mention once the collab doc syncs.
         title: `You were mentioned in: ${page?.title ?? "a document"}`,
         body: "You were tagged in a document.",
-        link: `/documents/${pageId}?mention=1`,
+        link: `/documents/${pageId}?mention=`, // fallback; per-recipient link wins
       },
-      recipients: fresh.map((userId) => ({ userId })),
+      recipients: fresh.map((userId) => ({
+        userId,
+        link: `/documents/${pageId}?mention=${userId}`,
+      })),
     });
   }
 

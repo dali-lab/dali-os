@@ -3,7 +3,8 @@ import type { Route } from "./+types/education.$offeringId.page.$pageId";
 import { requireEnrollment } from "~/education/lib/access.server";
 import { readMaterialPage } from "~/education/lib/lms.server";
 import { prisma } from "~/lib/db";
-import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
+import { DocEditor, countWords } from "~/components/doc";
+import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { buttonClasses } from "~/components/ui/Button";
 
 export const meta: Route.MetaFunction = ({ data }) => [
@@ -45,7 +46,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   return {
     offeringId: params.offeringId!,
     offeringTitle: offering?.title ?? "Offering",
-    page,
+    // readMaterialPage returns compat ProseMirror JSON; the read-only DocEditor
+    // wants block JSON.
+    page: { ...page, content: ensureBlocks(page.content) },
     isManager,
   };
 }
@@ -79,12 +82,13 @@ export default function MaterialPage() {
         )}
       </header>
       <div className="bg-card border border-border rounded-lg p-5">
-        {isEmptyDoc(page.content) ? (
+        {countWords(page.content) === 0 ? (
           <p className="text-sm text-muted-foreground italic">
             Nothing written here yet.
           </p>
         ) : (
-          <RichTextViewer content={page.content} />
+          // "document" so nothing a page-doc can hold gets schema-stripped.
+          <DocEditor features="document" editable={false} initialContent={page.content} />
         )}
       </div>
     </div>

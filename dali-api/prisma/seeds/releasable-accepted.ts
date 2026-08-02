@@ -49,21 +49,24 @@ async function main() {
   });
   if (!admin) throw new Error("No admin user found to act as releaser.");
 
-  const binding = await prisma.cycleConfidentialityAgreement.findUnique({
-    where: { applicationCycleId: CYCLE_ID },
-    select: { confidentialityAgreementVersionId: true },
+  const binding = await prisma.signingBinding.findFirst({
+    where: { cycleId: CYCLE_ID, document: { kind: "Confidentiality" } },
+    select: { id: true, versionId: true },
   });
   if (binding) {
-    const existingSig = await prisma.confidentialityAgreementSignature.findFirst({
-      where: { applicationCycleId: CYCLE_ID, userId: admin.userId },
+    const existingSig = await prisma.signingSignature.findFirst({
+      where: { bindingId: binding.id, signerUserId: admin.userId, roleKey: "member" },
       select: { id: true },
     });
     if (!existingSig) {
-      await prisma.confidentialityAgreementSignature.create({
+      await prisma.signingSignature.create({
         data: {
-          userId: admin.userId,
-          applicationCycleId: CYCLE_ID,
-          confidentialityAgreementVersionId: binding.confidentialityAgreementVersionId,
+          bindingId: binding.id,
+          versionId: binding.versionId,
+          signerUserId: admin.userId,
+          roleKey: "member",
+          typedName: "",
+          fieldValues: {},
         },
       });
       console.log(`  ✓ signed confidentiality for releaser (${admin.user.firstName})`);

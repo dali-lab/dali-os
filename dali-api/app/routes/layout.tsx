@@ -8,6 +8,7 @@ import { LaunchWelcome } from '~/components/LaunchWelcome'
 import { TimeZonePrompt } from '~/components/TimeZonePrompt'
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { getUserRoles, isLabMentor } from '~/lib/roles'
+import { getAppGateOutstanding } from '~/signing/lib/state.server'
 import { getActiveCycle } from '~/hiring/lib/cycles'
 import { prisma } from '~/lib/db'
 import { resolvePhotoUrl } from '~/lib/photo'
@@ -60,6 +61,25 @@ export async function loader({ request }: Route.LoaderArgs) {
     canViewForms,
     canViewStaffing,
   } = roles
+
+  // Hard gate: a lab member who owes a signature on an app-enforced agreement
+  // (membership, mentorship) can only reach the signing surface until they
+  // sign. /sign* and /logout are exempt to avoid a redirect loop. Confidentiality
+  // is HiringCycle-scoped and gated inside hiring, so it never triggers here.
+  {
+    const url = new URL(request.url)
+    const path = url.pathname
+    const gateExempt =
+      path === '/sign' || path.startsWith('/sign/') || path.startsWith('/logout')
+    if (isLabMember && !gateExempt) {
+      const outstanding = await getAppGateOutstanding(auth.user.sub)
+      if (outstanding) {
+        return redirect(
+          `/sign/${outstanding.bindingId}?next=${encodeURIComponent(path + url.search)}`,
+        )
+      }
+    }
+  }
 
   // Whether to show the Hiring tab at all. Core/Admin/DomainLead always; other
   // lab members only if they're a reviewer or interviewer on ANY cycle (not
@@ -140,6 +160,8 @@ const LAYOUT_MUTATING_ACTION_PREFIXES = [
   '/api/hiring/cycles',
   '/logout',
   '/members',
+  // Signing clears the hard gate — revalidate the shell so the gate re-checks.
+  '/sign',
 ]
 
 export function shouldRevalidate({ formAction, currentUrl, nextUrl, defaultShouldRevalidate }: ShouldRevalidateFunctionArgs) {

@@ -16,23 +16,30 @@ export async function getCycleConfidentialityState(
   userId: string,
   cycleId: string,
 ): Promise<ConfidentialityState> {
+  // Backed by the generalized document-signing tables: a confidentiality
+  // agreement is a SigningDocument (kind Confidentiality) bound to the cycle via
+  // a SigningBinding (scopeKey "cycle:<id>"), and a member signs it as a
+  // SigningSignature (roleKey "member"). The public API here is unchanged so the
+  // ~30 hiring gate call sites keep working.
   const [binding, signature] = await Promise.all([
-    prisma.cycleConfidentialityAgreement.findUnique({
-      where: { applicationCycleId: cycleId },
-      select: { confidentialityAgreementVersionId: true },
+    prisma.signingBinding.findFirst({
+      where: { cycleId, document: { kind: "Confidentiality" } },
+      select: { versionId: true },
     }),
-    prisma.confidentialityAgreementSignature.findUnique({
+    prisma.signingSignature.findFirst({
       where: {
-        userId_applicationCycleId: { userId, applicationCycleId: cycleId },
+        signerUserId: userId,
+        roleKey: "member",
+        binding: { cycleId, document: { kind: "Confidentiality" } },
       },
-      select: { confidentialityAgreementVersionId: true },
+      select: { versionId: true },
     }),
   ]);
 
   if (!binding) return { status: "no_agreement", activeVersionId: null };
 
-  const activeVersionId = binding.confidentialityAgreementVersionId;
-  if (signature && signature.confidentialityAgreementVersionId === activeVersionId) {
+  const activeVersionId = binding.versionId;
+  if (signature && signature.versionId === activeVersionId) {
     return { status: "signed", activeVersionId };
   }
   return { status: "unsigned", activeVersionId };

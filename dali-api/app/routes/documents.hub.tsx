@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import {
   redirect,
   useLoaderData,
+  useNavigate,
   useRevalidator,
   useSearchParams,
 } from "react-router";
@@ -10,9 +11,11 @@ import {
   Archive,
   ChevronDown,
   ChevronRight,
+  Copy,
   FileText,
   Folder,
   FolderPlus,
+  LayoutTemplate,
   Pin,
   Plus,
   Search,
@@ -229,7 +232,10 @@ export default function DocumentsHub() {
   >;
   const [, setSearchParams] = useSearchParams();
   const revalidator = useRevalidator();
+  const navigate = useNavigate();
   const dialog = useDialog();
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
+  const [labTemplates, setLabTemplates] = useState<Array<{ id: string; title: string; iconEmoji: string | null }> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [query, setQuery] = useState("");
@@ -324,6 +330,31 @@ export default function DocumentsHub() {
       revalidator.revalidate();
     }
   }
+
+  const openTemplatePicker = useCallback(async () => {
+    setTemplatePickerOpen(true);
+    if (labTemplates !== null) return;
+    const res = await fetch("/api/page-templates?workspaceType=Lab", { credentials: "include" });
+    if (res.ok) {
+      const data = (await res.json()) as { templates: Array<{ id: string; title: string; iconEmoji: string | null }> };
+      setLabTemplates(data.templates);
+    } else {
+      setLabTemplates([]);
+    }
+  }, [labTemplates]);
+
+  async function createFromTemplate(templatePageId: string) {
+    setTemplatePickerOpen(false);
+    const b = await post("/api/page-templates", {
+      templatePageId,
+      targetWorkspaceType: "Lab",
+      targetWorkspaceId: null,
+    });
+    if (b?.id) {
+      revalidator.revalidate();
+      navigate(`/documents/${b.id}`);
+    }
+  }
   async function createLabFolder() {
     const title = await dialog.prompt({ title: "New folder", label: "Folder name" });
     if (!title || !title.trim()) return;
@@ -348,6 +379,13 @@ export default function DocumentsHub() {
   async function togglePin(id: string, next: boolean) {
     const b = await post(`/api/pages/${id}/pin`, { pinned: next });
     if (b) revalidator.revalidate();
+  }
+  async function duplicateDocument(id: string) {
+    const b = await post(`/api/pages/${id}/duplicate`);
+    if (b?.id) {
+      revalidator.revalidate();
+      navigate(`/documents/${b.id}`);
+    }
   }
   // Drag a lab document into a folder (parentPageId = folder id) or back to the
   // top level (null). Folders themselves aren't draggable.
@@ -489,6 +527,19 @@ export default function DocumentsHub() {
                 }`}
               >
                 <Pin className={`w-3.5 h-3.5 ${doc.pinned ? "fill-current" : ""}`} />
+              </button>
+            </Tooltip>
+          )}
+          {canManage && (
+            <Tooltip label="Duplicate">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void duplicateDocument(doc.id)}
+                aria-label="Duplicate document"
+                className="text-muted-foreground hover:text-foreground disabled:opacity-60"
+              >
+                <Copy className="w-3.5 h-3.5" />
               </button>
             </Tooltip>
           )}
@@ -727,6 +778,14 @@ export default function DocumentsHub() {
             <button
               type="button"
               disabled={busy}
+              onClick={() => void openTemplatePicker()}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-60"
+            >
+              <LayoutTemplate className="w-4 h-4" /> From template…
+            </button>
+            <button
+              type="button"
+              disabled={busy}
               onClick={() => void createLabDocument()}
               className="inline-flex items-center gap-1.5 rounded-md bg-accent-coral px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-coral/90 disabled:opacity-60"
             >
@@ -735,6 +794,58 @@ export default function DocumentsHub() {
           </div>
         )}
       </div>
+
+      {/* Template picker dropdown */}
+      {templatePickerOpen && (
+        <div
+          className="fixed inset-0 z-40 flex items-start justify-end pt-16 pr-4"
+          onClick={(e) => { if (e.target === e.currentTarget) setTemplatePickerOpen(false); }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Choose a template"
+            className="w-72 rounded-lg border border-border bg-card shadow-brand-2 overflow-hidden"
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+              <span className="text-sm font-semibold text-foreground">Start from template</span>
+              <button
+                type="button"
+                onClick={() => setTemplatePickerOpen(false)}
+                aria-label="Close"
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="max-h-64 overflow-y-auto p-2">
+              {labTemplates === null ? (
+                <p className="px-2 py-4 text-sm text-muted-foreground text-center">Loading…</p>
+              ) : labTemplates.length === 0 ? (
+                <p className="px-2 py-4 text-sm text-muted-foreground text-center italic">
+                  No lab-wide templates yet. Mark a document as a template from its ⋯ menu.
+                </p>
+              ) : (
+                <ul className="flex flex-col gap-0.5">
+                  {labTemplates.map((tpl) => (
+                    <li key={tpl.id}>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void createFromTemplate(tpl.id)}
+                        className="w-full flex items-center gap-2 px-2.5 py-2 rounded-md text-left text-sm text-foreground hover:bg-muted disabled:opacity-60"
+                      >
+                        <PageIcon iconEmoji={tpl.iconEmoji} />
+                        <span className="truncate">{tpl.title}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Filter bar: search + scope toggle on one row, tag chips below */}
       <div className="flex flex-col gap-3">

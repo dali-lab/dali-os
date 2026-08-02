@@ -1,7 +1,8 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { X } from 'lucide-react'
 import type { Question } from '~/types'
-import { RichTextViewer, isEmptyDoc } from '~/components/RichTextViewer'
+import { DocEditor } from '~/components/doc'
+import { isEmptyBlocks } from '~/lib/blocks'
 import { AnswerDisplay } from '~/hiring/components/ApplicationAnswers'
 
 // Question types where the answer is a URL or structured value rather than
@@ -346,11 +347,13 @@ function AnnotatableField({
 
 // Shape of the application as returned by the reviewer.application.$id loader.
 // On InternToFull cycles, `challengeVersion` is null and the domain is loaded
-// directly via the `domain` relation instead.
+// directly via the `domain` relation instead. `description` fields must be
+// loader-normalized block JSON (ensureBlocks) — published ChallengeVersion
+// rows are immutable, so hosts convert legacy ProseMirror on read.
 export interface ApplicationViewerProps {
   application: {
     answers: unknown
-    generalChallengeVersion: { questions: unknown; description?: unknown } | null
+    generalChallengeVersion: { id?: string; questions: unknown; description?: unknown } | null
     domainApplications: Array<{
       id: string
       answers: unknown
@@ -424,9 +427,15 @@ export function ApplicationViewer({ application, questionLabels, initialAnnotati
           <h2 className="text-lg font-semibold text-foreground">General Information</h2>
         </div>
         <div className="p-6 space-y-6">
-          {!isEmptyDoc(application.generalChallengeVersion?.description) && (
+          {!isEmptyBlocks(application.generalChallengeVersion?.description) && (
             <div className="border border-border rounded-md bg-muted/30 px-4 py-3">
-              <RichTextViewer content={application.generalChallengeVersion!.description} />
+              <DocEditor
+                key={application.generalChallengeVersion?.id ?? 'general'}
+                features="notes"
+                density="compact"
+                editable={false}
+                initialContent={application.generalChallengeVersion!.description}
+              />
             </div>
           )}
           {Object.entries(application.answers as Record<string, unknown>).map(([key, value]) => {
@@ -470,9 +479,15 @@ export function ApplicationViewer({ application, questionLabels, initialAnnotati
               <h2 className="text-lg font-semibold text-foreground">{domainName} Challenge</h2>
             </div>
             <div className="p-6 space-y-6">
-              {!isEmptyDoc(cv.description) && (
+              {!isEmptyBlocks(cv.description) && (
                 <div className="border border-border rounded-md bg-muted/30 px-4 py-3">
-                  <RichTextViewer content={cv.description} />
+                  <DocEditor
+                    key={dapp.id}
+                    features="notes"
+                    density="compact"
+                    editable={false}
+                    initialContent={cv.description}
+                  />
                 </div>
               )}
               {Object.entries(dapp.answers as Record<string, unknown>).map(([key, value]) => {

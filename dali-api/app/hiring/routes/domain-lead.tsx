@@ -15,7 +15,9 @@ import { getReviewStatus } from "~/hiring/lib/review-status";
 import { buildCriteriaList } from "~/hiring/lib/rubric-criteria";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { ConfidentialityGate } from "~/hiring/components/ConfidentialityGate";
-import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
+import { DocEditor } from "~/components/doc";
+import { isEmptyBlocks } from "~/lib/blocks";
+import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { Modal } from "~/components/Modal";
 import { ChallengePreviewModal } from "~/hiring/components/ChallengePreviewModal";
 import { Tooltip } from "~/components/ui/IconButton";
@@ -172,12 +174,16 @@ export async function loader({ request }: Route.LoaderArgs) {
           })
         : [];
       const cvNumberMap = buildVersionNumberMap(cvSiblings);
+      // description: immutable ChallengeVersion rows — legacy ProseMirror
+      // converts to block JSON on read (the viewers expect blocks).
       const challengeVersionOptions = challengeVersionOptionsRaw.map((cv) => ({
         ...cv,
+        description: ensureBlocks(cv.description),
         versionNumber: cvNumberMap.get(cv.id) ?? null,
       }));
       const linkedChallengeVersions = linkedChallengeVersionsRaw.map((cv) => ({
         ...cv,
+        description: ensureBlocks(cv.description),
         versionNumber: cvNumberMap.get(cv.id) ?? null,
       }));
 
@@ -1518,9 +1524,15 @@ function ChallengeSelector({ cycleId, domainId, options, linkedChallengeVersions
                     </button>
                   </div>
                 </div>
-                {!isEmptyDoc(cv.description) && (
+                {!isEmptyBlocks(cv.description) && (
                   <div className="mt-2 border border-border rounded-md bg-muted/30 px-4 py-3">
-                    <RichTextViewer content={cv.description} />
+                    <DocEditor
+                      key={cv.id}
+                      features="notes"
+                      density="compact"
+                      editable={false}
+                      initialContent={cv.description}
+                    />
                   </div>
                 )}
               </div>

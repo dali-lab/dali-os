@@ -1,5 +1,5 @@
 import { useFetcher } from "react-router";
-import { CollaborativeEditor } from "~/components/CollaborativeEditor";
+import { DocEditor } from "~/components/doc";
 import { Modal } from "~/components/Modal";
 import {
   DECISION_COLORS,
@@ -158,12 +158,16 @@ export function InterviewPrepNoteSection({
             {description} Edited live with other leads; shown to interviewers.
           </p>
           {collabToken && userName ? (
-            <CollaborativeEditor
-              editorId="prep-note"
-              documentName={`domainApplication:${domainApplicationId}:prepNote`}
-              token={collabToken}
-              userName={userName}
+            <DocEditor
+              features="notes"
+              density="compact"
               placeholder="Specific things to bring up in the interview…"
+              className="rounded-lg border border-gray-300 bg-card focus-within:ring-2 focus-within:ring-accent-coral focus-within:border-transparent"
+              collab={{
+                documentName: `domainApplication:${domainApplicationId}:prepNote`,
+                token: collabToken,
+                userName,
+              }}
             />
           ) : (
             <div className="p-3 bg-yellow-50 rounded-lg border border-yellow-200 text-sm text-yellow-800">

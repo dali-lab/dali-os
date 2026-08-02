@@ -79,6 +79,7 @@ import { runInterviewReminders } from "~/jobs/interview-reminders.server";
 import { runStandupPrompts } from "~/jobs/standup-prompts.server";
 import { runTaskAutoArchive } from "~/jobs/task-auto-archive.server";
 import { runMembershipStatusSync } from "~/jobs/membership-status-sync.server";
+import { runSigningIssuance } from "~/jobs/signing-issuance.server";
 
 export const JOBS: JobDefinition[] = [
   {
@@ -285,6 +286,13 @@ export const JOBS: JobDefinition[] = [
       },
     ],
     handler: runMembershipStatusSync,
+  },
+  {
+    name: "signing-issuance",
+    description:
+      "Re-issues recurring (per-term) agreements each term: for every per-term document already put in force once, materializes the current term's binding and notifies its audience to sign.",
+    intervalMinutes: 1440,
+    handler: runSigningIssuance,
   },
 ];
 

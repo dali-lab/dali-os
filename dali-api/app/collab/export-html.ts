@@ -1,8 +1,17 @@
-// Pure ProseMirror-JSON → HTML rendering for the document export pipeline.
+// LEGACY pure ProseMirror-JSON → HTML rendering, plus the shared PMNode type
+// and the buildExportHtml document shell (both still current). The live HTML
+// export path is blocks-based (blocksToHtml in blocknote-server.ts);
+// renderNodes remains for PM-JSON inputs that are never transcoded — signing
+// frozen bodies — and as the reference renderer for legacy fixtures.
 // Deliberately free of any DB / Prisma import so it can be unit-tested and
-// reused without loading the database client. The DB-coupled decode functions
-// live in export.ts (which re-exports these); the PDF renderer in export-pdf.ts
-// walks the same node/mark set so the two formats stay visually consistent.
+// reused without loading the database client.
+
+import {
+  isSigningFieldType,
+  fieldDisplayText,
+  variableDisplayText,
+  type SigningFieldType,
+} from "~/lib/signing-fields";
 
 export type PMNode = {
   type: string;
@@ -11,6 +20,21 @@ export type PMNode = {
   marks?: { type: string; attrs?: Record<string, unknown> }[];
   attrs?: Record<string, unknown>;
 };
+
+// Signing field / variable atoms — inline leaf nodes. Values are baked into
+// attrs.value by bakeSigningBody before export, so the renderer reads attrs
+// only. An unfilled field renders as a blank signature line.
+function renderSigningFieldHtml(node: PMNode): string {
+  const type = node.type as SigningFieldType;
+  const value = node.attrs?.value;
+  if (type === "checkboxField") {
+    return `<span>${fieldDisplayText(type, value)}</span>`;
+  }
+  const text = fieldDisplayText(type, value);
+  return text
+    ? `<span style="border-bottom:1px solid #333;padding:0 4px;font-style:italic;">${escapeHtml(text)}</span>`
+    : `<span style="display:inline-block;min-width:160px;border-bottom:1px solid #333;">&nbsp;</span>`;
+}
 
 function escapeHtml(s: string): string {
   return s
@@ -90,12 +114,42 @@ function renderNode(node: PMNode): string {
       )}</code></pre>`;
     case "horizontalRule":
       return "<hr />";
+    case "pageBreak":
+      return '<div class="page-break" style="break-after:page;page-break-after:always;border-top:1px dashed #bbb;margin:24px 0;" aria-hidden="true"></div>';
     case "hardBreak":
       return "<br />";
     case "image": {
       const src = typeof node.attrs?.src === "string" ? escapeHtml(node.attrs.src) : "";
       const alt = typeof node.attrs?.alt === "string" ? escapeHtml(node.attrs.alt) : "";
-      return src ? `<img src="${src}" alt="${alt}" />` : "";
+      if (!src) return "";
+      const align = node.attrs?.align;
+      const width = node.attrs?.width;
+      const alignAttr = align === "left" || align === "right" ? ` data-align="${align}"` : "";
+      const widthStyle = typeof width === "number" && width > 0 ? ` style="width:${width}px"` : "";
+      return `<img src="${src}" alt="${alt}"${alignAttr}${widthStyle} />`;
+    }
+    case "file": {
+      // Render as a download link; fall back gracefully when no URL is stored.
+      const url = typeof node.attrs?.url === "string" ? node.attrs.url : "";
+      const name =
+        typeof node.attrs?.name === "string" && node.attrs.name
+          ? node.attrs.name
+          : url.split("/").pop() ?? "File";
+      const caption = typeof node.attrs?.caption === "string" ? node.attrs.caption : "";
+      if (!url) return "";
+      const label = escapeHtml(caption || name);
+      return `<p><a href="${escapeHtml(url)}" download="${escapeHtml(name)}">${label}</a></p>`;
+    }
+    case "video": {
+      // Render as a native <video> when a URL is present; degrade to a link
+      // when it is missing.
+      const url = typeof node.attrs?.url === "string" ? node.attrs.url : "";
+      const caption = typeof node.attrs?.caption === "string" ? node.attrs.caption : "";
+      if (!url) return "";
+      const captionHtml = caption
+        ? `<figcaption>${escapeHtml(caption)}</figcaption>`
+        : "";
+      return `<figure><video src="${escapeHtml(url)}" controls style="max-width:100%;border-radius:6px;"></video>${captionHtml}</figure>`;
     }
     case "toggleBlock": {
       // First child may be a toggleSummary; the rest is the collapsible body.
@@ -132,7 +186,13 @@ function renderNode(node: PMNode): string {
       return `<th>${renderNodes(node.content)}</th>`;
     case "tableCell":
       return `<td>${renderNodes(node.content)}</td>`;
+    case "variable": {
+      const name = typeof node.attrs?.name === "string" ? node.attrs.name : "";
+      return `<span>${escapeHtml(variableDisplayText(name, node.attrs?.value))}</span>`;
+    }
     default:
+      // Signing field atoms render their captured value / a signature line.
+      if (isSigningFieldType(node.type)) return renderSigningFieldHtml(node);
       // Unknown block: render its children so content is never dropped.
       return renderNodes(node.content);
   }
@@ -166,6 +226,7 @@ export function buildExportHtml(title: string, bodyHtml: string): string {
   table { border-collapse: collapse; width: 100%; margin: 12px 0; }
   th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; vertical-align: top; }
   th { background: #f2f2f2; font-weight: 600; }
+  .page-break { break-after: page; page-break-after: always; }
 </style>
 </head>
 <body>

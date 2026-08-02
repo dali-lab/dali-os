@@ -12,7 +12,8 @@ import { validateAnswers } from "~/forms/lib/public-form";
 import { notifyFormSubmission } from "~/forms/lib/submission-notify.server";
 import { FormFieldList } from "~/forms/components/FormField";
 import { FormQuestionField } from "~/components/form-builder/QuestionField";
-import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
+import { DocEditor } from "~/components/doc";
+import { isEmptyBlocks } from "~/lib/blocks";
 import { findMissingRequired } from "~/lib/form-answers";
 
 export const meta: Route.MetaFunction = () => [
@@ -51,15 +52,20 @@ export async function loader({ request }: Route.LoaderArgs) {
   };
 }
 
-// Plain text from the form, stored as the single-paragraph ProseMirror doc
-// the internal scope editor round-trips (see PartnerApplicationDomain schema
-// comment).
+// Plain text from the form, stored as a single-paragraph BlockNote block array
+// — the format the internal scope editor round-trips (mutable rich-text
+// columns store block JSON going forward).
 function wrapChallenges(text: string) {
   if (!text) return null;
-  return {
-    type: "doc",
-    content: [{ type: "paragraph", content: [{ type: "text", text }] }],
-  };
+  return [
+    {
+      id: crypto.randomUUID(),
+      type: "paragraph",
+      props: { backgroundColor: "default", textColor: "default", textAlignment: "left" },
+      content: [{ type: "text", text, styles: {} }],
+      children: [],
+    },
+  ];
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -316,12 +322,16 @@ export default function PartnerApply({ actionData }: Route.ComponentProps) {
             <h2 className="font-heading text-lg font-semibold text-dark-blue">
               A few more questions
             </h2>
-            {Boolean(applicationForm.description) &&
-              !isEmptyDoc(applicationForm.description) && (
-                <div className="text-sm text-muted-foreground -mt-1">
-                  <RichTextViewer content={applicationForm.description} />
-                </div>
-              )}
+            {!isEmptyBlocks(applicationForm.description) && (
+              <div className="text-sm text-muted-foreground -mt-1">
+                <DocEditor
+                  features="notes"
+                  density="compact"
+                  editable={false}
+                  initialContent={applicationForm.description}
+                />
+              </div>
+            )}
             <FormFieldList
               questions={applicationForm.questions}
               values={formAnswers}

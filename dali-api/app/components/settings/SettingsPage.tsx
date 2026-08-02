@@ -4,6 +4,7 @@ import {
   Bell,
   CalendarDays,
   Cable,
+  FileSignature,
   KeyRound,
   Palette,
   PanelTop,
@@ -20,6 +21,7 @@ import { SlackSettingsBlock } from "~/components/settings/SlackSettingsBlock";
 import { SessionsSettingsBlock } from "~/components/settings/SessionsSettingsBlock";
 import { ConnectedAppsSettingsBlock } from "~/components/settings/ConnectedAppsSettingsBlock";
 import { NotificationsSettingsBlock } from "~/components/settings/NotificationsSettingsBlock";
+import { AgreementsSettingsBlock } from "~/components/settings/AgreementsSettingsBlock";
 import type { loadSettingsPageData } from "~/lib/settings-page.server";
 
 const SECTION_IDS = [
@@ -29,6 +31,7 @@ const SECTION_IDS = [
   "calendar",
   "slack",
   "notifications",
+  "agreements",
   "devices",
   "connected-apps",
 ] as const;
@@ -41,6 +44,7 @@ const NAV = [
   { id: "calendar", label: "Calendar", icon: CalendarDays },
   { id: "slack", label: "Slack", icon: Slack },
   { id: "notifications", label: "Notifications", icon: Bell },
+  { id: "agreements", label: "Agreements", icon: FileSignature },
   { id: "devices", label: "Your devices", icon: KeyRound },
   { id: "connected-apps", label: "Connected apps", icon: Cable },
 ] as const;
@@ -161,6 +165,19 @@ export function SettingsPage({
             description="Choose how each kind of update reaches you — in-app, email or digest, Slack DM."
           >
             <NotificationsSettingsBlock {...data.notifications} />
+          </SettingsBlock>
+        )}
+
+        {active === "agreements" && (
+          <SettingsBlock
+            id="agreements"
+            title="Agreements"
+            description="Lab agreements you've signed, and any still awaiting your signature."
+          >
+            <AgreementsSettingsBlock
+              outstanding={data.agreements.outstanding}
+              signed={data.agreements.signed}
+            />
           </SettingsBlock>
         )}
 

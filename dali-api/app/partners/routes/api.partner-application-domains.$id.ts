@@ -4,10 +4,11 @@ import { prisma } from "~/lib/db";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { isEmptyDoc } from "~/components/RichTextViewer";
+import { isEmptyBlocks } from "~/lib/blocks";
 
 // POST   /api/partner-application-domains/:id — update expected scope.
-//          Body: { expectedMembers: number, expectedChallenges: ProseMirrorDoc|null }
+//          Body: { expectedMembers: number, expectedChallenges: Block[]|null }
+//          (BlockNote block array; the column stores block JSON going forward)
 // DELETE /api/partner-application-domains/:id — detach the domain from the
 //          application (hard delete; the row is pure join+scope data, nothing
 //          references it).
@@ -20,16 +21,11 @@ type Body = {
   expectedChallenges: unknown;
 };
 
-function isProseMirrorDoc(x: unknown): boolean {
-  if (!x || typeof x !== "object") return false;
-  return (x as { type?: unknown }).type === "doc";
-}
-
 function isBody(x: unknown): x is Body {
   if (!x || typeof x !== "object") return false;
   const r = x as Record<string, unknown>;
   if (typeof r.expectedMembers !== "number") return false;
-  if (r.expectedChallenges !== null && !isProseMirrorDoc(r.expectedChallenges))
+  if (r.expectedChallenges !== null && !Array.isArray(r.expectedChallenges))
     return false;
   return true;
 }
@@ -93,7 +89,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   const expectedMembers = Math.max(0, Math.floor(body.expectedMembers));
-  const expectedChallenges = isEmptyDoc(body.expectedChallenges)
+  const expectedChallenges = isEmptyBlocks(body.expectedChallenges)
     ? Prisma.JsonNull
     : (body.expectedChallenges as Prisma.InputJsonValue);
 

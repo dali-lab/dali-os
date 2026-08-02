@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, Trash2, RotateCcw, MessageSquare } from "lucide-react";
-import { MentionTextInput } from "~/components/editor/MentionTextInput";
+import { MentionTextInput } from "~/components/MentionTextInput";
 import { Avatar } from "~/components/ui/Avatar";
 
 export type Comment = {
@@ -10,7 +10,9 @@ export type Comment = {
   authorId: string;
   authorPhotoUrl?: string | null;
   body: string;
-  anchor: { from: string; to: string } | null;
+  /** Legacy Yjs anchor {from, to}, BlockNote inline marker {kind:"blocknote"},
+   *  or null for doc/file-level threads. */
+  anchor: { from: string; to: string } | { kind: "blocknote" } | null;
   resolved: boolean;
   createdAt: string;
   // File comments: the ProjectFileVersion current when the comment was
@@ -50,11 +52,57 @@ function VersionChip({
   );
 }
 
+// ── Inline-thread anchor helpers ────────────────────────────────────────────
+
+/** True when the anchor is a legacy Yjs {from,to} pair. */
+function isYjsAnchor(anchor: Comment["anchor"]): anchor is { from: string; to: string } {
+  return (
+    anchor !== null &&
+    typeof anchor === "object" &&
+    "from" in anchor &&
+    "to" in anchor
+  );
+}
+
+/** True when the anchor is a BlockNote inline mark {kind:"blocknote"}. */
+function isBlockNoteAnchor(anchor: Comment["anchor"]): anchor is { kind: "blocknote" } {
+  return (
+    anchor !== null &&
+    typeof anchor === "object" &&
+    (anchor as { kind?: string }).kind === "blocknote"
+  );
+}
+
+/** True when clicking this thread card can jump to its editor position. */
+function isJumpable(
+  root: Comment,
+  onFocusAnchor?: (a: { from: string; to: string }) => void,
+  onFocusInlineThread?: (id: string) => void,
+): boolean {
+  if (isYjsAnchor(root.anchor) && onFocusAnchor) return true;
+  if (isBlockNoteAnchor(root.anchor) && onFocusInlineThread) return true;
+  return false;
+}
+
+/** Dispatches the correct jump action based on anchor type. */
+function handleJump(
+  root: Comment,
+  onFocusAnchor?: (a: { from: string; to: string }) => void,
+  onFocusInlineThread?: (id: string) => void,
+) {
+  if (isYjsAnchor(root.anchor) && onFocusAnchor) {
+    onFocusAnchor(root.anchor);
+  } else if (isBlockNoteAnchor(root.anchor) && onFocusInlineThread) {
+    onFocusInlineThread(root.id);
+  }
+}
+
 // Comment threads for a document or file. Doc-level (anchor === null) and
 // inline (anchor !== null) comments share this rail; the host passes
-// `onFocusAnchor` for inline ones so clicking a thread scrolls the editor to
-// its range. The rail owns its own data fetch + mutations so it can be dropped
-// onto any doc/file surface.
+// `onFocusAnchor` (legacy Yjs anchors) or `onFocusInlineThread` (BlockNote
+// inline marks) for inline ones so clicking a thread scrolls the editor to it.
+// The rail owns its own data fetch + mutations so it can be dropped onto any
+// doc/file surface.
 export function CommentsRail({
   targetType,
   targetId,
@@ -65,6 +113,7 @@ export function CommentsRail({
   pendingAnchor,
   onClearPendingAnchor,
   onFocusAnchor,
+  onFocusInlineThread,
   registerRefresh,
   mentionPath,
   focusCommentId,
@@ -92,7 +141,12 @@ export function CommentsRail({
   // stamped with it rather than whatever version happens to be current.
   versionId?: string | null;
   onClearPendingAnchor?: () => void;
+  /** Legacy Yjs-position anchor jump. Called for old inline comments that
+   *  store a {from, to} Yjs relative position in the anchor column. */
   onFocusAnchor?: (anchor: { from: string; to: string }) => void;
+  /** BlockNote inline thread jump. Called when the user clicks a thread whose
+   *  anchor is {kind:"blocknote"}; scrolls to the [data-bn-thread-id] mark. */
+  onFocusInlineThread?: (threadId: string) => void;
   // Lets the host trigger a refetch (e.g. after creating an inline comment
   // mark), receive the live thread list for decoration, and reuse this
   // rail's mutation logic (e.g. for an inline popover anchored at the
@@ -322,9 +376,9 @@ export function CommentsRail({
             >
               <button
                 type="button"
-                disabled={!t.root.anchor || !onFocusAnchor}
-                onClick={() => t.root.anchor && onFocusAnchor?.(t.root.anchor)}
-                className={`block w-full text-left ${t.root.anchor && onFocusAnchor ? "hover:bg-muted/50 rounded" : ""}`}
+                disabled={!isJumpable(t.root, onFocusAnchor, onFocusInlineThread)}
+                onClick={() => handleJump(t.root, onFocusAnchor, onFocusInlineThread)}
+                className={`block w-full text-left ${isJumpable(t.root, onFocusAnchor, onFocusInlineThread) ? "hover:bg-muted/50 rounded" : ""}`}
               >
                 <div className="flex items-center justify-between">
                   <span className="flex items-center gap-1.5 text-xs font-medium text-foreground">

@@ -11,8 +11,8 @@ import { withCors, handlePreflight } from "~/lib/cors";
 // the stored value is returned untouched. If null, a new opaque id is
 // generated, written, and returned.
 //
-// Called by the epic detail modal when it first opens so the
-// CollaborativeEditor has a stable room name to bind to. The id is opaque —
+// Called by the epic detail modal when it first opens so the collab
+// DocEditor has a stable room name to bind to. The id is opaque —
 // not a Page row, no migration to a richer model. authorizeCollabDoc has an
 // `epic` branch that looks the column up here.
 //

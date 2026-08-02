@@ -205,6 +205,12 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
         typeof data.label === 'string'
       ) {
         workspaceRef.current?.setTabLabel(data.url, data.label)
+      } else if (data.type === 'dali:closeTab' && typeof data.url === 'string') {
+        // An embedded page retracting a split-screen tab it opened earlier —
+        // e.g. the project hub closing a document pane when the user leaves the
+        // subtab that spawned it. Tabless mode never opened one, so ignore it
+        // there rather than navigating the top window somewhere unasked.
+        if (!tablessRef.current) workspaceRef.current?.closeTabByUrl(data.url)
       } else if (data.type === 'dali:profileUpdated') {
         // A profile edit inside a workspace iframe doesn't re-run the shell
         // loader, so re-fetch it to refresh the footer avatar.
@@ -252,7 +258,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
     { key: 'partners', label: 'Partners', to: '/partners', icon: Handshake, show: true },
     { key: 'education', label: 'Education', to: '/education', icon: GraduationCap, show: true },
     { key: 'internal-processes', label: 'Lab Processes', to: '/internal-processes', icon: Workflow, show: true },
-    { key: 'admin-console', label: 'Admin', to: '/admin-console', icon: Settings, show: isCore },
+    { key: 'admin', label: 'Admin', to: '/admin', icon: Settings, show: isCore },
   ].filter((e) => e.show)
 
   const isEntryActive = (entry: NavEntry) => path.startsWith(entry.to)
@@ -711,7 +717,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
         onClose={() => setPaletteOpen(false)}
         tabless={tabless}
         focusMode={focusMode}
-        roles={{ isCore, canViewForms, canViewStaffing, hasHiringAccess, isLabMentor }}
+        roles={{ isCore, isAdmin, canViewForms, canViewStaffing, hasHiringAccess, isLabMentor }}
         onOpen={openFromPalette}
       />
     </div>

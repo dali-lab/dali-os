@@ -24,11 +24,12 @@ async function main() {
   // confers the legacy "HiringLead" semantic.
   const admin = await prisma.user.upsert({
     where: { daliEmail: "admin@dali.dartmouth.edu" },
-    update: { firstName: "Admin", lastName: "User" },
+    update: { firstName: "Admin", lastName: "User", handle: "adminuser" },
     create: {
       daliEmail: "admin@dali.dartmouth.edu",
       firstName: "Admin",
       lastName: "User",
+      handle: "adminuser",
       daliMember: { create: {} },
     },
   });
@@ -1908,11 +1909,12 @@ async function main() {
   // ── Domain lead user ──────────────────────────────────────────────────────
   const engLead = await prisma.user.upsert({
     where: { daliEmail: "eng.lead@dali.dartmouth.edu" },
-    update: { firstName: "Mira", lastName: "Chen" },
+    update: { firstName: "Mira", lastName: "Chen", handle: "mirachen" },
     create: {
       daliEmail: "eng.lead@dali.dartmouth.edu",
       firstName: "Mira",
       lastName: "Chen",
+      handle: "mirachen",
       daliMember: { create: {} },
     },
   });
@@ -1942,11 +1944,12 @@ async function main() {
   // ── Jordan Taylor (Hiring Lead + Engineering Domain Lead) ──────────────────
   const jordan = await prisma.user.upsert({
     where: { daliEmail: "jordan.taylor@dali.dartmouth.edu" },
-    update: { firstName: "Jordan", lastName: "Taylor" },
+    update: { firstName: "Jordan", lastName: "Taylor", handle: "jordantaylor" },
     create: {
       daliEmail: "jordan.taylor@dali.dartmouth.edu",
       firstName: "Jordan",
       lastName: "Taylor",
+      handle: "jordantaylor",
       daliMember: { create: {} },
     },
     include: { daliMember: true },
@@ -1983,43 +1986,66 @@ async function main() {
 
   // ── Confidentiality agreement (Fall 2026) ────────────────────────────────
   // Bind a signed agreement to the active cycle so domain leads and the hiring
-  // lead can access confidentiality-gated pages in E2E tests.
-  await prisma.confidentialityAgreement.upsert({
+  // lead can access confidentiality-gated pages in E2E tests. Confidentiality
+  // is now a SigningDocument (kind Confidentiality) bound to the cycle via a
+  // SigningBinding and signed as a SigningSignature (roleKey "member").
+  await prisma.signingDocument.upsert({
     where: { id: "ca-fall-2026" },
     update: {},
-    create: { id: "ca-fall-2026", name: "Fall 2026 Hiring Confidentiality Agreement" },
+    create: {
+      id: "ca-fall-2026",
+      name: "Fall 2026 Hiring Confidentiality Agreement",
+      slug: "confidentiality-ca-fall-2026",
+      kind: "Confidentiality",
+      gateScope: "HiringCycle",
+      audience: "HiringParticipants",
+    },
   });
-  await prisma.confidentialityAgreementVersion.upsert({
+  await prisma.signingDocumentVersion.upsert({
     where: { id: "cav-fall-2026-v1" },
     update: {},
     create: {
       id: "cav-fall-2026-v1",
       versionNumber: 1,
       body: { type: "doc", content: [] },
-      agreementId: "ca-fall-2026",
+      roles: ["member"],
+      publishedAt: new Date(),
+      documentId: "ca-fall-2026",
       createdById: jordan.id,
     },
   });
-  await prisma.cycleConfidentialityAgreement.upsert({
-    where: { applicationCycleId: cycle.id },
+  await prisma.signingBinding.upsert({
+    where: { id: "sb-fall-2026" },
     update: {},
     create: {
-      applicationCycleId: cycle.id,
-      confidentialityAgreementVersionId: "cav-fall-2026-v1",
+      id: "sb-fall-2026",
+      documentId: "ca-fall-2026",
+      versionId: "cav-fall-2026-v1",
+      scopeKey: `cycle:${cycle.id}`,
+      cycleId: cycle.id,
     },
   });
   for (const [sigId, userId] of [
     ["cas-eng-lead", engLead.id],
     ["cas-jordan", jordan.id],
   ] as [string, string][]) {
-    await prisma.confidentialityAgreementSignature.upsert({
-      where: { userId_applicationCycleId: { userId, applicationCycleId: cycle.id } },
+    await prisma.signingSignature.upsert({
+      where: {
+        bindingId_signerUserId_roleKey: {
+          bindingId: "sb-fall-2026",
+          signerUserId: userId,
+          roleKey: "member",
+        },
+      },
       update: {},
       create: {
         id: sigId,
-        userId,
-        applicationCycleId: cycle.id,
-        confidentialityAgreementVersionId: "cav-fall-2026-v1",
+        bindingId: "sb-fall-2026",
+        versionId: "cav-fall-2026-v1",
+        signerUserId: userId,
+        roleKey: "member",
+        typedName: "",
+        fieldValues: {},
       },
     });
   }
@@ -2062,12 +2088,12 @@ async function main() {
   // reviewer3 and pm.lead intentionally left unsigned to seed the "pending"
   // state visible in the hiring-lead signatures list.
   const reviewerData = [
-    { email: "reviewer1@dali.dartmouth.edu", first: "Riley", last: "Okonkwo", domainId: engDomain.id, signed: true },
-    { email: "reviewer2@dali.dartmouth.edu", first: "Sam", last: "Alvarez", domainId: designDomain.id, signed: true },
-    { email: "reviewer3@dali.dartmouth.edu", first: "Pat", last: "Mikhailov", domainId: pmDomain.id, signed: false },
-    { email: "eng.lead@dali.dartmouth.edu", first: "Mira", last: "Chen", domainId: engDomain.id, signed: true },
-    { email: "design.lead@dali.dartmouth.edu", first: "Isabela", last: "Ferreira", domainId: designDomain.id, signed: true },
-    { email: "pm.lead@dali.dartmouth.edu", first: "Theo", last: "Abernathy", domainId: pmDomain.id, signed: false },
+    { email: "reviewer1@dali.dartmouth.edu", first: "Riley", last: "Okonkwo", handle: "rileyokonkwo", domainId: engDomain.id, signed: true },
+    { email: "reviewer2@dali.dartmouth.edu", first: "Sam", last: "Alvarez", handle: "samalvarez", domainId: designDomain.id, signed: true },
+    { email: "reviewer3@dali.dartmouth.edu", first: "Pat", last: "Mikhailov", handle: "patmikhailov", domainId: pmDomain.id, signed: false },
+    { email: "eng.lead@dali.dartmouth.edu", first: "Mira", last: "Chen", handle: "mirachen", domainId: engDomain.id, signed: true },
+    { email: "design.lead@dali.dartmouth.edu", first: "Isabela", last: "Ferreira", handle: "isabelaferreira", domainId: designDomain.id, signed: true },
+    { email: "pm.lead@dali.dartmouth.edu", first: "Theo", last: "Abernathy", handle: "theoabernathy", domainId: pmDomain.id, signed: false },
   ];
 
   const reviewerUsers: Array<{ id: string; domainId: string }> = [];
@@ -2075,11 +2101,12 @@ async function main() {
   for (const r of reviewerData) {
     const user = await prisma.user.upsert({
       where: { daliEmail: r.email },
-      update: { firstName: r.first, lastName: r.last },
+      update: { firstName: r.first, lastName: r.last, handle: r.handle },
       create: {
         daliEmail: r.email,
         firstName: r.first,
         lastName: r.last,
+        handle: r.handle,
         daliMember: { create: {} },
       },
     });
@@ -2128,13 +2155,22 @@ async function main() {
     });
 
     if (r.signed) {
-      await prisma.confidentialityAgreementSignature.upsert({
-        where: { userId_applicationCycleId: { userId: user.id, applicationCycleId: cycle.id } },
+      await prisma.signingSignature.upsert({
+        where: {
+          bindingId_signerUserId_roleKey: {
+            bindingId: "sb-fall-2026",
+            signerUserId: user.id,
+            roleKey: "member",
+          },
+        },
         update: {},
         create: {
-          userId: user.id,
-          applicationCycleId: cycle.id,
-          confidentialityAgreementVersionId: "cav-fall-2026-v1",
+          bindingId: "sb-fall-2026",
+          versionId: "cav-fall-2026-v1",
+          signerUserId: user.id,
+          roleKey: "member",
+          typedName: "",
+          fieldValues: {},
         },
       });
     }
@@ -3026,6 +3062,9 @@ async function main() {
   // its questions to the structural pitch fields (title, terms, domain scope).
   // Core can retarget or edit it from /partners/applications — this just makes
   // the feature live out of the box.
+  // Keep this question set in sync with the 20260730130000_partner_application_form_seed
+  // migration, which creates the same form (same id) on environments the seed
+  // never runs against.
   const partnerAppForm = await prisma.form.upsert({
     where: { id: "form-partner-application" },
     update: { published: true },
@@ -3062,6 +3101,25 @@ async function main() {
             label: "What does success look like?",
             description:
               "A term from now, what would make you glad you worked with the lab?",
+          },
+        },
+        {
+          key: "users",
+          type: "textarea",
+          required: false,
+          data: {
+            label: "Who will use what we build?",
+            description: "Roughly how many people, and in what setting?",
+          },
+        },
+        {
+          key: "existing_work",
+          type: "textarea",
+          required: false,
+          data: {
+            label: "What exists today?",
+            description:
+              "Any research, designs, or a codebase we would be building on rather than starting from scratch.",
           },
         },
       ] as object,
@@ -4007,11 +4065,12 @@ async function main() {
         });
         const payrollStudent = await prisma.user.upsert({
           where: { netId: "f00pay01" },
-          update: { firstName: "Ada", lastName: "Lovelace" },
+          update: { firstName: "Ada", lastName: "Lovelace", handle: "adalovelace" },
           create: {
             netId: "f00pay01",
             firstName: "Ada",
             lastName: "Lovelace",
+            handle: "adalovelace",
             daliMember: { create: {} },
           },
         });

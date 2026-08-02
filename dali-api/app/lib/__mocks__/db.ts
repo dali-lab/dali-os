@@ -55,14 +55,20 @@ export const prisma = {
   auditLog: {
     create: vi.fn(),
   },
-  confidentialityAgreement: {
+  // Confidentiality gate reads the generalized signing tables. Default to a
+  // bound + signed state so the ~30 gated hiring loaders keep passing.
+  signingDocument: {
     findMany: vi.fn().mockResolvedValue([]),
   },
-  cycleConfidentialityAgreement: {
-    findUnique: vi.fn().mockResolvedValue({ confidentialityAgreementVersionId: "mock-cav-id" }),
+  signingBinding: {
+    findFirst: vi.fn().mockResolvedValue({ versionId: "mock-cav-id" }),
+    findUnique: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+    create: vi.fn(),
   },
-  confidentialityAgreementSignature: {
-    findUnique: vi.fn().mockResolvedValue({ confidentialityAgreementVersionId: "mock-cav-id" }),
+  signingSignature: {
+    findFirst: vi.fn().mockResolvedValue({ versionId: "mock-cav-id" }),
+    findMany: vi.fn().mockResolvedValue([]),
     count: vi.fn().mockResolvedValue(0),
   },
   oAuthClient: {
@@ -75,6 +81,7 @@ export const prisma = {
   },
   dALIMember: {
     findUnique: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
   },
   partnerUser: {
     findUnique: vi.fn(),
@@ -192,6 +199,7 @@ export const prisma = {
     findMany: vi.fn().mockResolvedValue([]),
     create: vi.fn(),
     update: vi.fn(),
+    delete: vi.fn(),
     count: vi.fn().mockResolvedValue(0),
   },
   projectFile: {
@@ -207,9 +215,20 @@ export const prisma = {
   collabDocument: {
     findUnique: vi.fn(),
     upsert: vi.fn(),
+    deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
   },
   docComment: {
     create: vi.fn(),
+    findUnique: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+    update: vi.fn(),
+    delete: vi.fn(),
+  },
+  docCommentReaction: {
+    upsert: vi.fn().mockResolvedValue({}),
+    deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+  },
+  pageDoc: {
     findUnique: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
   },
@@ -259,6 +278,9 @@ export const prisma = {
   },
   domainEligibility: {
     findMany: vi.fn().mockResolvedValue([]),
+    findFirst: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
   },
   userAvailabilitySettings: {
     findUnique: vi.fn().mockResolvedValue(null),
@@ -268,6 +290,51 @@ export const prisma = {
   },
   manualBlock: {
     findMany: vi.fn().mockResolvedValue([]),
+    findUnique: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+  },
+  projectShowcase: {
+    findUnique: vi.fn(),
+    findFirst: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+    upsert: vi.fn(),
+    update: vi.fn(),
+    deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+  },
+  staffingCycle: {
+    findUnique: vi.fn(),
+    findFirst: vi.fn(),
+  },
+  staffingAssignment: {
+    findMany: vi.fn().mockResolvedValue([]),
+    create: vi.fn(),
+    deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+  },
+  staffingBoardMember: {
+    findMany: vi.fn().mockResolvedValue([]),
+  },
+  domain: {
+    findUnique: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+    count: vi.fn().mockResolvedValue(0),
+  },
+  pageShare: {
+    findFirst: vi.fn(),
+    findUnique: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+    create: vi.fn(),
+    deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+  },
+  timeEntry: {
+    findMany: vi.fn().mockResolvedValue([]),
+    findUnique: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    upsert: vi.fn(),
+    delete: vi.fn(),
+    deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
   },
   userCalendarLink: {
     findMany: vi.fn().mockResolvedValue([]),
@@ -281,6 +348,7 @@ export const prisma = {
   },
   adminMembership: {
     findUnique: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
   },
   jobCodeLookup: {
     findUnique: vi.fn(),
@@ -296,6 +364,7 @@ export const prisma = {
   },
   domainLeadAssignment: {
     findFirst: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
   },
   instructorAssignment: {
     findFirst: vi.fn(),
@@ -460,6 +529,10 @@ export const prisma = {
     update: vi.fn(),
     delete: vi.fn(),
     deleteMany: vi.fn(),
+  },
+  aiUsage: {
+    upsert: vi.fn(),
+    update: vi.fn(),
   },
   $transaction: vi.fn(),
   $queryRaw: vi.fn().mockResolvedValue([]),

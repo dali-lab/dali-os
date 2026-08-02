@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useSubmit, useActionData, useNavigation } from "react-router";
 import { FormQuestionField } from "~/components/form-builder/QuestionField";
 import { FormFieldList } from "~/forms/components/FormField";
-import { RichTextViewer, isEmptyDoc } from "~/components/RichTextViewer";
+import { DocEditor, countWords } from "~/components/doc";
 import { Button } from "~/components/ui/Button";
 import { findMissingRequired } from "~/lib/form-answers";
 import type { Question } from "~/types";
@@ -54,9 +54,11 @@ export function OfferingApplyForm({
 
   return (
     <div>
-      {description != null && !isEmptyDoc(description) && (
+      {/* description is block JSON (loaders normalize via ensureBlocks);
+          countWords(non-array) is 0, so stray legacy shapes just hide it. */}
+      {countWords(description) > 0 && (
         <div className="text-sm text-muted-foreground">
-          <RichTextViewer content={description} />
+          <DocEditor features="notes" editable={false} initialContent={description} />
         </div>
       )}
 

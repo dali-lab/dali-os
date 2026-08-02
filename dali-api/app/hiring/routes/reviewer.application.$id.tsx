@@ -8,10 +8,11 @@ import { parseSessionCookie } from '~/lib/cookies'
 import { getPresenceUser } from '~/lib/presence-user'
 import { requirePageSignedOrRedirect } from '~/hiring/lib/confidentiality'
 import { presignAnswers } from '~/hiring/lib/presign'
+import { ensureBlocks } from '~/collab/legacy/pm-to-blocknote'
 import type { Route } from './+types/reviewer.application.$id'
 import { ApplicationViewer } from '~/hiring/components/ApplicationViewer'
 import { SaveStatusIndicator } from '~/hiring/components/SaveStatusIndicator'
-import { CollaborativeEditor } from '~/components/CollaborativeEditor'
+import { DocEditor } from '~/components/doc'
 import { PresenceProvider } from '~/components/collab/PresenceProvider'
 import { PresenceBar } from '~/components/collab/PresenceBar'
 import { getEducationEngagement } from '~/education/lib/engagement.server'
@@ -132,6 +133,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const presignedDomainApplications = await Promise.all(
     domainApplications.map(async (da: any) => ({
       ...da,
+      // Immutable ChallengeVersion rows: legacy ProseMirror descriptions
+      // convert to block JSON on read (ApplicationViewer expects blocks).
+      challengeVersion: da.challengeVersion
+        ? { ...da.challengeVersion, description: ensureBlocks(da.challengeVersion.description) }
+        : da.challengeVersion,
       answers: await presignAnswers(
         (da.challengeVersion?.questions as unknown as Question[]) ?? [],
         da.answers as Record<string, string>,
@@ -142,6 +148,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const application = {
     ...applicationBase,
     answers: presignedGeneralAnswers,
+    generalChallengeVersion: applicationBase.generalChallengeVersion
+      ? {
+          ...applicationBase.generalChallengeVersion,
+          description: ensureBlocks(applicationBase.generalChallengeVersion.description),
+        }
+      : applicationBase.generalChallengeVersion,
     domainApplications: presignedDomainApplications,
   }
 
@@ -474,13 +486,22 @@ export default function ReviewerApplicationReview() {
                 <h3 className="text-sm font-bold text-foreground uppercase tracking-wider mb-2">Internal Feedback</h3>
                 <p className="text-xs text-muted-foreground mb-2">Notes for other reviewers. Not visible to applicant.</p>
                 {existingReview && collabToken ? (
-                  <CollaborativeEditor
-                    editorId="feedback"
-                    documentName={`review:${existingReview.id}:feedback`}
-                    token={collabToken}
-                    userName={userName}
-                    disabled={isSubmitted}
+                  <DocEditor
+                    features="notes"
+                    density="compact"
+                    editable={!isSubmitted}
                     placeholder="Strengths, weaknesses, areas to probe in interview..."
+                    className={`rounded-lg border ${
+                      isSubmitted
+                        ? 'border-border bg-muted/50 opacity-75'
+                        : 'border-gray-300 bg-card focus-within:ring-2 focus-within:ring-accent-coral focus-within:border-transparent'
+                    }`}
+                    collab={{
+                      documentName: `review:${existingReview.id}:feedback`,
+                      token: collabToken,
+                      userName,
+                      userId: currentUserId,
+                    }}
                   />
                 ) : (
                   <textarea
@@ -498,13 +519,22 @@ export default function ReviewerApplicationReview() {
                   Rejection Rationale <span className="text-xs font-normal text-muted-foreground normal-case">(Optional)</span>
                 </h3>
                 {existingReview && collabToken ? (
-                  <CollaborativeEditor
-                    editorId="rejectionRationale"
-                    documentName={`review:${existingReview.id}:rejectionRationale`}
-                    token={collabToken}
-                    userName={userName}
-                    disabled={isSubmitted}
+                  <DocEditor
+                    features="notes"
+                    density="compact"
+                    editable={!isSubmitted}
                     placeholder="If we reject this candidate, what feedback should we provide?"
+                    className={`rounded-lg border ${
+                      isSubmitted
+                        ? 'border-border bg-muted/50 opacity-75'
+                        : 'border-gray-300 bg-card focus-within:ring-2 focus-within:ring-accent-coral focus-within:border-transparent'
+                    }`}
+                    collab={{
+                      documentName: `review:${existingReview.id}:rejectionRationale`,
+                      token: collabToken,
+                      userName,
+                      userId: currentUserId,
+                    }}
                   />
                 ) : (
                   <textarea
