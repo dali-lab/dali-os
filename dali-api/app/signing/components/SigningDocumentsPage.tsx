@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { Link, Form, useLoaderData } from "react-router";
 import { Plus, FileSignature, ChevronRight } from "lucide-react";
-import { adminPills } from "~/admin-console/adminPills";
+import { adminPills } from "~/admin/adminPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
-import type { loader } from "~/signing/routes/admin-console.agreements";
+import type { loader } from "~/signing/routes/admin.agreements";
 
 const KIND_LABELS: Record<string, string> = {
   General: "General",
@@ -127,7 +127,7 @@ export function SigningDocumentsPage() {
             return (
               <Link
                 key={doc.id}
-                to={`/admin-console/agreements/${doc.id}`}
+                to={`/admin/agreements/${doc.id}`}
                 className="bg-card rounded-xl border border-border p-6 shadow-sm hover:shadow-md transition-shadow group block"
               >
                 <div className="flex items-start justify-between">

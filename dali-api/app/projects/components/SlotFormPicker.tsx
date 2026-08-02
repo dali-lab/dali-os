@@ -103,7 +103,7 @@ export function SlotFormPicker({
         <div className="flex flex-wrap items-center gap-2">
           {fillUrl ? (
             <a
-              href={`/admin-console/announcements?formId=${encodeURIComponent(binding.formId)}&audience=all`}
+              href={`/admin/announcements?formId=${encodeURIComponent(binding.formId)}&audience=all`}
               className="px-3 py-1.5 text-xs font-medium rounded-md border border-border text-foreground hover:bg-muted"
             >
               Send to members

@@ -2,7 +2,7 @@ import { test, expect } from './fixtures';
 
 const ADMIN_EMAIL = 'admin@dali.dartmouth.edu';
 
-// /admin-console/domains renders inside the workspace iframe. The Admin
+// /admin/domains renders inside the workspace iframe. The Admin
 // sidebar area is childless, so the tab is seeded with the area label.
 const domainsFrame = (page: import('@playwright/test').Page) =>
   page.frameLocator('iframe[title="Admin"]');
@@ -15,7 +15,7 @@ test.describe('admin domain management', () => {
   test('admin can create a new domain and then delete it', async ({ page }) => {
     const name = `E2E Domain ${Date.now()}`;
 
-    await page.goto('/admin-console/domains');
+    await page.goto('/admin/domains');
     const frame = domainsFrame(page);
     await expect(frame.getByText(/^Domains \(/)).toBeVisible();
 
@@ -31,7 +31,7 @@ test.describe('admin domain management', () => {
   });
 
   test('delete is disabled for a seeded domain that is in use', async ({ page }) => {
-    await page.goto('/admin-console/domains');
+    await page.goto('/admin/domains');
     const frame = domainsFrame(page);
 
     const engRow = frame.getByRole('listitem').filter({ hasText: /^Engineering/ });
@@ -42,21 +42,21 @@ test.describe('admin domain management', () => {
 });
 
 test.describe('admin console access tiers', () => {
-  // Core (Hiring Lead title) gained access to admin-console/members and
-  // admin-console/domains so they can manage Core titles, Domain Leads, and
+  // Core (Hiring Lead title) gained access to admin/members and
+  // admin/domains so they can manage Core titles, Domain Leads, and
   // member eligibilities without needing Admin. Admin-only actions
   // (set-admin, create-domain, delete-domain) still 403 inside the action
   // handler.
   test('hiring lead (Core) can access admin console members', async ({ loginAs, page }) => {
     await loginAs({ daliEmail: 'jordan.taylor@dali.dartmouth.edu' });
-    await page.goto('/admin-console/members');
-    await expect(page).toHaveURL(/\/admin-console\/members/);
+    await page.goto('/admin/members');
+    await expect(page).toHaveURL(/\/admin\/members/);
   });
 
   // A lab member with neither Core nor Admin is still redirected away.
   test('non-Core, non-Admin lab member cannot access admin console', async ({ loginAs, page }) => {
     await loginAs({ daliEmail: 'reviewer1@dali.dartmouth.edu' });
-    await page.goto('/admin-console/members');
-    await expect(page).not.toHaveURL(/admin-console/);
+    await page.goto('/admin/members');
+    await expect(page).not.toHaveURL(/admin/);
   });
 });

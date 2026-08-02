@@ -11,7 +11,7 @@ import {
   Archive,
   PenLine,
 } from "lucide-react";
-import { adminPills } from "~/admin-console/adminPills";
+import { adminPills } from "~/admin/adminPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import {
   DocEditor,
@@ -28,7 +28,7 @@ import {
 import { ALL_SIGNING_VARIABLES } from "~/lib/signing-variables";
 import { formatDateTime, fullName, UNKNOWN_LABEL } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
-import type { loader } from "~/signing/routes/admin-console.agreements.$id";
+import type { loader } from "~/signing/routes/admin.agreements.$id";
 
 function asRoles(raw: unknown): string[] {
   return Array.isArray(raw) ? (raw as string[]) : [];
@@ -502,7 +502,7 @@ function BindingsPanel() {
                     roster.signed.map((s) => (
                       <li key={s.signatureId}>
                         <Link
-                          to={`/admin-console/agreements/${document.id}/signature/${s.signatureId}`}
+                          to={`/admin/agreements/${document.id}/signature/${s.signatureId}`}
                           className="block truncate text-xs text-accent-coral hover:underline"
                           title="View signed copy"
                         >

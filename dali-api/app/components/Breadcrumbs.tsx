@@ -64,7 +64,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   emails: 'Emails',
   interviews: 'Interviews',
 
-  'admin-console': 'Admin',
+  'admin': 'Admin',
   members: 'People',
   groups: 'Groups',
   domains: 'Domains',

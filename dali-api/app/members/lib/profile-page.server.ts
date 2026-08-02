@@ -26,11 +26,11 @@ import {
   ALLOWED_LEVELS,
   parseLevel,
   type Level,
-} from "~/admin-console/lib/eligibility";
+} from "~/admin/lib/eligibility";
 import {
   applyEligibilityWithNotify,
   removeEligibility,
-} from "~/admin-console/lib/eligibility.server";
+} from "~/admin/lib/eligibility.server";
 import { NEW_MEMBER_PROFILE_FORM_NAME } from "~/members/lib/profile-form-interpreter";
 import { normalizeHandle } from "~/lib/handle";
 import { isValidTimezone } from "~/lib/timezone";
@@ -107,7 +107,7 @@ export type ProfilePageData = {
   presencePhotoUrl: string | null;
   presenceSubtitle: string | null;
   /** Re-exported so the view can render the Domains & levels picker without
-   *  needing its own admin-console import. */
+   *  needing its own admin import. */
   allowedLevels: readonly Level[];
   /** Mentorship pairings + note count for this member. Populated only when
    *  the VIEWER is a lab mentor or Core AND they are not looking at their

@@ -101,7 +101,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   // Lab members are Users with a DALIMember row attached. Roles derive from
   // AdminMembership + CoreAssignment per the Phase 2 identity model — see
-  // app/admin-console/routes/api.members.ts for the canonical shape.
+  // app/admin/routes/api.members.ts for the canonical shape.
   // The Alumni view layers the stored membership status onto the same base set
   // (still requires a DALIMember row; drops the term filter) and sorts by class
   // year. membershipStatus is authoritative — no derivation here.
