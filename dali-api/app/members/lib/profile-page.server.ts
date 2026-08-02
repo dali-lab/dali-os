@@ -16,8 +16,13 @@ import {
   type NoteSummary,
 } from "~/members/lib/personal-notes.server";
 import {
+  achievementsForMember,
+  type Achievement,
+} from "~/members/lib/achievements.server";
+import {
   currentTerm,
   getUserRoles,
+  instructorRoleLabel,
   isAdmin,
   isCore,
   isLabMentor,
@@ -99,6 +104,9 @@ export type ProfilePageData = {
    *  the viewer; `sharedWithMe` is populated only on your own profile. */
   notes: NoteSummary[];
   sharedWithMe: NoteSummary[];
+  /** Milestone medals shown above the notes rail. Always the full catalog —
+   *  the view hides unearned ones on other people's profiles. */
+  achievements: Achievement[];
   allDomains: Array<{ id: string; displayName: string }>;
   photoUrlResolved: string | null;
   collabToken: string | null;
@@ -369,20 +377,44 @@ export async function loadProfilePage({
     };
   }
 
+  // Hired roles: the positions this member actually holds this term. Admin is
+  // an access grant rather than a post, and "Lab Member" is what everyone on
+  // this page already is — neither is something you're hired into, so neither
+  // belongs here. Core titles and Domain Lead posts do, and they're listed by
+  // their real names rather than a generic label.
+  const [coreTitles, domainLeadRows, instructorRows] = term
+    ? await Promise.all([
+        prisma.coreAssignment.findMany({
+          where: { userId: targetId, termId: term.id },
+          select: { leadTitle: true },
+        }),
+        prisma.domainLeadAssignment.findMany({
+          where: { userId: targetId, termId: term.id },
+          select: { domain: { select: { displayName: true } } },
+        }),
+        prisma.instructorAssignment.findMany({
+          where: { userId: targetId, termId: term.id },
+          select: { offering: { select: { title: true, type: true } } },
+        }),
+      ])
+    : [[], [], []];
+
   const roleLabels = [
-    roles.isAdmin && "Admin",
-    roles.isCore && "Hiring Lead",
-    roles.isDomainLead && "Domain Lead",
-    roles.isLabMember && "Lab Member",
-  ].filter(Boolean) as string[];
+    ...coreTitles.map((c) => (c.leadTitle ? `Core — ${c.leadTitle}` : "Core")),
+    ...domainLeadRows.map((d) => `${d.domain.displayName} Lead`),
+    // Named by what they teach: "Instructor" alone doesn't identify a post, and
+    // a member can hold several in one term.
+    ...instructorRows.map((i) => instructorRoleLabel(i.offering.type, i.offering.title)),
+  ];
 
   const collabToken = parseSessionCookie(request);
 
   // Personal notes for the rail. "Shared with me" is an inbox of your own, so
   // it's only fetched when you're looking at your own profile.
-  const [notes, sharedWithMe] = await Promise.all([
+  const [notes, sharedWithMe, achievements] = await Promise.all([
     listProfileNotes(targetId, auth.user.sub),
     isSelf ? listSharedWithMe(auth.user.sub) : Promise.resolve([]),
+    achievementsForMember(targetId),
   ]);
 
   // Convert the raw People-API code to a label server-side; only the label
@@ -412,6 +444,7 @@ export async function loadProfilePage({
     canManageEligibility,
     notes,
     sharedWithMe,
+    achievements,
     allDomains,
     photoUrlResolved,
     collabToken,

@@ -1,6 +1,6 @@
 import { prisma } from "~/lib/db";
 import { cycleSortKeyRange } from "~/lib/core-cycle";
-import type { AssignmentType } from "~/generated/prisma/client";
+import type { AssignmentType, OfferingType } from "~/generated/prisma/client";
 
 export function getAdminUserIdsFromEnv(): string[] {
   return (process.env.ADMIN_USER_IDS ?? "").split(",").filter(Boolean);
@@ -106,6 +106,16 @@ export async function getUserRoles(userId: string): Promise<UserRoles> {
   };
 }
 
+/**
+ * Label for an instructor post. "Instructor" on its own says nothing about what
+ * someone teaches — a member can hold several at once, and on a timesheet they
+ * bill separately — so the offering's own name leads and the kind qualifies it,
+ * matching the `Project (Level)` shape used elsewhere.
+ */
+export function instructorRoleLabel(type: OfferingType, title: string): string {
+  return `${title} (${type} Instructor)`;
+}
+
 // ─── Concrete role instances (Timesheet / calendar role attribution) ────────
 
 export interface RoleInstance {
@@ -120,7 +130,8 @@ export interface RoleInstance {
 /**
  * Resolve the concrete paid roles a user currently holds — one entry per
  * ProjectAssignment/CoreAssignment/InstructorAssignment/DomainLeadAssignment
- * row plus their AdminMembership, term-scoped like `currentTermMemberWhere()`.
+ * row plus any CustomHire, term-scoped like `currentTermMemberWhere()`.
+ * AdminMembership is excluded: Admin is an access grant, not a paid post.
  * Unlike `getUserRoles` (which only returns boolean flags), this is the
  * source for "which role is this timesheet entry for" pickers — no separate
  * synced table, resolved at query time against the live assignment tables
@@ -132,8 +143,13 @@ export async function getUserRoleInstances(
 ): Promise<RoleInstance[]> {
   const term = termId ? { id: termId } : await currentTerm();
 
-  const [projectAssignments, coreAssignments, instructorAssignments, domainLeadAssignments, admin] =
-    await Promise.all([
+  const [
+    projectAssignments,
+    coreAssignments,
+    instructorAssignments,
+    domainLeadAssignments,
+    customHires,
+  ] = await Promise.all([
       term
         ? prisma.projectAssignment.findMany({
             where: { userId, termId: term.id },
@@ -148,7 +164,7 @@ export async function getUserRoleInstances(
         : Promise.resolve([]),
       prisma.instructorAssignment.findMany({
         where: { userId, ...(term ? { termId: term.id } : {}) },
-        select: { id: true, offering: { select: { title: true } } },
+        select: { id: true, offering: { select: { title: true, type: true } } },
       }),
       term
         ? prisma.domainLeadAssignment.findMany({
@@ -156,7 +172,13 @@ export async function getUserRoleInstances(
             select: { id: true, domain: { select: { displayName: true } } },
           })
         : Promise.resolve([]),
-      prisma.adminMembership.findUnique({ where: { userId }, select: { id: true } }),
+      // Not term-scoped: a member's outside job doesn't follow DALI's calendar,
+      // and nothing here knows when it started or ended.
+      prisma.customHire.findMany({
+        where: { userId, archivedAt: null },
+        select: { id: true, label: true },
+        orderBy: { label: "asc" },
+      }),
     ]);
 
   const roles: RoleInstance[] = [];
@@ -180,7 +202,7 @@ export async function getUserRoleInstances(
     roles.push({
       assignmentType: "Instructor",
       roleRefId: ia.id,
-      label: `Instructor — ${ia.offering.title}`,
+      label: instructorRoleLabel(ia.offering.type, ia.offering.title),
     });
   }
   for (const dla of domainLeadAssignments) {
@@ -190,8 +212,15 @@ export async function getUserRoleInstances(
       label: `Domain Lead — ${dla.domain.displayName}`,
     });
   }
-  if (admin) {
-    roles.push({ assignmentType: "Admin", roleRefId: admin.id, label: "Admin" });
+  // Admin is deliberately absent: it's an access grant, not a post anyone is
+  // hired into, so it isn't something hours are billed against. Existing
+  // entries that reference an AdminMembership still resolve their label via
+  // getRoleLabel — this only stops it being offered for new attribution.
+  //
+  // Last: DALI roles are what most entries attribute to, so they stay at the
+  // top of the picker.
+  for (const ch of customHires) {
+    roles.push({ assignmentType: "Custom", roleRefId: ch.id, label: ch.label });
   }
 
   return roles;
@@ -245,6 +274,15 @@ export async function resolveRoleRef(
       });
       return row ? { projectId: null } : null;
     }
+    case "Custom": {
+      // Archived hires are rejected for new writes — they're gone from the
+      // picker, so an id for one arriving here is stale client state.
+      const row = await prisma.customHire.findFirst({
+        where: { id: roleRefId, userId, archivedAt: null },
+        select: { id: true },
+      });
+      return row ? { projectId: null } : null;
+    }
   }
 }
 
@@ -278,9 +316,9 @@ export async function getRoleLabel(
     case "Instructor": {
       const row = await prisma.instructorAssignment.findUnique({
         where: { id: roleRefId },
-        select: { offering: { select: { title: true } } },
+        select: { offering: { select: { title: true, type: true } } },
       });
-      return row ? `Instructor — ${row.offering.title}` : null;
+      return row ? instructorRoleLabel(row.offering.type, row.offering.title) : null;
     }
     case "DomainLead": {
       const row = await prisma.domainLeadAssignment.findUnique({
@@ -295,6 +333,14 @@ export async function getRoleLabel(
         select: { id: true },
       });
       return row ? "Admin" : null;
+    }
+    case "Custom": {
+      // Archived hires still resolve — past entries keep their label.
+      const row = await prisma.customHire.findUnique({
+        where: { id: roleRefId },
+        select: { label: true },
+      });
+      return row?.label ?? null;
     }
   }
 }

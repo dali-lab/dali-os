@@ -1,5 +1,6 @@
+import { useId, useState } from "react";
 import { Link, useFetcher } from "react-router";
-import { CalendarDays, Plus, Trash2 } from "lucide-react";
+import { CalendarDays, ChevronDown, ChevronRight, Plus, Trash2 } from "lucide-react";
 import type { CalendarLinkDTO } from "~/lib/settings-page.server";
 
 const CALENDAR_ACTION = "/settings/calendar";
@@ -49,17 +50,34 @@ export function CalendarSettingsBlock({
   );
 }
 
+// Collapsed by default: an account's sub-calendar list is only interesting
+// while you're actually changing what blocks your availability, and someone
+// with several linked accounts otherwise scrolls past dozens of rows to find
+// the address they came for.
 function CalendarLinkBlock({ link }: { link: CalendarLinkDTO }) {
   const removeFetcher = useFetcher();
+  const [open, setOpen] = useState(false);
+  const bodyId = useId();
+  const Chevron = open ? ChevronDown : ChevronRight;
   return (
     <div className="overflow-hidden rounded-md border border-border border-l-4 border-l-teal-500 bg-card">
-      <div className="flex items-center justify-between bg-teal-500/10 px-3 py-2">
-        <div className="flex min-w-0 items-center gap-2">
+      <div className="flex items-center justify-between bg-teal-500/10 pr-3">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          aria-controls={bodyId}
+          className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left"
+        >
+          <Chevron className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
           <GoogleIcon />
           <span className="truncate text-sm font-semibold text-foreground">
             {link.displayName ?? link.externalEmail}
           </span>
-        </div>
+          {!open && link.syncError && (
+            <span className="flex-shrink-0 text-[11px] text-red-700">Sync error</span>
+          )}
+        </button>
         <removeFetcher.Form method="post" action={CALENDAR_ACTION}>
           <input type="hidden" name="intent" value="remove-calendar-link" />
           <input type="hidden" name="linkId" value={link.id} />
@@ -72,25 +90,27 @@ function CalendarLinkBlock({ link }: { link: CalendarLinkDTO }) {
           </button>
         </removeFetcher.Form>
       </div>
-      <div className="flex flex-col gap-2 px-3 py-3">
-        {link.syncError && (
-          <div className="text-[11px] text-red-700">Sync error: {link.syncError}</div>
-        )}
-        <p className="text-xs text-muted-foreground">
-          Select which calendars should block your availability:
-        </p>
-        {link.subCalendars === null ? (
-          <div className="text-xs italic text-muted-foreground">
-            Couldn't load this account's calendars.
-          </div>
-        ) : link.subCalendars.length === 0 ? (
-          <div className="text-xs italic text-muted-foreground">No calendars found.</div>
-        ) : (
-          link.subCalendars.map((cal) => (
-            <SubCalendarRow key={cal.id} linkId={link.id} cal={cal} />
-          ))
-        )}
-      </div>
+      {open && (
+        <div id={bodyId} className="flex flex-col gap-2 px-3 py-3">
+          {link.syncError && (
+            <div className="text-[11px] text-red-700">Sync error: {link.syncError}</div>
+          )}
+          <p className="text-xs text-muted-foreground">
+            Select which calendars should block your availability:
+          </p>
+          {link.subCalendars === null ? (
+            <div className="text-xs italic text-muted-foreground">
+              Couldn't load this account's calendars.
+            </div>
+          ) : link.subCalendars.length === 0 ? (
+            <div className="text-xs italic text-muted-foreground">No calendars found.</div>
+          ) : (
+            link.subCalendars.map((cal) => (
+              <SubCalendarRow key={cal.id} linkId={link.id} cal={cal} />
+            ))
+          )}
+        </div>
+      )}
     </div>
   );
 }

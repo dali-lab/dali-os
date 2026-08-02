@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   redirect,
   useLoaderData,
@@ -16,6 +16,7 @@ import {
   Folder,
   FolderPlus,
   LayoutTemplate,
+  Lock,
   Pin,
   Plus,
   Search,
@@ -25,6 +26,7 @@ import {
 import { prisma } from "~/lib/db";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { isCore, isLabMember, currentTerm } from "~/lib/roles";
+import { visibleLabDocFilter } from "~/lib/lab-documents.server";
 import { Tooltip } from "~/components/ui/IconButton";
 import { useDialog } from "~/components/ui/dialog";
 import { PageIcon } from "~/components/PageIcon";
@@ -60,6 +62,9 @@ type DocOut = {
   workspaceKey: string;
   workspaceLabel: string;
   workspaceKind: "lab" | "project";
+  /** Lab docs only: narrowed to its creator + share list rather than the whole
+   *  lab. Drives the lock badge. */
+  restricted: boolean;
 };
 
 type WorkspaceOut = {
@@ -112,11 +117,20 @@ export async function loader({ request }: Route.LoaderArgs) {
   // everyone else sees projects they're staffed on). Active (default) matches
   // the projects hub term view — current-term Active only. All drops the
   // status/term gates so archived + older-term projects stay reachable.
+  // Restricted lab docs drop out of the list for everyone but their creator,
+  // the people they're shared with, and Core.
+  const labVisibility = core ? {} : await visibleLabDocFilter(auth.user.sub);
+
   const [labPages, projects] = await Promise.all([
     prisma.page.findMany({
-      where: { workspaceType: "Lab", workspaceId: null, archivedAt: null },
+      where: {
+        workspaceType: "Lab",
+        workspaceId: null,
+        archivedAt: null,
+        ...labVisibility,
+      },
       orderBy: { position: "asc" },
-      select: pageSelect,
+      select: { ...pageSelect, createdById: true, labRestricted: true },
     }),
     prisma.project.findMany({
       where: {
@@ -150,7 +164,13 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const projectById = new Map(projects.map((p) => [p.id, p]));
   const toDto = (
-    p: (typeof labPages)[number] & { workspaceId?: string | null },
+    // Lab rows carry createdById/labRestricted; project rows don't select them
+    // and don't need them — access for project docs is the project's business.
+    p: Omit<(typeof labPages)[number], "createdById" | "labRestricted"> & {
+      workspaceId?: string | null;
+      createdById?: string;
+      labRestricted?: boolean;
+    },
     workspaceKey: string,
     workspaceLabel: string,
     workspaceKind: "lab" | "project",
@@ -169,6 +189,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     workspaceKey,
     workspaceLabel,
     workspaceKind,
+    restricted: workspaceKind === "lab" && p.labRestricted === true,
   });
 
   const docs: DocOut[] = [
@@ -240,11 +261,35 @@ export default function DocumentsHub() {
   const [busy, setBusy] = useState(false);
   const [query, setQuery] = useState("");
   const [scope, setScope] = useState<"all" | "lab" | "project">("all");
+  const [newMenuOpen, setNewMenuOpen] = useState(false);
+  const newMenuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!newMenuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (newMenuRef.current && !newMenuRef.current.contains(e.target as Node)) {
+        setNewMenuOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setNewMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [newMenuOpen]);
   const [selectedTagIds, setSelectedTagIds] = useState<Set<string>>(() => new Set());
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(
     () => new Set(docs.filter((d) => d.kind === "Folder").map((d) => d.id)),
   );
-  const [collapsedWorkspaces, setCollapsedWorkspaces] = useState<Set<string>>(() => new Set());
+  // Projects collapsed by default — see ProjectFolderRow. Lab-wide docs are
+  // never in this set; they're the top level of the tree, not a workspace.
+  const [collapsedWorkspaces, setCollapsedWorkspaces] = useState<Set<string>>(
+    () => new Set(workspaces.filter((w) => w.kind === "project").map((w) => w.key)),
+  );
 
   function setProjectFilter(next: ProjectFilter) {
     setSearchParams(
@@ -509,6 +554,11 @@ export default function DocumentsHub() {
         >
           <PageIcon iconEmoji={doc.iconEmoji} />
           <span className="truncate">{doc.title}</span>
+          {doc.restricted && (
+            <Tooltip label="Restricted — only the people it's shared with">
+              <Lock className="w-3 h-3 flex-shrink-0 text-muted-foreground" />
+            </Tooltip>
+          )}
         </button>
         <div className="flex items-center gap-2 flex-shrink-0">
           {doc.tags.map((t) => (
@@ -606,6 +656,9 @@ export default function DocumentsHub() {
             )}
             <Folder className="w-3.5 h-3.5 flex-shrink-0 text-muted-foreground" />
             <span className="truncate">{doc.title}</span>
+            {doc.restricted && (
+              <Lock className="w-3 h-3 flex-shrink-0 text-muted-foreground" />
+            )}
             {doc.isSystem && (
               <span className="text-[10px] uppercase tracking-wide text-muted-foreground/70 flex-shrink-0">
                 Default
@@ -674,87 +727,127 @@ export default function DocumentsHub() {
     );
   }
 
-  function WorkspaceGroup({ workspace }: { workspace: WorkspaceOut }) {
+  // One tree, not one card per workspace. Lab-wide documents are the top level
+  // — the hub is the lab's shelf — and each project hangs off it as a folder,
+  // closed until asked for. Splitting them into separate bordered sections made
+  // two lists of the same thing and pushed the lab's own documents down the page
+  // by however many projects you happen to be on.
+  function UnifiedTree({ workspaces }: { workspaces: WorkspaceOut[] }) {
+    const lab = workspaces.find((w) => w.kind === "lab");
+    const projects = workspaces.filter((w) => w.kind === "project");
+    const labTopLevel = docs.filter(
+      (d) => d.workspaceKind === "lab" && d.parentPageId === null && !d.pinned,
+    );
+    const labCanManage = lab?.canManage ?? false;
+    const isEmpty = labTopLevel.length === 0 && projects.length === 0;
+
+    return (
+      <section className="bg-card border border-border rounded-lg px-4 py-1.5">
+        {isEmpty ? (
+          <p className="py-6 text-sm text-muted-foreground italic">No documents yet.</p>
+        ) : (
+          <div
+            // Dropping on the tree's empty space moves a lab doc back to the
+            // root. Project rows stop propagation, so this only ever catches
+            // the lab level.
+            onDragOver={
+              labCanManage && dragDocId
+                ? (e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                    if (dropTarget !== "root") setDropTarget("root");
+                  }
+                : undefined
+            }
+            onDragLeave={
+              labCanManage ? () => setDropTarget((t) => (t === "root" ? null : t)) : undefined
+            }
+            onDrop={
+              labCanManage && dragDocId
+                ? (e) => {
+                    e.preventDefault();
+                    void moveDocument(dragDocId, null);
+                  }
+                : undefined
+            }
+            className={`flex flex-col divide-y divide-border rounded-md ${
+              dropTarget === "root" ? "ring-2 ring-accent-coral/40" : ""
+            }`}
+          >
+            {labTopLevel.map((doc) =>
+              doc.kind === "Folder" ? (
+                <FolderRow key={doc.id} doc={doc} canManage={labCanManage} />
+              ) : (
+                <DocRow key={doc.id} doc={doc} indent={false} />
+              ),
+            )}
+            {projects.map((w) => (
+              <ProjectFolderRow key={w.key} workspace={w} />
+            ))}
+          </div>
+        )}
+      </section>
+    );
+  }
+
+  // A project rendered as a folder in the lab tree. Same row grammar as
+  // FolderRow so the tree reads as one structure, but tinted with the project
+  // accent and carrying the project's own icon — a project is a different kind
+  // of container from a folder somebody made, and the colour is what says so
+  // without a second label.
+  function ProjectFolderRow({ workspace }: { workspace: WorkspaceOut }) {
+    const open = !collapsedWorkspaces.has(workspace.key);
     const topLevel = docs.filter(
       (d) => d.workspaceKey === workspace.key && d.parentPageId === null && !d.pinned,
     );
-    const isLab = workspace.kind === "lab";
-    // Lab-wide is a flat list with no header of its own — its "Add document"
-    // action lives in the page header. Project groups keep the collapsible
-    // folder styling since their docs nest.
-    const collapsed = !isLab && collapsedWorkspaces.has(workspace.key);
     return (
-      <section
-        className={`bg-card border border-border rounded-lg px-4 ${
-          isLab ? "py-1.5" : collapsed ? "py-2.5" : "py-4"
-        }`}
-      >
-        {!isLab && (
-          <div className={`flex items-center justify-between ${collapsed ? "" : "mb-3"}`}>
-            <button
-              type="button"
-              onClick={() => toggleWorkspace(workspace.key)}
-              className="flex items-center gap-2 text-sm font-semibold text-foreground min-w-0"
-            >
-              {collapsed ? (
-                <ChevronRight className="w-4 h-4 flex-shrink-0 text-muted-foreground" />
-              ) : (
-                <ChevronDown className="w-4 h-4 flex-shrink-0 text-muted-foreground" />
-              )}
-              <ProjectIcon iconEmoji={workspace.projectIconEmoji} />
-              <span className="truncate">{workspace.label}</span>
-              <span className="text-[10px] uppercase tracking-wide text-muted-foreground/70 flex-shrink-0">
-                Project
-              </span>
-              {workspace.projectStatus && workspace.projectStatus !== "Active" && (
-                <span className="text-[10px] uppercase tracking-wide text-muted-foreground border border-border rounded px-1.5 py-0.5 flex-shrink-0">
-                  {workspace.projectStatus}
-                </span>
-              )}
-            </button>
-          </div>
-        )}
-        {!collapsed &&
-          (topLevel.length === 0 ? (
-            <p className="text-sm text-muted-foreground italic">No documents yet.</p>
+      <div className="py-2.5 flex flex-col gap-1">
+        <button
+          type="button"
+          onClick={() => toggleWorkspace(workspace.key)}
+          aria-expanded={open}
+          className="flex items-center gap-1.5 text-left text-sm font-medium text-foreground min-w-0"
+        >
+          {open ? (
+            <ChevronDown className="w-3.5 h-3.5 flex-shrink-0 text-accent-coral" />
           ) : (
-            <div
-              onDragOver={
-                isLab && workspace.canManage && dragDocId
-                  ? (e) => {
-                      e.preventDefault();
-                      e.dataTransfer.dropEffect = "move";
-                      if (dropTarget !== "root") setDropTarget("root");
-                    }
-                  : undefined
-              }
-              onDragLeave={
-                isLab && workspace.canManage
-                  ? () => setDropTarget((t) => (t === "root" ? null : t))
-                  : undefined
-              }
-              onDrop={
-                isLab && workspace.canManage && dragDocId
-                  ? (e) => {
-                      e.preventDefault();
-                      void moveDocument(dragDocId, null);
-                    }
-                  : undefined
-              }
-              className={`flex flex-col divide-y divide-border rounded-md ${
-                dropTarget === "root" ? "ring-2 ring-accent-coral/40" : ""
-              }`}
-            >
-              {topLevel.map((doc) =>
+            <ChevronRight className="w-3.5 h-3.5 flex-shrink-0 text-accent-coral" />
+          )}
+          {/* ProjectIcon is the only glyph here: it shows the project's emoji,
+              or falls back to a folder itself, so pairing it with a Folder icon
+              drew two folders in a row. */}
+          <ProjectIcon iconEmoji={workspace.projectIconEmoji} />
+          <span className="truncate">{workspace.label}</span>
+          <span className="text-[10px] uppercase tracking-wide text-accent-coral/70 flex-shrink-0">
+            Project
+          </span>
+          {workspace.projectStatus && workspace.projectStatus !== "Active" && (
+            <span className="text-[10px] uppercase tracking-wide text-muted-foreground border border-border rounded px-1.5 py-0.5 flex-shrink-0">
+              {workspace.projectStatus}
+            </span>
+          )}
+          {!open && topLevel.length > 0 && (
+            <span className="text-[11px] text-muted-foreground flex-shrink-0">
+              ({topLevel.length})
+            </span>
+          )}
+        </button>
+        {open && (
+          <div className="pl-6 flex flex-col divide-y divide-border">
+            {topLevel.length === 0 ? (
+              <p className="py-1.5 text-sm text-muted-foreground italic">No documents yet.</p>
+            ) : (
+              topLevel.map((doc) =>
                 doc.kind === "Folder" ? (
                   <FolderRow key={doc.id} doc={doc} canManage={workspace.canManage} />
                 ) : (
                   <DocRow key={doc.id} doc={doc} indent={false} />
                 ),
-              )}
-            </div>
-          ))}
-      </section>
+              )
+            )}
+          </div>
+        )}
+      </div>
     );
   }
 
@@ -765,32 +858,66 @@ export default function DocumentsHub() {
           <FileText className="w-5 h-5 text-accent-coral" />
           <h1 className="text-lg font-semibold text-foreground">Documents</h1>
         </div>
+        {/* One primary action with the two rarer ways to create attached to it,
+            rather than three same-sized buttons competing for the same corner.
+            Split button: the left half does the common thing outright, the
+            chevron opens the alternatives. */}
         {canManageLab && (
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void createLabFolder()}
-              className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-60"
-            >
-              <FolderPlus className="w-4 h-4" /> New folder
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void openTemplatePicker()}
-              className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-60"
-            >
-              <LayoutTemplate className="w-4 h-4" /> From template…
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void createLabDocument()}
-              className="inline-flex items-center gap-1.5 rounded-md bg-accent-coral px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-coral/90 disabled:opacity-60"
-            >
-              <Plus className="w-4 h-4" /> New document
-            </button>
+          <div ref={newMenuRef} className="relative flex-shrink-0">
+            <div className="inline-flex overflow-hidden rounded-md">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void createLabDocument()}
+                className="inline-flex items-center gap-1.5 bg-accent-coral px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-coral/90 disabled:opacity-60"
+              >
+                <Plus className="w-4 h-4" /> New document
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setNewMenuOpen((o) => !o)}
+                aria-haspopup="menu"
+                aria-expanded={newMenuOpen}
+                aria-label="More ways to add"
+                className="inline-flex items-center border-l border-white/25 bg-accent-coral px-1.5 py-1.5 text-white hover:bg-accent-coral/90 disabled:opacity-60"
+              >
+                <ChevronDown className="w-4 h-4" />
+              </button>
+            </div>
+            {newMenuOpen && (
+              <div
+                role="menu"
+                className="absolute right-0 z-30 mt-1 w-52 rounded-md border border-border bg-card p-1 shadow-brand-2"
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={busy}
+                  onClick={() => {
+                    setNewMenuOpen(false);
+                    void createLabFolder();
+                  }}
+                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-foreground hover:bg-muted disabled:opacity-60"
+                >
+                  <FolderPlus className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                  New folder
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={busy}
+                  onClick={() => {
+                    setNewMenuOpen(false);
+                    void openTemplatePicker();
+                  }}
+                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-foreground hover:bg-muted disabled:opacity-60"
+                >
+                  <LayoutTemplate className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                  From template…
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -862,26 +989,6 @@ export default function DocumentsHub() {
           </div>
           <div className="inline-flex rounded-md border border-border bg-card p-0.5 text-sm">
             {([
-              ["active", "Active"],
-              ["all", "All"],
-            ] as const).map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setProjectFilter(value)}
-                aria-pressed={projectFilter === value}
-                className={`px-3 py-1 rounded font-medium transition-colors ${
-                  projectFilter === value
-                    ? "bg-accent-coral/10 text-accent-coral"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <div className="inline-flex rounded-md border border-border bg-card p-0.5 text-sm">
-            {([
               ["all", "All"],
               ["lab", "Lab-wide"],
               ["project", "Projects"],
@@ -901,6 +1008,31 @@ export default function DocumentsHub() {
               </button>
             ))}
           </div>
+          {scope !== "lab" && (
+            <div className="inline-flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">Projects</span>
+              <div className="inline-flex rounded-md border border-border bg-card p-0.5 text-sm">
+                {([
+                  ["active", "This term"],
+                  ["all", "All time"],
+                ] as const).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setProjectFilter(value)}
+                    aria-pressed={projectFilter === value}
+                    className={`px-3 py-1 rounded font-medium transition-colors ${
+                      projectFilter === value
+                        ? "bg-accent-coral/10 text-accent-coral"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
         {allTags.length > 0 && (
           <div className="flex items-center gap-2 flex-wrap">
@@ -988,9 +1120,7 @@ export default function DocumentsHub() {
               </div>
             </section>
           )}
-          {visibleWorkspaces.map((workspace) => (
-            <WorkspaceGroup key={workspace.key} workspace={workspace} />
-          ))}
+          <UnifiedTree workspaces={visibleWorkspaces} />
         </>
       )}
     </div>

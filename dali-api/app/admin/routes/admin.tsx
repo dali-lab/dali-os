@@ -43,9 +43,6 @@ export default function AdminHub() {
     <div className="flex flex-col gap-8">
       <header>
         <h1 className="font-heading text-2xl font-bold text-foreground">Admin</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Lab administration, grouped by area.
-        </p>
       </header>
       {clusters.map((cluster) => (
         <section key={cluster.key} className="flex flex-col gap-3">

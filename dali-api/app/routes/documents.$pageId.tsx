@@ -7,6 +7,7 @@ import { parseSessionCookie } from "~/lib/cookies";
 import { fullName } from "~/lib/display";
 import { getPresenceUser } from "~/lib/presence-user";
 import { getPageAccess } from "~/lib/pageAccess.server";
+import { labDocAccess } from "~/lib/lab-documents.server";
 import { normalizePageTypography } from "~/lib/page-typography";
 import { DocumentEditor } from "~/components/DocumentEditor";
 import { AttendanceChecklist, type AttendanceRow } from "~/components/AttendanceChecklist";
@@ -93,6 +94,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       isTemplate: true,
       typography: true,
       updatedAt: true,
+      createdById: true,
+      labRestricted: true,
       createdBy: { select: { firstName: true, lastName: true } },
       lastEditedBy: { select: { firstName: true, lastName: true } },
       tags: { select: { tag: { select: { id: true, label: true, slug: true, color: true } } } },
@@ -117,13 +120,26 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
 
   // Unified permission resolution — single call replaces the old inline block.
+  // createdById/labRestricted must be passed through: without them the Lab
+  // branch would read every lab page as unrestricted and open a narrowed
+  // document to the whole lab.
   const access = await getPageAccess(auth.user.sub, {
     id: page.id,
     workspaceType: page.workspaceType,
     workspaceId: page.workspaceId,
     archivedAt: page.archivedAt,
+    createdById: page.createdById,
+    labRestricted: page.labRestricted,
   });
   const { canEdit, canComment, canResolve } = access;
+  if (!access.canView) throw new Response("Not found", { status: 404 });
+
+  // Only lab documents carry a per-page audience; everywhere else the workspace
+  // decides who reads, so there's nothing to manage.
+  const canManageAccess =
+    page.workspaceType === "Lab"
+      ? (await labDocAccess(page, auth.user.sub)).canManageAccess
+      : false;
 
   const allTags = await prisma.docTag.findMany({
     where: { archivedAt: null },
@@ -260,6 +276,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     canEdit,
     canComment,
     canResolve,
+    canManageAccess,
     collabToken,
     userName: presenceUser?.name ?? fallbackName,
     currentUserId: auth.user.sub,
@@ -279,6 +296,7 @@ export default function DocumentPage() {
     canEdit,
     canComment,
     canResolve,
+    canManageAccess,
     collabToken,
     userName,
     currentUserId,
@@ -332,6 +350,7 @@ export default function DocumentPage() {
         canEdit={canEdit}
         canComment={canComment}
         canResolve={canResolve}
+        canManageAccess={canManageAccess}
         tags={tags}
         allTags={allTags}
         iconEmoji={iconEmoji}

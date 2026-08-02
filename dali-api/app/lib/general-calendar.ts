@@ -23,6 +23,13 @@ export type GeneralCalendarEvent = {
   end: Date;
   summary: string;
   allDay: boolean;
+  // Optional VEVENT fields, carried through for the home calendar's detail
+  // panel. Absent from most feed entries, so every one is nullable.
+  location: string | null;
+  description: string | null;
+  organizer: string | null;
+  /** Google puts the event's own web link in URL. */
+  url: string | null;
 };
 
 // A parsed VEVENT before windowing/recurrence expansion.
@@ -32,6 +39,10 @@ type RawEvent = {
   summary: string;
   allDay: boolean;
   rrule: string | null;
+  location: string | null;
+  description: string | null;
+  organizer: string | null;
+  url: string | null;
 };
 
 const FETCH_TIMEOUT_MS = 5_000;
@@ -105,7 +116,7 @@ export async function fetchGeneralCalendarEvents(
     if (!ev.rrule) {
       // One-off: include if it overlaps the window.
       if (ev.end.getTime() > windowStart.getTime() && ev.start.getTime() < windowEnd.getTime()) {
-        out.push({ start: ev.start, end: ev.end, summary: ev.summary, allDay: ev.allDay });
+        out.push({ ...meta(ev), start: ev.start, end: ev.end });
       }
       continue;
     }
@@ -119,6 +130,7 @@ export async function fetchGeneralCalendarEvents(
     const occurrences = rule.between(new Date(windowStart.getTime() - durMs), windowEnd, true);
     for (const occStart of occurrences) {
       out.push({
+        ...meta(ev),
         start: occStart,
         end: new Date(occStart.getTime() + durMs),
         summary: ev.summary,
@@ -127,6 +139,19 @@ export async function fetchGeneralCalendarEvents(
     }
   }
   return out;
+}
+
+// The non-time fields every occurrence of an event shares. Recurrences differ
+// only in start/end, so this keeps the two push sites from drifting.
+function meta(ev: RawEvent): Omit<GeneralCalendarEvent, "start" | "end"> {
+  return {
+    summary: ev.summary,
+    allDay: ev.allDay,
+    location: ev.location,
+    description: ev.description,
+    organizer: ev.organizer,
+    url: ev.url,
+  };
 }
 
 // Build an RRule anchored at the event's DTSTART, matching ~/lib/availability's
@@ -167,7 +192,17 @@ function parseIcs(raw: string): RawEvent[] {
   const lines = unfold(raw);
   const out: RawEvent[] = [];
   let cur:
-    | { start?: Date; end?: Date; summary?: string; allDay?: boolean; rrule?: string }
+    | {
+        start?: Date;
+        end?: Date;
+        summary?: string;
+        allDay?: boolean;
+        rrule?: string;
+        location?: string;
+        description?: string;
+        organizer?: string;
+        url?: string;
+      }
     | null = null;
 
   for (const line of lines) {
@@ -187,6 +222,10 @@ function parseIcs(raw: string): RawEvent[] {
           summary: cur.summary,
           allDay: cur.allDay ?? false,
           rrule: cur.rrule ?? null,
+          location: cur.location ?? null,
+          description: cur.description ?? null,
+          organizer: cur.organizer ?? null,
+          url: cur.url ?? null,
         });
       }
       cur = null;
@@ -213,6 +252,16 @@ function parseIcs(raw: string): RawEvent[] {
       if (parsed) cur.end = parsed.date;
     } else if (name === "RRULE") {
       cur.rrule = value;
+    } else if (name === "LOCATION") {
+      cur.location = unescapeText(value) || undefined;
+    } else if (name === "DESCRIPTION") {
+      cur.description = unescapeText(value) || undefined;
+    } else if (name === "ORGANIZER") {
+      // ORGANIZER is a mailto: URI, often with a CN= param on the name part.
+      const cn = /CN=([^;:]+)/.exec(namePart);
+      cur.organizer = (cn?.[1] ?? value.replace(/^mailto:/i, "")).trim() || undefined;
+    } else if (name === "URL") {
+      cur.url = value.trim() || undefined;
     }
   }
   return out;

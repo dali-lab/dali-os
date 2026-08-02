@@ -20,7 +20,7 @@
 // Nothing here grants write access: only the owner edits their own notes.
 
 import { prisma } from "~/lib/db";
-import { resolveGroupMembers } from "~/lib/groups";
+import { groupIdsForUser as sharedGroupIdsForUser } from "~/lib/page-sharing.server";
 import type { Prisma } from "~/generated/prisma/client";
 
 export type NoteVisibility = "private" | "public";
@@ -40,24 +40,11 @@ export class NoteForbiddenError extends Error {
 }
 
 /**
- * Group ids whose membership includes this user. Dynamic groups are resolved
- * through resolveGroupMembers rather than reimplemented — the definition of
- * "in a group" has to stay identical to notifications and meeting invites, or
- * sharing would quietly diverge from every other audience in the app.
+ * Group ids whose membership includes this user. Re-exported from the shared
+ * PageShare module — lab documents resolve group membership the same way, and
+ * two copies of this would drift.
  */
-export async function groupIdsForUser(userId: string): Promise<string[]> {
-  const groups = await prisma.groupDefinition.findMany({
-    where: { archivedAt: null },
-    select: { id: true },
-  });
-  const memberships = await Promise.all(
-    groups.map(async (g) => ({
-      id: g.id,
-      members: await resolveGroupMembers(g.id),
-    })),
-  );
-  return memberships.filter((g) => g.members.includes(userId)).map((g) => g.id);
-}
+export const groupIdsForUser = sharedGroupIdsForUser;
 
 /**
  * A `where` fragment matching every personal note `viewerId` may read. Compose

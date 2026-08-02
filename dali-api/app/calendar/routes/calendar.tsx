@@ -40,6 +40,7 @@ import { UnderlineTabButtons } from "~/components/AreaPillNav";
 import { Tooltip } from "~/components/ui/IconButton";
 import { buttonClasses } from "~/components/ui/Button";
 import { RsvpButtons } from "~/components/RsvpButtons";
+import { CustomHiresManager } from "~/calendar/components/CustomHiresManager";
 
 // Underline subnav sits flush under the workspace tab bar (see layout embed padding).
 export const handle = {
@@ -2734,7 +2735,6 @@ function todayDateInputValue(timezone: string): string {
 }
 
 function TimesheetView({ data }: { data: LoaderData }) {
-  const totalHours = data.timeEntries.reduce((sum, t) => sum + t.hours, 0);
   const addFetcher = useFetcher<{ error?: string } | null>();
   const adding = addFetcher.state !== "idle";
   const [date, setDate] = useState(() => todayDateInputValue(data.timezone));
@@ -2781,9 +2781,16 @@ function TimesheetView({ data }: { data: LoaderData }) {
   return (
     <div className="flex flex-col gap-4 w-full max-w-full min-w-0">
       <section className="bg-card border border-border shadow-brand-1 rounded-lg p-4">
-        <div className="flex items-center justify-between mb-3">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="font-heading font-semibold text-foreground">Timesheet</h2>
-          <span className="text-sm text-muted-foreground">{totalHours.toFixed(2)} hrs total</span>
+          {/* Adding an outside job is how someone with no current DALI
+              assignment gets a role to log against, so it stays reachable even
+              when the form below is showing the no-roles message. */}
+          <CustomHiresManager
+            hires={data.myRoles
+              .filter((r) => r.assignmentType === "Custom")
+              .map((r) => ({ id: r.roleRefId, label: r.label }))}
+          />
         </div>
         <p className="text-xs text-muted-foreground mb-3">
           Meeting-sourced entries are added automatically when someone checks you present on a
@@ -2805,7 +2812,7 @@ function TimesheetView({ data }: { data: LoaderData }) {
               // Defer so the fetcher can read current field values first.
               queueMicrotask(() => resetAddForm());
             }}
-            className="grid grid-cols-1 sm:grid-cols-[1fr_110px_110px_1.4fr_1.6fr_auto] gap-2 items-end"
+            className="grid grid-cols-1 items-end gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(8rem,1fr)_7rem_7rem_minmax(9rem,1.2fr)_minmax(12rem,1.8fr)_auto]"
           >
             <input type="hidden" name="intent" value="add-time-entry" />
             {/* Hours is derived from the range, never typed — the server
@@ -2855,7 +2862,7 @@ function TimesheetView({ data }: { data: LoaderData }) {
               value={roleKey}
               onChange={setRoleKey}
             />
-            <label className="text-xs text-muted-foreground flex flex-col gap-1">
+            <label className="text-xs text-muted-foreground flex flex-col gap-1 sm:col-span-2 xl:col-span-1">
               Note
               <textarea
                 name="note"
@@ -2866,7 +2873,7 @@ function TimesheetView({ data }: { data: LoaderData }) {
                 className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground resize-y min-h-[2.25rem]"
               />
             </label>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 sm:col-span-2 sm:justify-end xl:col-span-1 xl:justify-start">
               <button
                 type="submit"
                 disabled={!canSubmit}

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type JSX } from "react";
 import {
   Form,
   Link,
@@ -7,6 +7,7 @@ import {
   useSubmit,
 } from "react-router";
 import {
+  Briefcase as BriefcaseIcon,
   FolderKanban,
   Github,
   Globe,
@@ -27,6 +28,7 @@ import { Avatar } from "~/components/ui/Avatar";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { PresenceBar } from "~/components/collab/PresenceBar";
 import { PersonalNotesRail } from "./PersonalNotesRail";
+import { AchievementsBlock } from "./AchievementsBlock";
 import { buttonClasses } from "~/components/ui/Button";
 import type { Level } from "~/admin/lib/eligibility";
 import { APPLICATION_TZ, formatZoneLabel } from "~/lib/timezone";
@@ -65,6 +67,7 @@ export function MemberProfileView({
     mentorshipPanel,
     notes,
     sharedWithMe,
+    achievements,
   } = data;
 
   // /members/:id renders inside a TabWorkspace iframe; a successful save only
@@ -186,6 +189,7 @@ export function MemberProfileView({
       />
 
       <DomainsSection
+        roleLabels={roleLabels}
         eligibilities={member.domainEligibilities}
         allDomains={allDomains}
         canManage={canManageEligibility}
@@ -212,7 +216,8 @@ export function MemberProfileView({
       {/* Right rail. Below xl it stacks under the profile rather than
           squeezing both columns; sticky above it so the notes stay reachable
           while scrolling a long profile. */}
-      <div className="w-full xl:w-80 xl:shrink-0 xl:sticky xl:top-6">
+      <div className="w-full xl:w-80 xl:shrink-0 xl:sticky xl:top-6 flex flex-col gap-6">
+        <AchievementsBlock achievements={achievements} />
         <PersonalNotesRail
           ownerId={member.id}
           ownerFirstName={member.firstName}
@@ -528,133 +533,11 @@ function PersonalSection({
               </div>
             </div>
           ) : (
-            <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 text-sm">
-              {showIdentitySummary && (
-                <>
-                  <Detail label="Pronouns" value={member.pronouns} />
-                  <Detail
-                    label="Handle"
-                    value={member.handle ? `@${member.handle}` : null}
-                  />
-                  <Detail label="Major" value={member.major} />
-                  <Detail
-                    label="Class year"
-                    value={member.classYear?.toString() ?? null}
-                  />
-                  <div className="sm:col-span-2">
-                    <dt className="text-xs text-muted-foreground mb-1">Roles</dt>
-                    <dd className="flex flex-wrap gap-1.5">
-                      {!roleLabels || roleLabels.length === 0 ? (
-                        <span className="text-sm text-foreground">—</span>
-                      ) : (
-                        roleLabels.map((r) => (
-                          <span
-                            key={r}
-                            className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-accent-coral/15 text-accent-coral"
-                          >
-                            {r}
-                          </span>
-                        ))
-                      )}
-                    </dd>
-                  </div>
-                  <div className="sm:col-span-2">
-                    <dt className="text-xs text-muted-foreground mb-1">Emails</dt>
-                    <dd className="flex flex-col gap-0.5">
-                      {emails.length === 0 ? (
-                        <span className="text-sm text-foreground">—</span>
-                      ) : (
-                        emails.map((e) => (
-                          <span
-                            key={e}
-                            className="inline-flex items-center gap-1.5 text-sm text-foreground"
-                          >
-                            <Mail className="w-3.5 h-3.5 text-muted-foreground" />
-                            {e}
-                          </span>
-                        ))
-                      )}
-                    </dd>
-                  </div>
-                </>
-              )}
-              <Detail label="Hometown" value={member.hometown} />
-              <Detail
-                label="Birthday"
-                value={formatBirthday(member.birthday)}
-              />
-              <Detail label="Phone" value={member.phoneNumber} />
-              <Detail label="NetID" value={member.netId} />
-              <Detail label="Personal email" value={member.personalEmail} />
-              <Detail
-                label="Time zone"
-                value={member.timeZone ? formatZoneLabel(member.timeZone) : null}
-              />
-              <div>
-                <dt className="text-xs text-muted-foreground mb-1">GitHub</dt>
-                <dd className="text-sm text-foreground">
-                  {member.githubUsername ? (
-                    <a
-                      href={`https://github.com/${member.githubUsername}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1.5 text-accent-coral hover:underline"
-                    >
-                      <Github className="w-3.5 h-3.5" />
-                      {member.githubUsername}
-                    </a>
-                  ) : (
-                    "—"
-                  )}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-xs text-muted-foreground mb-1">LinkedIn</dt>
-                <dd className="text-sm text-foreground">
-                  {member.linkedinUrl ? (
-                    <a
-                      href={member.linkedinUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1.5 text-accent-coral hover:underline"
-                    >
-                      <Linkedin className="w-3.5 h-3.5" />
-                      Profile
-                    </a>
-                  ) : (
-                    "—"
-                  )}
-                </dd>
-              </div>
-              <div className="sm:col-span-2">
-                <dt className="text-xs text-muted-foreground mb-1">
-                  Personal site
-                </dt>
-                <dd className="text-sm text-foreground">
-                  {member.personalSite ? (
-                    <a
-                      href={member.personalSite}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1.5 text-accent-coral hover:underline break-all"
-                    >
-                      <Globe className="w-3.5 h-3.5 flex-shrink-0" />
-                      {member.personalSite}
-                    </a>
-                  ) : (
-                    "—"
-                  )}
-                </dd>
-              </div>
-              <div className="sm:col-span-2">
-                <dt className="text-xs text-muted-foreground mb-1">
-                  Dietary restrictions
-                </dt>
-                <dd className="text-sm text-foreground whitespace-pre-wrap">
-                  {member.dietaryRestrictions || "—"}
-                </dd>
-              </div>
-            </dl>
+            <ProfileDetails
+              member={member}
+              emails={emails}
+              showIdentitySummary={showIdentitySummary}
+            />
           )}
         </Form>
       )}
@@ -851,12 +734,15 @@ function EducationSection({
 // ─── Domains & levels (identical to the previous member view) ───────────────
 
 function DomainsSection({
+  roleLabels = [],
   eligibilities,
   allDomains,
   canManage,
   allowedLevels,
   embedded,
 }: {
+  /** Core titles and Domain Lead posts held this term. */
+  roleLabels?: string[];
   eligibilities: ProfileMember["domainEligibilities"];
   allDomains: Array<{ id: string; displayName: string }>;
   canManage: boolean;
@@ -878,7 +764,7 @@ function DomainsSection({
         <div className="flex items-center justify-between gap-2">
           <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
             <Shield className="w-4 h-4 text-accent-coral" />
-            Domains &amp; levels
+            Roles, domains &amp; levels
           </h2>
           {!canManage && (
             <span className="text-[11px] text-muted-foreground/70">
@@ -891,6 +777,19 @@ function DomainsSection({
         <p className="text-[11px] text-muted-foreground/70">
           Only Core or Admin can edit.
         </p>
+      )}
+      {roleLabels.length > 0 && (
+        <ul className="flex flex-col gap-1.5">
+          {roleLabels.map((r) => (
+            <li
+              key={r}
+              className="flex items-center gap-2 rounded-md border border-accent-coral/25 bg-accent-coral/5 px-2.5 py-2"
+            >
+              <BriefcaseIcon className="w-4 h-4 flex-shrink-0 text-accent-coral" />
+              <span className="min-w-0 truncate font-medium text-foreground">{r}</span>
+            </li>
+          ))}
+        </ul>
       )}
       {eligibilities.length === 0 && !canManage && (
         <p className="text-sm text-muted-foreground/70 italic">
@@ -1260,6 +1159,159 @@ function Detail({ label, value }: { label: string; value: string | null }) {
     <div>
       <dt className="text-xs text-muted-foreground mb-1">{label}</dt>
       <dd className="text-sm text-foreground">{value || "—"}</dd>
+    </div>
+  );
+}
+
+// ─── Personal, in view mode ─────────────────────────────────────────────────
+//
+// The same fields, made lighter without breaking the section into more cards:
+//
+//  - empty fields are omitted rather than printed as "—". Most profiles fill in
+//    a handful, so the flat grid was mostly placeholders. Edit mode still shows
+//    every field, so nothing becomes unreachable;
+//  - what's left is grouped (about / contact / links) with a hairline and a
+//    small caption, so the eye has somewhere to stop;
+//  - the three links collapse into one row of chips instead of three
+//    full-height label/value cells.
+//
+// A group with nothing in it renders nothing, hairline included.
+
+type Fact = { label: string; value: string | null | undefined; wide?: boolean };
+
+/**
+ * A captioned group of label/value pairs. Facts without a value are dropped,
+ * and a group left with none renders nothing at all — caption and divider
+ * included. Takes data rather than children on purpose: an element that
+ * *renders* null is still an element, so counting children would keep empty
+ * groups alive.
+ */
+function DetailGroup({
+  caption,
+  facts,
+  first = false,
+  children,
+}: {
+  caption: string;
+  facts: Fact[];
+  first?: boolean;
+  /** Extra rows that aren't simple strings (e.g. the email list). Counts
+   *  toward the group being non-empty. */
+  children?: React.ReactNode;
+}) {
+  const shown = facts.filter((f) => f.value);
+  if (shown.length === 0 && !children) return null;
+  return (
+    <div className={first ? "" : "border-t border-border/60 pt-3"}>
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70 mb-2">
+        {caption}
+      </p>
+      <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3">
+        {shown.map((f) => (
+          <div key={f.label} className={f.wide ? "sm:col-span-2" : undefined}>
+            <dt className="text-[11px] text-muted-foreground">{f.label}</dt>
+            <dd className="text-sm text-foreground">{f.value}</dd>
+          </div>
+        ))}
+        {children}
+      </dl>
+    </div>
+  );
+}
+
+function ProfileDetails({
+  member,
+  emails,
+  showIdentitySummary,
+}: {
+  member: ProfileMember;
+  emails: string[];
+  showIdentitySummary: boolean;
+}) {
+  const links = [
+    member.githubUsername && {
+      key: "github",
+      href: `https://github.com/${member.githubUsername}`,
+      icon: <Github className="w-3.5 h-3.5" />,
+      label: member.githubUsername,
+    },
+    member.linkedinUrl && {
+      key: "linkedin",
+      href: member.linkedinUrl,
+      icon: <Linkedin className="w-3.5 h-3.5" />,
+      label: "LinkedIn",
+    },
+    member.personalSite && {
+      key: "site",
+      href: member.personalSite,
+      icon: <Globe className="w-3.5 h-3.5" />,
+      label: member.personalSite.replace(/^https?:\/\//, "").replace(/\/$/, ""),
+    },
+  ].filter(Boolean) as { key: string; href: string; icon: JSX.Element; label: string }[];
+
+  return (
+    <div className="flex flex-col gap-3 text-sm">
+      <DetailGroup
+        caption="About"
+        first
+        facts={[
+          ...(showIdentitySummary
+            ? [
+                { label: "Pronouns", value: member.pronouns },
+                { label: "Handle", value: member.handle ? `@${member.handle}` : null },
+                { label: "Major", value: member.major },
+                { label: "Class year", value: member.classYear?.toString() ?? null },
+              ]
+            : []),
+          { label: "Hometown", value: member.hometown },
+          { label: "Birthday", value: formatBirthday(member.birthday) },
+          {
+            label: "Time zone",
+            value: member.timeZone ? formatZoneLabel(member.timeZone) : null,
+          },
+          { label: "Dietary restrictions", value: member.dietaryRestrictions, wide: true },
+        ]}
+      />
+
+      <DetailGroup
+        caption="Contact"
+        facts={[
+          { label: "Phone", value: member.phoneNumber },
+          { label: "NetID", value: member.netId },
+          { label: "Personal email", value: member.personalEmail },
+        ]}
+      >
+        {showIdentitySummary && emails.length > 0 && (
+          <div className="sm:col-span-2">
+            <dt className="text-[11px] text-muted-foreground">Emails</dt>
+            <dd className="flex flex-col gap-0.5">
+              {emails.map((e) => (
+                <span key={e} className="inline-flex items-center gap-1.5 text-sm text-foreground">
+                  <Mail className="w-3.5 h-3.5 text-muted-foreground" />
+                  {e}
+                </span>
+              ))}
+            </dd>
+          </div>
+        )}
+      </DetailGroup>
+
+      {links.length > 0 && (
+        <div className="border-t border-border/60 pt-3 flex flex-wrap gap-1.5">
+          {links.map((l) => (
+            <a
+              key={l.key}
+              href={l.href}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs text-foreground hover:border-accent-coral/40 hover:text-accent-coral"
+            >
+              <span className="text-muted-foreground">{l.icon}</span>
+              <span className="truncate">{l.label}</span>
+            </a>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

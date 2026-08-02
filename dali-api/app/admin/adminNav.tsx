@@ -257,6 +257,10 @@ export function adminTrail(active: string, isAdmin: boolean): Crumb[] {
 // to filter the Finance cluster out of the switcher for non-admins.
 export function adminHandle(active: string) {
   return {
+    // Admin pages open straight onto a title with no area subnav between it and
+    // the trail, so the shell's default 8px gap left the two crowding each
+    // other. The shell reads this flag rather than each page padding itself.
+    roomyBreadcrumb: true,
     breadcrumbTrail: (data: unknown) => {
       const d = data as { isAdmin?: boolean; viewerIsAdmin?: boolean } | null;
       return adminTrail(active, !!d?.isAdmin || !!d?.viewerIsAdmin);

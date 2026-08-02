@@ -184,6 +184,11 @@ export default function AppLayoutRoute() {
   const hasAreaSubnav = matches.some(
     (m) => (m as { handle?: { areaPills?: boolean } }).handle?.areaPills,
   )
+  // Pages that land directly on their own title, with no subnav in between,
+  // ask for a wider gap under the trail (see adminHandle).
+  const roomyBreadcrumb = matches.some(
+    (m) => (m as { handle?: { roomyBreadcrumb?: boolean } }).handle?.roomyBreadcrumb,
+  )
 
   // After a client-side navigation inside the workspace iframe, the loader
   // re-runs via fetch — which carries `Sec-Fetch-Dest: empty`, not `iframe` —
@@ -327,7 +332,12 @@ export default function AppLayoutRoute() {
           hasAreaSubnav ? 'pt-0' : 'pt-4 sm:pt-8 md:pt-12',
         )}
       >
-        <div className="mb-2 flex items-start justify-between gap-3 empty:mb-0">
+        <div
+          className={cn(
+            'flex items-start justify-between gap-3',
+            roomyBreadcrumb ? 'mb-5 sm:mb-6 empty:mb-0' : 'mb-2 empty:mb-0',
+          )}
+        >
           <Breadcrumbs />
           <PageDocButton suppressWhenPills />
         </div>

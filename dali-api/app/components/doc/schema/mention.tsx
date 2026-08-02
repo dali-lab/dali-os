@@ -14,6 +14,7 @@ import type { DefaultReactSuggestionItem } from "@blocknote/react";
 // imports MentionSpec as a value).
 import type { DocEditorInstance } from "./build";
 import { mentionConfig, pageMentionConfig } from "./configs";
+import { MentionHoverCard } from "./MentionHoverCard";
 
 export type MentionUser = {
   id: string;
@@ -40,9 +41,11 @@ const PAGE_MENTION_CLASS =
 
 export const MentionSpec = createReactInlineContentSpec(mentionConfig, {
   render: ({ inlineContent }) => (
-    <span className={MENTION_CLASS} data-mention-id={inlineContent.props.id}>
-      @{inlineContent.props.label}
-    </span>
+    <MentionHoverCard userId={inlineContent.props.id}>
+      <span className={MENTION_CLASS} data-mention-id={inlineContent.props.id}>
+        @{inlineContent.props.label}
+      </span>
+    </MentionHoverCard>
   ),
 });
 

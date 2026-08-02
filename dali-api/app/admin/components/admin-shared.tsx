@@ -31,6 +31,8 @@ export interface Member {
   firstName: string;
   lastName: string;
   daliEmail: string | null;
+  /** Resolved (signed) avatar URL, or null. */
+  photoUrl?: string | null;
   // Presence indicates a lab member (vs a Dartmouth student or partner).
   isLabMember: boolean;
   // Presence = Admin (AdminMembership row exists).
@@ -223,10 +225,10 @@ export function AdminToggle({ member, disabled }: { member: Member; disabled?: b
         type="submit"
         disabled={disabled}
         title={disabled ? "Only Admins can grant or revoke Admin." : undefined}
-        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
           isAdminMember
-            ? "bg-blue-100 text-blue-800 hover:bg-blue-200"
-            : "bg-muted text-muted-foreground hover:bg-muted"
+            ? "border border-accent-coral/30 bg-accent-coral/10 text-accent-coral hover:bg-accent-coral/20"
+            : "border border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground"
         } disabled:opacity-60 disabled:cursor-not-allowed`}
       >
         {isAdminMember ? <Check className="w-3 h-3" /> : <Shield className="w-3 h-3" />}
@@ -255,10 +257,10 @@ export function StaffToggle({ member, disabled }: { member: Member; disabled?: b
         type="submit"
         disabled={disabled}
         title={disabled ? "Only Admins can mark Staff." : "Staff are exempt from student checklist items and gain Admin access."}
-        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
           isStaffMember
-            ? "bg-accent-teal/15 text-accent-teal hover:bg-accent-teal/25"
-            : "bg-muted text-muted-foreground hover:bg-muted"
+            ? "border border-accent-teal/30 bg-accent-teal/10 text-accent-teal hover:bg-accent-teal/20"
+            : "border border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground"
         } disabled:opacity-60 disabled:cursor-not-allowed`}
       >
         {isStaffMember ? <Check className="w-3 h-3" /> : <Briefcase className="w-3 h-3" />}
@@ -340,7 +342,7 @@ export function CorePicker({ member }: { member: Member }) {
       {member.coreAssignments.map((a) => (
         <span
           key={a.id}
-          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800"
+          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium border border-accent-green/40 bg-accent-green/15 text-foreground"
         >
           {a.leadTitle ?? "Core"}
           <RemoveCoreTitleButton assignmentId={a.id} />
