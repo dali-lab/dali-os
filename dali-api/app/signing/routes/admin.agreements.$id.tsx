@@ -7,6 +7,7 @@ import type { Route } from "./+types/admin.agreements.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { getUserRoles, isCore } from "~/lib/roles";
+import { adminHandle } from "~/admin/adminNav";
 import { logAuditEvent } from "~/lib/audit";
 import { fullName } from "~/lib/display";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
@@ -15,7 +16,7 @@ import { notifySignRequest } from "~/signing/lib/notify.server";
 import { AUDIENCE_RESOLVERS } from "~/signing/lib/audiences";
 import { SigningDocumentDetail } from "~/signing/components/SigningDocumentDetail";
 
-export const handle = { areaPills: true };
+export const handle = adminHandle("agreements");
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const name = (data as { document?: { name?: string } } | undefined)?.document?.name;

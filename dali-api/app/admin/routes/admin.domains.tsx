@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { redirect, useLoaderData, useFetcher } from "react-router";
 import type { Route } from "./+types/admin.domains";
-import { AdminPathBar } from "~/admin/adminPills";
+import { adminHandle } from "~/admin/adminNav";
 import { prisma } from "~/lib/db";
 import { ensureDomainGroup } from "~/lib/groups";
 import { requireAuth, forbidden } from "~/lib/auth";
@@ -22,7 +22,7 @@ import {
   RemoveDomainLeadButton,
 } from "~/admin/components/admin-shared";
 
-export const handle = { areaPills: true };
+export const handle = adminHandle("domains");
 
 export const meta: Route.MetaFunction = () => [{ title: "Domains · Admin · DALI OS" }];
 
@@ -560,7 +560,6 @@ export default function AdminConsoleDomains() {
 
   return (
     <div className="space-y-6">
-      <AdminPathBar active="domains" />
       <div className="bg-card border border-border rounded-lg overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/50">
           <h2 className="text-sm font-medium text-muted-foreground">Domains ({domains.length})</h2>

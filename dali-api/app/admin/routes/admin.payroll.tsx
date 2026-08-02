@@ -30,7 +30,7 @@ import {
   type TimesheetNoteView,
 } from "~/admin/lib/payroll-reconcile.server";
 import type { JobBreakdown } from "~/admin/lib/payroll-collation";
-import { AdminPathBar } from "~/admin/adminPills";
+import { adminHandle } from "~/admin/adminNav";
 import { TermFilter } from "~/components/TermFilter";
 import { Card } from "~/components/ui/Card";
 import { buttonClasses } from "~/components/ui/Button";
@@ -43,7 +43,7 @@ import { Tooltip as UiTooltip } from "~/components/ui/IconButton";
 import { PayrollUploadModal } from "~/admin/components/PayrollUploadModal";
 import { PayrollBudgetPanel } from "~/admin/components/PayrollBudgetPanel";
 
-export const handle = { areaPills: true };
+export const handle = adminHandle("payroll-reconcile");
 
 export const meta: Route.MetaFunction = () => [
   { title: "Payroll: Reconcile · Admin · DALI OS" },
@@ -72,6 +72,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       reconciliation: null as ReconciliationResult | null,
       periods: [] as PeriodSummary[],
       missingChartStrings: [] as string[],
+      isAdmin: true,
     };
   }
 
@@ -124,7 +125,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     };
   });
 
-  return { ...termFilter, reconciliation, periods, missingChartStrings };
+  return { ...termFilter, reconciliation, periods, missingChartStrings, isAdmin: true };
 }
 
 type TabKey =
@@ -179,7 +180,6 @@ export default function PayrollReconcile() {
 
   return (
     <div className="space-y-6">
-      <AdminPathBar active="payroll-reconcile" />
 
       <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">

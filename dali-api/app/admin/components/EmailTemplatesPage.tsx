@@ -8,7 +8,6 @@ import { Link, Form, useLoaderData } from 'react-router'
 import { Plus, Mail, ChevronRight } from 'lucide-react'
 import { Button } from '~/components/ui/Button'
 import { Modal, ModalHeader } from '~/components/Modal'
-import { AdminPathBar } from '~/admin/adminPills';
 import type { loader } from '~/admin/routes/admin.email-templates'
 
 export function EmailTemplatesPage() {
@@ -18,8 +17,6 @@ export function EmailTemplatesPage() {
 
   return (
     <div className="space-y-8">
-      <AdminPathBar active="email-templates" />
-
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Email Templates</h1>

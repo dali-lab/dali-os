@@ -1,12 +1,12 @@
 import { Link, redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/admin.analytics";
-import { AdminPathBar } from "~/admin/adminPills";
+import { adminHandle } from "~/admin/adminNav";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isCore } from "~/lib/roles";
+import { isCore, isAdmin } from "~/lib/roles";
 import { BarChart3, AlertTriangle } from "lucide-react";
 
-export const handle = { areaPills: true };
+export const handle = adminHandle("analytics");
 
 export const meta: Route.MetaFunction = () => [
   { title: "Analytics · Admin · DALI OS" },
@@ -138,6 +138,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     LIMIT 50
   `;
 
+  const admin = await isAdmin(auth.user.sub);
   return {
     rangeKey: range.key,
     rangeLabel: range.label,
@@ -153,6 +154,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       firstSeen: e.firstSeen.toISOString(),
       lastSeen: e.lastSeen.toISOString(),
     })),
+    isAdmin: admin,
   };
 }
 
@@ -227,7 +229,6 @@ export default function AdminConsoleAnalytics() {
 
   return (
     <div className="space-y-6">
-      <AdminPathBar active="analytics" />
       <div className="flex items-center gap-3">
         <BarChart3 className="w-6 h-6 text-foreground/80" />
         <h1 className="text-2xl font-bold text-foreground">Site analytics</h1>

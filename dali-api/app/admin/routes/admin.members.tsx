@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/admin.members";
-import { AdminPathBar } from "~/admin/adminPills";
+import { adminHandle } from "~/admin/adminNav";
 import { prisma } from "~/lib/db";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { isAdmin, isCore, isAdminViaEnv, currentTerm } from "~/lib/roles";
@@ -19,7 +19,7 @@ import {
 
 export const meta: Route.MetaFunction = () => [{ title: "Roles & Permissions · Admin · DALI OS" }];
 
-export const handle = { areaPills: true };
+export const handle = adminHandle("members");
 
 // Phase 2 rewrite: role state lives in AdminMembership / CoreAssignment /
 // DomainLeadAssignment instead of DALIMember.roles[]. The admin page now
@@ -248,7 +248,6 @@ export default function AdminConsoleMembers() {
 
   return (
     <div className="space-y-6">
-      <AdminPathBar active="members" />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <Users className="w-6 h-6 text-foreground/80" />

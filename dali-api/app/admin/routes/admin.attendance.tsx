@@ -6,7 +6,7 @@ import {
   useLoaderData,
 } from "react-router";
 import type { Route } from "./+types/admin.attendance";
-import { AdminPathBar } from "~/admin/adminPills";
+import { adminHandle } from "~/admin/adminNav";
 import { TermFilter } from "~/components/TermFilter";
 import { Tooltip } from "~/components/ui/IconButton";
 import { useConfirmSubmit } from "~/components/ui/dialog";
@@ -28,7 +28,7 @@ import {
   UserX,
 } from "lucide-react";
 
-export const handle = { areaPills: true };
+export const handle = adminHandle("attendance");
 
 export const meta: Route.MetaFunction = () => [
   { title: "Attendance · Admin · DALI OS" },
@@ -264,7 +264,6 @@ export default function AdminAttendancePage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <AdminPathBar active="attendance" />
 
       <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>

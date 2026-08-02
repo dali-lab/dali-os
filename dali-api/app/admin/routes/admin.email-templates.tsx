@@ -5,12 +5,13 @@
 
 import { redirect } from 'react-router'
 import type { Route } from './+types/admin.email-templates'
+import { adminHandle } from '~/admin/adminNav'
 import { prisma } from '~/lib/db'
 import { requireAuth } from '~/lib/auth'
 import { isCore, getUserRoles } from '~/lib/roles'
 import { EmailTemplatesPage } from '~/admin/components/EmailTemplatesPage'
 
-export const handle = { areaPills: true }
+export const handle = adminHandle("email-templates")
 
 export const meta: Route.MetaFunction = () => [
   { title: 'Email Templates · Admin · DALI OS' },

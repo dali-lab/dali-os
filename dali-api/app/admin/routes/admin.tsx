@@ -5,7 +5,7 @@ import { requireAuth } from "~/lib/auth";
 import { isAdmin, isCore } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { cn } from "~/lib/cn";
-import { ADMIN_CLUSTERS } from "~/admin/adminPills";
+import { ADMIN_CLUSTERS } from "~/admin/adminNav";
 
 export const meta: Route.MetaFunction = () => [{ title: "Admin · DALI OS" }];
 

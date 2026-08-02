@@ -8,14 +8,14 @@ import { redirect, useFetcher, useLoaderData, useRevalidator } from "react-route
 import { useEffect, useState } from "react";
 import { Play } from "lucide-react";
 import type { Route } from "./+types/admin.jobs";
-import { AdminPathBar } from "~/admin/adminPills";
+import { adminHandle } from "~/admin/adminNav";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isCore } from "~/lib/roles";
+import { isCore, isAdmin } from "~/lib/roles";
 import { JOBS, resolveJobSettings } from "~/jobs/registry";
 import { buttonClasses } from "~/components/ui/Button";
 
-export const handle = { areaPills: true };
+export const handle = adminHandle("jobs");
 
 export const meta: Route.MetaFunction = () => [{ title: "Jobs · Admin · DALI OS" }];
 
@@ -56,7 +56,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     };
   });
 
-  return { jobs };
+  const admin = await isAdmin(auth.user.sub);
+  return { jobs, isAdmin: admin };
 }
 
 type JobView = {
@@ -267,7 +268,6 @@ export default function AdminJobs() {
   const { jobs } = useLoaderData<typeof loader>();
   return (
     <div className="flex flex-col gap-4">
-      <AdminPathBar active="jobs" />
       <header>
         <h1 className="font-heading text-2xl font-bold text-foreground">Jobs</h1>
         <p className="mt-1 text-sm text-muted-foreground">

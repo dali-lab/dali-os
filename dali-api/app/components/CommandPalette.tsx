@@ -36,7 +36,7 @@ import { Avatar } from "~/components/ui/Avatar";
 import { setTablessPreference } from "~/lib/tabless";
 import { setFocusPreference } from "~/lib/focus-mode";
 import type { SearchResult, SearchResultType } from "~/lib/search";
-import { ADMIN_CLUSTERS } from "~/admin/adminPills";
+import { ADMIN_CLUSTERS } from "~/admin/adminNav";
 
 export interface CommandPaletteRoles {
   isCore?: boolean;

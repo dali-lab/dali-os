@@ -7,6 +7,7 @@ import type { Route } from "./+types/admin.agreements";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { getUserRoles, isCore } from "~/lib/roles";
+import { adminHandle } from "~/admin/adminNav";
 import type {
   SigningDocumentKind,
   SigningGateScope,
@@ -15,7 +16,7 @@ import type {
 } from "~/generated/prisma/enums";
 import { SigningDocumentsPage } from "~/signing/components/SigningDocumentsPage";
 
-export const handle = { areaPills: true };
+export const handle = adminHandle("agreements");
 
 export const meta: Route.MetaFunction = () => [
   { title: "Agreements · Admin · DALI OS" },

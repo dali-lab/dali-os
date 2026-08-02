@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { Link, Form, useLoaderData } from "react-router";
 import { Plus, FileSignature, ChevronRight } from "lucide-react";
-import { AdminPathBar } from "~/admin/adminPills";
 import type { loader } from "~/signing/routes/admin.agreements";
 
 const KIND_LABELS: Record<string, string> = {
@@ -23,8 +22,6 @@ export function SigningDocumentsPage() {
 
   return (
     <div className="space-y-8">
-      <AdminPathBar active="agreements" />
-
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Agreements</h1>

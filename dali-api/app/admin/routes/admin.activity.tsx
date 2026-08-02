@@ -1,9 +1,9 @@
 import { Form, Link, redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/admin.activity";
-import { AdminPathBar } from "~/admin/adminPills";
+import { adminHandle } from "~/admin/adminNav";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isCore } from "~/lib/roles";
+import { isCore, isAdmin } from "~/lib/roles";
 import { fullName } from "~/lib/display";
 import { AUDIT_ACTIONS } from "~/lib/audit-actions";
 import {
@@ -16,7 +16,7 @@ import {
 import { ListTodo, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { Tooltip } from "~/components/ui/IconButton";
 
-export const handle = { areaPills: true };
+export const handle = adminHandle("activity");
 
 export const meta: Route.MetaFunction = () => [{ title: "Activity · Admin · DALI OS" }];
 
@@ -71,12 +71,14 @@ export async function loader({ request }: Route.LoaderArgs) {
         });
   const userById = new Map(users.map((u) => [u.id, u]));
 
+  const admin = await isAdmin(auth.user.sub);
   return {
     page,
     hasNext,
     filters,
     anyFilter: hasAnyFilter(filters),
     actions: AUDIT_ACTIONS,
+    isAdmin: admin,
     entries: entries.map((e) => ({
       id: e.id,
       createdAt: e.createdAt.toISOString(),
@@ -143,7 +145,6 @@ export default function AdminConsoleActivity() {
 
   return (
     <div className="space-y-4">
-      <AdminPathBar active="activity" />
       <div className="flex items-center gap-3">
         <ListTodo className="w-6 h-6 text-foreground/80" />
         <h1 className="text-2xl font-bold text-foreground">Activity log</h1>

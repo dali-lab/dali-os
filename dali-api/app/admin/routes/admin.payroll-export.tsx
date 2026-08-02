@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Form, redirect, useLoaderData, useSearchParams } from "react-router";
 import type { Route } from "./+types/admin.payroll-export";
-import { AdminPathBar } from "~/admin/adminPills";
+import { adminHandle } from "~/admin/adminNav";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
@@ -16,7 +16,7 @@ import {
   type RoleCandidate,
 } from "~/admin/lib/payroll-export";
 
-export const handle = { areaPills: true };
+export const handle = adminHandle("payroll");
 
 export const meta: Route.MetaFunction = () => [
   { title: "Payroll Export · Admin · DALI OS" },
@@ -52,6 +52,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       projectRows: [] as PayrollRow[],
       coreCandidates: [] as RoleCandidate[],
       instructorCandidates: [] as RoleCandidate[],
+      isAdmin: true,
     };
   }
 
@@ -68,6 +69,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     projectRows,
     coreCandidates,
     instructorCandidates,
+    isAdmin: true,
   };
 }
 
@@ -122,7 +124,6 @@ export default function PayrollExport() {
 
   return (
     <div className="space-y-6">
-      <AdminPathBar active="payroll" />
       <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <FileDown className="w-6 h-6 text-foreground/80" />

@@ -11,7 +11,6 @@ import {
   Archive,
   PenLine,
 } from "lucide-react";
-import { AdminPathBar } from "~/admin/adminPills";
 import {
   DocEditor,
   insertSigningField,
@@ -164,8 +163,6 @@ export function SigningDocumentDetail() {
 
   return (
     <div className="space-y-6">
-      <AdminPathBar active="agreements" />
-
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           {isRenaming ? (

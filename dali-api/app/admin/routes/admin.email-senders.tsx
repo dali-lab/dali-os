@@ -5,10 +5,10 @@
 
 import { redirect, useFetcher, useLoaderData, useSearchParams } from "react-router";
 import type { Route } from "./+types/admin.email-senders";
-import { AdminPathBar } from "~/admin/adminPills";
+import { adminHandle } from "~/admin/adminNav";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
-import { isCore } from "~/lib/roles";
+import { isCore, isAdmin } from "~/lib/roles";
 import { listSenderIntegrations } from "~/lib/gmail-integration";
 import { buttonClasses } from "~/components/ui/Button";
 import {
@@ -17,7 +17,7 @@ import {
   type EmailPurposeKey,
 } from "~/lib/email-identities";
 
-export const handle = { areaPills: true };
+export const handle = adminHandle("email-senders");
 
 export const meta: Route.MetaFunction = () => [
   { title: "Email Senders · Admin · DALI OS" },
@@ -53,7 +53,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     };
   });
 
-  return { senders };
+  const admin = await isAdmin(auth.user.sub);
+  return { senders, isAdmin: admin };
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -94,7 +95,6 @@ export default function EmailSendersAdmin() {
 
   return (
     <div className="flex flex-col gap-4">
-      <AdminPathBar active="email-senders" />
       <header>
         <h1 className="font-heading text-2xl font-bold text-foreground">
           Email Senders
