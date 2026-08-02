@@ -3,7 +3,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { resolveUserTimeZone, zonedDayStartUtc } from "~/lib/timezone";
-import { getRoleLabel } from "~/lib/roles";
+import { getRoleLabel, getUserRoleInstances } from "~/lib/roles";
 
 // Export the caller's Timesheet-tab entries in the shape the JobX browser
 // extension (jobx-extension/) consumes:
@@ -83,9 +83,26 @@ export async function loader({ request }: Route.LoaderArgs) {
     }
     bucket.entries.push(e);
   }
+  // Every paid role the member holds this term, not just the ones with hours
+  // logged in this window. Deriving the list from `entries` alone hid roles a
+  // member has been hired into but hasn't logged against yet — which is
+  // precisely when they need to pick one in JobX. Buckets with entries keep
+  // their computed label; the rest come from the role registry with no
+  // entries, so switching to one shows an empty (but selectable) timesheet.
+  const roleInstances = await getUserRoleInstances(userId);
+  for (const role of roleInstances) {
+    if (byKey.has(role.roleRefId)) continue;
+    byKey.set(role.roleRefId, { label: role.label, entries: [] });
+  }
   const availableHires = Array.from(byKey.entries()).map(([key, v]) => ({ key, label: v.label }));
 
-  const hireKey = hireKeyParam && byKey.has(hireKeyParam) ? hireKeyParam : availableHires[0]!.key;
+  // Default to a bucket that actually has hours — landing on an empty role
+  // just because it sorts first would look like the pull had failed.
+  const firstWithEntries = availableHires.find((h) => (byKey.get(h.key)?.entries.length ?? 0) > 0);
+  const hireKey =
+    hireKeyParam && byKey.has(hireKeyParam)
+      ? hireKeyParam
+      : (firstWithEntries?.key ?? availableHires[0]!.key);
   const hire = byKey.get(hireKey)!;
 
   const payload = {
