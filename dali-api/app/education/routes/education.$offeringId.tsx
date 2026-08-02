@@ -106,17 +106,21 @@ export default function OfferingDetail() {
   const seatsLeft = Math.max(0, offering.capacity - offering.approvedCount);
 
   return (
-    <div className="flex flex-col gap-6 max-w-3xl">
-      <header>
-        <div className="flex flex-wrap items-center gap-2">
-          <TypeBadge type={offering.type} />
-          {offering.status !== "Published" && <StatusBadge status={offering.status} />}
-          <MyStatusChip status={myStatus} />
-        </div>
-        <div className="mt-2 flex items-start justify-between gap-4">
+    <div className="flex flex-col gap-6">
+      {/* Header matches the manage page: full width, title first, badges under
+          it as qualifiers rather than an eyebrow. */}
+      <header className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
           <h1 className="font-heading text-2xl font-bold text-foreground">
             {offering.title}
           </h1>
+          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+            <TypeBadge type={offering.type} />
+            {offering.status !== "Published" && <StatusBadge status={offering.status} />}
+            <MyStatusChip status={myStatus} />
+          </div>
+        </div>
+        <div className="flex items-start gap-4">
           <div className="flex items-center gap-2 shrink-0">
             {myStatus === "Approved" && (
               <Link
@@ -172,7 +176,9 @@ export default function OfferingDetail() {
             )}
           </div>
         </div>
-        <p className="text-sm text-muted-foreground mt-1">
+      </header>
+      <div className="-mt-4">
+        <p className="text-sm text-muted-foreground">
           {formatDateShort(offering.startsAt, tz)} – {formatDateShort(offering.endsAt, tz)}
           {" · "}
           {registrationWindowLabel(offering, tz)}
@@ -187,7 +193,7 @@ export default function OfferingDetail() {
             {offering.instructors.map((i) => i.name).join(", ")}
           </p>
         )}
-      </header>
+      </div>
 
       {descriptionHtml && (
         <section

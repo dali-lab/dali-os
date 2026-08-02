@@ -550,6 +550,7 @@ export async function runOfferingAction(
           title: String(formData.get("title") ?? "").trim() || null,
           datetime,
           location: String(formData.get("location") ?? "").trim() || null,
+          notes: String(formData.get("notes") ?? "").trim() || null,
         },
         select: { id: true },
       });
@@ -618,6 +619,7 @@ export async function runOfferingAction(
           title: String(formData.get("title") ?? "").trim() || null,
           datetime,
           location: String(formData.get("location") ?? "").trim() || null,
+          notes: String(formData.get("notes") ?? "").trim() || null,
           recordingUrl: String(formData.get("recordingUrl") ?? "").trim() || null,
         },
       });

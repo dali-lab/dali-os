@@ -2864,6 +2864,10 @@ model EducationSession {
   title          String?
   datetime       DateTime
   location       String?
+  // Free text the instructor wants students to read alongside the session —
+  // prep work, what to bring, a reading link. Shown on the course hub; distinct
+  // from materials (which are pages) and from the recording.
+  notes          String?
   // DORMANT in v1 — per-session materials live as pages in the offering's
   // page workspace instead. Kept for a possible per-session doc link later.
   materialsDocId String?
@@ -3030,17 +3034,37 @@ model EducationSubmission {
 // Broadcast from instructor to all approved enrollees. On create, fans out
 // via notify() (eventType "education.announcement") — in-app rows plus email
 // per each recipient's preference.
+// A post in an offering's discussion. The table keeps its original name — it
+// started as instructor-only announcements — but the feature is now a
+// discussion: instructors post either an Announcement (fans out to every
+// enrollee, in-app + email) or an ordinary Message, students post Messages, and
+// anyone in the offering can reply to any top-level post.
 model EducationAnnouncement {
-  id         String   @id @default(cuid())
+  id         String      @id @default(cuid())
   offeringId String
   authorId   String
   body       String
-  sentAt     DateTime @default(now())
+  // Announcement fans out a notification; Message doesn't. Only offering
+  // managers may post an Announcement — a student post is always a Message.
+  kind       EduPostKind @default(Announcement)
+  // Set on a reply, pointing at the top-level post. One level only: a reply to
+  // a reply still hangs off the same root, so a thread reads as a conversation
+  // rather than a tree.
+  parentId   String?
+  sentAt     DateTime    @default(now())
 
   offering EducationOffering @relation(fields: [offeringId], references: [id])
   author   User              @relation("EducationAnnouncementAuthor", fields: [authorId], references: [id])
+  parent   EducationAnnouncement?  @relation("EduPostReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies  EducationAnnouncement[] @relation("EduPostReplies")
 
   @@index([offeringId, sentAt])
+  @@index([parentId, sentAt])
+}
+
+enum EduPostKind {
+  Announcement
+  Message
 }
 
 // Per-offering binding: which EmailTemplateVersion fires when an application

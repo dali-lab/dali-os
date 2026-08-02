@@ -3,10 +3,17 @@ import { useEffect, useState } from "react";
 import { Button, buttonClasses } from "~/components/ui/Button";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { formatDateTime } from "~/lib/display";
+// Aliased: this file already has a DiscussionPost for the assignment threads.
+import {
+  OfferingDiscussion,
+  type DiscussionPost as OfferingDiscussionPost,
+} from "./OfferingDiscussion";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { cn } from "~/lib/cn";
 import { CollaborativeEditor } from "~/components/CollaborativeEditor";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
+import { Avatar } from "~/components/ui/Avatar";
+import { ChevronRight, FileText, Folder } from "lucide-react";
 
 // The enrolled course hub, shared by the member surface and the portal
 // mirror. `basePath` decides where page/assignment links land
@@ -15,7 +22,9 @@ import { PresenceProvider } from "~/components/collab/PresenceProvider";
 
 export type HubData = {
   offering: { id: string; title: string; descriptionHtml: string };
-  announcements: { id: string; body: string; sentAt: string | Date; authorName: string }[];
+  instructors: { id: string; name: string; photoUrl: string | null }[];
+  classmates: { id: string; name: string; photoUrl: string | null; isMe: boolean }[];
+  announcements: OfferingDiscussionPost[];
   sessions: {
     id: string;
     sequence: number;
@@ -28,6 +37,7 @@ export type HubData = {
   materials: {
     id: string;
     title: string;
+    isFolder: boolean;
     children: { id: string; title: string }[];
   }[];
   workspaceDocs: { id: string; title: string }[];
@@ -132,7 +142,7 @@ export function CourseHub({
       </nav>
 
       {tab === "overview" && (
-        <div className="flex flex-col gap-5 max-w-3xl">
+        <div className="flex flex-col gap-5">
           {data.myCertificateId && (
             <section className="bg-brand-tint rounded-lg px-4 py-3 flex items-center justify-between gap-4">
               <p className="text-sm text-foreground">
@@ -157,40 +167,77 @@ export function CourseHub({
               </p>
             </section>
           )}
-          {data.offering.descriptionHtml && (
-            <section
-              className="bg-card border border-border rounded-lg p-5 prose prose-sm dark:prose-invert max-w-none"
-              dangerouslySetInnerHTML={{ __html: data.offering.descriptionHtml }}
-            />
-          )}
-          <section>
-            <h2 className="font-heading text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-              Announcements
+          {/* About the course: what it is, who teaches it, who else is in it.
+              None of this was reachable from inside the hub before — a student
+              had to go back out to the listing page to read the description. */}
+          <section className="rounded-lg border border-border bg-card p-5">
+            <h2 className="font-heading text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              About this course
             </h2>
-            {data.announcements.length === 0 ? (
-              <p className="text-sm text-muted-foreground italic">
-                Nothing announced yet.
-              </p>
+            {data.offering.descriptionHtml ? (
+              <div
+                className="prose prose-sm dark:prose-invert mt-2 max-w-none"
+                dangerouslySetInnerHTML={{ __html: data.offering.descriptionHtml }}
+              />
             ) : (
-              <ul className="flex flex-col gap-3">
-                {data.announcements.map((a) => (
-                  <li key={a.id} className="bg-card border border-border rounded-lg p-4">
-                    <p className="text-xs text-muted-foreground">
-                      {a.authorName} · {formatDateTime(a.sentAt, tz)}
-                    </p>
-                    <p className="text-sm text-foreground whitespace-pre-wrap mt-1">
-                      {a.body}
-                    </p>
-                  </li>
-                ))}
-              </ul>
+              <p className="mt-2 text-sm text-muted-foreground italic">
+                No description yet.
+              </p>
+            )}
+
+            {data.instructors.length > 0 && (
+              <div className="mt-4 border-t border-border pt-4">
+                <p className="text-xs font-semibold text-muted-foreground">
+                  {data.instructors.length === 1 ? "Instructor" : "Instructors"}
+                </p>
+                <ul className="mt-2 flex flex-wrap gap-2">
+                  {data.instructors.map((i) => (
+                    <li
+                      key={i.id}
+                      className="inline-flex items-center gap-2 rounded-md border border-border bg-muted px-2 py-1"
+                    >
+                      <Avatar photoUrl={i.photoUrl} name={i.name} size="xs" />
+                      <span className="text-sm text-foreground">{i.name}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {data.classmates.length > 0 && (
+              <div className="mt-4 border-t border-border pt-4">
+                <p className="text-xs font-semibold text-muted-foreground">
+                  Taking this course · {data.classmates.length}
+                </p>
+                <ul className="mt-2 flex flex-wrap gap-2">
+                  {data.classmates.map((c) => (
+                    <li
+                      key={c.id}
+                      className={`inline-flex items-center gap-2 rounded-md border px-2 py-1 ${
+                        c.isMe
+                          ? "border-accent-coral/30 bg-accent-coral/5"
+                          : "border-border bg-card"
+                      }`}
+                    >
+                      <Avatar photoUrl={c.photoUrl} name={c.name} size="xs" />
+                      <span className="text-sm text-foreground">{c.name}</span>
+                      {c.isMe && (
+                        <span className="text-[10px] font-semibold uppercase tracking-wide text-accent-coral">
+                          You
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
           </section>
+
         </div>
       )}
 
       {tab === "sessions" && (
-        <ul className="bg-card border border-border rounded-lg divide-y divide-border max-w-3xl">
+        <ul className="bg-card border border-border rounded-lg divide-y divide-border">
           {data.sessions.length === 0 && (
             <li className="px-4 py-3 text-sm text-muted-foreground italic">
               No sessions scheduled yet.
@@ -233,34 +280,43 @@ export function CourseHub({
       )}
 
       {tab === "materials" && (
-        <div className="max-w-3xl">
+        <div>
           {data.materials.length === 0 ? (
             <p className="text-sm text-muted-foreground italic">
               No materials posted yet.
             </p>
           ) : (
-            <ul className="bg-card border border-border rounded-lg divide-y divide-border">
+            // Each material is a card you click, not a text link in a list:
+            // a document icon to say what it is, the whole row as the target,
+            // and a chevron so it reads as somewhere to go.
+            <ul className="flex flex-col gap-4">
               {data.materials.map((p) => (
-                <li key={p.id} className="px-4 py-3">
-                  <Link
-                    to={`${basePath}/page/${p.id}`}
-                    className="text-sm font-medium text-foreground hover:text-accent-coral"
-                  >
-                    {p.title}
-                  </Link>
+                <li key={p.id} className="flex flex-col gap-1.5">
+                  {p.isFolder ? (
+                    // A folder groups materials; there's nothing to open, so it
+                    // reads as a heading rather than a card.
+                    <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      <Folder className="h-3.5 w-3.5" aria-hidden />
+                      {p.title}
+                    </p>
+                  ) : (
+                    <MaterialLink to={`${basePath}/page/${p.id}`} title={p.title} />
+                  )}
                   {p.children.length > 0 && (
-                    <ul className="mt-1 ml-4 flex flex-col gap-1">
+                    <ul className={`flex flex-col gap-1.5 ${p.isFolder ? "" : "ml-6"}`}>
                       {p.children.map((c) => (
                         <li key={c.id}>
-                          <Link
+                          <MaterialLink
                             to={`${basePath}/page/${c.id}`}
-                            className="text-sm text-muted-foreground hover:text-accent-coral"
-                          >
-                            {c.title}
-                          </Link>
+                            title={c.title}
+                            nested={!p.isFolder}
+                          />
                         </li>
                       ))}
                     </ul>
+                  )}
+                  {p.isFolder && p.children.length === 0 && (
+                    <p className="text-sm text-muted-foreground italic">Nothing in here yet.</p>
                   )}
                 </li>
               ))}
@@ -278,7 +334,7 @@ export function CourseHub({
       )}
 
       {tab === "assignments" && (
-        <ul className="bg-card border border-border rounded-lg divide-y divide-border max-w-3xl">
+        <ul className="bg-card border border-border rounded-lg divide-y divide-border">
           {data.assignments.length === 0 && (
             <li className="px-4 py-3 text-sm text-muted-foreground italic">
               No assignments yet.
@@ -316,13 +372,77 @@ export function CourseHub({
       )}
 
       {tab === "discussions" && (
-        <DiscussionBoard
-          threads={data.threads}
-          currentUserId={data.currentUserId}
-          isManager={data.isManager}
-        />
+        <div className="flex flex-col gap-5">
+          {data.announcements.length > 0 && (
+            <section>
+              <h2 className="mb-2 font-heading text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                Announcements
+              </h2>
+              {/* Read-only here: announcements are a broadcast from the
+                  instructors. Replies and questions go in the board below. */}
+              <ul className="flex flex-col gap-2">
+                {data.announcements.map((a) => (
+                  <li
+                    key={a.id}
+                    className="rounded-lg border border-accent-coral/30 bg-accent-coral/5 p-4"
+                  >
+                    <p className="text-xs text-muted-foreground">
+                      {a.author.firstName} {a.author.lastName} ·{" "}
+                      {formatDateTime(a.sentAt as never, tz)}
+                    </p>
+                    <p className="mt-1 whitespace-pre-wrap text-sm text-foreground">{a.body}</p>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+          <DiscussionBoard
+            threads={data.threads}
+            currentUserId={data.currentUserId}
+            isManager={data.isManager}
+          />
+        </div>
       )}
     </div>
+  );
+}
+
+/** One material, rendered as a clickable resource card. */
+function MaterialLink({
+  to,
+  title,
+  nested = false,
+}: {
+  to: string;
+  title: string;
+  nested?: boolean;
+}) {
+  return (
+    <Link
+      to={to}
+      className={`group flex items-center gap-3 rounded-lg border border-border bg-card transition-colors hover:border-accent-coral/50 hover:bg-muted/40 ${
+        nested ? "px-3 py-2" : "px-4 py-3"
+      }`}
+    >
+      <span
+        className={`flex shrink-0 items-center justify-center rounded-md bg-accent-coral/10 text-accent-coral ${
+          nested ? "h-7 w-7" : "h-8 w-8"
+        }`}
+      >
+        <FileText className={nested ? "h-3.5 w-3.5" : "h-4 w-4"} aria-hidden />
+      </span>
+      <span
+        className={`min-w-0 flex-1 truncate group-hover:text-accent-coral ${
+          nested ? "text-sm text-muted-foreground" : "text-sm font-medium text-foreground"
+        }`}
+      >
+        {title}
+      </span>
+      <ChevronRight
+        className="h-4 w-4 shrink-0 text-muted-foreground/60 group-hover:text-accent-coral"
+        aria-hidden
+      />
+    </Link>
   );
 }
 
@@ -336,7 +456,7 @@ function DiscussionBoard({
   isManager: boolean;
 }) {
   return (
-    <div className="flex flex-col gap-4 max-w-3xl">
+    <div className="flex flex-col gap-4">
       <Form method="post" className="bg-card border border-border rounded-lg p-4">
         <input type="hidden" name="intent" value="post-discussion" />
         <textarea
@@ -495,7 +615,7 @@ function WorkspaceTab({
   }
 
   return (
-    <div className="flex flex-col gap-3 max-w-3xl">
+    <div className="flex flex-col gap-3">
       {docs.length > 1 && (
         <div className="flex flex-wrap gap-1.5">
           {docs.map((d) => (

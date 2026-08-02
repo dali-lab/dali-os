@@ -39,7 +39,7 @@ export default function PortalCourseHub() {
   const { hub, collabToken } = useLoaderData<typeof loader>();
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 flex flex-col gap-4">
+    <div className="w-full px-4 sm:px-6 py-8 flex flex-col gap-4">
       <header>
         <p className="text-xs text-muted-foreground">
           <Link to={`/portal/education/${hub.offering.id}`} className="hover:underline">

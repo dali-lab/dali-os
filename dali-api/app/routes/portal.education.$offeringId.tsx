@@ -96,7 +96,7 @@ export default function PortalOfferingDetail() {
   const seatsLeft = Math.max(0, offering.capacity - offering.approvedCount);
 
   return (
-    <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 flex flex-col gap-6">
+    <div className="w-full px-4 sm:px-6 py-8 flex flex-col gap-6">
       <header>
         <div className="flex flex-wrap items-center gap-2">
           <TypeBadge type={offering.type} />
