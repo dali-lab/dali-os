@@ -2,6 +2,7 @@ import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
 import { logAuditEvent } from "~/lib/audit";
 import { requestInstructorExitSurveys } from "./feedback.server";
+import { lockOffering } from "./apply.server";
 import { currentTerm } from "~/lib/roles";
 
 // Completion certificates. Pure derived data — the HTML page and PDF are
@@ -104,29 +105,37 @@ export async function closeOutOffering(args: {
   }
 
   // Teaching earns a CE credit too — but only on the FIRST close-out, since
-  // manual-style rows (sessionId null) have no uniqueness to lean on.
+  // manual-style rows (sessionId null) have no uniqueness to lean on. Grant the
+  // credits and stamp closedOutAt atomically under the offering row lock: a
+  // concurrent or retried close-out re-reads closedOutAt inside the lock and
+  // bails, so instructors can never be double-granted.
   if (firstCloseOut) {
     const term = await currentTerm();
-    if (term) {
-      for (const instructor of offering.instructors) {
-        await prisma.cECredit.create({
-          data: {
-            userId: instructor.userId,
-            termId: term.id,
-            grantedById: args.actorId,
-            reason: `Taught ${offering.title}`,
-          },
-        });
+    await prisma.$transaction(async (tx) => {
+      await lockOffering(tx, args.offeringId);
+      const fresh = await tx.educationOffering.findUnique({
+        where: { id: args.offeringId },
+        select: { closedOutAt: true },
+      });
+      if (fresh?.closedOutAt) return; // another close-out won the race
+      if (term) {
+        for (const instructor of offering.instructors) {
+          await tx.cECredit.create({
+            data: {
+              userId: instructor.userId,
+              termId: term.id,
+              grantedById: args.actorId,
+              reason: `Taught ${offering.title}`,
+            },
+          });
+        }
       }
-    }
+      await tx.educationOffering.update({
+        where: { id: args.offeringId },
+        data: { closedOutAt: new Date(), closedOutById: args.actorId },
+      });
+    });
   }
-
-  await prisma.educationOffering.update({
-    where: { id: args.offeringId },
-    data: firstCloseOut
-      ? { closedOutAt: new Date(), closedOutById: args.actorId }
-      : {},
-  });
 
   // Notifications + emails after the writes; best-effort. education.certificate
   // defaults to Instant email, matching the old everyone-gets-email behavior.
@@ -175,6 +184,55 @@ export async function closeOutOffering(args: {
     });
   }
   return { ok: true, issued, alreadyIssued, ineligible };
+}
+
+export type CloseOutPreview = {
+  eligible: string[];
+  belowThreshold: string[];
+  alreadyIssued: number;
+};
+
+/**
+ * Dry-run of close-out: who would get a certificate vs who's below the
+ * attendance threshold, without issuing anything or sending mail. Lets the
+ * instructor sanity-check before the irreversible fan-out.
+ */
+export async function previewCloseOut(offeringId: string): Promise<CloseOutPreview | null> {
+  const offering = await prisma.educationOffering.findUnique({
+    where: { id: offeringId },
+    select: {
+      type: true,
+      _count: { select: { sessions: true } },
+      applications: {
+        where: { status: "Approved" },
+        select: {
+          attendances: { select: { status: true } },
+          certificate: { select: { id: true } },
+          applicant: { select: { firstName: true, lastName: true } },
+        },
+      },
+    },
+  });
+  if (!offering) return null;
+  const totalSessions = offering._count.sessions;
+  const eligible: string[] = [];
+  const belowThreshold: string[] = [];
+  let alreadyIssued = 0;
+  for (const app of offering.applications) {
+    const name = `${app.applicant.firstName} ${app.applicant.lastName}`.trim();
+    if (app.certificate) {
+      alreadyIssued += 1;
+      continue;
+    }
+    const present = app.attendances.filter((a) => a.status === "Present").length;
+    const excused = app.attendances.filter((a) => a.status === "Excused").length;
+    if (certificateEligibility({ type: offering.type, totalSessions, present, excused })) {
+      eligible.push(name);
+    } else {
+      belowThreshold.push(name);
+    }
+  }
+  return { eligible, belowThreshold, alreadyIssued };
 }
 
 /**

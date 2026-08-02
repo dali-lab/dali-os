@@ -95,6 +95,38 @@ export async function listCatalog(userId?: string) {
   );
 }
 
+/**
+ * Every application the caller has made, across all offerings, newest first.
+ * The "My applications" history — includes Rejected/Withdrawn and offerings that
+ * have since been archived or closed out, which drop out of the live catalog.
+ */
+export async function listMyApplications(userId: string) {
+  const apps = await prisma.educationApplication.findMany({
+    where: { applicantUserId: userId },
+    orderBy: { submittedAt: "desc" },
+    select: {
+      id: true,
+      status: true,
+      submittedAt: true,
+      offering: {
+        select: { id: true, title: true, type: true, endsAt: true, closedOutAt: true },
+      },
+      certificate: { select: { id: true } },
+    },
+  });
+  return apps.map((a) => ({
+    id: a.id,
+    status: a.status,
+    submittedAt: a.submittedAt,
+    offeringId: a.offering.id,
+    offeringTitle: a.offering.title,
+    offeringType: a.offering.type,
+    endsAt: a.offering.endsAt,
+    closedOutAt: a.offering.closedOutAt,
+    certificateId: a.certificate?.id ?? null,
+  }));
+}
+
 /** Offerings the user can manage, all statuses. Core sees everything. */
 export async function listManageable(userId: string) {
   const ids = await manageableOfferingIds(userId);
@@ -170,6 +202,7 @@ function shapeOffering(o: {
   registrationClosesAt: Date;
   startsAt: Date;
   endsAt: Date;
+  closedOutAt: Date | null;
   instructors: {
     userId: string;
     user: { firstName: string; lastName: string; photoUrl: string | null };
@@ -187,6 +220,7 @@ function shapeOffering(o: {
     registrationClosesAt: o.registrationClosesAt,
     startsAt: o.startsAt,
     endsAt: o.endsAt,
+    closedOutAt: o.closedOutAt,
     sessionCount: o.sessions.length,
     // Kept as plain strings for the cert/PDF servers that render names only.
     instructorNames: o.instructors.map((i) =>
@@ -341,6 +375,78 @@ export async function runOfferingAction(
   if (!(await isOfferingManager(actorId, offeringId))) return bad("Forbidden", 403);
 
   switch (intent) {
+    case "duplicate-offering": {
+      // Clone an offering for a new run: core fields + sessions + instructors,
+      // a fresh application form, as a Draft. Core-only, like creating one.
+      if (!(await isCore(actorId))) return bad("Core only", 403);
+      const src = await prisma.educationOffering.findUnique({
+        where: { id: offeringId },
+        select: {
+          type: true,
+          title: true,
+          capacity: true,
+          requiresReview: true,
+          calendarEmail: true,
+          registrationOpensAt: true,
+          registrationClosesAt: true,
+          startsAt: true,
+          endsAt: true,
+          sessions: {
+            orderBy: { sequence: "asc" },
+            select: { sequence: true, title: true, datetime: true, location: true },
+          },
+          instructors: { select: { userId: true } },
+        },
+      });
+      if (!src) return bad("Offering not found", 404);
+      const created = await prisma.educationOffering.create({
+        data: {
+          type: src.type,
+          title: `${src.title} (copy)`,
+          capacity: src.capacity,
+          requiresReview: src.requiresReview,
+          calendarEmail: src.calendarEmail,
+          registrationOpensAt: src.registrationOpensAt,
+          registrationClosesAt: src.registrationClosesAt,
+          startsAt: src.startsAt,
+          endsAt: src.endsAt,
+          status: "Draft",
+          sessions: {
+            create: src.sessions.map((s) => ({
+              sequence: s.sequence,
+              title: s.title,
+              datetime: s.datetime,
+              location: s.location,
+            })),
+          },
+        },
+        select: { id: true },
+      });
+      await prisma.educationOffering.update({
+        where: { id: created.id },
+        data: { descriptionDocId: `eduoffering:${created.id}:description` },
+      });
+      // Re-assign the same instructors for the current term (a clone is a fresh run).
+      const cloneTerm = await currentTerm();
+      if (cloneTerm && src.instructors.length > 0) {
+        await prisma.instructorAssignment.createMany({
+          data: src.instructors.map((i) => ({
+            userId: i.userId,
+            offeringId: created.id,
+            termId: cloneTerm.id,
+          })),
+          skipDuplicates: true,
+        });
+      }
+      await createOfferingApplicationForm(created.id, actorId);
+      await logAuditEvent({
+        action: "education.offering.create",
+        userId: actorId,
+        targetId: created.id,
+        metadata: { title: `${src.title} (copy)`, type: src.type, clonedFrom: offeringId },
+      });
+      return { ok: true, id: created.id };
+    }
     case "update-offering": {
       const title = String(formData.get("title") ?? "").trim();
       if (!title) return bad("Title is required");
@@ -441,8 +547,10 @@ export async function runOfferingAction(
         data: {
           offeringId,
           sequence: (last?.sequence ?? 0) + 1,
+          title: String(formData.get("title") ?? "").trim() || null,
           datetime,
           location: String(formData.get("location") ?? "").trim() || null,
+          notes: String(formData.get("notes") ?? "").trim() || null,
         },
         select: { id: true },
       });
@@ -453,6 +561,46 @@ export async function runOfferingAction(
         metadata: { offeringId },
       });
       return { ok: true, id: session.id };
+    }
+
+    case "generate-sessions": {
+      // Bulk-create N sessions spaced intervalDays apart from a start — the
+      // common "weekly for 6 weeks" setup, in one action instead of N.
+      const start = parseDate(formData.get("startDatetime"));
+      if (!start) return bad("Start date/time is required");
+      const count = Math.min(
+        30,
+        Math.max(1, Number.parseInt(String(formData.get("count") ?? "1"), 10) || 1),
+      );
+      const intervalDays = Math.min(
+        30,
+        Math.max(1, Number.parseInt(String(formData.get("intervalDays") ?? "7"), 10) || 7),
+      );
+      const location = String(formData.get("location") ?? "").trim() || null;
+      const last = await prisma.educationSession.findFirst({
+        where: { offeringId },
+        orderBy: { sequence: "desc" },
+        select: { sequence: true },
+      });
+      let sequence = last?.sequence ?? 0;
+      const rows = [];
+      for (let i = 0; i < count; i += 1) {
+        sequence += 1;
+        rows.push({
+          offeringId,
+          sequence,
+          datetime: new Date(start.getTime() + i * intervalDays * 86_400_000),
+          location,
+        });
+      }
+      await prisma.educationSession.createMany({ data: rows });
+      await logAuditEvent({
+        action: "education.session.create",
+        userId: actorId,
+        targetId: offeringId,
+        metadata: { offeringId, count, intervalDays, bulk: true },
+      });
+      return { ok: true };
     }
 
     case "update-session": {
@@ -468,8 +616,10 @@ export async function runOfferingAction(
       await prisma.educationSession.update({
         where: { id: sessionId },
         data: {
+          title: String(formData.get("title") ?? "").trim() || null,
           datetime,
           location: String(formData.get("location") ?? "").trim() || null,
+          notes: String(formData.get("notes") ?? "").trim() || null,
           recordingUrl: String(formData.get("recordingUrl") ?? "").trim() || null,
         },
       });

@@ -4,6 +4,7 @@ import { requireEnrollment } from "~/education/lib/access.server";
 import { getHubData } from "~/education/lib/lms.server";
 import { runDiscussionAction } from "~/education/lib/discussions.server";
 import { CourseHub } from "~/education/components/CourseHub";
+import { parseSessionCookie } from "~/lib/cookies";
 
 export const meta: Route.MetaFunction = ({ data }) => [
   { title: `${data?.hub.offering.title ?? "Course"} · DALI` },
@@ -22,7 +23,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     isManager: false,
   });
   if (!hub) throw new Response("Not found", { status: 404 });
-  return { hub };
+  return { hub, collabToken: parseSessionCookie(request) };
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -35,10 +36,10 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function PortalCourseHub() {
-  const { hub } = useLoaderData<typeof loader>();
+  const { hub, collabToken } = useLoaderData<typeof loader>();
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 flex flex-col gap-4">
+    <div className="w-full px-4 sm:px-6 py-8 flex flex-col gap-4">
       <header>
         <p className="text-xs text-muted-foreground">
           <Link to={`/portal/education/${hub.offering.id}`} className="hover:underline">
@@ -49,7 +50,11 @@ export default function PortalCourseHub() {
           {hub.offering.title}
         </h1>
       </header>
-      <CourseHub data={hub} basePath={`/portal/education/${hub.offering.id}`} />
+      <CourseHub
+        data={hub}
+        basePath={`/portal/education/${hub.offering.id}`}
+        collabToken={collabToken}
+      />
     </div>
   );
 }

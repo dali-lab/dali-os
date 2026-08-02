@@ -42,7 +42,7 @@ export function StatusBadge({ status }: { status: OfferingCardData["status"] }) 
   const styles: Record<OfferingCardData["status"], string> = {
     Draft: "bg-muted text-muted-foreground",
     Published: "bg-green-100 text-green-800",
-    Archived: "bg-amber-100 text-amber-800",
+    Archived: "bg-accent-yellow/25 text-foreground",
   };
   return (
     <span
@@ -57,9 +57,9 @@ export function StatusBadge({ status }: { status: OfferingCardData["status"] }) 
 }
 
 const MY_STATUS_STYLES: Record<string, { label: string; className: string }> = {
-  Submitted: { label: "Applied", className: "bg-blue-100 text-blue-800" },
+  Submitted: { label: "Applied", className: "bg-accent-teal/10 text-accent-teal" },
   Approved: { label: "Enrolled", className: "bg-green-100 text-green-800" },
-  Waitlisted: { label: "Waitlisted", className: "bg-amber-100 text-amber-800" },
+  Waitlisted: { label: "Waitlisted", className: "bg-accent-yellow/25 text-foreground" },
   Rejected: { label: "Not accepted", className: "bg-muted text-muted-foreground" },
   Withdrawn: { label: "Withdrawn", className: "bg-muted text-muted-foreground" },
 };
@@ -127,7 +127,7 @@ export function OfferingCard({
             )}
           </div>
           {pendingCount != null && pendingCount > 0 && (
-            <span className="inline-flex items-center rounded-full bg-blue-100 text-blue-800 px-2 py-0.5 text-[11px] font-semibold">
+            <span className="inline-flex items-center rounded-full bg-accent-teal/10 text-accent-teal px-2 py-0.5 text-[11px] font-semibold">
               {pendingCount} to review
             </span>
           )}

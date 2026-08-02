@@ -4,6 +4,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { getActiveCycle } from "~/hiring/lib/cycles";
 import { listCatalog, registrationOpen } from "~/education/lib/offerings.server";
+import { listUpcomingSessionsForUser } from "~/education/lib/schedule.server";
 import { buttonClasses } from "~/components/ui/Button";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 
@@ -19,10 +20,18 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Lab members have the full app; the portal is the non-member surface.
   if (auth.user.type === "member") return redirect("/");
 
-  const [cycle, offerings] = await Promise.all([
+  const [cycle, offerings, me, upcomingSessions] = await Promise.all([
     getActiveCycle(),
     listCatalog(auth.user.sub),
+    prisma.user.findUnique({
+      where: { id: auth.user.sub },
+      select: { timeZone: true },
+    }),
+    listUpcomingSessionsForUser(auth.user.sub, { limit: 3 }),
   ]);
+  // Portal students can't set a timezone yet — Eastern is the safe default for
+  // a Dartmouth cohort.
+  const tz = me?.timeZone ?? "America/New_York";
 
   // Hiring summary: the latest status update on my application in the active
   // cycle (Draft → Submitted → Withdrawn), if any.
@@ -68,6 +77,22 @@ export async function loader({ request }: Route.LoaderArgs) {
         (o) => o.myStatus === "Submitted" || o.myStatus === "Waitlisted",
       ).length,
       openAssignments: enrolled.reduce((sum, o) => sum + o.openAssignments, 0),
+      upcoming: upcomingSessions.map((s) => ({
+        id: s.id,
+        offeringId: s.offeringId,
+        label: s.title
+          ? `${s.offeringTitle} · ${s.title}`
+          : `${s.offeringTitle} · Session ${s.sequence}`,
+        when: s.datetime.toLocaleString("en-US", {
+          timeZone: tz,
+          weekday: "short",
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+        }),
+        location: s.location,
+      })),
     },
   };
 }
@@ -170,6 +195,25 @@ export default function PortalHome() {
               </span>
             )}
           </div>
+          {education.upcoming.length > 0 && (
+            <ul className="mt-3 flex flex-col gap-1.5 border-t border-border pt-3">
+              {education.upcoming.map((s) => (
+                <li key={s.id} className="text-xs">
+                  <Link
+                    to={`/portal/education/${s.offeringId}/hub`}
+                    className="font-medium text-dark-blue hover:underline"
+                  >
+                    {s.label}
+                  </Link>
+                  <span className="text-muted-foreground">
+                    {" "}
+                    · {s.when}
+                    {s.location ? ` · ${s.location}` : ""}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
         </CardShell>
       </div>
     </div>

@@ -5,6 +5,7 @@ import { getHubData } from "~/education/lib/lms.server";
 import { runDiscussionAction } from "~/education/lib/discussions.server";
 import { CourseHub } from "~/education/components/CourseHub";
 import { buttonClasses } from "~/components/ui/Button";
+import { parseSessionCookie } from "~/lib/cookies";
 
 export const meta: Route.MetaFunction = ({ data }) => [
   { title: `${data?.hub.offering.title ?? "Course"} · DALI OS` },
@@ -28,7 +29,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     isManager,
   });
   if (!hub) throw new Response("Not found", { status: 404 });
-  return { hub };
+  return { hub, collabToken: parseSessionCookie(request) };
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -45,7 +46,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function MemberCourseHub() {
-  const { hub } = useLoaderData<typeof loader>();
+  const { hub, collabToken } = useLoaderData<typeof loader>();
 
   return (
     <div className="flex flex-col gap-4">
@@ -69,7 +70,11 @@ export default function MemberCourseHub() {
           </Link>
         )}
       </header>
-      <CourseHub data={hub} basePath={`/education/${hub.offering.id}`} />
+      <CourseHub
+        data={hub}
+        basePath={`/education/${hub.offering.id}`}
+        collabToken={collabToken}
+      />
     </div>
   );
 }

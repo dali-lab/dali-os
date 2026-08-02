@@ -129,7 +129,7 @@ export default function GradeAssignment() {
                 {s.files.map((f) => (
                   <li key={f.key}>
                     <a
-                      href={`/api/upload/url?key=${encodeURIComponent(f.key)}`}
+                      href={`/api/upload/raw?key=${encodeURIComponent(f.key)}`}
                       target="_blank"
                       rel="noreferrer"
                       className="text-sm text-accent-coral hover:underline"
@@ -161,9 +161,9 @@ export default function GradeAssignment() {
                 <span className="text-xs font-semibold text-muted-foreground">
                   Feedback (shown to the student)
                 </span>
-                <input
-                  type="text"
+                <textarea
                   name="feedbackText"
+                  rows={2}
                   defaultValue={s.feedbackText ?? ""}
                   placeholder="Nice work — consider…"
                   className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"

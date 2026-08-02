@@ -2,6 +2,8 @@ import { Form, redirect, useLoaderData, useNavigation } from "react-router";
 import type { Route } from "./+types/portal.settings";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { isValidTimezone } from "~/lib/timezone";
+import { AppearanceSettingsBlock } from "~/components/settings/AppearanceSettingsBlock";
 
 export const meta: Route.MetaFunction = () => [{ title: "Settings · DALI OS" }];
 
@@ -18,6 +20,9 @@ export async function loader({ request }: Route.LoaderArgs) {
       lastName: true,
       pronouns: true,
       phoneNumber: true,
+      classYear: true,
+      major: true,
+      timeZone: true,
     },
   });
   if (!me) return redirect("/login");
@@ -34,6 +39,13 @@ export async function action({ request }: Route.ActionArgs) {
   if (!firstName || !lastName) {
     return { error: "First and last name are required." };
   }
+  const classYearRaw = (form.get("classYear") as string | null)?.trim();
+  const classYear = classYearRaw ? Number.parseInt(classYearRaw, 10) : null;
+  if (classYearRaw && (Number.isNaN(classYear!) || classYear! < 2000 || classYear! > 2100)) {
+    return { error: "Enter a valid class year (e.g. 2027)." };
+  }
+  const tzRaw = (form.get("timeZone") as string | null)?.trim() || null;
+  const timeZone = tzRaw && isValidTimezone(tzRaw) ? tzRaw : null;
   await prisma.user.update({
     where: { id: auth.user.sub },
     data: {
@@ -41,6 +53,9 @@ export async function action({ request }: Route.ActionArgs) {
       lastName,
       pronouns: (form.get("pronouns") as string | null)?.trim() || null,
       phoneNumber: (form.get("phoneNumber") as string | null)?.trim() || null,
+      classYear,
+      major: (form.get("major") as string | null)?.trim() || null,
+      timeZone,
     },
   });
   return { ok: true };
@@ -120,10 +135,64 @@ export default function PortalSettings({ actionData }: Route.ComponentProps) {
               className={inputClass}
             />
           </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="classYear" className={labelClass}>
+                Class year
+              </label>
+              <input
+                id="classYear"
+                name="classYear"
+                type="number"
+                min={2000}
+                max={2100}
+                placeholder="e.g. 2027"
+                defaultValue={me.classYear ?? ""}
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label htmlFor="major" className={labelClass}>
+                Major
+              </label>
+              <input
+                id="major"
+                name="major"
+                placeholder="e.g. Computer Science"
+                defaultValue={me.major ?? ""}
+                className={inputClass}
+              />
+            </div>
+          </div>
+          <div>
+            <label htmlFor="timeZone" className={labelClass}>
+              Time zone
+            </label>
+            <select
+              id="timeZone"
+              name="timeZone"
+              defaultValue={me.timeZone ?? "America/New_York"}
+              className={inputClass}
+            >
+              {Intl.supportedValuesOf("timeZone").map((tz) => (
+                <option key={tz} value={tz}>
+                  {tz.replace(/_/g, " ")}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Session times across the portal show in this zone.
+            </p>
+          </div>
           <button type="submit" disabled={submitting} className={saveClass}>
             Save profile
           </button>
         </Form>
+      </section>
+
+      <section className="bg-card border border-border rounded-2xl p-5">
+        <h2 className="font-heading font-semibold text-dark-blue mb-4">Appearance</h2>
+        <AppearanceSettingsBlock />
       </section>
     </main>
   );

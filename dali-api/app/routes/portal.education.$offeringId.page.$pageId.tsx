@@ -25,7 +25,7 @@ export default function PortalMaterialPage() {
   const { offeringId, page } = useLoaderData<typeof loader>();
 
   return (
-    <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 flex flex-col gap-4">
+    <div className="w-full px-4 sm:px-6 py-8 flex flex-col gap-4">
       <header>
         <p className="text-xs text-muted-foreground">
           <Link

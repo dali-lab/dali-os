@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   redirect,
   useLoaderData,
@@ -18,20 +19,34 @@ import {
   runOfferingAction,
 } from "~/education/lib/offerings.server";
 import { listApplications } from "~/education/lib/apply.server";
-import { decideApplication } from "~/education/lib/decisions.server";
+import { decideApplication, approveAllPending } from "~/education/lib/decisions.server";
 import { isOfferingManager } from "~/education/lib/access.server";
 import { ApplicationAnswers } from "~/education/components/ApplicationAnswers";
-import { listMaterialPages, createMaterialPage } from "~/education/lib/lms.server";
+import { ApplicationsReview } from "~/education/components/ApplicationsReview";
+import { RosterMatrix } from "~/education/components/RosterMatrix";
+import { InstructorPicker } from "~/education/components/InstructorPicker";
+import { AddFormModal } from "~/education/components/AddFormModal";
+import { OfferingDiscussion } from "~/education/components/OfferingDiscussion";
+import {
+  listMaterialPages,
+  listWorkspaceDocs,
+  createMaterialPage,
+  moveMaterialPage,
+} from "~/education/lib/lms.server";
 import {
   listAssignments,
   createAssignment,
   updateAssignment,
   deleteAssignment,
 } from "~/education/lib/assignments.server";
-import { listAnnouncements, postAnnouncement } from "~/education/lib/announcements.server";
-import { getSessionRoster, saveAttendance } from "~/education/lib/attendance.server";
+import { listDiscussion, postAnnouncement } from "~/education/lib/announcements.server";
+import {
+  getAttendanceMatrix,
+  getSessionRoster,
+  saveAttendance,
+} from "~/education/lib/attendance.server";
 import { notesForOffering, upsertStudentNote } from "~/education/lib/student-notes.server";
-import { closeOutOffering } from "~/education/lib/certificates.server";
+import { closeOutOffering, previewCloseOut } from "~/education/lib/certificates.server";
 import {
   setFormBinding,
   listFeedbackResults,
@@ -96,6 +111,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     emailTemplates,
     decisionEmailBindings,
     materials,
+    workspaceDocs,
     assignments,
     announcements,
   ] = await Promise.all([
@@ -124,8 +140,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       select: { status: true, emailTemplateVersionId: true },
     }),
     listMaterialPages(params.offeringId!),
+    listWorkspaceDocs(params.offeringId!),
     listAssignments(params.offeringId!),
-    listAnnouncements(params.offeringId!),
+    listDiscussion(params.offeringId!),
   ]);
 
   const notes = await notesForOffering(params.offeringId!);
@@ -160,6 +177,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         : Promise.resolve(null),
     ]);
 
+  const attendanceMatrix = await getAttendanceMatrix(params.offeringId!);
+
   return {
     publishedForms,
     feedbackBindings,
@@ -177,14 +196,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         : null,
     })),
     roster,
+    attendanceMatrix,
     materials,
+    workspaceDocs,
     assignments,
-    announcements: announcements.map((a) => ({
-      id: a.id,
-      body: a.body,
-      sentAt: a.sentAt,
-      authorName: `${a.author.firstName} ${a.author.lastName}`.trim(),
-    })),
+    // Discussion posts pass through whole — the component renders authors,
+    // replies and the announcement/message distinction.
+    announcements,
     emailTemplates: emailTemplates
       .filter((t) => t.versions.length > 0)
       .map((t) => ({ name: t.name, versionId: t.versions[0]!.id })),
@@ -196,6 +214,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     })),
     collabToken: parseSessionCookie(request),
     userName: `${gate.auth.user.firstName ?? ""} ${gate.auth.user.lastName ?? ""}`.trim(),
+    currentUserId: gate.auth.user.sub,
   };
 }
 
@@ -208,6 +227,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const contentIntents = [
     "decide-application",
     "create-page",
+    "move-page",
     "create-assignment",
     "update-assignment",
     "delete-assignment",
@@ -226,16 +246,28 @@ export async function action({ request, params }: Route.ActionArgs) {
 
     switch (intent) {
       case "decide-application": {
-        const applicationId = String(formData.get("applicationId") ?? "");
-        const application = await prisma.educationApplication.findUnique({
-          where: { id: applicationId },
-          select: { offeringId: true },
-        });
-        if (!application || application.offeringId !== params.offeringId)
-          return Response.json({ error: "Application not found" }, { status: 404 });
+        // decideApplication self-scopes to offeringId, so a manager of another
+        // offering can't act on this application.
         const result = await decideApplication({
-          applicationId,
+          applicationId: String(formData.get("applicationId") ?? ""),
+          offeringId: params.offeringId!,
           status: String(formData.get("status")) as EduApplicationStatus,
+          actorId: auth.user.sub,
+        });
+        return "error" in result ? fail(result) : { ok: true };
+      }
+      case "approve-all-pending": {
+        const result = await approveAllPending({
+          offeringId: params.offeringId!,
+          actorId: auth.user.sub,
+        });
+        return { ok: true, bulkApprove: result };
+      }
+      case "move-page": {
+        const result = await moveMaterialPage({
+          offeringId: params.offeringId!,
+          pageId: String(formData.get("pageId") ?? ""),
+          parentPageId: String(formData.get("parentPageId") ?? "") || null,
           actorId: auth.user.sub,
         });
         return "error" in result ? fail(result) : { ok: true };
@@ -245,6 +277,8 @@ export async function action({ request, params }: Route.ActionArgs) {
           offeringId: params.offeringId!,
           title: String(formData.get("title") ?? ""),
           parentPageId: String(formData.get("parentPageId") ?? "") || null,
+          studentEditable: formData.get("studentEditable") === "true",
+          kind: formData.get("kind") === "Folder" ? "Folder" : "FreeForm",
           actorId: auth.user.sub,
         });
         return "error" in result ? fail(result) : { ok: true };
@@ -286,6 +320,8 @@ export async function action({ request, params }: Route.ActionArgs) {
           offeringId: params.offeringId!,
           authorId: auth.user.sub,
           body: String(formData.get("body") ?? ""),
+          kind: formData.get("kind") === "Message" ? "Message" : "Announcement",
+          parentId: String(formData.get("parentId") ?? "") || null,
         });
         return "error" in result ? fail(result) : { ok: true };
       }
@@ -297,6 +333,10 @@ export async function action({ request, params }: Route.ActionArgs) {
           actorId: auth.user.sub,
         });
         return "error" in result ? fail(result) : { ok: true };
+      }
+      case "preview-close-out": {
+        const preview = await previewCloseOut(params.offeringId!);
+        return { ok: true, closeOutPreview: preview };
       }
       case "close-out-offering": {
         const result = await closeOutOffering({
@@ -356,6 +396,8 @@ export async function action({ request, params }: Route.ActionArgs) {
   if ("error" in result)
     return Response.json({ error: result.error }, { status: result.status });
   if (formData.get("intent") === "delete-offering") return redirect("/education/manage");
+  if (formData.get("intent") === "duplicate-offering" && "id" in result && result.id)
+    return redirect(`/education/manage/${result.id}`);
   return result;
 }
 
@@ -366,7 +408,7 @@ const TABS = [
   { key: "roster", label: "Roster" },
   { key: "materials", label: "Materials" },
   { key: "assignments", label: "Assignments" },
-  { key: "announcements", label: "Announcements" },
+  { key: "announcements", label: "Discussion" },
   { key: "feedback", label: "Feedback" },
 ] as const;
 
@@ -375,7 +417,9 @@ export default function ManageOffering() {
     offering,
     applications,
     roster,
+    attendanceMatrix,
     materials,
+    workspaceDocs,
     assignments,
     announcements,
     emailTemplates,
@@ -389,15 +433,30 @@ export default function ManageOffering() {
     instructorCandidates,
     collabToken,
     userName,
+    currentUserId,
   } = useLoaderData<typeof loader>();
   const tz = useUserTimeZone();
   const confirmSubmit = useConfirmSubmit();
   const actionData = useActionData<{
     error?: string;
     closeOut?: { issued: number; alreadyIssued: number; ineligible: number };
+    closeOutPreview?: { eligible: string[]; belowThreshold: string[]; alreadyIssued: number } | null;
+    bulkApprove?: { approved: number; skipped: number };
   }>();
   const [searchParams, setSearchParams] = useSearchParams();
+  const [addSessionOpen, setAddSessionOpen] = useState(false);
+  const [generateOpen, setGenerateOpen] = useState(false);
   const tab = searchParams.get("tab") ?? "details";
+
+  const [appFilter, setAppFilter] = useState("all");
+  const appCounts = applications.reduce<Record<string, number>>((m, a) => {
+    m[a.status] = (m[a.status] ?? 0) + 1;
+    return m;
+  }, {});
+  const filteredApps =
+    appFilter === "all"
+      ? applications
+      : applications.filter((a) => a.status === appFilter);
 
   const nextStatuses: { to: string; label: string; variant: "primary" | "secondary" | "destructive" }[] =
     offering.status === "Draft"
@@ -413,24 +472,20 @@ export default function ManageOffering() {
     <div className="flex flex-col gap-6">
       <header className="flex items-start justify-between gap-4">
         <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <TypeBadge type={offering.type} />
-            <StatusBadge status={offering.status} />
-          </div>
-          <h1 className="mt-1 font-heading text-2xl font-bold text-foreground">
+          {/* Title first: the badges qualify the offering, so they read better
+              under its name than as an eyebrow above it. */}
+          <h1 className="font-heading text-2xl font-bold text-foreground">
             {offering.title}
           </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            {offering.approvedCount} of {offering.capacity} seats filled
-          </p>
+          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+            <TypeBadge type={offering.type} />
+            <StatusBadge status={offering.status} />
+            <span className="text-sm text-muted-foreground">
+              {offering.approvedCount} of {offering.capacity} seats filled
+            </span>
+          </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <Link
-            to={`/education/${offering.id}`}
-            className={buttonClasses("ghost", "sm")}
-          >
-            View listing
-          </Link>
           <Form
             method="post"
             onSubmit={confirmSubmit({
@@ -473,6 +528,33 @@ export default function ManageOffering() {
           .
         </p>
       )}
+      {actionData?.closeOutPreview && (
+        <div className="text-sm bg-card border border-border rounded-md px-3 py-2.5 flex flex-col gap-1">
+          <p className="font-semibold text-foreground">
+            Close-out preview — {actionData.closeOutPreview.eligible.length} would get a
+            certificate
+            {actionData.closeOutPreview.alreadyIssued > 0 &&
+              `, ${actionData.closeOutPreview.alreadyIssued} already issued`}
+            {actionData.closeOutPreview.belowThreshold.length > 0 &&
+              `, ${actionData.closeOutPreview.belowThreshold.length} below threshold`}
+            .
+          </p>
+          {actionData.closeOutPreview.belowThreshold.length > 0 && (
+            <p className="text-xs text-amber-700">
+              Below threshold: {actionData.closeOutPreview.belowThreshold.join(", ")}
+            </p>
+          )}
+        </div>
+      )}
+      {actionData?.bulkApprove && (
+        <p className="text-sm text-foreground bg-green-50 border border-green-200 rounded-md px-3 py-2">
+          Approved {actionData.bulkApprove.approved} pending application
+          {actionData.bulkApprove.approved === 1 ? "" : "s"}
+          {actionData.bulkApprove.skipped > 0 &&
+            ` — ${actionData.bulkApprove.skipped} left (capacity reached)`}
+          .
+        </p>
+      )}
 
       <nav className="flex gap-1 border-b border-border">
         {TABS.map((t) => (
@@ -493,7 +575,7 @@ export default function ManageOffering() {
       </nav>
 
       {tab === "details" && (
-        <div className="flex flex-col gap-6 max-w-2xl">
+        <div className="flex flex-col gap-6">
           {offering.applicationFormId && (
             <div className="bg-brand-tint rounded-lg px-4 py-3 flex items-center justify-between gap-4">
               <p className="text-sm text-foreground">
@@ -515,7 +597,7 @@ export default function ManageOffering() {
           >
             <input type="hidden" name="intent" value="update-offering" />
             <OfferingFields values={offering} typeLocked />
-            <div>
+            <div className="flex justify-end">
               <Button type="submit" size="sm">
                 Save details
               </Button>
@@ -567,21 +649,11 @@ export default function ManageOffering() {
                 Instructors can edit this offering, review applications, and
                 take attendance.
               </p>
-              <div className="grid gap-1 sm:grid-cols-2 max-h-64 overflow-y-auto pr-2">
-                {instructorCandidates.map((u) => (
-                  <label key={u.id} className="flex items-center gap-2 text-sm text-foreground">
-                    <input
-                      type="checkbox"
-                      name="userIds"
-                      value={u.id}
-                      defaultChecked={offering.instructors.some((i) => i.userId === u.id)}
-                      className="rounded border-border"
-                    />
-                    {u.name}
-                  </label>
-                ))}
-              </div>
-              <div className="mt-3">
+              <InstructorPicker
+                candidates={instructorCandidates}
+                initialSelectedIds={offering.instructors.map((i) => i.userId)}
+              />
+              <div className="mt-3 flex justify-end">
                 <Button type="submit" variant="secondary" size="sm">
                   Save instructors
                 </Button>
@@ -698,7 +770,7 @@ export default function ManageOffering() {
       )}
 
       {tab === "sessions" && (
-        <div className="flex flex-col gap-4 max-w-2xl">
+        <div className="flex flex-col gap-4">
           {offering.sessions.length === 0 ? (
             <p className="text-sm text-muted-foreground italic">
               No sessions yet.{" "}
@@ -712,7 +784,7 @@ export default function ManageOffering() {
                 <li key={s.id} className="bg-card border border-border rounded-lg p-4">
                   <div className="flex items-center justify-between gap-4 mb-3">
                     <p className="text-sm font-semibold text-foreground">
-                      Session {s.sequence}
+                      {s.title ? `${s.sequence}. ${s.title}` : `Session ${s.sequence}`}
                       <span className="ml-2 font-normal text-muted-foreground text-xs">
                         {formatDateTime(s.datetime, tz)}
                       </span>
@@ -732,9 +804,23 @@ export default function ManageOffering() {
                       </Button>
                     </Form>
                   </div>
-                  <Form method="post" className="grid gap-3 sm:grid-cols-[1fr_1fr_1fr_auto] items-end">
+                  {/* Topic leads on its own line: it's the session's name and
+                      the longest thing you type here, so sharing a row with
+                      three short fields left it a stub. */}
+                  <Form method="post" className="flex flex-col gap-3">
                     <input type="hidden" name="intent" value="update-session" />
                     <input type="hidden" name="sessionId" value={s.id} />
+                    <label className="block">
+                      <span className="text-xs font-semibold text-muted-foreground">Topic</span>
+                      <input
+                        type="text"
+                        name="title"
+                        placeholder="e.g. Intro to Figma"
+                        defaultValue={s.title ?? ""}
+                        className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
+                      />
+                    </label>
+                    <div className="grid gap-3 sm:grid-cols-3">
                     <label className="block">
                       <span className="text-xs font-semibold text-muted-foreground">When</span>
                       <input
@@ -763,29 +849,141 @@ export default function ManageOffering() {
                         className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
                       />
                     </label>
-                    <Button type="submit" variant="secondary" size="sm">
-                      Save
-                    </Button>
+                    </div>
+                    <label className="block">
+                      <span className="text-xs font-semibold text-muted-foreground">
+                        Notes for students
+                      </span>
+                      <textarea
+                        name="notes"
+                        rows={2}
+                        defaultValue={s.notes ?? ""}
+                        placeholder="Prep work, what to bring, links — students see this on the course page."
+                        className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
+                      />
+                    </label>
+                    <div className="flex justify-end">
+                      <Button type="submit" variant="secondary" size="sm">
+                        Save
+                      </Button>
+                    </div>
                   </Form>
                 </li>
               ))}
             </ul>
           )}
 
-          <Form
-            method="post"
-            className="bg-card border border-border rounded-lg p-4 grid gap-3 sm:grid-cols-[1fr_1fr_auto] items-end"
+          {/* Adding a session is occasional; the form sat open permanently above
+              the list you actually came to read. The button reveals it. */}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant={addSessionOpen ? "secondary" : "primary"}
+              onClick={() => setAddSessionOpen((o) => !o)}
+            >
+              Add session
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={() => setGenerateOpen((o) => !o)}
+            >
+              Generate weekly series
+            </Button>
+          </div>
+
+          <AddFormModal
+            open={addSessionOpen}
+            onClose={() => setAddSessionOpen(false)}
+            title="Add session"
+            intent="add-session"
+            submitLabel="Add session"
           >
-            <input type="hidden" name="intent" value="add-session" />
             <label className="block">
-              <span className="text-xs font-semibold text-muted-foreground">When</span>
+              <span className="text-xs font-semibold text-muted-foreground">Topic</span>
+              <input
+                type="text"
+                name="title"
+                placeholder="e.g. Intro to Figma"
+                className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
+              />
+            </label>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="block">
+                <span className="text-xs font-semibold text-muted-foreground">When</span>
+                <input
+                  type="datetime-local"
+                  name="datetime"
+                  required
+                  className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs font-semibold text-muted-foreground">Location</span>
+                <input
+                  type="text"
+                  name="location"
+                  placeholder="Sudikoff 007"
+                  className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
+                />
+              </label>
+            </div>
+            <label className="block">
+              <span className="text-xs font-semibold text-muted-foreground">
+                Notes for students
+              </span>
+              <textarea
+                name="notes"
+                rows={2}
+                placeholder="Prep work, what to bring, links — students see this on the course page."
+                className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
+              />
+            </label>
+          </AddFormModal>
+
+          <AddFormModal
+            open={generateOpen}
+            onClose={() => setGenerateOpen(false)}
+            title="Generate a weekly series"
+            subtitle="You can rename or retime individual sessions afterward."
+            intent="generate-sessions"
+            submitLabel="Generate"
+          >
+            <label className="block">
+              <span className="text-xs font-semibold text-muted-foreground">First session</span>
               <input
                 type="datetime-local"
-                name="datetime"
+                name="startDatetime"
                 required
                 className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
               />
             </label>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="block">
+                <span className="text-xs font-semibold text-muted-foreground">How many</span>
+                <input
+                  type="number"
+                  name="count"
+                  min={1}
+                  max={30}
+                  defaultValue={6}
+                  className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs font-semibold text-muted-foreground">Every N days</span>
+                <input
+                  type="number"
+                  name="intervalDays"
+                  min={1}
+                  max={30}
+                  defaultValue={7}
+                  className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
+                />
+              </label>
+            </div>
             <label className="block">
               <span className="text-xs font-semibold text-muted-foreground">Location</span>
               <input
@@ -795,201 +993,78 @@ export default function ManageOffering() {
                 className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
               />
             </label>
-            <Button type="submit" size="sm">
-              Add session
-            </Button>
-          </Form>
+          </AddFormModal>
         </div>
       )}
 
       {tab === "applications" && (
-        <div className="flex flex-col gap-3 max-w-3xl">
+        <div className="flex flex-col gap-3">
           {applications.length === 0 ? (
             <p className="text-sm text-muted-foreground italic">
               No applications yet.
             </p>
           ) : (
-            applications.map((a) => (
-              <details
-                key={a.id}
-                className="bg-card border border-border rounded-lg px-4 py-3"
-              >
-                <summary className="flex items-center justify-between gap-4 cursor-pointer list-none">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <MyStatusChip status={a.status} />
-                    <span className="text-sm font-medium text-foreground truncate">
-                      {`${a.applicant.firstName} ${a.applicant.lastName}`.trim()}
-                    </span>
-                    <span className="text-xs text-muted-foreground truncate">
-                      {a.applicant.daliEmail ??
-                        a.applicant.dartmouthEmail ??
-                        (a.applicant.netId ? `${a.applicant.netId}@dartmouth.edu` : "")}
-                    </span>
-                    {a.status === "Waitlisted" && a.waitlistRank != null && (
-                      <span className="text-xs text-muted-foreground">
-                        #{a.waitlistRank}
-                      </span>
-                    )}
-                  </div>
-                  <span className="text-xs text-muted-foreground shrink-0">
-                    {formatDateTime(a.submittedAt, tz)}
-                  </span>
-                </summary>
-                <div className="mt-3 pt-3 border-t border-border flex flex-col gap-4">
-                  {a.formSubmission ? (
-                    <ApplicationAnswers
-                      questions={
-                        (a.formSubmission.formVersion.questions as unknown as Question[]) ?? []
-                      }
-                      answers={
-                        (a.formSubmission.answers as Record<string, unknown>) ?? {}
-                      }
-                    />
-                  ) : (
-                    <p className="text-xs text-muted-foreground italic">
-                      No answers recorded.
-                    </p>
-                  )}
-                  <div className="flex items-center gap-2">
-                    {(["Approved", "Waitlisted", "Rejected"] as const)
-                      .filter((s) => s !== a.status)
-                      .map((s) => (
-                        <Form key={s} method="post">
-                          <input type="hidden" name="intent" value="decide-application" />
-                          <input type="hidden" name="applicationId" value={a.id} />
-                          <input type="hidden" name="status" value={s} />
-                          <Button
-                            type="submit"
-                            size="sm"
-                            variant={s === "Approved" ? "primary" : "secondary"}
-                          >
-                            {s === "Approved"
-                              ? "Approve"
-                              : s === "Waitlisted"
-                                ? "Waitlist"
-                                : "Reject"}
-                          </Button>
-                        </Form>
-                      ))}
-                  </div>
-
-                  {a.status === "Approved" && (
-                    <Form
-                      method="post"
-                      className="grid gap-3 sm:grid-cols-2 items-start pt-3 border-t border-border"
-                    >
-                      <input type="hidden" name="intent" value="save-student-note" />
-                      <input type="hidden" name="applicationId" value={a.id} />
-                      <label className="block">
-                        <span className="text-xs font-semibold text-muted-foreground">
-                          Feedback to student — shared with their certificate
-                        </span>
-                        <textarea
-                          name="feedback"
-                          rows={3}
-                          defaultValue={a.note?.feedback ?? ""}
-                          placeholder="Overall performance feedback the student will see…"
-                          className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
-                        />
-                      </label>
-                      <label className="block">
-                        <span className="text-xs font-semibold text-amber-800">
-                          Internal note — hiring only, never shown to the student
-                        </span>
-                        <textarea
-                          name="internalNote"
-                          rows={3}
-                          defaultValue={a.note?.internalNote ?? ""}
-                          placeholder="Engagement/competency signal for future hiring…"
-                          className="mt-1 w-full rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 text-sm"
-                        />
-                      </label>
-                      <div className="sm:col-span-2">
-                        <Button type="submit" variant="secondary" size="sm">
-                          Save notes
-                        </Button>
-                      </div>
-                    </Form>
-                  )}
-                </div>
-              </details>
-            ))
-          )}
-        </div>
-      )}
-
-      {tab === "roster" && (
-        <div className="flex flex-col gap-4 max-w-2xl">
-          {offering.sessions.length === 0 ? (
-            <p className="text-sm text-muted-foreground italic">
-              Add a session first — attendance is marked per session.
-            </p>
-          ) : (
             <>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold text-muted-foreground">
-                  Session
-                </span>
-                <select
-                  value={roster?.session.id ?? ""}
-                  onChange={(e) =>
-                    setSearchParams(
-                      { tab: "roster", session: e.target.value },
-                      { preventScrollReset: true },
-                    )
-                  }
-                  className="rounded-md border border-border bg-card px-2 py-1.5 text-sm"
-                >
-                  {offering.sessions.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      Session {s.sequence} — {formatDateTime(s.datetime, tz)}
-                    </option>
+              <div className="flex flex-wrap items-center gap-2">
+                {(["all", "Submitted", "Approved", "Waitlisted", "Rejected", "Withdrawn"] as const)
+                  .filter((s) => s === "all" || (appCounts[s] ?? 0) > 0)
+                  .map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setAppFilter(s)}
+                      className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                        appFilter === s
+                          ? "bg-accent-coral text-white"
+                          : "bg-muted text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      {s === "all" ? `All ${applications.length}` : `${s} ${appCounts[s] ?? 0}`}
+                    </button>
                   ))}
-                </select>
-              </div>
-
-              {roster && roster.roster.length === 0 && (
-                <p className="text-sm text-muted-foreground italic">
-                  No approved students yet.
-                </p>
-              )}
-              {roster && roster.roster.length > 0 && (
-                <Form method="post" className="bg-card border border-border rounded-lg">
-                  <input type="hidden" name="intent" value="save-attendance" />
-                  <input type="hidden" name="sessionId" value={roster.session.id} />
-                  <ul className="divide-y divide-border">
-                    {roster.roster.map((r) => (
-                      <li
-                        key={r.applicationId}
-                        className="px-4 py-2.5 flex items-center justify-between gap-4"
-                      >
-                        <span className="text-sm text-foreground">{r.name}</span>
-                        <select
-                          name={`mark-${r.applicationId}`}
-                          defaultValue={r.status ?? ""}
-                          className="rounded-md border border-border bg-card px-2 py-1 text-sm"
-                        >
-                          <option value="">Unmarked</option>
-                          <option value="Present">Present</option>
-                          <option value="Absent">Absent</option>
-                          <option value="Excused">Excused</option>
-                        </select>
-                      </li>
-                    ))}
-                  </ul>
-                  <div className="px-4 py-3 border-t border-border">
+                {(appCounts["Submitted"] ?? 0) > 0 && (
+                  <Form method="post" className="ml-auto">
+                    <input type="hidden" name="intent" value="approve-all-pending" />
                     <Button type="submit" size="sm">
-                      Save attendance
+                      Approve all {appCounts["Submitted"]} pending
                     </Button>
-                  </div>
-                </Form>
-              )}
+                  </Form>
+                )}
+              </div>
+              <ApplicationsReview
+                applications={filteredApps}
+                statusChip={(status) => <MyStatusChip status={status as never} />}
+                formatSubmitted={(at) => formatDateTime(at as never, tz)}
+              />
             </>
           )}
         </div>
       )}
 
-      {tab === "materials" && <ManageMaterials materials={materials} />}
+      {tab === "roster" && (
+        <div className="flex flex-col gap-4">
+          <RosterMatrix
+            sessions={attendanceMatrix.sessions.map((s) => ({
+              id: s.id,
+              sequence: s.sequence,
+              datetime: s.datetime,
+            }))}
+            students={attendanceMatrix.students}
+            activeSessionId={roster?.session.id ?? attendanceMatrix.sessions[0]?.id ?? null}
+            onSelectSession={(sessionId) =>
+              setSearchParams(
+                { tab: "roster", session: sessionId },
+                { preventScrollReset: true },
+              )
+            }
+            formatSessionDate={(d) => formatDateTime(d as never, tz)}
+          />
+        </div>
+      )}
+
+      {tab === "materials" && (
+        <ManageMaterials materials={materials} workspaceDocs={workspaceDocs} />
+      )}
 
       {tab === "assignments" && (
         <ManageAssignments
@@ -1001,11 +1076,11 @@ export default function ManageOffering() {
       )}
 
       {tab === "announcements" && (
-        <ManageAnnouncements announcements={announcements} />
+        <OfferingDiscussion posts={announcements} currentUserId={currentUserId} canAnnounce />
       )}
 
       {tab === "feedback" && (
-        <div className="flex flex-col gap-5 max-w-3xl">
+        <div className="flex flex-col gap-5">
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold text-muted-foreground">
               Session
@@ -1062,6 +1137,8 @@ function FeedbackResults({
   title: string;
   anonymizedNote: boolean;
   results: {
+    responded: number;
+    eligible: number;
     questions: { key: string; type: string; data: { label: string } }[];
     submissions: {
       id: string;
@@ -1071,10 +1148,19 @@ function FeedbackResults({
   };
 }) {
   const visibleQuestions = results.questions.filter((q) => q.type !== "info");
+  const rate =
+    results.eligible > 0
+      ? Math.round((results.responded / results.eligible) * 100)
+      : null;
   return (
     <section className="bg-card border border-border rounded-lg p-5 flex flex-col gap-4">
       <div>
         <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+        {rate !== null && (
+          <p className="text-xs font-medium text-muted-foreground mt-0.5">
+            {results.responded} of {results.eligible} responded ({rate}%)
+          </p>
+        )}
         {anonymizedNote && (
           <p className="text-xs text-muted-foreground mt-0.5">
             Responses are anonymized and shown in a shuffled order.
@@ -1083,12 +1169,52 @@ function FeedbackResults({
       </div>
       {results.submissions.length === 0 ? (
         <p className="text-sm text-muted-foreground italic">No responses yet.</p>
+      ) : anonymizedNote && results.responded < 3 ? (
+        <p className="text-sm text-muted-foreground italic">
+          Only {results.responded} response{results.responded === 1 ? "" : "s"} so far —
+          individual responses stay hidden until at least 3, to keep them anonymous.
+        </p>
       ) : (
-        visibleQuestions.map((q) => (
+        visibleQuestions.map((q) => {
+          // Aggregate answers: a tally for enumerable (choice/rating) questions
+          // and an average when every answer is numeric. Skipped for free text
+          // (too many distinct values).
+          const values = results.submissions
+            .map((s) => {
+              const raw = s.answers[q.key];
+              return raw == null || raw === ""
+                ? null
+                : Array.isArray(raw)
+                  ? raw.join(", ")
+                  : String(raw);
+            })
+            .filter((v): v is string => v !== null);
+          const tally = new Map<string, number>();
+          for (const v of values) tally.set(v, (tally.get(v) ?? 0) + 1);
+          const nums = values.map(Number).filter((n) => Number.isFinite(n));
+          const avg =
+            values.length > 0 && nums.length === values.length
+              ? nums.reduce((a, b) => a + b, 0) / nums.length
+              : null;
+          const showTally = tally.size > 0 && tally.size <= 8;
+          return (
           <div key={q.key}>
             <h3 className="text-xs font-semibold text-muted-foreground">
               {q.data.label}
             </h3>
+            {(avg !== null || showTally) && (
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {avg !== null && (
+                  <span className="font-semibold text-foreground">avg {avg.toFixed(1)}</span>
+                )}
+                {avg !== null && showTally && " · "}
+                {showTally &&
+                  [...tally.entries()]
+                    .sort((a, b) => b[1] - a[1])
+                    .map(([v, n]) => `${v} (${n})`)
+                    .join(", ")}
+              </p>
+            )}
             <ul className="mt-1 flex flex-col gap-1">
               {results.submissions.map((s) => {
                 const raw = s.answers[q.key];
@@ -1113,7 +1239,8 @@ function FeedbackResults({
               })}
             </ul>
           </div>
-        ))
+          );
+        })
       )}
     </section>
   );
