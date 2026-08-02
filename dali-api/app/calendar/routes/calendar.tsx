@@ -35,6 +35,7 @@ import { CalendarActionSchema, validateTimeEntryRange } from "~/lib/calendar-sch
 import { syncManualBlockTimeEntry } from "~/lib/time-entry-sync";
 import { fetchBusyEvents, listCalendarsForLink } from "~/lib/google-calendar";
 import { getZonedHourFraction, getZonedYMD, resolveUserTimeZone, zonedDayStartUtc } from "~/lib/timezone";
+import { formatPayPeriod, isPayPeriodEnd, payPeriodFor } from "~/lib/pay-period";
 import type { Route } from "./+types/calendar";
 import { UnderlineTabButtons } from "~/components/AreaPillNav";
 import { Tooltip } from "~/components/ui/IconButton";
@@ -3023,8 +3024,35 @@ function TimesheetWeekGrid({ data }: { data: LoaderData }) {
     weekEntries.push({ t, startIso, endIso });
   }
 
+  // Per-role hours accumulate across the pay period the visible week belongs
+  // to, and start over at the next one — that's the unit payroll approves and
+  // pays in, so a week-only total answered a question nobody asks. Periods
+  // start on a Sunday, so the displayed Sun–Sat week is always inside exactly
+  // one of them.
+  const weekPeriod = payPeriodFor(weekStart);
+  const periodEntries = data.timeEntries.filter((t) => {
+    const ymd = getZonedYMD(new Date(t.date), data.timezone);
+    const dayUtc = new Date(Date.UTC(ymd.year, ymd.month - 1, ymd.day));
+    return payPeriodFor(dayUtc).index === weekPeriod.index;
+  });
+
   const roleBuckets = new Map<string, { key: string; label: string; hours: number }>();
+  // Seed from what's drawn this week so every visible block still has a chip,
+  // then total the period into it.
   for (const { t } of weekEntries) {
+    const key = timeEntryRoleKey(t);
+    if (roleBuckets.has(key)) continue;
+    const known =
+      t.assignmentType && t.roleRefId
+        ? data.myRoles.find((r) => r.assignmentType === t.assignmentType && r.roleRefId === t.roleRefId)
+        : undefined;
+    roleBuckets.set(key, {
+      key,
+      label: known?.label ?? (key === UNASSIGNED_ROLE_KEY ? "Unassigned" : "Other role"),
+      hours: 0,
+    });
+  }
+  for (const t of periodEntries) {
     const key = timeEntryRoleKey(t);
     const existing = roleBuckets.get(key);
     if (existing) {
@@ -3077,6 +3105,15 @@ function TimesheetWeekGrid({ data }: { data: LoaderData }) {
         Drag a range to log time, or click any block to edit role, time, or note. See My
         Availability for your full calendar.
       </p>
+      {/* Names the window the chip hours cover, so "12.5h" isn't mistaken for
+          this week's total. */}
+      <p className="px-1 pb-1 text-[11px] text-muted-foreground">
+        Hours below are for the pay period{" "}
+        <span className="font-medium text-foreground">
+          {formatPayPeriod(weekPeriod, data.timezone)}
+        </span>
+        .
+      </p>
       <RoleFilterRow
         buckets={Array.from(roleBuckets.values())}
         excludedKeys={excludedRoleKeys}
@@ -3085,6 +3122,7 @@ function TimesheetWeekGrid({ data }: { data: LoaderData }) {
       <WeekGrid
         days={days}
         showSubHourGrid
+        markPayPeriodEnds
         timezone={data.timezone}
         eventsByDay={eventsByDay}
         onDayPointerSelect={(dayIdx, startHour, endHour) => {
@@ -5165,6 +5203,7 @@ function WeekGrid({
   onSelectionResize,
   showSubHourGrid = false,
   timezone,
+  markPayPeriodEnds = false,
 }: {
   days: { dayOfWeek: number; num: number; dateUtc: Date }[];
   eventsByDay: Record<number, EventBlock[]>;
@@ -5184,6 +5223,10 @@ function WeekGrid({
   // When set, the column matching "today" in this timezone is highlighted and a
   // horizontal current-time line is drawn in it.
   timezone?: string;
+  // Timesheet only: draw a boundary on the last day of each pay period, so it's
+  // visible where hours stop accruing to one period and start on the next.
+  // Availability has no payroll meaning, so it doesn't ask for this.
+  markPayPeriodEnds?: boolean;
 }) {
   // Current time, in this timezone, for the today-highlight + now-line. Both are
   // skipped until `now` is set (post-mount) and when no timezone is provided.
@@ -5377,11 +5420,28 @@ function WeekGrid({
       {/* Day columns */}
       {days.map((d, idx) => {
         const isToday = idx === todayIdx;
+        const periodEnd = markPayPeriodEnds && isPayPeriodEnd(d.dateUtc);
         return (
-        <div key={idx} className="flex-1 min-w-0 border-r last:border-r-0 border-border flex flex-col">
-          <div className={`flex flex-col items-center justify-center border-b border-border ${showProviderRow ? "h-16" : "h-9"} ${isToday ? "bg-accent-coral/10" : ""}`}>
+        <div
+          key={idx}
+          className={`flex-1 min-w-0 border-r last:border-r-0 flex flex-col ${
+            // A solid accent edge on the period's last column, rather than a
+            // badge: the boundary is between this day and the next, so it wants
+            // to be drawn on the seam.
+            periodEnd ? "border-r-2 border-r-accent-teal" : "border-border"
+          }`}
+        >
+          <div className={`flex flex-col items-center justify-center border-b border-border ${showProviderRow ? "h-16" : "h-9"} ${isToday ? "bg-accent-coral/10" : periodEnd ? "bg-accent-teal/10" : ""}`}>
             <div className={`text-[10px] font-semibold tracking-wide ${isToday ? "text-accent-coral" : "text-muted-foreground"}`}>{DAY_KEYS[d.dayOfWeek]}</div>
             <div className={isToday ? "flex items-center justify-center w-6 h-6 rounded-full bg-accent-coral text-sm font-bold text-white" : "text-sm font-bold text-foreground"}>{d.num}</div>
+            {periodEnd && !showProviderRow && (
+              <span
+                title="Last day of this pay period"
+                className="text-[8px] font-semibold uppercase tracking-wide text-accent-teal leading-none"
+              >
+                Pay ends
+              </span>
+            )}
             {showProviderRow && (
               <div className="flex items-center gap-0.5 mt-0.5 text-muted-foreground/50">
                 <Building2 className="w-2.5 h-2.5" />
