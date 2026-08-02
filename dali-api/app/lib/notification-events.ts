@@ -254,6 +254,28 @@ export const EVENT_TYPES = {
     description: "When you're issued a certificate of completion.",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
   },
+  "education.session_reminder": {
+    kind: "Education",
+    area: "Education",
+    label: "Session reminders",
+    description: "A reminder before each session of a course you're enrolled in.",
+    timeSensitive: true,
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
+  "education.grade": {
+    kind: "Education",
+    area: "Education",
+    label: "Grades & feedback",
+    description: "When an instructor grades or leaves feedback on your submission.",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
+  "education.ce_reminder": {
+    kind: "Education",
+    area: "Education",
+    label: "CE credit reminders",
+    description: "A nudge when you still owe your continuing-education credit for the term.",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
   "member.promotion": {
     kind: "General",
     area: "Staffing",

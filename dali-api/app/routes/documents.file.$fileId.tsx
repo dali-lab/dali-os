@@ -10,6 +10,7 @@ import { getDownloadUrl } from "~/lib/s3";
 import { hydrateAuthors } from "~/lib/collabAuth";
 import { formatBytes, uploadFileToS3 } from "~/lib/upload-client";
 import { CommentsRail } from "~/components/collab/CommentsRail";
+import { FilePreview } from "~/components/FilePreview";
 import { TagPicker } from "~/components/TagPicker";
 import { ProjectIcon } from "~/components/ProjectIcon";
 
@@ -203,7 +204,13 @@ export default function FilePage() {
 
           {selected && (
             <div className="mt-6">
-              <FilePreview version={selected} />
+              <FilePreview
+                previewUrl={selected.previewUrl}
+                downloadUrl={selected.downloadUrl}
+                contentType={selected.contentType}
+                fileName={selected.fileName}
+                reloadKey={selected.id}
+              />
             </div>
           )}
 
@@ -305,71 +312,3 @@ export default function FilePage() {
   );
 }
 
-type FileVersionView = Exclude<
-  Awaited<ReturnType<typeof loader>>,
-  Response
->["versions"][number];
-
-// Inline preview of a file version. Images, video, audio, and PDFs render
-// directly from the presigned S3 URL; anything else (e.g. .psd/.ae source
-// files) falls back to a download prompt.
-function FilePreview({ version }: { version: FileVersionView }) {
-  const ct = version.contentType ?? "";
-  const isImage = ct.startsWith("image/");
-  const isVideo = ct.startsWith("video/");
-  const isAudio = ct.startsWith("audio/");
-  const isPdf = ct === "application/pdf";
-  const isText = ct.startsWith("text/") || ct === "application/json";
-
-  if (isVideo) {
-    return (
-      // `key` forces a reload when the previewed version changes — <video>
-      // doesn't re-fetch on a src prop change alone.
-      <video
-        key={version.id}
-        src={version.previewUrl}
-        controls
-        className="max-w-full max-h-[70vh] rounded-lg border border-border bg-black"
-      />
-    );
-  }
-  if (isAudio) {
-    return (
-      <audio key={version.id} src={version.previewUrl} controls className="w-full" />
-    );
-  }
-  if (isImage) {
-    return (
-      <img
-        src={version.previewUrl}
-        alt={version.fileName}
-        className="max-w-full max-h-[70vh] rounded-lg border border-border object-contain bg-muted/20"
-      />
-    );
-  }
-  if (isPdf || isText) {
-    return (
-      <iframe
-        key={version.id}
-        src={version.previewUrl}
-        title={version.fileName}
-        className="w-full h-[70vh] rounded-lg border border-border bg-white"
-      />
-    );
-  }
-  return (
-    <div className="rounded-lg border border-border bg-muted/20 px-4 py-10 text-center text-sm text-muted-foreground">
-      <p>
-        No inline preview for this file type
-        {version.contentType ? ` (${version.contentType})` : ""}.
-      </p>
-      <a
-        href={version.downloadUrl}
-        className="mt-3 inline-flex items-center gap-1 text-accent-coral hover:underline"
-      >
-        <Download className="w-3.5 h-3.5" />
-        Download to view
-      </a>
-    </div>
-  );
-}

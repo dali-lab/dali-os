@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useSubmit, useActionData, useNavigation } from "react-router";
+import { FileAttachment } from "~/components/FilePreview";
 import { DocEditor, countWords } from "~/components/doc";
 import { Button } from "~/components/ui/Button";
 import { formatDateTime } from "~/lib/display";
@@ -115,16 +116,19 @@ export function AssignmentWorkArea({
         </section>
       )}
 
-      {submission?.feedbackText != null && (
+      {submission?.gradedAt != null && (
         <section className="bg-accent-teal/5 border border-accent-teal/30 rounded-lg p-4">
           <p className="text-xs font-semibold text-accent-teal">
-            Instructor feedback
-            {submission.grade ? ` · ${submission.grade}` : ""}
-            {submission.gradedAt ? ` · ${formatDateTime(submission.gradedAt, tz)}` : ""}
+            {submission.grade ? `Grade · ${submission.grade}` : "Graded"}
+            {` · ${formatDateTime(submission.gradedAt, tz)}`}
           </p>
-          <p className="text-sm text-foreground whitespace-pre-wrap mt-1">
-            {submission.feedbackText}
-          </p>
+          {submission.feedbackText ? (
+            <p className="text-sm text-foreground whitespace-pre-wrap mt-1">
+              {submission.feedbackText}
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground italic mt-1">No written feedback.</p>
+          )}
         </section>
       )}
 
@@ -162,19 +166,20 @@ export function AssignmentWorkArea({
             {wantsFiles && (
               <div className="flex flex-col gap-2">
                 {files.map((f) => (
-                  <div
+                  <FileAttachment
                     key={f.key}
-                    className="flex items-center justify-between gap-3 text-sm text-foreground border border-border rounded-md px-3 py-1.5"
-                  >
-                    <span className="truncate">{f.name}</span>
-                    <button
-                      type="button"
-                      onClick={() => setFiles((cur) => cur.filter((x) => x.key !== f.key))}
-                      className="text-xs text-muted-foreground hover:text-destructive"
-                    >
-                      Remove
-                    </button>
-                  </div>
+                    url={`/api/upload/raw?key=${encodeURIComponent(f.key)}`}
+                    fileName={f.name}
+                    trailing={
+                      <button
+                        type="button"
+                        onClick={() => setFiles((cur) => cur.filter((x) => x.key !== f.key))}
+                        className="shrink-0 text-xs text-muted-foreground hover:text-destructive"
+                      >
+                        Remove
+                      </button>
+                    }
+                  />
                 ))}
                 <label className="text-xs text-muted-foreground">
                   <input

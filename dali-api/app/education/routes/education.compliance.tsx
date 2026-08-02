@@ -7,12 +7,14 @@ import {
   complianceForTerm,
   grantManualCredit,
   creditHistory,
+  remindNonCompliant,
 } from "~/education/lib/ce-credits.server";
 import { redirectDartmouthToPortal } from "~/education/lib/access.server";
 import { educationPills } from "~/education/components/educationPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import { TermFilter } from "~/components/TermFilter";
 import { Button } from "~/components/ui/Button";
+import { useConfirmSubmit } from "~/components/ui/dialog";
 import { cn } from "~/lib/cn";
 
 export const handle = { areaPills: true };
@@ -54,7 +56,14 @@ export async function action({ request }: Route.ActionArgs) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
 
   const formData = await request.formData();
-  if (formData.get("intent") !== "grant-credit")
+  const intent = formData.get("intent");
+  if (intent === "remind-non-compliant") {
+    const termId = String(formData.get("termId") ?? "");
+    if (!termId) return Response.json({ error: "No term selected" }, { status: 400 });
+    const result = await remindNonCompliant({ termId, actorId: auth.user.sub });
+    return { ok: true, reminded: result.reminded };
+  }
+  if (intent !== "grant-credit")
     return Response.json({ error: "Unknown intent" }, { status: 400 });
   const result = await grantManualCredit({
     userId: String(formData.get("userId") ?? ""),
@@ -70,7 +79,8 @@ export async function action({ request }: Route.ActionArgs) {
 export default function CECompliance() {
   const { terms, selected, termId, rows, expandedMemberId, memberHistory } =
     useLoaderData<typeof loader>();
-  const actionData = useActionData<{ error?: string }>();
+  const actionData = useActionData<{ error?: string; reminded?: number }>();
+  const confirmSubmit = useConfirmSubmit();
   const nonCompliant = rows.filter((r) => !r.compliant).length;
 
   return (
@@ -99,13 +109,37 @@ export default function CECompliance() {
           {actionData.error}
         </p>
       )}
+      {actionData?.reminded !== undefined && (
+        <p className="text-sm text-foreground bg-green-50 border border-green-200 rounded-md px-3 py-2">
+          Reminded {actionData.reminded} member{actionData.reminded === 1 ? "" : "s"}.
+        </p>
+      )}
 
-      <p className="text-sm text-foreground">
-        {rows.length} current member{rows.length === 1 ? "" : "s"} ·{" "}
-        <span className={nonCompliant > 0 ? "text-amber-700 font-semibold" : ""}>
-          {nonCompliant} without a credit
-        </span>
-      </p>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm text-foreground">
+          {rows.length} current member{rows.length === 1 ? "" : "s"} ·{" "}
+          <span className={nonCompliant > 0 ? "text-amber-700 font-semibold" : ""}>
+            {nonCompliant} without a credit
+          </span>
+        </p>
+        {nonCompliant > 0 && termId && (
+          <Form
+            method="post"
+            onSubmit={confirmSubmit({
+              title: `Remind ${nonCompliant} member${nonCompliant === 1 ? "" : "s"}?`,
+              description:
+                "Sends an in-app nudge (and email per preference) to everyone who still owes a CE credit this term.",
+              confirmLabel: "Send reminders",
+            })}
+          >
+            <input type="hidden" name="intent" value="remind-non-compliant" />
+            <input type="hidden" name="termId" value={termId} />
+            <Button type="submit" variant="secondary" size="sm">
+              Remind {nonCompliant} non-compliant
+            </Button>
+          </Form>
+        )}
+      </div>
 
       <ul className="bg-card border border-border rounded-lg divide-y divide-border">
         {rows.map((r) => (

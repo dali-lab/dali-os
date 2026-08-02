@@ -15,7 +15,10 @@ import {
 const mockPrisma = prisma as unknown as Record<
   string,
   Record<string, ReturnType<typeof vi.fn>>
->;
+> & {
+  $transaction: ReturnType<typeof vi.fn>;
+  $queryRaw: ReturnType<typeof vi.fn>;
+};
 
 describe("certificateEligibility", () => {
   it("passes a miniseries exactly at the 80% boundary", () => {
@@ -87,6 +90,14 @@ describe("closeOutOffering", () => {
 
   beforeEach(() => {
     vi.resetAllMocks();
+    // Teaching-credit grants + the closedOutAt stamp run inside a $transaction
+    // under the offering row lock; drive the callback with the mock client.
+    mockPrisma.$transaction.mockImplementation(async (fn: unknown) =>
+      typeof fn === "function"
+        ? (fn as (tx: unknown) => Promise<unknown>)(mockPrisma)
+        : Promise.all(fn as Promise<unknown>[]),
+    );
+    mockPrisma.$queryRaw.mockResolvedValue([]);
     mockPrisma.educationCertificate.create.mockResolvedValue({ id: "cert-1" });
     mockPrisma.educationOffering.update.mockResolvedValue({});
     mockPrisma.cECredit.create.mockResolvedValue({});
