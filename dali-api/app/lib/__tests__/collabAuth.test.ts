@@ -293,50 +293,54 @@ describe("authorizeCollabDoc", () => {
 
     it("allows an assigned instructor", async () => {
       mockPrisma.page.findUnique.mockResolvedValue(eduPage());
-      mockPrisma.instructorAssignment.findFirst.mockResolvedValue({ id: "ia1" });
-      expect(await authorizeCollabDoc("user1", "doc:p1:body")).toBe(true);
+      // getPageAccess owns the instructor gate post-merge.
+      vi.mocked(getPageAccess).mockResolvedValue({
+        canView: true,
+        canEdit: true,
+        canComment: true,
+        canResolve: true,
+      });
+      expect(await authorizeCollabDoc("user1", "doc:p1:body")).toMatchObject(allowed());
     });
 
     it("rejects a student on a non-collaborative material page", async () => {
       mockPrisma.page.findUnique.mockResolvedValue(eduPage());
-      mockPrisma.instructorAssignment.findFirst.mockResolvedValue(null);
       mockPrisma.educationApplication.findFirst.mockResolvedValue({ id: "app1" });
-      expect(await authorizeCollabDoc("user1", "doc:p1:body")).toBe(false);
+      expect(await authorizeCollabDoc("user1", "doc:p1:body")).toMatchObject(denied());
       // Never even checks enrollment — the page isn't studentEditable.
       expect(mockPrisma.educationApplication.findFirst).not.toHaveBeenCalled();
     });
 
     it("allows an enrolled student on a studentEditable page of a live offering", async () => {
       mockPrisma.page.findUnique.mockResolvedValue(eduPage({ studentEditable: true }));
-      mockPrisma.instructorAssignment.findFirst.mockResolvedValue(null);
       mockPrisma.educationOffering.findUnique.mockResolvedValue({
         status: "Published",
         closedOutAt: null,
       });
       mockPrisma.educationApplication.findFirst.mockResolvedValue({ id: "app1" });
-      expect(await authorizeCollabDoc("user1", "doc:p1:body")).toBe(true);
+      // Enrolled students get a writable room even though getPageAccess denies
+      // them — that carve-out lives in collabAuth.
+      expect(await authorizeCollabDoc("user1", "doc:p1:body")).toMatchObject(allowed());
     });
 
     it("rejects a non-enrolled user on a studentEditable page", async () => {
       mockPrisma.page.findUnique.mockResolvedValue(eduPage({ studentEditable: true }));
-      mockPrisma.instructorAssignment.findFirst.mockResolvedValue(null);
       mockPrisma.educationOffering.findUnique.mockResolvedValue({
         status: "Published",
         closedOutAt: null,
       });
       mockPrisma.educationApplication.findFirst.mockResolvedValue(null);
-      expect(await authorizeCollabDoc("user1", "doc:p1:body")).toBe(false);
+      expect(await authorizeCollabDoc("user1", "doc:p1:body")).toMatchObject(denied());
     });
 
     it("rejects an enrolled student once the offering is closed out", async () => {
       mockPrisma.page.findUnique.mockResolvedValue(eduPage({ studentEditable: true }));
-      mockPrisma.instructorAssignment.findFirst.mockResolvedValue(null);
       mockPrisma.educationOffering.findUnique.mockResolvedValue({
         status: "Published",
         closedOutAt: new Date(),
       });
       mockPrisma.educationApplication.findFirst.mockResolvedValue({ id: "app1" });
-      expect(await authorizeCollabDoc("user1", "doc:p1:body")).toBe(false);
+      expect(await authorizeCollabDoc("user1", "doc:p1:body")).toMatchObject(denied());
     });
   });
 
@@ -349,22 +353,22 @@ describe("authorizeCollabDoc", () => {
     it("allows the owning student on their content doc", async () => {
       mockPrisma.educationSubmission.findUnique.mockResolvedValue(submission("user1"));
       mockPrisma.instructorAssignment.findFirst.mockResolvedValue(null);
-      expect(await authorizeCollabDoc("user1", "edusubmission:s1:content")).toBe(true);
+      expect(await authorizeCollabDoc("user1", "edusubmission:s1:content")).toMatchObject(allowed());
     });
 
     it("rejects a different student on someone else's content doc", async () => {
       mockPrisma.educationSubmission.findUnique.mockResolvedValue(submission("other"));
       mockPrisma.instructorAssignment.findFirst.mockResolvedValue(null);
-      expect(await authorizeCollabDoc("user1", "edusubmission:s1:content")).toBe(false);
+      expect(await authorizeCollabDoc("user1", "edusubmission:s1:content")).toMatchObject(denied());
     });
 
     it("denies the student on the feedback doc but allows the instructor", async () => {
       mockPrisma.educationSubmission.findUnique.mockResolvedValue(submission("user1"));
       mockPrisma.instructorAssignment.findFirst.mockResolvedValue(null);
-      expect(await authorizeCollabDoc("user1", "edusubmission:s1:feedback")).toBe(false);
+      expect(await authorizeCollabDoc("user1", "edusubmission:s1:feedback")).toMatchObject(denied());
 
       mockPrisma.instructorAssignment.findFirst.mockResolvedValue({ id: "ia1" });
-      expect(await authorizeCollabDoc("instr1", "edusubmission:s1:feedback")).toBe(true);
+      expect(await authorizeCollabDoc("instr1", "edusubmission:s1:feedback")).toMatchObject(allowed());
     });
   });
 

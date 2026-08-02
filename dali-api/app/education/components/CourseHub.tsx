@@ -10,7 +10,7 @@ import {
 } from "./OfferingDiscussion";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { cn } from "~/lib/cn";
-import { CollaborativeEditor } from "~/components/CollaborativeEditor";
+import { DocEditor } from "~/components/doc";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { Avatar } from "~/components/ui/Avatar";
 import { ChevronRight, FileText, Folder } from "lucide-react";
@@ -646,14 +646,14 @@ function WorkspaceTab({
               token={collabToken}
               userName={userName}
             >
-              <CollaborativeEditor
+              <DocEditor
                 key={selected.id}
-                editorId={`doc:${selected.id}:body`}
-                documentName={`doc:${selected.id}:body`}
-                token={collabToken}
-                userName={userName}
-                enableImages
-                enableRichBlocks
+                features="notes"
+                collab={{
+                  documentName: `doc:${selected.id}:body`,
+                  token: collabToken,
+                  userName,
+                }}
                 placeholder="Start writing together…"
                 className="border border-border rounded-md"
               />
