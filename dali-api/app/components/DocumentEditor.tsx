@@ -8,7 +8,7 @@ import {
   type RefObject,
 } from "react";
 import { useNavigate, useRevalidator } from "react-router";
-import { Copy, FileDown, History, LayoutTemplate, Link, MoreHorizontal, Printer, Search, Upload, Users } from "lucide-react";
+import { Copy, FileDown, History, LayoutTemplate, Link, MessageSquare, MoreHorizontal, Printer, Search, Upload, Users } from "lucide-react";
 import { DocEditor, type TocHeading } from "~/components/doc";
 import type { DocEditorInstance } from "~/components/doc/schema/build";
 import { DocCommentsPanel, useDocThreadCounts } from "~/components/doc/comments";
@@ -231,11 +231,12 @@ export function DocumentEditor({
     return () => ro.disconnect();
   }, []);
 
-  // Comments have no toggle: on a wide container they occupy the right-hand
-  // rail, and otherwise they sit at the foot of the document. Nothing to open,
-  // so nothing to remember — the old localStorage preference went with the
-  // button that used to set it.
-  const railVisible = containerWide && (canComment || openThreadCount > 0);
+  // Comments live in the right-hand rail on a wide container and at the foot of
+  // the document otherwise. The top-bar toggle hides both surfaces at once, for
+  // readers who want the page without the margin chatter.
+  const hasComments = canComment || openThreadCount > 0;
+  const [commentsOpen, setCommentsOpen] = useState(true);
+  const railVisible = commentsOpen && containerWide && hasComments;
 
   const [railFilter, setRailFilter] = useState<"open" | "resolved">("open");
 
@@ -551,6 +552,24 @@ export function DocumentEditor({
             </div>
           )}
         </div>
+      )}
+
+      {hasComments && (
+        <Tooltip label={commentsOpen ? "Hide comments" : "Show comments"}>
+          <button
+            type="button"
+            onClick={() => setCommentsOpen((o) => !o)}
+            aria-pressed={commentsOpen}
+            aria-label={commentsOpen ? "Hide comments" : "Show comments"}
+            className={`inline-flex items-center rounded-md border px-2 py-1 transition-colors ${
+              commentsOpen
+                ? "border-accent-coral/40 bg-accent-coral/10 text-accent-coral"
+                : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+            }`}
+          >
+            <MessageSquare className="h-3.5 w-3.5" />
+          </button>
+        </Tooltip>
       )}
 
       {/* Manage access — lab documents only. Its own control rather than a ⋯
@@ -925,9 +944,7 @@ export function DocumentEditor({
   );
 
   // Comments at the foot of the document whenever there's no room for the rail.
-  // Always mounted — there's no button to reveal it, so it has to be findable
-  // by scrolling, the way it worked before the toggle existed.
-  const inlineComments = !containerWide && (canComment || openThreadCount > 0) && (
+  const inlineComments = commentsOpen && !containerWide && hasComments && (
     // Centred on the same column as the paper card so the thread list lines up
     // with the text it's about.
     <div className="flex justify-center pb-12">
