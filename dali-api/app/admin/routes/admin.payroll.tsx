@@ -30,7 +30,7 @@ import {
   type TimesheetNoteView,
 } from "~/admin/lib/payroll-reconcile.server";
 import type { JobBreakdown } from "~/admin/lib/payroll-collation";
-import { AdminPathBar, SectionSubtabs } from "~/admin/adminPills";
+import { AdminPathBar } from "~/admin/adminPills";
 import { TermFilter } from "~/components/TermFilter";
 import { Card } from "~/components/ui/Card";
 import { buttonClasses } from "~/components/ui/Button";
@@ -180,7 +180,6 @@ export default function PayrollReconcile() {
   return (
     <div className="space-y-6">
       <AdminPathBar active="payroll-reconcile" />
-      <SectionSubtabs active="payroll-reconcile" />
 
       <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">

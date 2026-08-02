@@ -5,7 +5,7 @@
 
 import { redirect, useFetcher, useLoaderData, useSearchParams } from "react-router";
 import type { Route } from "./+types/admin.email-senders";
-import { AdminPathBar, SectionSubtabs } from "~/admin/adminPills";
+import { AdminPathBar } from "~/admin/adminPills";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
@@ -95,7 +95,6 @@ export default function EmailSendersAdmin() {
   return (
     <div className="flex flex-col gap-4">
       <AdminPathBar active="email-senders" />
-      <SectionSubtabs active="email-senders" />
       <header>
         <h1 className="font-heading text-2xl font-bold text-foreground">
           Email Senders

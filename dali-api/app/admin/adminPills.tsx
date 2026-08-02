@@ -230,6 +230,15 @@ function CrumbDropdown({
   currentKey: string;
 }) {
   const { open, setOpen, ref } = useDismissableMenu();
+  // A crumb with no siblings to switch to is just where you are — render it as
+  // plain text, not an empty dropdown.
+  if (items.length <= 1) {
+    return (
+      <span className="px-2 py-1 font-semibold font-heading text-foreground">
+        {label}
+      </span>
+    );
+  }
   return (
     <div ref={ref} className="relative">
       <button
@@ -299,6 +308,8 @@ export function AdminPathBar({ active }: { active: string }) {
   const cluster = direct ?? found?.cluster;
   if (!cluster) return null;
   const section = found?.section ?? null;
+  // Consolidated sections (Email, Payroll) add a fourth crumb for the view.
+  const subtab = section?.subtabs?.find((s) => s.key === active) ?? null;
 
   // Cluster switcher is access-filtered (Finance is Admin-only); sibling
   // sections within a cluster all share the cluster's access tier.
@@ -310,6 +321,9 @@ export function AdminPathBar({ active }: { active: string }) {
     label: s.label,
     to: s.to,
   }));
+  const subtabItems =
+    section?.subtabs?.map((s) => ({ key: s.key, label: s.label, to: s.to })) ??
+    [];
 
   return (
     <nav
@@ -345,48 +359,21 @@ export function AdminPathBar({ active }: { active: string }) {
             />
           </>
         )}
+        {subtab && (
+          <>
+            <ChevronRight
+              className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50"
+              aria-hidden
+            />
+            <CrumbDropdown
+              label={subtab.label}
+              items={subtabItems}
+              currentKey={subtab.key}
+            />
+          </>
+        )}
       </div>
     </nav>
-  );
-}
-
-// The in-page sub-tab strip for a consolidated section (Email, Payroll), or
-// null for a plain section.
-export function adminSubtabs(active: string): (AdminSubtab & { active: boolean })[] | null {
-  const found = resolve(active);
-  if (!found?.section.subtabs) return null;
-  return found.section.subtabs.map((s) => ({ ...s, active: s.key === active }));
-}
-
-// Secondary, in-content navigation between a consolidated section's views. A
-// segmented control, visually distinct from the cluster's underline pill row so
-// the two levels never read as a duplicated tab bar.
-export function SectionSubtabs({ active }: { active: string }) {
-  const items = adminSubtabs(active);
-  if (!items) return null;
-  return (
-    <div
-      className="inline-flex items-center gap-1 rounded-lg border border-border bg-muted/40 p-1"
-      role="tablist"
-      aria-label="View"
-    >
-      {items.map((item) => (
-        <Link
-          key={item.key}
-          to={item.to}
-          role="tab"
-          aria-selected={item.active}
-          className={cn(
-            "rounded-md px-3 py-1.5 text-sm font-medium font-heading transition-colors",
-            item.active
-              ? "bg-card text-foreground shadow-brand-1"
-              : "text-muted-foreground hover:text-foreground",
-          )}
-        >
-          {item.label}
-        </Link>
-      ))}
-    </div>
   );
 }
 
