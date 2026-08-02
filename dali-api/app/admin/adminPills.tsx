@@ -5,6 +5,7 @@ import {
   FileSignature,
   ClipboardCheck,
   Globe,
+  LayoutGrid,
   Mail,
   Megaphone,
   Receipt,
@@ -214,25 +215,32 @@ function resolve(active: string): { cluster: AdminCluster; section: AdminSection
   return null;
 }
 
-// The pill row for the cluster containing `active`. AreaPillNav hides itself
-// for a lone pill, so single-section clusters (Documents, Finance) render no
-// row. `isAdmin` is accepted for call-site compatibility but unused — cluster
+// The pill row for the cluster containing `active`: a leading "Hub" pill — the
+// way back up to /admin, matching every other area's pill row — followed by the
+// cluster's sections. (The Hub pill also lifts single-section clusters above
+// AreaPillNav's lone-pill hiding, so Documents/Finance keep a visible row.)
+// `isAdmin` is accepted for call-site compatibility but unused — cluster
 // membership already encodes access.
+const HUB_PILL: AreaPill = { label: "Hub", to: "/admin", icon: LayoutGrid };
+
 export function adminPills(args: { active: string; isAdmin?: boolean }): AreaPill[] {
   if (args.active === "hub") return [];
   const cluster = clusterByKey(args.active);
   if (cluster) {
-    // A cluster hub: show the row with nothing active.
-    return cluster.sections.map((s) => ({ label: s.label, to: s.to, icon: s.icon }));
+    // A cluster hub: the row with nothing active except the way back up.
+    return [HUB_PILL, ...cluster.sections.map((s) => ({ label: s.label, to: s.to, icon: s.icon }))];
   }
   const found = resolve(args.active);
   if (!found) return [];
-  return found.cluster.sections.map((s) => ({
-    label: s.label,
-    to: s.to,
-    icon: s.icon,
-    active: s.key === found.section.key,
-  }));
+  return [
+    HUB_PILL,
+    ...found.cluster.sections.map((s) => ({
+      label: s.label,
+      to: s.to,
+      icon: s.icon,
+      active: s.key === found.section.key,
+    })),
+  ];
 }
 
 // The in-page sub-tab strip for a consolidated section (Email, Payroll), or
