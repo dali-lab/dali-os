@@ -1,4 +1,5 @@
 import type { LoggedEntry } from "./types";
+import { conflictsWithSaved, overlaps, savedRowRange } from "./overlap";
 
 // Writes logged entries into JobX's quick-add timesheet grid. The grid pairs an
 // `addQuickentry` row (a hidden `..._QuickDate_<suffix>` marker plus Start/End/
@@ -129,9 +130,14 @@ export function commitRow(prefix: string, suffix: string): boolean {
 
 // ── Compare pulled entries against what's already saved on the page ──────────
 // "added"    = a saved row matches this date AND start/end → skip on fill.
-// "override" = a saved row exists on this date with a different time → the
-//              pulled entry supersedes it (delete-then-add, once supported).
-// "new"      = nothing saved on that date yet → fill normally.
+// "override" = a saved row on this date OVERLAPS this entry's time range → the
+//              pulled entry supersedes it (delete-then-add).
+// "new"      = nothing saved on that date conflicts → fill normally.
+//
+// Overlap, not same-day. A second session on a day you already logged (9–11am
+// saved, adding 2–4pm) is an additional entry, not a correction of the first —
+// treating it as an override meant the panel offered to delete a row that had
+// nothing to do with it, and filling replaced real hours.
 export type EntryStatus = "new" | "added" | "override";
 
 const longDateLabel = (iso: string) =>
@@ -143,6 +149,14 @@ const timeLabel = (iso: string) => {
   const c = toClock(iso);
   return `${c.hour}:${c.minute} ${c.ampm}`.toLowerCase();
 };
+
+function entryRange(entry: LoggedEntry): [number, number] {
+  const s = toClock(entry.startAt);
+  const e = toClock(entry.endAt);
+  const mins = (c: Clock) =>
+    ((Number(c.hour) % 12) + (c.ampm === "PM" ? 12 : 0)) * 60 + Number(c.minute);
+  return [mins(s), mins(e)];
+}
 
 // ── Deleting a saved row (for override / "replace existing") ─────────────────
 // Heuristic and deliberately conservative: we only look INSIDE the one saved
@@ -174,13 +188,31 @@ function looksLikeDelete(el: Element): boolean {
 
 export function findSavedRowDelete(entry: LoggedEntry): FindDeleteResult {
   const date = longDateLabel(entry.startAt);
-  const rows = Array.from(document.querySelectorAll("tr")).filter((r) => {
+  const onDate = Array.from(document.querySelectorAll("tr")).filter((r) => {
     const t = (r.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
     return t.includes("reg hours") && t.includes(date);
   });
-  if (rows.length === 0) return { ok: false, status: "skipped", detail: "No saved row to replace" };
+  if (onDate.length === 0) return { ok: false, status: "skipped", detail: "No saved row to replace" };
+
+  // Target the row this entry actually collides with, rather than refusing as
+  // soon as the day holds more than one session. Only the overlapping row is
+  // being superseded; the others are separate sessions and must survive.
+  const mine = entryRange(entry);
+  const rows =
+    onDate.length === 1
+      ? onDate
+      : onDate.filter((r) => {
+          const range = savedRowRange((r.textContent || "").replace(/\s+/g, " ").trim().toLowerCase());
+          return range !== null && overlaps(mine, range);
+        });
+
+  if (rows.length === 0) {
+    return { ok: false, status: "skipped", detail: "No overlapping saved row on this date" };
+  }
   if (rows.length > 1) {
-    return { ok: false, status: "error", detail: "Multiple saved rows on this date — delete manually" };
+    // Two saved rows both overlapping one entry is a genuine mess; deleting
+    // either would be a guess about which the member meant to keep.
+    return { ok: false, status: "error", detail: "Several saved rows overlap this entry — delete manually" };
   }
   const control = Array.from(rows[0].querySelectorAll<HTMLElement>("a, button, input, img")).find(
     looksLikeDelete,
@@ -201,9 +233,14 @@ export function classify(entries: LoggedEntry[]): EntryStatus[] {
     const date = longDateLabel(entry.startAt);
     const onDate = savedRows.filter((t) => t.includes(date));
     if (onDate.length === 0) return "new";
+
     const start = timeLabel(entry.startAt);
     const end = timeLabel(entry.endAt);
     if (onDate.some((t) => t.includes(start) && t.includes(end))) return "added";
-    return "override";
+
+    // Only a row whose hours actually collide is being superseded. A saved row
+    // we can't read the times off is treated as a collision, since silently
+    // adding a duplicate is worse than asking the member to look.
+    return conflictsWithSaved(entryRange(entry), onDate) ? "override" : "new";
   });
 }
