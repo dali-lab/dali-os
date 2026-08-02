@@ -8,7 +8,9 @@ import { isAdmin, isCore, isAdminViaEnv, currentTerm } from "~/lib/roles";
 import { LAB_MEMBER_WHERE, MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { coreCycleTermIds } from "~/lib/core-cycle";
 import { notifyAdminsOfPromotion } from "~/lib/promotion-notify.server";
-import { Users, Check } from "lucide-react";
+import { resolvePhotoUrl } from "~/lib/photo";
+import { Avatar } from "~/components/ui/Avatar";
+import { Users, Shield, Briefcase, Crown, Compass } from "lucide-react";
 import {
   AdminToggle,
   StaffToggle,
@@ -55,6 +57,12 @@ export async function loader({ request }: Route.LoaderArgs) {
     currentTerm(),
   ]);
 
+  const photoUrls = new Map(
+    await Promise.all(
+      users.map(async (u) => [u.id, await resolvePhotoUrl(u.photoUrl)] as const),
+    ),
+  );
+
   const members: Member[] = users.map((u) => {
     const currentCore = term !== null
       ? u.coreAssignments.filter((a) => a.termId === term.id)
@@ -65,6 +73,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       firstName: u.firstName,
       lastName: u.lastName,
       daliEmail: u.daliEmail,
+      photoUrl: photoUrls.get(u.id) ?? null,
       isLabMember: u.daliMember !== null,
       isAdmin: isAdminUser,
       isStaff: u.adminMembership?.isStaff === true,
@@ -246,102 +255,190 @@ export default function AdminConsoleMembers() {
     return true;
   });
 
+  // Counts drive the filter chips, so each one states its own size before you
+  // click it — the old segmented control gave no sense of what you'd get.
+  const counts = {
+    all: members.length,
+    admin: members.filter((m) => m.isAdmin).length,
+    core: members.filter((m) => m.isCore).length,
+    leads: members.filter((m) => m.domainLeadAssignments.length > 0).length,
+  };
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <Users className="w-6 h-6 text-foreground/80" />
-          <h1 className="text-2xl font-bold text-foreground">Roles & Permissions</h1>
-          <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground">
-            {filtered.length}{filtered.length !== members.length ? ` of ${members.length}` : ""} members
+    <div className="flex flex-col gap-5">
+      <header className="flex flex-col gap-4">
+        <div className="flex items-start gap-3">
+          <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent-coral/10 text-accent-coral">
+            <Users className="h-4.5 w-4.5" />
           </span>
+          <div className="min-w-0">
+            <h1 className="font-heading text-xl font-bold text-foreground">Roles &amp; permissions</h1>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              Who holds Admin, Staff, Core and Domain Lead this term. Changes take effect
+              immediately.
+            </p>
+          </div>
         </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-          <div role="group" aria-label="Filter members by role" className="flex rounded-md border border-border overflow-hidden text-sm">
-            {(["all", "admin", "core"] as RoleFilter[]).map((f) => (
+
+        {/* Role census. Reads as the page's summary and as its filter — the two
+            were the same question asked twice before. */}
+        <div className="flex flex-wrap items-center gap-2">
+          {(
+            [
+              ["all", "Everyone", counts.all, Users],
+              ["admin", "Admins", counts.admin, Shield],
+              ["core", "Core", counts.core, Crown],
+            ] as const
+          ).map(([key, label, count, Icon]) => {
+            const active = roleFilter === key;
+            return (
               <button
-                key={f}
-                onClick={() => setRoleFilter(f)}
-                aria-pressed={roleFilter === f}
-                className={`px-3 py-1.5 font-medium transition-colors ${
-                  roleFilter === f
-                    ? "bg-gray-900 text-white"
-                    : "bg-card text-muted-foreground hover:bg-muted/50"
+                key={key}
+                type="button"
+                onClick={() => setRoleFilter(key)}
+                aria-pressed={active}
+                className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
+                  active
+                    ? "border-accent-coral bg-accent-coral/10 text-accent-coral"
+                    : "border-border bg-card text-muted-foreground hover:bg-muted"
                 }`}
               >
-                {f === "all" ? "All" : f === "admin" ? "Admins" : "Core"}
+                <Icon className="h-3.5 w-3.5" />
+                {label}
+                <span className={`tabular-nums ${active ? "" : "text-muted-foreground/70"}`}>
+                  {count}
+                </span>
               </button>
-            ))}
-          </div>
-          <label htmlFor="member-search" className="sr-only">Search members by name or email</label>
+            );
+          })}
+          <span className="ml-auto text-xs text-muted-foreground">
+            {counts.leads} domain {counts.leads === 1 ? "lead" : "leads"}
+          </span>
+        </div>
+
+        <div>
+          <label htmlFor="member-search" className="sr-only">
+            Search members by name or email
+          </label>
           <input
             id="member-search"
-            type="text"
+            type="search"
             placeholder="Search by name or email…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full sm:w-56 px-3 py-2 text-base sm:text-sm border border-border rounded-md bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-base text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 sm:max-w-sm sm:text-sm"
           />
         </div>
+      </header>
+
+      {/* One row per member rather than a 7-column matrix: at seven columns of
+          controls the table needed 860px and scrolled sideways on every laptop.
+          Identity on the left, the permissions that person actually holds on the
+          right, wrapping instead of scrolling. */}
+      <div className="overflow-hidden rounded-lg border border-border bg-card shadow-brand-1">
+        {filtered.length === 0 ? (
+          <p className="px-4 py-12 text-center text-sm text-muted-foreground">
+            {search || roleFilter !== "all"
+              ? "No members match that search."
+              : "No lab members yet."}
+          </p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {filtered.map((member) => (
+              <MemberRow
+                key={member.id}
+                member={member}
+                domains={domains}
+                viewerIsAdmin={viewerIsAdmin}
+              />
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MemberRow({
+  member,
+  domains,
+  viewerIsAdmin,
+}: {
+  member: Member;
+  domains: { id: string; name: string }[];
+  viewerIsAdmin: boolean;
+}) {
+  const name = `${member.firstName} ${member.lastName}`.trim();
+  // A one-line summary of what this person holds, so the row is readable
+  // before you parse the controls next to it.
+  const held = [
+    member.isAdmin && "Admin",
+    member.isStaff && "Staff",
+    member.isCore && "Core",
+    member.domainLeadAssignments.length > 0 &&
+      `Lead · ${member.domainLeadAssignments.map((a) => a.domain.name).join(", ")}`,
+  ].filter(Boolean) as string[];
+
+  return (
+    <li className="flex flex-col gap-3 px-4 py-3.5 transition-colors hover:bg-muted/40 lg:flex-row lg:items-start lg:gap-6">
+      <div className="flex min-w-0 items-center gap-3 lg:w-72 lg:shrink-0">
+        <Avatar photoUrl={member.photoUrl} name={name} size="sm" />
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium text-foreground">{name}</p>
+          <p className="truncate text-xs text-muted-foreground">
+            {member.daliEmail ?? "No DALI email"}
+          </p>
+          {held.length > 0 && (
+            <p className="mt-0.5 truncate text-[11px] text-accent-coral">{held.join(" · ")}</p>
+          )}
+        </div>
+        {!member.isLabMember && (
+          <span className="ml-auto shrink-0 rounded-md border border-border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Not a member
+          </span>
+        )}
       </div>
 
-      <div className="bg-card border border-border rounded-lg overflow-x-auto">
-        <table className="w-full text-sm min-w-[860px]">
-          <thead>
-            <tr className="border-b border-border bg-muted/50">
-              <th className="text-left px-4 py-3 font-medium text-muted-foreground">Name</th>
-              <th className="text-left px-4 py-3 font-medium text-muted-foreground">DALI Email</th>
-              <th className="text-left px-4 py-3 font-medium text-muted-foreground">Lab Member</th>
-              <th className="text-left px-4 py-3 font-medium text-muted-foreground">Admin</th>
-              <th className="text-left px-4 py-3 font-medium text-muted-foreground">Staff</th>
-              <th className="text-left px-4 py-3 font-medium text-muted-foreground">Core</th>
-              <th className="text-left px-4 py-3 font-medium text-muted-foreground">Domain Lead</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {filtered.length === 0 && (
-              <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground/70">
-                  <span className="sr-only">Table empty: </span>No members found.
-                </td>
-              </tr>
-            )}
-            {filtered.map((member) => (
-              <tr key={member.id} className="hover:bg-muted/50">
-                <td className="px-4 py-3 font-medium text-foreground">
-                  {member.firstName} {member.lastName}
-                </td>
-                <td className="px-4 py-3 text-muted-foreground">{member.daliEmail ?? "—"}</td>
-                <td className="px-4 py-3">
-                  {member.isLabMember ? (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                      <Check className="w-3 h-3" /> Yes
-                    </span>
-                  ) : (
-                    <span className="text-xs text-muted-foreground/70">No</span>
-                  )}
-                </td>
-                <td className="px-4 py-3">
-                  <AdminToggle member={member} disabled={!viewerIsAdmin} />
-                </td>
-                <td className="px-4 py-3">
-                  <StaffToggle member={member} disabled={!viewerIsAdmin} />
-                </td>
-                <td className="px-4 py-3">
-                  <CorePicker member={member} />
-                </td>
-                <td className="px-4 py-3">
-                  <DomainLeadPicker
-                    member={member}
-                    domains={domains}
-                    existingAssignments={member.domainLeadAssignments}
-                  />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="flex min-w-0 flex-1 flex-wrap items-start gap-x-5 gap-y-3">
+        <ControlCell label="Access" icon={Shield}>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <AdminToggle member={member} disabled={!viewerIsAdmin} />
+            <StaffToggle member={member} disabled={!viewerIsAdmin} />
+          </div>
+        </ControlCell>
+        <ControlCell label="Core" icon={Crown}>
+          <CorePicker member={member} />
+        </ControlCell>
+        <ControlCell label="Domain lead" icon={Compass}>
+          <DomainLeadPicker
+            member={member}
+            domains={domains}
+            existingAssignments={member.domainLeadAssignments}
+          />
+        </ControlCell>
       </div>
+    </li>
+  );
+}
+
+/** Labelled slot for one group of role controls. The label is what the old
+ *  table header used to carry; keeping it per-row is what lets the header go. */
+function ControlCell({
+  label,
+  icon: Icon,
+  children,
+}: {
+  label: string;
+  icon: typeof Shield;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1.5">
+      <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+        <Icon className="h-3 w-3" />
+        {label}
+      </span>
+      {children}
     </div>
   );
 }

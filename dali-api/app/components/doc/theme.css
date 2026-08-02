@@ -270,13 +270,17 @@ html.dark .dali-doc .bn-thread-mark[data-orphan="true"] {
 }
 
 /* Top bar: stays anchored above the canvas, inherits the surface bg.
- * Minimal — breadcrumb/back are handled by the outer shell pill row. */
+ * Minimal — breadcrumb/back are handled by the outer shell pill row.
+ *
+ * Matches .doc-surface (--color-page) rather than --color-background, which is
+ * pure white and read as a separate bar floating over the tinted page. Still
+ * opaque, not transparent: it's sticky, so content scrolls underneath it. The
+ * hairline goes with it — with the fill matched there's no edge left to draw. */
 .doc-topbar {
   position: sticky;
   top: 0;
   z-index: 20;
-  background-color: var(--color-background);
-  border-bottom: 1px solid var(--color-border);
+  background-color: var(--color-page);
 }
 
 /* Page typography (the top bar's "Aa" menu) — per-page display prefs stored

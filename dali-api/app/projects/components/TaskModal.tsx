@@ -1010,7 +1010,7 @@ export function TaskModal({
         )}
 
         {!isCreate && task && (
-          <div className="flex flex-col gap-2 pt-2 border-t border-border">
+          <div className="flex flex-col gap-3 pt-4 mt-1 border-t border-border">
             <span className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
               Comments
               {comments !== null && ` (${comments.length})`}
@@ -1026,7 +1026,7 @@ export function TaskModal({
                   <p className="text-xs text-muted-foreground italic">No comments yet.</p>
                 )}
                 {comments.length > 0 && (
-                  <div className="flex flex-col gap-2 max-h-48 overflow-y-auto">
+                  <div className="flex flex-col gap-3.5 max-h-56 overflow-y-auto pr-1">
                     {comments.map((c) => (
                       <div key={c.id} className="text-sm">
                         <div className="flex items-center gap-2">
@@ -1038,7 +1038,13 @@ export function TaskModal({
                             {formatCommentAt(c.createdAt)}
                           </span>
                         </div>
-                        <p className="text-foreground whitespace-pre-wrap">{c.body}</p>
+                        {/* Indented to the avatar's right edge (w-5 + gap-2) so
+                            the body hangs under the name rather than restarting
+                            at the margin, which is what made consecutive
+                            comments read as one block. */}
+                        <p className="mt-1 pl-7 text-foreground whitespace-pre-wrap leading-relaxed">
+                          {c.body}
+                        </p>
                       </div>
                     ))}
                   </div>
@@ -1046,14 +1052,14 @@ export function TaskModal({
               </>
             )}
             {canManage && (
-              <>
+              <div className="flex flex-col gap-2 pt-1">
                 <textarea
                   value={commentDraft}
                   onChange={(e) => setCommentDraft(e.target.value)}
                   rows={2}
                   maxLength={COMMENT_MAX}
                   placeholder="Write a comment…"
-                  className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
+                  className="w-full px-2.5 py-2 text-sm border border-border rounded-md bg-background text-foreground"
                 />
                 {commentPostError && (
                   <p className="text-xs text-accent-coral">{commentPostError}</p>
@@ -1068,7 +1074,7 @@ export function TaskModal({
                     {commentPosting ? "Posting…" : "Comment"}
                   </Button>
                 </div>
-              </>
+              </div>
             )}
           </div>
         )}

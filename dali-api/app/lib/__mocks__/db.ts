@@ -327,6 +327,14 @@ export const prisma = {
     create: vi.fn(),
     deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
   },
+  customHire: {
+    findFirst: vi.fn(),
+    findUnique: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+    create: vi.fn(),
+    update: vi.fn(),
+    updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+  },
   timeEntry: {
     findMany: vi.fn().mockResolvedValue([]),
     findUnique: vi.fn(),
@@ -368,6 +376,7 @@ export const prisma = {
   },
   instructorAssignment: {
     findFirst: vi.fn(),
+    findUnique: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
     createMany: vi.fn(),
     deleteMany: vi.fn(),

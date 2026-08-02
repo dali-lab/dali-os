@@ -23,20 +23,29 @@ export type UnderlineTabButton = {
 };
 
 const underlineTabBarClass = cn(
-  // nowrap + horizontal scroll: long area pill rows stay on one line instead of
-  // wrapping under empty page space when a parent max-width (or narrow viewport)
-  // is tighter than the tab set.
-  "flex items-stretch gap-0.5 flex-nowrap overflow-x-auto border-b border-border mb-6 sm:mb-8",
+  // nowrap so a long row stays on one line rather than wrapping under empty
+  // page space. It can still scroll when the viewport is genuinely narrower
+  // than the tab set, but the scrollbar itself is hidden — a visible track
+  // sitting under the tabs reads as chrome, not as an affordance.
+  "flex items-stretch gap-0.5 flex-nowrap overflow-x-auto no-scrollbar border-b border-border mb-6 sm:mb-8",
   // Bleed to the iframe edges; tab items carry their own px-3 (matches workspace tabs).
   "-mx-3 sm:-mx-6 lg:-mx-10",
 );
 
+// A 2px coral rule on a white page was doing all the work of saying "this tab
+// is selected", and losing — at that weight the tint reads as a hairline rather
+// than a state. The active tab now carries a 3px rule, a tinted body and
+// rounded top corners so it reads as a tab sitting on the content below it,
+// with the underline as reinforcement instead of the only signal.
 function underlineTabItemClass(active: boolean) {
   return cn(
-    "inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold font-heading border-b-2 -mb-px transition-colors shrink-0",
+    // px-3, not more: the row is nowrap, so every extra pixel per tab pushes a
+    // full tab set into a horizontal scrollbar.
+    "inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold font-heading",
+    "rounded-t-md border-b-[3px] -mb-px transition-colors shrink-0",
     active
-      ? "border-accent-coral text-accent-coral"
-      : "border-transparent text-muted-foreground hover:text-foreground",
+      ? "border-accent-coral bg-accent-coral/10 text-accent-coral"
+      : "border-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground",
   );
 }
 

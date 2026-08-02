@@ -407,6 +407,7 @@ export default [
   route("api/projects/:id/documents", "projects/routes/api.projects.$id.documents.ts"),
   // Lab-wide documents (collab Pages scoped to the Lab workspace)
   route("api/lab-documents", "routes/api.lab-documents.ts"),
+  route("api/lab-documents/access", "routes/api.lab-documents.access.ts"),
   route("api/documents/:id", "projects/routes/api.documents.$id.ts"),
   route("api/pages/:id/partner-visible", "projects/routes/api.pages.$id.partner-visible.ts"),
   route("api/pages/:id/public-visible", "projects/routes/api.pages.$id.public-visible.ts"),
@@ -442,6 +443,8 @@ export default [
   // Per-page documentation guides + the member search that backs @-mentions
   route("api/page-docs/:key", "routes/api.page-docs.$key.ts"),
   route("api/mentions/search", "routes/api.mentions.search.ts"),
+  route("api/mentions/card", "routes/api.mentions.card.ts"),
+  route("api/custom-hires", "routes/api.custom-hires.ts"),
   route("api/mentions/pages", "routes/api.mentions.pages.ts"),
 
   // Document export (server-rendered PDF / Word)
