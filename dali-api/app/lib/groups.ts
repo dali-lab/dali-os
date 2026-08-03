@@ -1,5 +1,5 @@
 import { prisma } from "~/lib/db";
-import { getActiveCoreCycleTermIds } from "~/lib/roles";
+import { currentTerm, getActiveCoreCycleTermIds } from "~/lib/roles";
 
 // Single source of truth for resolving a GroupDefinition to its member userIds.
 // Notification fan-out and meeting participant resolution both go through this.
@@ -56,9 +56,24 @@ async function resolveTermMembers(termId: string): Promise<string[]> {
   return [...set];
 }
 
+/**
+ * A project group is the people staffed on it *now*, not everyone who ever was.
+ *
+ * ProjectAssignment rows are per (user, project, term) and are never deleted, so
+ * an unscoped query returns every member the project has ever had. That made
+ * the derived group grow every term: alumni and members who rotated off kept
+ * receiving the project's notifications and meeting invites.
+ *
+ * With no current term (an empty Term table, or a gap between terms with none
+ * upcoming) nobody is currently staffed, so the group is empty — the same
+ * answer term-scoped role resolution gives, and a safer default than
+ * broadcasting to everyone who ever touched the project.
+ */
 async function resolveProjectMembers(projectId: string): Promise<string[]> {
+  const term = await currentTerm();
+  if (!term) return [];
   const rows = await prisma.projectAssignment.findMany({
-    where: { projectId },
+    where: { projectId, termId: term.id },
     select: { userId: true },
     distinct: ["userId"],
   });
