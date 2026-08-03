@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
-import { Download, Eye, X } from "lucide-react";
+import { Check, Download, Eye, FileText, X } from "lucide-react";
 import { termCodeLabel } from "~/lib/display";
 import { formatBytes } from "~/lib/upload-client";
 import { Avatar } from "~/components/ui/Avatar";
@@ -22,8 +22,9 @@ type SharedFile = PartnerProjectViewData["sharedFiles"][number];
 const fmtDate = (iso: string) =>
   new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
+// Partner-facing labels — plain language, no agile jargon (no "backlog").
 const EPIC_STATUS_LABEL: Record<PartnerProjectEpic["status"], string> = {
-  Backlog: "Backlog",
+  Backlog: "Planned",
   Open: "Open",
   InProgress: "In progress",
   Done: "Done",
@@ -189,7 +190,7 @@ function PastSprintRow({ s }: { s: PartnerProjectSprint }) {
   const total = s.done + s.open;
   return (
     <div className="flex items-center gap-2 py-1.5 text-sm">
-      <span className="text-accent-teal flex-shrink-0">✓</span>
+      <Check className="w-4 h-4 text-accent-teal flex-shrink-0" />
       <span className="min-w-0 flex-1 truncate text-muted-foreground">{s.name}</span>
       <span className="text-xs text-muted-foreground flex-shrink-0">
         {s.done}/{total} · {fmtDate(s.endsAt)}
@@ -216,7 +217,7 @@ function SprintGroup({ sprints }: { sprints: PartnerProjectSprint[] }) {
       {past.length > 0 && (
         <details>
           <summary className="cursor-pointer select-none text-xs font-medium text-muted-foreground hover:text-foreground">
-            {past.length} completed sprint{past.length === 1 ? "" : "s"}
+            {past.length} completed update{past.length === 1 ? "" : "s"}
           </summary>
           <div className="mt-1 flex flex-col divide-y divide-border">
             {past.map((s) => (
@@ -263,7 +264,7 @@ function MomentumReadout({
   return (
     <div className="rounded-2xl bg-brand-tint px-5 py-4 sm:min-w-[13rem]">
       <p className="text-xs font-medium uppercase tracking-wide text-accent-teal">
-        Current sprint
+        Current focus
       </p>
       <p className="mt-1 font-heading font-bold text-dark-blue text-lg leading-snug">
         {momentum.label}
@@ -369,6 +370,7 @@ export function PartnerProjectHubView({
     recentlyDone,
     sharedPages,
     sharedFiles,
+    whatsNew,
   } = data;
 
   const hasWork = epics.length > 0 || ungroupedSprints.length > 0;
@@ -389,7 +391,7 @@ export function PartnerProjectHubView({
 
   // Section anchors for the side nav — only the ones actually rendered.
   const sections: NavSection[] = [
-    { id: "roadmap", label: "Roadmap" },
+    { id: "roadmap", label: "Progress" },
     ...(recentlyDone.length > 0
       ? [{ id: "recently-completed", label: "Recently completed" }]
       : []),
@@ -455,13 +457,34 @@ export function PartnerProjectHubView({
           <SectionNav sections={sections} active={activeSection} />
         )}
         <div className="flex min-w-0 flex-1 flex-col gap-8">
+      {whatsNew.length > 0 && (
+        <section className="rounded-2xl border border-accent-coral/30 bg-accent-coral/5 p-4">
+          <h2 className="font-heading text-sm font-semibold text-dark-blue mb-2">
+            What's new since your last visit
+          </h2>
+          <ul className="flex flex-col gap-1.5">
+            {whatsNew.map((n) => (
+              <li
+                key={n.id}
+                className="flex items-center gap-2 text-sm text-foreground"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-accent-coral flex-shrink-0" />
+                <span className="flex-1 min-w-0 truncate">{n.label}</span>
+                <span className="text-xs text-muted-foreground flex-shrink-0">
+                  {fmtDate(n.at)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       {/* The roadmap — active epics by default, each showing its stories
           (scope) and its sprints across past, current, and planned. Backlog
           and done epics live behind the "Show all" toggle. */}
       <section id="roadmap" className="scroll-mt-24">
         <div className="mb-3 flex items-center justify-between gap-4">
           <h2 className="font-heading text-lg font-semibold text-dark-blue">
-            Roadmap
+            Progress
           </h2>
           {hiddenEpicCount > 0 && (
             <button
@@ -477,8 +500,7 @@ export function PartnerProjectHubView({
         </div>
         {!hasWork ? (
           <div className="bg-card border border-border rounded-2xl p-6 text-sm text-muted-foreground">
-            Nothing on the roadmap yet. Epics and sprints will appear here once
-            the team plans the work.
+            Nothing here yet. Progress will appear once the team plans the work.
           </div>
         ) : (
           <div className="flex flex-col gap-4">
@@ -523,7 +545,7 @@ export function PartnerProjectHubView({
           <ul className="bg-card border border-border rounded-2xl divide-y divide-border">
             {recentlyDone.map((t) => (
               <li key={t.id} className="px-4 py-3 flex items-center gap-3 text-sm">
-                <span className="text-accent-teal">✓</span>
+                <Check className="w-4 h-4 text-accent-teal flex-shrink-0" />
                 <span className="flex-1 min-w-0 truncate text-foreground">{t.title}</span>
                 {t.domain && (
                   <span className="text-xs rounded-full bg-muted text-muted-foreground px-2 py-0.5 flex-shrink-0">
@@ -556,7 +578,11 @@ export function PartnerProjectHubView({
                   to={pageHref(p.id)}
                   className="px-4 py-3 flex items-center gap-3 text-sm hover:bg-muted/20 transition"
                 >
-                  <span>{p.iconEmoji ?? "📄"}</span>
+                  {p.iconEmoji ? (
+                    <span>{p.iconEmoji}</span>
+                  ) : (
+                    <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                  )}
                   <span className="flex-1 min-w-0 truncate font-medium text-foreground">
                     {p.title}
                   </span>

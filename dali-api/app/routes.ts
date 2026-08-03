@@ -231,6 +231,10 @@ export default [
   route("partner/auth/verify", "partners/routes/partner.auth.verify.tsx"),
   route("partner/invite/:token", "partners/routes/partner.invite.$token.tsx"),
   route("partner/onboarding", "partners/routes/partner.onboarding.tsx"),
+  route(
+    "partner/applications/:id/contract.pdf",
+    "partners/routes/partner.applications.$id.contract-pdf.ts",
+  ),
 
   // Authenticated member form fill (no layout), token-addressed. Every form
   // is filled while logged in — the submitter is always the session user, so

@@ -4227,6 +4227,19 @@ enum PartnerAuthProvider {
   Google
 }
 
+// Tracks when a partner last opened a given project hub, so the hub can show a
+// "what's new since your last visit" feed. One row per (user, project); the
+// prior value is read before it's bumped on each visit.
+model PartnerProjectVisit {
+  id         String   @id @default(cuid())
+  userId     String
+  projectId  String
+  lastSeenAt DateTime @default(now())
+
+  @@unique([userId, projectId])
+  @@index([userId])
+}
+
 // Many-to-many: projects can have multiple partners, and partners can fund
 // multiple projects.
 model ProjectPartner {
@@ -4528,6 +4541,12 @@ model PartnerApplication {
   contractSentAt     DateTime?
   contractSignedAt   DateTime?
   contractSignerName String?
+  // E-sign audit trail, captured at signing for legal defensibility (UETA/
+  // ESIGN): the signer's IP + user agent and a SHA-256 of the contract body as
+  // it read when signed (tamper-evidence).
+  contractSignerIp        String?
+  contractSignerUserAgent String?
+  contractSignedHash      String?
   status             PartnerApplicationStatus @default(Submitted)
   // Set when status moves to Accepted and a Project is spun up. Loose ref to
   // Project.id; no relation to avoid a Project→PartnerApplication cycle.

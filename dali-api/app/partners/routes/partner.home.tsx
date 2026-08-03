@@ -5,6 +5,7 @@ import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
 import { partnerProjectsWhere } from "~/partners/lib/partner-access";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { ProjectCoverImage } from "~/projects/components/ProjectCoverImage";
+import { buttonClasses } from "~/components/ui/Button";
 import {
   PARTNER_APPLICATION_STATUS_LABELS,
   PARTNER_APPLICATION_STATUS_PILL,
@@ -168,7 +169,7 @@ export default function PartnerHome() {
             </p>
             <Link
               to="/partner/apply"
-              className="inline-block rounded-xl bg-dark-blue text-white font-heading font-semibold px-5 py-2.5 text-sm hover:opacity-90 transition"
+              className={buttonClasses("primary")}
             >
               Pitch a project
             </Link>

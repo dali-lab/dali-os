@@ -33,6 +33,7 @@ import {
   resolveChecklist,
   noteText,
 } from "../lib/partner-review";
+import { notifyPartnerApplicationEvent } from "../lib/partner-emails.server";
 import { formAnswerRows } from "~/forms/lib/answer-rows.server";
 import type { Question } from "~/types";
 import { DocEditor } from "~/components/doc";
@@ -82,6 +83,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       contractSentAt: true,
       contractSignedAt: true,
       contractSignerName: true,
+      contractSignerIp: true,
+      contractSignedHash: true,
       legalEntityName: true,
       legalEntityAddress: true,
       resultingProjectId: true,
@@ -163,6 +166,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       contractSentAt: application.contractSentAt,
       contractSignedAt: application.contractSignedAt,
       contractSignerName: application.contractSignerName,
+      contractSignerIp: application.contractSignerIp,
+      contractSignedHash: application.contractSignedHash,
       legalEntityName: application.legalEntityName,
       legalEntityAddress: application.legalEntityAddress,
       resultingProjectId: application.resultingProjectId,
@@ -230,6 +235,20 @@ export async function action({ request, params }: Route.ActionArgs) {
       where: { id: params.id },
       data: { status },
     });
+    // Push the partner-actionable decisions to their inbox (pull + push).
+    const decisionEvent =
+      status === "Accepted"
+        ? ("accepted" as const)
+        : status === "Rejected"
+          ? ("rejected" as const)
+          : status === "OnHold"
+            ? ("onhold" as const)
+            : null;
+    if (decisionEvent) {
+      void notifyPartnerApplicationEvent(params.id!, { kind: decisionEvent }).catch(
+        (e) => console.error("partner status notify failed", e),
+      );
+    }
   } else if (intent === "eval") {
     const criteria: Record<string, string> = {};
     for (const c of EVAL_CRITERIA) {
@@ -288,10 +307,20 @@ export async function action({ request, params }: Route.ActionArgs) {
     });
   } else if (intent === "sow-share") {
     const share = form.get("share") === "on";
+    const already = await prisma.partnerApplication.findUnique({
+      where: { id: params.id },
+      select: { sowSharedAt: true },
+    });
     await prisma.partnerApplication.update({
       where: { id: params.id },
       data: { sowSharedAt: share ? new Date() : null },
     });
+    // Notify only on the transition into "shared", not on re-saves.
+    if (share && !already?.sowSharedAt) {
+      void notifyPartnerApplicationEvent(params.id!, { kind: "sow-shared" }).catch(
+        (e) => console.error("partner sow notify failed", e),
+      );
+    }
   } else if (intent === "contract") {
     const trimOrNull = (k: string) =>
       (form.get(k) as string | null)?.trim() || null;
@@ -302,6 +331,10 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (send && !legalEntityName) {
       return { error: "Add the partner's legal entity name before sending." };
     }
+    const priorContract = await prisma.partnerApplication.findUnique({
+      where: { id: params.id },
+      select: { contractSentAt: true },
+    });
     await prisma.partnerApplication.update({
       where: { id: params.id },
       data: {
@@ -314,6 +347,11 @@ export async function action({ request, params }: Route.ActionArgs) {
         contractSentAt: send ? new Date() : null,
       },
     });
+    if (send && !priorContract?.contractSentAt) {
+      void notifyPartnerApplicationEvent(params.id!, { kind: "contract-sent" }).catch(
+        (e) => console.error("partner contract notify failed", e),
+      );
+    }
   } else if (intent === "details") {
     const summaryRaw = (form.get("summary") as string | null)?.trim() ?? "";
     // The form posts one targetTermId per selected term; blank/duplicate
@@ -629,6 +667,25 @@ function ContractBlock({
           </span>
         )}
       </div>
+
+      {signed && (
+        <div className="rounded-md bg-muted/40 border border-border px-3 py-2 text-xs text-muted-foreground flex flex-col gap-1">
+          <a
+            href={`/partner/applications/${application.id}/contract.pdf`}
+            className="text-accent-coral hover:underline w-fit"
+          >
+            Download signed contract (PDF)
+          </a>
+          {application.contractSignerIp && (
+            <span>Signer IP: {application.contractSignerIp}</span>
+          )}
+          {application.contractSignedHash && (
+            <span className="break-all">
+              Body hash: {application.contractSignedHash}
+            </span>
+          )}
+        </div>
+      )}
 
       {canEdit && (
         <Form method="post" className="flex flex-col gap-3">

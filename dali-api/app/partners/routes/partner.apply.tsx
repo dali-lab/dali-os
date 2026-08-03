@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Form, redirect, useLoaderData, useNavigation } from "react-router";
 import type { Route } from "./+types/partner.apply";
 import type { Question } from "~/types";
@@ -9,6 +9,7 @@ import { loadApplicationForm } from "~/partners/lib/application-form.server";
 import { validateAnswers } from "~/forms/lib/public-form";
 import { notifyFormSubmission } from "~/forms/lib/submission-notify.server";
 import { FormFieldList } from "~/forms/components/FormField";
+import { buttonClasses } from "~/components/ui/Button";
 import { DocEditor } from "~/components/doc";
 import { isEmptyBlocks } from "~/lib/blocks";
 import { findMissingRequired } from "~/lib/form-answers";
@@ -127,6 +128,43 @@ export default function PartnerApply({ actionData }: Route.ComponentProps) {
   const [formAnswers, setFormAnswers] = useState<Record<string, string>>({});
   const [clientError, setClientError] = useState<string | null>(null);
   const [current, setCurrent] = useState(0);
+  // Keys of required fields flagged empty on a Next/Submit attempt, so we can
+  // mark ALL of them (not just the first) and clear each as it's filled.
+  const [invalid, setInvalid] = useState<Set<string>>(new Set());
+  const [titleInvalid, setTitleInvalid] = useState(false);
+  const [draftRestored, setDraftRestored] = useState(false);
+
+  const DRAFT_KEY = "dali-partner-apply-draft";
+
+  // Restore any in-progress draft (the applicant is signed in, but this is a
+  // cheap client-side save/resume — closing the tab no longer loses the form).
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY);
+      if (!raw) return;
+      const d = JSON.parse(raw) as {
+        title?: string;
+        formAnswers?: Record<string, string>;
+      };
+      if (d.title) setTitle(d.title);
+      if (d.formAnswers && typeof d.formAnswers === "object") {
+        setFormAnswers(d.formAnswers);
+      }
+      if (d.title || d.formAnswers) setDraftRestored(true);
+    } catch {
+      // ignore malformed drafts
+    }
+  }, []);
+
+  // Persist on every change so a refresh/close is recoverable.
+  useEffect(() => {
+    try {
+      if (!title && Object.keys(formAnswers).length === 0) return;
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({ title, formAnswers }));
+    } catch {
+      // storage full / unavailable — non-fatal
+    }
+  }, [title, formAnswers]);
 
   const questions = useMemo(
     () => applicationForm?.questions ?? [],
@@ -151,42 +189,77 @@ export default function PartnerApply({ actionData }: Route.ComponentProps) {
     clientError ??
     (actionData && "error" in actionData ? actionData.error : null);
 
-  // Returns the first missing-required message for a set of questions (plus the
-  // title on step 1), or null. The action re-validates everything server-side.
-  function firstMissing(stepQuestions: Question[], includeTitle: boolean): string | null {
-    if (includeTitle && !title.trim()) return "Give your pitch a title.";
+  // Flags every empty required field in a set (plus the title on step 1). Marks
+  // them all — not just the first — and returns whether the set was clean.
+  function validateFields(
+    stepQuestions: Question[],
+    includeTitle: boolean,
+  ): boolean {
     const missing = findMissingRequired(
       stepQuestions,
       (q) => formAnswers[q.key],
       { excludeFileType: true },
     );
-    return missing.length > 0 ? `"${missing[0].data.label}" is required.` : null;
+    const titleMissing = includeTitle && !title.trim();
+    setInvalid(new Set(missing.map((q) => q.key)));
+    setTitleInvalid(titleMissing);
+    if (missing.length > 0 || titleMissing) {
+      setClientError(
+        titleMissing
+          ? "Give your pitch a title."
+          : `Please fill in the required field${missing.length > 1 ? "s" : ""} marked below.`,
+      );
+      return false;
+    }
+    setClientError(null);
+    return true;
   }
 
   function goNext() {
-    const msg = firstMissing(steps[current].questions, current === 0);
-    if (msg) {
-      setClientError(msg);
-      return;
-    }
-    setClientError(null);
+    if (!validateFields(steps[current].questions, current === 0)) return;
     setCurrent((c) => Math.min(c + 1, steps.length - 1));
   }
 
   function checkAllOnSubmit(e: React.FormEvent<HTMLFormElement>) {
-    const msg = firstMissing(questions, true);
-    if (msg) {
+    if (!validateFields(questions, true)) {
       e.preventDefault();
-      setClientError(msg);
-      // Jump to the step holding the problem so the field is visible.
-      const bad = questions.find((q) => formAnswers[q.key] == null || formAnswers[q.key] === "");
-      if (!title.trim()) setCurrent(0);
-      else if (bad) {
-        const idx = steps.findIndex((s) => s.questions.some((q) => q.key === bad.key));
-        if (idx >= 0) setCurrent(idx);
+      // Jump to the earliest step holding a problem so the field is visible.
+      if (!title.trim()) {
+        setCurrent(0);
+      } else {
+        const bad = questions.find(
+          (q) =>
+            q.required &&
+            q.type !== "file" &&
+            (formAnswers[q.key] == null || formAnswers[q.key] === ""),
+        );
+        if (bad) {
+          const idx = steps.findIndex((s) =>
+            s.questions.some((q) => q.key === bad.key),
+          );
+          if (idx >= 0) setCurrent(idx);
+        }
       }
-    } else {
-      setClientError(null);
+      return;
+    }
+    // Valid — the draft has served its purpose; don't resurrect it next time.
+    try {
+      localStorage.removeItem(DRAFT_KEY);
+    } catch {
+      // ignore
+    }
+  }
+
+  // Clear a field's "required" flag as soon as it's given a value.
+  function onAnswerChange(key: string, value: string) {
+    setFormAnswers((a) => ({ ...a, [key]: value }));
+    if (value && value.trim()) {
+      setInvalid((prev) => {
+        if (!prev.has(key)) return prev;
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
     }
   }
 
@@ -234,6 +307,12 @@ export default function PartnerApply({ actionData }: Route.ComponentProps) {
         </div>
       )}
 
+      {draftRestored && (
+        <p className="mb-4 text-xs text-muted-foreground bg-muted/40 rounded-lg px-4 py-2">
+          We restored your saved draft — pick up where you left off.
+        </p>
+      )}
+
       {error && (
         <p className="mb-4 text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3">
           {error}
@@ -255,16 +334,27 @@ export default function PartnerApply({ actionData }: Route.ComponentProps) {
                   id="title"
                   name="title"
                   value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  className={inputClass}
+                  onChange={(e) => {
+                    setTitle(e.target.value);
+                    if (e.target.value.trim()) setTitleInvalid(false);
+                  }}
+                  className={`${inputClass} ${titleInvalid ? "border-red-400 ring-1 ring-red-300" : ""}`}
                 />
+                {titleInvalid && (
+                  <p className="mt-1 text-xs text-red-600">Required</p>
+                )}
               </div>
             )}
             {step.questions.length > 0 && (
               <FormFieldList
                 questions={step.questions}
                 values={formAnswers}
-                onChange={(k, v) => setFormAnswers((a) => ({ ...a, [k]: v }))}
+                onChange={onAnswerChange}
+                belowField={(q) =>
+                  invalid.has(q.key) ? (
+                    <p className="mt-1 text-xs text-red-600">Required</p>
+                  ) : null
+                }
               />
             )}
           </section>
@@ -284,7 +374,7 @@ export default function PartnerApply({ actionData }: Route.ComponentProps) {
                 setClientError(null);
                 setCurrent((c) => Math.max(0, c - 1));
               }}
-              className="rounded-xl border border-border bg-card text-dark-blue font-heading font-semibold px-5 py-3 hover:border-accent-coral transition"
+              className={buttonClasses("secondary")}
             >
               Back
             </button>
@@ -293,7 +383,7 @@ export default function PartnerApply({ actionData }: Route.ComponentProps) {
             <button
               type="button"
               onClick={goNext}
-              className="rounded-xl bg-dark-blue text-white font-heading font-semibold px-6 py-3 hover:opacity-90 transition"
+              className={buttonClasses("primary")}
             >
               Next
             </button>
@@ -301,7 +391,7 @@ export default function PartnerApply({ actionData }: Route.ComponentProps) {
             <button
               type="submit"
               disabled={submitting}
-              className="rounded-xl bg-dark-blue text-white font-heading font-semibold px-6 py-3 hover:opacity-90 transition disabled:opacity-50"
+              className={buttonClasses("primary")}
             >
               {submitting ? "Submitting…" : "Submit application"}
             </button>

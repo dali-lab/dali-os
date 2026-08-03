@@ -1,10 +1,16 @@
+import { createHash } from "node:crypto";
 import { Form, Link, useLoaderData, useNavigation } from "react-router";
+import { Check, Download, FileSignature, FileText, PartyPopper } from "lucide-react";
+import { buttonClasses } from "~/components/ui/Button";
 import { PartnerBackLink } from "~/partners/components/PartnerBackLink";
 import type { Route } from "./+types/partner.applications.$id";
 import { prisma } from "~/lib/db";
 import { parseSessionCookie } from "~/lib/cookies";
 import { getPresenceUser } from "~/lib/presence-user";
+import { getClientIp } from "~/lib/request-meta";
+import { readDocAsBlocks } from "~/collab/read";
 import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
+import { notifyPartnerApplicationEvent } from "~/partners/lib/partner-emails.server";
 import {
   formAnswerRows,
   type FormAnswerRow,
@@ -120,12 +126,26 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
     const signerName = (form.get("signerName") as string | null)?.trim() ?? "";
     const affirm = form.get("affirm") === "on";
+    const esignConsent = form.get("esignConsent") === "on";
     if (!signerName) return { error: "Type your full name to sign." };
+    if (!esignConsent) {
+      return { error: "Please consent to signing electronically to continue." };
+    }
     if (!affirm) return { error: "Confirm the affirmation to sign." };
     const legalEntityName =
       (form.get("legalEntityName") as string | null)?.trim() || null;
     if (!legalEntityName) {
       return { error: "Add the legal entity name." };
+    }
+    // Tamper-evidence: hash the contract body exactly as it read at signing.
+    let contractSignedHash: string | null = null;
+    try {
+      const blocks = await readDocAsBlocks(`partnercontract:${application.id}:body`);
+      contractSignedHash = createHash("sha256")
+        .update(JSON.stringify(blocks))
+        .digest("hex");
+    } catch {
+      // A missing/unreadable body shouldn't block signing; hash stays null.
     }
     await prisma.partnerApplication.update({
       where: { id: application.id },
@@ -135,8 +155,15 @@ export async function action({ request, params }: Route.ActionArgs) {
           (form.get("legalEntityAddress") as string | null)?.trim() || null,
         contractSignedAt: new Date(),
         contractSignerName: signerName,
+        contractSignerIp: getClientIp(request) ?? null,
+        contractSignerUserAgent: request.headers.get("user-agent") ?? null,
+        contractSignedHash,
       },
     });
+    void notifyPartnerApplicationEvent(application.id, {
+      kind: "contract-signed",
+      signerName,
+    }).catch((e) => console.error("partner contract-signed notify failed", e));
     return { ok: true };
   }
 
@@ -185,6 +212,46 @@ function StatusTimeline({ status }: { status: PartnerApplicationStatus }) {
   );
 }
 
+// A dated log of the milestones that actually have timestamps — what a partner
+// wants when they ask "what's happened so far?". Synthesized from the columns
+// we already track (no separate event table).
+function MilestoneTimeline({
+  application,
+}: {
+  application: Awaited<ReturnType<typeof loader>>["application"];
+}) {
+  const items = [
+    { label: "Application submitted", at: application.createdAt },
+    { label: "Statement of work shared for feedback", at: application.sowSharedAt },
+    { label: "Contract sent for signature", at: application.contractSentAt },
+    { label: "Contract signed", at: application.contractSignedAt },
+  ].filter((i): i is { label: string; at: Date } => i.at != null);
+  if (items.length <= 1) return null;
+
+  return (
+    <section className="bg-card border border-border rounded-2xl p-5">
+      <h2 className="font-heading font-semibold text-dark-blue mb-3">Progress</h2>
+      <ol className="flex flex-col gap-3">
+        {items.map((i) => (
+          <li key={i.label} className="flex items-start gap-3">
+            <span className="mt-1 w-2 h-2 rounded-full bg-accent-coral flex-shrink-0" />
+            <div className="flex-1">
+              <div className="text-sm text-foreground">{i.label}</div>
+              <div className="text-xs text-muted-foreground">
+                {new Date(i.at).toLocaleDateString(undefined, {
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                })}
+              </div>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
 export default function PartnerApplicationDetail({
   actionData,
 }: Route.ComponentProps) {
@@ -210,29 +277,37 @@ export default function PartnerApplicationDetail({
         </div>
         <p className="text-sm text-muted-foreground mt-1">
           Submitted {new Date(application.createdAt).toLocaleDateString()}
+          {(application.status === "Submitted" ||
+            application.status === "UnderReview") &&
+            " · We typically respond within about two weeks."}
         </p>
       </div>
+
+      <MilestoneTimeline application={application} />
 
       {application.status === "Accepted" && application.resultingProjectId && (
         <Link
           to={`/partner/projects/${application.resultingProjectId}`}
-          className="bg-accent-teal/10 border border-accent-teal/30 rounded-2xl px-5 py-4 text-sm text-accent-teal font-medium hover:bg-accent-teal/15 transition"
+          className="bg-accent-teal/10 border border-accent-teal/30 rounded-2xl px-5 py-4 text-sm text-accent-teal font-medium hover:bg-accent-teal/15 transition flex items-center gap-2"
         >
-          🎉 This pitch became a project — see what the team is up to →
+          <PartyPopper className="w-4 h-4 flex-shrink-0" />
+          This pitch became a project — see what the team is up to →
         </Link>
       )}
 
       {application.contractSentAt && !application.contractSignedAt && (
-        <div className="bg-accent-coral/10 border border-accent-coral/30 rounded-2xl px-5 py-4 text-sm text-dark-blue">
-          ✍️ A contract is ready for your signature — review and sign it below.
+        <div className="bg-accent-coral/10 border border-accent-coral/30 rounded-2xl px-5 py-4 text-sm text-dark-blue flex items-center gap-2">
+          <FileSignature className="w-4 h-4 flex-shrink-0" />
+          A contract is ready for your signature — review and sign it below.
         </div>
       )}
 
       {application.sowSharedAt &&
         !application.contractSentAt &&
         application.status !== "Accepted" && (
-          <div className="bg-accent-coral/10 border border-accent-coral/30 rounded-2xl px-5 py-4 text-sm text-dark-blue">
-            📝 A statement of work is ready for your feedback — review and edit it
+          <div className="bg-accent-coral/10 border border-accent-coral/30 rounded-2xl px-5 py-4 text-sm text-dark-blue flex items-center gap-2">
+            <FileText className="w-4 h-4 flex-shrink-0" />
+            A statement of work is ready for your feedback — review and edit it
             together with the DALI team below.
           </div>
         )}
@@ -254,7 +329,7 @@ export default function PartnerApplicationDetail({
             <button
               type="submit"
               disabled={submitting}
-              className="self-start rounded-xl bg-dark-blue text-white text-sm font-heading font-semibold px-5 py-2.5 hover:opacity-90 transition disabled:opacity-50"
+              className={buttonClasses("primary", "md", "self-start")}
             >
               {submitting ? "Saving…" : "Save changes"}
             </button>
@@ -365,10 +440,20 @@ export default function PartnerApplicationDetail({
           </div>
 
           {application.contractSignedAt ? (
-            <p className="mt-4 text-sm text-accent-teal bg-accent-teal/10 border border-accent-teal/30 rounded-lg px-4 py-3">
-              ✓ Signed by {application.contractSignerName} on{" "}
-              {new Date(application.contractSignedAt).toLocaleDateString()}.
-            </p>
+            <div className="mt-4 flex flex-col gap-2">
+              <p className="text-sm text-accent-teal bg-accent-teal/10 border border-accent-teal/30 rounded-lg px-4 py-3 flex items-center gap-2">
+                <Check className="w-4 h-4 flex-shrink-0" />
+                Signed by {application.contractSignerName} on{" "}
+                {new Date(application.contractSignedAt).toLocaleDateString()}.
+              </p>
+              <a
+                href={`/partner/applications/${application.id}/contract.pdf`}
+                className={buttonClasses("secondary", "sm", "self-start")}
+              >
+                <Download className="w-4 h-4" />
+                Download signed contract (PDF)
+              </a>
+            </div>
           ) : (
             <Form method="post" className="mt-4 flex flex-col gap-3 border-t border-border pt-4">
               <input type="hidden" name="intent" value="sign-contract" />
@@ -405,14 +490,23 @@ export default function PartnerApplicationDetail({
                 />
               </label>
               <label className="flex items-start gap-2 text-sm text-dark-blue">
+                <input type="checkbox" name="esignConsent" required className="mt-1 rounded" />
+                I agree to sign this contract electronically and to conduct this
+                transaction by electronic records and signatures (E-SIGN / UETA).
+              </label>
+              <label className="flex items-start gap-2 text-sm text-dark-blue">
                 <input type="checkbox" name="affirm" required className="mt-1 rounded" />
                 I have read the contract above and, by typing my name, agree to
                 it on behalf of the legal entity named.
               </label>
+              <p className="text-xs text-muted-foreground">
+                Your name, the time, and your IP address are recorded with your
+                signature.
+              </p>
               <button
                 type="submit"
                 disabled={submitting}
-                className="self-start rounded-xl bg-dark-blue text-white font-heading font-semibold px-6 py-3 hover:opacity-90 transition disabled:opacity-50"
+                className={buttonClasses("primary", "md", "self-start")}
               >
                 {submitting ? "Signing…" : "Sign contract"}
               </button>

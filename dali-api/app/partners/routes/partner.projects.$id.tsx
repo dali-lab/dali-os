@@ -17,7 +17,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     throw new Response("Not found", { status: 404 });
   }
 
-  const data = await loadPartnerProjectView(params.id!, partnerUser.partnerOrgId);
+  const data = await loadPartnerProjectView(
+    params.id!,
+    partnerUser.partnerOrgId,
+    auth.user.sub,
+  );
   if (!data) throw new Response("Not found", { status: 404 });
   return data;
 }

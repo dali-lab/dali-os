@@ -2,6 +2,7 @@ import { Form, redirect, useLoaderData, useNavigation } from "react-router";
 import type { Route } from "./+types/partner.onboarding";
 import { prisma } from "~/lib/db";
 import { requirePartnerCandidate } from "~/partners/lib/partner-auth.server";
+import { buttonClasses } from "~/components/ui/Button";
 
 export const meta: Route.MetaFunction = () => [
   { title: "DALI OS · Partner setup" },
@@ -151,7 +152,7 @@ export default function PartnerOnboarding({ actionData }: Route.ComponentProps) 
           <button
             type="submit"
             disabled={submitting}
-            className="mt-2 w-full rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
+            className={buttonClasses("primary", "md", "mt-2 w-full py-3")}
           >
             {submitting ? "Saving…" : "Continue"}
           </button>

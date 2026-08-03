@@ -11,6 +11,7 @@ import {
   issuePartnerMagicLink,
   normalizeEmail,
 } from "~/partners/lib/magic-link.server";
+import { buttonClasses } from "~/components/ui/Button";
 
 // UI resend cooldown. The server independently rate-limits (3 sends per
 // email per 15 minutes) — this just keeps the button from being mashed.
@@ -180,7 +181,7 @@ export default function PartnerLogin() {
               <button
                 type="submit"
                 disabled={submitting}
-                className="w-full rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
+                className={buttonClasses("primary", "md", "w-full py-3")}
               >
                 {submitting ? "Sending…" : "Email me a sign-in link"}
               </button>
