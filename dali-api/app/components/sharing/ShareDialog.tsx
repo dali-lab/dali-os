@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Check, Globe, Link2, Lock, Users, X } from "lucide-react";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { buttonClasses } from "~/components/ui/Button";
+import { SelectMenu, type SelectMenuOption } from "~/components/ui/SelectMenu";
 
 // One Share dialog for every document — Project, Lab, EducationOffering and
 // personal notes. Google Docs' shape: add people, a "People with access" list
@@ -9,7 +10,7 @@ import { buttonClasses } from "~/components/ui/Button";
 // /api/pages/:id/share; the link people copy is just the doc URL.
 
 type Permission = "View" | "Comment" | "Edit" | "FullAccess";
-type LinkAccess = "Restricted" | "SignedIn" | "Public";
+type LinkAccess = "Restricted" | "LabMembers" | "Public";
 type Option = { id: string; label: string };
 type Share = {
   id: string;
@@ -26,18 +27,18 @@ type Context = {
 };
 
 // Full tiers for the per-person dropdown; general access never offers Full.
-const PERMISSIONS: { value: Permission; label: string }[] = [
-  { value: "View", label: "Can view" },
-  { value: "Comment", label: "Can comment" },
-  { value: "Edit", label: "Can edit" },
-  { value: "FullAccess", label: "Full access" },
+const PERMISSION_OPTIONS: SelectMenuOption<Permission>[] = [
+  { value: "View", label: "Can view", description: "Read only" },
+  { value: "Comment", label: "Can comment", description: "Read and comment" },
+  { value: "Edit", label: "Can edit", description: "Edit the document" },
+  { value: "FullAccess", label: "Full access", description: "Edit and manage sharing" },
 ];
-const LINK_PERMISSIONS = PERMISSIONS.filter((p) => p.value !== "FullAccess");
+const LINK_PERMISSION_OPTIONS = PERMISSION_OPTIONS.filter((p) => p.value !== "FullAccess");
 
-const AUDIENCES: { value: LinkAccess; label: string; hint: string }[] = [
-  { value: "Restricted", label: "Restricted", hint: "Only people with access can open the link." },
-  { value: "SignedIn", label: "Anyone signed in to DALI", hint: "Anyone with a DALI account and the link." },
-  { value: "Public", label: "Anyone with the link", hint: "Anyone on the internet — read-only, no account." },
+const AUDIENCE_OPTIONS: SelectMenuOption<LinkAccess>[] = [
+  { value: "Restricted", label: "Restricted", description: "Only the people and groups above." },
+  { value: "LabMembers", label: "Anyone in the lab", description: "Any lab member with the link — not partners or applicants." },
+  { value: "Public", label: "Anyone with the link", description: "Anyone on the internet — read-only, no account." },
 ];
 
 function baseAccessLine(ctx: Context): string {
@@ -269,29 +270,24 @@ export function ShareDialog({
               >
                 <Users className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                 <span className="flex-1 min-w-0 truncate text-foreground">{s.label}</span>
-                <select
-                  disabled={busy}
+                <SelectMenu
                   value={s.permission}
-                  aria-label={`Access level for ${s.label}`}
-                  onChange={(e) =>
+                  options={PERMISSION_OPTIONS}
+                  align="right"
+                  disabled={busy}
+                  ariaLabel={`Access level for ${s.label}`}
+                  onChange={(permission) =>
                     void run(
                       {
                         intent: "share-change",
                         principalType: s.principalType,
                         principalId: s.principalId,
-                        permission: e.target.value,
+                        permission,
                       },
                       refresh,
                     )
                   }
-                  className="text-xs border border-border rounded bg-background text-foreground px-1.5 py-1"
-                >
-                  {PERMISSIONS.map((p) => (
-                    <option key={p.value} value={p.value}>
-                      {p.label}
-                    </option>
-                  ))}
-                </select>
+                />
                 <button
                   type="button"
                   disabled={busy}
@@ -357,52 +353,38 @@ export function ShareDialog({
         <div className="flex items-start gap-3 rounded-md border border-border px-3 py-2">
           <Link2 className="w-4 h-4 mt-1 shrink-0 text-muted-foreground" />
           <div className="flex-1 min-w-0 flex flex-col gap-1">
-            <select
-              disabled={busy || !ctx}
+            <SelectMenu
               value={ctx?.linkAccess ?? "Restricted"}
-              aria-label="General access audience"
-              onChange={(e) => {
-                const linkAccess = e.target.value as LinkAccess;
+              options={AUDIENCE_OPTIONS}
+              disabled={busy || !ctx}
+              ariaLabel="General access audience"
+              buttonClassName="inline-flex items-center gap-1 self-start rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-foreground transition-colors hover:bg-muted/40 disabled:opacity-60"
+              onChange={(linkAccess) => {
                 // Public can only be view-only (no identity to attribute writes).
-                const linkPermission =
-                  linkAccess === "Public" ? "View" : (ctx?.linkPermission ?? "View");
+                const linkPermission = linkAccess === "Public" ? "View" : (ctx?.linkPermission ?? "View");
                 void run({ intent: "general-access", linkAccess, linkPermission }, refresh);
               }}
-              className="text-sm border border-border rounded bg-background text-foreground px-2 py-1"
-            >
-              {AUDIENCES.map((a) => (
-                <option key={a.value} value={a.value}>
-                  {a.label}
-                </option>
-              ))}
-            </select>
+            />
             <span className="text-xs text-muted-foreground">
-              {AUDIENCES.find((a) => a.value === (ctx?.linkAccess ?? "Restricted"))?.hint}
+              {AUDIENCE_OPTIONS.find((a) => a.value === (ctx?.linkAccess ?? "Restricted"))?.description}
             </span>
           </div>
           {ctx && ctx.linkAccess !== "Restricted" && (
-            <select
-              disabled={busy || ctx.linkAccess === "Public"}
-              value={ctx.linkAccess === "Public" ? "View" : ctx.linkPermission}
-              aria-label="General access role"
-              onChange={(e) =>
-                void run(
-                  {
-                    intent: "general-access",
-                    linkAccess: ctx.linkAccess,
-                    linkPermission: e.target.value,
-                  },
-                  refresh,
-                )
-              }
-              className="text-xs border border-border rounded bg-background text-foreground px-1.5 py-1 self-center disabled:opacity-60"
-            >
-              {LINK_PERMISSIONS.map((p) => (
-                <option key={p.value} value={p.value}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
+            <div className="self-center">
+              <SelectMenu
+                value={ctx.linkAccess === "Public" ? "View" : ctx.linkPermission}
+                options={LINK_PERMISSION_OPTIONS}
+                align="right"
+                disabled={busy || ctx.linkAccess === "Public"}
+                ariaLabel="General access role"
+                onChange={(linkPermission) =>
+                  void run(
+                    { intent: "general-access", linkAccess: ctx.linkAccess, linkPermission },
+                    refresh,
+                  )
+                }
+              />
+            </div>
           )}
         </div>
       </div>

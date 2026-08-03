@@ -197,12 +197,22 @@ describe("Project workspace", () => {
     expect(result.canEdit).toBe(true);
   });
 
-  it("General access SignedIn·Edit grants edit to any signed-in user", async () => {
+  it("General access LabMembers·Edit grants edit to a lab member", async () => {
+    vi.mocked(isLabMember).mockResolvedValue(true);
     const result = await getPageAccess(
-      "any-user",
-      projectPage({ linkAccess: "SignedIn", linkPermission: "Edit" }),
+      "lab-user",
+      projectPage({ linkAccess: "LabMembers", linkPermission: "Edit" }),
     );
     expect(result.canEdit).toBe(true);
+  });
+
+  it("General access LabMembers does NOT grant to a non-lab-member", async () => {
+    vi.mocked(isLabMember).mockResolvedValue(false);
+    const result = await getPageAccess(
+      "outsider",
+      projectPage({ linkAccess: "LabMembers", linkPermission: "Edit" }),
+    );
+    expect(result).toEqual(denied());
   });
 
   it("General access Public grants view only", async () => {

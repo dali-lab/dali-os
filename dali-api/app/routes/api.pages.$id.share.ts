@@ -36,7 +36,7 @@ const PERMISSIONS: readonly string[] = ["View", "Comment", "Edit", "FullAccess"]
 function parsePermission(v: string | undefined, fallback: SharePermission = "View"): SharePermission {
   return v && PERMISSIONS.includes(v) ? (v as SharePermission) : fallback;
 }
-const LINK_ACCESSES: readonly string[] = ["Restricted", "SignedIn", "Public"];
+const LINK_ACCESSES: readonly string[] = ["Restricted", "LabMembers", "Public"];
 function parseLinkAccess(v: string | undefined): LinkAccess {
   return v && LINK_ACCESSES.includes(v) ? (v as LinkAccess) : "Restricted";
 }

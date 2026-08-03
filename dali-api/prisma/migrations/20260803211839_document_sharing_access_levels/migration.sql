@@ -2,7 +2,7 @@
 CREATE TYPE "SharePermission" AS ENUM ('View', 'Comment', 'Edit', 'FullAccess');
 
 -- CreateEnum
-CREATE TYPE "LinkAccess" AS ENUM ('Restricted', 'SignedIn', 'Public');
+CREATE TYPE "LinkAccess" AS ENUM ('Restricted', 'LabMembers', 'Public');
 
 -- AlterTable
 ALTER TABLE "Page" ADD COLUMN     "linkAccess" "LinkAccess" NOT NULL DEFAULT 'Restricted',

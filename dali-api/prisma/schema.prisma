@@ -3854,8 +3854,8 @@ model Page {
   //
   // Orthogonal to the named PageShare list and to the workspace-specific
   // visibility flags above. Restricted (default) = only named accounts/groups
-  // plus the workspace's base access. SignedIn = any authenticated DALI user
-  // gets `linkPermission`. Public = anyone with the URL gets a read-only view.
+  // plus the workspace's base access. LabMembers = anyone in the lab gets
+  // `linkPermission`. Public = anyone with the URL gets a read-only view.
   // Evaluated live in getPageAccess (max with base + named share), so flipping
   // back to Restricted revokes link access immediately — no rows to clean up.
   // `linkPermission` is only meaningful when linkAccess != Restricted and is
@@ -3986,11 +3986,13 @@ enum SharePermission {
 
 // Document-level "General access" audience (Google's General access row). Lives
 // on Page.linkAccess. Restricted = only the named accounts/groups on the share
-// list. SignedIn = any authenticated DALI user gets Page.linkPermission.
-// Public = anyone with the URL gets a read-only view (no account needed).
+// list. LabMembers = anyone in the lab (isLabMember) gets Page.linkPermission —
+// deliberately not "any signed-in account", which would include partner,
+// applicant, and non-member Dartmouth users. Public = anyone with the URL gets
+// a read-only view (no account needed).
 enum LinkAccess {
   Restricted
-  SignedIn
+  LabMembers
   Public
 }
 

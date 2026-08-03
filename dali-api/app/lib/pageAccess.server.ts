@@ -35,8 +35,11 @@ export interface PageShape {
   labRestricted?: boolean | null;
   profileVisible?: boolean | null;
   labListing?: string | null;
-  linkAccess?: LinkAccess | null;
-  linkPermission?: SharePermission | null;
+  // Loose like workspaceType/labListing above — the enum values live in the DB;
+  // shareAndLinkGrant casts. Keeping these `string` lets callers pass rows
+  // without importing the Prisma enum types.
+  linkAccess?: string | null;
+  linkPermission?: string | null;
   [key: string]: unknown;
 }
 
@@ -89,15 +92,17 @@ function higher(a: SharePermission | null, b: SharePermission): SharePermission 
  * Access implied by the additive layers — a named PageShare (per-account or via
  * group) and the document-level General access setting — independent of the
  * page's workspace role rules. Returned as its own access result so the caller
- * ORs it onto the role base. getPageAccess always runs with an authenticated
- * userSub (the anonymous public-link view is served by the route loader, not
- * here), so `SignedIn` general access applies to every caller that reaches this.
+ * ORs it onto the role base. `LabMembers` general access grants to lab members
+ * only (not partner/applicant/non-member Dartmouth accounts); `Public` grants a
+ * read-only view to any caller that reaches getPageAccess.
  */
 async function shareAndLinkGrant(page: PageShape, userSub: string): Promise<PageAccessResult> {
   let level = await sharePermissionFor(page.id, userSub);
   const linkAccess = (page.linkAccess as LinkAccess | null | undefined) ?? "Restricted";
-  if (linkAccess === "SignedIn") {
-    level = higher(level, (page.linkPermission as SharePermission | null | undefined) ?? "View");
+  if (linkAccess === "LabMembers") {
+    if (await isLabMember(userSub)) {
+      level = higher(level, (page.linkPermission as SharePermission | null | undefined) ?? "View");
+    }
   } else if (linkAccess === "Public") {
     level = higher(level, "View");
   }
