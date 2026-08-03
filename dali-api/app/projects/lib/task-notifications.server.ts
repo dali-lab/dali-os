@@ -1,10 +1,12 @@
 // Emitters for task-facing notification events (task.assigned, task.comment,
-// task.status_changed, task.github_update). Each helper loads what it needs
+// task.status_changed, task.github_update — plus pagedoc.mention, the app-wide
+// @-mention event, for handles named in a comment). Each helper loads what it needs
 // and dispatches via notify(); callers fire-and-forget so a delivery hiccup
 // never fails the underlying write.
 
 import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
+import { extractHandlesFromText, notifyMentions, resolveHandles } from "~/lib/mentions";
 import { TASK_STATUS_LABELS } from "./task-board";
 import { currentProjectParticipantIds } from "./project-members.server";
 
@@ -75,25 +77,49 @@ export async function notifyTaskComment(args: {
     },
   });
   if (!task) return;
+
+  // "@handle" tokens in the body notify the named member directly. Deliberate,
+  // so unlike ambient comment activity it isn't gated on project membership —
+  // the board is readable by any member, which is who the typeahead offers.
+  const mentioned = new Set(
+    (await resolveHandles(extractHandlesFromText(args.body))).filter(
+      (id) => id !== args.authorId,
+    ),
+  );
+
+  // A mentioned assignee gets the mention instead of the comment event, not both.
   const recipients = await onProject(
     task.projectId,
-    task.assignees.map((a) => a.userId).filter((id) => id !== args.authorId),
+    task.assignees
+      .map((a) => a.userId)
+      .filter((id) => id !== args.authorId && !mentioned.has(id)),
   );
-  if (recipients.length === 0) return;
-  const preview =
-    args.body.length > COMMENT_PREVIEW_MAX
-      ? `${args.body.slice(0, COMMENT_PREVIEW_MAX)}…`
-      : args.body;
-  await notify({
-    eventType: "task.comment",
-    createdByUserId: args.authorId,
-    message: {
-      title: `New comment on: ${task.title}`,
-      body: preview,
+  if (recipients.length > 0) {
+    const preview =
+      args.body.length > COMMENT_PREVIEW_MAX
+        ? `${args.body.slice(0, COMMENT_PREVIEW_MAX)}…`
+        : args.body;
+    await notify({
+      eventType: "task.comment",
+      createdByUserId: args.authorId,
+      message: {
+        title: `New comment on: ${task.title}`,
+        body: preview,
+        link: taskLink(task.projectId, task.id),
+      },
+      recipients: recipients.map((userId) => ({ userId })),
+    });
+  }
+
+  if (mentioned.size > 0) {
+    await notifyMentions({
+      recipientUserIds: [...mentioned],
+      actorId: args.authorId,
       link: taskLink(task.projectId, task.id),
-    },
-    recipients: recipients.map((userId) => ({ userId })),
-  });
+      title: `You were mentioned on: ${task.title}`,
+      preview: args.body,
+    });
+  }
 }
 
 export async function notifyTaskStatusChanged(

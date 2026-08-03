@@ -11,6 +11,7 @@ import { X } from "lucide-react";
 import { Modal } from "~/components/Modal";
 import { Button } from "~/components/ui/Button";
 import { Avatar } from "~/components/ui/Avatar";
+import { MentionTextInput } from "~/components/MentionTextInput";
 import { useDialog } from "~/components/ui/dialog";
 import { uploadFileToS3 } from "~/lib/upload-client";
 import {
@@ -1053,12 +1054,13 @@ export function TaskModal({
             )}
             {canManage && (
               <div className="flex flex-col gap-2 pt-1">
-                <textarea
+                <MentionTextInput
+                  multiline
                   value={commentDraft}
-                  onChange={(e) => setCommentDraft(e.target.value)}
+                  onChange={setCommentDraft}
                   rows={2}
                   maxLength={COMMENT_MAX}
-                  placeholder="Write a comment…"
+                  placeholder="Write a comment, @ to mention someone…"
                   className="w-full px-2.5 py-2 text-sm border border-border rounded-md bg-background text-foreground"
                 />
                 {commentPostError && (
