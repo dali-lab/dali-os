@@ -268,7 +268,7 @@ export function NoteShareModal({
         )}
       </div>
 
-      {/* Lab listing. Only offered once the note is public, because Core can't
+      {/* Lab listing. Only offered once the page is public, because Core can't
           list something the lab can't read. */}
       <div className="flex flex-col gap-2 border-t border-border pt-4">
         <h3 className="text-xs font-semibold text-muted-foreground inline-flex items-center gap-1.5">
@@ -295,7 +295,7 @@ export function NoteShareModal({
           </div>
         ) : !isPublic ? (
           <p className="text-sm text-muted-foreground">
-            Make the note public first — Core can't list something the lab can't read.
+            Make the page public first — Core can't list something the lab can't read.
           </p>
         ) : (
           <div className="flex items-center justify-between gap-2">
@@ -329,7 +329,7 @@ export function NoteShareModal({
           className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-destructive transition-colors"
         >
           <Trash2 className="w-4 h-4" />
-          Delete note
+          Delete page
         </button>
         <button type="button" onClick={onClose} className={buttonClasses("primary", "sm")}>
           Done

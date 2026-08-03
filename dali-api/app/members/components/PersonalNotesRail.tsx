@@ -173,7 +173,7 @@ export function PersonalNotesRail({
   return (
     <aside className="bg-card border border-border rounded-lg flex flex-col">
       <div className="px-4 pt-3 pb-2 flex items-center justify-between gap-2">
-        <h2 className="font-heading font-semibold text-foreground">Notes</h2>
+        <h2 className="font-heading font-semibold text-foreground">Pages</h2>
         {isSelf && (
           <div className="flex items-center gap-0.5">
             <Tooltip label="New folder">
@@ -187,12 +187,12 @@ export function PersonalNotesRail({
                 <FolderPlus className="w-4 h-4" />
               </button>
             </Tooltip>
-            <Tooltip label="New note">
+            <Tooltip label="New page">
               <button
                 type="button"
                 onClick={() => create(false)}
                 disabled={creating}
-                aria-label="New note"
+                aria-label="New page"
                 className={buttonClasses("ghost", "sm")}
               >
                 <Plus className="w-4 h-4" />
@@ -206,7 +206,7 @@ export function PersonalNotesRail({
         <div
           className="flex items-stretch gap-0.5 px-3 border-b border-border"
           role="tablist"
-          aria-label="Notes"
+          aria-label="Pages"
         >
           {(
             [
@@ -238,10 +238,10 @@ export function PersonalNotesRail({
       {visible.length === 0 ? (
         <p className="px-4 py-6 text-sm text-muted-foreground">
           {isSelf && tab === "shared"
-            ? "Nothing yet. Notes other people share with you land here."
+            ? "Nothing yet. Pages other people share with you land here."
             : isSelf
-              ? "Keep your own notes here — meeting prep, reading, anything. Private until you say otherwise."
-              : `${ownerFirstName} hasn't published any notes.`}
+              ? "Keep your own pages here — meeting prep, reading, anything. Private until you say otherwise."
+              : `${ownerFirstName} hasn't published any pages.`}
         </p>
       ) : (
         <ul className="p-2 flex flex-col gap-0.5">
