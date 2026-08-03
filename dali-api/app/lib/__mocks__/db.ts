@@ -35,6 +35,7 @@ export const prisma = {
   },
   interviewAssignment: {
     findUnique: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
     create: vi.fn(),
     update: vi.fn(),
   },
@@ -275,6 +276,19 @@ export const prisma = {
     findUnique: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
     upsert: vi.fn(),
+  },
+  mentorshipPair: {
+    count: vi.fn().mockResolvedValue(0),
+    findMany: vi.fn().mockResolvedValue([]),
+    findFirst: vi.fn(),
+  },
+  applicationReview: {
+    findMany: vi.fn().mockResolvedValue([]),
+    findFirst: vi.fn(),
+  },
+  decision: {
+    findFirst: vi.fn().mockResolvedValue(null),
+    findMany: vi.fn().mockResolvedValue([]),
   },
   domainEligibility: {
     findMany: vi.fn().mockResolvedValue([]),
