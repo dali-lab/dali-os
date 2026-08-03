@@ -1570,6 +1570,7 @@ enum SigningDocumentKind {
   MemberAgreement // onboarding auto-trigger (membership lifecycle)
   MentorshipAgreement // termly re-sign for mentors
   Confidentiality // hiring-cycle gate (migrated from ConfidentialityAgreement)
+  PartnerContract // per-application partner contract; signed in the partner portal
 }
 
 enum SigningGateScope {
@@ -1639,12 +1640,17 @@ model SigningBinding {
   cycle    ApplicationCycle? @relation(fields: [cycleId], references: [id])
   termId   String? // set for termly (mentorship) scope
   term     Term?             @relation(fields: [termId], references: [id])
+  // Set for PartnerContract bindings (scopeKey "partner-app:<id>"): the
+  // PartnerApplication this contract instance is for. Loose ref (no relation)
+  // to avoid a Project/partner cycle; drives per-deal merge variables.
+  applicationId String?
 
   signatures SigningSignature[]
 
   @@unique([documentId, scopeKey])
   @@index([cycleId])
   @@index([termId])
+  @@index([applicationId])
 }
 
 // One party's signature on one binding. Generalizes
@@ -4536,6 +4542,11 @@ model PartnerApplication {
   // rides on legalEntityName/legalEntityAddress above; fee is free-text (no
   // fixed tiers). The partner signs with a typed-name affirmation — a
   // deliberately isolated flow, not the app-gated member e-sign service.
+  // The partner contract is a first-class signing document (SigningDocument
+  // kind PartnerContract), instanced per application via a SigningBinding and
+  // signed in the portal through the shared signing engine. This links to that
+  // binding; signed state + audit live on the SigningSignature.
+  contractBindingId  String?                  @unique
   contractDocId      String?                  @unique
   contractFee        String?
   contractSentAt     DateTime?

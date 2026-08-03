@@ -2,27 +2,14 @@ import type { Route } from "./+types/partner.applications.$id.contract-pdf";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
-import { readDocAsBlocks } from "~/collab/read";
+import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { renderBlocksToPdf } from "~/collab/export-pdf";
-import type { DocBlock } from "~/collab/blocknote-server";
 
 // GET /partner/applications/:id/contract.pdf
 //
-// The signed contract as a PDF (pdfkit), with a signature/audit page appended
-// (signer, legal entity, timestamp, IP, body hash). Readable by the applicant,
-// their org members, or Core. Only once the contract is signed.
-
-function para(text: string, bold = false): DocBlock {
-  return {
-    id: crypto.randomUUID(),
-    type: "paragraph",
-    props: {},
-    content: text
-      ? [{ type: "text", text, styles: bold ? { bold: true } : {} }]
-      : [],
-    children: [],
-  } as DocBlock;
-}
+// The signed contract as a PDF. Renders the frozen archival copy captured by the
+// signing engine (body with baked field values + resolved variables). Readable
+// by the applicant, their org members, or Core; only once signed.
 
 function safeFilename(title: string): string {
   return (
@@ -42,13 +29,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       title: true,
       applicantUserId: true,
       partnerOrgId: true,
-      contractFee: true,
-      legalEntityName: true,
-      legalEntityAddress: true,
-      contractSignedAt: true,
-      contractSignerName: true,
-      contractSignerIp: true,
-      contractSignedHash: true,
+      contractBindingId: true,
     },
   });
   if (!app) return new Response("Not found", { status: 404 });
@@ -68,29 +49,20 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
   if (!allowed) return new Response("Forbidden", { status: 403 });
 
-  if (!app.contractSignedAt) {
+  if (!app.contractBindingId) {
+    return new Response("This contract hasn't been sent yet.", { status: 409 });
+  }
+  const signature = await prisma.signingSignature.findFirst({
+    where: { bindingId: app.contractBindingId, roleKey: "member" },
+    orderBy: { signedAt: "desc" },
+    select: { frozenBody: true },
+  });
+  if (!signature?.frozenBody) {
     return new Response("This contract hasn't been signed yet.", { status: 409 });
   }
 
-  const body = await readDocAsBlocks(`partnercontract:${app.id}:body`);
-  const audit: DocBlock[] = [
-    para(""),
-    para("Signature", true),
-    para(`Signed by: ${app.contractSignerName ?? "—"}`),
-    para(`On behalf of: ${app.legalEntityName ?? "—"}`),
-    ...(app.legalEntityAddress ? [para(`Address: ${app.legalEntityAddress}`)] : []),
-    ...(app.contractFee ? [para(`Fee: ${app.contractFee}`)] : []),
-    para(`Signed at: ${app.contractSignedAt.toISOString()}`),
-    ...(app.contractSignerIp ? [para(`Signer IP: ${app.contractSignerIp}`)] : []),
-    ...(app.contractSignedHash
-      ? [para(`Document hash (SHA-256): ${app.contractSignedHash}`)]
-      : []),
-  ];
-
-  const pdf = await renderBlocksToPdf(`${app.title} — Contract`, [
-    ...body,
-    ...audit,
-  ]);
+  const blocks = ensureBlocks(signature.frozenBody);
+  const pdf = await renderBlocksToPdf(`${app.title} — Contract`, blocks);
   return new Response(new Uint8Array(pdf), {
     headers: {
       "Content-Type": "application/pdf",

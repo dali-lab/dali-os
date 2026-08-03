@@ -221,6 +221,10 @@ export default [
     route("partner", "partners/routes/partner.home.tsx"),
     route("partner/apply", "partners/routes/partner.apply.tsx"),
     route("partner/applications/:id", "partners/routes/partner.applications.$id.tsx"),
+    route(
+      "partner/applications/:id/sign-contract",
+      "partners/routes/partner.applications.$id.sign-contract.tsx",
+    ),
     route("partner/settings", "partners/routes/partner.settings.tsx"),
     route("partner/projects/:id", "partners/routes/partner.projects.$id.tsx"),
     route("partner/projects/:id/pages/:pageId", "partners/routes/partner.projects.$id.pages.$pageId.tsx"),

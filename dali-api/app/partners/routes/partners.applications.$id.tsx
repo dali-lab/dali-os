@@ -34,6 +34,8 @@ import {
   noteText,
 } from "../lib/partner-review";
 import { notifyPartnerApplicationEvent } from "../lib/partner-emails.server";
+import { sendPartnerContract } from "../lib/partner-contract.server";
+import { buttonClasses } from "~/components/ui/Button";
 import { formAnswerRows } from "~/forms/lib/answer-rows.server";
 import type { Question } from "~/types";
 import { DocEditor } from "~/components/doc";
@@ -323,33 +325,33 @@ export async function action({ request, params }: Route.ActionArgs) {
   } else if (intent === "contract") {
     const trimOrNull = (k: string) =>
       (form.get(k) as string | null)?.trim() || null;
-    const send = form.get("send") === "on";
-    // Sending requires a legal entity — it's the whole point of the contract
-    // step and what the org record is built from at promotion.
+    // Per-deal values feed the contract's merge variables ({{legalEntityName}},
+    // {{fee}}, …). Always save them; "Send" instances the shared contract
+    // template as a per-application signing binding.
     const legalEntityName = trimOrNull("legalEntityName");
-    if (send && !legalEntityName) {
-      return { error: "Add the partner's legal entity name before sending." };
-    }
-    const priorContract = await prisma.partnerApplication.findUnique({
-      where: { id: params.id },
-      select: { contractSentAt: true },
-    });
     await prisma.partnerApplication.update({
       where: { id: params.id },
       data: {
         legalEntityName,
         legalEntityAddress: trimOrNull("legalEntityAddress"),
         contractFee: trimOrNull("contractFee"),
-        // A fresh doc id the first time the contract is opened, so the collab
-        // body has a stable name to bind to.
-        contractDocId: `partnercontract:${params.id}:body`,
-        contractSentAt: send ? new Date() : null,
       },
     });
-    if (send && !priorContract?.contractSentAt) {
-      void notifyPartnerApplicationEvent(params.id!, { kind: "contract-sent" }).catch(
-        (e) => console.error("partner contract notify failed", e),
-      );
+    if (form.get("op") === "send") {
+      if (!legalEntityName) {
+        return { error: "Add the partner's legal entity name before sending." };
+      }
+      const prior = await prisma.partnerApplication.findUnique({
+        where: { id: params.id },
+        select: { contractSentAt: true },
+      });
+      const res = await sendPartnerContract(params.id!);
+      if (!res.ok) return { error: res.error };
+      if (!prior?.contractSentAt) {
+        void notifyPartnerApplicationEvent(params.id!, { kind: "contract-sent" }).catch(
+          (e) => console.error("partner contract notify failed", e),
+        );
+      }
     }
   } else if (intent === "details") {
     const summaryRaw = (form.get("summary") as string | null)?.trim() ?? "";
@@ -607,32 +609,23 @@ export default function PartnerApplicationDetail() {
         userName={userName}
       />
 
-      <ContractBlock
-        application={application}
-        canEdit={canEdit}
-        collabToken={collabToken}
-        userName={userName}
-      />
+      <ContractBlock application={application} canEdit={canEdit} />
     </div>
   );
 }
 
-// The formal contract: legal entity + free-text fee + a collab body doc, sent
-// to the applicant to sign. Distinct from the SOW (scope, iterated earlier).
+// The formal contract runs on the shared signing engine: Core fills the per-deal
+// merge values here and sends the standard template (authored in Admin →
+// Agreements); the partner signs it in their portal. Distinct from the SOW.
 function ContractBlock({
   application,
   canEdit,
-  collabToken,
-  userName,
 }: {
   application: LoaderData["application"];
   canEdit: boolean;
-  collabToken: string | null;
-  userName: string;
 }) {
   const sent = application.contractSentAt !== null;
   const signed = application.contractSignedAt !== null;
-  const documentName = `partnercontract:${application.id}:body`;
 
   return (
     <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
@@ -647,8 +640,8 @@ function ContractBlock({
                     : ""
                 }.`
               : sent
-                ? "Sent to the applicant — awaiting their signature."
-                : "Draft the agreement, then send it for signature."}
+                ? "Sent — awaiting the partner's signature in their portal."
+                : "Fill the deal details, then send the standard contract for signature."}
           </p>
         </div>
         {signed && (
@@ -659,27 +652,24 @@ function ContractBlock({
       </div>
 
       {signed && (
-        <div className="rounded-md bg-muted/40 border border-border px-3 py-2 text-xs text-muted-foreground flex flex-col gap-1">
-          <a
-            href={`/partner/applications/${application.id}/contract.pdf`}
-            className="text-accent-coral hover:underline w-fit"
-          >
-            Download signed contract (PDF)
-          </a>
-          {application.contractSignerIp && (
-            <span>Signer IP: {application.contractSignerIp}</span>
-          )}
-          {application.contractSignedHash && (
-            <span className="break-all">
-              Body hash: {application.contractSignedHash}
-            </span>
-          )}
-        </div>
+        <a
+          href={`/partner/applications/${application.id}/contract.pdf`}
+          className="text-xs text-accent-coral hover:underline w-fit"
+        >
+          Download signed contract (PDF)
+        </a>
       )}
 
-      {canEdit && (
+      {canEdit && !signed && (
         <Form method="post" className="flex flex-col gap-3">
           <input type="hidden" name="intent" value="contract" />
+          <p className="text-xs text-muted-foreground">
+            The contract body is the standard{" "}
+            <a href="/admin/agreements" className="text-accent-coral hover:underline">
+              partner contract template
+            </a>
+            . These values fill its merge fields.
+          </p>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="flex flex-col gap-1 text-xs">
               <span className="text-muted-foreground">Legal entity name</span>
@@ -709,44 +699,25 @@ function ContractBlock({
               className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
             />
           </label>
-          <label className="flex items-center gap-2 text-sm text-foreground">
-            <input
-              type="checkbox"
-              name="send"
-              defaultChecked={sent}
-              className="rounded"
-            />
-            Send to applicant for signature
-          </label>
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
             <button
               type="submit"
-              className="px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
+              name="op"
+              value="save"
+              className={buttonClasses("secondary", "sm")}
             >
-              Save contract
+              Save details
+            </button>
+            <button
+              type="submit"
+              name="op"
+              value="send"
+              className={buttonClasses("primary", "sm")}
+            >
+              {sent ? "Re-send contract" : "Send contract"}
             </button>
           </div>
         </Form>
-      )}
-
-      {collabToken ? (
-        <PresenceProvider
-          pageId={`partnercontract:${application.id}`}
-          token={collabToken}
-          userName={userName}
-        >
-          <DocEditor
-            features="notes"
-            editable={canEdit && !signed}
-            placeholder="Draft the contract…"
-            className="border border-border rounded-md bg-card py-2"
-            collab={{ documentName, token: collabToken, userName }}
-          />
-        </PresenceProvider>
-      ) : (
-        <p className="text-xs text-muted-foreground italic">
-          Sign in again to edit the contract.
-        </p>
       )}
     </section>
   );

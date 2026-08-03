@@ -30,6 +30,10 @@ describe("signing variables", () => {
       today: "",
       memberName: "Ada Lovelace",
       supervisorName: "",
+      orgName: "",
+      legalEntityName: "",
+      legalEntityAddress: "",
+      fee: "",
     });
   });
 });

@@ -1,16 +1,12 @@
-import { createHash } from "node:crypto";
 import { Form, Link, useLoaderData, useNavigation } from "react-router";
-import { Check, Download, FileSignature, FileText, PartyPopper } from "lucide-react";
+import { Download, FileSignature, FileText, PartyPopper } from "lucide-react";
 import { buttonClasses } from "~/components/ui/Button";
 import { PartnerBackLink } from "~/partners/components/PartnerBackLink";
 import type { Route } from "./+types/partner.applications.$id";
 import { prisma } from "~/lib/db";
 import { parseSessionCookie } from "~/lib/cookies";
 import { getPresenceUser } from "~/lib/presence-user";
-import { getClientIp } from "~/lib/request-meta";
-import { readDocAsBlocks } from "~/collab/read";
 import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
-import { notifyPartnerApplicationEvent } from "~/partners/lib/partner-emails.server";
 import {
   formAnswerRows,
   type FormAnswerRow,
@@ -105,69 +101,14 @@ export async function action({ request, params }: Route.ActionArgs) {
         ...(partnerUser ? [{ partnerOrgId: partnerUser.partnerOrgId }] : []),
       ],
     },
-    select: {
-      id: true,
-      status: true,
-      contractSentAt: true,
-      contractSignedAt: true,
-    },
+    select: { id: true, status: true },
   });
   if (!application) throw new Response("Not found", { status: 404 });
 
   const form = await request.formData();
-  const intent = (form.get("intent") as string | null) ?? "title";
 
-  if (intent === "sign-contract") {
-    if (!application.contractSentAt) {
-      return { error: "There's no contract to sign yet." };
-    }
-    if (application.contractSignedAt) {
-      return { error: "This contract has already been signed." };
-    }
-    const signerName = (form.get("signerName") as string | null)?.trim() ?? "";
-    const affirm = form.get("affirm") === "on";
-    const esignConsent = form.get("esignConsent") === "on";
-    if (!signerName) return { error: "Type your full name to sign." };
-    if (!esignConsent) {
-      return { error: "Please consent to signing electronically to continue." };
-    }
-    if (!affirm) return { error: "Confirm the affirmation to sign." };
-    const legalEntityName =
-      (form.get("legalEntityName") as string | null)?.trim() || null;
-    if (!legalEntityName) {
-      return { error: "Add the legal entity name." };
-    }
-    // Tamper-evidence: hash the contract body exactly as it read at signing.
-    let contractSignedHash: string | null = null;
-    try {
-      const blocks = await readDocAsBlocks(`partnercontract:${application.id}:body`);
-      contractSignedHash = createHash("sha256")
-        .update(JSON.stringify(blocks))
-        .digest("hex");
-    } catch {
-      // A missing/unreadable body shouldn't block signing; hash stays null.
-    }
-    await prisma.partnerApplication.update({
-      where: { id: application.id },
-      data: {
-        legalEntityName,
-        legalEntityAddress:
-          (form.get("legalEntityAddress") as string | null)?.trim() || null,
-        contractSignedAt: new Date(),
-        contractSignerName: signerName,
-        contractSignerIp: getClientIp(request) ?? null,
-        contractSignerUserAgent: request.headers.get("user-agent") ?? null,
-        contractSignedHash,
-      },
-    });
-    void notifyPartnerApplicationEvent(application.id, {
-      kind: "contract-signed",
-      signerName,
-    }).catch((e) => console.error("partner contract-signed notify failed", e));
-    return { ok: true };
-  }
-
-  // Default: edit the pitch title (only while still under consideration).
+  // Only the pitch title is editable here; the contract is signed on its own
+  // route (/partner/applications/:id/sign-contract) via the signing engine.
   if (!PARTNER_EDITABLE_STATUSES.includes(application.status)) {
     return { error: "This application is no longer editable." };
   }
@@ -407,43 +348,18 @@ export default function PartnerApplicationDetail({
 
       {application.contractSentAt && (
         <section className="bg-card border border-border rounded-2xl p-5">
-          <h2 className="font-heading font-semibold text-dark-blue">Contract</h2>
+          <h2 className="font-heading font-semibold text-dark-blue mb-1">
+            Contract
+          </h2>
           {application.contractFee && (
-            <p className="text-sm text-muted-foreground mt-1">
+            <p className="text-sm text-muted-foreground">
               Fee: {application.contractFee}
             </p>
           )}
-          <div className="mt-3">
-            {collabToken ? (
-              <PresenceProvider
-                pageId={`partnercontract:${application.id}`}
-                token={collabToken}
-                userName={userName}
-              >
-                <DocEditor
-                  features="notes"
-                  editable={false}
-                  className="border border-border rounded-md bg-card py-2"
-                  collab={{
-                    documentName: `partnercontract:${application.id}:body`,
-                    token: collabToken,
-                    userName,
-                    userId: currentUserId,
-                  }}
-                />
-              </PresenceProvider>
-            ) : (
-              <p className="text-xs text-muted-foreground italic">
-                Sign in again to view the contract.
-              </p>
-            )}
-          </div>
-
           {application.contractSignedAt ? (
-            <div className="mt-4 flex flex-col gap-2">
-              <p className="text-sm text-accent-teal bg-accent-teal/10 border border-accent-teal/30 rounded-lg px-4 py-3 flex items-center gap-2">
-                <Check className="w-4 h-4 flex-shrink-0" />
-                Signed by {application.contractSignerName} on{" "}
+            <div className="mt-3 flex flex-col gap-2">
+              <p className="text-sm text-accent-teal">
+                ✓ Signed by {application.contractSignerName} on{" "}
                 {new Date(application.contractSignedAt).toLocaleDateString()}.
               </p>
               <a
@@ -455,62 +371,17 @@ export default function PartnerApplicationDetail({
               </a>
             </div>
           ) : (
-            <Form method="post" className="mt-4 flex flex-col gap-3 border-t border-border pt-4">
-              <input type="hidden" name="intent" value="sign-contract" />
-              <h3 className="text-sm font-heading font-semibold text-dark-blue">
-                Sign
-              </h3>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="flex flex-col gap-1 text-xs">
-                  <span className="text-muted-foreground">Legal entity name</span>
-                  <input
-                    name="legalEntityName"
-                    required
-                    defaultValue={application.legalEntityName ?? ""}
-                    className="px-3 py-2 text-sm border border-border rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-                  />
-                </label>
-                <label className="flex flex-col gap-1 text-xs">
-                  <span className="text-muted-foreground">Your full name</span>
-                  <input
-                    name="signerName"
-                    required
-                    placeholder="Type your name to sign"
-                    className="px-3 py-2 text-sm border border-border rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-                  />
-                </label>
-              </div>
-              <label className="flex flex-col gap-1 text-xs">
-                <span className="text-muted-foreground">Legal entity address</span>
-                <textarea
-                  name="legalEntityAddress"
-                  rows={2}
-                  defaultValue={application.legalEntityAddress ?? ""}
-                  className="px-3 py-2 text-sm border border-border rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-                />
-              </label>
-              <label className="flex items-start gap-2 text-sm text-dark-blue">
-                <input type="checkbox" name="esignConsent" required className="mt-1 rounded" />
-                I agree to sign this contract electronically and to conduct this
-                transaction by electronic records and signatures (E-SIGN / UETA).
-              </label>
-              <label className="flex items-start gap-2 text-sm text-dark-blue">
-                <input type="checkbox" name="affirm" required className="mt-1 rounded" />
-                I have read the contract above and, by typing my name, agree to
-                it on behalf of the legal entity named.
-              </label>
-              <p className="text-xs text-muted-foreground">
-                Your name, the time, and your IP address are recorded with your
-                signature.
+            <div className="mt-3 flex flex-col gap-2">
+              <p className="text-sm text-muted-foreground">
+                Your contract is ready. Review the agreement and sign online.
               </p>
-              <button
-                type="submit"
-                disabled={submitting}
+              <Link
+                to={`/partner/applications/${application.id}/sign-contract`}
                 className={buttonClasses("primary", "md", "self-start")}
               >
-                {submitting ? "Signing…" : "Sign contract"}
-              </button>
-            </Form>
+                Review &amp; sign contract
+              </Link>
+            </div>
           )}
         </section>
       )}

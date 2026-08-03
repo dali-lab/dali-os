@@ -27,6 +27,7 @@ const KINDS: SigningDocumentKind[] = [
   "MemberAgreement",
   "MentorshipAgreement",
   "Confidentiality",
+  "PartnerContract",
 ];
 const SCOPES: SigningGateScope[] = ["None", "App", "HiringCycle"];
 const AUDIENCES: SigningAudience[] = [

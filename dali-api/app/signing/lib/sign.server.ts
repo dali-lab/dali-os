@@ -16,6 +16,10 @@ export interface RecordSignatureArgs {
   signerUserId: string;
   fieldValues: Record<string, unknown>;
   request: Request;
+  // Pre-resolved merge variables. When omitted, resolved from the signer +
+  // current term (the member/mentorship/confidentiality path, unchanged).
+  // PartnerContract signing passes per-application values here.
+  variables?: Record<string, string>;
 }
 
 export type RecordSignatureResult =
@@ -61,7 +65,8 @@ export async function recordSignature(
     typedName = u ? fullName(u) : "";
   }
 
-  const variables = await resolveSigningVariablesForSigner(args.signerUserId);
+  const variables =
+    args.variables ?? (await resolveSigningVariablesForSigner(args.signerUserId));
   const frozenBody = bakeSigningBody(body, {
     fieldValues: args.fieldValues,
     variables,
