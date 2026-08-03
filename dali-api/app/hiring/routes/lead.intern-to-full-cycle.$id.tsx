@@ -3,6 +3,7 @@ import { Form, redirect, useLoaderData, useFetcher, Link } from "react-router";
 import type { Route } from "./+types/lead.intern-to-full-cycle.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth, forbidden } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";
 import type { Question } from "~/types";
 import type { Prisma } from "~/generated/prisma/client";
@@ -42,7 +43,7 @@ const MIN_POOL_SIZE = 2;
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   if (!(await isCore(auth.user.sub))) return redirect("/");
 
   const cycle = await prisma.applicationCycle.findUniqueOrThrow({

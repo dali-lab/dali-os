@@ -1,6 +1,7 @@
 import type { Route } from "./+types/settings.connected-apps";
 import { redirect } from "react-router";
 import { requireAuth } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { revokeAllForGrant } from "~/lib/session";
 
@@ -12,7 +13,7 @@ export async function loader() {
 
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
 
   const form = await request.formData();
   const grantId = form.get("grantId");

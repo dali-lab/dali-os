@@ -5,6 +5,7 @@ import { adminHandle } from "~/admin/adminNav";
 import { prisma } from "~/lib/db";
 import { ensureDomainGroup } from "~/lib/groups";
 import { requireAuth, forbidden } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { isAdmin, isCore, isAdminViaEnv, currentTerm } from "~/lib/roles";
 import { LAB_MEMBER_WHERE, MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { describeDomainUsage, DOMAIN_USAGE_COUNT_SELECT } from "./api.domains.$domainId";
@@ -32,7 +33,7 @@ export const meta: Route.MetaFunction = () => [{ title: "Domains · Admin · DAL
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   if (!(await isCore(auth.user.sub))) return redirect("/admin/members");
   const viewerIsAdmin = await isAdmin(auth.user.sub);
 

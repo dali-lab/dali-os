@@ -13,6 +13,7 @@ import type { Route } from "./+types/partners.applications.$id";
 import { prisma } from "~/lib/db";
 import { githubTeamSlug } from "~/lib/github-slug";
 import { requireAuth } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { parseSessionCookie } from "~/lib/cookies";
 import { canViewStaffing, isCore } from "~/lib/roles";
 import {
@@ -53,7 +54,7 @@ export const handle = {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   if (auth.user.type === "applicant") return redirect("/portal");
   if (!(await canViewStaffing(auth.user.sub))) return redirect("/");
 
@@ -156,7 +157,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   if (auth.user.type === "applicant") return redirect("/portal");
   if (!(await isCore(auth.user.sub))) {
     return { error: "You don't have permission to edit this application." };

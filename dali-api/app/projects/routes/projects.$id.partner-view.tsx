@@ -1,6 +1,7 @@
 import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/projects.$id.partner-view";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { loadPartnerProjectView } from "~/partners/lib/partner-project-view.server";
 import { PartnerProjectHubView } from "~/partners/components/PartnerProjectHubView";
 import { ProjectViewSwitch } from "../components/ProjectViewSwitch";
@@ -38,7 +39,7 @@ export const handle = {
 // there's no partnerSince to show.
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   const portalRedirect = redirectApplicantToPortal(auth);
   if (portalRedirect) return portalRedirect;
 

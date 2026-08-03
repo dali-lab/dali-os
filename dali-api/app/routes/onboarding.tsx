@@ -10,6 +10,7 @@
 import type { Route } from "./+types/onboarding";
 import { redirect, useLoaderData } from "react-router";
 import { requireAuth } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { loadPublicForm } from "~/forms/lib/public-form";
 import {
@@ -22,7 +23,7 @@ export const meta: Route.MetaFunction = () => [{ title: "Welcome · DALI OS" }];
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
 
   const member = await prisma.dALIMember.findUnique({
     where: { userId: auth.user.sub },

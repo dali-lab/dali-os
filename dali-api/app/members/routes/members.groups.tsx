@@ -4,6 +4,7 @@ import type { Route } from "./+types/members.groups";
 import { prisma } from "~/lib/db";
 import { listAllGroups } from "~/lib/groups";
 import { requireAuth, forbidden } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { canViewForms, currentTermMemberWhere } from "~/lib/roles";
 import { MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { resolvePhotoUrl } from "~/lib/photo";
@@ -60,7 +61,7 @@ type TermOption = { id: string; code: string };
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   if (!(await canViewForms(auth.user.sub))) return redirect("/members");
 
   // Picker pool is current-term lab members only (no applicants, no alumni).

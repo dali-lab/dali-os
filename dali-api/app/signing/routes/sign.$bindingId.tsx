@@ -7,6 +7,7 @@ import { ShieldCheck, Download } from "lucide-react";
 import type { Route } from "./+types/sign.$bindingId";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { DocEditor, looksLikeProseMirrorDoc } from "~/components/doc";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { renderNodes, type PMNode } from "~/collab/export-html";
@@ -28,7 +29,7 @@ function isSafeNext(next: string | null): next is string {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   const userId = auth.user.sub;
   const bindingId = params.bindingId!;
 
@@ -106,7 +107,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
 
   const bindingId = params.bindingId!;
   const formData = await request.formData();

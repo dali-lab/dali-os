@@ -2,6 +2,7 @@ import { Link, redirect, useLoaderData } from "react-router";
 import { ArrowRight } from "lucide-react";
 import type { Route } from "./+types/admin";
 import { requireAuth } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { isAdmin, isCore } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { cn } from "~/lib/cn";
@@ -13,7 +14,7 @@ export const meta: Route.MetaFunction = () => [{ title: "Admin · DALI OS" }];
 // hidden from the grouped dashboard for everyone else.
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   if (!(await isCore(auth.user.sub))) return redirect("/");
   // Live signals surfaced on the relevant cluster cards. Both are cheap counts
   // and default to 0, so the hub degrades gracefully if either table is empty.

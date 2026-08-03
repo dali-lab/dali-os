@@ -7,6 +7,7 @@ import { ArrowLeft, Download, ShieldCheck } from "lucide-react";
 import type { Route } from "./+types/admin.agreements.$id.signature.$sigId";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";
 import { fullName, formatDateTime } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
@@ -22,7 +23,7 @@ function safeFilename(s: string): string {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   if (!(await isCore(auth.user.sub))) return redirect("/");
 
   const sig = await prisma.signingSignature.findUnique({

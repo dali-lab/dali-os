@@ -132,7 +132,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   });
   const headers = new Headers();
   setSessionCookie(headers, session.rawId);
-  headers.set("Location", "/portal");
+  const next = consumeLoginNext(request, headers);
+  headers.set("Location", next ?? "/portal");
 
   return new Response(null, { status: 302, headers });
 }

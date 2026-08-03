@@ -9,6 +9,7 @@ import {
 } from "react-router";
 import type { Route } from "./+types/members";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { isCore, canViewForms } from "~/lib/roles";
 import { graduateProgramLabel } from "~/lib/dartmouth-people";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
@@ -58,7 +59,7 @@ function parseStatus(raw: string | null): MemberStatus {
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   const portalRedirect = redirectApplicantToPortal(auth);
   if (portalRedirect) return portalRedirect;
 
@@ -185,7 +186,7 @@ const PROFILE_TEXT_FIELDS = [
 
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   const portalRedirect = redirectApplicantToPortal(auth);
   if (portalRedirect) return portalRedirect;
   if (!(await isCore(auth.user.sub))) {

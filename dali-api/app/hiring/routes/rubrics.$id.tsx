@@ -2,6 +2,7 @@ import { redirect } from 'react-router'
 import type { Route } from './+types/rubrics.$id'
 import { prisma } from '~/lib/db'
 import { requireCoreOrDomainLead } from "~/lib/auth";
+import { redirectToLogin } from '~/lib/login-next'
 import { RubricDetail } from '~/hiring/components/RubricDetail'
 
 export const meta: Route.MetaFunction = ({ data }) => {
@@ -47,7 +48,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const auth = gate.auth
 
   const user = await prisma.user.findUnique({ where: { id: auth.user.sub } })
-  if (!user) return redirect('/login')
+  if (!user) return redirectToLogin(request)
 
   const formData = await request.formData()
   const intent = formData.get('intent') as string

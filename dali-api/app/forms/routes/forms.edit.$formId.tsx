@@ -1,6 +1,7 @@
 import { redirect } from "react-router";
 import type { Route } from "./+types/forms.edit.$formId";
 import { requireAuth, forbidden, redirectApplicantToPortal } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import {
@@ -36,7 +37,7 @@ export const handle = {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   const portalRedirect = redirectApplicantToPortal(auth);
   if (portalRedirect) return portalRedirect;
   if (!(await isCore(auth.user.sub))) return redirect("/");

@@ -3,6 +3,7 @@ import type { Route } from "./+types/admin.activity";
 import { adminHandle } from "~/admin/adminNav";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { isCore, isAdmin } from "~/lib/roles";
 import { fullName } from "~/lib/display";
 import { AUDIT_ACTIONS } from "~/lib/audit-actions";
@@ -30,7 +31,7 @@ const PAGE_SIZE = 50;
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   if (!(await isCore(auth.user.sub))) return redirect("/");
 
   const url = new URL(request.url);

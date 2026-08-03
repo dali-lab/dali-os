@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { prisma } from '~/lib/db'
 import { requireAuth } from "~/lib/auth";
+import { redirectToLogin } from '~/lib/login-next'
 import { resolvePhotoUrl } from '~/lib/photo'
 import { parseSessionCookie } from '~/lib/cookies'
 import { getPresenceUser } from '~/lib/presence-user'
@@ -51,7 +52,7 @@ export const meta: Route.MetaFunction = ({ data }) => {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request)
-  if (!auth.ok) throw redirect('/login')
+  if (!auth.ok) throw redirectToLogin(request)
 
   const member = await prisma.user.findUnique({
     where: { id: auth.user.sub },

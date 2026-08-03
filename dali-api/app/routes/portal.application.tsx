@@ -3,6 +3,7 @@ import { redirect, useLoaderData, useFetcher, Link } from "react-router";
 import type { Route } from "./+types/portal.application";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { getActiveCycle } from "~/hiring/lib/cycles";
 import { presignAnswers } from "~/hiring/lib/presign";
 import type { Question } from "~/types";
@@ -17,7 +18,7 @@ export const meta: Route.MetaFunction = () => [{ title: "My application · DALI 
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
 
   const active = await getActiveCycle();
   let cycleId: string;

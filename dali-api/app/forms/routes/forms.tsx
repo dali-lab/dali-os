@@ -1,6 +1,7 @@
 import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/forms";
 import { requireAuth, forbidden, redirectApplicantToPortal } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { canViewForms } from "~/lib/roles";
 import { loadFormsLevel, runFormsAction } from "~/forms/lib/forms-data";
 import { FormsBrowser } from "~/forms/components/FormsBrowser";
@@ -9,7 +10,7 @@ export const meta: Route.MetaFunction = () => [{ title: "Forms · DALI OS" }];
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   const portalRedirect = redirectApplicantToPortal(auth);
   if (portalRedirect) return portalRedirect;
   if (!(await canViewForms(auth.user.sub))) return redirect("/");

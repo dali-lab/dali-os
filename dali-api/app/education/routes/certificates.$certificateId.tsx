@@ -1,6 +1,7 @@
-import { redirect, useLoaderData } from "react-router";
+import { useLoaderData } from "react-router";
 import type { Route } from "./+types/certificates.$certificateId";
 import { requireAuth } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { getCertificate } from "~/education/lib/certificates.server";
 import { isOfferingManager } from "~/education/lib/access.server";
 import { formatDateShort } from "~/lib/display";
@@ -14,7 +15,7 @@ export const meta: Route.MetaFunction = ({ data }) => [
 // users can open their certificates without the member shell.
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
 
   const certificate = await getCertificate(params.certificateId!);
   if (!certificate) throw new Response("Not found", { status: 404 });

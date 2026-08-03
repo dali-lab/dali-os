@@ -6,6 +6,7 @@
 import { redirect } from "react-router";
 import { prisma } from "~/lib/db";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { graduateProgramLabel } from "~/lib/dartmouth-people";
 import { parseSessionCookie } from "~/lib/cookies";
@@ -191,7 +192,7 @@ export async function loadProfilePage({
   targetId: string;
 }): Promise<ProfilePageData> {
   const auth = await requireAuth(request);
-  if (!auth.ok) throw redirect("/login");
+  if (!auth.ok) throw redirectToLogin(request);
   const portalRedirect = redirectApplicantToPortal(auth);
   if (portalRedirect) throw portalRedirect;
 
@@ -519,7 +520,7 @@ export async function runProfileAction({
   targetId: string;
 }): Promise<ProfileActionResult | Response> {
   const auth = await requireAuth(request);
-  if (!auth.ok) throw redirect("/login");
+  if (!auth.ok) throw redirectToLogin(request);
   const portalRedirect = redirectApplicantToPortal(auth);
   if (portalRedirect) throw portalRedirect;
 

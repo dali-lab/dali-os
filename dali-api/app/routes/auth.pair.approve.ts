@@ -7,13 +7,14 @@
 import { redirect } from "react-router";
 import type { Route } from "./+types/auth.pair.approve";
 import { requireAuth } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { logAuditEvent } from "~/lib/audit";
 import { formatUserCode, normalizeUserCode } from "~/lib/pairing";
 
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
 
   const form = await request.formData();
   const intent = form.get("intent");
