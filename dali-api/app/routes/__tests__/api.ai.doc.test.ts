@@ -9,6 +9,31 @@ vi.mock("~/lib/auth", () => ({
 }));
 vi.mock("~/lib/db");
 
+// These tests drive the real action, which builds an Anthropic client and
+// calls it once a provider key is set — so without this stub the suite makes
+// live HTTPS requests. api.anthropic.com 401s quickly; chat.dartmouth.edu is
+// off-campus-unreachable from CI and the call hangs past Vitest's 5s timeout,
+// which is what made the Dartmouth key-gate test fail intermittently. Nothing
+// here asserts on provider output — the API surface is what's under test — so
+// the stub just fails the call the way a bad key would.
+vi.mock("@anthropic-ai/sdk", () => {
+  class APIError extends Error {
+    constructor(readonly status = 401, message = "stubbed SDK: no live key") {
+      super(message);
+    }
+  }
+  class Anthropic {
+    static APIError = APIError;
+    messages = {
+      create: vi.fn().mockRejectedValue(new APIError()),
+      stream: vi.fn(() => {
+        throw new APIError();
+      }),
+    };
+  }
+  return { default: Anthropic, APIError };
+});
+
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { _resetForTests as resetRateLimits } from "~/lib/rate-limit";
