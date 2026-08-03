@@ -2467,6 +2467,12 @@ model Project {
   chartStringType String?
   chartString     String?
 
+  // Private projects are excluded from every `projects:*` form reference
+  // source, so they can't be picked as an answer on a bid/preference form.
+  // Deliberately NOT a hub/search filter — the hub still lists them.
+  // Toggled by Core/Admin in the project settings modal.
+  isPrivate Boolean @default(false)
+
   overviewPage Page? @relation("ProjectOverview", fields: [overviewPageId], references: [id])
   prdPage      Page? @relation("ProjectPRD", fields: [prdPageId], references: [id])
 

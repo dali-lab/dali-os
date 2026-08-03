@@ -8,6 +8,7 @@ import {
   fileMatchesAccept,
 } from "~/lib/file-validation";
 import { SKILLS_RATING_UNRATED, parseSkillsRating } from "~/lib/skills-rating";
+import type { ReferenceOption } from "~/forms/lib/reference-sources.shared";
 
 export type UrlCheckState = {
   status: "idle" | "checking" | "done";
@@ -96,6 +97,110 @@ function CheckboxField({
           <span>{option}</span>
         </label>
       ))}
+    </div>
+  );
+}
+
+// Card picker for `projects:*` reference options. Same contract as the
+// <select> it replaces — one value, stored as the project id — but each
+// choice renders its context: partner, blurb, this term's per-domain
+// challenges, and a link to the term's SOW page when one is set.
+function ReferenceCardField({
+  groupName,
+  groupLabel,
+  options,
+  value,
+  onChange,
+  disabled = false,
+}: {
+  groupName: string;
+  groupLabel: string;
+  options: ReferenceOption[];
+  value: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label={groupLabel}
+      className={`flex flex-col gap-2 ${disabled ? "opacity-60" : ""}`}
+    >
+      {options.map((o) => {
+        const selected = value === o.value;
+        const card = o.card;
+        return (
+          <label
+            key={o.value}
+            className={`flex items-start gap-3 rounded-lg border p-4 transition-colors ${
+              disabled ? "cursor-not-allowed" : "cursor-pointer"
+            } ${
+              selected
+                ? "border-accent-coral bg-accent-coral/5"
+                : "border-border bg-card hover:border-accent-coral/40"
+            }`}
+          >
+            <input
+              type="radio"
+              name={groupName}
+              value={o.value}
+              checked={selected}
+              onChange={() => onChange(o.value)}
+              disabled={disabled}
+              className="mt-1 w-4 h-4 border-border text-accent-coral focus:ring-accent-coral/30 shrink-0"
+            />
+            <div className="min-w-0 flex flex-col gap-1.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-semibold text-dark-blue">{o.label}</span>
+                {card?.partners.map((p) => (
+                  <span
+                    key={p}
+                    className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground"
+                  >
+                    {p}
+                  </span>
+                ))}
+              </div>
+
+              {card?.description && (
+                <p className="text-sm text-muted-foreground">
+                  {card.description}
+                </p>
+              )}
+
+              {card && card.challenges.length > 0 && (
+                <dl className="flex flex-col gap-1 mt-0.5">
+                  {card.challenges.map((c) => (
+                    <div key={c.domain} className="text-sm">
+                      <dt className="inline font-medium text-dark-blue">
+                        {c.domain}:{" "}
+                      </dt>
+                      {/* Challenge text is authored as multi-line plain text. */}
+                      <dd className="inline whitespace-pre-line text-muted-foreground">
+                        {c.scope}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
+
+              {card?.sowPageId && (
+                // Inside a <label>, so a bare click would also toggle the
+                // radio — stop it so the link only opens the doc.
+                <a
+                  href={`/documents/${card.sowPageId}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="self-start text-xs px-2 py-0.5 rounded-full border border-accent-coral/40 text-accent-coral hover:bg-accent-coral/10"
+                >
+                  SOW
+                </a>
+              )}
+            </div>
+          </label>
+        );
+      })}
     </div>
   );
 }
@@ -386,6 +491,22 @@ export function FormQuestionField({
     // Options were resolved server-side from the question's data source.
     // The visible label differs from the stored value (a DB id).
     const opts = question.data.referenceOptions ?? [];
+    // `projects:*` sources attach a card to every option — render those as
+    // selectable cards so a member picking a project sees the partner,
+    // blurb, challenges, and SOW rather than just a name. Sources without
+    // cards (the domains ones) keep the plain <select>.
+    if (opts.length > 0 && opts.every((o) => o.card)) {
+      return (
+        <ReferenceCardField
+          groupName={question.key}
+          groupLabel={question.data.label}
+          options={opts}
+          value={value}
+          onChange={onChange}
+          disabled={disabled}
+        />
+      );
+    }
     return (
       <select
         value={value}
