@@ -140,6 +140,7 @@ export const prisma = {
   project: {
     findUnique: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
+    create: vi.fn(),
   },
   sprint: {
     findMany: vi.fn().mockResolvedValue([]),
