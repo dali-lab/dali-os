@@ -132,6 +132,13 @@ model User {
   // Null = not yet invited; the timestamp records when it was checked off.
   figmaInvitedAt DateTime?
 
+  // ─── Presence ─────────────────────────────────────────────────────────────
+  // Bumped at most once per 60s in requireAuth (fire-and-forget). Null = never
+  // active since the column was added. hideActivity gates display only; the
+  // write path always records.
+  lastActiveAt DateTime?
+  hideActivity Boolean   @default(false)
+
   // ─── Relations: existing ──────────────────────────────────────────────────
   daliMember                    DALIMember?
   applicationCycleStatusUpdates ApplicationCycleStatusUpdate[]

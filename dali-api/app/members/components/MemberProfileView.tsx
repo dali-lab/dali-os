@@ -37,6 +37,10 @@ import type {
   ProfileMember,
   ProfilePageData,
 } from "~/members/lib/profile-page.server";
+import { useAvatarStatus } from "~/components/presence/PresenceStatusProvider";
+import { formatLastActive } from "~/lib/presence";
+import { isNewMember, isBirthdayToday } from "~/members/lib/warmth";
+import { NewBadge, BirthdayBadge } from "~/members/components/WarmthBadges";
 
 export function MemberProfileView({
   data,
@@ -127,6 +131,28 @@ export function MemberProfileView({
     }
   }
 
+  // Live "last active" for this member's header (respects their hide-activity
+  // setting server-side). A snapshot of `now` per render is fine — the poll
+  // refreshes the status, not the clock.
+  const presence = useAvatarStatus(member.id);
+  const presenceLabel =
+    presence?.state === "active"
+      ? "Active now"
+      : presence?.lastActiveAt
+        ? formatLastActive(new Date(presence.lastActiveAt), new Date())
+        : null;
+  const showNewBadge =
+    !isAlumni &&
+    isNewMember(
+      {
+        onboardedAt: member.onboardedAt ? new Date(member.onboardedAt) : null,
+        createdAt: new Date(member.createdAt),
+      },
+      new Date(),
+    );
+  const showBirthday =
+    !!member.birthday && isBirthdayToday(new Date(member.birthday), new Date());
+
   const page = (
     <div className="w-full flex flex-col xl:flex-row xl:items-start gap-6">
       <div className="max-w-4xl w-full flex flex-col gap-6">
@@ -146,11 +172,28 @@ export function MemberProfileView({
           canEdit={canEdit}
         />
         <div className="min-w-0">
-          <p className="font-heading text-lg font-semibold text-foreground">
-            {member.firstName} {member.lastName}
+          <p className="font-heading text-lg font-semibold text-foreground flex items-center gap-2">
+            <span>
+              {member.firstName} {member.lastName}
+            </span>
+            {showNewBadge && <NewBadge />}
+            {showBirthday && <BirthdayBadge />}
           </p>
           {member.handle && (
             <p className="text-sm text-accent-coral">@{member.handle}</p>
+          )}
+          {presenceLabel && (
+            <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span
+                aria-hidden
+                className={`w-1.5 h-1.5 rounded-full ${
+                  presence?.state === "active"
+                    ? "bg-accent-green"
+                    : "border border-accent-yellow bg-background"
+                }`}
+              />
+              {presenceLabel}
+            </p>
           )}
           {(isStaff || isAlumni || member.gradProgram) && (
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">

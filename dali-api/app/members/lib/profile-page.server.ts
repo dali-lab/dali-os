@@ -69,6 +69,9 @@ export type ProfileMember = {
   handle: string | null;
   phoneNumber: string | null;
   birthday: string | null;
+  /** Account creation + lab-onboarding timestamps — drive the "New" badge. */
+  createdAt: string;
+  onboardedAt: string | null;
   dietaryRestrictions: string | null;
   domainEligibilities: Array<{
     id: string;
@@ -247,6 +250,8 @@ export async function loadProfilePage({
       handle: true,
       phoneNumber: true,
       birthday: true,
+      createdAt: true,
+      daliMember: { select: { onboardedAt: true } },
       dietaryRestrictions: true,
       domainEligibilities: {
         select: {
@@ -466,13 +471,22 @@ export async function loadProfilePage({
 
   // Convert the raw People-API code to a label server-side; only the label
   // (gradProgram) crosses the wire, not the underlying department_class.
-  const { dartmouthDepartmentClass, ...memberFields } = member;
+  const {
+    dartmouthDepartmentClass,
+    createdAt: memberCreatedAt,
+    daliMember: memberDaliMember,
+    ...memberFields
+  } = member;
 
   return {
     member: {
       ...memberFields,
       gradProgram: graduateProgramLabel(dartmouthDepartmentClass),
       birthday: member.birthday ? member.birthday.toISOString() : null,
+      createdAt: memberCreatedAt.toISOString(),
+      onboardedAt: memberDaliMember?.onboardedAt
+        ? memberDaliMember.onboardedAt.toISOString()
+        : null,
       domainEligibilities: member.domainEligibilities.map((e) => ({
         id: e.id,
         level: e.level as Level,

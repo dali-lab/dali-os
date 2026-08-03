@@ -18,6 +18,8 @@ import { assignHandleIfMissing } from "~/lib/handle";
 import { fullName, primaryEmail } from "~/lib/display";
 import { Avatar } from "~/components/ui/Avatar";
 import { RolePills } from "~/components/ui/RolePills";
+import { isNewMember, isBirthdayToday } from "~/members/lib/warmth";
+import { NewBadge, BirthdayBadge } from "~/members/components/WarmthBadges";
 import { buttonClasses } from "~/components/ui/Button";
 import { LAB_MEMBER_WHERE, MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { resolvePhotoUrl } from "~/lib/photo";
@@ -48,6 +50,10 @@ type MemberRow = {
   // Each domain the member is eligible for, with their level — rendered as
   // pills in the Roles column. Same source as the staffing boards.
   domainRoles: { domainName: string; level: string }[];
+  // Warmth surfaces: "New" pill (recently joined) + 🎂 on the day.
+  createdAt: string;
+  onboardedAt: string | null;
+  birthday: string | null;
 };
 
 type MemberStatus = "active" | "alumni";
@@ -123,6 +129,9 @@ export async function loader({ request }: Route.LoaderArgs) {
       classYear: true,
       dartmouthDepartmentClass: true,
       photoUrl: true,
+      createdAt: true,
+      birthday: true,
+      daliMember: { select: { onboardedAt: true } },
       adminMembership: { select: { isStaff: true } },
       coreAssignments: { select: { leadTitle: true } },
       domainEligibilities: {
@@ -144,6 +153,9 @@ export async function loader({ request }: Route.LoaderArgs) {
     gradProgram: graduateProgramLabel(u.dartmouthDepartmentClass),
     photoUrl: await resolvePhotoUrl(u.photoUrl),
     isStaff: u.adminMembership?.isStaff === true,
+    createdAt: u.createdAt.toISOString(),
+    onboardedAt: u.daliMember?.onboardedAt?.toISOString() ?? null,
+    birthday: u.birthday ? u.birthday.toISOString() : null,
     // Core pills: one per distinct lead title (deduped across terms — a
     // "Hiring Lead" who held the title for three terms shows one chip). A Core
     // member with assignments but no title set still gets a plain "Core" pill
@@ -543,11 +555,23 @@ function MembersTable({ rows, status }: { rows: MemberRow[]; status: MemberStatu
                     photoUrl={m.photoUrl}
                     name={fullName(m) || "Member"}
                     size="sm"
+                    userId={m.id}
                     className="flex-shrink-0"
                   />
                   <span>
                     {m.firstName} {m.lastName}
                   </span>
+                  {status === "active" &&
+                    isNewMember(
+                      {
+                        onboardedAt: m.onboardedAt ? new Date(m.onboardedAt) : null,
+                        createdAt: new Date(m.createdAt),
+                      },
+                      new Date(),
+                    ) && <NewBadge />}
+                  {m.birthday && isBirthdayToday(new Date(m.birthday), new Date()) && (
+                    <BirthdayBadge />
+                  )}
                   {m.isStaff && (
                     <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-accent-teal/15 text-accent-teal flex-shrink-0">
                       Staff

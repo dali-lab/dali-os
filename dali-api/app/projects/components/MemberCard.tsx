@@ -163,7 +163,7 @@ function ExternalMentorCard({
   return (
     <div className="rounded-md p-2.5 flex flex-col gap-1.5 select-none bg-accent-teal/[0.06] border border-accent-teal/40">
       <div className="flex items-start gap-2">
-        <Avatar photoUrl={card.photoUrl} name={fullName} size="sm" />
+        <Avatar photoUrl={card.photoUrl} name={fullName} size="sm" userId={card.userId} />
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-1.5 flex-wrap">
             <span className="text-sm font-semibold text-foreground truncate text-left">
@@ -223,7 +223,7 @@ function MemberCardBody({
   return (
     <>
       <div className="flex items-start gap-2">
-        <Avatar photoUrl={card.photoUrl} name={fullName} size="sm" />
+        <Avatar photoUrl={card.photoUrl} name={fullName} size="sm" userId={card.userId} />
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-1.5 flex-wrap">
             <span className="text-sm font-semibold text-foreground truncate text-left">

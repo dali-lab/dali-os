@@ -125,6 +125,7 @@ export async function requireAuth(request: Request): Promise<AuthResult> {
 
   // Fire-and-forget — a failed roll doesn't break the request.
   rollSession(session).catch(() => {});
+  bumpLastActive(session.user.id).catch(() => {});
 
   return {
     ok: true,
@@ -257,4 +258,17 @@ export async function redirectPartnerToPortal(
   auth: AuthSuccess,
 ): Promise<Response | null> {
   return (await isPartnerAccount(auth)) ? redirect("/partner") : null;
+}
+
+// Throttled presence heartbeat. Mirrors rollSession's throttle pattern:
+// a conditional UPDATE so the write is a no-op when the row is already fresh.
+// The 60s guard keeps concurrent Neon connections from hammering the same row
+// on every loader call while the user navigates quickly between pages.
+export async function bumpLastActive(userId: string): Promise<void> {
+  await prisma.$executeRaw`
+    UPDATE "User"
+    SET "lastActiveAt" = now()
+    WHERE id = ${userId}
+      AND ("lastActiveAt" IS NULL OR "lastActiveAt" < now() - interval '60 seconds')
+  `;
 }

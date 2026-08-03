@@ -136,7 +136,7 @@ export function SettingsPage({
             title="Workspace"
             description="How pages open, and whether to show the sidebar."
           >
-            <WorkspaceSettingsBlock />
+            <WorkspaceSettingsBlock hideActivity={data.workspace.hideActivity} />
           </SettingsBlock>
         )}
         {active === "slack" && (
