@@ -38,7 +38,6 @@ import { formAnswerRows } from "~/forms/lib/answer-rows.server";
 import type { Question } from "~/types";
 import { DocEditor } from "~/components/doc";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
-import { EditModeToggle, useEditMode } from "~/components/EditModeToggle";
 import { isEmptyBlocks } from "~/lib/blocks";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { useDialog, useConfirmSubmit } from "~/components/ui/dialog";
@@ -545,23 +544,14 @@ export default function PartnerApplicationDetail() {
     formAnswers,
     availableDomains,
     terms,
-    canEdit: canEditPerm,
+    canEdit,
     collabToken,
     userName,
   } = useLoaderData() as LoaderData;
-  const { editing: canEdit, editMode, setEditMode } = useEditMode(canEditPerm);
   const actionData = useActionData<typeof action>();
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-end">
-        <EditModeToggle
-          canEdit={canEditPerm}
-          editMode={editMode}
-          setEditMode={setEditMode}
-        />
-      </div>
-
       {actionData?.error && (
         <div className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-md px-3 py-2">
           {actionData.error}
