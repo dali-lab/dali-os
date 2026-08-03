@@ -23,7 +23,8 @@ import {
 // by the editor); the `satisfies` below makes adding a key there without a
 // loader here a compile error, and vice versa.
 
-export type ReferenceOption = { value: string; label: string };
+export type { ReferenceOption, ProjectOptionCard } from "./reference-sources.shared";
+import type { ReferenceOption } from "./reference-sources.shared";
 
 // Context a loader may use to scope its options. `userId` is the member
 // filling the form, when known — absent on the public/unauthenticated path.
@@ -43,6 +44,65 @@ export type ReferenceContext = {
 // forget it.
 const NOT_PRIVATE = { isPrivate: false } as const;
 
+// One shared select for every `projects:*` source, so all three render the
+// same card. The per-term bits (domainScopes, termStatuses) are fetched
+// unfiltered and narrowed to the card's term in toProjectOption — a project
+// runs few terms, so this stays one query per source rather than one per row.
+const PROJECT_CARD_SELECT = {
+  id: true,
+  name: true,
+  description: true,
+  // Current partners only; an ended partnership isn't who you'd be working with.
+  partners: {
+    where: { endedAt: null },
+    select: { partnerOrg: { select: { name: true } } },
+  },
+  domainScopes: {
+    select: { termId: true, scope: true, domain: { select: { name: true } } },
+  },
+  termStatuses: { select: { termId: true, sowPageId: true } },
+  projectTerms: { select: { termId: true, term: { select: { sortKey: true } } } },
+} as const;
+
+type ProjectCardRow = {
+  id: string;
+  name: string;
+  description: string | null;
+  partners: { partnerOrg: { name: string } }[];
+  domainScopes: { termId: string; scope: string; domain: { name: string } }[];
+  termStatuses: { termId: string; sowPageId: string | null }[];
+  projectTerms: { termId: string; term: { sortKey: number } }[];
+};
+
+// Build one card option. `scopeTermId` is the term the source scopes to, or
+// null for the term-less `projects:active` — which falls back to the
+// project's latest term (highest sortKey) so its card still shows the most
+// recent challenges and SOW rather than nothing.
+function toProjectOption(
+  p: ProjectCardRow,
+  scopeTermId: string | null,
+): ReferenceOption {
+  const latestTermId =
+    [...p.projectTerms].sort((a, b) => b.term.sortKey - a.term.sortKey)[0]
+      ?.termId ?? null;
+  const termId = scopeTermId ?? latestTermId;
+
+  return {
+    value: p.id,
+    label: p.name,
+    card: {
+      description: p.description,
+      partners: p.partners.map((pp) => pp.partnerOrg.name),
+      challenges: p.domainScopes
+        .filter((s) => s.termId === termId && s.scope.trim() !== "")
+        .map((s) => ({ domain: s.domain.name, scope: s.scope }))
+        .sort((a, b) => a.domain.localeCompare(b.domain)),
+      sowPageId:
+        p.termStatuses.find((t) => t.termId === termId)?.sowPageId ?? null,
+    },
+  };
+}
+
 const LOADERS = {
   // Projects a member can bid on this term: non-archived projects that run
   // this term (ProjectTerm) AND declare at least one domain (ProjectDomain).
@@ -60,18 +120,18 @@ const LOADERS = {
         domains: { some: {} },
       },
       orderBy: { name: "asc" },
-      select: { id: true, name: true },
+      select: PROJECT_CARD_SELECT,
     });
-    return projects.map((p) => ({ value: p.id, label: p.name }));
+    return projects.map((p) => toProjectOption(p, term.id));
   },
   // Every non-archived project, regardless of term.
   "projects:active": async () => {
     const projects = await prisma.project.findMany({
       where: { ...NOT_PRIVATE, status: { not: "Archived" } },
       orderBy: { name: "asc" },
-      select: { id: true, name: true },
+      select: PROJECT_CARD_SELECT,
     });
-    return projects.map((p) => ({ value: p.id, label: p.name }));
+    return projects.map((p) => toProjectOption(p, null));
   },
   // Non-archived projects whose term set includes the term the form author
   // chose (ctx.termId, from the question's data.referenceTermId). Term-scoped:
@@ -86,9 +146,9 @@ const LOADERS = {
         projectTerms: { some: { termId: ctx.termId } },
       },
       orderBy: { name: "asc" },
-      select: { id: true, name: true },
+      select: PROJECT_CARD_SELECT,
     });
-    return projects.map((p) => ({ value: p.id, label: p.name }));
+    return projects.map((p) => toProjectOption(p, ctx.termId!));
   },
   // Active domains (Design, Dev, …).
   "domains:active": async () => {
