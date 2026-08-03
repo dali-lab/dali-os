@@ -2279,6 +2279,12 @@ const UNASSIGNED_ROLE_KEY = "unassigned";
 const NO_ROLES_MESSAGE =
   "You have no paid roles this term, so there's nothing to log hours against.";
 
+// The add-entry row mixes a date input, two time inputs, a select and a
+// textarea. Each of those sizes itself from its own intrinsic content — the
+// native date/time widgets and the select spinner all differ, and by locale —
+// so equal padding does not produce equal heights. Pin them instead.
+const FIELD_BASE = "h-9 px-2 text-sm border rounded-md bg-background text-foreground";
+
 function timeEntryRoleKey(t: TimeEntryDTO): string {
   return t.assignmentType && t.roleRefId ? `${t.assignmentType}:${t.roleRefId}` : UNASSIGNED_ROLE_KEY;
 }
@@ -2371,9 +2377,7 @@ function RoleSelectField({
         required
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className={`px-2 py-1.5 text-sm border rounded-md bg-background text-foreground ${
-          value ? "border-border" : "border-red-500"
-        }`}
+        className={`${FIELD_BASE} ${value ? "border-border" : "border-red-500"}`}
       >
         {/* Placeholder, not a choice: every logged hour bills to a real role,
             so this is disabled and can't be submitted (unlike the old
@@ -2830,7 +2834,7 @@ function TimesheetView({ data }: { data: LoaderData }) {
                 required
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
+                className={`${FIELD_BASE} border-border`}
               />
             </label>
             <label className="text-xs text-muted-foreground flex flex-col gap-1">
@@ -2841,7 +2845,7 @@ function TimesheetView({ data }: { data: LoaderData }) {
                 step="900"
                 value={startTime}
                 onChange={(e) => setStartTime(e.target.value)}
-                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
+                className={`${FIELD_BASE} border-border`}
               />
             </label>
             <label className="text-xs text-muted-foreground flex flex-col gap-1">
@@ -2853,9 +2857,7 @@ function TimesheetView({ data }: { data: LoaderData }) {
                 value={endTime}
                 onChange={(e) => setEndTime(e.target.value)}
                 aria-invalid={!!rangeError}
-                className={`px-2 py-1.5 text-sm border rounded-md bg-background text-foreground ${
-                  rangeError ? "border-red-500" : "border-border"
-                }`}
+                className={`${FIELD_BASE} ${rangeError ? "border-red-500" : "border-border"}`}
               />
             </label>
             <RoleSelectField
@@ -2870,16 +2872,19 @@ function TimesheetView({ data }: { data: LoaderData }) {
                 name="note"
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
-                rows={2}
+                rows={1}
                 placeholder="What did you work on?"
-                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground resize-y min-h-[2.25rem]"
+                // Starts level with the rest of the row; drag to grow for a
+                // longer note. A textarea is top-aligned rather than centred
+                // like an input, hence the explicit vertical padding.
+                className={`${FIELD_BASE} border-border py-2 min-h-9 resize-y`}
               />
             </label>
             <div className="flex items-center gap-1.5 sm:col-span-2 sm:justify-end xl:col-span-1 xl:justify-start">
               <button
                 type="submit"
                 disabled={!canSubmit}
-                className="px-3 py-1.5 text-xs font-semibold rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 disabled:opacity-50"
+                className="h-9 px-3 text-xs font-semibold rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 disabled:opacity-50"
               >
                 Add
               </button>
@@ -2888,7 +2893,7 @@ function TimesheetView({ data }: { data: LoaderData }) {
                   type="button"
                   onClick={resetAddForm}
                   aria-label="Reset"
-                  className="inline-flex items-center justify-center p-1.5 text-xs font-semibold rounded-md border border-border text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                  className="inline-flex h-9 w-9 items-center justify-center text-xs font-semibold rounded-md border border-border text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
                 >
                   <RotateCcw className="w-3 h-3" aria-hidden />
                 </button>
