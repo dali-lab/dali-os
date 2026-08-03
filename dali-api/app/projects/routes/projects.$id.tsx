@@ -142,7 +142,7 @@ function isTab(x: string | null): x is Tab {
 
 const TAB_LABELS: Record<Tab, string> = {
   overview: "Overview",
-  board: "Board",
+  board: "Tasks",
   planning: "Planning",
   mentorship: "Mentorship",
 };
@@ -1608,6 +1608,7 @@ function ProjectHeader({
       />
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
           <div key={resetKey} className="flex items-center gap-2 flex-wrap">
             {editing && canEdit ? (
               <Form
@@ -1645,25 +1646,24 @@ function ProjectHeader({
                   {project.name}
                 </h1>
                 <StatusBadge status={project.status} />
-                {project.status === "Active" && !project.isActiveThisTerm && (
-                  <Tooltip label="Status is Active, but the current term isn't in this project's term set — it isn't running right now.">
-                    <span className="text-[11px] px-2 py-0.5 rounded-full border border-border bg-muted/50 text-muted-foreground font-medium">
-                      Not running this term
-                    </span>
-                  </Tooltip>
-                )}
               </>
             )}
 
-            {/* Domain chips at a glance. Falls back to the derived set (bids
-                + assignments) so a project that hasn't declared anything yet
-                still telegraphs its staffing footprint. */}
-            {!editing &&
-              (project.domains.length > 0 ? (
+          </div>
+
+          {/* Domains sit on their own row under the title. Sharing the title's
+              wrapped flex row meant they trailed off the end of the name and
+              broke to an arbitrary place as it grew. */}
+          {!editing &&
+            (project.domains.length > 0 ? (
+              <div className="mt-1.5">
                 <DomainChips items={project.domains} />
-              ) : project.derivedDomains.length > 0 ? (
+              </div>
+            ) : project.derivedDomains.length > 0 ? (
+              <div className="mt-1.5">
                 <DomainChips items={project.derivedDomains} muted />
-              ) : null)}
+              </div>
+            ) : null)}
           </div>
 
           {canEdit && (
@@ -2925,7 +2925,7 @@ function PartnersSection({
           <select
             name="partnerOrgId"
             required
-            className="flex-1 min-w-[220px] rounded-lg border border-border bg-background px-3 py-2 text-sm"
+            className="h-9 flex-1 min-w-[220px] rounded-lg border border-border bg-background px-3 text-sm"
           >
             <option value="">Select an organization…</option>
             {linkablePartnerOrgs.map((o) => (
@@ -2936,7 +2936,7 @@ function PartnersSection({
           </select>
           <button
             type="submit"
-            className="rounded-lg bg-dark-blue text-white text-sm font-medium px-4 py-2 hover:opacity-90 transition"
+            className="h-9 rounded-lg bg-dark-blue text-white text-sm font-medium px-4 hover:opacity-90 transition"
           >
             Link
           </button>

@@ -43,6 +43,7 @@ type Props = {
   autoFocus?: boolean;
   multiline?: boolean;
   rows?: number;
+  maxLength?: number;
   /** Applied to the input/textarea. */
   className?: string;
   /** Applied to the positioning wrapper (e.g. "flex-1" in a flex row). */
@@ -60,6 +61,7 @@ export function MentionTextInput({
   autoFocus,
   multiline = false,
   rows,
+  maxLength,
   className,
   wrapperClassName = "relative",
   onKeyDown,
@@ -160,6 +162,7 @@ export function MentionTextInput({
     placeholder,
     disabled,
     autoFocus,
+    maxLength,
     className,
   };
 

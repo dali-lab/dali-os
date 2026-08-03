@@ -20,6 +20,31 @@ export const REFERENCE_SOURCE_LABELS = {
 
 export type ReferenceSourceKey = keyof typeof REFERENCE_SOURCE_LABELS;
 
+// Extra context a `projects:*` option carries so the fill UI can render it as
+// a card instead of a bare title — a member picking a project sees what
+// they're picking. Only `projects:*` sources populate this; `domains:*`
+// options stay plain and render as a <select>.
+//
+// `challenges` and `sowPageId` are per-(project, term), so each source
+// resolves them for the term its options are scoped to (the chosen term, the
+// current term, or — for the term-less `projects:active` — the project's
+// latest term). Both are omitted/empty when that term has nothing recorded.
+export type ProjectOptionCard = {
+  description: string | null;
+  /** Names of currently-linked partner orgs (ended partnerships excluded). */
+  partners: string[];
+  /** This term's per-domain challenge text, alphabetical by domain. */
+  challenges: { domain: string; scope: string }[];
+  /** Page id of the term's Statement of Work, if one is set. */
+  sowPageId: string | null;
+};
+
+export type ReferenceOption = {
+  value: string;
+  label: string;
+  card?: ProjectOptionCard;
+};
+
 export function isReferenceSourceKey(
   key: string | undefined | null,
 ): key is ReferenceSourceKey {
