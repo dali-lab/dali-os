@@ -13,6 +13,7 @@ import {
   type EventType,
 } from "~/lib/notification-events";
 import { buttonClasses } from "~/components/ui/Button";
+import { SelectMenu } from "~/components/ui/SelectMenu";
 
 // `general` is the pre-registry backfill value — nothing emits it.
 export const VISIBLE_EVENTS = EVENT_TYPE_KEYS.filter((k) => k !== "general");
@@ -188,16 +189,17 @@ export function NotificationsSettingsBlock({
                           —
                         </span>
                       ) : (
-                        <select
+                        <SelectMenu
                           name={`${eventType}:email`}
                           defaultValue={email}
-                          className="w-full rounded-md border border-zinc-300 px-2 py-1 text-xs"
-                        >
-                          <option value="Instant">Instantly</option>
-                          <option value="Daily">Daily digest</option>
-                          <option value="Weekly">Weekly digest</option>
-                          <option value="Off">Off</option>
-                        </select>
+                          options={[
+                            { value: "Instant", label: "Instantly" },
+                            { value: "Daily", label: "Daily digest" },
+                            { value: "Weekly", label: "Weekly digest" },
+                            { value: "Off", label: "Off" },
+                          ]}
+                          buttonClassName="w-full rounded-md border border-zinc-300 px-2 py-1 text-xs inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                        />
                       )}
                     </div>
                   </div>

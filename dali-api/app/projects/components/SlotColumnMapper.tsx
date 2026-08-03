@@ -16,6 +16,7 @@
 import { useMemo, useRef, useState } from "react";
 import { useFetcher } from "react-router";
 import { Button } from "~/components/ui/Button";
+import { SelectMenu } from "~/components/ui/SelectMenu";
 import {
   SLOT_ROLES,
   BUILTIN_SOURCES,
@@ -474,22 +475,20 @@ export function SlotColumnMapper({
                     Resolved automatically
                   </div>
                 ) : canManage ? (
-                  <select
-                    aria-label={`Question for ${c.label}`}
+                  <SelectMenu
+                    ariaLabel={`Question for ${c.label}`}
                     value={c.questionKey}
                     disabled={saving}
-                    onChange={(e) =>
-                      patch(c.uid, { questionKey: e.target.value })
-                    }
-                    className="min-w-0 w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
-                  >
-                    <option value="">— Pick a question —</option>
-                    {questions.map((q) => (
-                      <option key={q.key} value={q.key}>
-                        {q.label} ({q.type})
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(v) => patch(c.uid, { questionKey: v })}
+                    options={[
+                      { value: "", label: "— Pick a question —" },
+                      ...questions.map((q) => ({
+                        value: q.key,
+                        label: `${q.label} (${q.type})`,
+                      })),
+                    ]}
+                    buttonClassName="min-w-0 w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                  />
                 ) : (
                   <div
                     className="min-w-0 text-sm text-foreground truncate"
