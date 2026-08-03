@@ -102,6 +102,9 @@ export async function canManageSharing(
 
 export type PageShareManagerContext = {
   page: { id: string; title: string; workspaceType: WorkspaceType; workspaceId: string | null };
+  // The document's owner, pinned atop the people list (like Google's owner row).
+  // Member notes: the note owner. Everything else: the creator.
+  owner: { id: string; name: string; isYou: boolean } | null;
   // Current General access setting, for the dialog's "General access" row.
   linkAccess: LinkAccess;
   linkPermission: SharePermission;
@@ -159,6 +162,23 @@ export async function requirePageShareManager(
   );
   if (!allowed) throw new PageShareForbiddenError();
 
+  // Owner = the note owner for Member pages, otherwise the creator.
+  const ownerId = page.workspaceType === "Member" ? page.workspaceId : page.createdById;
+  let owner: PageShareManagerContext["owner"] = null;
+  if (ownerId) {
+    const u = await prisma.user.findUnique({
+      where: { id: ownerId },
+      select: { id: true, firstName: true, lastName: true },
+    });
+    if (u) {
+      owner = {
+        id: u.id,
+        name: `${u.firstName} ${u.lastName}`.trim() || "Unknown",
+        isYou: u.id === userId,
+      };
+    }
+  }
+
   return {
     page: {
       id: page.id,
@@ -166,6 +186,7 @@ export async function requirePageShareManager(
       workspaceType: page.workspaceType,
       workspaceId: page.workspaceId,
     },
+    owner,
     linkAccess: page.linkAccess,
     linkPermission: page.linkPermission,
     labRestricted: page.labRestricted,

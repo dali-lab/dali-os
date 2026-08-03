@@ -24,6 +24,7 @@ type Context = {
   linkPermission: Permission;
   labRestricted: boolean;
   workspaceType: string;
+  owner: { id: string; name: string; isYou: boolean } | null;
 };
 
 // Full tiers for the per-person dropdown; general access never offers Full.
@@ -45,7 +46,7 @@ function baseAccessLine(ctx: Context): string {
   switch (ctx.workspaceType) {
     case "Lab":
       return ctx.labRestricted
-        ? "Only you, the people below, and Core can open it."
+        ? "Only you and the people below can open it."
         : "Everyone in the lab can view and edit.";
     case "Project":
       return "Project staff can edit · lab members can view.";
@@ -106,6 +107,7 @@ export function ShareDialog({
           linkPermission: d.context.linkPermission,
           labRestricted: d.context.labRestricted,
           workspaceType: d.context.page?.workspaceType ?? page.workspaceType,
+          owner: d.context.owner ?? null,
         });
       }
       setShares(d.shares ?? []);
@@ -149,6 +151,7 @@ export function ShareDialog({
         linkPermission: d.context.linkPermission,
         labRestricted: d.context.labRestricted,
         workspaceType: d.context.page?.workspaceType ?? page.workspaceType,
+        owner: d.context.owner ?? null,
       });
     }
     setShares(d.shares ?? []);
@@ -261,9 +264,22 @@ export function ShareDialog({
       <div className="flex flex-col gap-2 mb-5">
         <h3 className="text-xs font-semibold text-muted-foreground">People with access</h3>
         <p className="text-xs text-muted-foreground -mt-1">{ctx ? baseAccessLine(ctx) : "…"}</p>
-        {shares.length > 0 && (
-          <ul className="flex flex-col gap-1">
-            {shares.map((s) => (
+        <ul className="flex flex-col gap-1">
+          {ctx?.owner && (
+            <li className="flex items-center gap-2 text-sm px-2.5 py-1.5 rounded-md border border-border bg-muted">
+              <Users className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+              <span className="flex-1 min-w-0 truncate text-foreground">
+                {ctx.owner.name}
+                {ctx.owner.isYou && <span className="text-muted-foreground"> (you)</span>}
+              </span>
+              <span className="text-xs text-muted-foreground">Owner</span>
+            </li>
+          )}
+          {shares
+            .filter(
+              (s) => !(ctx?.owner && s.principalType === "User" && s.principalId === ctx.owner.id),
+            )
+            .map((s) => (
               <li
                 key={s.id}
                 className="flex items-center gap-2 text-sm px-2.5 py-1.5 rounded-md border border-border bg-muted"
@@ -301,8 +317,7 @@ export function ShareDialog({
                 </button>
               </li>
             ))}
-          </ul>
-        )}
+        </ul>
       </div>
 
       {/* Lab base audience (everyone-in-lab vs restricted) */}
@@ -312,7 +327,7 @@ export function ShareDialog({
           {(
             [
               [false, Globe, "Everyone in the lab", "Any lab member can open and edit it."],
-              [true, Lock, "Only people you add", "You, the people above, and Core."],
+              [true, Lock, "Only people you add", "You and the people above."],
             ] as const
           ).map(([value, Icon, label, hint]) => {
             const active = (ctx?.labRestricted ?? false) === value;
