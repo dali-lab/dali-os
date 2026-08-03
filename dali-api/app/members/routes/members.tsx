@@ -27,6 +27,7 @@ import { resolveTermFilter } from "~/lib/terms";
 import { deriveCoreTitles } from "~/lib/core-titles";
 import { LayoutGrid, UsersRound } from "lucide-react";
 import { AreaPillNav } from "~/components/AreaPillNav";
+import { SelectMenu, type SelectMenuOption } from "~/components/ui/SelectMenu";
 
 export const handle = { areaPills: true };
 
@@ -490,25 +491,23 @@ function DomainFilter({
   selected: string;
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
+  const options: SelectMenuOption<string>[] = [
+    { value: "", label: "All domains" },
+    ...domains.map((d) => ({ value: d.id, label: d.displayName })),
+  ];
   return (
-    <select
+    <SelectMenu
       value={selected}
-      onChange={(e) => {
+      options={options}
+      ariaLabel="Filter by domain"
+      buttonClassName="inline-flex w-full items-center justify-between gap-1 px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground transition-colors hover:bg-muted/40 sm:w-44"
+      onChange={(value) => {
         const next = new URLSearchParams(searchParams);
-        if (e.target.value) next.set("domain", e.target.value);
+        if (value) next.set("domain", value);
         else next.delete("domain");
         setSearchParams(next);
       }}
-      aria-label="Filter by domain"
-      className="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground sm:w-44"
-    >
-      <option value="">All domains</option>
-      {domains.map((d) => (
-        <option key={d.id} value={d.id}>
-          {d.displayName}
-        </option>
-      ))}
-    </select>
+    />
   );
 }
 
