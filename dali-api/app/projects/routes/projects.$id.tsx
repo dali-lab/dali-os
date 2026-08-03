@@ -2925,7 +2925,7 @@ function PartnersSection({
           <select
             name="partnerOrgId"
             required
-            className="flex-1 min-w-[220px] rounded-lg border border-border bg-background px-3 py-2 text-sm"
+            className="h-9 flex-1 min-w-[220px] rounded-lg border border-border bg-background px-3 text-sm"
           >
             <option value="">Select an organization…</option>
             {linkablePartnerOrgs.map((o) => (
@@ -2936,7 +2936,7 @@ function PartnersSection({
           </select>
           <button
             type="submit"
-            className="rounded-lg bg-dark-blue text-white text-sm font-medium px-4 py-2 hover:opacity-90 transition"
+            className="h-9 rounded-lg bg-dark-blue text-white text-sm font-medium px-4 hover:opacity-90 transition"
           >
             Link
           </button>
