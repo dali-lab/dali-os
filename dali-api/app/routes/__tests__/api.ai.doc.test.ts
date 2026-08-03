@@ -9,6 +9,28 @@ vi.mock("~/lib/auth", () => ({
 }));
 vi.mock("~/lib/db");
 
+// Keep resolveAiProvider real (the key→provider gate is what these tests check),
+// but stub the SDK's network calls so the "key is set" cases don't make a real
+// request — with a fake key the client would retry with backoff (~5s) and time
+// the test out. The route catches the rejection and returns a 502, which still
+// exercises "the 503 key-gate was skipped".
+vi.mock("@anthropic-ai/sdk", () => {
+  class APIError extends Error {
+    status?: number;
+  }
+  class Anthropic {
+    messages = {
+      create: vi.fn().mockRejectedValue(new Error("network disabled in tests")),
+      stream: vi.fn(() => {
+        throw new Error("network disabled in tests");
+      }),
+      countTokens: vi.fn().mockRejectedValue(new Error("network disabled in tests")),
+    };
+    static APIError = APIError;
+  }
+  return { default: Anthropic };
+});
+
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { _resetForTests as resetRateLimits } from "~/lib/rate-limit";
