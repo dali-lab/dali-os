@@ -5,6 +5,7 @@ import { redirect } from "react-router";
 import type { Route } from "./+types/admin.agreements.$id.signature.$sigId.pdf";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";
 import { fullName } from "~/lib/display";
 import { renderProseMirrorToPdf } from "~/collab/export-pdf";
@@ -17,7 +18,7 @@ function safeFilename(s: string): string {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   if (!(await isCore(auth.user.sub))) return redirect("/");
 
   const sig = await prisma.signingSignature.findUnique({

@@ -5,6 +5,7 @@ import { redirect } from "react-router";
 import type { Route } from "./+types/sign.$bindingId.pdf";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { renderProseMirrorToPdf } from "~/collab/export-pdf";
 import { getBindingStateForUser, getSignerCohorts } from "~/signing/lib/state.server";
 import { AUDIENCE_RESOLVERS } from "~/signing/lib/audiences";
@@ -13,7 +14,7 @@ import type { DocBlock } from "~/collab/blocknote-server";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   const userId = auth.user.sub;
   const bindingId = params.bindingId!;
 

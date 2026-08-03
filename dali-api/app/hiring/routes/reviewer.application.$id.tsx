@@ -3,6 +3,7 @@ import { redirect, useLoaderData, useSubmit } from 'react-router'
 import { HelpCircle, X, Check } from 'lucide-react'
 import { prisma } from '~/lib/db'
 import { requireAuth } from "~/lib/auth";
+import { redirectToLogin } from '~/lib/login-next'
 import { hasCycleAccess } from '~/lib/roles'
 import { parseSessionCookie } from '~/lib/cookies'
 import { getPresenceUser } from '~/lib/presence-user'
@@ -36,7 +37,7 @@ export const handle = {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request)
-  if (!auth.ok) return redirect('/login')
+  if (!auth.ok) return redirectToLogin(request)
 
   const applicationBase = await prisma.application.findUniqueOrThrow({
     where: { id: params.id },
@@ -62,7 +63,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const isInternToFull = applicationBase.applicationCycle.cycleType === 'InternToFull'
 
   if (!(await hasCycleAccess(auth.user.sub, applicationBase.applicationCycleId)))
-    throw redirect('/login')
+    throw redirectToLogin(request)
 
   const confRedirect = await requirePageSignedOrRedirect(
     auth.user.sub,
@@ -213,7 +214,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request)
-  if (!auth.ok) return redirect('/login')
+  if (!auth.ok) return redirectToLogin(request)
 
   const formData = await request.formData()
   const intent = formData.get('intent') as string

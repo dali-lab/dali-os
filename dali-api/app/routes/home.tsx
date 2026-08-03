@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { buttonClasses } from "~/components/ui/Button";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { listOpenTasks, type Task } from "~/lib/tasks";
 import { ProjectIcon } from "~/components/ProjectIcon";
@@ -43,7 +44,7 @@ type HomeNotification = {
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   if (auth.user.type === "applicant") return redirect("/portal");
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) return partnerRedirect;

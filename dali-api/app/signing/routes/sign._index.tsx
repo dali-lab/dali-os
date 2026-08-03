@@ -1,17 +1,18 @@
 // Member "documents to sign" inbox — every enforced agreement the signed-in
 // user still owes a signature on.
 
-import { redirect, Link, useLoaderData } from "react-router";
+import { Link, useLoaderData } from "react-router";
 import { FileSignature, CheckCircle2 } from "lucide-react";
 import type { Route } from "./+types/sign._index";
 import { requireAuth } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { listOutstandingBindings } from "~/signing/lib/state.server";
 
 export const meta: Route.MetaFunction = () => [{ title: "Documents to sign · DALI OS" }];
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   const outstanding = await listOutstandingBindings(auth.user.sub);
   return { outstanding };
 }

@@ -6,7 +6,8 @@ import { Breadcrumbs } from '~/components/Breadcrumbs'
 import { PageDocProvider, PageDocButton, PageDocOutlet } from '~/components/page-docs/PageDocButton'
 import { LaunchWelcome } from '~/components/LaunchWelcome'
 import { TimeZonePrompt } from '~/components/TimeZonePrompt'
-import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
+import { requireAuth, redirectPartnerToPortal } from "~/lib/auth"
+import { redirectToLogin } from '~/lib/login-next';
 import { getUserRoles, isLabMentor } from '~/lib/roles'
 import { getAppGateOutstanding } from '~/signing/lib/state.server'
 import { getActiveCycle } from '~/hiring/lib/cycles'
@@ -21,7 +22,7 @@ import type { Route } from './+types/layout'
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request)
-  if (!auth.ok) return redirect('/login')
+  if (!auth.ok) return redirectToLogin(request)
   if (auth.user.type === 'applicant') return redirect('/portal')
 
   // Onboarding is NOT a hard gate: a new member can use the whole app freely.

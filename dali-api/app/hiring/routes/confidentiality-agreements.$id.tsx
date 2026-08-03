@@ -2,6 +2,7 @@ import { redirect } from "react-router";
 import type { Route } from "./+types/confidentiality-agreements.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { isCore, isDomainLead, isAdmin } from "~/lib/roles";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { ConfidentialityAgreementDetail } from "~/hiring/components/ConfidentialityAgreementDetail";
@@ -27,7 +28,7 @@ export const handle = {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
 
   const [hiringLead, domainLead, admin] = await Promise.all([
     isCore(auth.user.sub),
@@ -58,7 +59,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   const [hiringLead, domainLead, admin] = await Promise.all([
     isCore(auth.user.sub),
     isDomainLead(auth.user.sub),
@@ -69,7 +70,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const member = await prisma.dALIMember.findUnique({
     where: { userId: auth.user.sub },
   });
-  if (!member) return redirect("/login");
+  if (!member) return redirectToLogin(request);
 
   const formData = await request.formData();
   const intent = formData.get("intent") as string;

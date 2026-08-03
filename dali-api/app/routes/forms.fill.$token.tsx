@@ -1,6 +1,7 @@
 import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/forms.fill.$token";
 import { requireAuth } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { requireMember } from "~/lib/roles";
 import {
   formAccessMeta,
@@ -44,7 +45,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     // Education-context fills bypass the audience gate: enrollment (or an
     // instructor assignment) is their authorization, and a session is
     // required so the submission is attributable.
-    if (!userId) return redirect("/login");
+    if (!userId) return redirectToLogin(request);
     if (!(await requireMember(userId))) {
       const admitted = await canFillEducationForm({
         token: params.token!,
@@ -56,7 +57,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     }
   } else {
     const access = await formFillAccess(meta, userId);
-    if (access === "login") return redirect("/login");
+    if (access === "login") return redirectToLogin(request);
     if (access === "denied") {
       return { accessDenied: true as const, name: meta.name };
     }

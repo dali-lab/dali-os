@@ -3,6 +3,7 @@ import { redirect, useLoaderData, useNavigate, useSearchParams } from "react-rou
 import { Search } from "lucide-react";
 import type { Route } from "./+types/applications";
 import { requireAuth } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { hiringPills } from "~/hiring/components/hiringPills";
@@ -22,7 +23,7 @@ export const meta: Route.MetaFunction = () => [
 // Read-only — rows link to the read-only detail page.
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   if (auth.user.type === "applicant") return redirect("/portal");
 
   const { isCore, isAdmin, isDomainLead, isInterviewer } = await getUserRoles(auth.user.sub);

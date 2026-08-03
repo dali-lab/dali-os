@@ -1,4 +1,5 @@
 import { redirect, useLoaderData, useActionData, Form } from "react-router";
+import { redirectToLogin } from "~/lib/login-next";
 import type { Route } from "./+types/education.compliance";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
@@ -25,7 +26,7 @@ export const meta: Route.MetaFunction = () => [
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   const portalRedirect = redirectDartmouthToPortal(auth);
   if (portalRedirect) return portalRedirect;
   if (!(await isCore(auth.user.sub))) return redirect("/education");

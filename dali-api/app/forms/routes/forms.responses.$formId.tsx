@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, redirect, useLoaderData, useSearchParams } from "react-router";
+import { redirectToLogin } from "~/lib/login-next";
 import { Download, Search } from "lucide-react";
 import { Tooltip } from "~/components/ui/IconButton";
 import type { Route } from "./+types/forms.responses.$formId";
@@ -52,7 +53,7 @@ type ResponseRow = {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   const portalRedirect = redirectApplicantToPortal(auth);
   if (portalRedirect) return portalRedirect;
   if (!(await isCore(auth.user.sub))) return redirect("/");

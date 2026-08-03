@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { prisma } from "~/lib/db";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { isCore, isLabMember, currentTerm } from "~/lib/roles";
 import { visibleLabDocFilter } from "~/lib/lab-documents.server";
 import { Tooltip } from "~/components/ui/IconButton";
@@ -99,7 +100,7 @@ const pageSelect = {
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   if (auth.user.type === "applicant") return redirect("/portal");
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) return partnerRedirect;

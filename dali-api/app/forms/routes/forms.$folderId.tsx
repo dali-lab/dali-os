@@ -1,4 +1,5 @@
 import { redirect, useLoaderData } from "react-router";
+import { redirectToLogin } from "~/lib/login-next";
 import type { Route } from "./+types/forms.$folderId";
 import { requireAuth, forbidden, redirectApplicantToPortal } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
@@ -26,7 +27,7 @@ export const handle = {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   const portalRedirect = redirectApplicantToPortal(auth);
   if (portalRedirect) return portalRedirect;
   if (!(await isCore(auth.user.sub))) return redirect("/");

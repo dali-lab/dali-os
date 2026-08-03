@@ -1,6 +1,7 @@
 import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/portal.education";
 import { requireAuth } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { listCatalog } from "~/education/lib/offerings.server";
 import { OfferingCard } from "~/education/components/OfferingCard";
 
@@ -10,7 +11,7 @@ export const meta: Route.MetaFunction = () => [
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   // Lab members use the member-shell education surface instead.
   if (auth.user.type === "member") return redirect("/education");
 

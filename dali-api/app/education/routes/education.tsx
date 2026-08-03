@@ -1,6 +1,7 @@
-import { redirect, useLoaderData } from "react-router";
+import { useLoaderData } from "react-router";
 import type { Route } from "./+types/education";
 import { requireAuth } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
 import { redirectDartmouthToPortal } from "~/education/lib/access.server";
 import { listCatalog, listMyApplications } from "~/education/lib/offerings.server";
@@ -16,7 +17,7 @@ export const meta: Route.MetaFunction = () => [{ title: "Education · DALI OS" }
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   const portalRedirect = redirectDartmouthToPortal(auth);
   if (portalRedirect) return portalRedirect;
 

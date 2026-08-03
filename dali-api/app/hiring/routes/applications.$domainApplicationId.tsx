@@ -2,6 +2,7 @@ import { redirect, useLoaderData, useSearchParams } from "react-router";
 import type { Route } from "./+types/applications.$domainApplicationId";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
@@ -43,7 +44,7 @@ export const handle = {
 // fully read-only — the page never lets you edit someone else's review.
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   if (auth.user.type === "dartmouth") return redirect("/portal");
 
   const da = await prisma.domainApplication.findUnique({

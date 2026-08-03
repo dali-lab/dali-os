@@ -7,6 +7,7 @@ import {
   Form,
   Link,
 } from "react-router";
+import { redirectToLogin } from "~/lib/login-next";
 import type { Route } from "./+types/education.manage.$offeringId";
 import { requireAuth } from "~/lib/auth";
 import { isCore, currentTermMemberWhere } from "~/lib/roles";
@@ -87,7 +88,7 @@ export const handle = {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const authOrRedirect = await requireAuth(request);
-  if (!authOrRedirect.ok) return redirect("/login");
+  if (!authOrRedirect.ok) return redirectToLogin(request);
   const portalRedirect = redirectDartmouthToPortal(authOrRedirect);
   if (portalRedirect) return portalRedirect;
 

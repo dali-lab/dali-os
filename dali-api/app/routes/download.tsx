@@ -1,8 +1,8 @@
-import { redirect } from "react-router";
 import { useEffect, useState } from "react";
 import { Download } from "lucide-react";
 import type { Route } from "./+types/download";
 import { requireAuth } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 
 const RELEASES_BASE = "https://dali-os-desktop-releases.s3.us-east-1.amazonaws.com";
 // Stable, version-less artifacts published by the release workflow each release —
@@ -49,7 +49,7 @@ export const meta: Route.MetaFunction = () => {
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   const version = await getLatestVersion();
   return { version, dmgUrl: STABLE_DMG_URL, appImageUrl: STABLE_APPIMAGE_URL, windowsUrl: STABLE_WINDOWS_URL };
 }

@@ -6,6 +6,7 @@ import { redirect } from 'react-router'
 import type { Route } from './+types/admin.email-templates.$id'
 import { prisma } from '~/lib/db'
 import { requireAuth } from '~/lib/auth'
+import { redirectToLogin } from '~/lib/login-next'
 import { isCore } from '~/lib/roles'
 import { EmailTemplateDetail } from '~/admin/components/EmailTemplateDetail'
 
@@ -21,7 +22,7 @@ export const handle = {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request)
-  if (!auth.ok) return redirect('/login')
+  if (!auth.ok) return redirectToLogin(request)
   if (!(await isCore(auth.user.sub))) return redirect('/')
 
   const template = await prisma.emailTemplate.findUniqueOrThrow({
@@ -39,13 +40,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request)
-  if (!auth.ok) return redirect('/login')
+  if (!auth.ok) return redirectToLogin(request)
   if (!(await isCore(auth.user.sub))) return redirect('/')
 
   const member = await prisma.dALIMember.findUnique({
     where: { userId: auth.user.sub },
   })
-  if (!member) return redirect('/login')
+  if (!member) return redirectToLogin(request)
 
   const formData = await request.formData()
   const intent = formData.get('intent') as string

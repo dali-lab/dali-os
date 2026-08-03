@@ -1,6 +1,7 @@
 import { redirect, useLoaderData, Link, Form } from "react-router";
 import type { Route } from "./+types/portal.education.$offeringId";
 import { requireAuth } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { withdrawApplication } from "~/education/lib/decisions.server";
 import {
@@ -24,7 +25,7 @@ export const meta: Route.MetaFunction = ({ data }) => [
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   if (auth.user.type === "member")
     return redirect(`/education/${params.offeringId}`);
 

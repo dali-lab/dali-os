@@ -1,6 +1,7 @@
 import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/projects.my-staffing";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { requireMember, canViewStaffing } from "~/lib/roles";
 import { listMemberStaffingForms } from "../lib/member-staffing.server";
 import { projectsPills } from "../components/projectsPills";
@@ -20,7 +21,7 @@ export const meta: Route.MetaFunction = () => [
 // every submission lookup is scoped to the session user.
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   const portal = redirectApplicantToPortal(auth);
   if (portal) return portal;
   if (!(await requireMember(auth.user.sub))) return redirect("/");
