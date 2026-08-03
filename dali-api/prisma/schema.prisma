@@ -3850,6 +3850,20 @@ model Page {
   labListingReviewedById String?
   labListingReviewedAt   DateTime?
 
+  // ─── General access (Google/Notion "General access" row) ─────────────────
+  //
+  // Orthogonal to the named PageShare list and to the workspace-specific
+  // visibility flags above. Restricted (default) = only named accounts/groups
+  // plus the workspace's base access. SignedIn = any authenticated DALI user
+  // gets `linkPermission`. Public = anyone with the URL gets a read-only view.
+  // Evaluated live in getPageAccess (max with base + named share), so flipping
+  // back to Restricted revokes link access immediately — no rows to clean up.
+  // `linkPermission` is only meaningful when linkAccess != Restricted and is
+  // never FullAccess (re-share is a named-principal grant only). Public forces
+  // it to View (no identity to attribute comment/edit writes to).
+  linkAccess     LinkAccess      @default(Restricted)
+  linkPermission SharePermission @default(View)
+
   shares PageShare[]
 
   // Pinned to the top of the project's Documents block. Timestamp so pins can
@@ -3939,6 +3953,13 @@ model PageShare {
   // polymorphic pattern as Page.workspaceId.
   principalId   String
 
+  // What the principal may do. Additive on top of the page's base access —
+  // getPageAccess takes the max, never a downgrade. Defaults to View so every
+  // pre-existing share (all view-only) keeps its behavior. FullAccess adds the
+  // right to re-share (see canManageSharing); it never applies to link/general
+  // access, only to named principals.
+  permission SharePermission @default(View)
+
   createdById String
   createdAt   DateTime @default(now())
 
@@ -3951,6 +3972,26 @@ model PageShare {
 enum SharePrincipalType {
   User
   Group
+}
+
+// Permission tiers for a share, ranked View < Comment < Edit < FullAccess.
+// Mirrors Google/Notion. FullAccess = Edit plus the right to re-share; it is
+// grantable only to named principals, never via general/link access.
+enum SharePermission {
+  View
+  Comment
+  Edit
+  FullAccess
+}
+
+// Document-level "General access" audience (Google's General access row). Lives
+// on Page.linkAccess. Restricted = only the named accounts/groups on the share
+// list. SignedIn = any authenticated DALI user gets Page.linkPermission.
+// Public = anyone with the URL gets a read-only view (no account needed).
+enum LinkAccess {
+  Restricted
+  SignedIn
+  Public
 }
 
 enum LabListingState {

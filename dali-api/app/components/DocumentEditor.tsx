@@ -22,7 +22,7 @@ import { PageCover } from "./doc-chrome/PageCover";
 import { DocToc } from "./doc-chrome/DocToc";
 import { relativeTime } from "~/lib/relative-time";
 import { Tooltip } from "~/components/ui/IconButton";
-import { LabDocAccessModal } from "~/components/documents/LabDocAccessModal";
+import { ShareDialog } from "~/components/sharing/ShareDialog";
 import { FindReplaceBar } from "./doc/find";
 import {
   DEFAULT_TYPOGRAPHY,
@@ -70,6 +70,7 @@ export function DocumentEditor({
   focusMentionUserId,
   aiEnabled = false,
   canManageAccess = false,
+  workspaceType,
 }: {
   pageId: string;
   initialTitle: string;
@@ -98,9 +99,13 @@ export function DocumentEditor({
   // When set (arriving from an @-mention notification), scroll to and flash the
   // first mention chip for that user once the collab doc syncs.
   focusMentionUserId?: string;
-  // Lab-wide documents only: viewer may change who can read this one. False for
-  // project/member pages, whose audience follows the workspace, not the page.
+  // Viewer may manage this document's sharing (open the Share dialog). True for
+  // the doc's manager on any workspace type — creator/Core on a lab doc, project
+  // staff, the note owner, an instructor, or a Full-access grantee.
   canManageAccess?: boolean;
+  // Workspace the page lives in — drives the Share dialog's per-workspace copy
+  // (lab-access toggle, base-access line).
+  workspaceType: string;
   // True when the server has an AI provider key configured — shows the AI slash items.
   aiEnabled?: boolean;
 }) {
@@ -572,18 +577,18 @@ export function DocumentEditor({
         </Tooltip>
       )}
 
-      {/* Manage access — lab documents only. Its own control rather than a ⋯
-          entry: who can read a document is a property of the document, not a
-          rarely-reached utility. */}
+      {/* Share — its own control rather than a ⋯ entry: who can open a document
+          is a property of the document, not a rarely-reached utility. */}
       {canManageAccess && (
-        <Tooltip label="Manage access">
+        <Tooltip label="Share">
           <button
             type="button"
             onClick={() => setAccessOpen(true)}
-            aria-label="Manage access"
-            className="inline-flex items-center rounded-md border border-border px-2 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            aria-label="Share"
+            className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             <Users className="h-3.5 w-3.5" />
+            Share
           </button>
         </Tooltip>
       )}
@@ -970,11 +975,11 @@ export function DocumentEditor({
       {inlineComments}
       {versionHistory}
       {canManageAccess && (
-        <LabDocAccessModal
-          doc={{ id: pageId, title: initialTitle }}
+        <ShareDialog
+          page={{ id: pageId, title: initialTitle, workspaceType }}
           open={accessOpen}
           onClose={() => setAccessOpen(false)}
-          onChanged={() => {}}
+          onChanged={() => revalidator.revalidate()}
         />
       )}
     </div>
