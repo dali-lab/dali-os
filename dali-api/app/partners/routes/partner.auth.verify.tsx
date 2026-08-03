@@ -43,14 +43,18 @@ export async function action({ request }: Route.ActionArgs) {
     request,
   });
 
-  const partnerUser = await prisma.partnerUser.findUnique({
-    where: { userId },
-    select: { id: true },
+  // Account-first: /partner serves applicants (no org) too — only send folks
+  // without a name to onboarding so we can capture one.
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { firstName: true },
   });
 
   const headers = new Headers();
   setSessionCookie(headers, session.rawId);
-  return redirect(partnerUser ? "/partner" : "/partner/onboarding", { headers });
+  return redirect(user?.firstName ? "/partner" : "/partner/onboarding", {
+    headers,
+  });
 }
 
 export default function PartnerAuthVerify({

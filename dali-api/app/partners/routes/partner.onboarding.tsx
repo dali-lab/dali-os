@@ -1,8 +1,6 @@
-import { useState } from "react";
 import { Form, redirect, useLoaderData, useNavigation } from "react-router";
 import type { Route } from "./+types/partner.onboarding";
 import { prisma } from "~/lib/db";
-import { logAuditEvent } from "~/lib/audit";
 import { requirePartnerCandidate } from "~/partners/lib/partner-auth.server";
 
 export const meta: Route.MetaFunction = () => [
@@ -19,8 +17,10 @@ export async function loader({ request }: Route.LoaderArgs) {
     email: auth.user.email,
     firstName: auth.user.firstName,
     lastName: auth.user.lastName,
-    // Invited users arrive with a PartnerUser already attached — they only
-    // complete their profile. Self-signup users also create the org.
+    // Invited teammates arrive with a PartnerUser already attached (they only
+    // complete their profile). Account-first applicants have no org yet — the
+    // org is created much later, at project promotion — so onboarding never
+    // asks about one.
     existingOrg: partnerUser
       ? { name: partnerUser.partnerOrg.name, displayRole: partnerUser.displayRole }
       : null,
@@ -44,7 +44,7 @@ export async function action({ request }: Route.ActionArgs) {
   });
 
   if (existing) {
-    // Profile-completion mode (invited teammate).
+    // Invited teammate: update name + display role on their org membership.
     await prisma.$transaction([
       prisma.user.update({
         where: { id: auth.user.sub },
@@ -55,48 +55,14 @@ export async function action({ request }: Route.ActionArgs) {
         data: { displayRole },
       }),
     ]);
-    return redirect("/partner");
-  }
-
-  const isIndividual = formData.get("isIndividual") === "on";
-  const orgName = isIndividual
-    ? `${firstName} ${lastName}`
-    : String(formData.get("orgName") ?? "").trim();
-  const website = String(formData.get("website") ?? "").trim() || null;
-  if (!orgName) {
-    return { error: "Organization name is required" };
-  }
-
-  const partnerUser = await prisma.$transaction(async (tx) => {
-    await tx.user.update({
+  } else {
+    // Account-first applicant: just record who they are. No org, no
+    // PartnerUser — those are created only if the lab moves forward.
+    await prisma.user.update({
       where: { id: auth.user.sub },
       data: { firstName, lastName },
     });
-    const org = await tx.partnerOrg.create({
-      data: { name: orgName, website, isIndividual },
-    });
-    const pu = await tx.partnerUser.create({
-      data: {
-        userId: auth.user.sub,
-        partnerOrgId: org.id,
-        displayRole,
-        authProvider: "MagicLink",
-      },
-    });
-    await tx.partnerOrg.update({
-      where: { id: org.id },
-      data: { primaryContactId: pu.id },
-    });
-    return pu;
-  });
-
-  await logAuditEvent({
-    action: "partner.org.create",
-    userId: auth.user.sub,
-    targetId: partnerUser.partnerOrgId,
-    metadata: { via: "self-signup" },
-    request,
-  });
+  }
 
   return redirect("/partner");
 }
@@ -108,17 +74,9 @@ export default function PartnerOnboarding({ actionData }: Route.ComponentProps) 
   const submitting = navigation.state === "submitting";
   const error = actionData && "error" in actionData ? actionData.error : null;
 
-  // Org concepts live HERE, not on the auth screens: a signed-in account
-  // with no membership either waits for an invite (which attaches to this
-  // account) or explicitly creates a new organization. Invite-only join —
-  // shared @dartmouth.edu domains rule out auto-matching.
-  const [creating, setCreating] = useState(false);
-  const showForm = Boolean(existingOrg) || creating;
-
   const inputClass =
     "w-full rounded-xl border border-border bg-card px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral";
   const labelClass = "block text-sm font-medium text-dark-blue mb-1";
-  const sectionClass = "font-heading text-sm font-semibold text-dark-blue";
 
   return (
     <div className="min-h-screen bg-page flex items-center justify-center px-6 py-12">
@@ -138,46 +96,18 @@ export default function PartnerOnboarding({ actionData }: Route.ComponentProps) 
           ) : (
             <>
               as <span className="font-medium text-dark-blue">{email}</span> —
-              you're not part of an organization yet.
+              tell us your name and you can start an application.
             </>
           )}
         </p>
 
-        {!existingOrg && !creating && (
-          <>
-            <div className="rounded-2xl bg-brand-tint p-6 mb-6">
-              <p className="font-heading font-semibold text-dark-blue mb-1">
-                Joining a team that's already here?
-              </p>
-              <p className="text-sm text-muted-foreground">
-                Ask a teammate to invite you — it's under{" "}
-                <span className="font-medium text-dark-blue">
-                  Settings → Team
-                </span>{" "}
-                in their portal. The invite lands in your email and attaches
-                to this account; accept it and you're in. Not sure who has
-                portal access? Ask your DALI project contact.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setCreating(true)}
-              className="w-full rounded-xl border border-border bg-card text-dark-blue font-heading font-semibold py-3 hover:border-accent-coral transition"
-            >
-              Set up a new organization
-            </button>
-          </>
-        )}
-
-        {error && showForm && (
+        {error && (
           <p className="mb-4 text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3">
             {error}
           </p>
         )}
 
-        {showForm && (
         <Form method="post" className="flex flex-col gap-5">
-          {!existingOrg && <h2 className={sectionClass}>About you</h2>}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label htmlFor="firstName" className={labelClass}>
@@ -218,42 +148,6 @@ export default function PartnerOnboarding({ actionData }: Route.ComponentProps) 
             />
           </div>
 
-          {!existingOrg && (
-            <>
-              <h2 className={`${sectionClass} mt-3`}>Your organization</h2>
-              <label className="flex items-center gap-2 text-sm text-dark-blue">
-                <input type="checkbox" name="isIndividual" className="rounded" />
-                I'm an individual, not an organization
-              </label>
-              <div>
-                <label htmlFor="orgName" className={labelClass}>
-                  Organization name
-                </label>
-                <input
-                  id="orgName"
-                  name="orgName"
-                  placeholder="Acme Corp"
-                  className={inputClass}
-                />
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Individuals can skip this — we'll use your name.
-                </p>
-              </div>
-              <div>
-                <label htmlFor="website" className={labelClass}>
-                  Website <span className="text-muted-foreground">(optional)</span>
-                </label>
-                <input
-                  id="website"
-                  name="website"
-                  type="url"
-                  placeholder="https://example.com"
-                  className={inputClass}
-                />
-              </div>
-            </>
-          )}
-
           <button
             type="submit"
             disabled={submitting}
@@ -262,7 +156,6 @@ export default function PartnerOnboarding({ actionData }: Route.ComponentProps) 
             {submitting ? "Saving…" : "Continue"}
           </button>
         </Form>
-        )}
       </div>
     </div>
   );

@@ -59,6 +59,11 @@ export interface BuildQuestionInput {
   maxWordsValue?: number | string
   referenceSource?: string
   referenceTermId?: string
+  // Multi-step forms: the 1-based step this question belongs to (default 1),
+  // and an optional title for that step (authored on any question in the step;
+  // fill surfaces show the first non-empty title per step).
+  step?: number
+  stepTitle?: string
 }
 
 export function buildQuestion(input: BuildQuestionInput): Question {
@@ -76,6 +81,8 @@ export function buildQuestion(input: BuildQuestionInput): Question {
     maxWordsValue,
     referenceSource,
     referenceTermId,
+    step,
+    stepTitle,
   } = input
 
   let maxWords: number | undefined
@@ -108,6 +115,9 @@ export function buildQuestion(input: BuildQuestionInput): Question {
         type === 'reference' && referenceSourceNeedsTerm(referenceSource)
           ? referenceTermId || undefined
           : undefined,
+      // Default step (1) is stored as undefined to keep single-step forms clean.
+      step: step && step > 1 ? step : undefined,
+      stepTitle: stepTitle?.trim() || undefined,
     },
   }
 }
@@ -227,6 +237,8 @@ export function FormBuilderTab({
       maxWordsValue,
       referenceSource: editForm.data?.referenceSource,
       referenceTermId: editForm.data?.referenceTermId,
+      step: editForm.data?.step,
+      stepTitle: editForm.data?.stepTitle,
     })
     setQuestions((prev) =>
       prev.map((q) => (q.key === editForm.key ? rebuilt : q)),
@@ -367,6 +379,46 @@ export function FormBuilderTab({
               }
               className="block w-full rounded-md border border-gray-300 bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
               placeholder="e.g. Keep it under 200 words."
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-foreground/80 mb-1">
+              Step (page)
+            </label>
+            <input
+              type="number"
+              min={1}
+              value={editForm.data?.step ?? 1}
+              onChange={(e) => {
+                const n = Math.max(1, Math.floor(Number(e.target.value) || 1))
+                setEditForm({
+                  ...editForm,
+                  data: { ...editForm.data!, step: n },
+                })
+              }}
+              className="block w-24 rounded-md border border-gray-300 bg-card text-foreground shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              Group questions into pages. 1 = first page.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-foreground/80 mb-1">
+              Step title (Optional)
+            </label>
+            <input
+              type="text"
+              value={editForm.data?.stepTitle || ''}
+              onChange={(e) =>
+                setEditForm({
+                  ...editForm,
+                  data: { ...editForm.data!, stepTitle: e.target.value },
+                })
+              }
+              className="block w-full rounded-md border border-gray-300 bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
+              placeholder="e.g. The Problem"
             />
           </div>
 

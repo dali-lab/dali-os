@@ -1,13 +1,14 @@
 import { Link, useLoaderData } from "react-router";
 import type { Route } from "./+types/partner.home";
 import { prisma } from "~/lib/db";
-import { requirePartner } from "~/partners/lib/partner-auth.server";
+import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
 import { partnerProjectsWhere } from "~/partners/lib/partner-access";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { ProjectCoverImage } from "~/projects/components/ProjectCoverImage";
 import {
   PARTNER_APPLICATION_STATUS_LABELS,
   PARTNER_APPLICATION_STATUS_PILL,
+  type PartnerApplicationStatus,
 } from "../lib/partner-application";
 
 export const meta: Route.MetaFunction = () => [
@@ -15,11 +16,21 @@ export const meta: Route.MetaFunction = () => [
 ];
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const { auth, partnerUser, org } = await requirePartner(request);
+  const { auth, partnerUser, org } = await requirePartnerAccount(request);
+
+  // "Mine" = applications I submitted, plus (once I'm in an org) my org's.
+  const applicationWhere = partnerUser
+    ? {
+        OR: [
+          { applicantUserId: auth.user.sub },
+          { partnerOrgId: partnerUser.partnerOrgId },
+        ],
+      }
+    : { applicantUserId: auth.user.sub };
 
   const [applications, projects] = await Promise.all([
     prisma.partnerApplication.findMany({
-      where: { partnerOrgId: partnerUser.partnerOrgId },
+      where: applicationWhere,
       orderBy: { createdAt: "desc" },
       select: {
         id: true,
@@ -27,17 +38,23 @@ export async function loader({ request }: Route.LoaderArgs) {
         status: true,
         createdAt: true,
         resultingProjectId: true,
+        sowSharedAt: true,
+        contractSentAt: true,
+        contractSignedAt: true,
       },
     }),
-    prisma.project.findMany({
-      where: partnerProjectsWhere(partnerUser.partnerOrgId),
-      orderBy: { name: "asc" },
-      select: { id: true, name: true, description: true, imageUrl: true },
-    }),
+    // Applicants have no org, so no projects yet.
+    partnerUser
+      ? prisma.project.findMany({
+          where: partnerProjectsWhere(partnerUser.partnerOrgId),
+          orderBy: { name: "asc" },
+          select: { id: true, name: true, description: true, imageUrl: true },
+        })
+      : [],
   ]);
 
   return {
-    org,
+    orgName: org?.name ?? null,
     firstName: auth.user.firstName,
     applications,
     projects: await Promise.all(
@@ -51,33 +68,58 @@ export async function loader({ request }: Route.LoaderArgs) {
   };
 }
 
+// The "how's my application going" lever: a plain next-step line so a partner
+// who logs in knows where things stand without reading a board. A shared SOW is
+// the most actionable state, so it takes precedence over the raw status.
+function nextStep(
+  status: PartnerApplicationStatus,
+  sowShared: boolean,
+  contractSent: boolean,
+  contractSigned: boolean,
+): string {
+  const live = status !== "Accepted" && status !== "Rejected";
+  if (contractSent && !contractSigned && live) {
+    return "A contract is ready for your signature.";
+  }
+  if (sowShared && !contractSent && live) {
+    return "A statement of work is ready for your feedback.";
+  }
+  switch (status) {
+    case "Submitted":
+      return "We've received your application — the team will review it soon.";
+    case "UnderReview":
+      return "The DALI team is reviewing your pitch. We may reach out to meet.";
+    case "OnHold":
+      return "On hold for now — we'll be in touch about timing.";
+    case "Accepted":
+      return "Accepted! We're setting up your project.";
+    case "Rejected":
+      return "Not something we can take on right now.";
+  }
+}
+
 export default function PartnerHome() {
-  const { org, firstName, applications, projects } = useLoaderData<typeof loader>();
+  const { orgName, firstName, applications, projects } =
+    useLoaderData<typeof loader>();
 
   return (
     <div className="flex flex-col gap-8">
       <div>
         <h1 className="font-heading text-3xl font-bold text-dark-blue">
-          {/* Greet the person — the org name already sits in the nav chip. */}
-          Welcome, {firstName || org.name}
+          Welcome, {firstName || orgName || "there"}
         </h1>
         <p className="text-muted-foreground mt-1">
-          Your projects and applications with the DALI Lab.
+          {orgName
+            ? "Your projects and applications with the DALI Lab."
+            : "Track your application and pitch new projects to the DALI Lab."}
         </p>
       </div>
 
-      <section>
-        <h2 className="font-heading text-lg font-semibold text-dark-blue mb-3">
-          Your projects
-        </h2>
-        {projects.length === 0 ? (
-          <div className="bg-card border border-border rounded-2xl p-8 text-center">
-            <p className="text-sm text-muted-foreground">
-              No active projects yet. Once an application is accepted and a
-              team is staffed, your project will appear here.
-            </p>
-          </div>
-        ) : (
+      {projects.length > 0 && (
+        <section>
+          <h2 className="font-heading text-lg font-semibold text-dark-blue mb-3">
+            Your projects
+          </h2>
           <div className="grid gap-4 sm:grid-cols-2">
             {projects.map((p) => (
               <Link
@@ -104,13 +146,13 @@ export default function PartnerHome() {
               </Link>
             ))}
           </div>
-        )}
-      </section>
+        </section>
+      )}
 
       <section>
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-heading text-lg font-semibold text-dark-blue">
-            Applications
+            {projects.length > 0 ? "Applications" : "Your application"}
           </h2>
           <Link
             to="/partner/apply"
@@ -143,13 +185,13 @@ export default function PartnerHome() {
                   <span className="text-sm font-medium text-foreground block truncate">
                     {a.title}
                   </span>
-                  <span className="text-xs text-muted-foreground">
-                    Submitted{" "}
-                    {new Date(a.createdAt).toLocaleDateString(undefined, {
-                      month: "short",
-                      day: "numeric",
-                      year: "numeric",
-                    })}
+                  <span className="text-xs text-muted-foreground block truncate">
+                    {nextStep(
+                      a.status,
+                      a.sowSharedAt !== null,
+                      a.contractSentAt !== null,
+                      a.contractSignedAt !== null,
+                    )}
                   </span>
                 </div>
                 <span

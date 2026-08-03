@@ -215,6 +215,8 @@ model User {
 
   // ─── Phase 1: partner back-relation (single per User) ─────────────────────
   partnerUser PartnerUser?
+  // Partner applications this user submitted as an applicant (account-first).
+  partnerApplicationsSubmitted PartnerApplication[] @relation("PartnerApplicationApplicant")
 
   // ─── Phase 1: OAuth / magic-link back-relations ───────────────────────────
   oauthGrants    OAuthGrant[]
@@ -4153,6 +4155,11 @@ model PartnerOrg {
   name             String
   logoUrl          String?
   website          String?
+  // Legal identity, captured at contract prep and copied here when the org is
+  // created at project promotion. Distinct from the display `name`: `name` is
+  // what people call the partner; these are what a signed contract needs.
+  legalName        String?
+  legalAddress     String?
   // Optional designated primary contact (FK to PartnerUser within this org).
   // Free-form: a PartnerUser.id. Not enforced as a Prisma relation to avoid
   // a circular FK; app-level keeps this valid.
@@ -4485,11 +4492,18 @@ enum SlackBugReportStatus {
 // linked back via `resultingProjectId` (loose ref — no Prisma relation, to
 // avoid a hard dependency cycle with Project).
 //
-// `partnerOrgId` is a required FK: applications are always tied to a known
-// PartnerOrg (Q: "linked to partner is very important").
+// Account-first: an application belongs to the PERSON who applied
+// (`applicantUserId`), not an organization. `partnerOrgId` is nullable and
+// stays null through the whole courtship — the PartnerOrg is created only at
+// project promotion, when its identity is finally settled. Legacy rows carry
+// an org and no applicant; new rows carry an applicant and (until promotion)
+// no org.
 model PartnerApplication {
   id                 String                   @id @default(cuid())
-  partnerOrgId       String
+  // The person who submitted the pitch. Nullable only for legacy rows that
+  // predate account-first; every new application sets it.
+  applicantUserId    String?
+  partnerOrgId       String?
   title              String
   // Short pitch summary. The long-form, versionable Statement of Work lives
   // in the collab doc named `partner-sow:{id}` (see sowDocId) — same Yjs +
@@ -4500,6 +4514,20 @@ model PartnerApplication {
   // opened/created. Not a Prisma relation: CollabDocument is keyed by its
   // unique `name`, addressed at the app layer.
   sowDocId           String?                  @unique
+  // Set when Core shares the SOW draft with the applicant for feedback. Null =
+  // still private to the lab. Gates the partner's visibility of the SOW doc, so
+  // the lab can draft privately and then send it over.
+  sowSharedAt        DateTime?
+  // Contract lifecycle (the "send contract" step, after SOW iteration). The
+  // contract body is a collab doc `partnercontract:{id}:body`. Legal identity
+  // rides on legalEntityName/legalEntityAddress above; fee is free-text (no
+  // fixed tiers). The partner signs with a typed-name affirmation — a
+  // deliberately isolated flow, not the app-gated member e-sign service.
+  contractDocId      String?                  @unique
+  contractFee        String?
+  contractSentAt     DateTime?
+  contractSignedAt   DateTime?
+  contractSignerName String?
   status             PartnerApplicationStatus @default(Submitted)
   // Set when status moves to Accepted and a Project is spun up. Loose ref to
   // Project.id; no relation to avoid a Project→PartnerApplication cycle.
@@ -4509,20 +4537,56 @@ model PartnerApplication {
   // form was bound when they applied. SetNull because deleting the Form
   // cascades its submissions away — the application must survive that.
   formSubmissionId   String?                  @unique
+  // Core's structured review: the 8-criteria eval + concerns + shouldMeet +
+  // recommendation + ambiguityRating. JSON (not columns) — it's displayed on
+  // the partner card, never queried. Partners never see it.
+  evaluation         Json?
+  // The accept checklist (term, ambiguity, SOW, funding, project-selection
+  // page, kickoff, material transfer). Array of { key, label, done }.
+  acceptChecklist    Json?
+  // Legal identity, entered at contract prep and copied onto the PartnerOrg
+  // when the org is created at promotion. Kept here (not the org) because the
+  // org doesn't exist yet during the courtship.
+  legalEntityName    String?
+  legalEntityAddress String?
 
-  partnerOrg     PartnerOrg                     @relation(fields: [partnerOrgId], references: [id])
+  applicant      User?                          @relation("PartnerApplicationApplicant", fields: [applicantUserId], references: [id])
+  partnerOrg     PartnerOrg?                    @relation(fields: [partnerOrgId], references: [id])
   formSubmission FormSubmission?                @relation(fields: [formSubmissionId], references: [id], onDelete: SetNull)
   // The terms the partner wants the project to run / be staffed in. Drives
   // the "expected lab members per term" projection on the list page — an
-  // application's expected headcount counts toward every target term.
+  // application's expected headcount counts toward every target term. Now
+  // Core-populated during scoping rather than partner-supplied at apply.
   targetTerms    PartnerApplicationTargetTerm[]
   domains        PartnerApplicationDomain[]
+  // Dated meeting/review notes (first-meeting template etc.). Core-only.
+  notes          PartnerApplicationNote[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([applicantUserId])
   @@index([partnerOrgId])
   @@index([status])
+}
+
+// Dated meeting / review notes on an application (Core-only; partners never
+// see these). Newest-first log on the partner card. A "meeting" note seeds the
+// first-meeting template; a "note" is a free jot.
+model PartnerApplicationNote {
+  id            String   @id @default(cuid())
+  applicationId String
+  // Loose ref to User.id of the author (display/audit only; survives deletion).
+  authorId      String?
+  // "meeting" | "note".
+  kind          String   @default("note")
+  // BlockNote block-array doc.
+  body          Json
+  createdAt     DateTime @default(now())
+
+  application PartnerApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId])
 }
 
 // Binds the generic Form whose questions partners answer when pitching a

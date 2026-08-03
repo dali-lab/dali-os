@@ -14,7 +14,9 @@ export function PortalProfileMenu({
   initials: string;
   displayName: string;
   subtitle?: string | null;
-  settingsTo: string;
+  // Optional: applicants (partners without an org yet) have no settings page,
+  // so the Settings item is hidden when this is absent.
+  settingsTo?: string;
 }) {
   const { open, setOpen, ref } = useDismissableMenu();
 
@@ -53,14 +55,16 @@ export function PortalProfileMenu({
           role="menu"
           className="absolute right-0 top-full mt-2 w-48 bg-card border border-border rounded-xl shadow-lg py-1 z-50"
         >
-          <Link
-            to={settingsTo}
-            role="menuitem"
-            onClick={() => setOpen(false)}
-            className="block px-4 py-2 text-sm text-dark-blue hover:bg-muted/50 transition"
-          >
-            Settings
-          </Link>
+          {settingsTo && (
+            <Link
+              to={settingsTo}
+              role="menuitem"
+              onClick={() => setOpen(false)}
+              className="block px-4 py-2 text-sm text-dark-blue hover:bg-muted/50 transition"
+            >
+              Settings
+            </Link>
+          )}
           <Link
             to="/logout"
             role="menuitem"

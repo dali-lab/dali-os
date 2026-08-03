@@ -9,7 +9,7 @@ import {
 import { ChevronDown } from "lucide-react";
 import type { Route } from "./+types/partner-layout";
 import { prisma } from "~/lib/db";
-import { requirePartner } from "~/partners/lib/partner-auth.server";
+import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
 import { partnerProjectsWhere } from "~/partners/lib/partner-access";
 import { userInitials } from "~/lib/display";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
@@ -21,15 +21,18 @@ import { useDismissableMenu } from "~/hooks/useDismissableMenu";
 // protect child routes (loaders run in parallel); every /partner route calls
 // the guard itself.
 export async function loader({ request }: Route.LoaderArgs) {
-  const { auth, partnerUser, org } = await requirePartner(request);
+  const { auth, partnerUser, org } = await requirePartnerAccount(request);
   // The org's projects feed the Projects nav item: direct link for one,
-  // dropdown for several, hidden for none (pre-acceptance partners).
-  const projects = await prisma.project.findMany({
-    where: partnerProjectsWhere(partnerUser.partnerOrgId),
-    orderBy: { name: "asc" },
-    select: { id: true, name: true },
-  });
-  return { user: auth.user, orgName: org.name, projects };
+  // dropdown for several, hidden for none (applicants + pre-acceptance
+  // partners). Applicants have no org yet, so no projects.
+  const projects = partnerUser
+    ? await prisma.project.findMany({
+        where: partnerProjectsWhere(partnerUser.partnerOrgId),
+        orderBy: { name: "asc" },
+        select: { id: true, name: true },
+      })
+    : [];
+  return { user: auth.user, orgName: org?.name ?? null, projects };
 }
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
@@ -65,8 +68,8 @@ export default function PartnerLayout() {
         <PortalProfileMenu
           initials={userInitials(user)}
           displayName={displayName}
-          subtitle={orgName}
-          settingsTo="/partner/settings"
+          subtitle={orgName ?? "Applicant"}
+          settingsTo={orgName ? "/partner/settings" : undefined}
         />
       </nav>
 

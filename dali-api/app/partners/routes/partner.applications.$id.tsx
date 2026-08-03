@@ -4,8 +4,7 @@ import type { Route } from "./+types/partner.applications.$id";
 import { prisma } from "~/lib/db";
 import { parseSessionCookie } from "~/lib/cookies";
 import { getPresenceUser } from "~/lib/presence-user";
-import { termCodeLabel } from "~/lib/display";
-import { requirePartner } from "~/partners/lib/partner-auth.server";
+import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
 import {
   formAnswerRows,
   type FormAnswerRow,
@@ -31,27 +30,31 @@ export const meta: Route.MetaFunction = ({ data }) => {
 const PARTNER_EDITABLE_STATUSES = ["Submitted", "UnderReview"];
 
 export async function loader({ request, params }: Route.LoaderArgs) {
-  const { auth, partnerUser } = await requirePartner(request);
+  const { auth, partnerUser } = await requirePartnerAccount(request);
 
-  // Scoped by org — other orgs' applications 404, never 403.
+  // Account-first: an application belongs to the applicant, and (once they're
+  // in an org) to that org. Other people's applications 404, never 403.
   const application = await prisma.partnerApplication.findFirst({
-    where: { id: params.id, partnerOrgId: partnerUser.partnerOrgId },
+    where: {
+      id: params.id,
+      OR: [
+        { applicantUserId: auth.user.sub },
+        ...(partnerUser ? [{ partnerOrgId: partnerUser.partnerOrgId }] : []),
+      ],
+    },
     select: {
       id: true,
       title: true,
       status: true,
       createdAt: true,
       resultingProjectId: true,
-      targetTerms: {
-        orderBy: { term: { sortKey: "asc" } },
-        select: { term: { select: { code: true } } },
-      },
-      domains: {
-        select: {
-          expectedMembers: true,
-          domain: { select: { displayName: true } },
-        },
-      },
+      sowSharedAt: true,
+      contractFee: true,
+      contractSentAt: true,
+      contractSignedAt: true,
+      contractSignerName: true,
+      legalEntityName: true,
+      legalEntityAddress: true,
       formSubmission: {
         select: {
           answers: true,
@@ -87,20 +90,62 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
-  const { partnerUser } = await requirePartner(request);
+  const { auth, partnerUser } = await requirePartnerAccount(request);
   const application = await prisma.partnerApplication.findFirst({
-    where: { id: params.id, partnerOrgId: partnerUser.partnerOrgId },
-    select: { id: true, status: true },
+    where: {
+      id: params.id,
+      OR: [
+        { applicantUserId: auth.user.sub },
+        ...(partnerUser ? [{ partnerOrgId: partnerUser.partnerOrgId }] : []),
+      ],
+    },
+    select: {
+      id: true,
+      status: true,
+      contractSentAt: true,
+      contractSignedAt: true,
+    },
   });
   if (!application) throw new Response("Not found", { status: 404 });
+
+  const form = await request.formData();
+  const intent = (form.get("intent") as string | null) ?? "title";
+
+  if (intent === "sign-contract") {
+    if (!application.contractSentAt) {
+      return { error: "There's no contract to sign yet." };
+    }
+    if (application.contractSignedAt) {
+      return { error: "This contract has already been signed." };
+    }
+    const signerName = (form.get("signerName") as string | null)?.trim() ?? "";
+    const affirm = form.get("affirm") === "on";
+    if (!signerName) return { error: "Type your full name to sign." };
+    if (!affirm) return { error: "Confirm the affirmation to sign." };
+    const legalEntityName =
+      (form.get("legalEntityName") as string | null)?.trim() || null;
+    if (!legalEntityName) {
+      return { error: "Add the legal entity name." };
+    }
+    await prisma.partnerApplication.update({
+      where: { id: application.id },
+      data: {
+        legalEntityName,
+        legalEntityAddress:
+          (form.get("legalEntityAddress") as string | null)?.trim() || null,
+        contractSignedAt: new Date(),
+        contractSignerName: signerName,
+      },
+    });
+    return { ok: true };
+  }
+
+  // Default: edit the pitch title (only while still under consideration).
   if (!PARTNER_EDITABLE_STATUSES.includes(application.status)) {
     return { error: "This application is no longer editable." };
   }
-
-  const form = await request.formData();
   const title = (form.get("title") as string | null)?.trim() ?? "";
   if (!title) return { error: "A title is required." };
-
   await prisma.partnerApplication.update({
     where: { id: application.id },
     data: { title },
@@ -177,6 +222,21 @@ export default function PartnerApplicationDetail({
         </Link>
       )}
 
+      {application.contractSentAt && !application.contractSignedAt && (
+        <div className="bg-accent-coral/10 border border-accent-coral/30 rounded-2xl px-5 py-4 text-sm text-dark-blue">
+          ✍️ A contract is ready for your signature — review and sign it below.
+        </div>
+      )}
+
+      {application.sowSharedAt &&
+        !application.contractSentAt &&
+        application.status !== "Accepted" && (
+          <div className="bg-accent-coral/10 border border-accent-coral/30 rounded-2xl px-5 py-4 text-sm text-dark-blue">
+            📝 A statement of work is ready for your feedback — review and edit it
+            together with the DALI team below.
+          </div>
+        )}
+
       {error && (
         <p className="text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3">{error}</p>
       )}
@@ -200,36 +260,11 @@ export default function PartnerApplicationDetail({
             </button>
           </Form>
         )}
-
-        <div className="flex flex-wrap gap-x-8 gap-y-3 mt-5 pt-4 border-t border-border">
-          <div>
-            <div className="text-xs font-medium text-muted-foreground mb-1">
-              Target terms
-            </div>
-            <div className="text-sm text-foreground">
-              {application.targetTerms.length > 0
-                ? application.targetTerms
-                    .map((t) => termCodeLabel(t.term.code))
-                    .join(", ")
-                : "—"}
-            </div>
-          </div>
-          <div>
-            <div className="text-xs font-medium text-muted-foreground mb-1">
-              Expected work
-            </div>
-            <div className="text-sm text-foreground">
-              {application.domains.length > 0
-                ? application.domains
-                    .map(
-                      (d) =>
-                        `${d.domain.displayName}${d.expectedMembers ? ` (~${d.expectedMembers})` : ""}`,
-                    )
-                    .join(", ")
-                : "—"}
-            </div>
-          </div>
-        </div>
+        {!canEditDetails && (
+          <p className="text-sm text-muted-foreground">
+            Your pitch is locked while the lab reviews it.
+          </p>
+        )}
       </section>
 
       {formAnswers.length > 0 && (
@@ -256,18 +291,19 @@ export default function PartnerApplicationDetail({
         <h2 className="font-heading font-semibold text-dark-blue">
           Statement of Work
         </h2>
-        {application.status !== "Submitted" && (
+        {application.sowSharedAt && (
           <p className="text-xs text-muted-foreground mt-0.5">
-            Drafted together with the DALI team — edits sync live.
+            Drafted together with the DALI team — edits sync live. Add your
+            thoughts right in the document.
           </p>
         )}
         <div className="mt-3" />
-        {/* The SOW is a co-owned doc: it opens once the lab is actually in
-            the room (review has started), not the moment a pitch lands. */}
-        {application.status === "Submitted" ? (
+        {/* The SOW is a co-owned doc: it opens once the lab explicitly shares
+            a draft with the applicant, not the moment a pitch lands. */}
+        {!application.sowSharedAt ? (
           <p className="text-sm text-muted-foreground bg-muted/30 rounded-lg px-4 py-3">
-            This document opens when the lab starts reviewing your pitch —
-            you'll draft the details here together with the DALI team.
+            When the DALI team has a draft ready, they'll share a statement of
+            work here for you to review and refine together.
           </p>
         ) : collabToken ? (
           <PresenceProvider
@@ -293,6 +329,97 @@ export default function PartnerApplicationDetail({
           </p>
         )}
       </section>
+
+      {application.contractSentAt && (
+        <section className="bg-card border border-border rounded-2xl p-5">
+          <h2 className="font-heading font-semibold text-dark-blue">Contract</h2>
+          {application.contractFee && (
+            <p className="text-sm text-muted-foreground mt-1">
+              Fee: {application.contractFee}
+            </p>
+          )}
+          <div className="mt-3">
+            {collabToken ? (
+              <PresenceProvider
+                pageId={`partnercontract:${application.id}`}
+                token={collabToken}
+                userName={userName}
+              >
+                <DocEditor
+                  features="notes"
+                  editable={false}
+                  className="border border-border rounded-md bg-card py-2"
+                  collab={{
+                    documentName: `partnercontract:${application.id}:body`,
+                    token: collabToken,
+                    userName,
+                    userId: currentUserId,
+                  }}
+                />
+              </PresenceProvider>
+            ) : (
+              <p className="text-xs text-muted-foreground italic">
+                Sign in again to view the contract.
+              </p>
+            )}
+          </div>
+
+          {application.contractSignedAt ? (
+            <p className="mt-4 text-sm text-accent-teal bg-accent-teal/10 border border-accent-teal/30 rounded-lg px-4 py-3">
+              ✓ Signed by {application.contractSignerName} on{" "}
+              {new Date(application.contractSignedAt).toLocaleDateString()}.
+            </p>
+          ) : (
+            <Form method="post" className="mt-4 flex flex-col gap-3 border-t border-border pt-4">
+              <input type="hidden" name="intent" value="sign-contract" />
+              <h3 className="text-sm font-heading font-semibold text-dark-blue">
+                Sign
+              </h3>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="flex flex-col gap-1 text-xs">
+                  <span className="text-muted-foreground">Legal entity name</span>
+                  <input
+                    name="legalEntityName"
+                    required
+                    defaultValue={application.legalEntityName ?? ""}
+                    className="px-3 py-2 text-sm border border-border rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-xs">
+                  <span className="text-muted-foreground">Your full name</span>
+                  <input
+                    name="signerName"
+                    required
+                    placeholder="Type your name to sign"
+                    className="px-3 py-2 text-sm border border-border rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                  />
+                </label>
+              </div>
+              <label className="flex flex-col gap-1 text-xs">
+                <span className="text-muted-foreground">Legal entity address</span>
+                <textarea
+                  name="legalEntityAddress"
+                  rows={2}
+                  defaultValue={application.legalEntityAddress ?? ""}
+                  className="px-3 py-2 text-sm border border-border rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+                />
+              </label>
+              <label className="flex items-start gap-2 text-sm text-dark-blue">
+                <input type="checkbox" name="affirm" required className="mt-1 rounded" />
+                I have read the contract above and, by typing my name, agree to
+                it on behalf of the legal entity named.
+              </label>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="self-start rounded-xl bg-dark-blue text-white font-heading font-semibold px-6 py-3 hover:opacity-90 transition disabled:opacity-50"
+              >
+                {submitting ? "Signing…" : "Sign contract"}
+              </button>
+            </Form>
+          )}
+        </section>
+      )}
     </div>
   );
 }

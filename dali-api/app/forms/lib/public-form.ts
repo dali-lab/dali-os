@@ -110,6 +110,10 @@ export async function validateAnswers(
   // Null on anonymous (Public-audience) fills — member-scoped reference
   // sources then resolve to [] and their answers can't validate.
   userId: string | null,
+  // Surfaces that wire up the authenticated upload presign (partner apply)
+  // pass allowFileUploads so a `file` answer is validated by value like any
+  // other field instead of being rejected outright.
+  opts: { allowFileUploads?: boolean } = {},
 ): Promise<{ error: string; status: number } | null> {
   // Checkbox answers arrive as a JSON-stringified array (the fill UIs keep
   // string-valued state); parse, validate against the question's options, and
@@ -153,7 +157,7 @@ export async function validateAnswers(
   // -complete submission.
   for (const q of questions) {
     if (!q.required) continue;
-    if (q.type === "file") {
+    if (q.type === "file" && !opts.allowFileUploads) {
       return {
         error: "This form has a required file upload and can't be submitted here.",
         status: 422,

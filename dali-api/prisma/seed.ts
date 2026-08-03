@@ -8,6 +8,7 @@ import {
 import { interpretIntentForm } from "../app/projects/lib/intent-form-interpreter.js";
 import { replaceIntentSet } from "../app/projects/lib/intent-validation.js";
 import { syncDefaultGroups } from "../app/lib/groups.js";
+import { PARTNER_APPLICATION_QUESTIONS } from "../app/partners/lib/default-application-form.js";
 import {
   ensureEducationTemplates,
   createOfferingApplicationForm,
@@ -3083,46 +3084,7 @@ async function main() {
       formId: partnerAppForm.id,
       versionNumber: 1,
       createdById: admin.id,
-      questions: [
-        {
-          key: "pitch",
-          type: "textarea",
-          required: false,
-          data: {
-            label: "Short pitch",
-            description: "What problem are you trying to solve, and for whom?",
-          },
-        },
-        {
-          key: "success",
-          type: "textarea",
-          required: false,
-          data: {
-            label: "What does success look like?",
-            description:
-              "A term from now, what would make you glad you worked with the lab?",
-          },
-        },
-        {
-          key: "users",
-          type: "textarea",
-          required: false,
-          data: {
-            label: "Who will use what we build?",
-            description: "Roughly how many people, and in what setting?",
-          },
-        },
-        {
-          key: "existing_work",
-          type: "textarea",
-          required: false,
-          data: {
-            label: "What exists today?",
-            description:
-              "Any research, designs, or a codebase we would be building on rather than starting from scratch.",
-          },
-        },
-      ] as object,
+      questions: PARTNER_APPLICATION_QUESTIONS as object,
     },
   });
   await prisma.partnerApplicationFormBinding.deleteMany({});

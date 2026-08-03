@@ -20,6 +20,7 @@ import {
   PARTNER_APPLICATION_STATUS_LABELS as STATUS_LABEL,
   PARTNER_APPLICATION_STATUS_PILL,
   PROJECTING_STATUSES,
+  partnerDisplayName,
   type PartnerApplicationStatus as Status,
 } from "../lib/partner-application";
 import { useChartColors } from "~/components/analytics/useChartColors";
@@ -87,6 +88,11 @@ export async function loader({ request }: Route.LoaderArgs) {
         summary: true,
         status: true,
         partnerOrg: { select: { name: true, logoUrl: true } },
+        // Account-first: an application may have no org yet (created only at
+        // promotion). Fall back to the applicant's own name/identity.
+        applicant: {
+          select: { firstName: true, lastName: true, personalEmail: true },
+        },
         formSubmission: {
           select: {
             answers: true,
@@ -139,10 +145,10 @@ export async function loader({ request }: Route.LoaderArgs) {
       id: a.id,
       title: a.title,
       status: a.status,
-      partnerName: a.partnerOrg.name,
+      partnerName: partnerDisplayName(a.partnerOrg, a.applicant),
       excerpt: answerExcerpt ?? a.summary,
       // Uploaded logos are stored as S3 keys; presign for display.
-      partnerLogoUrl: await resolvePhotoUrl(a.partnerOrg.logoUrl),
+      partnerLogoUrl: await resolvePhotoUrl(a.partnerOrg?.logoUrl ?? null),
       targetTerms: a.targetTerms.map((t) => ({
         code: t.term.code,
         sortKey: t.term.sortKey,

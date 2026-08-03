@@ -27,11 +27,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!auth.ok) return {};
   if (auth.user.type === "member") return redirect("/");
   if (auth.user.type === "dartmouth") return redirect("/portal");
-  const partnerUser = await prisma.partnerUser.findUnique({
-    where: { userId: auth.user.sub },
-    select: { id: true },
-  });
-  return redirect(partnerUser ? "/partner" : "/partner/onboarding");
+  // Account-first: /partner works for applicants (no org) too. Onboarding is
+  // only needed to capture a name we don't yet have.
+  return redirect(auth.user.firstName ? "/partner" : "/partner/onboarding");
 }
 
 export async function action({ request }: Route.ActionArgs) {

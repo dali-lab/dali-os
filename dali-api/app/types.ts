@@ -140,6 +140,13 @@ export interface Question {
     // ProseMirror JSON (old TipTap editor) or, before the rich-text upgrade,
     // a plain string — readers format-sniff all three.
     body?: unknown
+    // Multi-step forms: the 1-based step (page) this question belongs to.
+    // Absent = step 1. Fill surfaces that support paging group by this and show
+    // one step at a time; single-step surfaces ignore it and render flat.
+    step?: number
+    // Optional title for this question's step (e.g. "The Problem"). Authored on
+    // any question in the step; the wizard shows the first non-empty per step.
+    stepTitle?: string
   }
 }
 

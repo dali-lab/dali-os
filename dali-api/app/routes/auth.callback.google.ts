@@ -187,7 +187,21 @@ export async function loader({ request }: Route.LoaderArgs) {
     const headers = new Headers();
     headers.append("Set-Cookie", clearStateCookie);
     setSessionCookie(headers, session.rawId);
-    headers.set("Location", "/partner/onboarding");
+    // Account-first: a first-time partner is an applicant — /partner is their
+    // home. Google gives us a verified name, so they skip onboarding entirely;
+    // only route a nameless "existing" partner-in-progress there.
+    const named =
+      identity.kind === "new"
+        ? Boolean(googleUser.firstName)
+        : Boolean(
+            (
+              await prisma.user.findUnique({
+                where: { id: userId },
+                select: { firstName: true },
+              })
+            )?.firstName,
+          );
+    headers.set("Location", named ? "/partner" : "/partner/onboarding");
     return new Response(null, { status: 302, headers });
   }
 
