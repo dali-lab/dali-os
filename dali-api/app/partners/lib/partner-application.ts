@@ -62,3 +62,23 @@ export function isPartnerApplicationStatus(
     (PARTNER_APPLICATION_STATUSES as readonly string[]).includes(x)
   );
 }
+
+// Account-first: an application belongs to a person and may not have an org
+// until promotion. Prefer the org name once it exists (that's the settled
+// identity Core cares about), otherwise show the applicant. One source of
+// truth so the board, detail page, and org pages label an application the
+// same way.
+export function partnerDisplayName(
+  org: { name: string } | null | undefined,
+  applicant:
+    | { firstName: string | null; lastName: string | null; personalEmail: string | null }
+    | null
+    | undefined,
+): string {
+  if (org?.name) return org.name;
+  const full = [applicant?.firstName, applicant?.lastName]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  return full || applicant?.personalEmail || "Unknown applicant";
+}

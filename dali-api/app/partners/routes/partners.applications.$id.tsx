@@ -19,13 +19,27 @@ import {
   PARTNER_APPLICATION_STATUSES as STATUSES,
   PARTNER_APPLICATION_STATUS_LABELS as STATUS_LABEL,
   isPartnerApplicationStatus,
+  partnerDisplayName,
   type PartnerApplicationStatus as Status,
 } from "../lib/partner-application";
+import {
+  EVAL_CRITERIA,
+  RECOMMENDATION_OPTIONS,
+  AMBIGUITY_OPTIONS,
+  ACCEPT_CHECKLIST_TEMPLATE,
+  FIRST_MEETING_TEMPLATE,
+  parseEvaluation,
+  evaluationHasContent,
+  resolveChecklist,
+  noteText,
+} from "../lib/partner-review";
+import { notifyPartnerApplicationEvent } from "../lib/partner-emails.server";
+import { sendPartnerContract } from "../lib/partner-contract.server";
+import { buttonClasses } from "~/components/ui/Button";
 import { formAnswerRows } from "~/forms/lib/answer-rows.server";
 import type { Question } from "~/types";
 import { DocEditor } from "~/components/doc";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
-import { EditModeToggle, useEditMode } from "~/components/EditModeToggle";
 import { isEmptyBlocks } from "~/lib/blocks";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { useDialog, useConfirmSubmit } from "~/components/ui/dialog";
@@ -65,8 +79,25 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       summary: true,
       status: true,
       sowDocId: true,
+      sowSharedAt: true,
+      contractFee: true,
+      contractSentAt: true,
+      contractSignedAt: true,
+      contractSignerName: true,
+      legalEntityName: true,
+      legalEntityAddress: true,
       resultingProjectId: true,
+      evaluation: true,
+      acceptChecklist: true,
+      notes: {
+        orderBy: { createdAt: "desc" },
+        select: { id: true, kind: true, body: true, createdAt: true },
+      },
       partnerOrg: { select: { id: true, name: true, logoUrl: true } },
+      // Account-first: the applicant is the person; the org may not exist yet.
+      applicant: {
+        select: { firstName: true, lastName: true, personalEmail: true },
+      },
       targetTerms: {
         orderBy: { term: { sortKey: "asc" } },
         select: { termId: true, term: { select: { code: true } } },
@@ -129,12 +160,24 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       summary: application.summary,
       status: application.status,
       sowDocId: application.sowDocId,
+      sowSharedAt: application.sowSharedAt,
+      contractFee: application.contractFee,
+      contractSentAt: application.contractSentAt,
+      contractSignedAt: application.contractSignedAt,
+      contractSignerName: application.contractSignerName,
+      legalEntityName: application.legalEntityName,
+      legalEntityAddress: application.legalEntityAddress,
       resultingProjectId: application.resultingProjectId,
       targetTerms: application.targetTerms.map((t) => ({
         termId: t.termId,
         code: t.term.code,
       })),
       partner: application.partnerOrg,
+      applicant: application.applicant,
+      partnerName: partnerDisplayName(
+        application.partnerOrg,
+        application.applicant,
+      ),
       domains: application.domains.map((d) => ({
         id: d.id,
         domainId: d.domainId,
@@ -143,6 +186,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         // save blocks back to the same column.
         expectedChallenges: ensureBlocks(d.expectedChallenges),
         expectedMembers: d.expectedMembers,
+      })),
+      evaluation: parseEvaluation(application.evaluation),
+      checklist: resolveChecklist(application.acceptChecklist),
+      notes: application.notes.map((n) => ({
+        id: n.id,
+        kind: n.kind,
+        text: noteText(n.body),
+        createdAt: n.createdAt,
       })),
     },
     formAnswers,
@@ -181,6 +232,123 @@ export async function action({ request, params }: Route.ActionArgs) {
       where: { id: params.id },
       data: { status },
     });
+    // Push the partner-actionable decisions to their inbox (pull + push).
+    const decisionEvent =
+      status === "Accepted"
+        ? ("accepted" as const)
+        : status === "Rejected"
+          ? ("rejected" as const)
+          : status === "OnHold"
+            ? ("onhold" as const)
+            : null;
+    if (decisionEvent) {
+      void notifyPartnerApplicationEvent(params.id!, { kind: decisionEvent }).catch(
+        (e) => console.error("partner status notify failed", e),
+      );
+    }
+  } else if (intent === "eval") {
+    const criteria: Record<string, string> = {};
+    for (const c of EVAL_CRITERIA) {
+      const v = (form.get(`crit:${c.key}`) as string | null)?.trim() ?? "";
+      if (v) criteria[c.key] = v;
+    }
+    const recommendationRaw = String(form.get("recommendation") ?? "Undecided");
+    const ambiguityRaw = String(form.get("ambiguityRating") ?? "");
+    const evaluation = {
+      criteria,
+      concerns: (form.get("concerns") as string | null)?.trim() ?? "",
+      shouldMeet: form.get("shouldMeet") === "on",
+      recommendation: (RECOMMENDATION_OPTIONS as readonly string[]).includes(
+        recommendationRaw,
+      )
+        ? recommendationRaw
+        : "Undecided",
+      ambiguityRating: (AMBIGUITY_OPTIONS as readonly string[]).includes(
+        ambiguityRaw,
+      )
+        ? ambiguityRaw
+        : "",
+    };
+    await prisma.partnerApplication.update({
+      where: { id: params.id },
+      data: { evaluation },
+    });
+  } else if (intent === "checklist") {
+    // The whole checklist posts on every toggle (checkboxes named `check`).
+    const checked = new Set(form.getAll("check").map(String));
+    const items = ACCEPT_CHECKLIST_TEMPLATE.map((t) => ({
+      key: t.key,
+      label: t.label,
+      done: checked.has(t.key),
+    }));
+    await prisma.partnerApplication.update({
+      where: { id: params.id },
+      data: { acceptChecklist: items },
+    });
+  } else if (intent === "note") {
+    const kind = form.get("kind") === "meeting" ? "meeting" : "note";
+    const text = (form.get("text") as string | null)?.trim() ?? "";
+    if (!text) return { error: "A note can't be empty." };
+    await prisma.partnerApplicationNote.create({
+      data: {
+        applicationId: params.id!,
+        authorId: auth.user.sub,
+        kind,
+        body: { text },
+      },
+    });
+  } else if (intent === "note-delete") {
+    const noteId = String(form.get("noteId") ?? "");
+    await prisma.partnerApplicationNote.deleteMany({
+      where: { id: noteId, applicationId: params.id },
+    });
+  } else if (intent === "sow-share") {
+    const share = form.get("share") === "on";
+    const already = await prisma.partnerApplication.findUnique({
+      where: { id: params.id },
+      select: { sowSharedAt: true },
+    });
+    await prisma.partnerApplication.update({
+      where: { id: params.id },
+      data: { sowSharedAt: share ? new Date() : null },
+    });
+    // Notify only on the transition into "shared", not on re-saves.
+    if (share && !already?.sowSharedAt) {
+      void notifyPartnerApplicationEvent(params.id!, { kind: "sow-shared" }).catch(
+        (e) => console.error("partner sow notify failed", e),
+      );
+    }
+  } else if (intent === "contract") {
+    const trimOrNull = (k: string) =>
+      (form.get(k) as string | null)?.trim() || null;
+    // Per-deal values feed the contract's merge variables ({{legalEntityName}},
+    // {{fee}}, …). Always save them; "Send" instances the shared contract
+    // template as a per-application signing binding.
+    const legalEntityName = trimOrNull("legalEntityName");
+    await prisma.partnerApplication.update({
+      where: { id: params.id },
+      data: {
+        legalEntityName,
+        legalEntityAddress: trimOrNull("legalEntityAddress"),
+        contractFee: trimOrNull("contractFee"),
+      },
+    });
+    if (form.get("op") === "send") {
+      if (!legalEntityName) {
+        return { error: "Add the partner's legal entity name before sending." };
+      }
+      const prior = await prisma.partnerApplication.findUnique({
+        where: { id: params.id },
+        select: { contractSentAt: true },
+      });
+      const res = await sendPartnerContract(params.id!);
+      if (!res.ok) return { error: res.error };
+      if (!prior?.contractSentAt) {
+        void notifyPartnerApplicationEvent(params.id!, { kind: "contract-sent" }).catch(
+          (e) => console.error("partner contract notify failed", e),
+        );
+      }
+    }
   } else if (intent === "details") {
     const summaryRaw = (form.get("summary") as string | null)?.trim() ?? "";
     // The form posts one targetTermId per selected term; blank/duplicate
@@ -231,6 +399,10 @@ export async function action({ request, params }: Route.ActionArgs) {
         summary: true,
         resultingProjectId: true,
         partnerOrgId: true,
+        applicantUserId: true,
+        legalEntityName: true,
+        legalEntityAddress: true,
+        applicant: { select: { firstName: true, lastName: true } },
         targetTerms: {
           orderBy: { term: { sortKey: "asc" } },
           select: { termId: true },
@@ -271,7 +443,59 @@ export async function action({ request, params }: Route.ActionArgs) {
       new Set(roleRequestRows.map((r) => r.domainId)),
     );
 
+    // Account-first: the PartnerOrg is born HERE, at promotion, when its
+    // identity is finally settled — not at signup. Legacy applications already
+    // carry an org (set at apply time for existing partners); those reuse it.
+    const applicantName = [app.applicant?.firstName, app.applicant?.lastName]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+
     const project = await prisma.$transaction(async (tx) => {
+      let orgId = app.partnerOrgId;
+      if (!orgId) {
+        // A legal entity means a real organization; its absence means a solo
+        // partner (a professor, say) — a single-person org named after them.
+        const isIndividual = !app.legalEntityName;
+        const orgName =
+          app.legalEntityName?.trim() || applicantName || app.title;
+        const org = await tx.partnerOrg.create({
+          data: {
+            name: orgName,
+            legalName: app.legalEntityName,
+            legalAddress: app.legalEntityAddress,
+            isIndividual,
+          },
+          select: { id: true },
+        });
+        orgId = org.id;
+        // Graduate the applicant into their first org membership. Guard the
+        // one-org-per-person unique: if they somehow already belong to one, the
+        // org is still created and Core can invite them.
+        if (app.applicantUserId) {
+          try {
+            const pu = await tx.partnerUser.create({
+              data: {
+                userId: app.applicantUserId,
+                partnerOrgId: org.id,
+                authProvider: "MagicLink",
+              },
+              select: { id: true },
+            });
+            await tx.partnerOrg.update({
+              where: { id: org.id },
+              data: { primaryContactId: pu.id },
+            });
+          } catch (e) {
+            if ((e as { code?: string })?.code !== "P2002") throw e;
+          }
+        }
+        await tx.partnerApplication.update({
+          where: { id: app.id },
+          data: { partnerOrgId: org.id },
+        });
+      }
+
       const created = await tx.project.create({
         data: {
           name: app.title,
@@ -281,7 +505,7 @@ export async function action({ request, params }: Route.ActionArgs) {
           ...(firstTermId
             ? { projectTerms: { create: { termId: firstTermId } } }
             : {}),
-          partners: { create: { partnerOrgId: app.partnerOrgId } },
+          partners: { create: { partnerOrgId: orgId } },
           ...(roleRequestRows.length > 0
             ? { roleRequests: { create: roleRequestRows } }
             : {}),
@@ -318,23 +542,14 @@ export default function PartnerApplicationDetail() {
     formAnswers,
     availableDomains,
     terms,
-    canEdit: canEditPerm,
+    canEdit,
     collabToken,
     userName,
   } = useLoaderData() as LoaderData;
-  const { editing: canEdit, editMode, setEditMode } = useEditMode(canEditPerm);
   const actionData = useActionData<typeof action>();
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-end">
-        <EditModeToggle
-          canEdit={canEditPerm}
-          editMode={editMode}
-          setEditMode={setEditMode}
-        />
-      </div>
-
       {actionData?.error && (
         <div className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-md px-3 py-2">
           {actionData.error}
@@ -369,6 +584,10 @@ export default function PartnerApplicationDetail() {
         </section>
       )}
 
+      <EvaluationSection application={application} canEdit={canEdit} />
+
+      <MeetingNotesSection application={application} canEdit={canEdit} />
+
       <DomainScopeBlock
         applicationId={application.id}
         domains={application.domains}
@@ -376,13 +595,127 @@ export default function PartnerApplicationDetail() {
         canEdit={canEdit}
       />
 
+      <AcceptChecklistSection application={application} canEdit={canEdit} />
+
       <SowBlock
         applicationId={application.id}
         canEdit={canEdit}
+        sowSharedAt={application.sowSharedAt}
         collabToken={collabToken}
         userName={userName}
       />
+
+      <ContractBlock application={application} canEdit={canEdit} />
     </div>
+  );
+}
+
+// The formal contract runs on the shared signing engine: Core fills the per-deal
+// merge values here and sends the standard template (authored in Admin →
+// Agreements); the partner signs it in their portal. Distinct from the SOW.
+function ContractBlock({
+  application,
+  canEdit,
+}: {
+  application: LoaderData["application"];
+  canEdit: boolean;
+}) {
+  const sent = application.contractSentAt !== null;
+  const signed = application.contractSignedAt !== null;
+
+  return (
+    <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold text-foreground">Contract</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {signed
+              ? `Signed by ${application.contractSignerName ?? "the partner"}${
+                  application.contractSignedAt
+                    ? ` on ${new Date(application.contractSignedAt).toLocaleDateString()}`
+                    : ""
+                }.`
+              : sent
+                ? "Sent — awaiting the partner's signature in their portal."
+                : "Fill the deal details, then send the standard contract for signature."}
+          </p>
+        </div>
+        {signed && (
+          <span className="text-xs rounded-full bg-accent-teal/25 text-accent-teal px-2 py-0.5">
+            Signed
+          </span>
+        )}
+      </div>
+
+      {signed && (
+        <a
+          href={`/partner/applications/${application.id}/contract.pdf`}
+          className="text-xs text-accent-coral hover:underline w-fit"
+        >
+          Download signed contract (PDF)
+        </a>
+      )}
+
+      {canEdit && !signed && (
+        <Form method="post" className="flex flex-col gap-3">
+          <input type="hidden" name="intent" value="contract" />
+          <p className="text-xs text-muted-foreground">
+            The contract body is the standard{" "}
+            <a href="/admin/agreements" className="text-accent-coral hover:underline">
+              partner contract template
+            </a>
+            . These values fill its merge fields.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="text-muted-foreground">Legal entity name</span>
+              <input
+                name="legalEntityName"
+                defaultValue={application.legalEntityName ?? ""}
+                placeholder="The entity that will sign"
+                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="text-muted-foreground">Fee (free text)</span>
+              <input
+                name="contractFee"
+                defaultValue={application.contractFee ?? ""}
+                placeholder="e.g. $18K / term, one term"
+                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+              />
+            </label>
+          </div>
+          <label className="flex flex-col gap-1 text-xs">
+            <span className="text-muted-foreground">Legal entity address</span>
+            <textarea
+              name="legalEntityAddress"
+              rows={2}
+              defaultValue={application.legalEntityAddress ?? ""}
+              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+            />
+          </label>
+          <div className="flex justify-end gap-2">
+            <button
+              type="submit"
+              name="op"
+              value="save"
+              className={buttonClasses("secondary", "sm")}
+            >
+              Save details
+            </button>
+            <button
+              type="submit"
+              name="op"
+              value="send"
+              className={buttonClasses("primary", "sm")}
+            >
+              {sent ? "Re-send contract" : "Send contract"}
+            </button>
+          </div>
+        </Form>
+      )}
+    </section>
   );
 }
 
@@ -471,12 +804,16 @@ function Header({
       </div>
 
       <p className="text-sm text-muted-foreground">
-        <Link
-          to={`/projects?q=${encodeURIComponent(application.partner.name)}`}
-          className="text-accent-coral hover:underline"
-        >
-          {application.partner.name}
-        </Link>
+        {application.partner ? (
+          <Link
+            to={`/projects?q=${encodeURIComponent(application.partner.name)}`}
+            className="text-accent-coral hover:underline"
+          >
+            {application.partner.name}
+          </Link>
+        ) : (
+          <span className="text-dark-blue">{application.partnerName}</span>
+        )}
         {application.targetTerms.length > 0
           ? ` · Target ${application.targetTerms.map((t) => t.code).join(", ")}`
           : " · No target term"}
@@ -571,6 +908,291 @@ function DetailsSection({
           </button>
         </div>
       )}
+    </Form>
+  );
+}
+
+// Core's structured review against the 8-point reading rubric. Partners never
+// see this. Read mode shows only what's been filled in.
+function EvaluationSection({
+  application,
+  canEdit,
+}: {
+  application: LoaderData["application"];
+  canEdit: boolean;
+}) {
+  const e = application.evaluation;
+  const filled = evaluationHasContent(e);
+
+  if (!canEdit) {
+    return (
+      <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
+        <h2 className="text-sm font-semibold text-foreground">Evaluation</h2>
+        {!filled ? (
+          <p className="text-sm text-muted-foreground">Not yet evaluated.</p>
+        ) : (
+          <>
+            <div className="flex flex-wrap gap-2 text-xs">
+              <span className="rounded-full bg-muted px-2 py-0.5">
+                Recommendation: {e.recommendation}
+              </span>
+              {e.ambiguityRating && (
+                <span className="rounded-full bg-muted px-2 py-0.5">
+                  Ambiguity: {e.ambiguityRating}
+                </span>
+              )}
+              {e.shouldMeet && (
+                <span className="rounded-full bg-accent-teal/15 text-accent-teal px-2 py-0.5">
+                  Should meet
+                </span>
+              )}
+            </div>
+            <dl className="flex flex-col gap-2">
+              {EVAL_CRITERIA.filter((c) => e.criteria[c.key]).map((c) => (
+                <div key={c.key}>
+                  <dt className="text-xs font-medium text-muted-foreground">
+                    {c.label}
+                  </dt>
+                  <dd className="text-sm text-foreground whitespace-pre-wrap">
+                    {e.criteria[c.key]}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+            {e.concerns && (
+              <div>
+                <div className="text-xs font-medium text-muted-foreground">
+                  Questions / concerns
+                </div>
+                <p className="text-sm text-foreground whitespace-pre-wrap">
+                  {e.concerns}
+                </p>
+              </div>
+            )}
+          </>
+        )}
+      </section>
+    );
+  }
+
+  return (
+    <Form
+      method="post"
+      className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3"
+    >
+      <input type="hidden" name="intent" value="eval" />
+      <h2 className="text-sm font-semibold text-foreground">Evaluation</h2>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {EVAL_CRITERIA.map((c) => (
+          <label key={c.key} className="flex flex-col gap-1 text-xs">
+            <span className="text-muted-foreground">{c.label}</span>
+            <textarea
+              name={`crit:${c.key}`}
+              rows={2}
+              defaultValue={e.criteria[c.key] ?? ""}
+              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+            />
+          </label>
+        ))}
+      </div>
+      <label className="flex flex-col gap-1 text-xs">
+        <span className="text-muted-foreground">Questions / concerns</span>
+        <textarea
+          name="concerns"
+          rows={2}
+          defaultValue={e.concerns}
+          placeholder="What do we want to know more about?"
+          className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+        />
+      </label>
+      <div className="flex flex-wrap items-end gap-4">
+        <label className="flex flex-col gap-1 text-xs">
+          <span className="text-muted-foreground">Recommendation</span>
+          <select
+            name="recommendation"
+            defaultValue={e.recommendation}
+            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
+          >
+            {RECOMMENDATION_OPTIONS.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-xs">
+          <span className="text-muted-foreground">Ambiguity rating</span>
+          <select
+            name="ambiguityRating"
+            defaultValue={e.ambiguityRating}
+            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
+          >
+            <option value="">—</option>
+            {AMBIGUITY_OPTIONS.map((a) => (
+              <option key={a} value={a}>
+                {a}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex items-center gap-2 text-sm text-foreground">
+          <input
+            type="checkbox"
+            name="shouldMeet"
+            defaultChecked={e.shouldMeet}
+            className="rounded"
+          />
+          Should meet with them
+        </label>
+      </div>
+      <div className="flex justify-end">
+        <button
+          type="submit"
+          className="px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors"
+        >
+          Save evaluation
+        </button>
+      </div>
+    </Form>
+  );
+}
+
+// Dated meeting / review notes. Newest first. "Add meeting note" pre-fills the
+// first-meeting template.
+function MeetingNotesSection({
+  application,
+  canEdit,
+}: {
+  application: LoaderData["application"];
+  canEdit: boolean;
+}) {
+  const [draft, setDraft] = useState("");
+  const [kind, setKind] = useState<"note" | "meeting">("note");
+
+  return (
+    <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
+      <h2 className="text-sm font-semibold text-foreground">Meeting notes</h2>
+
+      {canEdit && (
+        <Form
+          method="post"
+          className="flex flex-col gap-2"
+          onSubmit={() => {
+            setDraft("");
+            setKind("note");
+          }}
+        >
+          <input type="hidden" name="intent" value="note" />
+          <input type="hidden" name="kind" value={kind} />
+          <textarea
+            name="text"
+            rows={kind === "meeting" ? 8 : 3}
+            value={draft}
+            onChange={(ev) => setDraft(ev.target.value)}
+            placeholder="Jot a note…"
+            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+          />
+          <div className="flex items-center gap-2">
+            <button
+              type="submit"
+              disabled={!draft.trim()}
+              className="px-3 py-1.5 text-sm font-medium rounded-md bg-accent-coral text-white hover:bg-accent-coral/90 transition-colors disabled:opacity-50"
+            >
+              Add note
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setKind("meeting");
+                setDraft((d) => d || FIRST_MEETING_TEMPLATE);
+              }}
+              className="px-3 py-1.5 text-sm font-medium rounded-md border border-border text-foreground hover:border-accent-coral transition-colors"
+            >
+              Use first-meeting template
+            </button>
+          </div>
+        </Form>
+      )}
+
+      {application.notes.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No notes yet.</p>
+      ) : (
+        <ul className="flex flex-col gap-3">
+          {application.notes.map((n) => (
+            <li key={n.id} className="border-t border-border pt-3 first:border-0 first:pt-0">
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <span className="text-xs text-muted-foreground">
+                  {n.kind === "meeting" && (
+                    <span className="mr-1.5 rounded-full bg-accent-teal/15 text-accent-teal px-2 py-0.5">
+                      Meeting
+                    </span>
+                  )}
+                  {new Date(n.createdAt).toLocaleDateString(undefined, {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                  })}
+                </span>
+                {canEdit && (
+                  <Form method="post">
+                    <input type="hidden" name="intent" value="note-delete" />
+                    <input type="hidden" name="noteId" value={n.id} />
+                    <button
+                      type="submit"
+                      className="text-xs text-muted-foreground hover:text-destructive transition-colors"
+                    >
+                      Delete
+                    </button>
+                  </Form>
+                )}
+              </div>
+              <p className="text-sm text-foreground whitespace-pre-wrap">
+                {n.text}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+// The accept checklist from the partner-lead process. Toggling any box posts
+// the whole set (auto-submit), same pattern as the status dropdown.
+function AcceptChecklistSection({
+  application,
+  canEdit,
+}: {
+  application: LoaderData["application"];
+  canEdit: boolean;
+}) {
+  const submit = useSubmit();
+  return (
+    <Form
+      method="post"
+      className="bg-card border border-border rounded-lg p-4 flex flex-col gap-2"
+      onChange={(e) => canEdit && submit(e.currentTarget)}
+    >
+      <input type="hidden" name="intent" value="checklist" />
+      <h2 className="text-sm font-semibold text-foreground">Accept checklist</h2>
+      {application.checklist.map((item) => (
+        <label
+          key={item.key}
+          className="flex items-center gap-2 text-sm text-foreground"
+        >
+          <input
+            type="checkbox"
+            name="check"
+            value={item.key}
+            defaultChecked={item.done}
+            disabled={!canEdit}
+            className="rounded"
+          />
+          <span className={item.done ? "text-muted-foreground line-through" : ""}>
+            {item.label}
+          </span>
+        </label>
+      ))}
     </Form>
   );
 }
@@ -977,30 +1599,49 @@ function DomainScopeEditRow({
 function SowBlock({
   applicationId,
   canEdit,
+  sowSharedAt,
   collabToken,
   userName,
 }: {
   applicationId: string;
   canEdit: boolean;
+  sowSharedAt: Date | string | null;
   collabToken: string | null;
   userName: string;
 }) {
+  const submit = useSubmit();
   // The SOW is a single collab doc per application. Versioning + history come
   // for free from the CollabDocumentVersion auto-snapshot machinery (same as
   // project documents); the editor exposes the version-history panel itself.
   const documentName = `partnersow:${applicationId}:body`;
+  const shared = sowSharedAt !== null;
   return (
     <section className="bg-card border border-border rounded-lg p-4">
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between gap-3 mb-3">
         <div>
           <h2 className="text-sm font-semibold text-foreground">
             Statement of Work
           </h2>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Versioned automatically — open version history from the editor
-            toolbar.
+            {shared
+              ? "Shared with the applicant — you're drafting this together."
+              : "Private to the lab until you share it. Versioned automatically."}
           </p>
         </div>
+        {canEdit && (
+          <Form method="post" onChange={(e) => submit(e.currentTarget)}>
+            <input type="hidden" name="intent" value="sow-share" />
+            <label className="flex items-center gap-2 text-xs text-foreground whitespace-nowrap">
+              <input
+                type="checkbox"
+                name="share"
+                defaultChecked={shared}
+                className="rounded"
+              />
+              Share with applicant
+            </label>
+          </Form>
+        )}
       </div>
       {collabToken ? (
         <PresenceProvider

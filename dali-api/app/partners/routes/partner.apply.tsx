@@ -1,17 +1,15 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Form, redirect, useLoaderData, useNavigation } from "react-router";
-import { ChevronDown } from "lucide-react";
-import { termCodeLabel } from "~/lib/display";
 import type { Route } from "./+types/partner.apply";
+import type { Question } from "~/types";
 import { prisma } from "~/lib/db";
 import { logAuditEvent } from "~/lib/audit";
-import { currentTerm } from "~/lib/roles";
-import { requirePartner } from "~/partners/lib/partner-auth.server";
+import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
 import { loadApplicationForm } from "~/partners/lib/application-form.server";
 import { validateAnswers } from "~/forms/lib/public-form";
 import { notifyFormSubmission } from "~/forms/lib/submission-notify.server";
 import { FormFieldList } from "~/forms/components/FormField";
-import { FormQuestionField } from "~/components/form-builder/QuestionField";
+import { buttonClasses } from "~/components/ui/Button";
 import { DocEditor } from "~/components/doc";
 import { isEmptyBlocks } from "~/lib/blocks";
 import { findMissingRequired } from "~/lib/form-answers";
@@ -21,28 +19,12 @@ export const meta: Route.MetaFunction = () => [
 ];
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const { auth } = await requirePartner(request);
-  const current = await currentTerm();
-  const [terms, domains, applicationForm] = await Promise.all([
-    prisma.term.findMany({
-      // Only current + future terms make sense as staffing targets.
-      where: current ? { sortKey: { gte: current.sortKey } } : undefined,
-      orderBy: { sortKey: "asc" },
-      take: 6,
-      select: { id: true, code: true },
-    }),
-    prisma.domain.findMany({
-      where: { active: true },
-      orderBy: { displayName: "asc" },
-      select: { id: true, displayName: true },
-    }),
-    // The lab-configured extra questions (see PartnerApplicationFormBinding).
-    // Null when none are bound — the structured fields below are the whole form.
-    loadApplicationForm(auth.user.sub),
-  ]);
+  const { auth } = await requirePartnerAccount(request);
+  // The application IS the lab-configured form (see PartnerApplicationFormBinding).
+  // Scope — target terms, per-domain headcount — is set by Core during review,
+  // not asked of the partner up front.
+  const applicationForm = await loadApplicationForm(auth.user.sub);
   return {
-    terms,
-    domains,
     applicationForm: applicationForm
       ? {
           questions: applicationForm.questions,
@@ -52,37 +34,12 @@ export async function loader({ request }: Route.LoaderArgs) {
   };
 }
 
-// Plain text from the form, stored as a single-paragraph BlockNote block array
-// — the format the internal scope editor round-trips (mutable rich-text
-// columns store block JSON going forward).
-function wrapChallenges(text: string) {
-  if (!text) return null;
-  return [
-    {
-      id: crypto.randomUUID(),
-      type: "paragraph",
-      props: { backgroundColor: "default", textColor: "default", textAlignment: "left" },
-      content: [{ type: "text", text, styles: {} }],
-      children: [],
-    },
-  ];
-}
-
 export async function action({ request }: Route.ActionArgs) {
-  const { auth, partnerUser } = await requirePartner(request);
+  const { auth, partnerUser } = await requirePartnerAccount(request);
   const form = await request.formData();
 
   const title = (form.get("title") as string | null)?.trim() ?? "";
-  const termIds = form.getAll("termIds").map(String).filter(Boolean);
-  const domainIds = form.getAll("domainIds").map(String).filter(Boolean);
-
   if (!title) return { error: "Give your pitch a title." };
-
-  // Validate the picked ids exist (form data is client-controlled).
-  const [validTerms, validDomains] = await Promise.all([
-    prisma.term.findMany({ where: { id: { in: termIds } }, select: { id: true } }),
-    prisma.domain.findMany({ where: { id: { in: domainIds }, active: true }, select: { id: true } }),
-  ]);
 
   // Bound-form answers ride along as one JSON field. Re-resolve the form
   // server-side (never trust the client's version/questions) and validate
@@ -106,6 +63,7 @@ export async function action({ request }: Route.ActionArgs) {
       applicationForm.questions,
       formAnswers,
       auth.user.sub,
+      { allowFileUploads: true },
     );
     if (bad) return { error: bad.error };
   }
@@ -127,28 +85,15 @@ export async function action({ request }: Route.ActionArgs) {
       });
       formSubmissionId = submission.id;
     }
-    // No structural summary: the qualitative pitch lives in the bound form's
-    // answers (see the seeded "Partner application questions" form).
+    // Account-first: the application belongs to the person. An existing partner
+    // (already in an org) keeps that link; a fresh applicant has no org yet —
+    // one is created only if the lab moves the pitch to a project.
     return tx.partnerApplication.create({
       data: {
-        partnerOrgId: partnerUser.partnerOrgId,
+        applicantUserId: auth.user.sub,
+        partnerOrgId: partnerUser?.partnerOrgId ?? null,
         title,
         formSubmissionId,
-        targetTerms: {
-          create: validTerms.map((t) => ({ termId: t.id })),
-        },
-        domains: {
-          create: validDomains.map((d) => {
-            const members = Number(form.get(`expectedMembers:${d.id}`) ?? 0);
-            const challenges =
-              (form.get(`challenges:${d.id}`) as string | null)?.trim() ?? "";
-            return {
-              domainId: d.id,
-              expectedMembers: Number.isFinite(members) && members > 0 ? Math.floor(members) : 0,
-              expectedChallenges: wrapChallenges(challenges) ?? undefined,
-            };
-          }),
-        },
       },
       select: { id: true },
     });
@@ -158,7 +103,7 @@ export async function action({ request }: Route.ActionArgs) {
     action: "partner.application.submitted",
     userId: auth.user.sub,
     targetId: application.id,
-    metadata: { partnerOrgId: partnerUser.partnerOrgId },
+    metadata: { partnerOrgId: partnerUser?.partnerOrgId ?? null },
     request,
   });
   if (applicationForm) {
@@ -171,42 +116,150 @@ export async function action({ request }: Route.ActionArgs) {
   return redirect(`/partner/applications/${application.id}`);
 }
 
+function stepOf(q: Question): number {
+  return q.data.step ?? 1;
+}
+
 export default function PartnerApply({ actionData }: Route.ComponentProps) {
-  const { terms, domains, applicationForm } = useLoaderData<typeof loader>();
+  const { applicationForm } = useLoaderData<typeof loader>();
   const navigation = useNavigation();
   const submitting = navigation.state === "submitting";
+  const [title, setTitle] = useState("");
   const [formAnswers, setFormAnswers] = useState<Record<string, string>>({});
-  // Controlled so editing a domain's fields selects the domain — otherwise
-  // an expanded-but-unchecked row's input is silently dropped on submit.
-  const [checkedDomains, setCheckedDomains] = useState<Set<string>>(new Set());
   const [clientError, setClientError] = useState<string | null>(null);
+  const [current, setCurrent] = useState(0);
+  // Keys of required fields flagged empty on a Next/Submit attempt, so we can
+  // mark ALL of them (not just the first) and clear each as it's filled.
+  const [invalid, setInvalid] = useState<Set<string>>(new Set());
+  const [titleInvalid, setTitleInvalid] = useState(false);
+  const [draftRestored, setDraftRestored] = useState(false);
 
-  function selectDomain(id: string) {
-    setCheckedDomains((prev) => {
-      if (prev.has(id)) return prev;
-      const next = new Set(prev);
-      next.add(id);
-      return next;
-    });
-  }
+  const DRAFT_KEY = "dali-partner-apply-draft";
+
+  // Restore any in-progress draft (the applicant is signed in, but this is a
+  // cheap client-side save/resume — closing the tab no longer loses the form).
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY);
+      if (!raw) return;
+      const d = JSON.parse(raw) as {
+        title?: string;
+        formAnswers?: Record<string, string>;
+      };
+      if (d.title) setTitle(d.title);
+      if (d.formAnswers && typeof d.formAnswers === "object") {
+        setFormAnswers(d.formAnswers);
+      }
+      if (d.title || d.formAnswers) setDraftRestored(true);
+    } catch {
+      // ignore malformed drafts
+    }
+  }, []);
+
+  // Persist on every change so a refresh/close is recoverable.
+  useEffect(() => {
+    try {
+      if (!title && Object.keys(formAnswers).length === 0) return;
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({ title, formAnswers }));
+    } catch {
+      // storage full / unavailable — non-fatal
+    }
+  }, [title, formAnswers]);
+
+  const questions = useMemo(
+    () => applicationForm?.questions ?? [],
+    [applicationForm],
+  );
+
+  // Group questions into steps (pages). The title field always leads step 1.
+  const steps = useMemo(() => {
+    const nums = [...new Set(questions.map(stepOf))].sort((a, b) => a - b);
+    const list = nums.map((n) => ({
+      title:
+        questions.find((q) => stepOf(q) === n && q.data.stepTitle)?.data
+          .stepTitle ?? null,
+      questions: questions.filter((q) => stepOf(q) === n),
+    }));
+    return list.length > 0 ? list : [{ title: null, questions: [] }];
+  }, [questions]);
+  const multiStep = steps.length > 1;
+  const lastStep = current >= steps.length - 1;
+
   const error =
     clientError ??
     (actionData && "error" in actionData ? actionData.error : null);
 
-  // The bound form's fields are controlled components, so required-ness is
-  // checked here before the post (the action re-validates server-side).
-  function checkRequired(e: React.FormEvent<HTMLFormElement>) {
-    if (!applicationForm) return;
+  // Flags every empty required field in a set (plus the title on step 1). Marks
+  // them all — not just the first — and returns whether the set was clean.
+  function validateFields(
+    stepQuestions: Question[],
+    includeTitle: boolean,
+  ): boolean {
     const missing = findMissingRequired(
-      applicationForm.questions,
+      stepQuestions,
       (q) => formAnswers[q.key],
       { excludeFileType: true },
     );
-    if (missing.length > 0) {
+    const titleMissing = includeTitle && !title.trim();
+    setInvalid(new Set(missing.map((q) => q.key)));
+    setTitleInvalid(titleMissing);
+    if (missing.length > 0 || titleMissing) {
+      setClientError(
+        titleMissing
+          ? "Give your pitch a title."
+          : `Please fill in the required field${missing.length > 1 ? "s" : ""} marked below.`,
+      );
+      return false;
+    }
+    setClientError(null);
+    return true;
+  }
+
+  function goNext() {
+    if (!validateFields(steps[current].questions, current === 0)) return;
+    setCurrent((c) => Math.min(c + 1, steps.length - 1));
+  }
+
+  function checkAllOnSubmit(e: React.FormEvent<HTMLFormElement>) {
+    if (!validateFields(questions, true)) {
       e.preventDefault();
-      setClientError(`"${missing[0].data.label}" is required.`);
-    } else {
-      setClientError(null);
+      // Jump to the earliest step holding a problem so the field is visible.
+      if (!title.trim()) {
+        setCurrent(0);
+      } else {
+        const bad = questions.find(
+          (q) =>
+            q.required &&
+            q.type !== "file" &&
+            (formAnswers[q.key] == null || formAnswers[q.key] === ""),
+        );
+        if (bad) {
+          const idx = steps.findIndex((s) =>
+            s.questions.some((q) => q.key === bad.key),
+          );
+          if (idx >= 0) setCurrent(idx);
+        }
+      }
+      return;
+    }
+    // Valid — the draft has served its purpose; don't resurrect it next time.
+    try {
+      localStorage.removeItem(DRAFT_KEY);
+    } catch {
+      // ignore
+    }
+  }
+
+  // Clear a field's "required" flag as soon as it's given a value.
+  function onAnswerChange(key: string, value: string) {
+    setFormAnswers((a) => ({ ...a, [key]: value }));
+    if (value && value.trim()) {
+      setInvalid((prev) => {
+        if (!prev.has(key)) return prev;
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
     }
   }
 
@@ -219,10 +272,46 @@ export default function PartnerApply({ actionData }: Route.ComponentProps) {
       <h1 className="font-heading text-3xl font-bold text-dark-blue mb-2">
         Apply to partner with DALI
       </h1>
-      <p className="text-muted-foreground mb-8">
-        Submit this application first. Once the lab accepts it, you can draft a
-        statement of work together with the DALI team.
+      <p className="text-muted-foreground mb-6">
+        Tell us about your project. If it's a fit, we'll set up a time to talk
+        and take it from there — no organization or paperwork needed to apply.
       </p>
+
+      {!isEmptyBlocks(applicationForm?.description) && (
+        <div className="text-sm text-muted-foreground mb-6">
+          <DocEditor
+            features="notes"
+            density="compact"
+            editable={false}
+            initialContent={applicationForm!.description}
+          />
+        </div>
+      )}
+
+      {multiStep && (
+        <div className="mb-6">
+          <div className="flex items-center justify-between text-xs text-muted-foreground mb-1.5">
+            <span className="font-medium text-dark-blue">
+              {steps[current].title ?? `Step ${current + 1}`}
+            </span>
+            <span>
+              Step {current + 1} of {steps.length}
+            </span>
+          </div>
+          <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+            <div
+              className="h-full bg-accent-coral transition-all"
+              style={{ width: `${((current + 1) / steps.length) * 100}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {draftRestored && (
+        <p className="mb-4 text-xs text-muted-foreground bg-muted/40 rounded-lg px-4 py-2">
+          We restored your saved draft — pick up where you left off.
+        </p>
+      )}
 
       {error && (
         <p className="mb-4 text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3">
@@ -230,143 +319,84 @@ export default function PartnerApply({ actionData }: Route.ComponentProps) {
         </p>
       )}
 
-      <Form method="post" onSubmit={checkRequired} className="flex flex-col gap-6">
-        <div>
-          <label htmlFor="title" className={labelClass}>
-            Project title<span className="text-accent-coral ml-0.5">*</span>
-          </label>
-          <input id="title" name="title" required className={inputClass} />
-        </div>
-
-        {terms.length > 0 && (
-          <fieldset>
-            <legend className={labelClass}>
-              Which terms would you like the team working?
-            </legend>
-            <div className="flex flex-wrap gap-3 mt-1">
-              {terms.map((t) => (
-                <label
-                  key={t.id}
-                  className="flex items-center gap-2 text-sm text-dark-blue bg-card border border-border rounded-lg px-3 py-2"
-                >
-                  <input type="checkbox" name="termIds" value={t.id} className="rounded" />
-                  {termCodeLabel(t.code)}
+      <Form method="post" onSubmit={checkAllOnSubmit} className="flex flex-col gap-6">
+        {steps.map((step, i) => (
+          <section
+            key={i}
+            className={`flex flex-col gap-5 ${multiStep && i !== current ? "hidden" : ""}`}
+          >
+            {i === 0 && (
+              <div>
+                <label htmlFor="title" className={labelClass}>
+                  Project title<span className="text-accent-coral ml-0.5">*</span>
                 </label>
-              ))}
-            </div>
-          </fieldset>
-        )}
-
-        <fieldset>
-          <legend className={labelClass}>
-            What kinds of work do you expect?
-          </legend>
-          <div className="flex flex-col gap-3 mt-1">
-            {domains.map((d) => (
-              <details key={d.id} className="group bg-card border border-border rounded-xl">
-                <summary className="flex items-center gap-2 text-sm text-dark-blue px-4 py-3 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    name="domainIds"
-                    value={d.id}
-                    checked={checkedDomains.has(d.id)}
-                    onChange={(e) => {
-                      const on = e.target.checked;
-                      setCheckedDomains((prev) => {
-                        const next = new Set(prev);
-                        if (on) next.add(d.id);
-                        else next.delete(d.id);
-                        return next;
-                      });
-                    }}
-                    className="rounded"
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                  {d.displayName}
-                  <ChevronDown className="w-4 h-4 text-muted-foreground ml-auto transition-transform group-open:rotate-180" />
-                </summary>
-                {/* Typing in either field selects the domain, so an expanded-
-                    but-unchecked row can't silently lose its input. */}
-                <div className="px-4 pb-4 flex flex-col gap-3" onInput={() => selectDomain(d.id)}>
-                  <label className="block">
-                    <span className="text-xs font-medium text-muted-foreground">
-                      Expected team members (rough)
-                    </span>
-                    <input
-                      type="number"
-                      min={0}
-                      max={20}
-                      name={`expectedMembers:${d.id}`}
-                      defaultValue={0}
-                      className="mt-1 w-24 rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                    />
-                  </label>
-                  <label className="block">
-                    <span className="text-xs font-medium text-muted-foreground">
-                      What should this discipline tackle?
-                    </span>
-                    <textarea
-                      name={`challenges:${d.id}`}
-                      rows={2}
-                      className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                    />
-                  </label>
-                </div>
-              </details>
-            ))}
-          </div>
-        </fieldset>
-
-        {applicationForm && applicationForm.questions.length > 0 && (
-          <section className="flex flex-col gap-5 border-t border-border pt-6">
-            <h2 className="font-heading text-lg font-semibold text-dark-blue">
-              A few more questions
-            </h2>
-            {!isEmptyBlocks(applicationForm.description) && (
-              <div className="text-sm text-muted-foreground -mt-1">
-                <DocEditor
-                  features="notes"
-                  density="compact"
-                  editable={false}
-                  initialContent={applicationForm.description}
+                <input
+                  id="title"
+                  name="title"
+                  value={title}
+                  onChange={(e) => {
+                    setTitle(e.target.value);
+                    if (e.target.value.trim()) setTitleInvalid(false);
+                  }}
+                  className={`${inputClass} ${titleInvalid ? "border-red-400 ring-1 ring-red-300" : ""}`}
                 />
+                {titleInvalid && (
+                  <p className="mt-1 text-xs text-red-600">Required</p>
+                )}
               </div>
             )}
-            <FormFieldList
-              questions={applicationForm.questions}
-              values={formAnswers}
-              onChange={(k, v) => setFormAnswers((a) => ({ ...a, [k]: v }))}
-              renderField={(q) =>
-                q.type === "file" ? (
-                  <div className="text-xs text-muted-foreground italic border border-dashed border-border rounded-md px-3 py-2">
-                    File uploads aren’t available here.
-                  </div>
-                ) : (
-                  <FormQuestionField
-                    question={q}
-                    value={formAnswers[q.key] ?? ""}
-                    onChange={(v) =>
-                      setFormAnswers((a) => ({ ...a, [q.key]: v }))
-                    }
-                  />
-                )
-              }
-            />
-            <input
-              type="hidden"
-              name="formAnswers"
-              value={JSON.stringify(formAnswers)}
-            />
+            {step.questions.length > 0 && (
+              <FormFieldList
+                questions={step.questions}
+                values={formAnswers}
+                onChange={onAnswerChange}
+                belowField={(q) =>
+                  invalid.has(q.key) ? (
+                    <p className="mt-1 text-xs text-red-600">Required</p>
+                  ) : null
+                }
+              />
+            )}
           </section>
-        )}
+        ))}
 
-        <button
-          type="submit"
-          disabled={submitting}
-          className="rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
-        >
-          {submitting ? "Submitting…" : "Submit application"}
-        </button>
+        <input
+          type="hidden"
+          name="formAnswers"
+          value={JSON.stringify(formAnswers)}
+        />
+
+        <div className="flex items-center gap-3">
+          {multiStep && current > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                setClientError(null);
+                setCurrent((c) => Math.max(0, c - 1));
+              }}
+              className={buttonClasses("secondary")}
+            >
+              Back
+            </button>
+          )}
+          {multiStep && !lastStep ? (
+            <button
+              type="button"
+              onClick={goNext}
+              className={buttonClasses("primary")}
+            >
+              Next
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={submitting}
+              className={buttonClasses("primary")}
+            >
+              {submitting ? "Submitting…" : "Submit application"}
+            </button>
+          )}
+        </div>
       </Form>
     </div>
   );

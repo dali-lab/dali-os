@@ -5,6 +5,7 @@ import { prisma } from "~/lib/db";
 import { logAuditEvent } from "~/lib/audit";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { PhotoUploadField } from "~/components/PhotoUploadField";
+import { buttonClasses } from "~/components/ui/Button";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { requirePartner } from "~/partners/lib/partner-auth.server";
 import {
@@ -185,8 +186,7 @@ export default function PartnerSettings({ actionData }: Route.ComponentProps) {
   const inputClass =
     "w-full rounded-xl border border-border bg-card px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent-coral";
   const labelClass = "block text-xs font-medium text-muted-foreground mb-1";
-  const saveClass =
-    "self-start rounded-xl bg-dark-blue text-white text-sm font-heading font-semibold px-5 py-2.5 hover:opacity-90 transition disabled:opacity-50";
+  const saveClass = buttonClasses("primary", "md", "self-start");
 
   return (
     <div className="flex flex-col gap-8 max-w-2xl mx-auto">

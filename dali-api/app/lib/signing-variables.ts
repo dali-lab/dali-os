@@ -10,6 +10,12 @@ export const SIGNING_VARIABLE_DESCRIPTIONS = {
   today: "The date the document is signed (Eastern Time).",
   memberName: "The signer's full name.",
   supervisorName: "The DALI staff supervisor's name.",
+  // Partner-contract merge values (resolved per application when signing a
+  // PartnerContract; empty on member/mentorship/confidentiality documents).
+  orgName: "The partner organization's name.",
+  legalEntityName: "The partner's legal entity name.",
+  legalEntityAddress: "The partner's legal entity address.",
+  fee: "The contract fee (free text).",
 } as const;
 
 export type SigningVariableName = keyof typeof SIGNING_VARIABLE_DESCRIPTIONS;
@@ -48,6 +54,10 @@ export interface SigningVariableInputs {
   today?: string;
   memberName?: string;
   supervisorName?: string;
+  orgName?: string;
+  legalEntityName?: string;
+  legalEntityAddress?: string;
+  fee?: string;
 }
 
 export function resolveSigningVariables(
@@ -58,5 +68,9 @@ export function resolveSigningVariables(
     today: inputs.today ?? "",
     memberName: inputs.memberName ?? "",
     supervisorName: inputs.supervisorName ?? "",
+    orgName: inputs.orgName ?? "",
+    legalEntityName: inputs.legalEntityName ?? "",
+    legalEntityAddress: inputs.legalEntityAddress ?? "",
+    fee: inputs.fee ?? "",
   };
 }

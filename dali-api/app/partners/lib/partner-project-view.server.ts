@@ -90,6 +90,10 @@ export type PartnerProjectViewData = {
     contentType: string | null;
     downloadUrl: string | null;
   }[];
+  // The partner's previous visit (null on first visit or the internal preview),
+  // and the activity since then — the "what's new since you were last here" feed.
+  lastSeenAt: string | null;
+  whatsNew: { id: string; label: string; at: string }[];
 };
 
 // The whole partner read-surface for a project: current epics/sprints, roster,
@@ -101,6 +105,10 @@ export type PartnerProjectViewData = {
 export async function loadPartnerProjectView(
   projectId: string,
   partnerOrgId: string | null,
+  // The signed-in partner viewing their own hub. When set, their visit is
+  // recorded and the "what's new since last visit" feed is computed. Omitted by
+  // the internal member preview (projects.$id.partner-view), which never writes.
+  viewerUserId?: string | null,
 ): Promise<PartnerProjectViewData | null> {
   // Every select below is deliberately minimal — this is the whole partner
   // read-surface for a project. No assignees on tasks, no levels on the
@@ -336,7 +344,46 @@ export async function loadPartnerProjectView(
       .filter((c) => c.status === "Planned")
       .sort((a, b) => a.startsAt.localeCompare(b.startsAt))[0] ?? null;
 
+  // Read the prior visit, then bump it — the "what's new" feed is scoped to
+  // activity since the value we just read (before overwriting it).
+  let lastSeenAt: string | null = null;
+  if (viewerUserId) {
+    const prior = await prisma.partnerProjectVisit.findUnique({
+      where: { userId_projectId: { userId: viewerUserId, projectId } },
+      select: { lastSeenAt: true },
+    });
+    lastSeenAt = prior?.lastSeenAt.toISOString() ?? null;
+    await prisma.partnerProjectVisit.upsert({
+      where: { userId_projectId: { userId: viewerUserId, projectId } },
+      create: { userId: viewerUserId, projectId },
+      update: { lastSeenAt: new Date() },
+    });
+  }
+  const since = lastSeenAt ? new Date(lastSeenAt) : null;
+  const whatsNew = since
+    ? [
+        ...recentlyDone
+          .filter((t) => t.updatedAt > since)
+          .map((t) => ({
+            id: `task-${t.id}`,
+            label: `Completed: ${t.title}`,
+            at: t.updatedAt.toISOString(),
+          })),
+        ...sharedPages
+          .filter((p) => p.updatedAt > since)
+          .map((p) => ({
+            id: `doc-${p.id}`,
+            label: `Shared document: ${p.title}`,
+            at: p.updatedAt.toISOString(),
+          })),
+      ]
+        .sort((a, b) => b.at.localeCompare(a.at))
+        .slice(0, 8)
+    : [];
+
   return {
+    lastSeenAt,
+    whatsNew,
     project: {
       id: project.id,
       name: project.name,

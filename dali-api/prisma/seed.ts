@@ -8,6 +8,7 @@ import {
 import { interpretIntentForm } from "../app/projects/lib/intent-form-interpreter.js";
 import { replaceIntentSet } from "../app/projects/lib/intent-validation.js";
 import { syncDefaultGroups } from "../app/lib/groups.js";
+import { PARTNER_APPLICATION_QUESTIONS } from "../app/partners/lib/default-application-form.js";
 import {
   ensureEducationTemplates,
   createOfferingApplicationForm,
@@ -3083,46 +3084,7 @@ async function main() {
       formId: partnerAppForm.id,
       versionNumber: 1,
       createdById: admin.id,
-      questions: [
-        {
-          key: "pitch",
-          type: "textarea",
-          required: false,
-          data: {
-            label: "Short pitch",
-            description: "What problem are you trying to solve, and for whom?",
-          },
-        },
-        {
-          key: "success",
-          type: "textarea",
-          required: false,
-          data: {
-            label: "What does success look like?",
-            description:
-              "A term from now, what would make you glad you worked with the lab?",
-          },
-        },
-        {
-          key: "users",
-          type: "textarea",
-          required: false,
-          data: {
-            label: "Who will use what we build?",
-            description: "Roughly how many people, and in what setting?",
-          },
-        },
-        {
-          key: "existing_work",
-          type: "textarea",
-          required: false,
-          data: {
-            label: "What exists today?",
-            description:
-              "Any research, designs, or a codebase we would be building on rather than starting from scratch.",
-          },
-        },
-      ] as object,
+      questions: PARTNER_APPLICATION_QUESTIONS as object,
     },
   });
   await prisma.partnerApplicationFormBinding.deleteMany({});
@@ -3130,6 +3092,103 @@ async function main() {
     data: { formId: partnerAppForm.id, updatedById: admin.id },
   });
   console.log("  partner application form bound (form-partner-application)");
+
+  // ── Partner contract template ────────────────────────────────────────────
+  // The partner contract is a first-class SigningDocument (kind PartnerContract).
+  // Core edits/publishes it in Admin → Agreements like the other agreements; per
+  // application it's instanced as a SigningBinding and signed in the portal via
+  // the shared signing engine. Body uses PM nodes (ensureBlocks converts on read;
+  // signing field/variable nodes survive 1:1). audience Manual + gateScope None:
+  // never auto-gates anyone; partners are directed to sign from their portal.
+  const partnerContractDoc = await prisma.signingDocument.upsert({
+    where: { id: "partner-contract-template" },
+    update: {},
+    create: {
+      id: "partner-contract-template",
+      name: "Partner Project Agreement",
+      slug: "partner-project-agreement",
+      kind: "PartnerContract",
+      gateScope: "None",
+      audience: "Manual",
+      cadence: "Once",
+    },
+  });
+  await prisma.signingDocumentVersion.deleteMany({
+    where: { documentId: partnerContractDoc.id },
+  });
+  await prisma.signingDocumentVersion.create({
+    data: {
+      id: "partner-contract-template-v1",
+      documentId: partnerContractDoc.id,
+      versionNumber: 1,
+      createdById: admin.id,
+      publishedAt: new Date(),
+      roles: ["member"],
+      body: {
+        type: "doc",
+        content: [
+          {
+            type: "heading",
+            attrs: { level: 1 },
+            content: [{ type: "text", text: "DALI Lab Project Partnership Agreement" }],
+          },
+          {
+            type: "paragraph",
+            content: [
+              { type: "text", text: "This agreement is between the DALI Lab at Dartmouth College and " },
+              { type: "variable", attrs: { name: "legalEntityName" } },
+              { type: "text", text: " (" },
+              { type: "variable", attrs: { name: "orgName" } },
+              { type: "text", text: "), for a project engagement beginning in term " },
+              { type: "variable", attrs: { name: "term" } },
+              { type: "text", text: "." },
+            ],
+          },
+          {
+            type: "paragraph",
+            content: [
+              { type: "text", text: "Legal entity address: " },
+              { type: "variable", attrs: { name: "legalEntityAddress" } },
+            ],
+          },
+          {
+            type: "paragraph",
+            content: [
+              { type: "text", text: "Partnership fee: " },
+              { type: "variable", attrs: { name: "fee" } },
+              { type: "text", text: ". Fees go directly to pay the students and mentors on the project team." },
+            ],
+          },
+          {
+            type: "paragraph",
+            content: [
+              {
+                type: "text",
+                text: "The partner retains 100% ownership of all deliverables — code, designs, research, and intellectual property. (Standard terms — edit this template in Admin → Agreements.)",
+              },
+            ],
+          },
+          {
+            type: "paragraph",
+            content: [
+              { type: "text", text: "Signed on behalf of " },
+              { type: "variable", attrs: { name: "orgName" } },
+              { type: "text", text: ":" },
+            ],
+          },
+          {
+            type: "paragraph",
+            content: [
+              { type: "signatureField", attrs: { fieldId: "partner-signature", role: "member", required: true } },
+              { type: "text", text: "   Date: " },
+              { type: "dateField", attrs: { fieldId: "partner-date", role: "member", required: false } },
+            ],
+          },
+        ],
+      },
+    },
+  });
+  console.log("  partner contract template published (partner-contract-template)");
 
   // ── Staffing cycle + preferences ───────────────────────────────────────────
   // Demo data for the /projects/staffing board. Staffing is always open —

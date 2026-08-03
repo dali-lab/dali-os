@@ -9,6 +9,7 @@ import {
   consumePartnerMagicLink,
   peekPartnerMagicLink,
 } from "~/partners/lib/magic-link.server";
+import { buttonClasses } from "~/components/ui/Button";
 
 export const meta: Route.MetaFunction = () => [
   { title: "DALI OS · Sign in" },
@@ -43,14 +44,18 @@ export async function action({ request }: Route.ActionArgs) {
     request,
   });
 
-  const partnerUser = await prisma.partnerUser.findUnique({
-    where: { userId },
-    select: { id: true },
+  // Account-first: /partner serves applicants (no org) too — only send folks
+  // without a name to onboarding so we can capture one.
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { firstName: true },
   });
 
   const headers = new Headers();
   setSessionCookie(headers, session.rawId);
-  return redirect(partnerUser ? "/partner" : "/partner/onboarding", { headers });
+  return redirect(user?.firstName ? "/partner" : "/partner/onboarding", {
+    headers,
+  });
 }
 
 export default function PartnerAuthVerify({
@@ -82,7 +87,7 @@ export default function PartnerAuthVerify({
               <button
                 type="submit"
                 disabled={submitting}
-                className="w-full rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
+                className={buttonClasses("primary", "md", "w-full py-3")}
               >
                 {submitting ? "Signing in…" : "Continue to DALI OS"}
               </button>
@@ -99,7 +104,7 @@ export default function PartnerAuthVerify({
             </p>
             <a
               href="/partner/login"
-              className="inline-block rounded-xl bg-dark-blue text-white font-heading font-semibold px-6 py-3 hover:opacity-90 transition"
+              className={buttonClasses("primary")}
             >
               Request a new link
             </a>
