@@ -111,6 +111,11 @@ import {
   runListSprints,
 } from "~/mcp/tools/list-sprints";
 import {
+  CREATE_PROJECT_TOOL,
+  runCreateProject,
+  CreateProjectError,
+} from "~/mcp/tools/create-project";
+import {
   CREATE_SPRINT_TOOL,
   runCreateSprint,
   CreateSprintError,
@@ -366,6 +371,7 @@ const TOOLS = [
   GET_TASK_TOOL,
   UPDATE_TASK_STATUS_TOOL,
   // Project hub additions:
+  CREATE_PROJECT_TOOL,
   CREATE_TASK_TOOL,
   UPDATE_TASK_TOOL,
   DELETE_TASK_TOOL,
@@ -478,6 +484,7 @@ function rpcErrorFromTool(id: unknown, err: unknown): Response | null {
 
   // Project-hub error classes share the same `.status` → JSON-RPC code mapping.
   const hubErrors = [
+    CreateProjectError,
     CreateTaskError,
     UpdateTaskError,
     DeleteTaskError,
@@ -858,6 +865,12 @@ export async function action({ request }: Route.ActionArgs) {
             payload = await runListSprints(
               auth.user.id,
               args as Parameters<typeof runListSprints>[1],
+            );
+            break;
+          case "create_project":
+            payload = await runCreateProject(
+              auth.user.id,
+              args as Parameters<typeof runCreateProject>[1],
             );
             break;
           case "create_sprint":
