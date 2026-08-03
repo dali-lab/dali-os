@@ -1,4 +1,15 @@
-import { Compass, Layers, Rocket, Trees } from "lucide-react";
+import {
+  Compass,
+  Flame,
+  GraduationCap,
+  Layers,
+  NotebookPen,
+  Rocket,
+  TrendingUp,
+  Trees,
+  UserSearch,
+  Users,
+} from "lucide-react";
 import { Tooltip } from "~/components/ui/IconButton";
 import type { Achievement, AchievementKey } from "~/members/lib/achievements.server";
 
@@ -34,6 +45,14 @@ const MEDAL: Record<
     // Hexagon, via clip-path below.
     shape: "rounded-md [clip-path:polygon(25%_2%,75%_2%,100%_50%,75%_98%,25%_98%,0%_50%)]",
   },
+  promoted: {
+    Icon: TrendingUp,
+    ring: "ring-accent-teal/30",
+    fill: "bg-accent-teal/15",
+    ink: "text-accent-teal",
+    // Upward chevron.
+    shape: "[clip-path:polygon(50%_0%,100%_38%,100%_100%,0%_100%,0%_38%)]",
+  },
   veteran: {
     Icon: Trees,
     ring: "ring-amber-500/30",
@@ -41,6 +60,46 @@ const MEDAL: Record<
     ink: "text-amber-600",
     // Shield.
     shape: "rounded-t-xl [clip-path:polygon(0%_0%,100%_0%,100%_62%,50%_100%,0%_62%)]",
+  },
+  student: {
+    Icon: GraduationCap,
+    ring: "ring-accent-pink/30",
+    fill: "bg-accent-pink/15",
+    ink: "text-accent-pink",
+    // Rounded square, distinguished from first-term by hue and glyph.
+    shape: "rounded-xl",
+  },
+  mentor: {
+    Icon: Users,
+    ring: "ring-accent-green/30",
+    fill: "bg-accent-green/15",
+    ink: "text-accent-green",
+    // Arch — two figures under one roof.
+    shape: "rounded-t-full",
+  },
+  "big-period": {
+    Icon: Flame,
+    ring: "ring-accent-coral/30",
+    fill: "bg-accent-coral/15",
+    ink: "text-accent-coral",
+    // Diamond.
+    shape: "[clip-path:polygon(50%_0%,100%_50%,50%_100%,0%_50%)]",
+  },
+  "talent-scout": {
+    Icon: UserSearch,
+    ring: "ring-accent-yellow/40",
+    fill: "bg-accent-yellow/20",
+    ink: "text-amber-600",
+    // Octagon.
+    shape: "[clip-path:polygon(30%_0%,70%_0%,100%_30%,100%_70%,70%_100%,30%_100%,0%_70%,0%_30%)]",
+  },
+  prolific: {
+    Icon: NotebookPen,
+    ring: "ring-border",
+    fill: "bg-muted",
+    ink: "text-foreground",
+    // Page with a folded corner.
+    shape: "rounded-sm [clip-path:polygon(0%_0%,78%_0%,100%_22%,100%_100%,0%_100%)]",
   },
 };
 

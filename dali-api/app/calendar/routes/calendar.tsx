@@ -36,6 +36,7 @@ import { syncManualBlockTimeEntry } from "~/lib/time-entry-sync";
 import { fetchBusyEvents, listCalendarsForLink } from "~/lib/google-calendar";
 import { getZonedHourFraction, getZonedYMD, resolveUserTimeZone, zonedDayStartUtc } from "~/lib/timezone";
 import { formatPayPeriod, isPayPeriodEnd, payPeriodFor } from "~/lib/pay-period";
+import { timeEntryDayUtc } from "~/calendar/lib/timesheet-day";
 import type { Route } from "./+types/calendar";
 import { UnderlineTabButtons } from "~/components/AreaPillNav";
 import { Tooltip } from "~/components/ui/IconButton";
@@ -3030,11 +3031,9 @@ function TimesheetWeekGrid({ data }: { data: LoaderData }) {
   // start on a Sunday, so the displayed Sun–Sat week is always inside exactly
   // one of them.
   const weekPeriod = payPeriodFor(weekStart);
-  const periodEntries = data.timeEntries.filter((t) => {
-    const ymd = getZonedYMD(new Date(t.date), data.timezone);
-    const dayUtc = new Date(Date.UTC(ymd.year, ymd.month - 1, ymd.day));
-    return payPeriodFor(dayUtc).index === weekPeriod.index;
-  });
+  const periodEntries = data.timeEntries.filter(
+    (t) => payPeriodFor(timeEntryDayUtc(t, data.timezone)).index === weekPeriod.index,
+  );
 
   const roleBuckets = new Map<string, { key: string; label: string; hours: number }>();
   // Seed from what's drawn this week so every visible block still has a chip,
