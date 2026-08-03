@@ -17,6 +17,8 @@ import {
 
 const mockPrisma = prisma as unknown as {
   task: { findUnique: ReturnType<typeof vi.fn> };
+  // Read by resolveHandles when a comment body carries "@handle" tokens.
+  user: { findMany: ReturnType<typeof vi.fn> };
 };
 const mockNotify = notify as unknown as ReturnType<typeof vi.fn>;
 const mockMembers = currentProjectParticipantIds as unknown as ReturnType<
@@ -28,6 +30,8 @@ beforeEach(() => {
   // Default: everyone referenced in these tests is currently on the project.
   // Individual tests override this to exercise the roll-off gate.
   mockMembers.mockResolvedValue(new Set(["u1", "u2"]));
+  // Default: no handle resolves. Mention tests override.
+  mockPrisma.user.findMany.mockResolvedValue([]);
 });
 
 describe("notifyTaskAssigned", () => {
@@ -134,6 +138,67 @@ describe("notifyTaskComment", () => {
     mockMembers.mockResolvedValue(new Set(["u1"]));
 
     await notifyTaskComment({ taskId: "t1", authorId: "u1", body: "hi" });
+
+    expect(mockNotify).not.toHaveBeenCalled();
+  });
+
+  it("notifies an @mentioned member who is neither assignee nor on the project", async () => {
+    mockPrisma.task.findUnique.mockResolvedValue({
+      id: "t1",
+      title: "Ship it",
+      projectId: "p1",
+      assignees: [{ userId: "u1" }, { userId: "u2" }],
+    });
+    mockPrisma.user.findMany.mockResolvedValue([{ id: "u3" }]);
+
+    await notifyTaskComment({
+      taskId: "t1",
+      authorId: "u1",
+      body: "@sophie can you take a look?",
+    });
+
+    expect(mockPrisma.user.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { handle: { in: ["sophie"] } } }),
+    );
+    const byEvent = Object.fromEntries(
+      mockNotify.mock.calls.map((c) => [c[0].eventType, c[0]]),
+    );
+    expect(byEvent["task.comment"].recipients).toEqual([{ userId: "u2" }]);
+    expect(byEvent["pagedoc.mention"].recipients).toEqual([{ userId: "u3" }]);
+    expect(byEvent["pagedoc.mention"].message.title).toBe(
+      "You were mentioned on: Ship it",
+    );
+    expect(byEvent["pagedoc.mention"].message.link).toBe(
+      "/projects/p1?tab=board&task=t1",
+    );
+  });
+
+  it("sends a mentioned assignee the mention instead of the comment event", async () => {
+    mockPrisma.task.findUnique.mockResolvedValue({
+      id: "t1",
+      title: "Ship it",
+      projectId: "p1",
+      assignees: [{ userId: "u1" }, { userId: "u2" }],
+    });
+    mockPrisma.user.findMany.mockResolvedValue([{ id: "u2" }]);
+
+    await notifyTaskComment({ taskId: "t1", authorId: "u1", body: "@u2handle ping" });
+
+    expect(mockNotify).toHaveBeenCalledTimes(1);
+    expect(mockNotify.mock.calls[0][0].eventType).toBe("pagedoc.mention");
+    expect(mockNotify.mock.calls[0][0].recipients).toEqual([{ userId: "u2" }]);
+  });
+
+  it("ignores an author who mentions themselves", async () => {
+    mockPrisma.task.findUnique.mockResolvedValue({
+      id: "t1",
+      title: "Ship it",
+      projectId: "p1",
+      assignees: [{ userId: "u1" }],
+    });
+    mockPrisma.user.findMany.mockResolvedValue([{ id: "u1" }]);
+
+    await notifyTaskComment({ taskId: "t1", authorId: "u1", body: "note to @self" });
 
     expect(mockNotify).not.toHaveBeenCalled();
   });

@@ -1,3 +1,5 @@
+import type { ReferenceOption } from '~/forms/lib/reference-sources.shared'
+
 export type ApplicationStatus =
   | 'Draft'
   | 'Submitted'
@@ -133,8 +135,10 @@ export interface Question {
     referenceTermId?: string
     // Transient: populated by the server at fill time from the resolved
     // source (label shown, value = stored answer / DB id). Never persisted —
-    // save-version rebuilds `data` and drops it.
-    referenceOptions?: { value: string; label: string }[]
+    // save-version rebuilds `data` and drops it. `projects:*` sources also
+    // attach a `card` per option, which the fill UI renders instead of a
+    // plain <select> row.
+    referenceOptions?: ReferenceOption[]
     // For type === 'info': free-form prose rendered as a non-question text
     // block in the form. New rows store BlockNote block JSON; legacy rows are
     // ProseMirror JSON (old TipTap editor) or, before the rich-text upgrade,
