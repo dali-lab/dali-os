@@ -1,6 +1,7 @@
 import { redirect, useLoaderData, Link, Form } from "react-router";
 import type { Route } from "./+types/portal.education.$offeringId";
 import { requireAuth } from "~/lib/auth";
+import { prisma } from "~/lib/db";
 import { withdrawApplication } from "~/education/lib/decisions.server";
 import {
   getOfferingDetail,
@@ -31,11 +32,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!offering || offering.status !== "Published")
     throw new Response("Not found", { status: 404 });
 
-  const [descriptionHtml, myApplication] = await Promise.all([
+  const [descriptionHtml, myApplication, me] = await Promise.all([
     offering.descriptionDocId
       ? collabDocToHtml(offering.descriptionDocId)
       : Promise.resolve(""),
     getMyApplication(auth.user.sub, offering.id),
+    prisma.user.findUnique({
+      where: { id: auth.user.sub },
+      select: { timeZone: true },
+    }),
   ]);
 
   return {
@@ -59,6 +64,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       })),
     },
     descriptionHtml,
+    tz: me?.timeZone ?? "America/New_York",
     myStatus: myApplication?.status ?? null,
     canApply:
       registrationOpen(offering) &&
@@ -84,13 +90,13 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function PortalOfferingDetail() {
-  const { offering, descriptionHtml, myStatus, canApply } =
+  const { offering, descriptionHtml, tz, myStatus, canApply } =
     useLoaderData<typeof loader>();
   const confirmSubmit = useConfirmSubmit();
   const seatsLeft = Math.max(0, offering.capacity - offering.approvedCount);
 
   return (
-    <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 flex flex-col gap-6">
+    <div className="w-full px-4 sm:px-6 py-8 flex flex-col gap-6">
       <header>
         <div className="flex flex-wrap items-center gap-2">
           <TypeBadge type={offering.type} />
@@ -128,6 +134,10 @@ export default function PortalOfferingDetail() {
                 method="post"
                 onSubmit={confirmSubmit({
                   title: "Withdraw from this offering?",
+                  description:
+                    myStatus === "Approved"
+                      ? "Your seat opens up for the next person on the waitlist."
+                      : "This removes your application. You can re-apply while registration is open.",
                   confirmLabel: "Withdraw",
                   tone: "destructive",
                 })}
@@ -141,7 +151,7 @@ export default function PortalOfferingDetail() {
           </div>
         </div>
         <p className="text-sm text-muted-foreground mt-1">
-          {formatDateShort(offering.startsAt)} – {formatDateShort(offering.endsAt)}
+          {formatDateShort(offering.startsAt, tz)} – {formatDateShort(offering.endsAt, tz)}
           {" · "}
           {registrationWindowLabel(offering)}
           {" · "}
@@ -185,7 +195,7 @@ export default function PortalOfferingDetail() {
                   Session {s.sequence}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {formatDateTime(s.datetime)}
+                  {formatDateTime(s.datetime, tz)}
                   {s.location ? ` · ${s.location}` : ""}
                 </p>
               </li>

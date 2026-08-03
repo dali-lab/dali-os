@@ -354,8 +354,23 @@ export async function listFeedbackResults(args: {
     },
   });
 
+  // Response rate: who was asked vs who answered. Session feedback goes to
+  // attendees marked Present; the instructor exit survey goes to instructors.
+  let eligible = 0;
+  if (args.slot === SESSION_FEEDBACK_SLOT && args.sessionId) {
+    eligible = await prisma.educationAttendance.count({
+      where: { sessionId: args.sessionId, status: "Present" },
+    });
+  } else if (args.slot === INSTRUCTOR_EXIT_SLOT) {
+    eligible = await prisma.instructorAssignment.count({
+      where: { offeringId: args.offeringId },
+    });
+  }
+
   return {
     formName: binding.form.name,
+    responded: submissions.length,
+    eligible,
     questions: (binding.form.versions[0]?.questions as unknown as
       | { key: string; type: string; data: { label: string } }[]
       | undefined) ?? [],

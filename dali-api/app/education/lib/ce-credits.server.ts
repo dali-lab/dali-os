@@ -1,7 +1,8 @@
 import { prisma } from "~/lib/db";
 import type { Prisma, AttendanceStatus } from "~/generated/prisma/client";
-import { currentTermMemberWhere } from "~/lib/roles";
+import { currentTerm, currentTermMemberWhere } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
+import { notify } from "~/lib/notify.server";
 
 // Continuing-education credit ledger. Policy: every lab member earns ≥1 CE
 // credit per term; a `Present` attendance mark grants one (idempotent via
@@ -157,6 +158,25 @@ export async function creditHistory(userId: string) {
 }
 
 /**
+ * The caller's own CE standing for the current term, for a member-facing
+ * surface ("you have N of 1 this term"). Returns null when there's no current
+ * term or the user is exempt (full-time staff), so callers can hide the strip.
+ */
+export async function myCreditStanding(userId: string) {
+  const term = await currentTerm();
+  if (!term) return null;
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { adminMembership: { select: { isStaff: true } } },
+  });
+  if (user?.adminMembership?.isStaff) return null;
+  const credits = await prisma.cECredit.count({
+    where: { userId, termId: term.id },
+  });
+  return { termCode: term.code, credits, compliant: credits >= 1 };
+}
+
+/**
  * Per-member credit counts for one term across current lab members —
  * the Core end-of-term compliance view. Display-only.
  */
@@ -185,4 +205,30 @@ export async function complianceForTerm(termId: string) {
     credits: countByUser.get(m.id) ?? 0,
     compliant: (countByUser.get(m.id) ?? 0) >= 1,
   }));
+}
+
+/**
+ * Nudge every member who still owes a CE credit this term (in-app; email per
+ * preference). Core-gated at the route. Returns how many were reminded.
+ */
+export async function remindNonCompliant(args: {
+  termId: string;
+  actorId: string;
+}): Promise<{ reminded: number }> {
+  const [rows, term] = await Promise.all([
+    complianceForTerm(args.termId),
+    prisma.term.findUnique({ where: { id: args.termId }, select: { code: true } }),
+  ]);
+  const targets = rows.filter((r) => !r.compliant);
+  if (targets.length === 0) return { reminded: 0 };
+  await notify({
+    eventType: "education.ce_reminder",
+    createdByUserId: args.actorId,
+    message: {
+      title: `You still owe a CE credit for ${term?.code ?? "this term"}`,
+      body: "Attend a workshop or miniseries session to earn it, or complete the async CEC check-in.",
+    },
+    recipients: targets.map((t) => ({ userId: t.userId, link: "/education" })),
+  });
+  return { reminded: targets.length };
 }

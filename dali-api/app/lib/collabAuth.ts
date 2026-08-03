@@ -62,7 +62,7 @@ export async function authorizeCollabDoc(
 
   const parts = name.split(":");
   if (parts.length !== 3) return deny;
-  const [entity, id] = parts;
+  const [entity, id, field] = parts;
 
   if (entity === "review") {
     const review = await prisma.applicationReview.findUnique({
@@ -142,13 +142,40 @@ export async function authorizeCollabDoc(
         workspaceId: true,
         partnerVisible: true,
         createdById: true,
+        studentEditable: true,
       },
     });
     if (!page || page.archivedAt !== null) return deny;
 
     const access = await getPageAccess(userSub, page);
-    if (!access.canView) return deny;
-    return { allowed: true, readOnly: !access.canEdit };
+    if (access.canView) return { allowed: true, readOnly: !access.canEdit };
+
+    // Enrolled students co-edit a page explicitly marked studentEditable (a
+    // shared "workspace" doc), but only while the offering is live. Enrollment
+    // is the gate, not auth type, so this covers members and Dartmouth-portal
+    // students alike — and getPageAccess doesn't model it.
+    if (
+      page.workspaceType === "EducationOffering" &&
+      page.workspaceId &&
+      page.studentEditable
+    ) {
+      const offering = await prisma.educationOffering.findUnique({
+        where: { id: page.workspaceId },
+        select: { status: true, closedOutAt: true },
+      });
+      if (offering?.status === "Published" && offering.closedOutAt === null) {
+        const enrolled = await prisma.educationApplication.findFirst({
+          where: {
+            applicantUserId: userSub,
+            offeringId: page.workspaceId,
+            status: "Approved",
+          },
+          select: { id: true },
+        });
+        if (enrolled !== null) return { allowed: true, readOnly: false };
+      }
+    }
+    return deny;
   }
 
   // eduassignment:{assignmentId}:instructions — edit gate = offering manager.
@@ -207,6 +234,36 @@ export async function authorizeCollabDoc(
       select: { id: true },
     });
     return instructor !== null ? allow : deny;
+  }
+
+  // edusubmission:{submissionId}:content|feedback — collaborative assignment
+  // submission (student-owned "content" doc) and instructor feedback
+  // ("feedback" doc). The field segment decides which side may edit: the
+  // student edits their own content and reads feedback via the hub; the
+  // instructor edits feedback and may open the content doc to review/annotate.
+  if (entity === "edusubmission") {
+    const submission = await prisma.educationSubmission.findUnique({
+      where: { id },
+      select: {
+        studentId: true,
+        assignment: {
+          select: { offeringId: true, session: { select: { offeringId: true } } },
+        },
+      },
+    });
+    if (!submission) return deny;
+    const offeringId =
+      submission.assignment.offeringId ?? submission.assignment.session?.offeringId;
+    if (!offeringId) return deny;
+    if (await isCore(userSub)) return allow;
+    const isInstructor =
+      (await prisma.instructorAssignment.findFirst({
+        where: { userId: userSub, offeringId },
+        select: { id: true },
+      })) !== null;
+    if (field === "feedback") return isInstructor ? allow : deny;
+    // content doc: the owning student, or an instructor reviewing it.
+    return submission.studentId === userSub || isInstructor ? allow : deny;
   }
 
   // Registry-backed surfaces (mentorship notes/templates, …)

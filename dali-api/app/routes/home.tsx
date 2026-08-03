@@ -11,15 +11,19 @@ import {
   ExternalLink,
   FileText,
   CalendarClock,
+  GraduationCap,
   MapPin,
   UserRound,
   X,
 } from "lucide-react";
+import { buttonClasses } from "~/components/ui/Button";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { prisma } from "~/lib/db";
 import { listOpenTasks, type Task } from "~/lib/tasks";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import { listedFormsFor, type ListedForm } from "~/forms/lib/public-form";
+import { listCatalog, registrationOpen } from "~/education/lib/offerings.server";
+import { listUpcomingSessionsForUser } from "~/education/lib/schedule.server";
 import { fetchGeneralCalendarEvents } from "~/lib/general-calendar";
 import { getZonedYMD, resolveUserTimeZone, zonedDayStartUtc } from "~/lib/timezone";
 import { RsvpButtons, notifyTasksChanged } from "~/components/RsvpButtons";
@@ -83,7 +87,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     tz,
   );
 
-  const [items, tasks, rawEvents, formsForYou, assignedTasks] = await Promise.all([
+  const [items, tasks, rawEvents, formsForYou, assignedTasks, catalog, upcomingSessions] =
+    await Promise.all([
     prisma.notification.findMany({
       // Hide invites whose meeting was Cancelled — they shouldn't appear in the
       // banner, just as they're dropped from tasks and the bell. Also hide
@@ -142,7 +147,37 @@ export async function loader({ request }: Route.LoaderArgs) {
         project: { select: { name: true, iconEmoji: true } },
       },
     }),
+    // Education for the home card: catalog (enrolled + open-registration +
+    // open-assignment counts) and the viewer's next few sessions.
+    listCatalog(auth.user.sub),
+    listUpcomingSessionsForUser(auth.user.sub, { limit: 3 }),
   ]);
+
+  const enrolledOfferings = catalog.filter((o) => o.myStatus === "Approved");
+  const education: EducationSummary = {
+    enrolledCount: enrolledOfferings.length,
+    openAssignments: enrolledOfferings.reduce((s, o) => s + o.openAssignments, 0),
+    openOfferings: catalog.filter((o) => registrationOpen(o)).length,
+    pendingCount: catalog.filter(
+      (o) => o.myStatus === "Submitted" || o.myStatus === "Waitlisted",
+    ).length,
+    upcoming: upcomingSessions.map((s) => ({
+      id: s.id,
+      offeringId: s.offeringId,
+      label: s.title
+        ? `${s.offeringTitle} · ${s.title}`
+        : `${s.offeringTitle} · Session ${s.sequence}`,
+      when: s.datetime.toLocaleString("en-US", {
+        timeZone: tz,
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      }),
+      location: s.location,
+    })),
+  };
 
   const myProjectTasks: MyProjectTask[] = assignedTasks.map((t) => ({
     id: t.id,
@@ -217,8 +252,23 @@ export async function loader({ request }: Route.LoaderArgs) {
     weekLabel,
     timeZone: tz,
     formsForYou,
+    education,
   };
 }
+
+type EducationSummary = {
+  enrolledCount: number;
+  openAssignments: number;
+  openOfferings: number;
+  pendingCount: number;
+  upcoming: {
+    id: string;
+    offeringId: string;
+    label: string;
+    when: string;
+    location: string | null;
+  }[];
+};
 
 type MyProjectTask = {
   id: string;
@@ -256,6 +306,7 @@ export default function Home() {
     weekLabel,
     timeZone,
     formsForYou,
+    education,
   } = useLoaderData<typeof loader>();
   const firstName = user.firstName || user.email.split("@")[0];
 
@@ -276,6 +327,8 @@ export default function Home() {
 
       <FormsForYouPanel forms={formsForYou} />
 
+      <EducationPanel education={education} />
+
       <div className="flex flex-col gap-6">
         <WeekCalendarPanel
           days={weekDays}
@@ -286,6 +339,81 @@ export default function Home() {
         />
       </div>
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Education — enrolled courses, next sessions, and open registration.  */
+/* Collapses to nothing when the member has no education activity, so    */
+/* the widget works for everyone (including non-students).               */
+/* ------------------------------------------------------------------ */
+
+function EducationPanel({ education }: { education: EducationSummary }) {
+  const { enrolledCount, openAssignments, openOfferings, pendingCount, upcoming } = education;
+  if (
+    enrolledCount === 0 &&
+    openOfferings === 0 &&
+    pendingCount === 0 &&
+    upcoming.length === 0
+  ) {
+    return null;
+  }
+  const blurb =
+    enrolledCount > 0
+      ? `You're enrolled in ${enrolledCount} course${enrolledCount === 1 ? "" : "s"}${
+          openAssignments > 0
+            ? ` — ${openAssignments} assignment${openAssignments === 1 ? "" : "s"} waiting on you`
+            : ""
+        }.`
+      : openOfferings > 0
+        ? `${openOfferings} workshop${openOfferings === 1 ? " or miniseries is" : "s and miniseries are"} open for registration.`
+        : "Workshops and miniseries are posted here each term.";
+  return (
+    <section className="bg-card border border-border shadow-brand-1 rounded-lg p-4 flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
+          <GraduationCap className="w-4 h-4 text-accent-coral" />
+          Education
+        </h2>
+        <Link to="/education" className={buttonClasses("secondary", "sm")}>
+          {enrolledCount > 0 ? "My courses" : "Browse offerings"}
+        </Link>
+      </div>
+      <p className="text-sm text-muted-foreground">{blurb}</p>
+      {(openAssignments > 0 || pendingCount > 0) && (
+        <div className="flex items-center gap-2 flex-wrap">
+          {openAssignments > 0 && (
+            <span className="inline-flex items-center rounded-full bg-accent-coral text-white px-2.5 py-1 text-xs font-semibold">
+              {openAssignments} assignment{openAssignments === 1 ? "" : "s"} due
+            </span>
+          )}
+          {pendingCount > 0 && (
+            <span className="inline-flex items-center rounded-full bg-amber-100 text-amber-800 px-2.5 py-1 text-xs font-semibold">
+              {pendingCount} application{pendingCount === 1 ? "" : "s"} pending
+            </span>
+          )}
+        </div>
+      )}
+      {upcoming.length > 0 && (
+        <ul className="flex flex-col gap-1.5 border-t border-border pt-3">
+          {upcoming.map((s) => (
+            <li key={s.id} className="text-xs">
+              <Link
+                to={`/education/${s.offeringId}/hub`}
+                className="font-medium text-foreground hover:underline"
+              >
+                {s.label}
+              </Link>
+              <span className="text-muted-foreground">
+                {" "}
+                · {s.when}
+                {s.location ? ` · ${s.location}` : ""}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

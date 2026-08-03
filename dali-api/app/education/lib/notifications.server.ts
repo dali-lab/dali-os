@@ -8,6 +8,7 @@ import {
   redirectBannerHtml,
 } from "~/lib/candidate-email";
 import { getFrontendUrl } from "~/lib/app-env";
+import { APPLICATION_TZ } from "~/lib/timezone";
 import type { EduApplicationStatus } from "~/generated/prisma/client";
 
 type Recipient = {
@@ -203,6 +204,146 @@ export async function notifyNewAssignment(args: {
     } catch (err) {
       console.error("assignment notification failed", {
         assignmentId: args.assignmentId,
+        userId: applicant.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+}
+
+/** Tell a student their submission was graded. Member in-app / portal email. */
+export async function notifyGraded(args: {
+  studentId: string;
+  offeringId: string;
+  assignmentId: string;
+  assignmentTitle: string;
+}): Promise<void> {
+  const student = await prisma.user.findUnique({
+    where: { id: args.studentId },
+    select: {
+      id: true,
+      firstName: true,
+      daliEmail: true,
+      dartmouthEmail: true,
+      personalEmail: true,
+      netId: true,
+    },
+  });
+  if (!student) return;
+  const title = `Feedback on ${args.assignmentTitle}`;
+  const body = "Your instructor graded your submission — open the assignment to see it.";
+  const link = `${educationLink(student, args.offeringId)}/assignments/${args.assignmentId}`;
+  try {
+    if (student.daliEmail) {
+      await notify({
+        eventType: "education.grade",
+        message: { title, body },
+        recipients: [{ userId: student.id, link }],
+      });
+    } else {
+      const refreshToken = await getSenderRefreshToken("Education");
+      if (!refreshToken) return;
+      const { to, redirectedFrom } = resolveCandidateEmail(recipientEmail(student));
+      if (!to) return;
+      await sendEmail({
+        refreshToken,
+        to,
+        subject: title,
+        html:
+          redirectBannerHtml(redirectedFrom) +
+          `<p>Hi ${student.firstName},</p><p>${body}</p><p><a href="${getFrontendUrl()}${link}">Open the assignment</a></p>`,
+      });
+    }
+  } catch (err) {
+    console.error("grade notification failed", {
+      assignmentId: args.assignmentId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+/**
+ * Remind approved enrollees that a session is starting soon. Members get a
+ * pref-aware in-app notification (education.session_reminder); portal students,
+ * who have no bell, get a direct email. Times are labeled ET — the shared
+ * in-app body can't be per-recipient, and the hub renders each user's own zone.
+ */
+export async function notifySessionReminder(args: {
+  offeringId: string;
+  offeringTitle: string;
+  sequence: number;
+  sessionTitle: string | null;
+  datetime: Date;
+  location: string | null;
+}): Promise<void> {
+  const enrollees = await prisma.educationApplication.findMany({
+    where: { offeringId: args.offeringId, status: "Approved" },
+    select: {
+      applicant: {
+        select: {
+          id: true,
+          firstName: true,
+          daliEmail: true,
+          dartmouthEmail: true,
+          personalEmail: true,
+          netId: true,
+        },
+      },
+    },
+  });
+  if (enrollees.length === 0) return;
+
+  const label = args.sessionTitle ?? `Session ${args.sequence}`;
+  const when = args.datetime.toLocaleString("en-US", {
+    timeZone: APPLICATION_TZ,
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  const title = `Upcoming: ${label}`;
+  const body = `${args.offeringTitle} · ${when} (ET)${args.location ? ` · ${args.location}` : ""}`;
+
+  const members = enrollees.filter((e) => e.applicant.daliEmail);
+  const portalStudents = enrollees.filter((e) => !e.applicant.daliEmail);
+
+  if (members.length > 0) {
+    try {
+      await notify({
+        eventType: "education.session_reminder",
+        message: { title, body },
+        recipients: members.map(({ applicant }) => ({
+          userId: applicant.id,
+          link: `${educationLink(applicant, args.offeringId)}/hub`,
+        })),
+      });
+    } catch (err) {
+      console.error("session reminder notification failed", {
+        offeringId: args.offeringId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  for (const { applicant } of portalStudents) {
+    const link = `${educationLink(applicant, args.offeringId)}/hub`;
+    try {
+      const refreshToken = await getSenderRefreshToken("Education");
+      if (!refreshToken) continue;
+      const { to, redirectedFrom } = resolveCandidateEmail(recipientEmail(applicant));
+      if (!to) continue;
+      await sendEmail({
+        refreshToken,
+        to,
+        subject: title,
+        html:
+          redirectBannerHtml(redirectedFrom) +
+          `<p>Hi ${applicant.firstName},</p><p>${body}</p><p><a href="${getFrontendUrl()}${link}">Open the course hub</a></p>`,
+      });
+    } catch (err) {
+      console.error("session reminder email failed", {
+        offeringId: args.offeringId,
         userId: applicant.id,
         error: err instanceof Error ? err.message : String(err),
       });

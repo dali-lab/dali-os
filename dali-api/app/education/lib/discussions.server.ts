@@ -143,6 +143,23 @@ export async function runDiscussionAction(
   ctx: { offeringId: string; userId: string; isManager: boolean },
 ): Promise<Response | { ok: true }> {
   const intent = formData.get("intent");
+  // The offering-wide discussion (announcements + messages + replies). Distinct
+  // from the assignment threads below, which hang off a single assignment.
+  // postAnnouncement re-checks membership itself, so a student can't broadcast
+  // by posting kind=Announcement from the hub.
+  if (intent === "post-announcement") {
+    const { postAnnouncement } = await import("./announcements.server");
+    const result = await postAnnouncement({
+      offeringId: ctx.offeringId,
+      authorId: ctx.userId,
+      body: String(formData.get("body") ?? ""),
+      kind: formData.get("kind") === "Announcement" ? "Announcement" : "Message",
+      parentId: String(formData.get("parentId") ?? "") || null,
+    });
+    if ("error" in result)
+      return Response.json({ error: result.error }, { status: result.status });
+    return { ok: true };
+  }
   if (intent === "post-discussion") {
     const result = await createPost({
       offeringId: ctx.offeringId,

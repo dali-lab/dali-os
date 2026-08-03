@@ -40,6 +40,62 @@ export async function getSessionRoster(offeringId: string, sessionId: string) {
   };
 }
 
+/**
+ * Every approved student against every session, with each one's marks and a
+ * running attended count.
+ *
+ * The roster answers two questions that used to need two screens — "who is
+ * behind" and "who was here today" — and they read the same rows, so they're
+ * one query. Marking edits a single column of what this returns.
+ */
+export async function getAttendanceMatrix(offeringId: string) {
+  const [sessions, students, marks] = await Promise.all([
+    prisma.educationSession.findMany({
+      where: { offeringId },
+      orderBy: { sequence: "asc" },
+      select: { id: true, sequence: true, datetime: true },
+    }),
+    prisma.educationApplication.findMany({
+      where: { offeringId, status: "Approved" },
+      orderBy: { submittedAt: "asc" },
+      select: {
+        id: true,
+        applicant: { select: { firstName: true, lastName: true } },
+      },
+    }),
+    prisma.educationAttendance.findMany({
+      where: { session: { offeringId } },
+      select: { applicationId: true, sessionId: true, status: true },
+    }),
+  ]);
+
+  const byApplication = new Map<string, Map<string, AttendanceStatus>>();
+  for (const m of marks) {
+    let row = byApplication.get(m.applicationId);
+    if (!row) {
+      row = new Map();
+      byApplication.set(m.applicationId, row);
+    }
+    row.set(m.sessionId, m.status);
+  }
+
+  return {
+    sessions,
+    students: students.map((st) => {
+      const row = byApplication.get(st.id) ?? new Map<string, AttendanceStatus>();
+      // Excused doesn't count as attended, but it isn't a miss either — it's
+      // shown as its own mark and left out of the numerator.
+      const attended = sessions.filter((s) => row.get(s.id) === "Present").length;
+      return {
+        applicationId: st.id,
+        name: `${st.applicant.firstName} ${st.applicant.lastName}`.trim(),
+        marks: Object.fromEntries(row) as Record<string, AttendanceStatus>,
+        attended,
+      };
+    }),
+  };
+}
+
 const STATUSES: AttendanceStatus[] = ["Present", "Absent", "Excused"];
 
 /**
