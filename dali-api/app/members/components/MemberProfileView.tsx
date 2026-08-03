@@ -29,6 +29,7 @@ import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { PresenceBar } from "~/components/collab/PresenceBar";
 import { PersonalNotesRail } from "./PersonalNotesRail";
 import { AchievementsBlock } from "./AchievementsBlock";
+import { ComplianceBlock } from "./ComplianceBlock";
 import { buttonClasses } from "~/components/ui/Button";
 import type { Level } from "~/admin/lib/eligibility";
 import { APPLICATION_TZ, formatZoneLabel } from "~/lib/timezone";
@@ -68,6 +69,7 @@ export function MemberProfileView({
     notes,
     sharedWithMe,
     achievements,
+    compliance,
   } = data;
 
   // /members/:id renders inside a TabWorkspace iframe; a successful save only
@@ -218,6 +220,7 @@ export function MemberProfileView({
           while scrolling a long profile. */}
       <div className="w-full xl:w-80 xl:shrink-0 xl:sticky xl:top-6 flex flex-col gap-6">
         <AchievementsBlock achievements={achievements} />
+        <ComplianceBlock compliance={compliance} />
         <PersonalNotesRail
           ownerId={member.id}
           ownerFirstName={member.firstName}
