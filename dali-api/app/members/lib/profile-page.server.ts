@@ -19,6 +19,7 @@ import {
   achievementsForMember,
   type Achievement,
 } from "~/members/lib/achievements.server";
+import { listMySignedDocuments } from "~/signing/lib/state.server";
 import {
   currentTerm,
   getUserRoles,
@@ -107,6 +108,14 @@ export type ProfilePageData = {
   /** Milestone medals shown above the notes rail. Always the full catalog —
    *  the view hides unearned ones on other people's profiles. */
   achievements: Achievement[];
+  /** CE standing and signed agreements. Null for viewers who shouldn't see
+   *  either — this is compliance and paperwork, not public profile data. */
+  compliance: {
+    /** Null when the member isn't staffed this term: the credit is a
+     *  requirement of being hired, so there's nothing to be compliant with. */
+    ce: { termCode: string; credits: number; compliant: boolean } | null;
+    agreements: { signatureId: string; documentName: string; context: string; signedAt: string }[];
+  } | null;
   allDomains: Array<{ id: string; displayName: string }>;
   photoUrlResolved: string | null;
   collabToken: string | null;
@@ -417,6 +426,44 @@ export async function loadProfilePage({
     achievementsForMember(targetId),
   ]);
 
+  // Own profile, or Core/Admin who need the compliance view. A peer has no
+  // business reading which agreements someone signed.
+  const canSeeCompliance = isSelf || canManageEligibility;
+  const compliance = canSeeCompliance
+    ? await (async () => {
+        const [staffedThisTerm, signed] = await Promise.all([
+          term
+            ? prisma.projectAssignment.findFirst({
+                where: { userId: targetId, termId: term.id },
+                select: { id: true },
+              })
+            : Promise.resolve(null),
+          listMySignedDocuments(targetId),
+        ]);
+        // Full-time staff are exempt from the student checklist, so they get no
+        // CE line even when staffed.
+        const exempt = roles.isStaff;
+        const ce =
+          term && staffedThisTerm && !exempt
+            ? await (async () => {
+                const credits = await prisma.cECredit.count({
+                  where: { userId: targetId, termId: term.id },
+                });
+                return { termCode: term.code, credits, compliant: credits >= 1 };
+              })()
+            : null;
+        return {
+          ce,
+          agreements: signed.map((d) => ({
+            signatureId: d.signatureId,
+            documentName: d.documentName,
+            context: d.context,
+            signedAt: d.signedAt.toISOString(),
+          })),
+        };
+      })()
+    : null;
+
   // Convert the raw People-API code to a label server-side; only the label
   // (gradProgram) crosses the wire, not the underlying department_class.
   const { dartmouthDepartmentClass, ...memberFields } = member;
@@ -445,6 +492,7 @@ export async function loadProfilePage({
     notes,
     sharedWithMe,
     achievements,
+    compliance,
     allDomains,
     photoUrlResolved,
     collabToken,
