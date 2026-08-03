@@ -214,7 +214,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       slackChannelId: true,
       chartStringType: true,
       chartString: true,
-      isPrivate: true,
       overviewPageId: true,
       prdPageId: true,
       projectTerms: {
@@ -989,7 +988,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       slackChannelId: project.slackChannelId,
       chartStringType: project.chartStringType,
       chartString: project.chartString,
-      isPrivate: project.isPrivate,
       overviewPageId: project.overviewPageId,
       prdPageId: project.prdPageId,
       startTerm,
@@ -1094,7 +1092,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const form = await request.formData();
   const intent = (form.get("intent") as string | null) ?? "details";
 
-  const SCOPE_INTENTS = ["scopesBulk", "domains", "terms", "visibility"];
+  const SCOPE_INTENTS = ["scopesBulk", "domains", "terms"];
   if (SCOPE_INTENTS.includes(intent) && !core) {
     return { error: "Only Core or Admin can change project settings." };
   }
@@ -1168,15 +1166,6 @@ export async function action({ request, params }: Route.ActionArgs) {
     await prisma.project.update({
       where: { id: params.id },
       data: { imageUrl: imageUrlRaw === "" ? null : imageUrlRaw },
-    });
-    return redirect(`/projects/${params.id}`);
-  }
-
-  // Private flag. An unchecked checkbox posts nothing, so absence means false.
-  if (intent === "visibility") {
-    await prisma.project.update({
-      where: { id: params.id },
-      data: { isPrivate: form.get("isPrivate") === "on" },
     });
     return redirect(`/projects/${params.id}`);
   }
@@ -1496,7 +1485,7 @@ export default function ProjectDetail() {
           <ModalHeader
             titleId="scope-settings-title"
             title="Project settings"
-            subtitle="Visibility, declared domains, planned terms, and the per-domain challenge for each term."
+            subtitle="Declared domains, planned terms, and the per-domain challenge for each term."
             onClose={() => setScopeSettingsOpen(false)}
             closeLabel="Close scope settings"
           />
@@ -1659,6 +1648,7 @@ function ProjectHeader({
                 <StatusBadge status={project.status} />
               </>
             )}
+
           </div>
 
           {/* Domains sit on their own row under the title. Sharing the title's
@@ -1780,65 +1770,6 @@ function DescriptionSegment({
 // optimistic state can't accumulate. When no domains are declared and the
 // project has bids/assignments, the derived union is shown read-only as a
 // hint so the user can see what staffing has implied so far.
-// Private toggle. "Private" only affects form reference questions today: a
-// private project is dropped from every `projects:*` source in
-// forms/lib/reference-sources.ts, so nobody can pick it as a bid/preference
-// answer. It stays fully visible in the hub, search, and to its own team —
-// the description below says so, since "private" otherwise reads as broader.
-function VisibilitySegment({
-  isPrivate,
-  canEdit,
-}: {
-  isPrivate: boolean;
-  canEdit: boolean;
-}) {
-  const submit = useSubmit();
-  const formRef = useRef<HTMLFormElement | null>(null);
-
-  return (
-    <EditableSection
-      title="Visibility"
-      canEdit={canEdit}
-      description="Private projects can't be selected as an answer on forms that pull from the project database."
-      onSave={() => {
-        if (formRef.current) submit(formRef.current);
-      }}
-    >
-      {({ editing, resetKey }) =>
-        editing ? (
-          <Form method="post" ref={formRef} key={resetKey}>
-            <input type="hidden" name="intent" value="visibility" />
-            <label className="flex items-start gap-2 text-sm cursor-pointer">
-              <input
-                type="checkbox"
-                name="isPrivate"
-                defaultChecked={isPrivate}
-                className="mt-0.5 accent-accent-coral"
-              />
-              <span>
-                <span className="text-foreground">Private project</span>
-                <span className="block text-xs text-muted-foreground">
-                  Hidden from project dropdowns on forms. Still listed in the
-                  project hub and search.
-                </span>
-              </span>
-            </label>
-          </Form>
-        ) : (
-          <p className="text-sm text-foreground">
-            {isPrivate ? "Private" : "Standard"}
-            <span className="block text-xs text-muted-foreground">
-              {isPrivate
-                ? "Not offered as a choice on forms that query projects."
-                : "Selectable on forms that query projects."}
-            </span>
-          </p>
-        )
-      }
-    </EditableSection>
-  );
-}
-
 function DomainsSegment({
   declared,
   derived,
@@ -2923,8 +2854,6 @@ function ScopeTab({
           {actionError}
         </div>
       )}
-
-      <VisibilitySegment isPrivate={project.isPrivate} canEdit={canEdit} />
 
       {/* Declared domains — editable; if none declared the derived set from
           assignments + bids is shown as a fallback so a freshly-created
