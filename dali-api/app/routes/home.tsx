@@ -27,9 +27,6 @@ import { listUpcomingSessionsForUser } from "~/education/lib/schedule.server";
 import { fetchGeneralCalendarEvents } from "~/lib/general-calendar";
 import { getZonedYMD, resolveUserTimeZone, zonedDayStartUtc } from "~/lib/timezone";
 import { RsvpButtons, notifyTasksChanged } from "~/components/RsvpButtons";
-import { birthdaysThisWeek, isBirthdayToday } from "~/members/lib/warmth";
-import { BirthdaysCard, type BirthdayMember } from "~/components/home/BirthdaysCard";
-import { LAB_MEMBER_WHERE } from "~/lib/prisma-shapes";
 import type { Route } from "./+types/home";
 
 type HomeNotification = {
@@ -90,7 +87,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     tz,
   );
 
-  const [items, tasks, rawEvents, formsForYou, assignedTasks, catalog, upcomingSessions, birthdayMembers] =
+  const [items, tasks, rawEvents, formsForYou, assignedTasks, catalog, upcomingSessions] =
     await Promise.all([
     prisma.notification.findMany({
       // Hide invites whose meeting was Cancelled — they shouldn't appear in the
@@ -154,17 +151,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     // open-assignment counts) and the viewer's next few sessions.
     listCatalog(auth.user.sub),
     listUpcomingSessionsForUser(auth.user.sub, { limit: 3 }),
-    // Active members with a birthday set — filtered to this week in the loader
-    // after fetch so we don't need DB-level month/day arithmetic. LAB_MEMBER_WHERE
-    // gates to lab members; membershipStatus (a User field) Active keeps alumni out.
-    prisma.user.findMany({
-      where: {
-        ...LAB_MEMBER_WHERE,
-        membershipStatus: "Active",
-        birthday: { not: null },
-      },
-      select: { id: true, firstName: true, lastName: true, birthday: true },
-    }),
   ]);
 
   const enrolledOfferings = catalog.filter((o) => o.myStatus === "Approved");
@@ -255,20 +241,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   // so the client doesn't re-derive it in the browser's.
   const weekLabel = formatWeekRange(weekStart, tz);
 
-  const thisWeekBirthdays: BirthdayMember[] = birthdaysThisWeek(
-    birthdayMembers as Array<{ id: string; firstName: string; lastName: string; birthday: Date | null }>,
-    now,
-  )
-    .map((m) => ({
-      id: m.id,
-      firstName: m.firstName,
-      lastName: m.lastName,
-      birthday: m.birthday!.toISOString(),
-      isToday: isBirthdayToday(m.birthday, now),
-    }))
-    // Birthdays today rise to the top of the list.
-    .sort((a, b) => (b.isToday ? 1 : 0) - (a.isToday ? 1 : 0));
-
   return {
     user: auth.user,
     notifications,
@@ -281,7 +253,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     timeZone: tz,
     formsForYou,
     education,
-    birthdays: thisWeekBirthdays,
   };
 }
 
@@ -336,7 +307,6 @@ export default function Home() {
     timeZone,
     formsForYou,
     education,
-    birthdays,
   } = useLoaderData<typeof loader>();
   const firstName = user.firstName || user.email.split("@")[0];
 
@@ -358,8 +328,6 @@ export default function Home() {
       <FormsForYouPanel forms={formsForYou} />
 
       <EducationPanel education={education} />
-
-      <BirthdaysCard members={birthdays} />
 
       <div className="flex flex-col gap-6">
         <WeekCalendarPanel

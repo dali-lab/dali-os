@@ -120,7 +120,9 @@ function AvatarWithStatus({
   if (!tooltipLabel) return wrapper;
 
   return (
-    <Tooltip label={tooltipLabel} side="top">
+    // portal: avatars often sit inside overflow-clipped scroll panes (the
+    // directory table, tight lists) — without it the tip is cut off at the edge.
+    <Tooltip label={tooltipLabel} side="top" portal>
       {wrapper}
     </Tooltip>
   );
