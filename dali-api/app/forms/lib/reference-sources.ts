@@ -36,6 +36,13 @@ export type ReferenceContext = {
   termId?: string | null;
 };
 
+// Every `projects:*` source excludes private projects. A private project is
+// one Core/Admin has marked as not offerable — it must never appear as a
+// choice on a bid/preference form, for any filling member. Applied here (one
+// shared predicate) rather than per-loader so a new projects source can't
+// forget it.
+const NOT_PRIVATE = { isPrivate: false } as const;
+
 const LOADERS = {
   // Projects a member can bid on this term: non-archived projects that run
   // this term (ProjectTerm) AND declare at least one domain (ProjectDomain).
@@ -47,6 +54,7 @@ const LOADERS = {
     if (!term) return [];
     const projects = await prisma.project.findMany({
       where: {
+        ...NOT_PRIVATE,
         status: { not: "Archived" },
         projectTerms: { some: { termId: term.id } },
         domains: { some: {} },
@@ -59,7 +67,7 @@ const LOADERS = {
   // Every non-archived project, regardless of term.
   "projects:active": async () => {
     const projects = await prisma.project.findMany({
-      where: { status: { not: "Archived" } },
+      where: { ...NOT_PRIVATE, status: { not: "Archived" } },
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     });
@@ -73,6 +81,7 @@ const LOADERS = {
     if (!ctx?.termId) return [];
     const projects = await prisma.project.findMany({
       where: {
+        ...NOT_PRIVATE,
         status: { not: "Archived" },
         projectTerms: { some: { termId: ctx.termId } },
       },
