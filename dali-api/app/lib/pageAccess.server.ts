@@ -15,6 +15,8 @@
 import { prisma } from "~/lib/db";
 import { isCore, isProjectMember, isLabMember } from "~/lib/roles";
 import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
+import { sharePermissionFor, permissionAtLeast } from "~/lib/page-sharing.server";
+import type { SharePermission, LinkAccess } from "~/generated/prisma/client";
 
 export interface PageAccessResult {
   canView: boolean;
@@ -31,7 +33,80 @@ export interface PageShape {
   createdById?: string | null;
   partnerVisible?: boolean | null;
   labRestricted?: boolean | null;
+  profileVisible?: boolean | null;
+  labListing?: string | null;
+  // Loose like workspaceType/labListing above — the enum values live in the DB;
+  // shareAndLinkGrant casts. Keeping these `string` lets callers pass rows
+  // without importing the Prisma enum types.
+  linkAccess?: string | null;
+  linkPermission?: string | null;
   [key: string]: unknown;
+}
+
+const DENIED: PageAccessResult = {
+  canView: false,
+  canEdit: false,
+  canComment: false,
+  canResolve: false,
+};
+const FULL: PageAccessResult = { canView: true, canEdit: true, canComment: true, canResolve: true };
+// Role-based read access (lab member on a project doc, public-visible note viewer,
+// etc.): may read and comment but not edit. Matches the pre-tier rule that anyone
+// who can see a doc can comment on it.
+const VIEW_COMMENT: PageAccessResult = {
+  canView: true,
+  canEdit: false,
+  canComment: true,
+  canResolve: false,
+};
+
+/** The access a named share / general-access tier confers, on its own. */
+function permToAccess(level: SharePermission): PageAccessResult {
+  switch (level) {
+    case "View":
+      return { canView: true, canEdit: false, canComment: false, canResolve: false };
+    case "Comment":
+      return { canView: true, canEdit: false, canComment: true, canResolve: false };
+    case "Edit":
+    case "FullAccess":
+      return { canView: true, canEdit: true, canComment: true, canResolve: true };
+  }
+}
+
+/** Field-wise OR — a share/link grant only ever adds access, never removes it. */
+function merge(a: PageAccessResult, b: PageAccessResult): PageAccessResult {
+  return {
+    canView: a.canView || b.canView,
+    canEdit: a.canEdit || b.canEdit,
+    canComment: a.canComment || b.canComment,
+    canResolve: a.canResolve || b.canResolve,
+  };
+}
+
+function higher(a: SharePermission | null, b: SharePermission): SharePermission {
+  if (!a) return b;
+  return permissionAtLeast(a, b) ? a : b;
+}
+
+/**
+ * Access implied by the additive layers — a named PageShare (per-account or via
+ * group) and the document-level General access setting — independent of the
+ * page's workspace role rules. Returned as its own access result so the caller
+ * ORs it onto the role base. `LabMembers` general access grants to lab members
+ * only (not partner/applicant/non-member Dartmouth accounts); `Public` grants a
+ * read-only view to any caller that reaches getPageAccess.
+ */
+async function shareAndLinkGrant(page: PageShape, userSub: string): Promise<PageAccessResult> {
+  let level = await sharePermissionFor(page.id, userSub);
+  const linkAccess = (page.linkAccess as LinkAccess | null | undefined) ?? "Restricted";
+  if (linkAccess === "LabMembers") {
+    if (await isLabMember(userSub)) {
+      level = higher(level, (page.linkPermission as SharePermission | null | undefined) ?? "View");
+    }
+  } else if (linkAccess === "Public") {
+    level = higher(level, "View");
+  }
+  return level ? permToAccess(level) : DENIED;
 }
 
 /**
@@ -69,11 +144,13 @@ export async function getPageAccess(
         partnerVisible: true,
         createdById: true,
         labRestricted: true,
+        profileVisible: true,
+        labListing: true,
+        linkAccess: true,
+        linkPermission: true,
       },
     });
-    if (!row) {
-      return { canView: false, canEdit: false, canComment: false, canResolve: false };
-    }
+    if (!row) return DENIED;
     page = row;
   } else {
     page = pageOrId;
@@ -82,41 +159,36 @@ export async function getPageAccess(
   // Archived pages: no access at all (collab/comments gate).
   // The route loader has a carve-out for meeting-note pages at the UI level,
   // but the collab socket and comments rail must not open on archived pages.
-  if (page.archivedAt != null) {
-    return { canView: false, canEdit: false, canComment: false, canResolve: false };
-  }
+  if (page.archivedAt != null) return DENIED;
+
+  // Additive layers (named shares + General access), computed once and ORed onto
+  // each workspace's role-based base below. They only ever grant more access —
+  // never a downgrade — and carry the exact View/Comment/Edit/FullAccess tier,
+  // so a "View" share does not confer comment the way role-based viewing does.
+  const extra = await shareAndLinkGrant(page, userSub);
 
   // ── Member-workspace (personal notes) ────────────────────────────────────
-  // Privacy is the whole point. Core gets NO bypass here.
+  // Privacy is the whole point. Core gets NO bypass here — only the owner (full)
+  // and public/lab-listed viewers (read + comment) get role-based access; anyone
+  // else reaches the doc solely through `extra` (a share or General access).
   if (page.workspaceType === "Member") {
-    if (!page.workspaceId) {
-      return { canView: false, canEdit: false, canComment: false, canResolve: false };
+    let base = DENIED;
+    if (page.workspaceId === userSub) {
+      base = FULL; // owner; page is non-archived (checked above)
+    } else if (page.profileVisible || page.labListing === "Listed") {
+      base = VIEW_COMMENT;
     }
-    try {
-      const { noteAccess } = await import("~/members/lib/personal-notes.server");
-      const access = await noteAccess(page.id, userSub);
-      if (!access.canView) {
-        return { canView: false, canEdit: false, canComment: false, canResolve: false };
-      }
-      // canEdit = owner only (sharing is always read-only for Member pages).
-      const canEdit = access.isOwner && access.canEdit;
-      return {
-        canView: true,
-        canEdit,
-        canComment: true,
-        canResolve: canEdit,
-      };
-    } catch {
-      return { canView: false, canEdit: false, canComment: false, canResolve: false };
-    }
+    return merge(base, extra);
   }
 
   // ── Core shortcut (Admin ⊆ Core) — applies to Lab/Project/Education ─────
   const core = await isCore(userSub);
 
   // ── Lab-workspace pages ──────────────────────────────────────────────────
-  // Any lab member can view AND edit Lab pages, unless the document has been
-  // restricted to its creator plus an explicit share list.
+  // Any lab member can view AND edit an unrestricted Lab page; a restricted one
+  // is limited to its creator and Core. labDocAccess.canEdit is true for exactly
+  // those role-based full-access cases — everything else (including a restricted
+  // doc's share list) flows through `extra` with its proper tier.
   if (page.workspaceType === "Lab") {
     const { labDocAccess } = await import("~/lib/lab-documents.server");
     const access = await labDocAccess(
@@ -127,64 +199,43 @@ export async function getPageAccess(
       },
       userSub,
     );
-    return {
-      canView: access.canView,
-      canEdit: access.canEdit,
-      canComment: access.canView,
-      canResolve: access.canEdit,
-    };
+    const base = access.canEdit ? FULL : DENIED;
+    return merge(base, extra);
   }
 
   // ── Project-workspace pages ──────────────────────────────────────────────
   if (page.workspaceType === "Project" && page.workspaceId) {
-    if (core) {
-      return { canView: true, canEdit: true, canComment: true, canResolve: true };
+    let base = DENIED;
+    if (core || (await isProjectMember(userSub, page.workspaceId))) {
+      base = FULL;
+    } else if (page.partnerVisible && (await partnerHasProjectAccess(userSub, page.workspaceId))) {
+      // Partner users may view (and comment) on partner-visible pages.
+      base = VIEW_COMMENT;
+    } else if (await isLabMember(userSub)) {
+      // Lab members can view (and comment) any project page.
+      base = VIEW_COMMENT;
     }
-    const projectMember = await isProjectMember(userSub, page.workspaceId);
-    if (projectMember) {
-      return { canView: true, canEdit: true, canComment: true, canResolve: true };
-    }
-    // Partner users may view (and comment) on partner-visible pages.
-    if (page.partnerVisible) {
-      const partnerView = await partnerHasProjectAccess(userSub, page.workspaceId);
-      if (partnerView) {
-        return { canView: true, canEdit: false, canComment: true, canResolve: false };
-      }
-    }
-    // Lab members can view (and comment) any project page — they are not
-    // members of the project but still lab staff who have read access to all
-    // project work. canComment = canView per the approved rule.
-    const labMember = await isLabMember(userSub);
-    if (labMember) {
-      return { canView: true, canEdit: false, canComment: true, canResolve: false };
-    }
-    return { canView: false, canEdit: false, canComment: false, canResolve: false };
+    return merge(base, extra);
   }
 
   // ── EducationOffering-workspace pages ────────────────────────────────────
-  // Instructors can edit; enrolled students get read/comment but no collab
-  // room (the offering hub renders course materials server-side read-only —
-  // this path is for non-student access checks only; the collab room stays
-  // instructor-only per the existing collabAuth gate).
+  // Instructors (and Core) can edit; non-instructor lab members get read/comment.
   if (page.workspaceType === "EducationOffering" && page.workspaceId) {
+    let base = DENIED;
     if (core) {
-      return { canView: true, canEdit: true, canComment: true, canResolve: true };
+      base = FULL;
+    } else {
+      const instructor = await prisma.instructorAssignment.findFirst({
+        where: { userId: userSub, offeringId: page.workspaceId },
+        select: { id: true },
+      });
+      if (instructor) base = FULL;
+      else if (await isLabMember(userSub)) base = VIEW_COMMENT;
     }
-    const instructor = await prisma.instructorAssignment.findFirst({
-      where: { userId: userSub, offeringId: page.workspaceId },
-      select: { id: true },
-    });
-    if (instructor) {
-      return { canView: true, canEdit: true, canComment: true, canResolve: true };
-    }
-    // Non-instructor lab members may view education pages but not edit.
-    const member = await isLabMember(userSub);
-    if (member) {
-      return { canView: true, canEdit: false, canComment: true, canResolve: false };
-    }
-    return { canView: false, canEdit: false, canComment: false, canResolve: false };
+    return merge(base, extra);
   }
 
-  // Unknown workspace type — deny.
-  return { canView: false, canEdit: false, canComment: false, canResolve: false };
+  // Unknown workspace type — role grants nothing, but a share / General access
+  // on the page (if any) still applies.
+  return merge(DENIED, extra);
 }

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Form, redirect, useLoaderData, useSearchParams } from "react-router";
+import { redirect, useLoaderData, useSearchParams, useSubmit } from "react-router";
 import type { Route } from "./+types/admin.payroll-export";
 import { adminHandle } from "~/admin/adminNav";
 import { prisma } from "~/lib/db";
@@ -8,6 +8,7 @@ import { redirectToLogin } from "~/lib/login-next";
 import { isAdmin } from "~/lib/roles";
 import { Download, FileDown, AlertTriangle, Users } from "lucide-react";
 import { buttonClasses } from "~/components/ui/Button";
+import { SelectMenu } from "~/components/ui/SelectMenu";
 import {
   buildPayrollRows,
   listCoreCandidates,
@@ -77,6 +78,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 export default function PayrollExport() {
   const data = useLoaderData<typeof loader>();
   const [searchParams] = useSearchParams();
+  const submit = useSubmit();
 
   // Selection state for the Core / Instructor checkbox sections. Default to
   // every candidate checked — admins uncheck people who didn't work that
@@ -134,30 +136,23 @@ export default function PayrollExport() {
           </span>
         </div>
         <div className="flex items-center gap-3">
-          <Form method="get" className="flex items-center gap-2">
-            <label htmlFor="termId" className="text-sm text-muted-foreground">
-              Term
-            </label>
-            <select
-              id="termId"
-              name="termId"
-              defaultValue={selectedTermId}
-              onChange={(e) => e.currentTarget.form?.submit()}
-              className="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-            >
-              {terms.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.code}
-                </option>
-              ))}
-            </select>
-            {/* Preserve any other params on submit (none today, future-proof). */}
-            {Array.from(searchParams.entries())
-              .filter(([k]) => k !== "termId")
-              .map(([k, v]) => (
-                <input key={k} type="hidden" name={k} value={v} />
-              ))}
-          </Form>
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-muted-foreground">Term</label>
+            <SelectMenu
+              value={selectedTermId}
+              ariaLabel="Term"
+              options={terms.map((t) => ({ value: t.id, label: t.code }))}
+              // Submit the picked value explicitly (a GET nav that preserves any
+              // other params) — don't re-submit the form's DOM, which would still
+              // hold the old value in the same tick.
+              onChange={(value) => {
+                const params = new URLSearchParams(searchParams);
+                params.set("termId", value);
+                submit(params, { method: "get" });
+              }}
+              buttonClassName="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+            />
+          </div>
           <a
             href={csvHref}
             download

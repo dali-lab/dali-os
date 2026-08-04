@@ -14,6 +14,7 @@ import {
   Copy,
   FileText,
   Folder,
+  FolderInput,
   FolderPlus,
   LayoutTemplate,
   Lock,
@@ -32,6 +33,7 @@ import { Tooltip } from "~/components/ui/IconButton";
 import { useDialog } from "~/components/ui/dialog";
 import { PageIcon } from "~/components/PageIcon";
 import { ProjectIcon } from "~/components/ProjectIcon";
+import { MoveToDialog } from "~/components/sharing/MoveToDialog";
 import type { ProjectStatus } from "~/generated/prisma/client";
 
 export const meta: Route.MetaFunction = () => [{ title: "Documents · DALI OS" }];
@@ -433,19 +435,58 @@ export default function DocumentsHub() {
       navigate(`/documents/${b.id}`);
     }
   }
-  // Drag a lab document into a folder (parentPageId = folder id) or back to the
-  // top level (null). Folders themselves aren't draggable.
+  // "Move to…" dialog state. workspaceType/workspaceId track the doc's current
+  // workspace so MoveToDialog can pre-select the right destination.
+  const [moveDoc, setMoveDoc] = useState<{
+    id: string;
+    title: string;
+    workspaceType: string;
+    workspaceId: string | null;
+  } | null>(null);
+
+  // Drag a document into a folder or back to the top level (lab-only before;
+  // now all workspaces are draggable — cross-workspace drops confirm first).
   const [dragDocId, setDragDocId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | "root" | null>(null);
   async function moveDocument(
     id: string,
     parentPageId: string | null,
     beforeId: string | null = null,
+    destWorkspaceKey?: string,
   ) {
+    const src = docs.find((d) => d.id === id);
+    const srcKey = src?.workspaceKey;
+
+    // Cross-workspace: confirm before posting.
+    if (destWorkspaceKey && srcKey && destWorkspaceKey !== srcKey) {
+      const destWorkspace = workspaces.find((w) => w.key === destWorkspaceKey);
+      const leavingProject = src?.workspaceKind === "project";
+      const confirmed = await dialog.confirm({
+        title: `Move "${src?.title}" to ${destWorkspace?.label ?? destWorkspaceKey}?`,
+        description:
+          `People with access where it is now will lose it; people in the destination will gain access.` +
+          (leavingProject ? " Partner and public sharing will be turned off." : ""),
+        confirmLabel: "Move",
+      });
+      if (!confirmed) {
+        setDragDocId(null);
+        setDropTarget(null);
+        return;
+      }
+    }
+
     setDragDocId(null);
     setDropTarget(null);
     if (id === beforeId) return;
-    const b = await post(`/api/pages/${id}/move`, { parentPageId, beforeId });
+
+    const destPayload =
+      destWorkspaceKey && srcKey && destWorkspaceKey !== srcKey
+        ? destWorkspaceKey === "lab"
+          ? { workspaceType: "Lab", workspaceId: null }
+          : { workspaceType: "Project", workspaceId: destWorkspaceKey }
+        : {};
+
+    const b = await post(`/api/pages/${id}/move`, { parentPageId, beforeId, ...destPayload });
     if (b) {
       if (parentPageId) setExpandedFolders((prev) => new Set(prev).add(parentPageId));
       revalidator.revalidate();
@@ -507,7 +548,9 @@ export default function DocumentsHub() {
   }) {
     const canManage = canManageByWorkspace.get(doc.workspaceKey) ?? false;
     const canArchive = canManage && doc.workspaceKind === "lab" && !doc.isSystem;
-    const draggable = canManage && doc.workspaceKind === "lab";
+    // All manageable, non-system docs are draggable; project docs can cross
+    // workspaces (the drop handler confirms before posting).
+    const draggable = canManage && !doc.isSystem;
     return (
       <div
         draggable={draggable}
@@ -520,25 +563,33 @@ export default function DocumentsHub() {
               }
             : undefined
         }
-        onDragEnd={draggable ? () => setDragDocId(null) : undefined}
+        onDragEnd={
+          draggable
+            ? () => {
+                setDragDocId(null);
+                setDropTarget(null);
+              }
+            : undefined
+        }
         onDragOver={
-          draggable && dragDocId
+          dragDocId && dragDocId !== doc.id
             ? (e) => {
                 e.preventDefault();
+                // Deepest zone under the cursor wins — without this the event
+                // bubbles and every ancestor also claims the target, so the drop
+                // indicator oscillates between levels.
+                e.stopPropagation();
                 e.dataTransfer.dropEffect = "move";
                 if (dropTarget !== doc.id) setDropTarget(doc.id);
               }
             : undefined
         }
-        onDragLeave={
-          draggable ? () => setDropTarget((t) => (t === doc.id ? null : t)) : undefined
-        }
         onDrop={
-          draggable && dragDocId
+          dragDocId && dragDocId !== doc.id
             ? (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                void moveDocument(dragDocId, parentId, doc.id);
+                void moveDocument(dragDocId, parentId, doc.id, doc.workspaceKey);
               }
             : undefined
         }
@@ -594,6 +645,25 @@ export default function DocumentsHub() {
               </button>
             </Tooltip>
           )}
+          {canManage && !doc.isSystem && (
+            <Tooltip label="Move to…">
+              <button
+                type="button"
+                onClick={() =>
+                  setMoveDoc({
+                    id: doc.id,
+                    title: doc.title,
+                    workspaceType: doc.workspaceKind === "lab" ? "Lab" : "Project",
+                    workspaceId: doc.workspaceKind === "lab" ? null : doc.workspaceKey,
+                  })
+                }
+                aria-label="Move document"
+                className="text-muted-foreground hover:text-foreground disabled:opacity-60"
+              >
+                <FolderInput className="w-3.5 h-3.5" />
+              </button>
+            </Tooltip>
+          )}
           {canArchive && (
             <Tooltip label="Archive document">
               <button
@@ -615,7 +685,7 @@ export default function DocumentsHub() {
   function FolderRow({ doc, canManage }: { doc: DocOut; canManage: boolean }) {
     const children = childrenByParent.get(doc.id) ?? [];
     const canArchive = canManage && doc.workspaceKind === "lab" && !doc.isSystem;
-    const isDropZone = canManage && doc.workspaceKind === "lab";
+    const isDropZone = canManage;
     const dropActive = dropTarget === doc.id;
     return (
       <div className="py-2.5 flex flex-col gap-1">
@@ -624,20 +694,19 @@ export default function DocumentsHub() {
             isDropZone && dragDocId
               ? (e) => {
                   e.preventDefault();
+                  e.stopPropagation();
                   e.dataTransfer.dropEffect = "move";
                   if (dropTarget !== doc.id) setDropTarget(doc.id);
                 }
               : undefined
-          }
-          onDragLeave={
-            isDropZone ? () => setDropTarget((t) => (t === doc.id ? null : t)) : undefined
           }
           onDrop={
             isDropZone && dragDocId
               ? (e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  if (dragDocId !== doc.id) void moveDocument(dragDocId, doc.id);
+                  if (dragDocId !== doc.id)
+                    void moveDocument(dragDocId, doc.id, null, doc.workspaceKey);
                 }
               : undefined
           }
@@ -754,20 +823,20 @@ export default function DocumentsHub() {
             onDragOver={
               labCanManage && dragDocId
                 ? (e) => {
+                    // Only fires when the cursor is over the tree's own empty
+                    // space — child rows stopPropagation, so this is the "drop
+                    // at the lab top level" zone.
                     e.preventDefault();
                     e.dataTransfer.dropEffect = "move";
                     if (dropTarget !== "root") setDropTarget("root");
                   }
                 : undefined
             }
-            onDragLeave={
-              labCanManage ? () => setDropTarget((t) => (t === "root" ? null : t)) : undefined
-            }
             onDrop={
               labCanManage && dragDocId
                 ? (e) => {
                     e.preventDefault();
-                    void moveDocument(dragDocId, null);
+                    void moveDocument(dragDocId, null, null, "lab");
                   }
                 : undefined
             }
@@ -801,8 +870,30 @@ export default function DocumentsHub() {
     const topLevel = docs.filter(
       (d) => d.workspaceKey === workspace.key && d.parentPageId === null && !d.pinned,
     );
+    const dropActive = dropTarget === workspace.key;
     return (
-      <div className="py-2.5 flex flex-col gap-1">
+      <div
+        onDragOver={
+          dragDocId
+            ? (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                e.dataTransfer.dropEffect = "move";
+                if (dropTarget !== workspace.key) setDropTarget(workspace.key);
+              }
+            : undefined
+        }
+        onDrop={
+          dragDocId
+            ? (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                void moveDocument(dragDocId, null, null, workspace.key);
+              }
+            : undefined
+        }
+        className={`py-2.5 flex flex-col gap-1 ${dropActive ? "ring-2 ring-accent-coral/40 rounded-md" : ""}`}
+      >
         <button
           type="button"
           onClick={() => toggleWorkspace(workspace.key)}
@@ -1124,6 +1215,18 @@ export default function DocumentsHub() {
           <UnifiedTree workspaces={visibleWorkspaces} />
         </>
       )}
+
+      <MoveToDialog
+        open={!!moveDoc}
+        pageId={moveDoc?.id ?? ""}
+        title={moveDoc?.title ?? ""}
+        current={{ type: moveDoc?.workspaceType ?? "Lab", id: moveDoc?.workspaceId ?? null }}
+        onClose={() => setMoveDoc(null)}
+        onMoved={() => {
+          setMoveDoc(null);
+          revalidator.revalidate();
+        }}
+      />
     </div>
   );
 }

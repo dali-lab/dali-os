@@ -12,14 +12,30 @@
 
 import { prisma } from "~/lib/db";
 import { resolveGroupMembers } from "~/lib/groups";
-import type { SharePrincipalType } from "~/generated/prisma/client";
+import type { SharePrincipalType, SharePermission } from "~/generated/prisma/client";
 
 export type ShareRow = {
   id: string;
   principalType: string;
   principalId: string;
+  permission: SharePermission;
   label: string;
 };
+
+// Permission tiers ranked low→high. getPageAccess and the manage gate both
+// compare against this order; keep it the single source of truth so "higher
+// than" never diverges between call sites.
+const PERMISSION_RANK: Record<SharePermission, number> = {
+  View: 0,
+  Comment: 1,
+  Edit: 2,
+  FullAccess: 3,
+};
+
+/** True when `a` grants at least as much as `b`. */
+export function permissionAtLeast(a: SharePermission, b: SharePermission): boolean {
+  return PERMISSION_RANK[a] >= PERMISSION_RANK[b];
+}
 
 /**
  * Group ids whose membership includes this user. Dynamic groups are resolved
@@ -58,12 +74,42 @@ export async function isSharedWith(pageId: string, userId: string): Promise<bool
   return viaGroup !== null;
 }
 
+/**
+ * The highest permission `userId` holds on `pageId` via a named share — direct
+ * User grant or any Group grant they're a member of — or null if not shared.
+ * Resolves group membership exactly like `isSharedWith`, so a permission-aware
+ * caller never disagrees with the presence check.
+ */
+export async function sharePermissionFor(
+  pageId: string,
+  userId: string,
+): Promise<SharePermission | null> {
+  const groupIds = await groupIdsForUser(userId);
+  const rows = await prisma.pageShare.findMany({
+    where: {
+      pageId,
+      OR: [
+        { principalType: "User", principalId: userId },
+        ...(groupIds.length
+          ? [{ principalType: "Group" as const, principalId: { in: groupIds } }]
+          : []),
+      ],
+    },
+    select: { permission: true },
+  });
+  if (rows.length === 0) return null;
+  return rows.reduce<SharePermission>(
+    (best, r) => (PERMISSION_RANK[r.permission] > PERMISSION_RANK[best] ? r.permission : best),
+    "View",
+  );
+}
+
 /** Who a page is shared with, resolved to display names. */
 export async function listPageShares(pageId: string): Promise<ShareRow[]> {
   const shares = await prisma.pageShare.findMany({
     where: { pageId },
     orderBy: { createdAt: "asc" },
-    select: { id: true, principalType: true, principalId: true },
+    select: { id: true, principalType: true, principalId: true, permission: true },
   });
   if (shares.length === 0) return [];
 
@@ -98,16 +144,20 @@ export async function listPageShares(pageId: string): Promise<ShareRow[]> {
 export class SharePrincipalError extends Error {}
 
 /**
- * Add a principal to a page's share list. Idempotent — re-adding someone
- * reports `alreadyShared` rather than failing, so a double-click in the picker
- * isn't an error.
+ * Add (or re-level) a principal on a page's share list. Idempotent and an
+ * upsert: re-adding someone at the same level reports `alreadyShared` without
+ * failing (a double-click isn't an error), and re-adding at a different level
+ * changes it. `changed` is true whenever the effective grant moved — a new row
+ * or a level change — which is what the caller keys the "shared with you"
+ * notification on, so an idempotent no-op re-add stays quiet.
  */
 export async function addPageShare(
   pageId: string,
   actorId: string,
   principalType: SharePrincipalType,
   principalId: string,
-): Promise<{ ok: true; alreadyShared: boolean }> {
+  permission: SharePermission = "View",
+): Promise<{ ok: true; alreadyShared: boolean; changed: boolean }> {
   if (principalType === "User") {
     const user = await prisma.user.findUnique({
       where: { id: principalId },
@@ -127,14 +177,23 @@ export async function addPageShare(
     where: {
       pageId_principalType_principalId: { pageId, principalType, principalId },
     },
-    select: { id: true },
+    select: { id: true, permission: true },
   });
-  if (existing) return { ok: true, alreadyShared: true };
+  if (existing) {
+    if (existing.permission === permission) {
+      return { ok: true, alreadyShared: true, changed: false };
+    }
+    await prisma.pageShare.update({
+      where: { id: existing.id },
+      data: { permission },
+    });
+    return { ok: true, alreadyShared: true, changed: true };
+  }
 
   await prisma.pageShare.create({
-    data: { pageId, principalType, principalId, createdById: actorId },
+    data: { pageId, principalType, principalId, permission, createdById: actorId },
   });
-  return { ok: true, alreadyShared: false };
+  return { ok: true, alreadyShared: false, changed: true };
 }
 
 /** Scoped by pageId as well as shareId so a stale id can't remove someone

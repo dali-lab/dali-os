@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRevalidator, useSearchParams } from "react-router";
+import { SelectMenu } from "~/components/ui/SelectMenu";
 import { Button } from "~/components/ui/Button";
 import type { DragEndEvent } from "@dnd-kit/core";
 import { Archive, Eye, EyeOff, Github, Paperclip, X } from "lucide-react";
@@ -465,20 +466,19 @@ export function TaskBoard({
         {termFilterEnabled && (
           <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
             <span className="font-medium">Term</span>
-            <select
+            <SelectMenu
               value={effectiveTerm}
-              onChange={(e) => setTermFilter(e.target.value)}
-              aria-label="Filter board by term"
-              className="px-2 py-1 text-xs border border-border rounded-full bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-            >
-              {options.terms.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.code}
-                  {t.id === options.currentTermId ? " · current" : ""}
-                </option>
-              ))}
-              <option value={ALL_TERMS}>All terms</option>
-            </select>
+              options={[
+                ...options.terms.map((t) => ({
+                  value: t.id,
+                  label: t.code + (t.id === options.currentTermId ? " · current" : ""),
+                })),
+                { value: ALL_TERMS, label: "All terms" },
+              ]}
+              ariaLabel="Filter board by term"
+              buttonClassName="inline-flex items-center justify-between gap-1 px-2 py-1 text-xs border border-border rounded-full bg-background text-foreground transition-colors hover:bg-muted/40"
+              onChange={(value) => setTermFilter(value)}
+            />
           </label>
         )}
         {showEpicFilter && (

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { Modal, ModalHeader, ModalFooter } from "~/components/Modal";
+import { SelectMenu } from "~/components/ui/SelectMenu";
 
 type Candidate = { userId: string; name: string; email: string | null };
 
@@ -162,17 +163,13 @@ export function AddExternalMentorModal({
 
         <label className="flex flex-col gap-1 text-xs">
           <span className="text-muted-foreground">Domain</span>
-          <select
+          <SelectMenu
+            ariaLabel="Domain"
             value={domainId}
-            onChange={(e) => setDomainId(e.target.value)}
-            className="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-          >
-            {domains.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
-          </select>
+            onChange={(v) => setDomainId(v)}
+            options={domains.map((d) => ({ value: d.id, label: d.name }))}
+            buttonClassName="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+          />
         </label>
 
         {error && <p className="text-xs text-destructive">{error}</p>}
