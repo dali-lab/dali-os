@@ -1218,10 +1218,10 @@ function AssigneePicker({
           disabled={disabled}
           onChange={() => toggle(m.id)}
           label={
-            <>
+            <span className="flex items-center gap-2">
               <Avatar photoUrl={m.photoUrl} name={m.name} size="xs" className="shrink-0" />
               <span className="text-foreground">{m.name}</span>
-            </>
+            </span>
           }
           className={`px-1.5 py-1 text-sm rounded ${
             disabled ? "" : "hover:bg-muted/40 cursor-pointer"
