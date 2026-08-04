@@ -15,10 +15,14 @@ export function FavoriteStar({
   pageId,
   favorited: initial,
   className = "",
+  onToggled,
 }: {
   pageId: string;
   favorited: boolean;
   className?: string;
+  /** Called after a successful write. Home uses it to re-sort the panel, since
+   *  un-starring there should move the row out of Favourites immediately. */
+  onToggled?: (favorited: boolean) => void;
 }) {
   const [favorited, setFavorited] = useState(initial);
   const [busy, setBusy] = useState(false);
@@ -34,7 +38,8 @@ export function FavoriteStar({
         credentials: "include",
         body: JSON.stringify({ favorited: next }),
       });
-      if (!res.ok) setFavorited(!next);
+      if (res.ok) onToggled?.(next);
+      else setFavorited(!next);
     } catch {
       setFavorited(!next);
     } finally {

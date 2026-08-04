@@ -25,6 +25,7 @@ import { listOpenTasks, type Task } from "~/lib/tasks";
 import { listFavoritesAndRecents, type FavoritePage } from "~/lib/user-pages.server";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import { PageIcon } from "~/components/PageIcon";
+import { FavoriteStar } from "~/components/FavoriteStar";
 import { listedFormsFor, type ListedForm } from "~/forms/lib/public-form";
 import { listCatalog, registrationOpen } from "~/education/lib/offerings.server";
 import { listUpcomingSessionsForUser } from "~/education/lib/schedule.server";
@@ -317,6 +318,14 @@ export default function Home() {
   } = useLoaderData<typeof loader>();
   const firstName = user.firstName || user.email.split("@")[0];
 
+  // Only the blocks that will actually render — see the grid below.
+  const compactBlocks = [
+    myProjectTasks.length > 0 && <MyTasksPanel tasks={myProjectTasks} />,
+    <FavoritesPanel pages={pages} />,
+    formsForYou.length > 0 && <FormsForYouPanel forms={formsForYou} />,
+    hasEducationContent(education) && <EducationPanel education={education} />,
+  ].filter(Boolean);
+
   return (
     <div className="flex flex-col gap-6">
       <header>
@@ -330,23 +339,21 @@ export default function Home() {
 
       <AttentionBanner tasks={tasks} notifications={notifications} />
 
-      {/* Tasks and pages side by side on wide screens — both are short lists
-          you scan rather than read, so stacking them wasted the width. Tasks
-          hide themselves when you have none, so pair up only when there's
-          something to pair with; otherwise Favourites takes the full width
-          rather than leaving half the row empty. */}
+      {/* The compact blocks flow two-up on wide screens. Each hides itself when
+          empty, so the list is built here from what will actually render —
+          otherwise a hidden block leaves a hole in the grid. A lone block takes
+          the full width rather than sitting in a half-empty row. */}
       <div
         className={`grid grid-cols-1 gap-6 lg:items-start ${
-          myProjectTasks.length > 0 ? "lg:grid-cols-2" : ""
+          compactBlocks.length > 1 ? "lg:grid-cols-2" : ""
         }`}
       >
-        <MyTasksPanel tasks={myProjectTasks} />
-        <FavoritesPanel pages={pages} />
+        {compactBlocks.map((block, i) => (
+          <div key={i} className="min-w-0">
+            {block}
+          </div>
+        ))}
       </div>
-
-      <FormsForYouPanel forms={formsForYou} />
-
-      <EducationPanel education={education} />
 
       <div className="flex flex-col gap-6">
         <WeekCalendarPanel
@@ -367,14 +374,17 @@ export default function Home() {
 /* the widget works for everyone (including non-students).               */
 /* ------------------------------------------------------------------ */
 
+// Whether the Education block has anything to say. Exported shape so the home
+// layout can count visible blocks without duplicating the rule.
+function hasEducationContent(e: EducationSummary): boolean {
+  return (
+    e.enrolledCount > 0 || e.openOfferings > 0 || e.pendingCount > 0 || e.upcoming.length > 0
+  );
+}
+
 function EducationPanel({ education }: { education: EducationSummary }) {
   const { enrolledCount, openAssignments, openOfferings, pendingCount, upcoming } = education;
-  if (
-    enrolledCount === 0 &&
-    openOfferings === 0 &&
-    pendingCount === 0 &&
-    upcoming.length === 0
-  ) {
+  if (!hasEducationContent(education)) {
     return null;
   }
   const blurb =
@@ -445,13 +455,11 @@ function EducationPanel({ education }: { education: EducationSummary }) {
 function FormsForYouPanel({ forms }: { forms: ListedForm[] }) {
   if (forms.length === 0) return null;
   return (
-    <div className="bg-card border border-border shadow-brand-1 rounded-lg p-3">
-      <div className="flex items-center gap-2 mb-2">
+    <div className="bg-card border border-border shadow-brand-1 rounded-lg p-4">
+      <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground mb-2">
         <FileText className="w-4 h-4 text-accent-coral" />
-        <span className="font-heading font-semibold text-sm text-foreground">
-          Forms for you
-        </span>
-      </div>
+        Forms for you
+      </h2>
       <div className="flex flex-col gap-1">
         {forms.map((f) => (
           <a
@@ -478,15 +486,23 @@ function FormsForYouPanel({ forms }: { forms: ListedForm[] }) {
 /* Favourites — pages you starred, then the ones you opened most recently. */
 /* ------------------------------------------------------------------ */
 
-function PageRow({ page }: { page: FavoritePage }) {
+function PageRow({ page, onChanged }: { page: FavoritePage; onChanged: () => void }) {
   return (
-    <a
-      href={`/documents/${page.id}`}
-      className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm hover:bg-muted/50 transition-colors"
-    >
-      <PageIcon iconEmoji={page.iconEmoji} />
-      <span className="truncate text-foreground">{page.title || "Untitled"}</span>
-    </a>
+    // Link + star are siblings: the star must not navigate.
+    <div className="group flex items-center gap-1 rounded-md hover:bg-muted/50 transition-colors">
+      <a
+        href={`/documents/${page.id}`}
+        className="flex flex-1 min-w-0 items-center gap-2 px-2 py-1.5 text-sm"
+      >
+        <PageIcon iconEmoji={page.iconEmoji} />
+        <span className="truncate text-foreground">{page.title || "Untitled"}</span>
+      </a>
+      {/* Recents show a hollow star on hover — a way to keep the page without
+          hunting for it — while a favourite always shows its filled one. */}
+      <span className={`pr-2 ${page.favorited ? "" : "opacity-0 group-hover:opacity-100 focus-within:opacity-100"}`}>
+        <FavoriteStar pageId={page.id} favorited={page.favorited} onToggled={onChanged} />
+      </span>
+    </div>
   );
 }
 
@@ -495,6 +511,10 @@ function FavoritesPanel({
 }: {
   pages: { favorites: FavoritePage[]; recents: FavoritePage[] };
 }) {
+  const revalidator = useRevalidator();
+  // Starring here re-sorts the panel: an un-starred page drops to Recent, and a
+  // starred one rises out of it.
+  const onChanged = () => revalidator.revalidate();
   const { favorites, recents } = pages;
   // Nothing starred and nothing opened yet — a brand-new account. Say what the
   // panel is for rather than showing an empty box.
@@ -516,7 +536,7 @@ function FavoritesPanel({
           {favorites.length > 0 && (
             <div className="flex flex-col gap-1">
               {favorites.map((p) => (
-                <PageRow key={p.id} page={p} />
+                <PageRow key={p.id} page={p} onChanged={onChanged} />
               ))}
             </div>
           )}
@@ -531,7 +551,7 @@ function FavoritesPanel({
                 </span>
               )}
               {recents.map((p) => (
-                <PageRow key={p.id} page={p} />
+                <PageRow key={p.id} page={p} onChanged={onChanged} />
               ))}
             </div>
           )}
