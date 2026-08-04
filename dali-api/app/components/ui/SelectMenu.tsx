@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, ChevronDown } from "lucide-react";
 
@@ -68,8 +68,8 @@ export function SelectMenu<T extends string>({
     setOpen(false);
   }
 
-  useLayoutEffect(() => {
-    if (!open || !triggerRef.current) return;
+  const reposition = useCallback(() => {
+    if (!triggerRef.current) return;
     const r = triggerRef.current.getBoundingClientRect();
     const minWidth = Math.max(r.width, 200);
     const spaceBelow = window.innerHeight - r.bottom;
@@ -83,11 +83,15 @@ export function SelectMenu<T extends string>({
         ? { bottom: window.innerHeight - r.top + 4, left, minWidth }
         : { top: r.bottom + 4, left, minWidth },
     );
-  }, [open, align]);
+  }, [align]);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    reposition();
+  }, [open, reposition]);
 
   useEffect(() => {
     if (!open) return;
-    const close = () => setOpen(false);
     function onDown(e: MouseEvent) {
       const t = e.target as Node;
       if (triggerRef.current?.contains(t) || menuRef.current?.contains(t)) return;
@@ -98,16 +102,17 @@ export function SelectMenu<T extends string>({
     }
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
-    // A scroll or resize invalidates the fixed position — just close.
-    window.addEventListener("scroll", close, true);
-    window.addEventListener("resize", close);
+    // Keep the menu pinned to the trigger while scrolling (e.g. inside a
+    // scrollable dialog) rather than closing it.
+    window.addEventListener("scroll", reposition, true);
+    window.addEventListener("resize", reposition);
     return () => {
       document.removeEventListener("mousedown", onDown);
       document.removeEventListener("keydown", onKey);
-      window.removeEventListener("scroll", close, true);
-      window.removeEventListener("resize", close);
+      window.removeEventListener("scroll", reposition, true);
+      window.removeEventListener("resize", reposition);
     };
-  }, [open]);
+  }, [open, reposition]);
 
   const current = options.find((o) => o.value === selected);
 
@@ -160,7 +165,7 @@ export function SelectMenu<T extends string>({
             ref={menuRef}
             role="listbox"
             style={{ position: "fixed", top: pos.top, bottom: pos.bottom, left: pos.left, minWidth: pos.minWidth }}
-            className="z-[60] max-w-[18rem] rounded-md border border-border bg-card p-1 shadow-brand-2"
+            className="z-[60] max-h-72 max-w-[18rem] overflow-y-auto rounded-md border border-border bg-card p-1 shadow-brand-2"
           >
             {options.map((o) => (
               <li key={o.value}>

@@ -14,6 +14,7 @@ import type { Question } from '~/types'
 import { DocEditor } from '~/components/doc'
 import { Tooltip } from '~/components/ui/IconButton'
 import { referenceSourceChoices, referenceSourceNeedsTerm } from '~/forms/lib/reference-sources.shared'
+import { Checkbox } from '~/components/ui/Checkbox'
 
 const ACCEPT_PRESETS = [
   { label: 'PDF', value: 'application/pdf' },
@@ -314,38 +315,30 @@ export function FormBuilderTab({
           </div>
 
           <div className="flex items-center gap-6 mt-6">
-            <label className="flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={editForm.required || false}
+            <Checkbox
+              checked={editForm.required || false}
+              onChange={(e) =>
+                setEditForm({
+                  ...editForm,
+                  required: e.target.checked,
+                })
+              }
+              label="Required field"
+            />
+            {isGeneralForm && (
+              <Checkbox
+                checked={editForm.data?.afterDomains || false}
                 onChange={(e) =>
                   setEditForm({
                     ...editForm,
-                    required: e.target.checked,
+                    data: {
+                      ...editForm.data!,
+                      afterDomains: e.target.checked,
+                    },
                   })
                 }
-                className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
+                label="Show after domain questions"
               />
-              <span className="ml-2 text-sm text-foreground/80">Required field</span>
-            </label>
-            {isGeneralForm && (
-              <label className="flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={editForm.data?.afterDomains || false}
-                  onChange={(e) =>
-                    setEditForm({
-                      ...editForm,
-                      data: {
-                        ...editForm.data!,
-                        afterDomains: e.target.checked,
-                      },
-                    })
-                  }
-                  className="rounded border-gray-300 text-amber-600 shadow-sm focus:border-amber-300 focus:ring focus:ring-amber-200 focus:ring-opacity-50"
-                />
-                <span className="ml-2 text-sm text-gray-700">Show after domain questions</span>
-              </label>
             )}
           </div>
 
@@ -372,15 +365,11 @@ export function FormBuilderTab({
 
           {editForm.type === 'textarea' && (
             <div className="col-span-2 flex flex-wrap items-center gap-3">
-              <label className="flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={maxWordsEnabled}
-                  onChange={(e) => setMaxWordsEnabled(e.target.checked)}
-                  className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
-                />
-                <span className="ml-2 text-sm text-foreground/80">Limit word count</span>
-              </label>
+              <Checkbox
+                checked={maxWordsEnabled}
+                onChange={(e) => setMaxWordsEnabled(e.target.checked)}
+                label="Limit word count"
+              />
               <input
                 type="number"
                 min={1}

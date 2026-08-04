@@ -8,6 +8,7 @@ import {
   useSubmit,
 } from "react-router";
 import { Building2, FolderKanban, Mail, Users, Unlink } from "lucide-react";
+import { Checkbox } from "~/components/ui/Checkbox";
 import { Tooltip } from "~/components/ui/IconButton";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { ProjectIcon } from "~/components/ProjectIcon";
@@ -510,19 +511,21 @@ export default function PartnerOrgDetail() {
                   </div>
                 )}
               </div>
-              <label className="flex items-center gap-2 text-sm text-foreground">
-                {editing ? (
-                  <input
-                    type="checkbox"
-                    name="isIndividual"
-                    defaultChecked={org.isIndividual}
-                    className="rounded"
-                  />
-                ) : (
-                  <input type="checkbox" checked={org.isIndividual} disabled className="rounded" />
-                )}
-                Individual (not an organization)
-              </label>
+              {editing ? (
+                <Checkbox
+                  name="isIndividual"
+                  defaultChecked={org.isIndividual}
+                  label="Individual (not an organization)"
+                  className="text-sm text-foreground"
+                />
+              ) : (
+                <Checkbox
+                  checked={org.isIndividual}
+                  disabled
+                  label="Individual (not an organization)"
+                  className="text-sm text-foreground"
+                />
+              )}
             </div>
           )}
         </EditableSection>

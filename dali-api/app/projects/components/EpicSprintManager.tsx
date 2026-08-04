@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 import { useRevalidator } from "react-router";
 import { X, GripVertical, Check, Trash2, Pencil, Maximize2 } from "lucide-react";
 import { Tooltip } from "~/components/ui/IconButton";
+import { Checkbox } from "~/components/ui/Checkbox";
 import {
   DndContext,
   PointerSensor,
@@ -14,6 +15,7 @@ import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } 
 import { CSS } from "@dnd-kit/utilities";
 import { Modal } from "~/components/Modal";
 import { Button } from "~/components/ui/Button";
+import { DateField } from "~/components/ui/DateField";
 import { useDialog } from "~/components/ui/dialog";
 import { DocEditor } from "~/components/doc";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
@@ -1486,20 +1488,20 @@ function EpicForm({
         <div className="flex items-end gap-2">
           <label className="flex flex-col gap-1 text-xs">
             <span className="text-muted-foreground">Start (optional)</span>
-            <input
-              type="date"
+            <DateField
+              mode="date"
               value={startsAt}
-              onChange={(e) => setStartsAt(e.target.value)}
-              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
+              onChange={(value) => setStartsAt(value)}
+              ariaLabel="Start (optional)"
             />
           </label>
           <label className="flex flex-col gap-1 text-xs">
             <span className="text-muted-foreground">End (optional)</span>
-            <input
-              type="date"
+            <DateField
+              mode="date"
               value={endsAt}
-              onChange={(e) => setEndsAt(e.target.value)}
-              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
+              onChange={(value) => setEndsAt(value)}
+              ariaLabel="End (optional)"
             />
           </label>
         </div>
@@ -1565,18 +1567,13 @@ function DependsOnField({
       {open && (
         <div className="absolute z-20 mt-1 max-h-48 w-56 overflow-y-auto rounded-md border border-border bg-card p-1 shadow-brand-2">
           {options.map((s) => (
-            <label
+            <Checkbox
               key={s.id}
-              className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm hover:bg-muted"
-            >
-              <input
-                type="checkbox"
-                checked={value.includes(s.id)}
-                onChange={() => toggle(s.id)}
-                className="accent-accent-coral"
-              />
-              <span className="truncate">{s.name}</span>
-            </label>
+              checked={value.includes(s.id)}
+              onChange={() => toggle(s.id)}
+              label={<span className="truncate">{s.name}</span>}
+              className="rounded px-2 py-1 text-sm hover:bg-muted"
+            />
           ))}
         </div>
       )}
@@ -1656,22 +1653,22 @@ function SprintForm({
       </label>
       <label className="flex flex-col gap-1 text-xs">
         <span className="text-muted-foreground">Start</span>
-        <input
-          type="date"
+        <DateField
+          mode="date"
           required
           value={startsAt}
-          onChange={(e) => setStartsAt(e.target.value)}
-          className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
+          onChange={(value) => setStartsAt(value)}
+          ariaLabel="Start"
         />
       </label>
       <label className="flex flex-col gap-1 text-xs">
         <span className="text-muted-foreground">End</span>
-        <input
-          type="date"
+        <DateField
+          mode="date"
           required
           value={endsAt}
-          onChange={(e) => setEndsAt(e.target.value)}
-          className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
+          onChange={(value) => setEndsAt(value)}
+          ariaLabel="End"
         />
       </label>
       <label className="flex flex-col gap-1 text-xs">

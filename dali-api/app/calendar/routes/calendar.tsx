@@ -42,8 +42,11 @@ import type { Route } from "./+types/calendar";
 import { UnderlineTabButtons } from "~/components/AreaPillNav";
 import { Tooltip } from "~/components/ui/IconButton";
 import { buttonClasses } from "~/components/ui/Button";
+import { Checkbox } from "~/components/ui/Checkbox";
+import { Toggle } from "~/components/ui/Toggle";
 import { RsvpButtons } from "~/components/RsvpButtons";
 import { CustomHiresManager } from "~/calendar/components/CustomHiresManager";
+import { DateField } from "~/components/ui/DateField";
 
 // Underline subnav sits flush under the workspace tab bar (see layout embed padding).
 export const handle = {
@@ -1401,22 +1404,11 @@ function WorkingHoursCard({
             </>
           )}
           {/* Master on/off switch */}
-          <button
-            type="button"
-            role="switch"
-            aria-checked={enabled}
+          <Toggle
+            checked={enabled}
             aria-label="Working hours enabled"
-            onClick={enabled ? turnOff : turnOn}
-            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-              enabled ? "bg-accent-coral" : "bg-border"
-            }`}
-          >
-            <span
-              className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                enabled ? "translate-x-4" : "translate-x-0.5"
-              }`}
-            />
-          </button>
+            onChange={() => (enabled ? turnOff() : turnOn())}
+          />
         </div>
       </div>
       {enabled && (
@@ -1736,6 +1728,8 @@ function ManualBlocksCard({ blocks, timezone }: { blocks: ManualBlockDTO[]; time
 function AddManualBlockForm({ onDone }: { onDone: () => void }) {
   const fetcher = useFetcher();
   const [repeats, setRepeats] = useState<Repeats>("none");
+  const [startLocal, setStartLocal] = useState("");
+  const [endLocal, setEndLocal] = useState("");
   return (
     <fetcher.Form
       method="post"
@@ -1755,33 +1749,27 @@ function AddManualBlockForm({ onDone }: { onDone: () => void }) {
       <div className="flex gap-2">
         <label className="flex-1 min-w-0 text-xs text-muted-foreground flex flex-col gap-1">
           Start
-          <input
-            type="datetime-local"
+          <DateField
+            mode="datetime-local"
             name="startTimeLocal"
             required
-            className="w-full min-w-0 px-2 py-1 text-sm border border-border rounded-md bg-background text-foreground"
-            onChange={(e) => {
-              const dt = e.currentTarget.value ? new Date(e.currentTarget.value).toISOString() : "";
-              const hidden = e.currentTarget.form?.querySelector<HTMLInputElement>('input[name="startTime"]');
-              if (hidden) hidden.value = dt;
-            }}
+            className="w-full min-w-0"
+            value={startLocal}
+            onChange={(value) => setStartLocal(value)}
           />
-          <input type="hidden" name="startTime" />
+          <input type="hidden" name="startTime" value={startLocal ? new Date(startLocal).toISOString() : ""} readOnly />
         </label>
         <label className="flex-1 min-w-0 text-xs text-muted-foreground flex flex-col gap-1">
           End
-          <input
-            type="datetime-local"
+          <DateField
+            mode="datetime-local"
             name="endTimeLocal"
             required
-            className="w-full min-w-0 px-2 py-1 text-sm border border-border rounded-md bg-background text-foreground"
-            onChange={(e) => {
-              const dt = e.currentTarget.value ? new Date(e.currentTarget.value).toISOString() : "";
-              const hidden = e.currentTarget.form?.querySelector<HTMLInputElement>('input[name="endTime"]');
-              if (hidden) hidden.value = dt;
-            }}
+            className="w-full min-w-0"
+            value={endLocal}
+            onChange={(value) => setEndLocal(value)}
           />
-          <input type="hidden" name="endTime" />
+          <input type="hidden" name="endTime" value={endLocal ? new Date(endLocal).toISOString() : ""} readOnly />
         </label>
       </div>
       <label className="text-xs text-muted-foreground flex flex-col gap-1">
@@ -2533,27 +2521,25 @@ function CreateFromDragPopover({
               <label htmlFor="drag-start" className="block text-sm font-medium text-foreground mb-1">
                 Starts
               </label>
-              <input
-                id="drag-start"
-                type="datetime-local"
+              <DateField
+                mode="datetime-local"
                 value={start}
-                onChange={(e) => setStart(e.target.value)}
-                className="w-full px-2 py-2 text-sm border border-border rounded-md bg-background text-foreground"
+                onChange={(value) => setStart(value)}
+                className="w-full"
+                ariaLabel="Starts"
               />
             </div>
             <div>
               <label htmlFor="drag-end" className="block text-sm font-medium text-foreground mb-1">
                 Ends
               </label>
-              <input
-                id="drag-end"
-                type="datetime-local"
+              <DateField
+                mode="datetime-local"
                 value={end}
                 min={start || undefined}
-                onChange={(e) => setEnd(e.target.value)}
-                className={`w-full px-2 py-2 text-sm border rounded-md bg-background text-foreground ${
-                  startEndValid ? "border-border" : "border-red-500"
-                }`}
+                onChange={(value) => setEnd(value)}
+                className="w-full"
+                ariaLabel="Ends"
               />
             </div>
           </div>
@@ -2579,15 +2565,12 @@ function CreateFromDragPopover({
 
           {myRoles.length > 0 && !isRecurring && (
             <div>
-              <label className="flex items-center gap-2 text-sm font-medium text-foreground">
-                <input
-                  type="checkbox"
-                  checked={isWork}
-                  onChange={(e) => setIsWork(e.target.checked)}
-                  className="h-4 w-4 rounded border-border"
-                />
-                This is work
-              </label>
+              <Checkbox
+                label="This is work"
+                checked={isWork}
+                onChange={(e) => setIsWork(e.target.checked)}
+                className="text-sm font-medium text-foreground"
+              />
               {isWork && (
                 <select
                   aria-label="Which role is this work for"
@@ -2829,36 +2812,36 @@ function TimesheetView({ data }: { data: LoaderData }) {
             <input type="hidden" name="endTime" value={endIso ?? ""} />
             <label className="text-xs text-muted-foreground flex flex-col gap-1">
               Date
-              <input
-                type="date"
+              <DateField
+                mode="date"
                 name="date"
                 required
                 value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className={`${FIELD_BASE} border-border`}
+                onChange={(value) => setDate(value)}
+                className={FIELD_BASE}
+                ariaLabel="Date"
               />
             </label>
             <label className="text-xs text-muted-foreground flex flex-col gap-1">
               Start
-              <input
-                type="time"
+              <DateField
+                mode="time"
                 required
-                step="900"
                 value={startTime}
-                onChange={(e) => setStartTime(e.target.value)}
-                className={`${FIELD_BASE} border-border`}
+                onChange={(value) => setStartTime(value)}
+                className={FIELD_BASE}
+                ariaLabel="Start time"
               />
             </label>
             <label className="text-xs text-muted-foreground flex flex-col gap-1">
               End
-              <input
-                type="time"
+              <DateField
+                mode="time"
                 required
-                step="900"
                 value={endTime}
-                onChange={(e) => setEndTime(e.target.value)}
-                aria-invalid={!!rangeError}
-                className={`${FIELD_BASE} ${rangeError ? "border-red-500" : "border-border"}`}
+                onChange={(value) => setEndTime(value)}
+                className={FIELD_BASE}
+                ariaLabel="End time"
               />
             </label>
             <RoleSelectField
@@ -3287,27 +3270,25 @@ function TimesheetDragPopover({
             <label htmlFor="ts-drag-start" className="block text-sm font-medium text-foreground mb-1">
               Starts
             </label>
-            <input
-              id="ts-drag-start"
-              type="datetime-local"
+            <DateField
+              mode="datetime-local"
               value={start}
-              onChange={(e) => setStart(e.target.value)}
-              className="w-full px-2 py-2 text-sm border border-border rounded-md bg-background text-foreground"
+              onChange={(value) => setStart(value)}
+              className="w-full"
+              ariaLabel="Starts"
             />
           </div>
           <div>
             <label htmlFor="ts-drag-end" className="block text-sm font-medium text-foreground mb-1">
               Ends
             </label>
-            <input
-              id="ts-drag-end"
-              type="datetime-local"
+            <DateField
+              mode="datetime-local"
               value={end}
               min={start || undefined}
-              onChange={(e) => setEnd(e.target.value)}
-              className={`w-full px-2 py-2 text-sm border rounded-md bg-background text-foreground ${
-                startEndValid ? "border-border" : "border-red-500"
-              }`}
+              onChange={(value) => setEnd(value)}
+              className="w-full"
+              ariaLabel="Ends"
             />
           </div>
         </div>
@@ -3512,27 +3493,25 @@ function TimesheetEditPopover({
             <label htmlFor="ts-edit-start" className="block text-sm font-medium text-foreground mb-1">
               Starts
             </label>
-            <input
-              id="ts-edit-start"
-              type="datetime-local"
+            <DateField
+              mode="datetime-local"
               value={start}
-              onChange={(e) => setStart(e.target.value)}
-              className="w-full px-2 py-2 text-sm border border-border rounded-md bg-background text-foreground"
+              onChange={(value) => setStart(value)}
+              className="w-full"
+              ariaLabel="Starts"
             />
           </div>
           <div>
             <label htmlFor="ts-edit-end" className="block text-sm font-medium text-foreground mb-1">
               Ends
             </label>
-            <input
-              id="ts-edit-end"
-              type="datetime-local"
+            <DateField
+              mode="datetime-local"
               value={end}
               min={start || undefined}
-              onChange={(e) => setEnd(e.target.value)}
-              className={`w-full px-2 py-2 text-sm border rounded-md bg-background text-foreground ${
-                startEndValid ? "border-border" : "border-red-500"
-              }`}
+              onChange={(value) => setEnd(value)}
+              className="w-full"
+              ariaLabel="Ends"
             />
           </div>
         </div>
@@ -3812,12 +3791,10 @@ function CreateScheduledMeetingForm({
               <label htmlFor="meeting-start" className={labelClass}>
                 Starts <span className="text-muted-foreground font-normal">(optional)</span>
               </label>
-              <input
-                id="meeting-start"
-                type="datetime-local"
+              <DateField
+                mode="datetime-local"
                 value={startLocal}
-                onChange={(e) => {
-                  const next = e.target.value;
+                onChange={(next) => {
                   onStartLocalChange(next);
                   if (next && (!endLocal || new Date(endLocal).getTime() <= new Date(next).getTime())) {
                     const d = new Date(next);
@@ -3825,20 +3802,21 @@ function CreateScheduledMeetingForm({
                     onEndLocalChange(toDatetimeLocal(d));
                   }
                 }}
-                className={fieldClass}
+                className="w-full"
+                ariaLabel="Starts"
               />
             </div>
             <div>
               <label htmlFor="meeting-end" className={labelClass}>
                 Ends
               </label>
-              <input
-                id="meeting-end"
-                type="datetime-local"
+              <DateField
+                mode="datetime-local"
                 value={endLocal}
                 min={startLocal || undefined}
-                onChange={(e) => onEndLocalChange(e.target.value)}
-                className={`${fieldClass} ${startEndValid ? "" : "border-red-500"}`}
+                onChange={(value) => onEndLocalChange(value)}
+                className="w-full"
+                ariaLabel="Ends"
               />
               {!startEndValid && (
                 <p className="mt-1 text-xs text-red-600">End must be after start.</p>
@@ -3910,24 +3888,12 @@ function CreateScheduledMeetingForm({
           </p>
 
           <div className="rounded-md border border-border bg-muted/20 p-3 space-y-3">
-            <label className="flex items-start gap-2.5 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={createNote}
-                onChange={(e) => setCreateNote(e.target.checked)}
-                className="mt-0.5 h-3.5 w-3.5 rounded border-border"
-              />
-              <span>
-                <span className="block text-sm font-medium text-foreground">
-                  Create meeting note
-                </span>
-                <span className="block text-xs text-muted-foreground mt-0.5">
-                  Adds a note with an attendance checklist
-                  {projectId ? " under the project's documents" : " in Lab documents"}. Invites
-                  still go only to people and groups in Participants.
-                </span>
-              </span>
-            </label>
+            <Checkbox
+              checked={createNote}
+              onChange={(e) => setCreateNote(e.target.checked)}
+              label="Create meeting note"
+              description={`Adds a note with an attendance checklist${projectId ? " under the project's documents" : " in Lab documents"}. Invites still go only to people and groups in Participants.`}
+            />
 
             {createNote && (
               <div className="pl-6 space-y-3">
@@ -3988,25 +3954,12 @@ function CreateScheduledMeetingForm({
 
           {canSetSelfCheckIn && (
             <div className="rounded-md border border-border bg-muted/20 p-3">
-              <label className="flex items-start gap-2.5 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={selfCheckIn}
-                  onChange={(e) => setSelfCheckIn(e.target.checked)}
-                  className="mt-0.5 h-3.5 w-3.5 rounded border-border"
-                />
-                <span>
-                  <span className="block text-sm font-medium text-foreground">
-                    Self check-in (QR)
-                  </span>
-                  <span className="block text-xs text-muted-foreground mt-0.5">
-                    Attendees mark themselves present. Works with or without a meeting note —
-                    {createNote
-                      ? " the QR appears on the note."
-                      : " you'll get a shareable check-in link after creating."}
-                  </span>
-                </span>
-              </label>
+              <Checkbox
+                checked={selfCheckIn}
+                onChange={(e) => setSelfCheckIn(e.target.checked)}
+                label="Self check-in (QR)"
+                description={`Attendees mark themselves present. Works with or without a meeting note —${createNote ? " the QR appears on the note." : " you'll get a shareable check-in link after creating."}`}
+              />
             </div>
           )}
         </div>

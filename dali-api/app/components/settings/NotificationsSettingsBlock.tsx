@@ -14,6 +14,7 @@ import {
 } from "~/lib/notification-events";
 import { buttonClasses } from "~/components/ui/Button";
 import { SelectMenu } from "~/components/ui/SelectMenu";
+import { Checkbox } from "~/components/ui/Checkbox";
 
 // `general` is the pre-registry backfill value — nothing emits it.
 export const VISIBLE_EVENTS = EVENT_TYPE_KEYS.filter((k) => k !== "general");
@@ -152,32 +153,26 @@ export function NotificationsSettingsBlock({
                       <p className="text-xs text-zinc-500">{def.description}</p>
                     </div>
                     <div className="text-center">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         name={`${eventType}:inApp`}
                         defaultChecked={inApp}
                         disabled={def.lockedInApp}
                         title={def.lockedInApp ? "Required — this is an action item" : undefined}
-                        className="h-4 w-4 rounded border-zinc-300 disabled:opacity-50"
                       />
                     </div>
                     <div className="text-center">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         name={`${eventType}:desktop`}
                         defaultChecked={desktop}
                         title="Native banner in the DALI OS desktop app (applies when in-app is on)"
-                        className="h-4 w-4 rounded border-zinc-300 disabled:opacity-50"
                       />
                     </div>
                     <div className="text-center">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         name={`${eventType}:slackDm`}
                         defaultChecked={slackDm}
                         disabled={!slackConnected}
                         title={!slackConnected ? "Connect Slack first" : undefined}
-                        className="h-4 w-4 rounded border-zinc-300 disabled:opacity-50"
                       />
                     </div>
                     <div className="text-center">

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Form, redirect, useLoaderData, useNavigation } from "react-router";
+import { Checkbox } from "~/components/ui/Checkbox";
 import type { Route } from "./+types/partner.onboarding";
 import { prisma } from "~/lib/db";
 import { logAuditEvent } from "~/lib/audit";
@@ -221,10 +222,11 @@ export default function PartnerOnboarding({ actionData }: Route.ComponentProps) 
           {!existingOrg && (
             <>
               <h2 className={`${sectionClass} mt-3`}>Your organization</h2>
-              <label className="flex items-center gap-2 text-sm text-dark-blue">
-                <input type="checkbox" name="isIndividual" className="rounded" />
-                I'm an individual, not an organization
-              </label>
+              <Checkbox
+                name="isIndividual"
+                label="I'm an individual, not an organization"
+                className="text-sm text-dark-blue"
+              />
               <div>
                 <label htmlFor="orgName" className={labelClass}>
                   Organization name

@@ -16,6 +16,7 @@ import { normalizeQuestionBodies } from "~/lib/question-blocks.server";
 import { FormFieldList } from "~/forms/components/FormField";
 import { findMissingRequired } from "~/lib/form-answers";
 import { APPLICATION_TZ, APPLICATION_TZ_LABEL } from "~/lib/timezone";
+import { Checkbox } from "~/components/ui/Checkbox";
 
 export const meta: Route.MetaFunction = () => [
   { title: "Fellowship · DALI OS" },
@@ -375,22 +376,17 @@ function FormView({
           {cycle.targetDomains.map((d) => {
             const checked = selectedDomainIds.includes(d.id);
             return (
-              <label
+              <Checkbox
                 key={d.id}
-                className={`flex items-center gap-3 px-4 py-3 rounded-lg border cursor-pointer transition ${
+                checked={checked}
+                onChange={() => toggleDomain(d.id)}
+                label={<span className="text-sm font-medium text-dark-blue">{d.displayName}</span>}
+                className={`px-4 py-3 rounded-lg border transition ${
                   checked
                     ? "border-accent-coral bg-accent-coral/10"
                     : "border-border hover:border-accent-coral/50"
                 }`}
-              >
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={() => toggleDomain(d.id)}
-                  className="w-4 h-4 accent-accent-coral"
-                />
-                <span className="text-sm font-medium text-dark-blue">{d.displayName}</span>
-              </label>
+              />
             );
           })}
         </div>

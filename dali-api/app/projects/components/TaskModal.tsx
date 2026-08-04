@@ -13,6 +13,8 @@ import { Button } from "~/components/ui/Button";
 import { Avatar } from "~/components/ui/Avatar";
 import { MentionTextInput } from "~/components/MentionTextInput";
 import { useDialog } from "~/components/ui/dialog";
+import { Checkbox } from "~/components/ui/Checkbox";
+import { DateField } from "~/components/ui/DateField";
 import { uploadFileToS3 } from "~/lib/upload-client";
 import {
   normalizeChecklist,
@@ -724,12 +726,13 @@ export function TaskModal({
           </PropRow>
 
           <PropRow label="Deadline">
-            <input
-              type="date"
+            <DateField
+              mode="date"
               value={dueDate}
               disabled={!canManage}
-              onChange={(e) => setDueDate(e.target.value)}
-              className={PROP_CONTROL}
+              onChange={(value) => setDueDate(value)}
+              className="w-full"
+              ariaLabel="Deadline"
             />
           </PropRow>
 
@@ -751,8 +754,7 @@ export function TaskModal({
             </span>
             {checklist.map((item, i) => (
               <div key={i} className="flex items-center gap-2">
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={item.done}
                   disabled={!canManage}
                   onChange={() => void toggleChecklistItem(i)}
@@ -798,14 +800,12 @@ export function TaskModal({
 
         {isCreate && canManage && githubRepos.length > 0 && (
           <div className="flex flex-col gap-2 pt-2 border-t border-border">
-            <label className="flex items-center gap-2 text-sm text-foreground">
-              <input
-                type="checkbox"
-                checked={githubEnabled}
-                onChange={(e) => setGithubEnabled(e.target.checked)}
-              />
-              Create GitHub issue
-            </label>
+            <Checkbox
+              label="Create GitHub issue"
+              checked={githubEnabled}
+              onChange={(e) => setGithubEnabled(e.target.checked)}
+              className="text-sm text-foreground"
+            />
             {githubEnabled && (
               <select
                 value={githubRepo}
@@ -1229,21 +1229,21 @@ function AssigneePicker({
   return (
     <div className="max-h-32 overflow-y-auto border border-border rounded-md bg-background p-1.5 flex flex-col gap-0.5">
       {all.map((m) => (
-        <label
+        <Checkbox
           key={m.id}
-          className={`flex items-center gap-2 px-1.5 py-1 text-sm rounded ${
+          checked={selected.includes(m.id)}
+          disabled={disabled}
+          onChange={() => toggle(m.id)}
+          label={
+            <>
+              <Avatar photoUrl={m.photoUrl} name={m.name} size="xs" className="shrink-0" />
+              <span className="text-foreground">{m.name}</span>
+            </>
+          }
+          className={`px-1.5 py-1 text-sm rounded ${
             disabled ? "" : "hover:bg-muted/40 cursor-pointer"
           }`}
-        >
-          <input
-            type="checkbox"
-            checked={selected.includes(m.id)}
-            disabled={disabled}
-            onChange={() => toggle(m.id)}
-          />
-          <Avatar photoUrl={m.photoUrl} name={m.name} size="xs" className="shrink-0" />
-          <span className="text-foreground">{m.name}</span>
-        </label>
+        />
       ))}
     </div>
   );

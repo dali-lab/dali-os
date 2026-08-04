@@ -73,6 +73,7 @@ import { TypeBadge, StatusBadge, MyStatusChip } from "~/education/components/Off
 import { OfferingFields, toDatetimeLocal } from "~/education/components/OfferingFields";
 import { DocEditor } from "~/components/doc";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
+import { DateField } from "~/components/ui/DateField";
 import { formatDateTime } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { cn } from "~/lib/cn";
@@ -824,12 +825,13 @@ export default function ManageOffering() {
                     <div className="grid gap-3 sm:grid-cols-3">
                     <label className="block">
                       <span className="text-xs font-semibold text-muted-foreground">When</span>
-                      <input
-                        type="datetime-local"
+                      <DateField
+                        mode="datetime-local"
                         name="datetime"
                         required
                         defaultValue={toDatetimeLocal(s.datetime)}
-                        className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
+                        className="mt-1 w-full"
+                        ariaLabel="Session date and time"
                       />
                     </label>
                     <label className="block">
@@ -914,11 +916,12 @@ export default function ManageOffering() {
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="block">
                 <span className="text-xs font-semibold text-muted-foreground">When</span>
-                <input
-                  type="datetime-local"
+                <DateField
+                  mode="datetime-local"
                   name="datetime"
                   required
-                  className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
+                  className="mt-1 w-full"
+                  ariaLabel="Session date and time"
                 />
               </label>
               <label className="block">
@@ -954,11 +957,12 @@ export default function ManageOffering() {
           >
             <label className="block">
               <span className="text-xs font-semibold text-muted-foreground">First session</span>
-              <input
-                type="datetime-local"
+              <DateField
+                mode="datetime-local"
                 name="startDatetime"
                 required
-                className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
+                className="mt-1 w-full"
+                ariaLabel="First session date and time"
               />
             </label>
             <div className="grid gap-3 sm:grid-cols-2">

@@ -16,6 +16,7 @@
 import { useMemo, useRef, useState } from "react";
 import { useFetcher } from "react-router";
 import { Button } from "~/components/ui/Button";
+import { Checkbox } from "~/components/ui/Checkbox";
 import { SelectMenu } from "~/components/ui/SelectMenu";
 import {
   SLOT_ROLES,
@@ -506,17 +507,15 @@ export function SlotColumnMapper({
 
                 {canManage && (
                   <div className="flex items-center gap-1 shrink-0 lg:justify-self-end">
-                    <label className="flex items-center gap-1 text-xs text-muted-foreground mr-1 select-none">
-                      <input
-                        type="checkbox"
-                        checked={!c.hidden}
-                        disabled={saving}
-                        onChange={(e) =>
-                          patch(c.uid, { hidden: !e.target.checked })
-                        }
-                      />
-                      In table
-                    </label>
+                    <Checkbox
+                      label="In table"
+                      className="text-xs text-muted-foreground mr-1 select-none"
+                      checked={!c.hidden}
+                      disabled={saving}
+                      onChange={(e) =>
+                        patch(c.uid, { hidden: !e.target.checked })
+                      }
+                    />
                     <button
                       type="button"
                       aria-label={`Remove ${c.label}`}

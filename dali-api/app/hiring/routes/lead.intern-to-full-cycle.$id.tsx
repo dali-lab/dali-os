@@ -21,6 +21,8 @@ import {
   type DecisionSlotType,
 } from "~/hiring/lib/email-variables";
 import { AlertTriangle, CheckCircle, Eye, Mail } from "lucide-react";
+import { DateField } from "~/components/ui/DateField";
+import { Checkbox } from "~/components/ui/Checkbox";
 import { Modal, ModalHeader, ModalFooter } from "~/components/Modal";
 
 import {
@@ -572,12 +574,12 @@ function CloseDateSection({
   return (
     <Section title="Close date" description="When the application window closes for interns.">
       <div className="flex items-center gap-3">
-        <input
-          type="date"
+        <DateField
+          mode="date"
           value={value}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={setValue}
           disabled={disabled}
-          className="px-3 py-2 text-sm border border-border rounded-md disabled:opacity-50"
+          ariaLabel="Close date"
         />
         <button
           onClick={() =>
@@ -808,14 +810,11 @@ function CreateFormVersionModal({
                       className="w-full px-2 py-1.5 text-xs border border-border rounded-md text-muted-foreground"
                     />
                     <div className="flex items-center gap-4 text-xs">
-                      <label className="flex items-center gap-1">
-                        <input
-                          type="checkbox"
-                          checked={q.required}
-                          onChange={(e) => update(idx, { required: e.target.checked })}
-                        />
-                        Required
-                      </label>
+                      <Checkbox
+                        label="Required"
+                        checked={q.required}
+                        onChange={(e) => update(idx, { required: e.target.checked })}
+                      />
                       <label className="flex items-center gap-1">
                         Type:
                         <select
@@ -916,20 +915,16 @@ function TargetDomainsSection({
         {allDomains.map((d) => {
           const checked = selectedIds.has(d.id);
           return (
-            <label
+            <Checkbox
               key={d.id}
-              className={`flex items-center gap-2 px-3 py-2 border rounded-md text-sm ${
+              label={d.displayName}
+              checked={checked}
+              disabled={disabled}
+              onChange={() => toggle(d.id)}
+              className={`px-3 py-2 border rounded-md text-sm ${
                 checked ? "border-blue-400 bg-blue-50" : "border-border"
               } ${disabled ? "opacity-50" : "cursor-pointer"}`}
-            >
-              <input
-                type="checkbox"
-                checked={checked}
-                disabled={disabled}
-                onChange={() => toggle(d.id)}
-              />
-              {d.displayName}
-            </label>
+            />
           );
         })}
       </div>
@@ -971,24 +966,22 @@ function DomainConfigRow({
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 py-2">
       <div className="text-sm font-medium text-dark-blue min-w-32">{domain.displayName}</div>
-      <label className="flex items-center gap-1 text-xs">
-        <input
-          type="checkbox"
-          checked={domain.isReady}
-          disabled={disabled}
-          onChange={(e) =>
-            fetcher.submit(
-              {
-                intent: "toggle-domain-ready",
-                domainId: domain.domainId,
-                ready: String(e.target.checked),
-              },
-              { method: "post" },
-            )
-          }
-        />
-        Ready
-      </label>
+      <Checkbox
+        label="Ready"
+        className="text-xs"
+        checked={domain.isReady}
+        disabled={disabled}
+        onChange={(e) =>
+          fetcher.submit(
+            {
+              intent: "toggle-domain-ready",
+              domainId: domain.domainId,
+              ready: String(e.target.checked),
+            },
+            { method: "post" },
+          )
+        }
+      />
     </div>
   );
 }

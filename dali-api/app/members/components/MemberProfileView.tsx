@@ -31,6 +31,7 @@ import { PersonalNotesRail } from "./PersonalNotesRail";
 import { AchievementsBlock } from "./AchievementsBlock";
 import { ComplianceBlock } from "./ComplianceBlock";
 import { buttonClasses } from "~/components/ui/Button";
+import { DateField } from "~/components/ui/DateField";
 import type { Level } from "~/admin/lib/eligibility";
 import { APPLICATION_TZ, formatZoneLabel } from "~/lib/timezone";
 import type {
@@ -521,12 +522,15 @@ function PersonalSection({
                 label="Hometown"
                 defaultValue={member.hometown ?? ""}
               />
-              <FieldInput
-                name="birthday"
-                label="Birthday"
-                type="date"
-                defaultValue={birthdayInputValue(member.birthday)}
-              />
+              <label className="flex flex-col gap-1 text-xs">
+                <span className="text-muted-foreground">Birthday</span>
+                <DateField
+                  mode="date"
+                  name="birthday"
+                  defaultValue={birthdayInputValue(member.birthday)}
+                  ariaLabel="Birthday"
+                />
+              </label>
               <FieldInput
                 name="phoneNumber"
                 label="Phone"

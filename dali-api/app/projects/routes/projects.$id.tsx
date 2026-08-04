@@ -17,6 +17,7 @@ import { Modal, ModalHeader } from "~/components/Modal";
 import { MoveToDialog } from "~/components/sharing/MoveToDialog";
 import { useDialog, useConfirmSubmit } from "~/components/ui/dialog";
 import { Tooltip } from "~/components/ui/IconButton";
+import { Checkbox } from "~/components/ui/Checkbox";
 import { EditableSection } from "~/components/EditableSection";
 import { PageIcon } from "~/components/PageIcon";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
@@ -1811,21 +1812,13 @@ function VisibilitySegment({
         editing ? (
           <Form method="post" ref={formRef} key={resetKey}>
             <input type="hidden" name="intent" value="visibility" />
-            <label className="flex items-start gap-2 text-sm cursor-pointer">
-              <input
-                type="checkbox"
-                name="isPrivate"
-                defaultChecked={isPrivate}
-                className="mt-0.5 accent-accent-coral"
-              />
-              <span>
-                <span className="text-foreground">Private project</span>
-                <span className="block text-xs text-muted-foreground">
-                  Hidden from project dropdowns on forms. Still listed in the
-                  project hub and search.
-                </span>
-              </span>
-            </label>
+            <Checkbox
+              name="isPrivate"
+              defaultChecked={isPrivate}
+              label="Private project"
+              description="Hidden from project dropdowns on forms. Still listed in the project hub and search."
+              className="text-sm"
+            />
           </Form>
         ) : (
           <p className="text-sm text-foreground">

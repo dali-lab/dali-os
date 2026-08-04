@@ -18,6 +18,7 @@ import { PresenceProvider } from '~/components/collab/PresenceProvider'
 import { PresenceBar } from '~/components/collab/PresenceBar'
 import { getEducationEngagement } from '~/education/lib/engagement.server'
 import { EducationEngagementPanel } from '~/education/components/EducationEngagementPanel'
+import { Radio } from '~/components/ui/Radio'
 import type { Question, RubricCriterion } from '~/types'
 
 export const meta: Route.MetaFunction = ({ data }) => {
@@ -470,7 +471,7 @@ export default function ReviewerApplicationReview() {
                                 type="range" min="0" max={criterion.maxScore}
                                 value={scores[criterion.key] ?? 0}
                                 onChange={(e) => setScores((prev) => ({ ...prev, [criterion.key]: parseInt(e.target.value) }))}
-                                className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-blue-600"
+                                className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-accent-coral"
                               />
                               <div className="flex justify-between text-xs text-muted-foreground/70 mt-1"><span>0</span><span>{criterion.maxScore}</span></div>
                             </div>
@@ -552,15 +553,15 @@ export default function ReviewerApplicationReview() {
                 <h3 className="text-sm font-bold text-foreground uppercase tracking-wider mb-3">Overall Recommendation</h3>
                 <div className="space-y-2">
                   {RECOMMENDATIONS.map((rec) => (
-                    <label key={rec} className={`flex items-center p-3 border rounded-lg cursor-pointer transition-colors ${overallRecommendation === rec ? 'border-blue-500 bg-blue-50' : 'border-border hover:bg-muted/50'}`}>
-                      <input
-                        type="radio" name="recommendation" value={rec}
-                        checked={overallRecommendation === rec}
-                        onChange={() => setOverallRecommendation(rec)}
-                        className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                      />
-                      <span className="ml-3 text-sm font-medium text-foreground">{rec}</span>
-                    </label>
+                    <Radio
+                      key={rec}
+                      name="recommendation"
+                      value={rec}
+                      checked={overallRecommendation === rec}
+                      onChange={() => setOverallRecommendation(rec)}
+                      label={rec}
+                      className={`p-3 border rounded-lg transition-colors ${overallRecommendation === rec ? 'border-blue-500 bg-blue-50' : 'border-border hover:bg-muted/50'}`}
+                    />
                   ))}
                 </div>
               </div>

@@ -25,6 +25,7 @@ import { normalizeQuestionBodies } from "~/lib/question-blocks.server";
 import { type UrlCheckState } from "~/components/form-builder/QuestionField";
 import { FormField } from "~/forms/components/FormField";
 import { useToast } from "~/components/ui/toast";
+import { Radio } from "~/components/ui/Radio";
 
 export const meta: Route.MetaFunction = () => [{ title: "Apply · DALI OS" }];
 
@@ -1434,17 +1435,15 @@ export default function PortalApply() {
                   </p>
                   <div className="space-y-2">
                     {domain.challenges.map(c => (
-                      <label key={c.challengeVersionId} className="flex items-start gap-2 text-sm cursor-pointer">
-                        <input
-                          type="radio"
-                          name={`challenge-${domainId}`}
-                          value={c.challengeVersionId}
-                          checked={pickedCvId === c.challengeVersionId}
-                          onChange={() => handleChallengePick(domainId, c.challengeVersionId)}
-                          className="mt-0.5"
-                        />
-                        <span className="text-dark-blue">{c.challengeName}</span>
-                      </label>
+                      <Radio
+                        key={c.challengeVersionId}
+                        name={`challenge-${domainId}`}
+                        value={c.challengeVersionId}
+                        checked={pickedCvId === c.challengeVersionId}
+                        onChange={() => handleChallengePick(domainId, c.challengeVersionId)}
+                        label={<span className="text-dark-blue">{c.challengeName}</span>}
+                        className="text-sm"
+                      />
                     ))}
                   </div>
                   {pickedCvId && (

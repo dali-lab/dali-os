@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useRevalidator } from "react-router";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { Button } from "~/components/ui/Button";
+import { Checkbox } from "~/components/ui/Checkbox";
 
 type Automation = "assignments" | "slack" | "gmail" | "github";
 
@@ -235,26 +236,14 @@ export function FinalizeModal({
 
       {nonP3Mentors.length > 0 && (
         <div className="mb-3 rounded-md border border-accent-yellow/40 bg-accent-yellow/10 px-3 py-2.5">
-          <label className="flex items-start gap-2 text-sm cursor-pointer">
-            <input
-              type="checkbox"
-              checked={promoteMentors}
-              disabled={running}
-              onChange={(e) => setPromoteMentors(e.target.checked)}
-              className="mt-0.5"
-            />
-            <span className="min-w-0">
-              <span className="font-medium text-foreground">
-                Promote {nonP3Mentors.length} mentor{nonP3Mentors.length === 1 ? "" : "s"} to P3
-              </span>
-              <span className="block text-xs text-muted-foreground mt-0.5">
-                {nonP3Mentors.map((m) => m.name).join(", ")}{" "}
-                {nonP3Mentors.length === 1 ? "is" : "are"} staged to mentor but not yet P3. Finalizing
-                promotes {nonP3Mentors.length === 1 ? "them" : "them"} (assignment + eligibility) so the
-                pairing is valid. Uncheck to pair without promoting.
-              </span>
-            </span>
-          </label>
+          <Checkbox
+            checked={promoteMentors}
+            disabled={running}
+            onChange={(e) => setPromoteMentors(e.target.checked)}
+            label={`Promote ${nonP3Mentors.length} mentor${nonP3Mentors.length === 1 ? "" : "s"} to P3`}
+            description={`${nonP3Mentors.map((m) => m.name).join(", ")} ${nonP3Mentors.length === 1 ? "is" : "are"} staged to mentor but not yet P3. Finalizing promotes ${nonP3Mentors.length === 1 ? "them" : "them"} (assignment + eligibility) so the pairing is valid. Uncheck to pair without promoting.`}
+            className="text-sm"
+          />
         </div>
       )}
 
@@ -285,12 +274,10 @@ export function FinalizeModal({
               key={a.id}
               className="border border-border rounded-md p-3 flex items-start gap-3"
             >
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={selected.has(a.id)}
                 disabled={!a.configured || running}
                 onChange={() => toggle(a.id)}
-                className="mt-0.5"
                 aria-label={a.label}
               />
               <div className="min-w-0 flex-1">
