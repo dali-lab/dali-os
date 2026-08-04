@@ -5535,6 +5535,17 @@ function SelectionPopoverPortal({
       if (!target) return;
       if (cardRef.current?.contains(target)) return;
       if (anchorEl?.contains(target)) return;
+      // The card's own dropdowns (Role, and any future Select/Menu/Popover)
+      // render into their own portal at <body>, so they are not inside
+      // cardRef — picking a role counted as an outside click and closed the
+      // whole form. Anything in a floating layer belongs to the card.
+      if (
+        target instanceof Element
+          ? target.closest("[data-floating-ui-portal]")
+          : (target.parentElement as Element | null)?.closest("[data-floating-ui-portal]")
+      ) {
+        return;
+      }
       onDismiss();
     };
     // Capture phase so we see the event even if something stops propagation.
