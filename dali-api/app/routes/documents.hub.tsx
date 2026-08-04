@@ -19,7 +19,6 @@ import {
   LayoutTemplate,
   Lock,
   Pin,
-  Star,
   Plus,
   Search,
   Tag as TagIcon,
@@ -31,6 +30,8 @@ import { redirectToLogin } from "~/lib/login-next";
 import { isCore, isLabMember, currentTerm } from "~/lib/roles";
 import { visibleLabDocFilter } from "~/lib/lab-documents.server";
 import { Tooltip } from "~/components/ui/IconButton";
+import { FavoriteStar } from "~/components/FavoriteStar";
+import { favoritePageIds } from "~/lib/user-pages.server";
 import { Menu } from "~/components/ui/floating";
 import { useDialog } from "~/components/ui/dialog";
 import { PageIcon } from "~/components/PageIcon";
@@ -201,14 +202,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   });
 
   // The viewer's stars, in one read rather than per row.
-  const favoriteIds = new Set(
-    (
-      await prisma.userPage.findMany({
-        where: { userId: auth.user.sub, favoritedAt: { not: null } },
-        select: { pageId: true },
-      })
-    ).map((r) => r.pageId),
-  );
+  const favoriteIds = await favoritePageIds(auth.user.sub);
 
   const docs: DocOut[] = [
     ...labPages.map((p) => toDto(p, "lab", "Lab-wide", "lab")),
@@ -423,10 +417,6 @@ export default function DocumentsHub() {
     const b = await post(`/api/pages/${id}/pin`, { pinned: next });
     if (b) revalidator.revalidate();
   }
-  async function toggleFavorite(id: string, next: boolean) {
-    const b = await post(`/api/pages/${id}/favorite`, { favorited: next });
-    if (b) revalidator.revalidate();
-  }
   async function duplicateDocument(id: string) {
     const b = await post(`/api/pages/${id}/duplicate`);
     if (b?.id) {
@@ -616,22 +606,7 @@ export default function DocumentsHub() {
             <TagChip key={t.id} tag={t} />
           ))}
           {doc.kind !== "Folder" && (
-            <Tooltip
-              label={doc.favorited ? "In your favourites" : "Add to your favourites"}
-            >
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void toggleFavorite(doc.id, !doc.favorited)}
-                aria-label={doc.favorited ? "Remove from favourites" : "Add to favourites"}
-                aria-pressed={doc.favorited}
-                className={`flex items-center disabled:opacity-60 ${
-                  doc.favorited ? "text-accent-coral" : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <Star className={`w-3.5 h-3.5 ${doc.favorited ? "fill-current" : ""}`} />
-              </button>
-            </Tooltip>
+            <FavoriteStar pageId={doc.id} favorited={doc.favorited} />
           )}
           {canManage && !indent && (
             <Tooltip label={doc.pinned ? "Pinned — click to unpin" : "Pin to top"}>

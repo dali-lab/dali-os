@@ -11,6 +11,7 @@ import { Select, type SelectOption } from "~/components/ui/floating";
 import { redirectToLogin } from "~/lib/login-next";
 import type { Route } from "./+types/education.manage.$offeringId";
 import { requireAuth } from "~/lib/auth";
+import { favoritePageIds } from "~/lib/user-pages.server";
 import { isCore, currentTermMemberWhere } from "~/lib/roles";
 import {
   requireOfferingManager,
@@ -117,6 +118,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     workspaceDocs,
     assignments,
     announcements,
+    favoriteIds,
   ] = await Promise.all([
     core
       ? prisma.user.findMany({
@@ -146,6 +148,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     listWorkspaceDocs(params.offeringId!),
     listAssignments(params.offeringId!),
     listDiscussion(params.offeringId!),
+    favoritePageIds(gate.auth.user.sub),
   ]);
 
   const notes = await notesForOffering(params.offeringId!);
@@ -202,6 +205,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     attendanceMatrix,
     materials,
     workspaceDocs,
+    favoriteIds: [...favoriteIds],
     assignments,
     // Discussion posts pass through whole — the component renders authors,
     // replies and the announcement/message distinction.
@@ -423,6 +427,7 @@ export default function ManageOffering() {
     attendanceMatrix,
     materials,
     workspaceDocs,
+    favoriteIds,
     assignments,
     announcements,
     emailTemplates,
@@ -1065,7 +1070,7 @@ export default function ManageOffering() {
       )}
 
       {tab === "materials" && (
-        <ManageMaterials materials={materials} workspaceDocs={workspaceDocs} />
+        <ManageMaterials materials={materials} workspaceDocs={workspaceDocs} favoriteIds={favoriteIds} />
       )}
 
       {tab === "assignments" && (

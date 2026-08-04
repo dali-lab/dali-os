@@ -74,6 +74,7 @@ export function MemberProfileView({
     mentorshipPanel,
     notes,
     sharedWithMe,
+    favoriteIds,
     achievements,
     compliance,
   } = data;
@@ -272,6 +273,7 @@ export function MemberProfileView({
           isSelf={isSelf}
           notes={notes}
           sharedWithMe={sharedWithMe}
+          favoriteIds={favoriteIds}
           onOpenNote={openNote}
         />
       </div>

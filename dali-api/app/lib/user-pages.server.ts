@@ -122,6 +122,18 @@ export function recordPageVisit(userId: string, pageId: string): void {
     });
 }
 
+/**
+ * Which of this user's pages are favourited, as a Set for O(1) row flagging.
+ * One query per list view rather than one per row.
+ */
+export async function favoritePageIds(userId: string): Promise<Set<string>> {
+  const rows = await prisma.userPage.findMany({
+    where: { userId, favoritedAt: { not: null } },
+    select: { pageId: true },
+  });
+  return new Set(rows.map((r) => r.pageId));
+}
+
 /** Whether this user has pinned this page. */
 export async function isFavorited(userId: string, pageId: string): Promise<boolean> {
   const row = await prisma.userPage.findUnique({

@@ -16,6 +16,7 @@ import {
   listSharedWithMe,
   type NoteSummary,
 } from "~/members/lib/personal-notes.server";
+import { favoritePageIds } from "~/lib/user-pages.server";
 import {
   achievementsForMember,
   type Achievement,
@@ -109,6 +110,8 @@ export type ProfilePageData = {
    *  the viewer; `sharedWithMe` is populated only on your own profile. */
   notes: NoteSummary[];
   sharedWithMe: NoteSummary[];
+  /** Page ids the viewer has starred — drives the per-row favourite toggle. */
+  favoriteIds: string[];
   /** Milestone medals shown above the notes rail. Always the full catalog —
    *  the view hides unearned ones on other people's profiles. */
   achievements: Achievement[];
@@ -426,10 +429,11 @@ export async function loadProfilePage({
 
   // Personal notes for the rail. "Shared with me" is an inbox of your own, so
   // it's only fetched when you're looking at your own profile.
-  const [notes, sharedWithMe, achievements] = await Promise.all([
+  const [notes, sharedWithMe, achievements, favoriteIds] = await Promise.all([
     listProfileNotes(targetId, auth.user.sub),
     isSelf ? listSharedWithMe(auth.user.sub) : Promise.resolve([]),
     achievementsForMember(targetId),
+    favoritePageIds(auth.user.sub),
   ]);
 
   // Own profile, or Core/Admin who need the compliance view. A peer has no
@@ -506,6 +510,7 @@ export async function loadProfilePage({
     canManageEligibility,
     notes,
     sharedWithMe,
+    favoriteIds: [...favoriteIds],
     achievements,
     compliance,
     allDomains,
