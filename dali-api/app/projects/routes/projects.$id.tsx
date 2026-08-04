@@ -23,7 +23,8 @@ import { EditableSection } from "~/components/EditableSection";
 import { PageIcon } from "~/components/PageIcon";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { PresenceBar } from "~/components/collab/PresenceBar";
-import { DocEditor } from "~/components/doc";
+import { DocEditor, countWords } from "~/components/doc";
+import { readDocAsBlocks } from "~/collab/read";
 import { uploadFileToS3, formatBytes } from "~/lib/upload-client";
 import type { Route } from "./+types/projects.$id";
 import { prisma } from "~/lib/db";
@@ -976,12 +977,20 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     }));
   }
 
+  // Rich description blocks (read server-side) so non-editors see the formatted
+  // doc rather than the flattened plaintext mirror. Empty for legacy rows that
+  // have never been opened in the editor — those fall back to <Markdown>.
+  const descriptionContent = await readDocAsBlocks(
+    `project:${project.id}:description`,
+  );
+
   return {
     project: {
       id: project.id,
       name: project.name,
       iconEmoji: project.iconEmoji,
       description: project.description,
+      descriptionContent,
       status: project.status,
       calendarEmail: project.calendarEmail,
       teamGroupEmail: project.teamGroupEmail,
@@ -1725,12 +1734,14 @@ function ProjectHeader({
 function DescriptionSegment({
   projectId,
   description,
+  descriptionContent,
   canEdit,
   collabToken,
   userName,
 }: {
   projectId: string;
   description: string | null;
+  descriptionContent: unknown;
   canEdit: boolean;
   collabToken: string | null;
   userName: string;
@@ -1741,9 +1752,9 @@ function DescriptionSegment({
         <FileText className="w-4 h-4" />
         Description
       </h2>
-      {/* Editors get the live collab doc; everyone else reads the plaintext
-          mirror (Project.description, synced on every save) so viewers never
-          need a collab socket. */}
+      {/* Editors get the live collab doc. Viewers render the doc read-only from
+          server-loaded blocks; legacy rows with no doc yet fall back to the
+          plaintext/Markdown mirror. */}
       {canEdit && collabToken ? (
         <PresenceProvider
           pageId={`project:${projectId}`}
@@ -1761,6 +1772,8 @@ function DescriptionSegment({
             className="border border-border rounded-md"
           />
         </PresenceProvider>
+      ) : countWords(descriptionContent) > 0 ? (
+        <DocEditor features="notes" editable={false} initialContent={descriptionContent} />
       ) : description ? (
         <Markdown>{description}</Markdown>
       ) : (
@@ -2637,6 +2650,7 @@ function OverviewTab({
       <DescriptionSegment
         projectId={project.id}
         description={project.description}
+        descriptionContent={project.descriptionContent}
         canEdit={canEdit}
         collabToken={collabToken}
         userName={userName}
