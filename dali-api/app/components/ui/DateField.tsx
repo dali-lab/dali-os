@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Calendar, ChevronLeft, ChevronRight, Clock } from "lucide-react";
-import { SelectMenu, type SelectMenuOption } from "~/components/ui/SelectMenu";
 import { cn } from "~/lib/cn";
 
 // Custom date / datetime / time picker — a drop-in for the native inputs of the
@@ -77,6 +76,11 @@ function formatDisplay(mode: DateFieldMode, v: string | undefined): string | nul
 const daysInMonth = (y: number, m: number) => new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
 const firstWeekday = (y: number, m: number) => new Date(Date.UTC(y, m, 1)).getUTCDay();
 const dateKey = (y: number, m: number, d: number) => `${y}-${pad(m + 1)}-${pad(d)}`;
+// Parse a typed hour/minute field, clamping to [0, max]; empty/garbage → 0.
+const clampInt = (raw: string, max: number) => {
+  const n = parseInt(raw, 10);
+  return Number.isNaN(n) ? 0 : Math.min(max, Math.max(0, n));
+};
 
 export function DateField({
   mode,
@@ -171,14 +175,6 @@ export function DateField({
   const maxKey = max && parts(mode, max) ? max.slice(0, 10) : null;
   const outOfRange = (k: string) => (minKey && k < minKey) || (maxKey && k > maxKey);
 
-  const hourOptions = useMemo<SelectMenuOption<string>[]>(
-    () => Array.from({ length: 24 }, (_, h) => ({ value: pad(h), label: pad(h) })),
-    [],
-  );
-  const minuteOptions = useMemo<SelectMenuOption<string>[]>(
-    () => Array.from({ length: 60 }, (_, mm) => ({ value: pad(mm), label: pad(mm) })),
-    [],
-  );
 
   const display = formatDisplay(mode, current);
   const showCalendar = mode !== "time";
@@ -301,18 +297,26 @@ export function DateField({
             {showTime && (
               <div className={cn("flex items-center gap-2", showCalendar && "mt-3 border-t border-border pt-3")}>
                 <Clock className="h-4 w-4 shrink-0 text-muted-foreground" />
-                <SelectMenu
-                  value={pad(cur?.hh ?? 0)}
-                  options={hourOptions}
-                  ariaLabel="Hour"
-                  onChange={(hh) => setTime(+hh, cur?.mm ?? 0)}
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={23}
+                  aria-label="Hour"
+                  value={cur?.hh ?? 0}
+                  onChange={(e) => setTime(clampInt(e.target.value, 23), cur?.mm ?? 0)}
+                  className="w-12 rounded-md border border-border bg-background px-1.5 py-1 text-center text-sm tabular-nums text-foreground focus:outline-none focus:ring-1 focus:ring-accent-coral/40"
                 />
                 <span className="text-muted-foreground">:</span>
-                <SelectMenu
-                  value={pad(cur?.mm ?? 0)}
-                  options={minuteOptions}
-                  ariaLabel="Minute"
-                  onChange={(mm) => setTime(cur?.hh ?? 0, +mm)}
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={59}
+                  aria-label="Minute"
+                  value={cur?.mm ?? 0}
+                  onChange={(e) => setTime(cur?.hh ?? 0, clampInt(e.target.value, 59))}
+                  className="w-12 rounded-md border border-border bg-background px-1.5 py-1 text-center text-sm tabular-nums text-foreground focus:outline-none focus:ring-1 focus:ring-accent-coral/40"
                 />
                 {mode === "datetime-local" && (
                   <button
