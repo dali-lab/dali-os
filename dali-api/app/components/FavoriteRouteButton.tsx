@@ -1,32 +1,50 @@
 import { useEffect, useState } from "react";
-import { useLocation } from "react-router";
+import { useLocation, useMatches } from "react-router";
 import { Star } from "lucide-react";
 import { Tooltip } from "~/components/ui/IconButton";
 
 // Stars the page you're currently on — for destinations that aren't documents:
-// a project hub, any subtab. Rides the right edge of the subtab bars next to
-// the Docs button, so every tabbed surface gets it from one place.
+// a project hub, an area landing, any subtab.
 //
-// The current URL is read from the router rather than passed in, so callers
-// only supply a label. Search params are included: subtabs are usually ?tab=…,
-// and dropping them would make every tab of a page the same favourite.
+// Placement follows the Guide button exactly (see PageDocButton): the layout
+// header owns it, except on pill pages where AreaPillNav does. Both land in the
+// same top-right cluster either way — the header row on a pill page sits above
+// the tabs in an otherwise empty band, and a lone star floating up there reads
+// as detached from the page.
+//
+// The current URL comes from the router. Search params are included — subtabs
+// are ?tab=…, and dropping them would make every tab of a page one favourite.
+// The label defaults to the document title, which every route already sets.
 export function FavoriteRouteButton({
-  label,
+  label: labelProp,
   href: hrefProp,
   favorited: favoritedProp,
   onToggled,
+  compact = false,
+  suppressWhenPills = false,
 }: {
-  label: string;
+  /** Defaults to the page's own title. */
+  label?: string;
   /** Omit on a tab bar (the current URL is used); pass it where the button
    *  represents some other row, as on the home panel. */
   href?: string;
   /** Known up front on home, so that render skips the state fetch below. */
   favorited?: boolean;
   onToggled?: (favorited: boolean) => void;
+  /** List rows use the same small star as FavoriteStar, so the two line up. */
+  compact?: boolean;
+  /** Set by the layout: pill pages render it in the pill row instead. */
+  suppressWhenPills?: boolean;
 }) {
+  const matches = useMatches();
   const location = useLocation();
   const href = hrefProp ?? `${location.pathname}${location.search}`;
   const known = favoritedProp !== undefined;
+  // Titles are "<page> · DALI OS"; keep the page part.
+  const label =
+    labelProp ??
+    (typeof document !== "undefined" ? document.title.split(" · ")[0] : "") ??
+    href;
   const [favorited, setFavorited] = useState(favoritedProp ?? false);
   const [ready, setReady] = useState(known);
   const [busy, setBusy] = useState(false);
@@ -53,6 +71,10 @@ export function FavoriteRouteButton({
     };
   }, [href, known]);
 
+  const hasAreaPills = matches.some(
+    (m) => (m as { handle?: { areaPills?: boolean } }).handle?.areaPills,
+  );
+
   async function toggle() {
     const next = !favorited;
     setFavorited(next);
@@ -73,21 +95,29 @@ export function FavoriteRouteButton({
     }
   }
 
+  if (suppressWhenPills && hasAreaPills) return null;
+
   return (
     <Tooltip label={favorited ? "In your favourites" : "Add this page to your favourites"}>
       <button
         type="button"
         disabled={busy || !ready}
-        onClick={() => void toggle()}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          void toggle();
+        }}
         aria-label={favorited ? "Remove from favourites" : "Add to favourites"}
         aria-pressed={favorited}
-        className={`inline-flex items-center justify-center rounded-md p-1.5 transition-colors disabled:opacity-40 ${
-          favorited
-            ? "text-accent-coral"
-            : "text-muted-foreground hover:bg-muted hover:text-foreground"
-        }`}
+        className={`inline-flex items-center justify-center transition-colors disabled:opacity-40 ${
+          compact ? "" : "rounded-md p-1.5"
+        } ${
+          favorited ? "text-accent-coral" : "text-muted-foreground hover:text-foreground"
+        } ${compact ? "" : "hover:bg-muted"}`}
       >
-        <Star className={`h-4 w-4 ${favorited ? "fill-current" : ""}`} />
+        <Star
+          className={`${compact ? "h-3.5 w-3.5" : "h-4 w-4"} ${favorited ? "fill-current" : ""}`}
+        />
       </button>
     </Tooltip>
   );

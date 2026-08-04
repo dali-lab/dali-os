@@ -510,6 +510,7 @@ function PageRow({ page, onChanged }: { page: FavoritePage; onChanged: () => voi
             label={page.title}
             favorited={page.favorited}
             onToggled={onChanged}
+            compact
           />
         ) : (
           <FavoriteStar pageId={page.id} favorited={page.favorited} onToggled={onChanged} />

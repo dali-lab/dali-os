@@ -83,9 +83,6 @@ export function AreaPillNav({
   // A lone tab is pure noise — the page is already the only destination.
   if (items.length <= 1) return null;
 
-  // What the favourite gets called: the tab you're on, which is the thing being
-  // starred. Falls back to the first tab when nothing is marked active.
-  const activeLabel = (items.find((i) => i.active) ?? items[0]).label;
 
   // The pill row is the natural home for a page-level action, so the "Docs"
   // icon rides the row's right edge rather than floating in a row of its own
@@ -106,9 +103,9 @@ export function AreaPillNav({
           <SubtabLabel label={item.label} icon={item.icon} />
         </Link>
       ))}
-      <span className="ml-auto flex items-center gap-1 self-center pl-2 pr-2">
-        <FavoriteRouteButton label={activeLabel} />
+      <span className="ml-auto flex items-center gap-2 self-center pl-2 pr-2">
         {hasDoc && <PageDocButton />}
+        <FavoriteRouteButton />
       </span>
     </nav>
   );
@@ -143,9 +140,9 @@ export function UnderlineTabButtons({
           <SubtabLabel label={item.label} icon={item.icon} />
         </button>
       ))}
-      <span className="ml-auto flex items-center gap-1 self-center pl-2 pr-2">
-        <FavoriteRouteButton label={(items.find((i) => i.active) ?? items[0])?.label ?? ""} />
+      <span className="ml-auto flex items-center gap-2 self-center pl-2 pr-2">
         {hasDoc && <PageDocButton />}
+        <FavoriteRouteButton />
       </span>
     </div>
   );
