@@ -64,7 +64,7 @@ function build(mode: DateFieldMode, p: { y: number; m: number; d: number; hh: nu
 function formatDisplay(mode: DateFieldMode, v: string | undefined): string | null {
   const p = parts(mode, v);
   if (!p) return null;
-  const time = `${pad(p.hh)}:${pad(p.mm)}`;
+  const time = `${p.hh % 12 === 0 ? 12 : p.hh % 12}:${pad(p.mm)} ${p.hh >= 12 ? "PM" : "AM"}`;
   if (mode === "time") return time;
   // UTC-pinned so the label never shifts by a timezone.
   const label = new Intl.DateTimeFormat(undefined, {
@@ -81,6 +81,9 @@ const clampInt = (raw: string, max: number) => {
   const n = parseInt(raw, 10);
   return Number.isNaN(n) ? 0 : Math.min(max, Math.max(0, n));
 };
+// 24h ↔ 12h + meridiem. Storage stays 24h; the US-style UI shows 1-12 + AM/PM.
+const to12 = (hh24: number) => (hh24 % 12 === 0 ? 12 : hh24 % 12);
+const from12 = (h12: number, pm: boolean) => (h12 % 12) + (pm ? 12 : 0);
 
 export function DateField({
   mode,
@@ -300,11 +303,13 @@ export function DateField({
                 <input
                   type="number"
                   inputMode="numeric"
-                  min={0}
-                  max={23}
+                  min={1}
+                  max={12}
                   aria-label="Hour"
-                  value={cur?.hh ?? 0}
-                  onChange={(e) => setTime(clampInt(e.target.value, 23), cur?.mm ?? 0)}
+                  value={to12(cur?.hh ?? 0)}
+                  onChange={(e) =>
+                    setTime(from12(clampInt(e.target.value, 12) || 12, (cur?.hh ?? 0) >= 12), cur?.mm ?? 0)
+                  }
                   className="w-12 rounded-md border border-border bg-background px-1.5 py-1 text-center text-sm tabular-nums text-foreground focus:outline-none focus:ring-1 focus:ring-accent-coral/40"
                 />
                 <span className="text-muted-foreground">:</span>
@@ -318,6 +323,25 @@ export function DateField({
                   onChange={(e) => setTime(cur?.hh ?? 0, clampInt(e.target.value, 59))}
                   className="w-12 rounded-md border border-border bg-background px-1.5 py-1 text-center text-sm tabular-nums text-foreground focus:outline-none focus:ring-1 focus:ring-accent-coral/40"
                 />
+                <div className="inline-flex overflow-hidden rounded-md border border-border" role="group" aria-label="AM/PM">
+                  {([["AM", false], ["PM", true]] as const).map(([label, pm]) => {
+                    const active = ((cur?.hh ?? 0) >= 12) === pm;
+                    return (
+                      <button
+                        key={label}
+                        type="button"
+                        aria-pressed={active}
+                        onClick={() => setTime(((cur?.hh ?? 0) % 12) + (pm ? 12 : 0), cur?.mm ?? 0)}
+                        className={cn(
+                          "px-2 py-1 text-xs font-medium transition-colors",
+                          active ? "bg-accent-coral text-white" : "text-muted-foreground hover:bg-muted",
+                        )}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
                 {mode === "datetime-local" && (
                   <button
                     type="button"

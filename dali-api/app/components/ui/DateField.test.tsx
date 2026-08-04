@@ -38,8 +38,9 @@ describe("DateField value contract", () => {
 
   it("time: hidden input carries HH:mm", () => {
     mount(createElement(DateField, { mode: "time", name: "t", value: "09:05", onChange: () => {} }));
+    // Hidden input keeps 24h "HH:mm" (the value contract); the trigger shows 12h.
     expect(hidden("t")?.value).toBe("09:05");
-    expect(triggerText()).toContain("09:05");
+    expect(triggerText()).toContain("9:05 AM");
   });
 
   it("no hidden input when uncontrolled without a name (pure controlled/onChange)", () => {
