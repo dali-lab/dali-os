@@ -165,7 +165,7 @@ export function SelectMenu<T extends string>({
             ref={menuRef}
             role="listbox"
             style={{ position: "fixed", top: pos.top, bottom: pos.bottom, left: pos.left, minWidth: pos.minWidth }}
-            className="z-[60] max-w-[18rem] rounded-md border border-border bg-card p-1 shadow-brand-2"
+            className="z-[60] max-h-72 max-w-[18rem] overflow-y-auto rounded-md border border-border bg-card p-1 shadow-brand-2"
           >
             {options.map((o) => (
               <li key={o.value}>
