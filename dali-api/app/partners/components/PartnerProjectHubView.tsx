@@ -5,6 +5,7 @@ import { termCodeLabel } from "~/lib/display";
 import { formatBytes } from "~/lib/upload-client";
 import { Avatar } from "~/components/ui/Avatar";
 import { Markdown } from "~/components/Markdown";
+import { DocEditor, countWords } from "~/components/doc";
 import { Modal } from "~/components/Modal";
 import { PartnerBackLink } from "~/partners/components/PartnerBackLink";
 import { ProjectCoverImage } from "~/projects/components/ProjectCoverImage";
@@ -431,14 +432,22 @@ export function PartnerProjectHubView({
                     .filter(Boolean)
                     .join(" · ")}
                 </p>
-                {/* Same Markdown renderer as the internal Overview tab, so a
-                    description written with formatting reads the same on both
-                    surfaces. */}
-                {project.description && (
+                {/* Rich description, read-only (no collab/AI on this external
+                    surface). Legacy rows with no doc fall back to the Markdown
+                    mirror, matching the internal Overview tab. */}
+                {countWords(project.descriptionContent) > 0 ? (
+                  <div className="mt-3">
+                    <DocEditor
+                      features="notes"
+                      editable={false}
+                      initialContent={project.descriptionContent}
+                    />
+                  </div>
+                ) : project.description ? (
                   <div className="mt-3">
                     <Markdown>{project.description}</Markdown>
                   </div>
-                )}
+                ) : null}
               </div>
               {momentum && (
                 <div className="sm:flex-shrink-0">

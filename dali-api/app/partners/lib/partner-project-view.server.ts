@@ -3,6 +3,7 @@ import { currentTerm } from "~/lib/roles";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { getDownloadUrl } from "~/lib/s3";
 import { fullName } from "~/lib/display";
+import { readDocAsBlocks } from "~/collab/read";
 
 // The three time states every work item collapses to, so the UI can speak one
 // visual language: past (teal/settled), current (coral/live), planned (dashed).
@@ -47,6 +48,9 @@ export type PartnerProjectViewData = {
     name: string;
     iconEmoji: string | null;
     description: string | null;
+    // Rich description blocks (read server-side) so partners see the formatted
+    // doc; empty for legacy rows, which fall back to the description mirror.
+    descriptionContent: unknown;
     imageUrl: string | null;
     terms: string[];
   };
@@ -336,12 +340,17 @@ export async function loadPartnerProjectView(
       .filter((c) => c.status === "Planned")
       .sort((a, b) => a.startsAt.localeCompare(b.startsAt))[0] ?? null;
 
+  const descriptionContent = await readDocAsBlocks(
+    `project:${project.id}:description`,
+  );
+
   return {
     project: {
       id: project.id,
       name: project.name,
       iconEmoji: project.iconEmoji,
       description: project.description,
+      descriptionContent,
       imageUrl: await resolvePhotoUrl(project.imageUrl),
       terms: [...project.projectTerms]
         .sort((a, b) => a.term.sortKey - b.term.sortKey)
