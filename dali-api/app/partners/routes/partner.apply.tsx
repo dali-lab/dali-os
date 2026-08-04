@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Form, redirect, useLoaderData, useNavigation } from "react-router";
+import { Checkbox } from "~/components/ui/Checkbox";
 import { ChevronDown } from "lucide-react";
 import { termCodeLabel } from "~/lib/display";
 import type { Route } from "./+types/partner.apply";
@@ -245,13 +246,13 @@ export default function PartnerApply({ actionData }: Route.ComponentProps) {
             </legend>
             <div className="flex flex-wrap gap-3 mt-1">
               {terms.map((t) => (
-                <label
+                <Checkbox
                   key={t.id}
-                  className="flex items-center gap-2 text-sm text-dark-blue bg-card border border-border rounded-lg px-3 py-2"
-                >
-                  <input type="checkbox" name="termIds" value={t.id} className="rounded" />
-                  {termCodeLabel(t.code)}
-                </label>
+                  name="termIds"
+                  value={t.id}
+                  label={termCodeLabel(t.code)}
+                  className="text-sm text-dark-blue bg-card border border-border rounded-lg px-3 py-2"
+                />
               ))}
             </div>
           </fieldset>

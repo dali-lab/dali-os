@@ -25,6 +25,8 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { SearchInput } from "~/components/ui/SearchInput";
+import { Checkbox } from "~/components/ui/Checkbox";
+import { DateField } from "~/components/ui/DateField";
 
 export const handle = adminHandle("announcements");
 
@@ -292,22 +294,24 @@ export default function AnnouncementsPage() {
             <span className="text-muted-foreground">
               Due date (optional) — shown as the deadline in recipients' Tasks.
             </span>
-            <input
-              type="datetime-local"
+            <DateField
+              mode="datetime-local"
               value={dueAt}
-              onChange={(e) => setDueAt(e.target.value)}
-              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground w-64"
+              onChange={setDueAt}
+              className="w-64"
+              ariaLabel="Due date"
             />
           </label>
           <label className="flex flex-col gap-1 text-xs">
             <span className="text-muted-foreground">
               Send later (optional) — schedule instead of sending now.
             </span>
-            <input
-              type="datetime-local"
+            <DateField
+              mode="datetime-local"
               value={sendAt}
-              onChange={(e) => setSendAt(e.target.value)}
-              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground w-64"
+              onChange={setSendAt}
+              className="w-64"
+              ariaLabel="Send later"
             />
           </label>
         </div>
@@ -418,26 +422,26 @@ export default function AnnouncementsPage() {
         </div>
 
         {/* Whole lab — when on, it supersedes the other selectors */}
-        <label
-          className={`flex items-center gap-2.5 rounded-lg border p-3 cursor-pointer transition-colors ${
+        <Checkbox
+          className={`flex items-center gap-2.5 rounded-lg border p-3 transition-colors ${
             allMembers
               ? "border-accent-coral bg-accent-coral/10"
               : "border-border hover:bg-muted/40"
           }`}
-        >
-          <input
-            type="checkbox"
-            checked={allMembers}
-            onChange={(e) => setAllMembers(e.target.checked)}
-          />
-          <Globe
-            className={`w-4 h-4 ${allMembers ? "text-accent-coral" : "text-muted-foreground"}`}
-          />
-          <span className="text-sm text-foreground font-medium">Whole lab</span>
-          <span className="text-xs text-muted-foreground">
-            every current lab member ({members.length})
-          </span>
-        </label>
+          checked={allMembers}
+          onChange={(e) => setAllMembers(e.target.checked)}
+          label={
+            <>
+              <Globe
+                className={`w-4 h-4 ${allMembers ? "text-accent-coral" : "text-muted-foreground"}`}
+              />
+              <span className="text-sm text-foreground font-medium">Whole lab</span>
+              <span className="text-xs text-muted-foreground">
+                every current lab member ({members.length})
+              </span>
+            </>
+          }
+        />
 
         {!allMembers && (
           <>
@@ -514,22 +518,22 @@ export default function AnnouncementsPage() {
               />
               <div className="max-h-64 overflow-y-auto border border-border rounded-md divide-y divide-border bg-card">
                 {filteredMembers.map((m) => (
-                  <label
+                  <Checkbox
                     key={m.id}
-                    className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted/40 cursor-pointer"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={pickedUsers.has(m.id)}
-                      onChange={() => toggleIn(setPickedUsers, m.id)}
-                    />
-                    <span className="text-foreground">{m.name}</span>
-                    {m.email && (
-                      <span className="text-xs text-muted-foreground truncate">
-                        {m.email}
-                      </span>
-                    )}
-                  </label>
+                    className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted/40 w-full"
+                    checked={pickedUsers.has(m.id)}
+                    onChange={() => toggleIn(setPickedUsers, m.id)}
+                    label={
+                      <>
+                        <span className="text-foreground">{m.name}</span>
+                        {m.email && (
+                          <span className="text-xs text-muted-foreground truncate">
+                            {m.email}
+                          </span>
+                        )}
+                      </>
+                    }
+                  />
                 ))}
                 {filteredMembers.length === 0 && (
                   <div className="px-3 py-2 text-sm text-muted-foreground">

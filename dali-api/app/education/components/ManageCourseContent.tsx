@@ -9,6 +9,7 @@ import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { formatDateTime } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { toDatetimeLocal } from "./OfferingFields";
+import { DateField } from "~/components/ui/DateField";
 
 // Manager-side course content tabs: Materials (offering-workspace pages),
 // Assignments (CRUD + inline collab instructions), Announcements (composer).
@@ -353,11 +354,12 @@ export function ManageAssignments({
               </label>
               <label className="block">
                 <span className={LABEL}>Due</span>
-                <input
-                  type="datetime-local"
+                <DateField
+                  mode="datetime-local"
                   name="dueAt"
                   defaultValue={a.dueAt ? toDatetimeLocal(a.dueAt) : ""}
-                  className={INPUT}
+                  className="w-full"
+                  ariaLabel="Due"
                 />
               </label>
               <label className="block">
@@ -436,7 +438,7 @@ export function ManageAssignments({
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="block">
             <span className={LABEL}>Due (optional)</span>
-            <input type="datetime-local" name="dueAt" className={INPUT} />
+            <DateField mode="datetime-local" name="dueAt" className="w-full" ariaLabel="Due (optional)" />
           </label>
           <label className="block">
             <span className={LABEL}>Type</span>

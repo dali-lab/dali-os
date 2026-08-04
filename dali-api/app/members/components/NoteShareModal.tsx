@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, Eye, Landmark, Lock, Trash2, Users, X } from "lucide-react";
+import { Radio } from "~/components/ui/Radio";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { buttonClasses } from "~/components/ui/Button";
 import type { NoteSummary } from "~/members/lib/personal-notes.server";
@@ -117,38 +118,37 @@ export function NoteShareModal({
             [true, Eye, "On your profile", "Anyone who can see your profile can read it."],
           ] as const
         ).map(([value, Icon, label, hint]) => (
-          <label
+          <Radio
             key={label}
-            className={`flex items-start gap-3 rounded-md border px-3 py-2 cursor-pointer transition-colors ${
+            name="note-visibility"
+            checked={isPublic === value}
+            disabled={busy}
+            onChange={() => {
+              setIsPublic(value);
+              void run({
+                intent: "visibility",
+                pageId: note.id,
+                public: String(value),
+              });
+            }}
+            className={`items-start rounded-md border px-3 py-2 transition-colors ${
               isPublic === value
                 ? "border-accent-coral bg-accent-coral/5"
                 : "border-border hover:bg-muted/30"
             }`}
-          >
-            <input
-              type="radio"
-              name="note-visibility"
-              className="sr-only"
-              checked={isPublic === value}
-              disabled={busy}
-              onChange={() => {
-                setIsPublic(value);
-                void run({
-                  intent: "visibility",
-                  pageId: note.id,
-                  public: String(value),
-                });
-              }}
-            />
-            <Icon
-              className={`w-4 h-4 mt-0.5 shrink-0 ${isPublic === value ? "text-accent-coral" : "text-muted-foreground"}`}
-            />
-            <span className="flex flex-col min-w-0">
-              <span className="text-sm font-medium text-foreground">{label}</span>
-              <span className="text-xs text-muted-foreground">{hint}</span>
-            </span>
-            {isPublic === value && <Check className="w-4 h-4 text-accent-coral shrink-0" />}
-          </label>
+            label={
+              <>
+                <Icon
+                  className={`w-4 h-4 mt-0.5 shrink-0 ${isPublic === value ? "text-accent-coral" : "text-muted-foreground"}`}
+                />
+                <span className="flex flex-col min-w-0">
+                  <span className="text-sm font-medium text-foreground">{label}</span>
+                  <span className="text-xs text-muted-foreground">{hint}</span>
+                </span>
+                {isPublic === value && <Check className="w-4 h-4 text-accent-coral shrink-0" />}
+              </>
+            }
+          />
         ))}
       </fieldset>
 

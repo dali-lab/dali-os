@@ -16,6 +16,7 @@ import {
 } from "~/lib/audit-query";
 import { ListTodo, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { Tooltip } from "~/components/ui/IconButton";
+import { DateField } from "~/components/ui/DateField";
 
 export const handle = adminHandle("activity");
 
@@ -186,20 +187,20 @@ export default function AdminConsoleActivity() {
         </label>
         <label className="text-xs text-muted-foreground flex flex-col gap-1">
           From
-          <input
-            type="date"
+          <DateField
+            mode="date"
             name="from"
             defaultValue={filters.from ?? ""}
-            className={inputClass}
+            ariaLabel="From date"
           />
         </label>
         <label className="text-xs text-muted-foreground flex flex-col gap-1">
           To
-          <input
-            type="date"
+          <DateField
+            mode="date"
             name="to"
             defaultValue={filters.to ?? ""}
-            className={inputClass}
+            ariaLabel="To date"
           />
         </label>
         <div className="sm:col-span-4 flex items-center gap-2">

@@ -16,6 +16,7 @@ import { AreaPillNav } from "~/components/AreaPillNav";
 import { IconButton } from "~/components/ui/IconButton";
 import { useDialog } from "~/components/ui/dialog";
 import { Avatar } from "~/components/ui/Avatar";
+import { Checkbox } from "~/components/ui/Checkbox";
 import { prisma } from "~/lib/db";
 import { resolvePhotoUrl } from "~/lib/photo";
 import {
@@ -316,12 +317,10 @@ function FigmaCheckbox({ userId, invited }: { userId: string; invited: boolean }
   const checked = pending != null ? pending === "true" : invited;
 
   return (
-    <label
-      className="inline-flex cursor-pointer items-center gap-2 text-xs text-muted-foreground"
-      onClick={(e) => e.stopPropagation()}
-    >
-      <input
-        type="checkbox"
+    // eslint-disable-next-line jsx-a11y/click-events-have-key-events
+    <span onClick={(e) => e.stopPropagation()}>
+      <Checkbox
+        className="inline-flex cursor-pointer items-center gap-2 text-xs text-muted-foreground"
         checked={checked}
         disabled={fetcher.state !== "idle"}
         onChange={() =>
@@ -330,10 +329,9 @@ function FigmaCheckbox({ userId, invited }: { userId: string; invited: boolean }
             { method: "post" },
           )
         }
-        className="h-4 w-4 rounded border-border accent-green-600"
+        label={checked ? "Invited" : "Not invited"}
       />
-      {checked ? "Invited" : "Not invited"}
-    </label>
+    </span>
   );
 }
 

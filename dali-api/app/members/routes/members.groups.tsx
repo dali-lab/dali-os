@@ -25,6 +25,7 @@ import {
   ArchiveRestore,
   LayoutGrid,
 } from "lucide-react";
+import { Radio } from "~/components/ui/Radio";
 
 export const handle = { areaPills: true };
 
@@ -444,36 +445,20 @@ function CreateGroupForm({
 
         <fieldset className="space-y-2">
           <legend className="text-sm font-medium text-foreground mb-1">Duration</legend>
-          <label className="flex items-start gap-2 text-sm">
-            <input
-              type="radio"
-              name="scope"
-              checked={scope === "always"}
-              onChange={() => setScope("always")}
-              className="mt-0.5"
-            />
-            <span>
-              <span className="text-foreground">Ongoing</span>
-              <span className="block text-xs text-muted-foreground">
-                Stays active until you archive it manually.
-              </span>
-            </span>
-          </label>
-          <label className="flex items-start gap-2 text-sm">
-            <input
-              type="radio"
-              name="scope"
-              checked={scope === "terms"}
-              onChange={() => setScope("terms")}
-              className="mt-0.5"
-            />
-            <span>
-              <span className="text-foreground">For specific term(s)</span>
-              <span className="block text-xs text-muted-foreground">
-                Auto-archives once the selected term(s) have ended.
-              </span>
-            </span>
-          </label>
+          <Radio
+            name="scope"
+            checked={scope === "always"}
+            onChange={() => setScope("always")}
+            label="Ongoing"
+            description="Stays active until you archive it manually."
+          />
+          <Radio
+            name="scope"
+            checked={scope === "terms"}
+            onChange={() => setScope("terms")}
+            label="For specific term(s)"
+            description="Auto-archives once the selected term(s) have ended."
+          />
           {scope === "terms" && (
             <div className="flex flex-wrap gap-1.5 pl-6 pt-1">
               {terms.length === 0 && (

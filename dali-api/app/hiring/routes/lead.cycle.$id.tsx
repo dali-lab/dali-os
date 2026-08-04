@@ -24,6 +24,8 @@ import { Modal, ModalHeader } from "~/components/Modal";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { ChallengePreviewModal } from "~/hiring/components/ChallengePreviewModal";
 import { Tooltip } from "~/components/ui/IconButton";
+import { Checkbox } from "~/components/ui/Checkbox";
+import { DateField } from "~/components/ui/DateField";
 import { useToast } from "~/components/ui/toast";
 import { Settings, Users, Calendar, AlertTriangle, Trash2, Plus, CheckCircle, ArrowRight, Circle, ChevronRight, X, LayoutDashboard, Eye, Mail } from 'lucide-react'
 import { formatVersionLabel, buildVersionNumberMap } from "~/lib/formatVersion";
@@ -2167,15 +2169,12 @@ export default function HiringLeadCycleDetails() {
                     Clear filters
                   </button>
                 )}
-                <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={showCancelledInterviews}
-                    onChange={(e) => setShowCancelledInterviews(e.target.checked)}
-                    className="w-3.5 h-3.5 rounded border-border accent-accent-coral"
-                  />
-                  <span>Show cancelled{hiddenCancelledCount > 0 && !showCancelledInterviews ? ` (${hiddenCancelledCount})` : ''}</span>
-                </label>
+                <Checkbox
+                  checked={showCancelledInterviews}
+                  onChange={(e) => setShowCancelledInterviews(e.target.checked)}
+                  label={`Show cancelled${hiddenCancelledCount > 0 && !showCancelledInterviews ? ` (${hiddenCancelledCount})` : ''}`}
+                  className="text-xs text-muted-foreground select-none"
+                />
                 <span className="ml-auto text-xs text-muted-foreground">
                   Showing {totalRows} of {totalAll}
                 </span>
@@ -2958,22 +2957,22 @@ export default function HiringLeadCycleDetails() {
             </div>
             <div>
               <label htmlFor="interview-start-date" className="block text-sm font-bold text-foreground/80 mb-1">Interview Start Date</label>
-              <input
-                id="interview-start-date"
-                type="date"
+              <DateField
+                mode="date"
                 value={config.interviewStartDate}
-                onChange={e => setConfig(c => ({ ...c, interviewStartDate: e.target.value }))}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                onChange={(value) => setConfig(c => ({ ...c, interviewStartDate: value }))}
+                className="w-full"
+                ariaLabel="Interview start date"
               />
             </div>
             <div>
               <label htmlFor="interview-end-date" className="block text-sm font-bold text-foreground/80 mb-1">Interview End Date</label>
-              <input
-                id="interview-end-date"
-                type="date"
+              <DateField
+                mode="date"
                 value={config.interviewEndDate}
-                onChange={e => setConfig(c => ({ ...c, interviewEndDate: e.target.value }))}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                onChange={(value) => setConfig(c => ({ ...c, interviewEndDate: value }))}
+                className="w-full"
+                ariaLabel="Interview end date"
               />
             </div>
             <div>
@@ -3746,11 +3745,12 @@ function CloseDateCard({ cycle, cycleStatus }: { cycle: any; cycleStatus: string
         <Form method="post" preventScrollReset className="flex flex-col sm:flex-row sm:items-end gap-3">
           <input type="hidden" name="intent" value="set-close-date" />
           <div className="flex-1">
-            <input
-              type="date"
+            <DateField
+              mode="date"
               name="closeDate"
               defaultValue={pickerDateValue}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              className="w-full"
+              ariaLabel="Application close date"
             />
           </div>
           <button

@@ -19,6 +19,7 @@ import { formatInterviewDate, formatInterviewTimeRangeDual } from "~/hiring/lib/
 import { resolveUserTimeZone } from "~/lib/timezone";
 import { APPLICATIONS_FROM_EMAIL } from "~/lib/app-env";
 import { Button } from "~/components/ui/Button";
+import { Checkbox } from "~/components/ui/Checkbox";
 
 export const meta: Route.MetaFunction = () => [{ title: "Apply to DALI · DALI OS" }];
 
@@ -889,22 +890,22 @@ function AcceptedView({ cycleName }: { cycleName: string }) {
         </div>
         <div className="divide-y divide-green-100">
           {CHECKLIST.map(item => (
-            <label key={item.id} className="flex items-start gap-4 px-6 py-4 cursor-pointer hover:bg-green-50/50 transition">
-              <input
-                type="checkbox"
-                checked={!!checked[item.id]}
-                onChange={e => setChecked(prev => ({ ...prev, [item.id]: e.target.checked }))}
-                className="mt-0.5 w-5 h-5 rounded accent-accent-coral flex-shrink-0"
-              />
-              <div>
+            <Checkbox
+              key={item.id}
+              checked={!!checked[item.id]}
+              onChange={e => setChecked(prev => ({ ...prev, [item.id]: e.target.checked }))}
+              label={
                 <span className={`text-sm font-semibold transition-colors ${checked[item.id] ? "text-muted-foreground/70 line-through" : "text-dark-blue"}`}>
                   {item.label}
                 </span>
-                <p className={`text-xs mt-0.5 transition-colors ${checked[item.id] ? "text-muted-foreground/50" : "text-muted-foreground"}`}>
+              }
+              description={
+                <span className={`text-xs mt-0.5 transition-colors ${checked[item.id] ? "text-muted-foreground/50" : "text-muted-foreground"}`}>
                   {item.description}
-                </p>
-              </div>
-            </label>
+                </span>
+              }
+              className="flex items-start gap-4 px-6 py-4 hover:bg-green-50/50 transition"
+            />
           ))}
         </div>
       </div>

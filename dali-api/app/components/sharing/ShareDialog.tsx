@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, Globe, Link2, Lock, Users, X } from "lucide-react";
+import { Checkbox } from "~/components/ui/Checkbox";
+import { Radio } from "~/components/ui/Radio";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { buttonClasses } from "~/components/ui/Button";
 import { SelectMenu, type SelectMenuOption } from "~/components/ui/SelectMenu";
@@ -360,31 +362,30 @@ export function ShareDialog({
           ).map(([value, Icon, label, hint]) => {
             const active = (ctx?.labRestricted ?? false) === value;
             return (
-              <label
+              <Radio
                 key={label}
-                className={`flex items-start gap-3 rounded-md border px-3 py-2 cursor-pointer transition-colors ${
+                name="lab-access"
+                checked={active}
+                disabled={busy}
+                onChange={() =>
+                  void run({ intent: "restrict", restricted: String(value) }, refresh)
+                }
+                className={`items-start rounded-md border px-3 py-2 transition-colors ${
                   active ? "border-accent-coral bg-accent-coral/5" : "border-border hover:bg-muted/30"
                 }`}
-              >
-                <input
-                  type="radio"
-                  name="lab-access"
-                  className="sr-only"
-                  checked={active}
-                  disabled={busy}
-                  onChange={() =>
-                    void run({ intent: "restrict", restricted: String(value) }, refresh)
-                  }
-                />
-                <Icon
-                  className={`w-4 h-4 mt-0.5 shrink-0 ${active ? "text-accent-coral" : "text-muted-foreground"}`}
-                />
-                <span className="flex flex-col min-w-0">
-                  <span className="text-sm font-medium text-foreground">{label}</span>
-                  <span className="text-xs text-muted-foreground">{hint}</span>
-                </span>
-                {active && <Check className="w-4 h-4 text-accent-coral shrink-0" />}
-              </label>
+                label={
+                  <>
+                    <Icon
+                      className={`w-4 h-4 mt-0.5 shrink-0 ${active ? "text-accent-coral" : "text-muted-foreground"}`}
+                    />
+                    <span className="flex flex-col min-w-0">
+                      <span className="text-sm font-medium text-foreground">{label}</span>
+                      <span className="text-xs text-muted-foreground">{hint}</span>
+                    </span>
+                    {active && <Check className="w-4 h-4 text-accent-coral shrink-0" />}
+                  </>
+                }
+              />
             );
           })}
         </fieldset>
@@ -437,21 +438,14 @@ export function ShareDialog({
       {ctx?.workspaceType === "Project" && ctx.hasActivePartner && (
         <div className="flex flex-col gap-2 mb-4 border-t border-border pt-4">
           <h3 className="text-xs font-semibold text-muted-foreground">Partners</h3>
-          <label className="flex items-start gap-3 rounded-md border border-border px-3 py-2 cursor-pointer">
-            <input
-              type="checkbox"
-              className="mt-0.5 accent-accent-coral"
-              checked={ctx.partnerVisible}
-              disabled={busy}
-              onChange={(e) => void setPartnerVisible(e.target.checked)}
-            />
-            <span className="flex flex-col min-w-0">
-              <span className="text-sm font-medium text-foreground">Visible to partners on this project</span>
-              <span className="text-xs text-muted-foreground">
-                Partner accounts on this project can open and comment on it in the partner portal.
-              </span>
-            </span>
-          </label>
+          <Checkbox
+            className="items-start rounded-md border border-border px-3 py-2"
+            checked={ctx.partnerVisible}
+            disabled={busy}
+            onChange={(e) => void setPartnerVisible(e.target.checked)}
+            label="Visible to partners on this project"
+            description="Partner accounts on this project can open and comment on it in the partner portal."
+          />
         </div>
       )}
 
