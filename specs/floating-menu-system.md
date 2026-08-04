@@ -253,22 +253,31 @@ noted. Batch by area, verify per batch.
    `partner-layout`, hiring `onboarding`, `documents.hub` split-button, and the
    Signing variable-inserter (was a reset-to-"" `<select>` hack → real `Menu`).
    `useDismissableMenu` deleted (no importers left).
-3. **Pickers/context/tooltip** → primitive/`ContextMenu`/`Tooltip` ⏳ REMAINING.
-   Plain-browser popovers (valid targets): `TagPicker`, `PageIconPicker`,
-   `DocToc` (absolute jump menu), `MentionTextInput` (@-mention autocomplete on a
-   plain `<textarea>/<input>` — combobox pattern), `FindReplaceBar` (imports
-   `BlockNoteEditor` as a *type* only; its bar UI is plain React), `TabWorkspace`
-   right-click → `ContextMenu`, `IconButton` tooltip → `Tooltip` (note: `Tooltip`
-   is re-exported from `IconButton` and imported by ~24 files — repoint those).
-   `calendar` right-click → `ContextMenu`.
-
-   **Excluded — BlockNote/ProseMirror-owned, do NOT swap:** `AiCardHost` (renders
-   in `@blocknote/react`'s `BlockPopover`, anchored into the editor subtree via
-   `editor.prosemirrorView.dom`) and `AiBar` (registers ProseMirror plugins,
-   positions against the editor selection; it's the content of AiCardHost's
-   block-anchored card). Their anchoring is the editor library's responsibility —
-   replacing it with a generic floating primitive would be wrong and is the class
-   of change CLAUDE.md flags for breaking document sync.
+3. **Pickers / popovers / tooltip** ✅ MOSTLY DONE.
+   - Added a generic **`<Popover>`** (portal + offset/flip/shift + dismiss + focus,
+     wrapping arbitrary children; render-prop `close()`). `TagPicker` (tag list +
+     inline create-tag form), `PageIconPicker` (emoji grid + paste input), and
+     `DocToc` (heading jump-list) migrated onto it. Verified (typecheck/build/tests).
+   - **Tooltip:** kept `IconButton`'s CSS-first tooltip as the app's one tooltip
+     (24 call sites unchanged, zero-JS `group-hover` default, portal fallback for
+     clipped ancestors). Deleted the redundant `floating/Tooltip.tsx` I'd added.
+   - **Deferred — `TabWorkspace`:** its three floating menus (`contextMenu`
+     right-click + `historyMenu`/`overflowMenu` click dropdowns) form a
+     self-contained coordinate-anchored system sharing one dismiss backdrop, inside
+     a 2,173-line critical navigation shell. Migratable to `ContextMenu` + `Menu`,
+     but a large, delicate refactor with low dedup-ROI (it's not duplicated across
+     files) and no runtime verification available here — warrants a dedicated,
+     manually-tested pass. `ContextMenu` (built earlier) is ready for it.
+   - **Not applicable / excluded (verified by reading each):**
+     - `calendar` — no right-click context menu; its `fixed` panels are
+       drag-anchored create/edit popovers (their selects were migrated in Phase 1).
+     - `MentionTextInput` — an @-mention autocomplete (combobox) on a plain
+       `<textarea>/<input>`; not clipped, has its own keyboard nav. Left as-is.
+     - `FindReplaceBar` — a CSS-positioned editor bar driving the PM find plugin
+       (`BlockNoteEditor` imported as a *type* only); no anchored float. Left as-is.
+     - `AiCardHost` / `AiBar` — BlockNote `BlockPopover` / ProseMirror-anchored;
+       library-owned. Replacing their anchoring would be wrong and is the class of
+       change CLAUDE.md flags for breaking document sync. Do NOT swap.
 
 **Per batch:** `npm run typecheck`, `npm test`, `npm run build`; manual keyboard/
 focus check on a representative surface.
