@@ -244,20 +244,22 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
   }
 
   // Every entry navigates to its surface's hub — the area root. Order here is
-  // the sidebar order (Calendar/Forms above the areas, matching the old nav).
+  // the sidebar order, running from everyday surfaces down to the ones only
+  // some roles see. Home and My Tasks are pinned above this list (rendered
+  // separately), so they aren't entries here.
   const navEntries: NavEntry[] = [
     { key: 'calendar', label: 'Calendar', to: '/calendar', icon: Calendar, show: true },
-    { key: 'forms', label: 'Forms', to: '/forms', icon: ClipboardList, show: canViewForms },
-    { key: 'hiring', label: 'Hiring', to: '/hiring', icon: Briefcase, show: hasHiringAccess },
     { key: 'projects', label: 'Projects', to: '/projects', icon: FolderKanban, show: true },
-    { key: 'documents', label: 'Documents', to: '/documents', icon: FileText, show: true },
+    { key: 'members', label: 'People', to: '/members', icon: UsersRound, show: true },
+    { key: 'internal-processes', label: 'Lab Processes', to: '/internal-processes', icon: Workflow, show: true },
     // Hidden from mentees entirely; the routes are gated server-side by
     // canViewMentorship. Mentors only see own-domain notes; Core/Admin see all.
     { key: 'mentorship', label: 'Mentorship', to: '/mentorship', icon: Heart, show: isLabMentor || isCore },
-    { key: 'members', label: 'People', to: '/members', icon: UsersRound, show: true },
-    { key: 'partners', label: 'Partners', to: '/partners', icon: Handshake, show: true },
+    { key: 'documents', label: 'Documents', to: '/documents', icon: FileText, show: true },
     { key: 'education', label: 'Education', to: '/education', icon: GraduationCap, show: true },
-    { key: 'internal-processes', label: 'Lab Processes', to: '/internal-processes', icon: Workflow, show: true },
+    { key: 'partners', label: 'Partners', to: '/partners', icon: Handshake, show: true },
+    { key: 'hiring', label: 'Hiring', to: '/hiring', icon: Briefcase, show: hasHiringAccess },
+    { key: 'forms', label: 'Forms', to: '/forms', icon: ClipboardList, show: canViewForms },
     { key: 'admin', label: 'Admin', to: '/admin', icon: Settings, show: isCore },
   ].filter((e) => e.show)
 
