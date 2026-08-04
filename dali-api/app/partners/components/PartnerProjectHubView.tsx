@@ -38,7 +38,7 @@ const EPIC_PILL: Record<PartnerProjectEpic["status"], string> = {
   Backlog: "bg-muted text-muted-foreground",
   Open: "bg-accent-coral/10 text-accent-coral",
   InProgress: "bg-accent-coral/10 text-accent-coral",
-  Done: "bg-accent-coral/10 text-accent-coral/70",
+  Done: "bg-accent-coral/10 text-accent-coral",
   Cancelled: "bg-muted text-muted-foreground",
 };
 

@@ -1094,7 +1094,7 @@ function CoverageHeatmap({ coverage }: { coverage: CoverageData | null }) {
   const slotHours = coverage.slotDurationMinutes / 60
 
   function cellColor(freeCount: number) {
-    if (freeCount === 0) return 'bg-muted/40 text-muted-foreground/60'
+    if (freeCount === 0) return 'bg-muted/40 text-muted-foreground'
     if (freeCount <= 2) return 'bg-amber-100 text-amber-900'
     if (freeCount <= 4) return 'bg-emerald-100 text-emerald-900'
     if (freeCount <= 6) return 'bg-emerald-200 text-emerald-900'
