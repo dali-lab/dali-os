@@ -1,4 +1,5 @@
 import { useState, useEffect, type CSSProperties, type ReactNode } from 'react'
+import { Select } from '~/components/ui/floating'
 import { GripVertical, Plus, Pencil, Trash2, Save, Check, Loader2 } from 'lucide-react'
 import {
   DndContext,
@@ -289,29 +290,30 @@ export function FormBuilderTab({
             <label className="block text-sm font-medium text-foreground/80 mb-1">
               Question Type
             </label>
-            <select
+            <Select
               value={editForm.type || 'text'}
-              onChange={(e) =>
+              onChange={(v) =>
                 setEditForm({
                   ...editForm,
-                  type: e.target.value as any,
+                  type: v as any,
                 })
               }
-              className="block w-full rounded-md border border-gray-300 bg-card text-foreground shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
-            >
-              <option value="text">Short Text</option>
-              <option value="textarea">Long Text</option>
-              <option value="select">Dropdown Select</option>
-              {(allowCheckbox || editForm.type === 'checkbox') && (
-                <option value="checkbox">Checkboxes (multi-select)</option>
-              )}
-              <option value="github_url">GitHub URL</option>
-              <option value="figma_url">Figma URL</option>
-              <option value="drive_url">Google Drive URL</option>
-              <option value="file">File Upload</option>
-              <option value="skills_rating">Skills Rating</option>
-              <option value="reference">Reference (from database)</option>
-            </select>
+              options={[
+                { value: 'text', label: 'Short Text' },
+                { value: 'textarea', label: 'Long Text' },
+                { value: 'select', label: 'Dropdown Select' },
+                ...((allowCheckbox || editForm.type === 'checkbox')
+                  ? [{ value: 'checkbox', label: 'Checkboxes (multi-select)' }]
+                  : []),
+                { value: 'github_url', label: 'GitHub URL' },
+                { value: 'figma_url', label: 'Figma URL' },
+                { value: 'drive_url', label: 'Google Drive URL' },
+                { value: 'file', label: 'File Upload' },
+                { value: 'skills_rating', label: 'Skills Rating' },
+                { value: 'reference', label: 'Reference (from database)' },
+              ]}
+              buttonClassName="block w-full rounded-md border border-gray-300 bg-card text-foreground shadow-sm sm:text-sm p-2 inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+            />
           </div>
 
           <div className="flex items-center gap-6 mt-6">
@@ -420,26 +422,21 @@ export function FormBuilderTab({
               <label className="block text-sm font-medium text-foreground/80 mb-1">
                 Data source
               </label>
-              <select
+              <Select
                 value={editForm.data?.referenceSource || ''}
-                onChange={(e) =>
+                onChange={(v) =>
                   setEditForm({
                     ...editForm,
                     data: {
                       ...editForm.data!,
-                      referenceSource: e.target.value,
+                      referenceSource: v,
                     },
                   })
                 }
-                className="block w-full rounded-md border border-gray-300 bg-card text-foreground shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
-              >
-                <option value="">Select a source…</option>
-                {referenceSourceChoices().map((s) => (
-                  <option key={s.key} value={s.key}>
-                    {s.label}
-                  </option>
-                ))}
-              </select>
+                placeholder="Select a source…"
+                options={referenceSourceChoices().map((s) => ({ value: s.key, label: s.label }))}
+                buttonClassName="block w-full rounded-md border border-gray-300 bg-card text-foreground shadow-sm sm:text-sm p-2 inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+              />
               <p className="text-xs text-muted-foreground mt-1">
                 Choices are pulled live when the form is filled — e.g. projects
                 open for staffing this term.
@@ -450,26 +447,21 @@ export function FormBuilderTab({
                   <label className="block text-sm font-medium text-foreground/80 mb-1">
                     Term
                   </label>
-                  <select
+                  <Select
                     value={editForm.data?.referenceTermId || ''}
-                    onChange={(e) =>
+                    onChange={(v) =>
                       setEditForm({
                         ...editForm,
                         data: {
                           ...editForm.data!,
-                          referenceTermId: e.target.value || undefined,
+                          referenceTermId: v || undefined,
                         },
                       })
                     }
-                    className="block w-full rounded-md border border-gray-300 bg-card text-foreground shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
-                  >
-                    <option value="">Select a term…</option>
-                    {terms.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.code}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="Select a term…"
+                    options={terms.map((t) => ({ value: t.id, label: t.code }))}
+                    buttonClassName="block w-full rounded-md border border-gray-300 bg-card text-foreground shadow-sm sm:text-sm p-2 inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                  />
                   <p className="text-xs text-muted-foreground mt-1">
                     Projects whose term set includes this term will be listed.
                   </p>

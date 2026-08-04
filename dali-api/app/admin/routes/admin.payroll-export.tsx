@@ -9,7 +9,7 @@ import { isAdmin } from "~/lib/roles";
 import { Download, FileDown, AlertTriangle, Users } from "lucide-react";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { buttonClasses } from "~/components/ui/Button";
-import { SelectMenu } from "~/components/ui/SelectMenu";
+import { Select } from "~/components/ui/floating";
 import {
   buildPayrollRows,
   listCoreCandidates,
@@ -139,7 +139,7 @@ export default function PayrollExport() {
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             <label className="text-sm text-muted-foreground">Term</label>
-            <SelectMenu
+            <Select
               value={selectedTermId}
               ariaLabel="Term"
               options={terms.map((t) => ({ value: t.id, label: t.code }))}

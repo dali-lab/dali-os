@@ -6,6 +6,7 @@ import {
   useNavigation,
   useSubmit,
 } from "react-router";
+import { Select } from "~/components/ui/floating";
 import {
   Briefcase as BriefcaseIcon,
   FolderKanban,
@@ -895,19 +896,20 @@ function EligibilityRow({
               name="domainId"
               value={eligibility.domain.id}
             />
-            <select
+            <Select
               name="level"
               defaultValue={eligibility.level}
-              onChange={(e) => setFetcher.submit(e.currentTarget.form)}
-              className="text-xs font-medium px-2 py-1 border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-              aria-label={`Level for ${eligibility.domain.displayName}`}
-            >
-              {allowedLevels.map((l) => (
-                <option key={l} value={l}>
-                  {l}
-                </option>
-              ))}
-            </select>
+              onChange={(value) => {
+                const fd = new FormData();
+                fd.set("intent", "set-eligibility-level");
+                fd.set("domainId", eligibility.domain.id);
+                fd.set("level", value);
+                setFetcher.submit(fd, { method: "post" });
+              }}
+              options={allowedLevels.map((l) => ({ value: l, label: l }))}
+              ariaLabel={`Level for ${eligibility.domain.displayName}`}
+              buttonClassName="text-xs font-medium px-2 py-1 border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+            />
           </setFetcher.Form>
         ) : (
           <span className="text-xs font-medium text-foreground">
@@ -979,35 +981,25 @@ function AddEligibility({
       <input type="hidden" name="intent" value="add-eligibility" />
       <label className="flex flex-col gap-1 text-xs flex-1">
         <span className="text-muted-foreground">Domain</span>
-        <select
+        <Select
           name="domainId"
-          value={domainId}
-          onChange={(e) => setDomainId(e.target.value)}
-          className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+          value={domainId as string}
+          onChange={(v) => setDomainId(v)}
+          placeholder="Select a domain…"
           required
-        >
-          <option value="">Select a domain…</option>
-          {domains.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.displayName}
-            </option>
-          ))}
-        </select>
+          options={domains.map((d) => ({ value: d.id, label: d.displayName }))}
+          buttonClassName="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+        />
       </label>
       <label className="flex flex-col gap-1 text-xs">
         <span className="text-muted-foreground">Level</span>
-        <select
+        <Select
           name="level"
           value={level}
-          onChange={(e) => setLevel(e.target.value as Level)}
-          className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-        >
-          {allowedLevels.map((l) => (
-            <option key={l} value={l}>
-              {l}
-            </option>
-          ))}
-        </select>
+          onChange={(v) => setLevel(v as Level)}
+          options={allowedLevels.map((l) => ({ value: l, label: l }))}
+          buttonClassName="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+        />
       </label>
       <button
         type="submit"

@@ -6,7 +6,7 @@ import { useConfirmSubmit } from "~/components/ui/dialog";
 import { formatUsd } from "~/lib/money";
 import { cn } from "~/lib/cn";
 import { PROJECT_TYPES } from "~/admin/lib/budget.shared";
-import { SelectMenu } from "~/components/ui/SelectMenu";
+import { Select } from "~/components/ui/floating";
 import type {
   BudgetData,
   BudgetGroup,
@@ -298,7 +298,7 @@ function ProjectTypeSelect({
     <fetcher.Form method="post" action={BUDGET_ROUTE} ref={formRef}>
       <input type="hidden" name="intent" value="update-project-type" />
       {keyInputs}
-      <SelectMenu
+      <Select
         name="projectType"
         defaultValue={row.projectType ?? ""}
         ariaLabel={`Project type for ${row.chartString}`}

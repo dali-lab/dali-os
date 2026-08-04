@@ -4,7 +4,7 @@ import { Checkbox } from "~/components/ui/Checkbox";
 import { Radio } from "~/components/ui/Radio";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { buttonClasses } from "~/components/ui/Button";
-import { SelectMenu, type SelectMenuOption } from "~/components/ui/SelectMenu";
+import { Select, type SelectOption } from "~/components/ui/floating";
 
 // One Share dialog for every document — Project, Lab, EducationOffering and
 // personal notes. Google Docs' shape: add people, a "People with access" list
@@ -32,7 +32,7 @@ type Context = {
 };
 
 // Full tiers for the per-person dropdown; general access never offers Full.
-const PERMISSION_OPTIONS: SelectMenuOption<Permission>[] = [
+const PERMISSION_OPTIONS: SelectOption<Permission>[] = [
   { value: "View", label: "Can view", description: "Read only" },
   { value: "Comment", label: "Can comment", description: "Read and comment" },
   { value: "Edit", label: "Can edit", description: "Edit the document" },
@@ -40,7 +40,7 @@ const PERMISSION_OPTIONS: SelectMenuOption<Permission>[] = [
 ];
 const LINK_PERMISSION_OPTIONS = PERMISSION_OPTIONS.filter((p) => p.value !== "FullAccess");
 
-const AUDIENCE_OPTIONS: SelectMenuOption<LinkAccess>[] = [
+const AUDIENCE_OPTIONS: SelectOption<LinkAccess>[] = [
   { value: "Restricted", label: "Restricted", description: "Only the people and groups above." },
   { value: "LabMembers", label: "Anyone in the lab", description: "Any lab member with the link — not partners or applicants." },
   { value: "Public", label: "Anyone with the link", description: "Anyone on the internet — read-only, no account." },
@@ -263,29 +263,21 @@ export function ShareDialog({
         {groups.length > 0 && (
           <label className="flex flex-col gap-1 text-xs">
             <span className="text-muted-foreground">Or add a group</span>
-            <select
+            <Select
+              key={shares.length}
               disabled={busy}
-              defaultValue=""
-              onChange={(e) => {
-                if (!e.target.value) return;
-                const id = e.target.value;
-                e.target.value = "";
+              placeholder="Pick a group…"
+              options={groups
+                .filter((g) => !alreadyShared.has(`Group:${g.id}`))
+                .map((g) => ({ value: g.id, label: g.label }))}
+              onChange={(id) => {
                 void run(
                   { intent: "share-add", principalType: "Group", principalId: id, permission: "View" },
                   refresh,
                 );
               }}
-              className="px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground"
-            >
-              <option value="">Pick a group…</option>
-              {groups
-                .filter((g) => !alreadyShared.has(`Group:${g.id}`))
-                .map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.label}
-                  </option>
-                ))}
-            </select>
+              buttonClassName="px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+            />
           </label>
         )}
       </div>
@@ -316,7 +308,7 @@ export function ShareDialog({
               >
                 <Users className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                 <span className="flex-1 min-w-0 truncate text-foreground">{s.label}</span>
-                <SelectMenu
+                <Select
                   value={s.permission}
                   options={PERMISSION_OPTIONS}
                   align="right"
@@ -397,7 +389,7 @@ export function ShareDialog({
         <div className="flex items-start gap-3 rounded-md border border-border px-3 py-2">
           <Link2 className="w-4 h-4 mt-1 shrink-0 text-muted-foreground" />
           <div className="flex-1 min-w-0 flex flex-col gap-1">
-            <SelectMenu
+            <Select
               value={ctx?.linkAccess ?? "Restricted"}
               options={AUDIENCE_OPTIONS}
               disabled={busy || !ctx}
@@ -415,7 +407,7 @@ export function ShareDialog({
           </div>
           {ctx && ctx.linkAccess !== "Restricted" && (
             <div className="self-center">
-              <SelectMenu
+              <Select
                 value={ctx.linkAccess === "Public" ? "View" : ctx.linkPermission}
                 options={LINK_PERMISSION_OPTIONS}
                 align="right"

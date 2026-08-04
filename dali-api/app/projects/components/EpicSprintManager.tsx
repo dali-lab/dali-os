@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useRevalidator } from "react-router";
+import { Select } from "~/components/ui/floating";
 import { X, GripVertical, Check, Trash2, Pencil, Maximize2 } from "lucide-react";
 import { Tooltip } from "~/components/ui/IconButton";
 import { Checkbox } from "~/components/ui/Checkbox";
@@ -406,21 +407,18 @@ export function EpicSprintManager({
             {epics.length > 0 && (
               <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <span className="sr-only">Filter by status</span>
-                <select
+                <Select
                   value={statusFilter}
-                  onChange={(e) =>
-                    setStatusFilter(e.target.value as "All" | EditableEpic["status"])
+                  onChange={(value) =>
+                    setStatusFilter(value as "All" | EditableEpic["status"])
                   }
-                  aria-label="Filter epics by status"
-                  className="px-1.5 py-1 text-xs border border-border rounded-md bg-background text-foreground"
-                >
-                  <option value="All">All statuses</option>
-                  {EPIC_STATUSES.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
+                  ariaLabel="Filter epics by status"
+                  options={[
+                    { value: "All", label: "All statuses" },
+                    ...EPIC_STATUSES.map((s) => ({ value: s, label: s })),
+                  ]}
+                  buttonClassName="px-1.5 py-1 text-xs border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                />
               </label>
             )}
             {canManage && !newEpicOpen && (
@@ -508,22 +506,16 @@ export function EpicSprintManager({
                           counts. Managers can change it inline without opening
                           the epic; viewers see a static pill. */}
                       {canManage ? (
-                        <select
+                        <Select
                           value={epic.status}
                           disabled={busy}
-                          aria-label={`Status for ${epic.title}`}
-                          onChange={(e) => {
-                            const status = e.target.value;
-                            run(() => api(`/api/epics/${epic.id}`, "POST", { status }));
+                          ariaLabel={`Status for ${epic.title}`}
+                          onChange={(value) => {
+                            run(() => api(`/api/epics/${epic.id}`, "POST", { status: value }));
                           }}
-                          className="text-[11px] px-1.5 py-0.5 rounded-full border border-border text-muted-foreground bg-muted/30 disabled:opacity-60"
-                        >
-                          {EPIC_STATUSES.map((s) => (
-                            <option key={s} value={s}>
-                              {s}
-                            </option>
-                          ))}
-                        </select>
+                          options={EPIC_STATUSES.map((s) => ({ value: s, label: s }))}
+                          buttonClassName="text-[11px] px-1.5 py-0.5 rounded-full border border-border text-muted-foreground bg-muted/30 disabled:opacity-60 inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                        />
                       ) : (
                         <span className="text-[11px] px-1.5 py-0.5 rounded-full border border-border text-muted-foreground bg-muted/30">
                           {epic.status}
@@ -1453,35 +1445,28 @@ function EpicForm({
         )}
         <label className="flex flex-col gap-1 text-xs">
           <span className="text-muted-foreground">Status</span>
-          <select
+          <Select
             value={status}
-            onChange={(e) => setStatus(e.target.value as EditableEpic["status"])}
-            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
-          >
-            {EPIC_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
+            onChange={(value) => setStatus(value as EditableEpic["status"])}
+            options={EPIC_STATUSES.map((s) => ({ value: s, label: s }))}
+            buttonClassName="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+          />
         </label>
         {/* Optional target term — a planning signal for cross-term epics, not
             a hard scope. Only offered once the project has terms. */}
         {terms.length > 0 && (
           <label className="flex flex-col gap-1 text-xs">
             <span className="text-muted-foreground">Target term (optional)</span>
-            <select
+            <Select
               value={targetTermId}
-              onChange={(e) => setTargetTermId(e.target.value)}
-              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
-            >
-              <option value="">No target term</option>
-              {terms.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.code}
-                </option>
-              ))}
-            </select>
+              onChange={(value) => setTargetTermId(value)}
+              placeholder="No target term"
+              options={[
+                { value: "", label: "No target term" },
+                ...terms.map((t) => ({ value: t.id, label: t.code })),
+              ]}
+              buttonClassName="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+            />
           </label>
         )}
         {/* Start + End stay paired on one line even when the row wraps. */}
@@ -1673,33 +1658,26 @@ function SprintForm({
       </label>
       <label className="flex flex-col gap-1 text-xs">
         <span className="text-muted-foreground">Status</span>
-        <select
+        <Select
           value={status}
-          onChange={(e) => setStatus(e.target.value as EditableSprint["status"])}
-          className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
-        >
-          {SPRINT_STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
+          onChange={(value) => setStatus(value as EditableSprint["status"])}
+          options={SPRINT_STATUSES.map((s) => ({ value: s, label: s }))}
+          buttonClassName="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+        />
       </label>
       {epics && (
         <label className="flex flex-col gap-1 text-xs">
           <span className="text-muted-foreground">Epic (optional)</span>
-          <select
+          <Select
             value={epicId}
-            onChange={(e) => setEpicId(e.target.value)}
-            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
-          >
-            <option value="">No epic</option>
-            {epics.map((e) => (
-              <option key={e.id} value={e.id}>
-                {e.title}
-              </option>
-            ))}
-          </select>
+            onChange={(value) => setEpicId(value)}
+            placeholder="No epic"
+            options={[
+              { value: "", label: "No epic" },
+              ...epics.map((e) => ({ value: e.id, label: e.title })),
+            ]}
+            buttonClassName="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+          />
         </label>
       )}
       {showDeps && (
@@ -1807,17 +1785,12 @@ function StoryForm({
         </label>
         <label className="flex flex-col gap-1 text-xs">
           <span className="text-muted-foreground">Status</span>
-          <select
+          <Select
             value={status}
-            onChange={(e) => setStatus(e.target.value as EditableStory["status"])}
-            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
-          >
-            {STORY_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
+            onChange={(value) => setStatus(value as EditableStory["status"])}
+            options={STORY_STATUSES.map((s) => ({ value: s, label: s }))}
+            buttonClassName="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+          />
         </label>
         <label className="flex flex-col gap-1 text-xs">
           <span className="text-muted-foreground">Category</span>
@@ -1830,18 +1803,16 @@ function StoryForm({
         </label>
         <label className="flex flex-col gap-1 text-xs">
           <span className="text-muted-foreground">Priority</span>
-          <select
+          <Select
             value={priority}
-            onChange={(e) => setPriority(e.target.value as StoryPriority | "")}
-            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
-          >
-            <option value="">—</option>
-            {STORY_PRIORITIES.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-          </select>
+            onChange={(value) => setPriority(value as StoryPriority | "")}
+            placeholder="—"
+            options={[
+              { value: "", label: "—" },
+              ...STORY_PRIORITIES.map((p) => ({ value: p, label: p })),
+            ]}
+            buttonClassName="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+          />
         </label>
       </div>
       <label className="flex flex-col gap-1 text-xs">

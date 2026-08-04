@@ -10,6 +10,7 @@ import { AreaPillNav } from "~/components/AreaPillNav";
 import { ChevronRight, ChevronDown, Plus } from "lucide-react";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { STATUS_COLORS, STATUS_LABELS } from "~/hiring/lib/labels";
+import { Select, type SelectOption } from "~/components/ui/floating";
 
 export const handle = { areaPills: true };
 
@@ -123,15 +124,15 @@ export default function HiringLeadDashboard() {
                   <label htmlFor="cycle-type" className="block text-sm font-medium text-foreground/80 mb-1">
                     Cycle type
                   </label>
-                  <select
-                    id="cycle-type"
+                  <Select
                     name="cycleType"
                     defaultValue="Standard"
-                    className="w-full px-3 py-2 text-sm text-foreground border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="Standard">Standard hire</option>
-                    <option value="InternToFull">Fellowship</option>
-                  </select>
+                    options={[
+                      { value: "Standard", label: "Standard hire" },
+                      { value: "InternToFull", label: "Fellowship" },
+                    ]}
+                    buttonClassName="w-full px-3 py-2 text-sm text-foreground border border-gray-300 rounded-md inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                  />
                   <p className="text-xs text-muted-foreground mt-1">
                     Fellowship cycles use a shortform (no challenge) and skip interviews.
                   </p>

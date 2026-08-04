@@ -17,7 +17,7 @@ import { useMemo, useRef, useState } from "react";
 import { useFetcher } from "react-router";
 import { Button } from "~/components/ui/Button";
 import { Checkbox } from "~/components/ui/Checkbox";
-import { SelectMenu } from "~/components/ui/SelectMenu";
+import { Select } from "~/components/ui/floating";
 import {
   SLOT_ROLES,
   BUILTIN_SOURCES,
@@ -476,7 +476,7 @@ export function SlotColumnMapper({
                     Resolved automatically
                   </div>
                 ) : canManage ? (
-                  <SelectMenu
+                  <Select
                     ariaLabel={`Question for ${c.label}`}
                     value={c.questionKey}
                     disabled={saving}

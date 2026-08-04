@@ -3,6 +3,7 @@ import { Check, Eye, Landmark, Lock, Trash2, Users, X } from "lucide-react";
 import { Radio } from "~/components/ui/Radio";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { buttonClasses } from "~/components/ui/Button";
+import { Select } from "~/components/ui/floating";
 import type { NoteSummary } from "~/members/lib/personal-notes.server";
 
 // Everything about a note's audience, in one place: who can see it at all,
@@ -236,13 +237,14 @@ export function NoteShareModal({
         {groups.length > 0 && (
           <label className="flex flex-col gap-1 text-xs">
             <span className="text-muted-foreground">Or share with a group</span>
-            <select
+            <Select
+              key={shares.length}
               disabled={busy}
-              defaultValue=""
-              onChange={(e) => {
-                if (!e.target.value) return;
-                const id = e.target.value;
-                e.target.value = "";
+              placeholder="Pick a group…"
+              options={groups
+                .filter((g) => !alreadyShared.has(`Group:${g.id}`))
+                .map((g) => ({ value: g.id, label: g.label }))}
+              onChange={(id) => {
                 void run(
                   {
                     intent: "share-add",
@@ -253,17 +255,8 @@ export function NoteShareModal({
                   refreshShares,
                 );
               }}
-              className="px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground"
-            >
-              <option value="">Pick a group…</option>
-              {groups
-                .filter((g) => !alreadyShared.has(`Group:${g.id}`))
-                .map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.label}
-                  </option>
-                ))}
-            </select>
+              buttonClassName="px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+            />
           </label>
         )}
       </div>

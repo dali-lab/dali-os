@@ -5,6 +5,7 @@ import { Avatar } from "~/components/ui/Avatar";
 import { RolePills } from "~/components/ui/RolePills";
 import { ALL_LEVELS, type Level } from "~/lib/level";
 import type { DomainLevel, MemberCardModel } from "../lib/staffing-board";
+import { Select } from "~/components/ui/floating";
 
 const LEVEL_BADGE: Record<Level, { label: string; cls: string }> = {
   P1: { label: "P1", cls: "bg-muted text-muted-foreground" },
@@ -371,31 +372,24 @@ function DomainLevelStrip({
       )}
       {canEdit && adding && (
         <div className="flex flex-wrap items-center gap-1 w-full mt-0.5">
-          <select
+          <Select
             value={newDomainId}
-            onChange={(e) => setNewDomainId(e.target.value)}
-            aria-label="Domain to add"
-            className="max-w-[9rem] rounded border border-border bg-background px-1 py-0.5 text-[10px] text-foreground"
-          >
-            <option value="">Domain…</option>
-            {available.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
-          </select>
-          <select
+            onChange={(value) => setNewDomainId(value)}
+            ariaLabel="Domain to add"
+            placeholder="Domain…"
+            options={[
+              { value: "", label: "Domain…" },
+              ...available.map((d) => ({ value: d.id, label: d.name })),
+            ]}
+            buttonClassName="max-w-[9rem] rounded border border-border bg-background px-1 py-0.5 text-[10px] text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+          />
+          <Select
             value={newLevel}
-            onChange={(e) => setNewLevel(e.target.value as Level)}
-            aria-label="Level for new domain"
-            className="rounded border border-border bg-background px-1 py-0.5 text-[10px] font-bold text-foreground"
-          >
-            {ALL_LEVELS.map((l) => (
-              <option key={l} value={l}>
-                {l}
-              </option>
-            ))}
-          </select>
+            onChange={(value) => setNewLevel(value as Level)}
+            ariaLabel="Level for new domain"
+            options={ALL_LEVELS.map((l) => ({ value: l, label: l }))}
+            buttonClassName="rounded border border-border bg-background px-1 py-0.5 text-[10px] font-bold text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+          />
           <button
             type="button"
             disabled={!newDomainId}
@@ -480,18 +474,13 @@ function DomainLevelChip({
     >
       {nameButton}
       {canEdit ? (
-        <select
+        <Select
           value={domain.level}
-          aria-label={`Level for ${domain.domainName}`}
-          onChange={(e) => onChangeLevel(e.target.value as Level)}
-          className={`rounded border-0 px-1 py-0 text-[10px] font-bold focus:outline-none focus:ring-1 focus:ring-accent-coral/40 ${LEVEL_BADGE[domain.level].cls}`}
-        >
-          {ALL_LEVELS.map((l) => (
-            <option key={l} value={l}>
-              {l}
-            </option>
-          ))}
-        </select>
+          ariaLabel={`Level for ${domain.domainName}`}
+          onChange={(value) => onChangeLevel(value as Level)}
+          options={ALL_LEVELS.map((l) => ({ value: l, label: l }))}
+          buttonClassName={`rounded border-0 px-1 py-0 text-[10px] font-bold focus:outline-none focus:ring-1 focus:ring-accent-coral/40 inline-flex items-center justify-between gap-0.5 transition-colors ${LEVEL_BADGE[domain.level].cls}`}
+        />
       ) : (
         <span className={`px-1 rounded font-bold ${LEVEL_BADGE[domain.level].cls}`}>
           {LEVEL_BADGE[domain.level].label}

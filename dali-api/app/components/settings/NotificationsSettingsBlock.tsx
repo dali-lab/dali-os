@@ -13,8 +13,8 @@ import {
   type EventType,
 } from "~/lib/notification-events";
 import { buttonClasses } from "~/components/ui/Button";
-import { SelectMenu } from "~/components/ui/SelectMenu";
 import { Checkbox } from "~/components/ui/Checkbox";
+import { Select } from "~/components/ui/floating";
 
 // `general` is the pre-registry backfill value — nothing emits it.
 export const VISIBLE_EVENTS = EVENT_TYPE_KEYS.filter((k) => k !== "general");
@@ -184,7 +184,7 @@ export function NotificationsSettingsBlock({
                           —
                         </span>
                       ) : (
-                        <SelectMenu
+                        <Select
                           name={`${eventType}:email`}
                           defaultValue={email}
                           options={[

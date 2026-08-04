@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, Form, useLoaderData } from "react-router";
 import { Plus, FileSignature, ChevronRight } from "lucide-react";
 import type { loader } from "~/signing/routes/admin.agreements";
+import { Select, type SelectOption } from "~/components/ui/floating";
 
 const KIND_LABELS: Record<string, string> = {
   General: "General",
@@ -62,37 +63,57 @@ export function SigningDocumentsPage() {
           </label>
           <label className="flex flex-col gap-1 text-sm">
             <span className="font-medium text-foreground/80">Kind</span>
-            <select name="kind" defaultValue="MemberAgreement" className="px-3 py-2 border border-gray-300 rounded-md">
-              <option value="General">General</option>
-              <option value="MemberAgreement">Membership</option>
-              <option value="MentorshipAgreement">Mentorship</option>
-              <option value="Confidentiality">Confidentiality</option>
-            </select>
+            <Select
+              name="kind"
+              defaultValue="MemberAgreement"
+              options={[
+                { value: "General", label: "General" },
+                { value: "MemberAgreement", label: "Membership" },
+                { value: "MentorshipAgreement", label: "Mentorship" },
+                { value: "Confidentiality", label: "Confidentiality" },
+              ]}
+              buttonClassName="px-3 py-2 border border-gray-300 rounded-md inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+            />
           </label>
           <label className="flex flex-col gap-1 text-sm">
             <span className="font-medium text-foreground/80">Enforcement</span>
-            <select name="gateScope" defaultValue="App" className="px-3 py-2 border border-gray-300 rounded-md">
-              <option value="None">Not enforced (surface only)</option>
-              <option value="App">Hard-gate the app until signed</option>
-              <option value="HiringCycle">Gate hiring data (confidentiality)</option>
-            </select>
+            <Select
+              name="gateScope"
+              defaultValue="App"
+              options={[
+                { value: "None", label: "Not enforced (surface only)" },
+                { value: "App", label: "Hard-gate the app until signed" },
+                { value: "HiringCycle", label: "Gate hiring data (confidentiality)" },
+              ]}
+              buttonClassName="px-3 py-2 border border-gray-300 rounded-md inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+            />
           </label>
           <label className="flex flex-col gap-1 text-sm">
             <span className="font-medium text-foreground/80">Audience</span>
-            <select name="audience" defaultValue="ActiveMembers" className="px-3 py-2 border border-gray-300 rounded-md">
-              <option value="Manual">Manual</option>
-              <option value="ActiveMembers">Active members</option>
-              <option value="Mentors">Mentors</option>
-              <option value="HiringParticipants">Hiring participants</option>
-            </select>
+            <Select
+              name="audience"
+              defaultValue="ActiveMembers"
+              options={[
+                { value: "Manual", label: "Manual" },
+                { value: "ActiveMembers", label: "Active members" },
+                { value: "Mentors", label: "Mentors" },
+                { value: "HiringParticipants", label: "Hiring participants" },
+              ]}
+              buttonClassName="px-3 py-2 border border-gray-300 rounded-md inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+            />
           </label>
           <label className="flex flex-col gap-1 text-sm">
             <span className="font-medium text-foreground/80">Cadence</span>
-            <select name="cadence" defaultValue="Once" className="px-3 py-2 border border-gray-300 rounded-md">
-              <option value="Once">One-time (sign once)</option>
-              <option value="PerTerm">Per term (re-sign each term)</option>
-              <option value="PerCycle">Per hiring cycle</option>
-            </select>
+            <Select
+              name="cadence"
+              defaultValue="Once"
+              options={[
+                { value: "Once", label: "One-time (sign once)" },
+                { value: "PerTerm", label: "Per term (re-sign each term)" },
+                { value: "PerCycle", label: "Per hiring cycle" },
+              ]}
+              buttonClassName="px-3 py-2 border border-gray-300 rounded-md inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+            />
           </label>
           <div className="sm:col-span-2 flex justify-end gap-2">
             <button

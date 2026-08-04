@@ -11,6 +11,7 @@ import {
 } from "~/lib/file-validation";
 import { SKILLS_RATING_UNRATED, parseSkillsRating } from "~/lib/skills-rating";
 import type { ReferenceOption } from "~/forms/lib/reference-sources.shared";
+import { Select } from "~/components/ui/floating";
 
 export type UrlCheckState = {
   status: "idle" | "checking" | "done";
@@ -224,20 +225,17 @@ function SkillsRatingField({
         return (
           <div key={skill} className="flex items-center justify-between gap-2 py-1">
             <span className="text-sm text-dark-blue truncate">{skill}</span>
-            <select
+            <Select
               value={current}
-              onChange={e => setRating(skill, e.target.value)}
+              onChange={(v) => setRating(skill, v)}
               disabled={disabled}
-              aria-disabled={disabled || undefined}
-              className={`w-14 shrink-0 rounded-md border border-border bg-card text-base sm:text-sm text-center text-dark-blue py-1 focus:outline-none focus:border-accent-coral ${disabled ? "cursor-not-allowed" : ""}`}
-            >
-              {showUnrated && (
-                <option value={SKILLS_RATING_UNRATED}>{SKILLS_RATING_UNRATED}</option>
-              )}
-              {["0", "1", "2", "3", "4", "5"].map(n => (
-                <option key={n} value={n}>{n}</option>
-              ))}
-            </select>
+              ariaLabel={skill}
+              options={[
+                ...(showUnrated ? [{ value: SKILLS_RATING_UNRATED, label: SKILLS_RATING_UNRATED }] : []),
+                ...["0", "1", "2", "3", "4", "5"].map((n) => ({ value: n, label: n })),
+              ]}
+              buttonClassName={`w-14 shrink-0 rounded-md border border-border bg-card text-base sm:text-sm text-center text-dark-blue py-1 inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40 ${disabled ? "cursor-not-allowed" : ""}`}
+            />
           </div>
         );
       })}
@@ -449,20 +447,14 @@ export function FormQuestionField({
 
   if (question.type === "select") {
     return (
-      <select
+      <Select
         value={value}
-        onChange={e => onChange(e.target.value)}
+        onChange={onChange}
         disabled={disabled}
-        aria-disabled={disabled || undefined}
-        className={`${inputBase} appearance-auto${disabledClass}`}
-      >
-        <option value="">Select...</option>
-        {(question.data.options ?? []).map(o => (
-          <option key={o} value={o}>
-            {o}
-          </option>
-        ))}
-      </select>
+        placeholder="Select..."
+        options={(question.data.options ?? []).map((o) => ({ value: o, label: o }))}
+        buttonClassName={`${inputBase}${disabledClass} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
+      />
     );
   }
 
@@ -498,22 +490,14 @@ export function FormQuestionField({
       );
     }
     return (
-      <select
+      <Select
         value={value}
-        onChange={e => onChange(e.target.value)}
+        onChange={onChange}
         disabled={disabled || opts.length === 0}
-        aria-disabled={disabled || opts.length === 0 || undefined}
-        className={`${inputBase} appearance-auto${disabledClass}`}
-      >
-        <option value="">
-          {opts.length === 0 ? "No options available" : "Select..."}
-        </option>
-        {opts.map(o => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
+        placeholder={opts.length === 0 ? "No options available" : "Select..."}
+        options={opts.map((o) => ({ value: o.value, label: o.label }))}
+        buttonClassName={`${inputBase}${disabledClass} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
+      />
     );
   }
 

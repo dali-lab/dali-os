@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { Modal, ModalHeader, ModalFooter } from "~/components/Modal";
-import { SelectMenu } from "~/components/ui/SelectMenu";
+import { Select } from "~/components/ui/floating";
 
 type Candidate = { userId: string; name: string; email: string | null };
 
@@ -163,7 +163,7 @@ export function AddExternalMentorModal({
 
         <label className="flex flex-col gap-1 text-xs">
           <span className="text-muted-foreground">Domain</span>
-          <SelectMenu
+          <Select
             ariaLabel="Domain"
             value={domainId}
             onChange={(v) => setDomainId(v)}

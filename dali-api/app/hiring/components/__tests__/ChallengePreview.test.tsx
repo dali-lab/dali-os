@@ -59,8 +59,10 @@ describe("ChallengePreview", () => {
     expect(inputMatches.length).toBeGreaterThanOrEqual(3);
     // textarea
     expect(html).toMatch(/<textarea[^>]*disabled/);
-    // select(s) — at least the type=select question + the skills-rating selects
-    expect(html).toMatch(/<select[^>]*disabled/);
+    // select(s) — now custom listbox-trigger buttons, still disabled in preview
+    expect(html).toMatch(
+      /<button[^>]*disabled[^>]*aria-haspopup="listbox"|<button[^>]*aria-haspopup="listbox"[^>]*disabled/,
+    );
     // file upload button (the button wraps an svg, then the text)
     expect(html).toMatch(/<button[^>]*disabled[\s\S]*?Choose file to upload/);
   });

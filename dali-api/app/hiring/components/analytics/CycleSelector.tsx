@@ -1,6 +1,6 @@
 import { useNavigate, useSearchParams } from "react-router";
 import { STATUS_COLORS, STATUS_LABELS } from "~/hiring/lib/labels";
-import { SelectMenu } from "~/components/ui/SelectMenu";
+import { Select } from "~/components/ui/floating";
 
 interface CycleSelectorProps {
   cycles: Array<{ id: string; name: string; status: string }>;
@@ -20,7 +20,7 @@ export function CycleSelector({ cycles, selectedCycleId }: CycleSelectorProps) {
 
   return (
     <div className="flex shrink-0 items-center gap-3">
-      <SelectMenu
+      <Select
         value={selectedCycleId}
         options={cycles.map((c) => ({ value: c.id, label: c.name }))}
         ariaLabel="Select hiring cycle"

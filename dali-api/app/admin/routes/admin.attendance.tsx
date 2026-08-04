@@ -10,7 +10,7 @@ import { adminHandle } from "~/admin/adminNav";
 import { TermFilter } from "~/components/TermFilter";
 import { Tooltip } from "~/components/ui/IconButton";
 import { useConfirmSubmit } from "~/components/ui/dialog";
-import { SelectMenu } from "~/components/ui/SelectMenu";
+import { Select } from "~/components/ui/floating";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -283,7 +283,7 @@ export default function AdminAttendancePage() {
           <label className="sr-only" htmlFor="attendance-sort">
             Sort by
           </label>
-          <SelectMenu
+          <Select
             ariaLabel="Sort by"
             value={sort}
             onChange={(v) => setSort(v as SortKey)}

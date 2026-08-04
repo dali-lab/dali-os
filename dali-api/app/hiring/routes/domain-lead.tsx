@@ -35,6 +35,7 @@ import type { DecisionType } from "~/types";
 import { formatVersionLabel, buildVersionNumberMap } from "~/lib/formatVersion";
 import { selectActiveCycleForDomainLead } from "~/hiring/lib/cycle-picker";
 import { STATUS_LABELS, DECISION_LABELS, STATUS_COLORS, DECISION_COLORS } from "~/hiring/lib/labels";
+import { Select, type SelectOption } from "~/components/ui/floating";
 
 const STATUS_MESSAGES: Record<string, string> = {
   Draft: "This cycle is still being set up.",
@@ -1550,24 +1551,22 @@ function ChallengeSelector({ cycleId, domainId, options, linkedChallengeVersions
             <label className="block text-sm font-medium text-foreground/80 mb-1">
               Add Challenge
             </label>
-            <select
+            <Select
               name="challengeVersionId"
               value={pickerId}
-              onChange={(e) => setPickerId(e.target.value)}
-              className="w-full px-3 py-2 text-sm text-foreground border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="" disabled>Select a challenge…</option>
-              {availableOptions.map((cv: any) => (
-                <option key={cv.id} value={cv.id}>
-                  {formatVersionLabel({
-                    name: cv.challenge?.name ?? "Untitled",
-                    versionNumber: cv.versionNumber,
-                    createdAt: cv.createdAt,
-                    createdBy: cv.createdBy,
-                  })}
-                </option>
-              ))}
-            </select>
+              placeholder="Select a challenge…"
+              onChange={(v) => setPickerId(v)}
+              options={availableOptions.map((cv: any) => ({
+                value: cv.id as string,
+                label: formatVersionLabel({
+                  name: cv.challenge?.name ?? "Untitled",
+                  versionNumber: cv.versionNumber,
+                  createdAt: cv.createdAt,
+                  createdBy: cv.createdBy,
+                }),
+              }))}
+              buttonClassName="w-full px-3 py-2 text-sm text-foreground border border-gray-300 rounded-md inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+            />
           </div>
           <button
             type="submit"
@@ -1697,18 +1696,16 @@ function ReviewerSection({ cycleId, domainId, initialReviewers }: {
       <div className="flex flex-col sm:flex-row sm:items-end gap-2">
           <div className="flex-1">
             <label className="block text-xs font-medium text-muted-foreground mb-1">Add Reviewer</label>
-            <select
+            <Select
               value={selectedMemberId}
-              onChange={e => setSelectedMemberId(e.target.value)}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-            >
-              <option value="">Select member...</option>
-              {availableMembers.map((m: any) => (
-                <option key={m.id} value={m.id}>
-                  {m.firstName && m.lastName ? `${m.firstName} ${m.lastName}` : m.daliEmail ?? m.id}
-                </option>
-              ))}
-            </select>
+              placeholder="Select member..."
+              onChange={(v) => setSelectedMemberId(v)}
+              options={availableMembers.map((m: any) => ({
+                value: m.id as string,
+                label: m.firstName && m.lastName ? `${m.firstName} ${m.lastName}` : m.daliEmail ?? m.id,
+              }))}
+              buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+            />
           </div>
           <button
             onClick={addReviewer}
@@ -1789,23 +1786,24 @@ function RubricPicker({ cycleId, domainId, options, selectedId, locked }: {
             <input type="hidden" name="domainId" value={domainId} />
             <div className="flex-1">
               <label className="block text-xs font-medium text-muted-foreground mb-1">Rubric Version</label>
-              <select
+              <Select
                 name="rubricVersionId"
                 defaultValue={selectedId ?? ""}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-              >
-                <option value="">No rubric assigned</option>
-                {options.map((rv: any) => (
-                  <option key={rv.id} value={rv.id}>
-                    {formatVersionLabel({
+                placeholder="No rubric assigned"
+                options={[
+                  { value: "", label: "No rubric assigned" },
+                  ...options.map((rv: any) => ({
+                    value: rv.id as string,
+                    label: formatVersionLabel({
                       name: rv.rubric?.name ?? 'Rubric',
                       versionNumber: rv.versionNumber,
                       createdAt: rv.createdAt,
                       createdBy: rv.createdBy,
-                    })}
-                  </option>
-                ))}
-              </select>
+                    }),
+                  })),
+                ]}
+                buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+              />
             </div>
             <button
               type="submit"
@@ -1891,18 +1889,16 @@ function InterviewerSection({ cycleId, domainId, initialInterviewers }: {
       <div className="flex flex-col sm:flex-row sm:items-end gap-2">
         <div className="flex-1">
           <label className="block text-xs font-medium text-muted-foreground mb-1">Add Interviewer</label>
-            <select
+            <Select
               value={selectedMemberId}
-              onChange={e => setSelectedMemberId(e.target.value)}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-            >
-              <option value="">Select member...</option>
-              {availableMembers.map((m: any) => (
-                <option key={m.id} value={m.id}>
-                  {m.firstName && m.lastName ? `${m.firstName} ${m.lastName}` : m.daliEmail ?? m.id}
-                </option>
-              ))}
-            </select>
+              placeholder="Select member..."
+              onChange={(v) => setSelectedMemberId(v)}
+              options={availableMembers.map((m: any) => ({
+                value: m.id as string,
+                label: m.firstName && m.lastName ? `${m.firstName} ${m.lastName}` : m.daliEmail ?? m.id,
+              }))}
+              buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+            />
           </div>
           <button
             onClick={addInterviewer}
@@ -2742,21 +2738,21 @@ function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, 
           <span className="text-[10px] uppercase tracking-wide font-bold text-blue-700 dark:text-blue-300">
             Adding reviewer
           </span>
-          <select
+          <Select
             value={selectedReviewerId}
-            onChange={e => setSelectedReviewerId(e.target.value)}
-            className="rounded border border-border bg-card text-card-foreground px-1.5 py-0.5 text-xs"
-            autoFocus
-          >
-            <option value="">Select...</option>
-            {available.map((cr: any) => {
+            placeholder="Select..."
+            onChange={(v) => setSelectedReviewerId(v)}
+            options={available.map((cr: any) => {
               const m = cr.user;
-              const label = m?.firstName && m?.lastName
-                ? `${m.firstName} ${m.lastName}`
-                : m?.daliEmail ?? cr.id;
-              return <option key={cr.id} value={cr.id}>{label}</option>;
+              return {
+                value: cr.id as string,
+                label: m?.firstName && m?.lastName
+                  ? `${m.firstName} ${m.lastName}`
+                  : m?.daliEmail ?? cr.id,
+              };
             })}
-          </select>
+            buttonClassName="rounded border border-border bg-card text-card-foreground px-1.5 py-0.5 text-xs inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+          />
           <button
             onClick={addReviewer}
             disabled={!selectedReviewerId}

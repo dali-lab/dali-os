@@ -24,6 +24,7 @@ import { AlertTriangle, CheckCircle, Eye, Mail } from "lucide-react";
 import { DateField } from "~/components/ui/DateField";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { Modal, ModalHeader, ModalFooter } from "~/components/Modal";
+import { Select, type SelectOption } from "~/components/ui/floating";
 
 import {
   zonedDayEndUtc,
@@ -646,22 +647,16 @@ function FormVersionSection({
       )}
       {!disabled && (
         <div className="flex flex-wrap items-center gap-2">
-          <select
+          <Select
             defaultValue={current?.id ?? ""}
-            onChange={(e) => {
-              const id = e.target.value;
+            placeholder="— pick existing —"
+            onChange={(id) => {
               if (!id) return;
               fetcher.submit({ intent: "set-form-version", formVersionId: id }, { method: "post" });
             }}
-            className="px-3 py-2 text-sm border border-border rounded-md"
-          >
-            <option value="">— pick existing —</option>
-            {allVersions.map((v) => (
-              <option key={v.id} value={v.id}>
-                v{v.version} · {v.createdBy}
-              </option>
-            ))}
-          </select>
+            options={allVersions.map((v) => ({ value: v.id, label: `v${v.version} · ${v.createdBy}` }))}
+            buttonClassName="px-3 py-2 text-sm border border-border rounded-md inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+          />
           <button
             onClick={() => setCreating(true)}
             className="px-3 py-2 text-sm font-medium text-blue-700 hover:underline"
@@ -817,14 +812,15 @@ function CreateFormVersionModal({
                       />
                       <label className="flex items-center gap-1">
                         Type:
-                        <select
+                        <Select
                           value={q.type}
-                          onChange={(e) => update(idx, { type: e.target.value as Question["type"] })}
-                          className="px-2 py-0.5 border border-border rounded"
-                        >
-                          <option value="textarea">Long answer</option>
-                          <option value="text">Short answer</option>
-                        </select>
+                          onChange={(v) => update(idx, { type: v as Question["type"] })}
+                          options={[
+                            { value: "textarea", label: "Long answer" },
+                            { value: "text", label: "Short answer" },
+                          ]}
+                          buttonClassName="px-2 py-0.5 border border-border rounded inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                        />
                       </label>
                     </div>
                   </>
@@ -1009,23 +1005,18 @@ function GeneralRubricSection({
         <p className="text-sm text-muted-foreground mb-3">No rubric pinned yet.</p>
       )}
       <div className="flex flex-wrap items-center gap-2">
-        <select
+        <Select
           value={currentRubricVersionId ?? ""}
-          onChange={(e) => {
+          placeholder="— pick a rubric version —"
+          onChange={(rubricVersionId) => {
             fetcher.submit(
-              { intent: "set-general-rubric", rubricVersionId: e.target.value },
+              { intent: "set-general-rubric", rubricVersionId },
               { method: "post" },
             );
           }}
-          className="px-3 py-2 text-sm border border-border rounded-md"
-        >
-          <option value="">— pick a rubric version —</option>
-          {allRubricVersions.map((rv) => (
-            <option key={rv.id} value={rv.id}>
-              {rv.label}
-            </option>
-          ))}
-        </select>
+          options={allRubricVersions.map((rv) => ({ value: rv.id, label: rv.label }))}
+          buttonClassName="px-3 py-2 text-sm border border-border rounded-md inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+        />
         <Link
           to="/hiring/library?tab=rubrics"
           className="text-xs font-medium text-blue-700 hover:underline"
@@ -1097,26 +1088,19 @@ function ReviewersSection({
               <li className="text-xs text-muted-foreground italic">No reviewers in the pool yet.</li>
             )}
           </ul>
-          <select
+          <Select
             defaultValue=""
-            onChange={(e) => {
-              const userId = e.target.value;
+            placeholder="+ Add reviewer…"
+            onChange={(userId) => {
               if (!userId) return;
               fetcher.submit(
                 { intent: "add-reviewer-pool", userId },
                 { method: "post" },
               );
-              e.currentTarget.value = "";
             }}
-            className="text-sm px-2 py-1.5 border border-border rounded"
-          >
-            <option value="">+ Add reviewer…</option>
-            {candidates.map((m) => (
-              <option key={m.userId} value={m.userId}>
-                {m.displayName}
-              </option>
-            ))}
-          </select>
+            options={candidates.map((m) => ({ value: m.userId, label: m.displayName }))}
+            buttonClassName="text-sm px-2 py-1.5 border border-border rounded inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+          />
           {error && (
             <p className="mt-2 text-xs text-red-600">{error}</p>
           )}
@@ -1252,22 +1236,23 @@ function DecisionEmailPicker({
           <input type="hidden" name="intent" value="set-decision-email" />
           <input type="hidden" name="decisionType" value={slot.type} />
           <div className="flex-1 min-w-[14rem]">
-            <select
+            <Select
               name="emailTemplateVersionId"
               defaultValue={currentVersionId ?? ""}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-            >
-              <option value="">No template (skip email)</option>
-              {emailTemplates
-                .filter((t: any) => t.versions.length > 0)
-                .flatMap((t: any) =>
-                  t.versions.map((v: any) => (
-                    <option key={v.id} value={v.id}>
-                      {t.name} — v{v.versionNumber}
-                    </option>
-                  )),
-                )}
-            </select>
+              placeholder="No template (skip email)"
+              options={[
+                { value: "", label: "No template (skip email)" },
+                ...emailTemplates
+                  .filter((t: any) => t.versions.length > 0)
+                  .flatMap((t: any) =>
+                    t.versions.map((v: any) => ({
+                      value: v.id as string,
+                      label: `${t.name} — v${v.versionNumber}`,
+                    })),
+                  ),
+              ]}
+              buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+            />
           </div>
           <button
             type="submit"
