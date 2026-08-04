@@ -149,7 +149,7 @@ function GridCellView({
       ? "border border-dashed border-red-400 text-red-400"
       : missing
       ? "border border-dashed border-border text-muted-foreground"
-      : "bg-muted text-muted-foreground/60";
+      : "bg-muted text-muted-foreground";
   const hover =
     missing && highlightMissing ? "hover:bg-red-400/10" : "hover:bg-muted/60";
 
