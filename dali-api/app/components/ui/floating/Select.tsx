@@ -188,11 +188,16 @@ export function Select<T extends string = string>({
         type="button"
         disabled={disabled}
         aria-label={ariaLabel}
-        className={buttonClassName ?? SELECT_TRIGGER_CLASS}
+        // Flex layout is structural (value left, chevron right) so a caller's
+        // buttonClassName — even one written for a native <select> — still lays
+        // out on one compact line.
+        className={`inline-flex items-center justify-between gap-1 ${
+          buttonClassName ?? SELECT_TRIGGER_CLASS
+        }`}
         {...getReferenceProps()}
         aria-haspopup="listbox"
       >
-        <span className={`truncate ${current ? "" : "text-muted-foreground"}`}>
+        <span className={`min-w-0 truncate ${current ? "" : "text-muted-foreground"}`}>
           {current?.label ?? placeholder ?? ""}
         </span>
         <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
