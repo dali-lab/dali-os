@@ -136,9 +136,9 @@ export function AreaPillNav({
             >
               <SubtabLabel label={item.label} icon={item.icon} />
             </Link>
-            {/* Hidden until you want it: a star on every tab, always visible,
-                turns a wayfinding row into a row of controls. Favourited ones
-                stay lit so you can see what you kept. */}
+            {/* Always visible — a control you can only find by hovering is one
+                most people never find. Dimmed so the row still reads as
+                wayfinding first, and lit once favourited. */}
             <FavoriteRouteButton
               href={item.to}
               label={item.label}
@@ -155,7 +155,7 @@ export function AreaPillNav({
               className={
                 favorites?.has(item.to)
                   ? ""
-                  : "opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                  : "text-muted-foreground/45 transition-colors group-hover:text-muted-foreground"
               }
             />
           </span>
