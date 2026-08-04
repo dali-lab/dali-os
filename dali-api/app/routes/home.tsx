@@ -501,11 +501,11 @@ function FavoritesPanel({
   const empty = favorites.length === 0 && recents.length === 0;
 
   return (
-    <div className="bg-card border border-border shadow-brand-1 rounded-lg p-3">
-      <div className="flex items-center gap-2 mb-2">
+    <div className="bg-card border border-border shadow-brand-1 rounded-lg p-4">
+      <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground mb-2">
         <Star className="w-4 h-4 text-accent-coral" />
-        <span className="font-heading font-semibold text-sm text-foreground">Favourites</span>
-      </div>
+        Favourites
+      </h2>
 
       {empty ? (
         <p className="px-2 py-1.5 text-sm text-muted-foreground italic">
@@ -544,13 +544,11 @@ function FavoritesPanel({
 function MyTasksPanel({ tasks }: { tasks: MyProjectTask[] }) {
   if (tasks.length === 0) return null;
   return (
-    <div className="bg-card border border-border shadow-brand-1 rounded-lg p-3">
-      <div className="flex items-center gap-2 mb-2">
+    <div className="bg-card border border-border shadow-brand-1 rounded-lg p-4">
+      <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground mb-2">
         <ListChecks className="w-4 h-4 text-accent-coral" />
-        <span className="font-heading font-semibold text-sm text-foreground">
-          My tasks
-        </span>
-      </div>
+        My tasks
+      </h2>
       <div className="flex flex-col gap-1">
         {tasks.map((t) => {
           const url = `/projects/${t.projectId}?tab=board&task=${t.id}`;

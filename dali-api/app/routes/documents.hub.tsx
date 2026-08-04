@@ -19,6 +19,7 @@ import {
   LayoutTemplate,
   Lock,
   Pin,
+  Star,
   Plus,
   Search,
   Tag as TagIcon,
@@ -61,6 +62,8 @@ type DocOut = {
   isSystem: boolean;
   pinned: boolean;
   pinnedAt: number | null;
+  /** This viewer's own star (home Favourites), not the shared pin above. */
+  favorited: boolean;
   iconEmoji: string | null;
   tags: DocTagOut[];
   workspaceKey: string;
@@ -194,14 +197,25 @@ export async function loader({ request }: Route.LoaderArgs) {
     workspaceLabel,
     workspaceKind,
     restricted: workspaceKind === "lab" && p.linkAccess === "Restricted",
+    favorited: false,
   });
+
+  // The viewer's stars, in one read rather than per row.
+  const favoriteIds = new Set(
+    (
+      await prisma.userPage.findMany({
+        where: { userId: auth.user.sub, favoritedAt: { not: null } },
+        select: { pageId: true },
+      })
+    ).map((r) => r.pageId),
+  );
 
   const docs: DocOut[] = [
     ...labPages.map((p) => toDto(p, "lab", "Lab-wide", "lab")),
     ...projectPages.map((p) =>
       toDto(p, p.workspaceId!, projectById.get(p.workspaceId!)?.name ?? "Project", "project"),
     ),
-  ];
+  ].map((d) => ({ ...d, favorited: favoriteIds.has(d.id) }));
 
   const workspaces: WorkspaceOut[] = [
     { key: "lab", label: "Lab-wide", kind: "lab", canManage: member },
@@ -409,6 +423,10 @@ export default function DocumentsHub() {
     const b = await post(`/api/pages/${id}/pin`, { pinned: next });
     if (b) revalidator.revalidate();
   }
+  async function toggleFavorite(id: string, next: boolean) {
+    const b = await post(`/api/pages/${id}/favorite`, { favorited: next });
+    if (b) revalidator.revalidate();
+  }
   async function duplicateDocument(id: string) {
     const b = await post(`/api/pages/${id}/duplicate`);
     if (b?.id) {
@@ -597,6 +615,24 @@ export default function DocumentsHub() {
           {doc.tags.map((t) => (
             <TagChip key={t.id} tag={t} />
           ))}
+          {doc.kind !== "Folder" && (
+            <Tooltip
+              label={doc.favorited ? "In your favourites" : "Add to your favourites"}
+            >
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void toggleFavorite(doc.id, !doc.favorited)}
+                aria-label={doc.favorited ? "Remove from favourites" : "Add to favourites"}
+                aria-pressed={doc.favorited}
+                className={`flex items-center disabled:opacity-60 ${
+                  doc.favorited ? "text-accent-coral" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Star className={`w-3.5 h-3.5 ${doc.favorited ? "fill-current" : ""}`} />
+              </button>
+            </Tooltip>
+          )}
           {canManage && !indent && (
             <Tooltip label={doc.pinned ? "Pinned — click to unpin" : "Pin to top"}>
               <button
