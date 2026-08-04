@@ -76,14 +76,72 @@ function formatDisplay(mode: DateFieldMode, v: string | undefined): string | nul
 const daysInMonth = (y: number, m: number) => new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
 const firstWeekday = (y: number, m: number) => new Date(Date.UTC(y, m, 1)).getUTCDay();
 const dateKey = (y: number, m: number, d: number) => `${y}-${pad(m + 1)}-${pad(d)}`;
-// Parse a typed hour/minute field, clamping to [0, max]; empty/garbage → 0.
-const clampInt = (raw: string, max: number) => {
-  const n = parseInt(raw, 10);
-  return Number.isNaN(n) ? 0 : Math.min(max, Math.max(0, n));
-};
 // 24h ↔ 12h + meridiem. Storage stays 24h; the US-style UI shows 1-12 + AM/PM.
 const to12 = (hh24: number) => (hh24 % 12 === 0 ? 12 : hh24 % 12);
 const from12 = (h12: number, pm: boolean) => (h12 % 12) + (pm ? 12 : 0);
+
+// A single time segment (hour or minute) that types like a native time field:
+// focus selects the segment so you overtype, valid digits commit live, arrow
+// keys step (wrapping), and blur clamps/normalizes.
+function TimePart({
+  value,
+  min,
+  max,
+  onCommit,
+  ariaLabel,
+  pad2 = false,
+}: {
+  value: number;
+  min: number;
+  max: number;
+  onCommit: (n: number) => void;
+  ariaLabel: string;
+  pad2?: boolean;
+}) {
+  const shown = (n: number) => (pad2 ? pad(n) : String(n));
+  const [text, setText] = useState(() => shown(value));
+  const [focused, setFocused] = useState(false);
+
+  useEffect(() => {
+    if (!focused) setText(shown(value));
+  }, [value, focused, pad2]);
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      aria-label={ariaLabel}
+      value={text}
+      onFocus={(e) => {
+        setFocused(true);
+        e.currentTarget.select();
+      }}
+      onChange={(e) => {
+        const raw = e.target.value.replace(/\D/g, "").slice(0, 2);
+        setText(raw);
+        const n = parseInt(raw, 10);
+        if (!Number.isNaN(n) && n >= min && n <= max) onCommit(n);
+      }}
+      onBlur={() => {
+        setFocused(false);
+        const n = parseInt(text, 10);
+        const next = Number.isNaN(n) ? value : Math.min(max, Math.max(min, n));
+        onCommit(next);
+        setText(shown(next));
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "ArrowUp") {
+          e.preventDefault();
+          onCommit(value >= max ? min : value + 1);
+        } else if (e.key === "ArrowDown") {
+          e.preventDefault();
+          onCommit(value <= min ? max : value - 1);
+        }
+      }}
+      className="w-12 rounded-md border border-border bg-background px-1.5 py-1 text-center text-sm tabular-nums text-foreground focus:outline-none focus:ring-1 focus:ring-accent-coral/40"
+    />
+  );
+}
 
 export function DateField({
   mode,
@@ -300,28 +358,21 @@ export function DateField({
             {showTime && (
               <div className={cn("flex items-center gap-2", showCalendar && "mt-3 border-t border-border pt-3")}>
                 <Clock className="h-4 w-4 shrink-0 text-muted-foreground" />
-                <input
-                  type="number"
-                  inputMode="numeric"
+                <TimePart
+                  value={to12(cur?.hh ?? 0)}
                   min={1}
                   max={12}
-                  aria-label="Hour"
-                  value={to12(cur?.hh ?? 0)}
-                  onChange={(e) =>
-                    setTime(from12(clampInt(e.target.value, 12) || 12, (cur?.hh ?? 0) >= 12), cur?.mm ?? 0)
-                  }
-                  className="w-12 rounded-md border border-border bg-background px-1.5 py-1 text-center text-sm tabular-nums text-foreground focus:outline-none focus:ring-1 focus:ring-accent-coral/40"
+                  ariaLabel="Hour"
+                  onCommit={(h12) => setTime(from12(h12, (cur?.hh ?? 0) >= 12), cur?.mm ?? 0)}
                 />
                 <span className="text-muted-foreground">:</span>
-                <input
-                  type="number"
-                  inputMode="numeric"
+                <TimePart
+                  value={cur?.mm ?? 0}
                   min={0}
                   max={59}
-                  aria-label="Minute"
-                  value={cur?.mm ?? 0}
-                  onChange={(e) => setTime(cur?.hh ?? 0, clampInt(e.target.value, 59))}
-                  className="w-12 rounded-md border border-border bg-background px-1.5 py-1 text-center text-sm tabular-nums text-foreground focus:outline-none focus:ring-1 focus:ring-accent-coral/40"
+                  pad2
+                  ariaLabel="Minute"
+                  onCommit={(m) => setTime(cur?.hh ?? 0, m)}
                 />
                 <div className="inline-flex overflow-hidden rounded-md border border-border" role="group" aria-label="AM/PM">
                   {([["AM", false], ["PM", true]] as const).map(([label, pm]) => {
