@@ -13,6 +13,7 @@ import {
   CalendarClock,
   GraduationCap,
   MapPin,
+  Star,
   UserRound,
   X,
 } from "lucide-react";
@@ -21,7 +22,9 @@ import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { listOpenTasks, type Task } from "~/lib/tasks";
+import { listFavoritesAndRecents, type FavoritePage } from "~/lib/user-pages.server";
 import { ProjectIcon } from "~/components/ProjectIcon";
+import { PageIcon } from "~/components/PageIcon";
 import { listedFormsFor, type ListedForm } from "~/forms/lib/public-form";
 import { listCatalog, registrationOpen } from "~/education/lib/offerings.server";
 import { listUpcomingSessionsForUser } from "~/education/lib/schedule.server";
@@ -88,7 +91,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     tz,
   );
 
-  const [items, tasks, rawEvents, formsForYou, assignedTasks, catalog, upcomingSessions] =
+  const [items, tasks, rawEvents, formsForYou, assignedTasks, catalog, upcomingSessions, pages] =
     await Promise.all([
     prisma.notification.findMany({
       // Hide invites whose meeting was Cancelled — they shouldn't appear in the
@@ -152,6 +155,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     // open-assignment counts) and the viewer's next few sessions.
     listCatalog(auth.user.sub),
     listUpcomingSessionsForUser(auth.user.sub, { limit: 3 }),
+    listFavoritesAndRecents(auth.user.sub),
   ]);
 
   const enrolledOfferings = catalog.filter((o) => o.myStatus === "Approved");
@@ -254,6 +258,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     timeZone: tz,
     formsForYou,
     education,
+    pages,
   };
 }
 
@@ -308,6 +313,7 @@ export default function Home() {
     timeZone,
     formsForYou,
     education,
+    pages,
   } = useLoaderData<typeof loader>();
   const firstName = user.firstName || user.email.split("@")[0];
 
@@ -324,7 +330,19 @@ export default function Home() {
 
       <AttentionBanner tasks={tasks} notifications={notifications} />
 
-      <MyTasksPanel tasks={myProjectTasks} />
+      {/* Tasks and pages side by side on wide screens — both are short lists
+          you scan rather than read, so stacking them wasted the width. Tasks
+          hide themselves when you have none, so pair up only when there's
+          something to pair with; otherwise Favourites takes the full width
+          rather than leaving half the row empty. */}
+      <div
+        className={`grid grid-cols-1 gap-6 lg:items-start ${
+          myProjectTasks.length > 0 ? "lg:grid-cols-2" : ""
+        }`}
+      >
+        <MyTasksPanel tasks={myProjectTasks} />
+        <FavoritesPanel pages={pages} />
+      </div>
 
       <FormsForYouPanel forms={formsForYou} />
 
@@ -455,6 +473,73 @@ function FormsForYouPanel({ forms }: { forms: ListedForm[] }) {
 /* deadline first. Each row deep-links to the task modal on its          */
 /* project board. Collapses to nothing when the viewer has none.         */
 /* ------------------------------------------------------------------ */
+
+/* ------------------------------------------------------------------ */
+/* Favourites — pages you starred, then the ones you opened most recently. */
+/* ------------------------------------------------------------------ */
+
+function PageRow({ page }: { page: FavoritePage }) {
+  return (
+    <a
+      href={`/documents/${page.id}`}
+      className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm hover:bg-muted/50 transition-colors"
+    >
+      <PageIcon iconEmoji={page.iconEmoji} />
+      <span className="truncate text-foreground">{page.title || "Untitled"}</span>
+    </a>
+  );
+}
+
+function FavoritesPanel({
+  pages,
+}: {
+  pages: { favorites: FavoritePage[]; recents: FavoritePage[] };
+}) {
+  const { favorites, recents } = pages;
+  // Nothing starred and nothing opened yet — a brand-new account. Say what the
+  // panel is for rather than showing an empty box.
+  const empty = favorites.length === 0 && recents.length === 0;
+
+  return (
+    <div className="bg-card border border-border shadow-brand-1 rounded-lg p-3">
+      <div className="flex items-center gap-2 mb-2">
+        <Star className="w-4 h-4 text-accent-coral" />
+        <span className="font-heading font-semibold text-sm text-foreground">Favourites</span>
+      </div>
+
+      {empty ? (
+        <p className="px-2 py-1.5 text-sm text-muted-foreground italic">
+          Star a document to keep it here — recently opened pages show up too.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {favorites.length > 0 && (
+            <div className="flex flex-col gap-1">
+              {favorites.map((p) => (
+                <PageRow key={p.id} page={p} />
+              ))}
+            </div>
+          )}
+
+          {recents.length > 0 && (
+            <div className="flex flex-col gap-1">
+              {/* Only label the recents when pins sit above them; on its own the
+                  heading is noise. */}
+              {favorites.length > 0 && (
+                <span className="px-2 pt-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+                  Recent
+                </span>
+              )}
+              {recents.map((p) => (
+                <PageRow key={p.id} page={p} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function MyTasksPanel({ tasks }: { tasks: MyProjectTask[] }) {
   if (tasks.length === 0) return null;

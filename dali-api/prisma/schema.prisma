@@ -214,6 +214,7 @@ model User {
   // ─── Phase 1: page-tree back-relations ────────────────────────────────────
   createdPages    Page[] @relation("PageCreatedBy")
   lastEditedPages Page[] @relation("PageLastEditedBy")
+  pageStates      UserPage[]
 
   // ─── Phase 1: notification back-relations ─────────────────────────────────
   notificationPreferences NotificationPreference[]
@@ -3859,6 +3860,7 @@ model Page {
   linkPermission SharePermission @default(View)
 
   shares PageShare[]
+  userStates UserPage[]
 
   // Pinned to the top of the project's Documents block. Timestamp so pins can
   // be ordered most-recent-first. Null = not pinned. (Distinct from the
@@ -3961,6 +3963,34 @@ model PageShare {
 
   @@unique([pageId, principalType, principalId])
   @@index([principalType, principalId])
+}
+
+// One person's relationship to one page: whether they favourited it, and when
+// they last opened it. Both feed the home Favourites panel (pins first, then
+// recents), and both are per-user — distinct from Page.pinnedAt, which is a
+// single shared pin on the project's Documents block, not yours.
+//
+// Deliberately not PageView: that table is analytics and normalizes record ids
+// out of the path (/documents/:id), so it cannot say *which* page you opened.
+//
+// One row per user per page, upserted — a cursor, not a history, so it stays
+// bounded by (people × pages they've touched) and there is nothing to prune.
+model UserPage {
+  id          String    @id @default(cuid())
+  userId      String
+  pageId      String
+  // Null = not favourited. Timestamped so pins order most-recent-first.
+  favoritedAt DateTime?
+  // Null = never opened (a page can be favourited without a visit row of its
+  // own if it was pinned from a list).
+  visitedAt   DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  page Page @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, pageId])
+  @@index([userId, favoritedAt])
+  @@index([userId, visitedAt])
 }
 
 enum SharePrincipalType {

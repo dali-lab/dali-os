@@ -8,7 +8,7 @@ import {
   type RefObject,
 } from "react";
 import { useNavigate, useRevalidator } from "react-router";
-import { Copy, FileDown, FolderInput, History, LayoutTemplate, Link, MessageSquare, MoreHorizontal, Printer, Search, Upload, Users } from "lucide-react";
+import { Copy, FileDown, FolderInput, History, LayoutTemplate, Link, MessageSquare, MoreHorizontal, Printer, Search, Star, Upload, Users } from "lucide-react";
 import { DocEditor, type TocHeading } from "~/components/doc";
 import type { DocEditorInstance } from "~/components/doc/schema/build";
 import { DocCommentsPanel, useDocThreadCounts } from "~/components/doc/comments";
@@ -71,6 +71,7 @@ export function DocumentEditor({
   focusMentionUserId,
   aiEnabled = false,
   canManageAccess = false,
+  favorited: initialFavorited = false,
   workspaceType,
   workspaceId = null,
 }: {
@@ -105,6 +106,8 @@ export function DocumentEditor({
   // the doc's manager on any workspace type — creator/Core on a lab doc, project
   // staff, the note owner, an instructor, or a Full-access grantee.
   canManageAccess?: boolean;
+  // Whether the viewer has this page in their own Favourites (home panel).
+  favorited?: boolean;
   // Workspace the page lives in — drives the Share dialog's per-workspace copy
   // (lab-access toggle, base-access line) and the "Move to…" picker's current
   // location.
@@ -131,6 +134,9 @@ export function DocumentEditor({
   const [panelFilter, setPanelFilter] = useState<"open" | "resolved">("open");
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [accessOpen, setAccessOpen] = useState(false);
+  // Optimistic: the star flips immediately and reverts if the write fails.
+  // A bookmark that lags behind the click feels broken.
+  const [favorited, setFavorited] = useState(initialFavorited);
   const [moveOpen, setMoveOpen] = useState(false);
   // Optimistic local reflection of isTemplate — revalidator syncs server truth.
   const [templateMarked, setTemplateMarked] = useState(isTemplate);
@@ -170,6 +176,22 @@ export function DocumentEditor({
       document.removeEventListener("keydown", onKey);
     };
   }, [typoOpen]);
+
+  async function toggleFavorite() {
+    const next = !favorited;
+    setFavorited(next);
+    try {
+      const res = await fetch(`/api/pages/${pageId}/favorite`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ favorited: next }),
+      });
+      if (!res.ok) setFavorited(!next);
+    } catch {
+      setFavorited(!next);
+    }
+  }
 
   async function saveTypography(next: PageTypography) {
     setTypo(next);
@@ -581,6 +603,24 @@ export function DocumentEditor({
           </button>
         </Tooltip>
       )}
+
+      {/* Favourite — personal, unlike the ⋯ "Pin" which moves the document for
+          everyone. Anyone who can read the page can bookmark it. */}
+      <Tooltip label={favorited ? "Remove from favourites" : "Add to favourites"}>
+        <button
+          type="button"
+          onClick={() => void toggleFavorite()}
+          aria-label={favorited ? "Remove from favourites" : "Add to favourites"}
+          aria-pressed={favorited}
+          className={`inline-flex items-center justify-center rounded-md border p-1.5 transition-colors ${
+            favorited
+              ? "border-accent-coral/40 bg-accent-coral/10 text-accent-coral"
+              : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+          }`}
+        >
+          <Star className={`h-3.5 w-3.5 ${favorited ? "fill-current" : ""}`} />
+        </button>
+      </Tooltip>
 
       {/* Share — its own control rather than a ⋯ entry: who can open a document
           is a property of the document, not a rarely-reached utility. */}
