@@ -54,7 +54,6 @@ export async function action({ request, params }: Route.ActionArgs) {
       kind: true,
       archivedAt: true,
       createdById: true,
-      labRestricted: true,
       systemKey: true,
       partnerVisible: true,
       publicVisible: true,
@@ -95,7 +94,6 @@ export async function action({ request, params }: Route.ActionArgs) {
       workspaceType: page.workspaceType,
       workspaceId: page.workspaceId,
       createdById: page.createdById,
-      labRestricted: page.labRestricted,
     },
     userId,
   );
@@ -175,6 +173,14 @@ export async function action({ request, params }: Route.ActionArgs) {
   else order.push(pageId);
 
   const leavesProject = page.workspaceType === "Project" && dest.type !== "Project";
+  // General access is workspace-specific, so reset it on every cross-workspace
+  // move: a doc landing on the Lab shelf becomes lab-wide editable (the shelf's
+  // default), and one leaving the shelf drops back to its workspace's own rules
+  // — otherwise "Everyone in the lab" edit would follow it into a project doc.
+  const destGeneralAccess: Prisma.PageUncheckedUpdateInput =
+    dest.type === "Lab"
+      ? { linkAccess: "LabMembers", linkPermission: "Edit" }
+      : { linkAccess: "Restricted", linkPermission: "View" };
   const crossData: Prisma.PageUncheckedUpdateInput = sameWorkspace
     ? {}
     : {
@@ -184,11 +190,13 @@ export async function action({ request, params }: Route.ActionArgs) {
         pinnedAt: null,
         // partner/public sharing is Project-only — clear it when leaving.
         ...(leavesProject ? { partnerVisible: false, publicVisible: false } : {}),
+        ...destGeneralAccess,
       };
   const childData: Prisma.PageUncheckedUpdateInput = {
     workspaceType: dest.type,
     workspaceId: dest.id,
     ...(leavesProject ? { partnerVisible: false, publicVisible: false } : {}),
+    ...destGeneralAccess,
   };
 
   await prisma.$transaction([
