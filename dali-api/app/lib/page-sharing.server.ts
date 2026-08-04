@@ -20,6 +20,8 @@ export type ShareRow = {
   principalId: string;
   permission: SharePermission;
   label: string;
+  /** Group rows only: how many people that grant actually reaches. */
+  memberCount?: number;
 };
 
 // Permission tiers ranked low→high. getPageAccess and the manage gate both
@@ -132,12 +134,26 @@ export async function listPageShares(pageId: string): Promise<ShareRow[]> {
   const userName = new Map(users.map((u) => [u.id, `${u.firstName} ${u.lastName}`.trim()]));
   const groupName = new Map(groups.map((g) => [g.id, g.name]));
 
+  // A group row hides how far the grant reaches — "Studio 26S" reads the same
+  // whether it's four people or four hundred. Resolve the size so the dialog
+  // can say. Dynamic groups have to be resolved to be counted, so this is one
+  // query per group; share lists hold a handful, not hundreds.
+  const memberCounts = new Map(
+    await Promise.all(
+      groups.map(async (g): Promise<[string, number]> => [
+        g.id,
+        (await resolveGroupMembers(g.id)).length,
+      ]),
+    ),
+  );
+
   return shares.map((s) => ({
     ...s,
     label:
       s.principalType === "User"
         ? (userName.get(s.principalId) ?? "Unknown member")
         : (groupName.get(s.principalId) ?? "Unknown group"),
+    ...(s.principalType === "Group" ? { memberCount: memberCounts.get(s.principalId) } : {}),
   }));
 }
 

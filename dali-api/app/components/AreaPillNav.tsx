@@ -2,6 +2,7 @@ import { Link, useMatches } from "react-router";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { PageDocButton } from "~/components/page-docs/PageDocButton";
+import { FavoriteRouteButton } from "~/components/FavoriteRouteButton";
 
 // Horizontal sub-navigation between an area's sibling surfaces. Used where a
 // sidebar area collapsed to a single entry: the area's landing page carries
@@ -22,15 +23,25 @@ export type UnderlineTabButton = {
   icon?: LucideIcon;
 };
 
+// The bar is two parts: a scrolling tab list and a fixed action cluster. They
+// have to be separate elements — an action pinned with ml-auto *inside* the
+// scroller counts toward its scroll width, so the row reported ~75px of
+// overflow and scrolled on every page even when the tabs fitted easily.
 const underlineTabBarClass = cn(
-  // nowrap so a long row stays on one line rather than wrapping under empty
-  // page space. It can still scroll when the viewport is genuinely narrower
-  // than the tab set, but the scrollbar itself is hidden — a visible track
-  // sitting under the tabs reads as chrome, not as an affordance.
-  "flex items-stretch gap-0.5 flex-nowrap overflow-x-auto no-scrollbar border-b border-border mb-6 sm:mb-8",
+  "flex items-stretch border-b border-border mb-6 sm:mb-8",
   // Bleed to the iframe edges; tab items carry their own px-3 (matches workspace tabs).
   "-mx-3 sm:-mx-6 lg:-mx-10",
 );
+
+// nowrap so a long row stays on one line rather than wrapping under empty page
+// space. It can still scroll when the viewport is genuinely narrower than the
+// tab set, but the scrollbar itself is hidden — a visible track sitting under
+// the tabs reads as chrome, not as an affordance.
+const underlineTabListClass =
+  "flex min-w-0 flex-1 items-stretch gap-0.5 flex-nowrap overflow-x-auto no-scrollbar";
+
+// Actions never scroll with the tabs and keep the row's right edge.
+const tabBarActionsClass = "flex shrink-0 items-center gap-2 self-center pl-2 pr-2";
 
 // A 2px coral rule on a white page was doing all the work of saying "this tab
 // is selected", and losing — at that weight the tint reads as a hairline rather
@@ -82,6 +93,7 @@ export function AreaPillNav({
   // A lone tab is pure noise — the page is already the only destination.
   if (items.length <= 1) return null;
 
+
   // The pill row is the natural home for a page-level action, so the "Docs"
   // icon rides the row's right edge rather than floating in a row of its own
   // above it. It's the last flex item pushed right by ml-auto, so it sits at
@@ -91,21 +103,22 @@ export function AreaPillNav({
   // so it stays clear of the row's bottom border.
   return (
     <nav className={cn(underlineTabBarClass, className)} aria-label="Section">
-      {items.map((item) => (
-        <Link
-          key={item.to}
-          to={item.to}
-          aria-current={item.active ? "page" : undefined}
-          className={underlineTabItemClass(!!item.active)}
-        >
-          <SubtabLabel label={item.label} icon={item.icon} />
-        </Link>
-      ))}
-      {hasDoc && (
-        <span className="ml-auto flex items-center self-center pl-2 pr-2">
-          <PageDocButton />
-        </span>
-      )}
+      <span className={underlineTabListClass}>
+        {items.map((item) => (
+          <Link
+            key={item.to}
+            to={item.to}
+            aria-current={item.active ? "page" : undefined}
+            className={underlineTabItemClass(!!item.active)}
+          >
+            <SubtabLabel label={item.label} icon={item.icon} />
+          </Link>
+        ))}
+      </span>
+      <span className={tabBarActionsClass}>
+        {hasDoc && <PageDocButton />}
+        <FavoriteRouteButton />
+      </span>
     </nav>
   );
 }
@@ -127,23 +140,24 @@ export function UnderlineTabButtons({
 
   return (
     <div className={underlineTabBarClass} role="tablist" aria-label={label}>
-      {items.map((item) => (
-        <button
-          key={item.label}
-          type="button"
-          role="tab"
-          aria-selected={item.active ?? false}
-          onClick={item.onClick}
-          className={underlineTabItemClass(!!item.active)}
-        >
-          <SubtabLabel label={item.label} icon={item.icon} />
-        </button>
-      ))}
-      {hasDoc && (
-        <span className="ml-auto flex items-center self-center pl-2 pr-2">
-          <PageDocButton />
-        </span>
-      )}
+      <span className={underlineTabListClass}>
+        {items.map((item) => (
+          <button
+            key={item.label}
+            type="button"
+            role="tab"
+            aria-selected={item.active ?? false}
+            onClick={item.onClick}
+            className={underlineTabItemClass(!!item.active)}
+          >
+            <SubtabLabel label={item.label} icon={item.icon} />
+          </button>
+        ))}
+      </span>
+      <span className={tabBarActionsClass}>
+        {hasDoc && <PageDocButton />}
+        <FavoriteRouteButton />
+      </span>
     </div>
   );
 }

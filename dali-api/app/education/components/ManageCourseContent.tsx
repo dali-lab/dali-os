@@ -11,6 +11,7 @@ import { formatDateTime } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { toDatetimeLocal } from "./OfferingFields";
 import { DateField } from "~/components/ui/DateField";
+import { FavoriteStar } from "~/components/FavoriteStar";
 
 // Manager-side course content tabs: Materials (offering-workspace pages),
 // Assignments (CRUD + inline collab instructions), Announcements (composer).
@@ -23,6 +24,7 @@ const LABEL = "text-xs font-semibold text-muted-foreground";
 export function ManageMaterials({
   materials,
   workspaceDocs,
+  favoriteIds = [],
 }: {
   materials: {
     id: string;
@@ -31,10 +33,13 @@ export function ManageMaterials({
     children: { id: string; title: string }[];
   }[];
   workspaceDocs: { id: string; title: string }[];
+  /** Page ids the viewer has starred, for the per-row favourite toggle. */
+  favoriteIds?: string[];
 }) {
   const [addPageOpen, setAddPageOpen] = useState(false);
   const [addFolderOpen, setAddFolderOpen] = useState(false);
   const [addDocOpen, setAddDocOpen] = useState(false);
+  const favorites = new Set(favoriteIds);
   const folders = materials.filter((m) => m.isFolder);
 
   // Drag a material onto a folder to nest it, or onto the top-level strip to
@@ -140,7 +145,7 @@ export function ManageMaterials({
                   </span>
                 </div>
               ) : (
-                <DocRow id={p.id} title={p.title} kind="material" />
+                <DocRow id={p.id} title={p.title} kind="material" favorited={favorites.has(p.id)} />
               )}
               {p.children.length > 0 && (
                 <ul className="mt-2 ml-6 flex flex-col gap-1.5">
@@ -152,7 +157,7 @@ export function ManageMaterials({
                         dragId === c.id ? "opacity-50" : ""
                       }`}
                     >
-                      <DocRow id={c.id} title={c.title} kind="material" nested />
+                      <DocRow id={c.id} title={c.title} kind="material" nested favorited={favorites.has(c.id)} />
                     </li>
                   ))}
                 </ul>
@@ -255,11 +260,13 @@ function DocRow({
   title,
   kind,
   nested = false,
+  favorited = false,
 }: {
   id: string;
   title: string;
   kind: "material" | "shared";
   nested?: boolean;
+  favorited?: boolean;
 }) {
   const shared = kind === "shared";
   const Icon = shared ? Users : FileText;
@@ -286,6 +293,7 @@ function DocRow({
           </span>
         )}
       </Link>
+      <FavoriteStar pageId={id} favorited={favorited} />
     </div>
   );
 }

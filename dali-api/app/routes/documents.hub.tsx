@@ -30,6 +30,8 @@ import { redirectToLogin } from "~/lib/login-next";
 import { isCore, isLabMember, currentTerm } from "~/lib/roles";
 import { visibleLabDocFilter } from "~/lib/lab-documents.server";
 import { Tooltip } from "~/components/ui/IconButton";
+import { FavoriteStar } from "~/components/FavoriteStar";
+import { favoritePageIds } from "~/lib/user-pages.server";
 import { Menu } from "~/components/ui/floating";
 import { useDialog } from "~/components/ui/dialog";
 import { PageIcon } from "~/components/PageIcon";
@@ -61,6 +63,8 @@ type DocOut = {
   isSystem: boolean;
   pinned: boolean;
   pinnedAt: number | null;
+  /** This viewer's own star (home Favourites), not the shared pin above. */
+  favorited: boolean;
   iconEmoji: string | null;
   tags: DocTagOut[];
   workspaceKey: string;
@@ -194,14 +198,18 @@ export async function loader({ request }: Route.LoaderArgs) {
     workspaceLabel,
     workspaceKind,
     restricted: workspaceKind === "lab" && p.linkAccess === "Restricted",
+    favorited: false,
   });
+
+  // The viewer's stars, in one read rather than per row.
+  const favoriteIds = await favoritePageIds(auth.user.sub);
 
   const docs: DocOut[] = [
     ...labPages.map((p) => toDto(p, "lab", "Lab-wide", "lab")),
     ...projectPages.map((p) =>
       toDto(p, p.workspaceId!, projectById.get(p.workspaceId!)?.name ?? "Project", "project"),
     ),
-  ];
+  ].map((d) => ({ ...d, favorited: favoriteIds.has(d.id) }));
 
   const workspaces: WorkspaceOut[] = [
     { key: "lab", label: "Lab-wide", kind: "lab", canManage: member },
@@ -597,6 +605,9 @@ export default function DocumentsHub() {
           {doc.tags.map((t) => (
             <TagChip key={t.id} tag={t} />
           ))}
+          {doc.kind !== "Folder" && (
+            <FavoriteStar pageId={doc.id} favorited={doc.favorited} />
+          )}
           {canManage && !indent && (
             <Tooltip label={doc.pinned ? "Pinned — click to unpin" : "Pin to top"}>
               <button

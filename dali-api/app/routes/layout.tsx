@@ -3,6 +3,7 @@ import { Outlet, redirect, useLoaderData, useLocation, useMatches, useNavigate, 
 import { cn } from '~/lib/cn'
 import { Layout } from '~/components/Layout'
 import { Breadcrumbs } from '~/components/Breadcrumbs'
+import { FavoriteRouteButton } from '~/components/FavoriteRouteButton'
 import { PageDocProvider, PageDocButton, PageDocOutlet } from '~/components/page-docs/PageDocButton'
 import { LaunchWelcome } from '~/components/LaunchWelcome'
 import { TimeZonePrompt } from '~/components/TimeZonePrompt'
@@ -357,7 +358,14 @@ export default function AppLayoutRoute() {
           )}
         >
           <Breadcrumbs />
-          <PageDocButton suppressWhenPills />
+          {/* Page-level actions, same corner on every page. Favourite is always
+              here — unlike Docs, it does not defer to the pill row, because a
+              control that relocates depending on whether a page has tabs is one
+              you have to hunt for. */}
+          <span className="ml-auto flex shrink-0 items-center gap-1">
+            <PageDocButton suppressWhenPills />
+            <FavoriteRouteButton suppressWhenPills />
+          </span>
         </div>
         <PageDocOutlet>
           <Outlet />
