@@ -12,6 +12,8 @@ import { Modal } from "~/components/Modal";
 import { Button } from "~/components/ui/Button";
 import { Avatar } from "~/components/ui/Avatar";
 import { MentionTextInput } from "~/components/MentionTextInput";
+import { DocEditor } from "~/components/doc";
+import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { useDialog } from "~/components/ui/dialog";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
@@ -79,12 +81,18 @@ export function TaskModal({
   onDelete,
   defaultEpicId,
   onArtifactsChanged,
+  collabToken,
+  userName,
 }: {
   // Present in edit mode; omitted (create mode) opens an empty form.
   task?: TaskCardModel;
   projectId: string;
   options: TaskBoardOptions;
   canManage: boolean;
+  // Collab wiring for the edit-mode rich description doc. Absent in create
+  // mode (no task id yet) and when the session cookie is missing.
+  collabToken?: string | null;
+  userName?: string;
   onClose: () => void;
   // Resolves with the save outcome; on failure the modal stays open and
   // shows `error` inline instead of closing.
@@ -238,8 +246,8 @@ export function TaskModal({
   function diffPatch(current: TaskCardModel): Patch {
     const patch: Patch = {};
     if (title.trim() && title.trim() !== current.title) patch.title = title.trim();
-    const nextDescription = description.trim() ? description.trim() : null;
-    if (nextDescription !== current.description) patch.description = nextDescription;
+    // Description is a live collab doc in edit mode (autosaved, mirrored to
+    // Task.description server-side) — not part of the Save patch.
     if (priority !== current.priority) patch.priority = priority;
     if (status !== current.status) patch.status = status;
     const nextDueIso = dueDate ? endOfDayIso(dueDate) : null;
@@ -627,14 +635,45 @@ export function TaskModal({
         </div>
 
         <Field label="Description">
-          <textarea
-            value={description}
-            disabled={!canManage}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={3}
-            placeholder="What does this task involve? (optional)"
-            className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground disabled:opacity-70"
-          />
+          {/* Create mode has no task id yet, so it collects an initial
+              description via a textarea (persisted to Task.description, which
+              seeds the collab doc on first open). Edit mode is the live doc;
+              non-managers / expired sessions read the plaintext mirror. */}
+          {isCreate ? (
+            <textarea
+              value={description}
+              disabled={!canManage}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+              placeholder="What does this task involve? (optional)"
+              className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground disabled:opacity-70"
+            />
+          ) : task && canManage && collabToken ? (
+            <PresenceProvider
+              pageId={`task:${task.id}`}
+              token={collabToken}
+              userName={userName ?? ""}
+            >
+              <DocEditor
+                features="notes"
+                collab={{
+                  documentName: `task:${task.id}:description`,
+                  token: collabToken,
+                  userName: userName ?? "",
+                }}
+                placeholder="What does this task involve? (optional)"
+                className="border border-border rounded-md"
+              />
+            </PresenceProvider>
+          ) : description ? (
+            <p className="px-2 py-1.5 text-sm text-foreground whitespace-pre-wrap">
+              {description}
+            </p>
+          ) : (
+            <p className="px-2 py-1.5 text-sm text-muted-foreground italic">
+              No description.
+            </p>
+          )}
         </Field>
 
         {/* Details — one tidy property panel (label · control rows) instead of

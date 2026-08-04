@@ -13,6 +13,9 @@ import {
   gradeSubmission,
 } from "~/education/lib/assignments.server";
 import { Button } from "~/components/ui/Button";
+import { DocEditor } from "~/components/doc";
+import { PresenceProvider } from "~/components/collab/PresenceProvider";
+import { parseSessionCookie } from "~/lib/cookies";
 import { formatDateTime } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 
@@ -52,6 +55,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       ...s,
       files: (s.files as { key: string; name: string }[]) ?? [],
     })),
+    collabToken: parseSessionCookie(request),
+    userName: `${auth.user.firstName ?? ""} ${auth.user.lastName ?? ""}`.trim(),
   };
 }
 
@@ -70,7 +75,6 @@ export async function action({ request, params }: Route.ActionArgs) {
     submissionId: String(formData.get("submissionId") ?? ""),
     offeringId,
     grade: String(formData.get("grade") ?? ""),
-    feedbackText: String(formData.get("feedbackText") ?? ""),
     actorId: auth.user.sub,
   });
   if ("error" in result)
@@ -79,7 +83,8 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function GradeAssignment() {
-  const { offeringId, assignment, submissions } = useLoaderData<typeof loader>();
+  const { offeringId, assignment, submissions, collabToken, userName } =
+    useLoaderData<typeof loader>();
   const tz = useUserTimeZone();
 
   return (
@@ -142,38 +147,52 @@ export default function GradeAssignment() {
               </ul>
             )}
 
-            <Form
-              method="post"
-              className="mt-3 pt-3 border-t border-border grid gap-3 sm:grid-cols-[1fr_3fr_auto] items-end"
-            >
-              <input type="hidden" name="intent" value="grade-submission" />
-              <input type="hidden" name="submissionId" value={s.id} />
-              <label className="block">
-                <span className="text-xs font-semibold text-muted-foreground">Grade</span>
-                <input
-                  type="text"
-                  name="grade"
-                  defaultValue={s.grade ?? ""}
-                  placeholder="Complete"
-                  className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
-                />
-              </label>
-              <label className="block">
-                <span className="text-xs font-semibold text-muted-foreground">
-                  Feedback (shown to the student)
-                </span>
-                <textarea
-                  name="feedbackText"
-                  rows={2}
-                  defaultValue={s.feedbackText ?? ""}
-                  placeholder="Nice work — consider…"
-                  className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
-                />
-              </label>
-              <Button type="submit" variant="secondary" size="sm">
-                Save
-              </Button>
-            </Form>
+            <div className="mt-3 pt-3 border-t border-border flex flex-col gap-3">
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground">
+                  Feedback (shown to the student once graded — saves as you type)
+                </p>
+                {collabToken ? (
+                  <PresenceProvider
+                    pageId={`edusubmission:${s.id}`}
+                    token={collabToken}
+                    userName={userName}
+                  >
+                    <DocEditor
+                      features="notes"
+                      collab={{
+                        documentName: `edusubmission:${s.id}:feedback`,
+                        token: collabToken,
+                        userName,
+                      }}
+                      placeholder="Nice work — consider…"
+                      className="mt-1 border border-border rounded-md"
+                    />
+                  </PresenceProvider>
+                ) : (
+                  <p className="text-xs text-muted-foreground italic mt-1">
+                    Sign in again to edit feedback.
+                  </p>
+                )}
+              </div>
+              <Form method="post" className="flex items-end gap-3">
+                <input type="hidden" name="intent" value="grade-submission" />
+                <input type="hidden" name="submissionId" value={s.id} />
+                <label className="block">
+                  <span className="text-xs font-semibold text-muted-foreground">Grade</span>
+                  <input
+                    type="text"
+                    name="grade"
+                    defaultValue={s.grade ?? ""}
+                    placeholder="Complete"
+                    className="mt-1 w-40 rounded-md border border-border bg-card px-2 py-1.5 text-sm"
+                  />
+                </label>
+                <Button type="submit" variant="secondary" size="sm">
+                  {s.gradedAt ? "Update grade" : "Release grade"}
+                </Button>
+              </Form>
+            </div>
           </div>
         ))
       )}

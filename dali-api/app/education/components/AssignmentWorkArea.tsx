@@ -26,6 +26,9 @@ export type SubmissionView = {
   gradedAt: string | Date | null;
   grade: string | null;
   feedbackText: string | null;
+  // Released instructor feedback as BlockNote blocks (read server-side); falls
+  // back to the feedbackText mirror for pre-migration submissions.
+  feedbackContent?: unknown;
 } | null;
 
 export function AssignmentWorkArea({
@@ -122,7 +125,15 @@ export function AssignmentWorkArea({
             {submission.grade ? `Grade · ${submission.grade}` : "Graded"}
             {` · ${formatDateTime(submission.gradedAt, tz)}`}
           </p>
-          {submission.feedbackText ? (
+          {countWords(submission.feedbackContent) > 0 ? (
+            <div className="mt-1">
+              <DocEditor
+                features="notes"
+                editable={false}
+                initialContent={submission.feedbackContent}
+              />
+            </div>
+          ) : submission.feedbackText ? (
             <p className="text-sm text-foreground whitespace-pre-wrap mt-1">
               {submission.feedbackText}
             </p>

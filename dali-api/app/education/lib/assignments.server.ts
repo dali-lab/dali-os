@@ -269,7 +269,6 @@ export async function gradeSubmission(args: {
   submissionId: string;
   offeringId: string;
   grade: string;
-  feedbackText: string;
   actorId: string;
 }): Promise<MutationResult> {
   const submission = await prisma.educationSubmission.findUnique({
@@ -283,11 +282,12 @@ export async function gradeSubmission(args: {
   if (!submission) return { error: "Submission not found", status: 404 };
   const owner = await offeringIdForAssignment(submission.assignmentId);
   if (owner !== args.offeringId) return { error: "Submission not found", status: 404 };
+  // feedbackText is owned by the collab feedback doc (edusubmission:{id}:feedback)
+  // and mirrored on save; grading only sets the grade + release timestamp.
   await prisma.educationSubmission.update({
     where: { id: args.submissionId },
     data: {
       grade: args.grade.trim() || null,
-      feedbackText: args.feedbackText.trim() || null,
       gradedAt: new Date(),
     },
   });
