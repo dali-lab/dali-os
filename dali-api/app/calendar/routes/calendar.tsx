@@ -47,6 +47,7 @@ import { Toggle } from "~/components/ui/Toggle";
 import { RsvpButtons } from "~/components/RsvpButtons";
 import { CustomHiresManager } from "~/calendar/components/CustomHiresManager";
 import { DateField } from "~/components/ui/DateField";
+import { Select } from "~/components/ui/floating";
 
 // Underline subnav sits flush under the workspace tab bar (see layout embed padding).
 export const handle = {
@@ -1774,17 +1775,12 @@ function AddManualBlockForm({ onDone }: { onDone: () => void }) {
       </div>
       <label className="text-xs text-muted-foreground flex flex-col gap-1">
         Repeats
-        <select
+        <Select
           value={repeats}
-          onChange={(e) => setRepeats(e.target.value as Repeats)}
-          className="px-2 py-1 text-sm border border-border rounded-md bg-background text-foreground"
-        >
-          {REPEATS_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
+          onChange={(v) => setRepeats(v as Repeats)}
+          options={REPEATS_OPTIONS}
+          buttonClassName="px-2 py-1 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+        />
       </label>
       {/* The action reads `recurrenceRule` as an RRULE string; derive it from
           the friendly Repeats choice so non-technical users never see RRULE. */}
@@ -2361,25 +2357,13 @@ function RoleSelectField({
   return (
     <label htmlFor={id} className="text-xs text-muted-foreground flex flex-col gap-1">
       Role
-      <select
-        id={id}
-        required
+      <Select
         value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className={`${FIELD_BASE} ${value ? "border-border" : "border-red-500"}`}
-      >
-        {/* Placeholder, not a choice: every logged hour bills to a real role,
-            so this is disabled and can't be submitted (unlike the old
-            "Unassigned" option, which silently created unattributable time). */}
-        <option value="" disabled>
-          Select a role…
-        </option>
-        {myRoles.map((r) => (
-          <option key={roleOptionKey(r)} value={roleOptionKey(r)}>
-            {r.label}
-          </option>
-        ))}
-      </select>
+        onChange={onChange}
+        placeholder="Select a role…"
+        options={myRoles.map((r) => ({ value: roleOptionKey(r), label: r.label }))}
+        buttonClassName={`${FIELD_BASE} ${value ? "border-border" : "border-red-500"} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
+      />
       <input type="hidden" name="assignmentType" value={parsed?.assignmentType ?? ""} />
       <input type="hidden" name="roleRefId" value={parsed?.roleRefId ?? ""} />
     </label>
@@ -2549,18 +2533,12 @@ function CreateFromDragPopover({
             <label htmlFor="drag-repeats" className="block text-sm font-medium text-foreground mb-1">
               Repeats
             </label>
-            <select
-              id="drag-repeats"
+            <Select
               value={repeats}
-              onChange={(e) => setRepeats(e.target.value as Repeats)}
-              className="w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground"
-            >
-              {REPEATS_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
+              onChange={(v) => setRepeats(v as Repeats)}
+              options={REPEATS_OPTIONS}
+              buttonClassName="w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+            />
           </div>
 
           {myRoles.length > 0 && !isRecurring && (
@@ -2572,18 +2550,13 @@ function CreateFromDragPopover({
                 className="text-sm font-medium text-foreground"
               />
               {isWork && (
-                <select
-                  aria-label="Which role is this work for"
+                <Select
+                  ariaLabel="Which role is this work for"
                   value={roleKey}
-                  onChange={(e) => setRoleKey(e.target.value)}
-                  className="mt-2 w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground"
-                >
-                  {myRoles.map((r) => (
-                    <option key={roleOptionKey(r)} value={roleOptionKey(r)}>
-                      {r.label}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => setRoleKey(v)}
+                  options={myRoles.map((r) => ({ value: roleOptionKey(r), label: r.label }))}
+                  buttonClassName="mt-2 w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                />
               )}
             </div>
           )}
@@ -3305,24 +3278,15 @@ function TimesheetDragPopover({
           {myRoles.length === 0 ? (
             <p className="text-xs text-red-600">{NO_ROLES_MESSAGE}</p>
           ) : (
-            <select
-              id="ts-drag-role"
-              required
+            <Select
               value={roleKey}
-              onChange={(e) => setRoleKey(e.target.value)}
-              className={`w-full px-3 py-2 text-sm border rounded-md bg-background text-foreground ${
+              onChange={(v) => setRoleKey(v)}
+              placeholder="Select a role…"
+              options={myRoles.map((r) => ({ value: roleOptionKey(r), label: r.label }))}
+              buttonClassName={`w-full px-3 py-2 text-sm border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40 ${
                 roleKey ? "border-border" : "border-red-500"
               }`}
-            >
-              <option value="" disabled>
-                Select a role…
-              </option>
-              {myRoles.map((r) => (
-                <option key={roleOptionKey(r)} value={roleOptionKey(r)}>
-                  {r.label}
-                </option>
-              ))}
-            </select>
+            />
           )}
         </div>
 
@@ -3525,31 +3489,20 @@ function TimesheetEditPopover({
           <label htmlFor="ts-edit-role" className="block text-sm font-medium text-foreground mb-1">
             Role
           </label>
-          <select
-            id="ts-edit-role"
-            required
+          <Select
             value={roleKey}
-            onChange={(e) => setRoleKey(e.target.value)}
-            className={`w-full px-3 py-2 text-sm border rounded-md bg-background text-foreground ${
+            onChange={(v) => setRoleKey(v)}
+            placeholder="Select a role…"
+            options={[
+              ...(roleKey && !myRoles.some((r) => roleOptionKey(r) === roleKey)
+                ? [{ value: roleKey, label: "Current role (no longer active)" }]
+                : []),
+              ...myRoles.map((r) => ({ value: roleOptionKey(r), label: r.label })),
+            ]}
+            buttonClassName={`w-full px-3 py-2 text-sm border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40 ${
               roleKey ? "border-border" : "border-red-500"
             }`}
-          >
-            {/* Disabled placeholder rather than an "Unassigned" choice. A
-                legacy unattributed entry still opens here with nothing
-                selected — saving then forces a real role, which is the point. */}
-            <option value="" disabled>
-              Select a role…
-            </option>
-            {roleKey &&
-              !myRoles.some((r) => roleOptionKey(r) === roleKey) && (
-                <option value={roleKey}>Current role (no longer active)</option>
-              )}
-            {myRoles.map((r) => (
-              <option key={roleOptionKey(r)} value={roleOptionKey(r)}>
-                {r.label}
-              </option>
-            ))}
-          </select>
+          />
           {!roleKey && <p className="mt-1 text-xs text-red-600">Pick a role to save this entry.</p>}
         </div>
 
@@ -3842,18 +3795,12 @@ function CreateScheduledMeetingForm({
             <label htmlFor="meeting-recurrence" className={labelClass}>
               Repeats
             </label>
-            <select
-              id="meeting-recurrence"
+            <Select
               value={repeats}
-              onChange={(e) => setRepeats(e.target.value as Repeats)}
-              className={fieldClass}
-            >
-              {REPEATS_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
+              onChange={(v) => setRepeats(v as Repeats)}
+              options={REPEATS_OPTIONS}
+              buttonClassName={`${fieldClass} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
+            />
           </div>
           <div className="pt-3">
             <label htmlFor="organizer-calendar" className={labelClass}>
@@ -3864,19 +3811,18 @@ function CreateScheduledMeetingForm({
                 No Google calendar linked. Link one in My Availability to send Gmail invites.
               </p>
             ) : (
-              <select
-                id="organizer-calendar"
+              <Select
                 value={organizerCalendarLinkId}
-                onChange={(e) => setOrganizerCalendarLinkId(e.target.value)}
-                className={fieldClass}
-              >
-                <option value="">No invite (in-app notification only)</option>
-                {googleLinks.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.displayName ? `${l.displayName} — ${l.externalEmail}` : l.externalEmail}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setOrganizerCalendarLinkId(v)}
+                options={[
+                  { value: "", label: "No invite (in-app notification only)" },
+                  ...googleLinks.map((l) => ({
+                    value: l.id,
+                    label: l.displayName ? `${l.displayName} — ${l.externalEmail}` : l.externalEmail,
+                  })),
+                ]}
+                buttonClassName={`${fieldClass} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
+              />
             )}
           </div>
         </div>
@@ -3902,16 +3848,16 @@ function CreateScheduledMeetingForm({
                     <label htmlFor="meeting-type" className={labelClass}>
                       Meeting type
                     </label>
-                    <select
-                      id="meeting-type"
+                    <Select
                       value={meetingType}
-                      onChange={(e) => setMeetingType(e.target.value as typeof meetingType)}
-                      className={fieldClass}
-                    >
-                      <option value="Team">Team meeting</option>
-                      <option value="Partner">Partner meeting</option>
-                      <option value="Other">Other</option>
-                    </select>
+                      onChange={(v) => setMeetingType(v as typeof meetingType)}
+                      options={[
+                        { value: "Team", label: "Team meeting" },
+                        { value: "Partner", label: "Partner meeting" },
+                        { value: "Other", label: "Other" },
+                      ]}
+                      buttonClassName={`${fieldClass} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
+                    />
                   </div>
                   {meetingType === "Other" && (
                     <div>
@@ -3933,19 +3879,15 @@ function CreateScheduledMeetingForm({
                     <label htmlFor="meeting-project" className={labelClass}>
                       Project <span className="text-muted-foreground font-normal">(optional)</span>
                     </label>
-                    <select
-                      id="meeting-project"
+                    <Select
                       value={projectId}
-                      onChange={(e) => setProjectId(e.target.value)}
-                      className={fieldClass}
-                    >
-                      <option value="">No project — Lab documents</option>
-                      {myProjects.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={(v) => setProjectId(v)}
+                      options={[
+                        { value: "", label: "No project — Lab documents" },
+                        ...myProjects.map((p) => ({ value: p.id, label: p.name })),
+                      ]}
+                      buttonClassName={`${fieldClass} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
+                    />
                   </div>
                 </div>
               </div>

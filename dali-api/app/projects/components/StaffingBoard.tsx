@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useRevalidator } from "react-router";
-import { SelectMenu } from "~/components/ui/SelectMenu";
+import { Select } from "~/components/ui/floating";
 import type { DragEndEvent } from "@dnd-kit/core";
 import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
 import {
@@ -631,7 +631,7 @@ export function StaffingBoard({
           }}
         />
         <div className="flex items-center gap-2">
-          <SelectMenu
+          <Select
             value={termId}
             options={terms.map((t) => ({ value: t.id, label: t.code }))}
             ariaLabel="Term"

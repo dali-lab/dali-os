@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Form, redirect, useLoaderData, useNavigation } from "react-router";
+import { Select } from "~/components/ui/floating";
 import { Calendar, Globe, History, Plus, Users, X } from "lucide-react";
 import type { Route } from "./+types/projects.$id.public-view";
 import { prisma } from "~/lib/db";
@@ -311,17 +312,12 @@ export default function ProjectPublicView() {
         {canPublish && (
           <Form method="post" className="flex items-center gap-2">
             <input type="hidden" name="intent" value="showcase-status" />
-            <select
+            <Select
               name="status"
               defaultValue={s?.status ?? "NotStarted"}
-              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
-            >
-              {STATUSES.map((v) => (
-                <option key={v} value={v}>
-                  {STATUS_LABELS[v]}
-                </option>
-              ))}
-            </select>
+              options={STATUSES.map((v) => ({ value: v, label: STATUS_LABELS[v] }))}
+              buttonClassName="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+            />
             <button
               type="submit"
               className="px-3 py-1.5 text-sm font-medium rounded-md border border-border hover:bg-muted/50 transition-colors"

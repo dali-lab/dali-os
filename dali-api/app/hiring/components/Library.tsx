@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Link, Form, useLoaderData, useSearchParams } from "react-router";
-import { SelectMenu, type SelectMenuOption } from "~/components/ui/SelectMenu";
+import { Select, type SelectOption } from "~/components/ui/floating";
 import {
   Plus,
   FileText,
@@ -116,12 +116,12 @@ function ChallengesPanel({
           </p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          <SelectMenu
+          <Select
             value={activeDomain}
             options={[
               { value: GENERAL_TAB_ID, label: "General" },
               ...domains.map((domain: any) => ({ value: domain.id, label: domain.name })),
-            ] as SelectMenuOption<string>[]}
+            ] as SelectOption<string>[]}
             ariaLabel="Domain"
             buttonClassName="inline-flex items-center justify-between gap-1 px-3 py-2 rounded-lg border border-border bg-card text-sm font-medium text-foreground transition-colors hover:bg-muted/40"
             onChange={(value) => setActiveDomain(value)}

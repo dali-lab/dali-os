@@ -29,7 +29,7 @@ import { resolveTermFilter } from "~/lib/terms";
 import { deriveCoreTitles } from "~/lib/core-titles";
 import { LayoutGrid, UsersRound } from "lucide-react";
 import { AreaPillNav } from "~/components/AreaPillNav";
-import { SelectMenu, type SelectMenuOption } from "~/components/ui/SelectMenu";
+import { Select, type SelectOption } from "~/components/ui/floating";
 
 export const handle = { areaPills: true };
 
@@ -503,12 +503,12 @@ function DomainFilter({
   selected: string;
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
-  const options: SelectMenuOption<string>[] = [
+  const options: SelectOption<string>[] = [
     { value: "", label: "All domains" },
     ...domains.map((d) => ({ value: d.id, label: d.displayName })),
   ];
   return (
-    <SelectMenu
+    <Select
       value={selected}
       options={options}
       ariaLabel="Filter by domain"

@@ -14,7 +14,7 @@ import { partnerProjectsWhere } from "~/partners/lib/partner-access";
 import { userInitials } from "~/lib/display";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 import { PortalProfileMenu } from "~/components/PortalProfileMenu";
-import { useDismissableMenu } from "~/hooks/useDismissableMenu";
+import { Menu } from "~/components/ui/floating";
 
 // Partner portal chrome: fixed top navbar, no member sidebar — the same
 // shape as the applicant portal. NOTE: this loader's requirePartner does NOT
@@ -86,7 +86,6 @@ function ProjectsNav({
 }: {
   projects: { id: string; name: string }[];
 }) {
-  const { open, setOpen, ref } = useDismissableMenu();
   const location = useLocation();
   const active = location.pathname.startsWith("/partner/projects");
 
@@ -100,40 +99,33 @@ function ProjectsNav({
   }
 
   return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        className={`flex items-center gap-1 text-sm font-medium transition ${
-          active ? "text-accent-coral" : "text-dark-blue hover:text-accent-coral"
-        }`}
-      >
-        Projects
-        <ChevronDown
-          className={`w-3.5 h-3.5 transition-transform ${open ? "rotate-180" : ""}`}
-        />
-      </button>
-      {open && (
-        <div
-          role="menu"
-          className="absolute left-0 top-full mt-2 w-56 bg-card border border-border rounded-xl shadow-lg py-1 z-50"
+    <Menu
+      align="left"
+      ariaLabel="Projects"
+      trigger={(open) => (
+        <button
+          type="button"
+          className={`flex items-center gap-1 text-sm font-medium transition ${
+            active ? "text-accent-coral" : "text-dark-blue hover:text-accent-coral"
+          }`}
         >
-          {projects.map((p) => (
-            <Link
-              key={p.id}
-              to={`/partner/projects/${p.id}`}
-              role="menuitem"
-              onClick={() => setOpen(false)}
-              className="block px-4 py-2 text-sm text-dark-blue hover:bg-muted/50 transition truncate"
-            >
-              {p.name}
-            </Link>
-          ))}
-        </div>
+          Projects
+          <ChevronDown
+            className={`w-3.5 h-3.5 transition-transform ${open ? "rotate-180" : ""}`}
+          />
+        </button>
       )}
-    </div>
+    >
+      {projects.map((p) => (
+        <Menu.LinkItem
+          key={p.id}
+          to={`/partner/projects/${p.id}`}
+          className="block px-4 py-2 text-sm text-dark-blue hover:bg-muted/50 transition truncate"
+        >
+          {p.name}
+        </Menu.LinkItem>
+      ))}
+    </Menu>
   );
 }
 

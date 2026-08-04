@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { Link, useMatches, useLocation } from 'react-router'
 import { Check, ChevronDown, ChevronRight } from 'lucide-react'
 import { cn } from '~/lib/cn'
-import { useDismissableMenu } from '~/hooks/useDismissableMenu'
+import { Menu } from '~/components/ui/floating'
 
 export type Crumb = {
   label: string
@@ -162,7 +162,7 @@ function isOpaqueId(seg: string) {
 }
 
 // A breadcrumb crumb that is also a switcher: clicking it opens a menu of
-// sibling destinations. Dismisses on outside-click / Escape via the shared hook.
+// sibling destinations.
 function CrumbSwitcher({
   label,
   siblings,
@@ -170,54 +170,48 @@ function CrumbSwitcher({
   label: string
   siblings: NonNullable<Crumb['siblings']>
 }) {
-  const { open, setOpen, ref } = useDismissableMenu()
   return (
-    <span ref={ref} className="relative inline-flex">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium text-foreground transition hover:bg-muted/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-coral"
-      >
-        {label}
-        <ChevronDown
-          className={cn(
-            'h-3.5 w-3.5 text-muted-foreground transition-transform',
-            open && 'rotate-180',
-          )}
-          aria-hidden
-        />
-      </button>
-      {open && (
-        <span
-          role="menu"
-          className="absolute left-0 top-full z-50 mt-1 flex min-w-[13rem] flex-col rounded-md border border-border bg-card py-1 shadow-lg"
+    <Menu
+      align="left"
+      ariaLabel={`${label} siblings`}
+      trigger={(open) => (
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium text-foreground transition hover:bg-muted/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-coral"
         >
-          {siblings.map((s) => (
-            <Link
-              key={s.to}
-              to={s.to}
-              role="menuitem"
-              onClick={() => setOpen(false)}
-              className={cn(
-                'flex items-center gap-2 px-3 py-1.5 text-sm transition hover:bg-muted/50',
-                s.current ? 'font-medium text-foreground' : 'text-muted-foreground',
-              )}
-            >
-              <Check
-                className={cn(
-                  'h-3.5 w-3.5 shrink-0 text-accent-coral',
-                  s.current ? 'opacity-100' : 'opacity-0',
-                )}
-                aria-hidden
-              />
-              {s.label}
-            </Link>
-          ))}
-        </span>
+          {label}
+          <ChevronDown
+            className={cn(
+              'h-3.5 w-3.5 text-muted-foreground transition-transform',
+              open && 'rotate-180',
+            )}
+            aria-hidden
+          />
+        </button>
       )}
-    </span>
+    >
+      {siblings.map((s) => (
+        <Menu.LinkItem
+          key={s.to}
+          to={s.to}
+          icon={
+            <Check
+              className={cn(
+                'h-3.5 w-3.5 shrink-0 text-accent-coral',
+                s.current ? 'opacity-100' : 'opacity-0',
+              )}
+              aria-hidden
+            />
+          }
+          className={cn(
+            'flex items-center gap-2 px-3 py-1.5 text-sm transition hover:bg-muted/50',
+            s.current ? 'font-medium text-foreground' : 'text-muted-foreground',
+          )}
+        >
+          {s.label}
+        </Menu.LinkItem>
+      ))}
+    </Menu>
   )
 }
 

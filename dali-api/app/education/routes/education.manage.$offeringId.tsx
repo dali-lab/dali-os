@@ -7,6 +7,7 @@ import {
   Form,
   Link,
 } from "react-router";
+import { Select, type SelectOption } from "~/components/ui/floating";
 import { redirectToLogin } from "~/lib/login-next";
 import type { Route } from "./+types/education.manage.$offeringId";
 import { requireAuth } from "~/lib/auth";
@@ -687,21 +688,19 @@ export default function ManageOffering() {
                   <input type="hidden" name="intent" value="set-decision-email" />
                   <input type="hidden" name="status" value={status} />
                   <span className="text-sm text-foreground w-24">{status}</span>
-                  <select
+                  <Select
                     name="emailTemplateVersionId"
                     defaultValue={
                       decisionEmailBindings.find((b) => b.status === status)
                         ?.emailTemplateVersionId ?? ""
                     }
-                    className="flex-1 rounded-md border border-border bg-card px-2 py-1.5 text-sm"
-                  >
-                    <option value="">Built-in message (no template)</option>
-                    {emailTemplates.map((t) => (
-                      <option key={t.versionId} value={t.versionId}>
-                        {t.name}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="Built-in message (no template)"
+                    options={[
+                      { value: "", label: "Built-in message (no template)" },
+                      ...emailTemplates.map((t) => ({ value: t.versionId, label: t.name })),
+                    ]}
+                    buttonClassName="flex-1 rounded-md border border-border bg-card px-2 py-1.5 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                  />
                   <Button type="submit" variant="secondary" size="sm">
                     Save
                   </Button>
@@ -730,20 +729,18 @@ export default function ManageOffering() {
                   <input type="hidden" name="intent" value="set-form-binding" />
                   <input type="hidden" name="slot" value={slot} />
                   <span className="text-sm text-foreground w-44">{label}</span>
-                  <select
+                  <Select
                     name="formId"
                     defaultValue={
                       feedbackBindings.find((b) => b.slot === slot)?.formId ?? ""
                     }
-                    className="flex-1 rounded-md border border-border bg-card px-2 py-1.5 text-sm"
-                  >
-                    <option value="">None</option>
-                    {publishedForms.map((f) => (
-                      <option key={f.id} value={f.id}>
-                        {f.name}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="None"
+                    options={[
+                      { value: "", label: "None" },
+                      ...publishedForms.map((f) => ({ value: f.id, label: f.name })),
+                    ]}
+                    buttonClassName="flex-1 rounded-md border border-border bg-card px-2 py-1.5 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                  />
                   <Button type="submit" variant="secondary" size="sm">
                     Save
                   </Button>
@@ -1090,22 +1087,20 @@ export default function ManageOffering() {
             <span className="text-xs font-semibold text-muted-foreground">
               Session
             </span>
-            <select
+            <Select
               value={feedbackSessionId ?? ""}
-              onChange={(e) =>
+              onChange={(value) =>
                 setSearchParams(
-                  { tab: "feedback", session: e.target.value },
+                  { tab: "feedback", session: value },
                   { preventScrollReset: true },
                 )
               }
-              className="rounded-md border border-border bg-card px-2 py-1.5 text-sm"
-            >
-              {offering.sessions.map((s) => (
-                <option key={s.id} value={s.id}>
-                  Session {s.sequence} — {formatDateTime(s.datetime, tz)}
-                </option>
-              ))}
-            </select>
+              options={offering.sessions.map((s) => ({
+                value: s.id,
+                label: `Session ${s.sequence} — ${formatDateTime(s.datetime, tz)}`,
+              }))}
+              buttonClassName="rounded-md border border-border bg-card px-2 py-1.5 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+            />
           </div>
 
           {!sessionFeedback ? (

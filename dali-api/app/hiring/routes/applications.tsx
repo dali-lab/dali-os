@@ -8,6 +8,7 @@ import { getUserRoles } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { hiringPills } from "~/hiring/components/hiringPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
+import { Select, type SelectOption } from "~/components/ui/floating";
 
 export const handle = { areaPills: true };
 
@@ -269,53 +270,43 @@ export default function ApplicationsDatabase() {
         >
           Cycle
         </label>
-        <select
-          id="cycle-select"
+        <Select
           value={data.selectedCycleId}
-          onChange={(e) => {
+          onChange={(cycleId) => {
             setDomainId("");
             setStatus("");
             setQuery("");
             const next = new URLSearchParams(searchParams);
-            next.set("cycle", e.target.value);
+            next.set("cycle", cycleId);
             setSearchParams(next);
           }}
-          className="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground sm:w-72"
-        >
-          {data.cycles.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name} · {c.status}
-            </option>
-          ))}
-        </select>
+          options={data.cycles.map((c) => ({ value: c.id, label: `${c.name} · ${c.status}` }))}
+          buttonClassName="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground sm:w-72 inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+        />
         {showDomainFilter && (
-          <select
-            aria-label="Filter by domain"
+          <Select
+            ariaLabel="Filter by domain"
             value={domainId}
-            onChange={(e) => setDomainId(e.target.value)}
-            className="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground sm:w-48"
-          >
-            <option value="">All domains</option>
-            {data.domainOptions.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
-          </select>
+            placeholder="All domains"
+            onChange={(v) => setDomainId(v)}
+            options={[
+              { value: "", label: "All domains" },
+              ...data.domainOptions.map((d) => ({ value: d.id, label: d.name })),
+            ]}
+            buttonClassName="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground sm:w-48 inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+          />
         )}
-        <select
-          aria-label="Filter by status"
+        <Select
+          ariaLabel="Filter by status"
           value={status}
-          onChange={(e) => setStatus(e.target.value)}
-          className="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground sm:w-40"
-        >
-          <option value="">All statuses</option>
-          {Object.keys(STATUS_TONE).map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
+          placeholder="All statuses"
+          onChange={(v) => setStatus(v)}
+          options={[
+            { value: "", label: "All statuses" },
+            ...Object.keys(STATUS_TONE).map((s) => ({ value: s, label: s })),
+          ]}
+          buttonClassName="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground sm:w-40 inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+        />
         <div className="relative w-full sm:ml-auto sm:w-64 min-w-[12rem]">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70 pointer-events-none" />
           <input

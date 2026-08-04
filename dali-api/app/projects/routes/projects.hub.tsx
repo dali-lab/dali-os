@@ -8,6 +8,7 @@ import {
   useNavigate,
   useSearchParams,
 } from "react-router";
+import { Select } from "~/components/ui/floating";
 import type { Route } from "./+types/projects.hub";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -344,45 +345,42 @@ export default function ProjectsListPage() {
             </label>
             <label className="flex flex-col gap-1 text-xs">
               <span className="text-muted-foreground">Status</span>
-              <select
+              <Select
                 name="status"
                 defaultValue="Active"
-                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-              >
-                <option value="Active">Active</option>
-                <option value="Paused">Paused</option>
-                <option value="Archived">Archived</option>
-              </select>
+                options={[
+                  { value: "Active", label: "Active" },
+                  { value: "Paused", label: "Paused" },
+                  { value: "Archived", label: "Archived" },
+                ]}
+                buttonClassName="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+              />
             </label>
             <label className="flex flex-col gap-1 text-xs">
               <span className="text-muted-foreground">Start term</span>
-              <select
+              <Select
                 name="firstTermId"
                 defaultValue=""
-                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-              >
-                <option value="">No start term</option>
-                {terms.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.code}
-                  </option>
-                ))}
-              </select>
+                placeholder="No start term"
+                options={[
+                  { value: "", label: "No start term" },
+                  ...terms.map((t) => ({ value: t.id, label: t.code })),
+                ]}
+                buttonClassName="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+              />
             </label>
             <label className="flex flex-col gap-1 text-xs sm:col-span-2">
               <span className="text-muted-foreground">Partner (optional)</span>
-              <select
+              <Select
                 name="partnerOrgId"
                 defaultValue=""
-                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-              >
-                <option value="">No partner</option>
-                {partnerOrgs.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
+                placeholder="No partner"
+                options={[
+                  { value: "", label: "No partner" },
+                  ...partnerOrgs.map((p) => ({ value: p.id, label: p.name })),
+                ]}
+                buttonClassName="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+              />
             </label>
           </div>
           <div className="flex justify-end gap-2">
@@ -429,23 +427,18 @@ export default function ProjectsListPage() {
         </label>
         <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
           Website
-          <select
+          <Select
             value={showcaseFilter}
-            onChange={(e) => {
+            onChange={(value) => {
               const next = new URLSearchParams(searchParams);
-              if (e.target.value === SHOWCASE_FILTER_ALL) next.delete("public");
-              else next.set("public", e.target.value);
+              if (value === SHOWCASE_FILTER_ALL) next.delete("public");
+              else next.set("public", value);
               setSearchParams(next);
             }}
-            aria-label="Filter by status on dali.website"
-            className="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground sm:w-40"
-          >
-            {SHOWCASE_FILTERS.map((f) => (
-              <option key={f.value} value={f.value}>
-                {f.label}
-              </option>
-            ))}
-          </select>
+            ariaLabel="Filter by status on dali.website"
+            options={SHOWCASE_FILTERS.map((f) => ({ value: f.value, label: f.label }))}
+            buttonClassName="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground sm:w-40 inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+          />
         </label>
         <ViewToggle value={view} onChange={setView} />
         <span className="text-xs text-muted-foreground ml-auto">

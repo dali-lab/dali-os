@@ -39,10 +39,11 @@ describe("FormQuestionField — question types render", () => {
       data: { label: "Color", options: ["red", "blue"] },
     };
     const html = renderField({ question: q, value: "", onChange: () => {} });
-    expect(html).toContain("<select");
-    expect(html).toContain(">Select...</option>");
-    expect(html).toContain(">red</option>");
-    expect(html).toContain(">blue</option>");
+    // The custom <Select> renders a listbox-trigger button; its options are
+    // portaled and only mounted when open, so static markup shows the trigger
+    // with the placeholder rather than <option> elements.
+    expect(html).toMatch(/<button[^>]*aria-haspopup="listbox"/);
+    expect(html).toContain("Select...");
   });
 
   it("renders a url input for type=github_url with the github placeholder", () => {
@@ -82,11 +83,9 @@ describe("FormQuestionField — question types render", () => {
     const html = renderField({ question: q, value: "", onChange: () => {} });
     expect(html).toContain("React");
     expect(html).toContain("TypeScript");
-    // The unrated sentinel appears once per skill on first render.
-    expect(html.match(/>-<\/option>/g)?.length ?? 0).toBe(2);
-    // Each row still offers 0-5 as valid ratings.
-    expect(html.match(/>0<\/option>/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
-    expect(html.match(/>5<\/option>/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+    // Each skill's <Select> trigger shows the unrated sentinel '-' as its
+    // current value on first render (the 0-5 options are portaled on open).
+    expect((html.match(/>-<\/span>/g) ?? []).length).toBe(2);
   });
 
   it("drops the '-' option for a skill once it has a real rating", () => {
@@ -101,8 +100,10 @@ describe("FormQuestionField — question types render", () => {
       value: "React: 3\nTypeScript: -",
       onChange: () => {},
     });
-    // Only the unrated skill still has '-' as an option.
-    expect(html.match(/>-<\/option>/g)?.length ?? 0).toBe(1);
+    // React now shows its real rating; only the still-unrated skill's trigger
+    // displays '-' (its dropdown is the only one that still offers '-').
+    expect(html).toMatch(/>3<\/span>/);
+    expect((html.match(/>-<\/span>/g) ?? []).length).toBe(1);
   });
 });
 
@@ -129,7 +130,9 @@ describe("FormQuestionField — disabled propagates to underlying inputs", () =>
       data: { label: "Color", options: ["red"] },
     };
     const html = renderField({ question: q, value: "", onChange: () => {}, disabled: true });
-    expect(html).toMatch(/<select[^>]*disabled/);
+    expect(html).toMatch(
+      /<button[^>]*disabled[^>]*aria-haspopup="listbox"|<button[^>]*aria-haspopup="listbox"[^>]*disabled/,
+    );
   });
 
   it("file upload trigger button is disabled when disabled=true", () => {
@@ -147,8 +150,10 @@ describe("FormQuestionField — disabled propagates to underlying inputs", () =>
       data: { label: "Skills", options: ["React", "Vue"] },
     };
     const html = renderField({ question: q, value: "", onChange: () => {}, disabled: true });
-    const selectMatches = html.match(/<select[^>]*disabled/g) ?? [];
-    expect(selectMatches.length).toBe(2);
+    const triggers = html.match(/<button[^>]*aria-haspopup="listbox"/g) ?? [];
+    expect(triggers.length).toBe(2);
+    const disabledButtons = html.match(/<button[^>]*disabled/g) ?? [];
+    expect(disabledButtons.length).toBe(2);
   });
 
   it("does not include disabled attribute when disabled=false (default)", () => {

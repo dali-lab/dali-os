@@ -3,7 +3,7 @@
 // the query / domain state and the actual filtering. The domain dropdown is
 // optional — the configurable database view filters by free text only.
 
-import { SelectMenu, type SelectMenuOption } from "~/components/ui/SelectMenu";
+import { Select, type SelectOption } from "~/components/ui/floating";
 
 type Domain = { id: string; name: string };
 
@@ -32,7 +32,7 @@ export function SubmissionFilters({
         className="flex-1 px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
       />
       {showDomain && (
-        <SelectMenu
+        <Select
           value={domainId ?? ""}
           options={[
             { value: "", label: "All domains" },

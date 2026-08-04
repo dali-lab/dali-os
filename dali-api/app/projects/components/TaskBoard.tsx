@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRevalidator, useSearchParams } from "react-router";
-import { SelectMenu } from "~/components/ui/SelectMenu";
+import { Select } from "~/components/ui/floating";
 import { Button } from "~/components/ui/Button";
 import type { DragEndEvent } from "@dnd-kit/core";
 import { Archive, Eye, EyeOff, Github, Paperclip, X } from "lucide-react";
@@ -466,7 +466,7 @@ export function TaskBoard({
         {termFilterEnabled && (
           <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
             <span className="font-medium">Term</span>
-            <SelectMenu
+            <Select
               value={effectiveTerm}
               options={[
                 ...options.terms.map((t) => ({

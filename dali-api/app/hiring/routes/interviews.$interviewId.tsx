@@ -30,6 +30,7 @@ import { buildCriteriaLabelMap } from '~/hiring/lib/rubric-criteria'
 import type { Route } from './+types/interviews.$interviewId'
 import type { Question } from '~/types'
 import { INTERVIEW_STATUS_COLORS } from '~/hiring/lib/labels'
+import { Select, type SelectOption } from '~/components/ui/floating'
 
 const RECOMMENDATION_OPTIONS = [
   'Strong Hire',
@@ -616,18 +617,13 @@ export default function InterviewDetailPage() {
               <label className="block text-sm font-medium text-foreground/80 mb-1">
                 Recommendation
               </label>
-              <select
+              <Select
                 value={recommendation}
-                onChange={(e) => setRecommendation(e.target.value)}
-                className="w-full sm:w-64 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">Select a recommendation...</option>
-                {RECOMMENDATION_OPTIONS.map((opt) => (
-                  <option key={opt} value={opt}>
-                    {opt}
-                  </option>
-                ))}
-              </select>
+                placeholder="Select a recommendation..."
+                onChange={(v) => setRecommendation(v)}
+                options={RECOMMENDATION_OPTIONS.map((opt) => ({ value: opt, label: opt }))}
+                buttonClassName="w-full sm:w-64 px-3 py-2 border border-gray-300 rounded-lg text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+              />
             </div>
 
             <div className="flex items-center gap-3">

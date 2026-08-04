@@ -3,6 +3,8 @@
 import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
 
+import { Select, type SelectOption } from "~/components/ui/floating";
+
 type Values = {
   type?: "Miniseries" | "Workshop";
   title?: string;
@@ -40,15 +42,16 @@ export function OfferingFields({
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="block">
           <span className={LABEL}>Type</span>
-          <select
+          <Select
             name="type"
             defaultValue={values.type ?? "Workshop"}
             disabled={typeLocked}
-            className={INPUT}
-          >
-            <option value="Workshop">Workshop (single session, RSVP)</option>
-            <option value="Miniseries">Miniseries (multi-session, reviewed)</option>
-          </select>
+            options={[
+              { value: "Workshop", label: "Workshop (single session, RSVP)" },
+              { value: "Miniseries", label: "Miniseries (multi-session, reviewed)" },
+            ]}
+            buttonClassName={INPUT}
+          />
         </label>
         <label className="block">
           <span className={LABEL}>Capacity</span>

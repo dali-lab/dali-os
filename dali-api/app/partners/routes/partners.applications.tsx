@@ -7,6 +7,7 @@ import {
   useLoaderData,
   useNavigate,
 } from "react-router";
+import { Select, type SelectOption } from "~/components/ui/floating";
 import type { DragEndEvent } from "@dnd-kit/core";
 import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
 import type { Route } from "./+types/partners.applications";
@@ -327,21 +328,14 @@ export default function PartnersApplications() {
             </label>
             <label className="flex flex-col gap-1 text-xs">
               <span className="text-muted-foreground">Partner</span>
-              <select
+              <Select
                 name="partnerOrgId"
                 required
                 defaultValue=""
-                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-              >
-                <option value="" disabled>
-                  Select a partner…
-                </option>
-                {partnerOrgs.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
+                placeholder="Select a partner…"
+                options={partnerOrgs.map((p) => ({ value: p.id, label: p.name }))}
+                buttonClassName="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+              />
             </label>
           </div>
           <div className="flex justify-end gap-2">
@@ -401,21 +395,16 @@ export default function PartnersApplications() {
               <div className="flex items-center gap-2">
                 <Form method="post" className="flex items-center gap-2">
                   <input type="hidden" name="intent" value="bind-form" />
-                  <select
+                  <Select
                     name="formId"
                     defaultValue={formBinding?.formId ?? ""}
-                    className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-                  >
-                    <option value="" disabled>
-                      Choose a form…
-                    </option>
-                    {selectableForms.map((f) => (
-                      <option key={f.id} value={f.id}>
-                        {f.name}
-                        {f.published ? "" : " (unpublished)"}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="Choose a form…"
+                    options={selectableForms.map((f) => ({
+                      value: f.id,
+                      label: `${f.name}${f.published ? "" : " (unpublished)"}`,
+                    }))}
+                    buttonClassName="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                  />
                   <button
                     type="submit"
                     className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition-colors"
@@ -459,33 +448,27 @@ export default function PartnersApplications() {
           className="flex-1 min-w-[200px] max-w-sm px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
         />
         {view === "list" && (
-          <select
+          <Select
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as Status | "all")}
-            aria-label="Filter by status"
-            className="px-2 py-2 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-          >
-            <option value="all">All statuses</option>
-            {STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {STATUS_LABEL[s]}
-              </option>
-            ))}
-          </select>
+            onChange={(value) => setStatusFilter(value as Status | "all")}
+            ariaLabel="Filter by status"
+            options={[
+              { value: "all", label: "All statuses" },
+              ...STATUSES.map((s) => ({ value: s, label: STATUS_LABEL[s] })),
+            ]}
+            buttonClassName="px-2 py-2 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+          />
         )}
-        <select
+        <Select
           value={domainFilter}
-          onChange={(e) => setDomainFilter(e.target.value)}
-          aria-label="Filter by domain"
-          className="px-2 py-2 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-        >
-          <option value="all">All domains</option>
-          {domainOptions.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name}
-            </option>
-          ))}
-        </select>
+          onChange={(value) => setDomainFilter(value)}
+          ariaLabel="Filter by domain"
+          options={[
+            { value: "all", label: "All domains" },
+            ...domainOptions.map((d) => ({ value: d.id, label: d.name })),
+          ]}
+          buttonClassName="px-2 py-2 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+        />
         <div className="flex rounded-md border border-border overflow-hidden">
           {(["list", "board"] as const).map((v) => (
             <button
