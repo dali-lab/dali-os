@@ -125,7 +125,8 @@ function titleCase(seg: string) {
 // the Library owns it). These stay in the trail as labels but never link,
 // so a crumb can't 404.
 const UNROUTED_SEGMENTS = new Set([
-  'documents', // /documents/:pageId only — no bare /documents index
+  // NB: 'documents' is routable now (the Documents hub lives at /documents),
+  // so it links back there from a document's trail.
   'challenges',
   'rubrics',
   'confidentiality-agreements',
