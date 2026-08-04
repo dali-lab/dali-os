@@ -1746,33 +1746,50 @@ function DescriptionSegment({
   collabToken: string | null;
   userName: string;
 }) {
+  // Editors edit the live collab doc behind the section's edit toggle: the
+  // editor stays mounted (showing live content) and only becomes writable in
+  // edit mode — same shape as the Epic description. Collab autosaves, so Save/
+  // Cancel just leave edit mode.
+  if (canEdit && collabToken) {
+    return (
+      <EditableSection
+        title="Description"
+        icon={<FileText className="w-4 h-4" />}
+        canEdit
+        onSave={() => {}}
+      >
+        {({ editing }) => (
+          <PresenceProvider
+            pageId={`project:${projectId}`}
+            token={collabToken}
+            userName={userName}
+          >
+            <DocEditor
+              features="notes"
+              editable={editing}
+              collab={{
+                documentName: `project:${projectId}:description`,
+                token: collabToken,
+                userName,
+              }}
+              placeholder="Add a short description…"
+              className="border border-border rounded-md"
+            />
+          </PresenceProvider>
+        )}
+      </EditableSection>
+    );
+  }
+
+  // Viewers render the doc read-only from server-loaded blocks (no collab
+  // socket); legacy rows with no doc yet fall back to the Markdown mirror.
   return (
     <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
       <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
         <FileText className="w-4 h-4" />
         Description
       </h2>
-      {/* Editors get the live collab doc. Viewers render the doc read-only from
-          server-loaded blocks; legacy rows with no doc yet fall back to the
-          plaintext/Markdown mirror. */}
-      {canEdit && collabToken ? (
-        <PresenceProvider
-          pageId={`project:${projectId}`}
-          token={collabToken}
-          userName={userName}
-        >
-          <DocEditor
-            features="notes"
-            collab={{
-              documentName: `project:${projectId}:description`,
-              token: collabToken,
-              userName,
-            }}
-            placeholder="Add a short description…"
-            className="border border-border rounded-md"
-          />
-        </PresenceProvider>
-      ) : countWords(descriptionContent) > 0 ? (
+      {countWords(descriptionContent) > 0 ? (
         <DocEditor features="notes" editable={false} initialContent={descriptionContent} />
       ) : description ? (
         <Markdown>{description}</Markdown>
