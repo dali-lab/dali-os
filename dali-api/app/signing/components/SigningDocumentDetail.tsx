@@ -17,6 +17,7 @@ import {
   insertVariable,
   type DocEditorInstance,
 } from "~/components/doc";
+import { useConfirmSubmit } from "~/components/ui/dialog";
 import {
   FIELD_LABEL,
   SIGNING_FIELD_TYPES,
@@ -127,6 +128,7 @@ function SigningInsertControls({
 export function SigningDocumentDetail() {
   const { document, isAdmin } = useLoaderData<typeof loader>();
   const tz = useUserTimeZone();
+  const confirmSubmit = useConfirmSubmit();
 
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(
     document.versions[0]?.id ?? null,
@@ -222,7 +224,14 @@ export function SigningDocumentDetail() {
               New Version
             </button>
           )}
-          <Form method="post" onSubmit={(e) => { if (!confirm("Archive this agreement?")) e.preventDefault(); }}>
+          <Form
+            method="post"
+            onSubmit={confirmSubmit({
+              title: "Archive this agreement?",
+              tone: "destructive",
+              confirmLabel: "Archive",
+            })}
+          >
             <input type="hidden" name="intent" value="archive" />
             <button
               type="submit"
