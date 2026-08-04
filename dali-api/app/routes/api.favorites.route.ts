@@ -33,8 +33,13 @@ function isSafePath(href: string): boolean {
 export async function loader({ request }: Route.LoaderArgs) {
   const gate = await requireMemberSession(request);
   if (!gate.ok) return withCors(request, gate.response);
-  const href = new URL(request.url).searchParams.get("href") ?? "";
+  const href = new URL(request.url).searchParams.get("href");
   const hrefs = await favoriteHrefs(gate.auth.user.sub);
+  // No href = "give me all of them", so a tab bar resolves its whole row in one
+  // request instead of one per tab.
+  if (href === null) {
+    return withCors(request, Response.json({ ok: true, hrefs: [...hrefs] }));
+  }
   return withCors(request, Response.json({ ok: true, favorited: hrefs.has(href) }));
 }
 

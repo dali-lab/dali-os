@@ -358,14 +358,12 @@ export default function AppLayoutRoute() {
           )}
         >
           <Breadcrumbs />
-          {/* Page-level actions, same corner on every page. Favourite is always
-              here — unlike Docs, it does not defer to the pill row, because a
-              control that relocates depending on whether a page has tabs is one
-              you have to hunt for. */}
-          <span className="ml-auto flex shrink-0 items-center gap-1">
-            <PageDocButton suppressWhenPills />
-            <FavoriteRouteButton suppressWhenPills />
-          </span>
+          {/* Page-level actions, rendered as direct children rather than in a
+              wrapper: on pill pages both suppress themselves, and an empty
+              wrapper would still count as content and defeat `empty:mb-0`,
+              leaving an 8px band above the tabs. */}
+          <PageDocButton suppressWhenPills />
+          <FavoriteRouteButton suppressWhenPills />
         </div>
         <PageDocOutlet>
           <Outlet />
