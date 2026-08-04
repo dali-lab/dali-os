@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
-import { redirect, useLoaderData, useRevalidator, useSearchParams, Link } from "react-router";
+import { useLoaderData, useRevalidator, useSearchParams, Link } from "react-router";
 import type { Route } from "./+types/portal.hiring";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { getActiveCycle } from "~/hiring/lib/cycles";
 import { sendExtensionNoticeIfDue } from "~/hiring/lib/extension-notice";
 import {
@@ -25,7 +26,7 @@ export const meta: Route.MetaFunction = () => [{ title: "Apply to DALI · DALI O
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
 
   // The applicant's own zone, used to show interview times as a dual (ET anchor
   // + their local time). Null/unset resolves to ET, so those applicants see the

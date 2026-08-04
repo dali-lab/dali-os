@@ -4,6 +4,7 @@ import type { Route } from "./+types/domain-lead.delibs.$id";
 import type { DragEndEvent } from "@dnd-kit/core";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { parseSessionCookie } from "~/lib/cookies";
 import { isDomainLead } from "~/lib/roles";
 import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
@@ -36,7 +37,7 @@ export const handle = {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   if (!(await isDomainLead(auth.user.sub))) return redirect("/");
 
   const me = await prisma.user.findUnique({

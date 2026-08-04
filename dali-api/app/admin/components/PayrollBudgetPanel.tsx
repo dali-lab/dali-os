@@ -6,6 +6,7 @@ import { useConfirmSubmit } from "~/components/ui/dialog";
 import { formatUsd } from "~/lib/money";
 import { cn } from "~/lib/cn";
 import { PROJECT_TYPES } from "~/admin/lib/budget.shared";
+import { SelectMenu } from "~/components/ui/SelectMenu";
 import type {
   BudgetData,
   BudgetGroup,
@@ -292,24 +293,28 @@ function ProjectTypeSelect({
   keyInputs: React.ReactNode;
 }) {
   const fetcher = useFetcher();
+  const formRef = useRef<HTMLFormElement>(null);
   return (
-    <fetcher.Form method="post" action={BUDGET_ROUTE}>
+    <fetcher.Form method="post" action={BUDGET_ROUTE} ref={formRef}>
       <input type="hidden" name="intent" value="update-project-type" />
       {keyInputs}
-      <select
+      <SelectMenu
         name="projectType"
         defaultValue={row.projectType ?? ""}
-        aria-label={`Project type for ${row.chartString}`}
-        onChange={(e) => fetcher.submit(e.target.form)}
-        className="rounded border border-border bg-card px-2 py-1 text-xs text-foreground focus:border-accent-coral focus:outline-none"
-      >
-        <option value="">—</option>
-        {PROJECT_TYPES.map((t) => (
-          <option key={t} value={t}>
-            {t}
-          </option>
-        ))}
-      </select>
+        ariaLabel={`Project type for ${row.chartString}`}
+        // Submit the picked value explicitly — override the (same-tick still
+        // stale) projectType field rather than re-submitting the form's DOM.
+        onChange={(value) => {
+          const fd = new FormData(formRef.current!);
+          fd.set("projectType", value);
+          fetcher.submit(fd, { method: "post", action: BUDGET_ROUTE });
+        }}
+        options={[
+          { value: "", label: "—" },
+          ...PROJECT_TYPES.map((t) => ({ value: t, label: t })),
+        ]}
+        buttonClassName="rounded border border-border bg-card px-2 py-1 text-xs text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+      />
     </fetcher.Form>
   );
 }

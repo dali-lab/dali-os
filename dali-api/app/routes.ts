@@ -409,7 +409,6 @@ export default [
   route("api/projects/:id/documents", "projects/routes/api.projects.$id.documents.ts"),
   // Lab-wide documents (collab Pages scoped to the Lab workspace)
   route("api/lab-documents", "routes/api.lab-documents.ts"),
-  route("api/lab-documents/access", "routes/api.lab-documents.access.ts"),
   route("api/documents/:id", "projects/routes/api.documents.$id.ts"),
   route("api/pages/:id/partner-visible", "projects/routes/api.pages.$id.partner-visible.ts"),
   route("api/pages/:id/public-visible", "projects/routes/api.pages.$id.public-visible.ts"),
@@ -420,6 +419,8 @@ export default [
   route("api/pages/:id/pin", "projects/routes/api.pages.$id.pin.ts"),
   route("api/pages/:id/move", "projects/routes/api.pages.$id.move.ts"),
   route("api/pages/:id/duplicate", "routes/api.pages.$id.duplicate.ts"),
+  route("api/pages/:id/share", "routes/api.pages.$id.share.ts"),
+  route("api/move-destinations", "routes/api.move-destinations.ts"),
   route("api/pages/:id/template", "routes/api.pages.$id.template.ts"),
   route("api/pages/:id/typography", "routes/api.pages.$id.typography.ts"),
   route("api/page-templates", "routes/api.page-templates.ts"),
@@ -451,6 +452,11 @@ export default [
 
   // Document export (server-rendered PDF / Word)
   route("documents/:pageId/export", "routes/documents.$pageId.export.ts"),
+
+  // Public read-only render for "Anyone with the link" documents — registered
+  // OUTSIDE the app-shell layout so an unauthenticated visitor can read it. The
+  // shell gate routes anon visitors of /documents/:pageId here for public docs.
+  route("documents/:pageId/public", "routes/documents.$pageId.public.tsx"),
 
   // Payroll CSV export (resource route — registered OUTSIDE the app layout so
   // the Response streams as a bare CSV body, not wrapped in an HTML shell).

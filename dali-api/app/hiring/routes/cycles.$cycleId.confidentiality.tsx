@@ -3,6 +3,7 @@ import { ShieldCheck, AlertTriangle } from "lucide-react";
 import type { Route } from "./+types/cycles.$cycleId.confidentiality";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { logAuditEvent } from "~/lib/audit";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { DocEditor } from "~/components/doc";
@@ -21,7 +22,7 @@ function isSafeNext(next: string | null): boolean {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
 
   const cycleId = params.cycleId!;
   const url = new URL(request.url);
@@ -63,7 +64,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
 
   const cycleId = params.cycleId!;
   const formData = await request.formData();

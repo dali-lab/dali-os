@@ -10,8 +10,10 @@ import { adminHandle } from "~/admin/adminNav";
 import { TermFilter } from "~/components/TermFilter";
 import { Tooltip } from "~/components/ui/IconButton";
 import { useConfirmSubmit } from "~/components/ui/dialog";
+import { SelectMenu } from "~/components/ui/SelectMenu";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { isCore, isAdmin } from "~/lib/roles";
 import { resolveTermFilter } from "~/lib/terms";
 import { fullName, formatDateShort, formatDateTime } from "~/lib/display";
@@ -36,7 +38,7 @@ export const meta: Route.MetaFunction = () => [
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   if (!(await isCore(auth.user.sub))) return redirect("/");
 
   const { terms, selected, termId, isAll } = await resolveTermFilter(request);
@@ -134,7 +136,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 // didn't create the meeting can still clear it.
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   if (!(await isCore(auth.user.sub))) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -281,19 +283,13 @@ export default function AdminAttendancePage() {
           <label className="sr-only" htmlFor="attendance-sort">
             Sort by
           </label>
-          <select
-            id="attendance-sort"
+          <SelectMenu
+            ariaLabel="Sort by"
             value={sort}
-            onChange={(e) => setSort(e.target.value as SortKey)}
-            aria-label="Sort by"
-            className="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground sm:w-48"
-          >
-            {SORT_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
+            onChange={(v) => setSort(v as SortKey)}
+            options={SORT_OPTIONS}
+            buttonClassName="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground sm:w-48 inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+          />
           <TermFilter terms={terms} selected={selected} />
         </div>
       </header>

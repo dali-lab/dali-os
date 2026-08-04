@@ -10,6 +10,7 @@ import {
 import { LayoutTemplate } from "lucide-react";
 import type { Route } from "./+types/mentorship.browse";
 import { requireAuth } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { parseSessionCookie } from "~/lib/cookies";
 import {
@@ -22,6 +23,7 @@ import { AreaPillNav } from "~/components/AreaPillNav";
 import { mentorshipPills } from "../components/mentorshipPills";
 import { TemplatesModal } from "../components/TemplatesModal";
 import { MentorGrid } from "../components/MentorGrid";
+import { SelectMenu } from "~/components/ui/SelectMenu";
 import {
   buildGrid,
   type MentorGridResult,
@@ -70,7 +72,7 @@ function pickFilter(value: string | null): string {
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   if (auth.user.type === "applicant") return redirect("/portal");
   if (!(await canViewMentorship(auth.user.sub))) {
     throw new Response("Forbidden", { status: 403 });
@@ -268,23 +270,20 @@ export default function MentorshipBrowse() {
               Templates
             </button>
           )}
-          <select
+          <SelectMenu
+            ariaLabel="Filter by term"
             value={data.filters.termId}
-            onChange={(e) => {
+            onChange={(v) => {
               const next = new URLSearchParams(params);
-              next.set("termId", e.target.value);
+              next.set("termId", v);
               navigate(`/mentorship/browse?${next.toString()}`);
             }}
-            aria-label="Filter by term"
-            className="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground sm:w-40"
-          >
-            <option value="">Any term</option>
-            {data.options.terms.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.label}
-              </option>
-            ))}
-          </select>
+            options={[
+              { value: "", label: "Any term" },
+              ...data.options.terms.map((o) => ({ value: o.id, label: o.label })),
+            ]}
+            buttonClassName="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground sm:w-40 inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+          />
         </div>
       </header>
 
@@ -401,18 +400,15 @@ function FilterSelect({
   return (
     <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
       {label}
-      <select
+      <SelectMenu
         name={name}
         defaultValue={value}
-        className="rounded-md border border-border bg-background px-2 py-1 text-sm text-foreground"
-      >
-        <option value="">Any</option>
-        {options.map((o) => (
-          <option key={o.id} value={o.id}>
-            {o.label}
-          </option>
-        ))}
-      </select>
+        options={[
+          { value: "", label: "Any" },
+          ...options.map((o) => ({ value: o.id, label: o.label })),
+        ]}
+        buttonClassName="rounded-md border border-border bg-background px-2 py-1 text-sm text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+      />
     </label>
   );
 }

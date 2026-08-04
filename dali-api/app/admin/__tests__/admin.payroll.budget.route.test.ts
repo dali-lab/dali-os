@@ -98,7 +98,9 @@ describe("budget loader — auth gate", () => {
     asAnon();
     const res = (await loader({ request: getReq(), params: {}, context: {} } as any)) as Response;
     expect(res.status).toBe(302);
-    expect(res.headers.get("location")).toBe("/login");
+    expect(res.headers.get("location")).toBe(
+      `/login?next=${encodeURIComponent("/admin/payroll/budget?term=term-25f")}`,
+    );
     expect(getBudgetData).not.toHaveBeenCalled();
   });
 

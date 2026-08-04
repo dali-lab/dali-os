@@ -2,6 +2,7 @@ import type { Route } from "./+types/forms.responses.$formId.export.csv";
 import { redirect } from "react-router";
 import { prisma } from "~/lib/db";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";
 import { csvResponse, rowsToCsv } from "~/lib/csv";
 import {
@@ -20,7 +21,7 @@ import type { Question } from "~/types";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   const portalRedirect = redirectApplicantToPortal(auth);
   if (portalRedirect) return portalRedirect;
   if (!(await isCore(auth.user.sub))) return redirect("/");

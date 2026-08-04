@@ -1,6 +1,6 @@
 import type { Route } from "./+types/admin.payroll.csv";
-import { redirect } from "react-router";
 import { requireAuth, forbidden } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { isAdmin } from "~/lib/roles";
 import { rowsToCsv, csvResponse } from "~/lib/csv";
 import { resolveTermFilter } from "~/lib/terms";
@@ -189,7 +189,7 @@ function buildBudgetRows(
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   if (!(await isAdmin(auth.user.sub))) return forbidden(request);
 
   const url = new URL(request.url);

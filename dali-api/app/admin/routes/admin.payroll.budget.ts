@@ -1,7 +1,7 @@
 import type { Route } from "./+types/admin.payroll.budget";
-import { redirect } from "react-router";
 import { z } from "zod";
 import { requireAuth, forbidden } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { isAdmin } from "~/lib/roles";
 import { resolveTermFilter } from "~/lib/terms";
 import {
@@ -29,7 +29,7 @@ export type BudgetLoaderData =
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   if (!(await isAdmin(auth.user.sub))) return forbidden(request);
 
   const { termId } = await resolveTermFilter(request);

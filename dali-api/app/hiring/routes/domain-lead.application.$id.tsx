@@ -3,6 +3,7 @@ import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/domain-lead.application.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
 import { presignAnswers } from "~/hiring/lib/presign";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
@@ -67,7 +68,7 @@ export const handle = {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
 
   const domainLeadAssignments = await prisma.domainLeadAssignment.findMany({
     where: { userId: auth.user.sub },

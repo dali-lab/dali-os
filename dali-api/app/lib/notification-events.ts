@@ -145,6 +145,13 @@ export const EVENT_TYPES = {
     description: "When you're made the maintainer of a page's guide.",
     defaults: { inApp: true, desktop: true, slackDm: true, email: "Off" },
   },
+  "document.shared_with_you": {
+    kind: "General",
+    area: "Documents",
+    label: "Documents shared with you",
+    description: "When someone shares a document with you or raises your access level.",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
   "document.sign_request": {
     kind: "General",
     area: "Documents",

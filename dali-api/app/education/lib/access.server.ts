@@ -2,6 +2,7 @@ import { redirect } from "react-router";
 import { prisma } from "~/lib/db";
 import { requireAuth, forbidden, type AuthSuccess } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
+import { redirectToLogin } from "~/lib/login-next";
 
 /**
  * Offering-scoped manager check: Core (which already covers Admin) or an
@@ -86,7 +87,7 @@ export async function requireEnrollment(
   isManager: boolean;
 }> {
   const auth = await requireAuth(request);
-  if (!auth.ok) throw redirect("/login");
+  if (!auth.ok) throw redirectToLogin(request);
   if (surface === "member" && auth.user.type === "dartmouth") {
     throw redirect(`/portal/education/${offeringId}/hub`);
   }

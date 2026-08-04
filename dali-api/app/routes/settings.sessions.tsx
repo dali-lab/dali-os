@@ -1,5 +1,6 @@
 import { redirect } from "react-router";
 import { requireAuth } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import type { Route } from "./+types/settings.sessions";
 
@@ -11,7 +12,7 @@ export async function loader() {
 
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
 
   const form = await request.formData();
   const intent = form.get("intent");

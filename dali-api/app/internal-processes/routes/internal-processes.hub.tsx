@@ -1,5 +1,6 @@
 import { Fragment, useMemo, useState, type CSSProperties } from "react";
-import { Link, redirect, useFetcher, useLoaderData, useSearchParams } from "react-router";
+import { Link, useFetcher, useLoaderData, useSearchParams } from "react-router";
+import { redirectToLogin } from "~/lib/login-next";
 import { z } from "zod";
 import type { Route } from "./+types/internal-processes.hub";
 import { prisma } from "~/lib/db";
@@ -21,7 +22,7 @@ export const meta: Route.MetaFunction = () => [{ title: "Lab Processes · DALI O
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   const portalRedirect = redirectApplicantToPortal(auth);
   if (portalRedirect) return portalRedirect;
   const overrideRows = await prisma.labProcessWeekContent.findMany({

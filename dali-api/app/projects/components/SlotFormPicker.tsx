@@ -6,6 +6,7 @@
 import { useState } from "react";
 import { useFetcher } from "react-router";
 import { Button } from "~/components/ui/Button";
+import { SelectMenu } from "~/components/ui/SelectMenu";
 
 type SelectableForm = { id: string; name: string; published: boolean };
 
@@ -59,21 +60,20 @@ export function SlotFormPicker({
             className="flex flex-1 flex-col sm:flex-row gap-2"
           >
             <input type="hidden" name="intent" value="set-slot-form" />
-            <select
+            <SelectMenu
               name="formId"
               value={selected}
-              onChange={(e) => setSelected(e.target.value)}
-              aria-label={`${slotLabel} form`}
-              className="flex-1 px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
-            >
-              <option value="">— No form selected —</option>
-              {forms.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.name}
-                  {f.published ? "" : " (unpublished)"}
-                </option>
-              ))}
-            </select>
+              onChange={(v) => setSelected(v)}
+              ariaLabel={`${slotLabel} form`}
+              options={[
+                { value: "", label: "— No form selected —" },
+                ...forms.map((f) => ({
+                  value: f.id,
+                  label: f.name + (f.published ? "" : " (unpublished)"),
+                })),
+              ]}
+              buttonClassName="flex-1 px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+            />
             <Button
               type="submit"
               variant="primary"

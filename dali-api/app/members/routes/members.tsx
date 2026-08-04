@@ -9,6 +9,7 @@ import {
 } from "react-router";
 import type { Route } from "./+types/members";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { isCore, canViewForms } from "~/lib/roles";
 import { graduateProgramLabel } from "~/lib/dartmouth-people";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
@@ -28,6 +29,7 @@ import { resolveTermFilter } from "~/lib/terms";
 import { deriveCoreTitles } from "~/lib/core-titles";
 import { LayoutGrid, UsersRound } from "lucide-react";
 import { AreaPillNav } from "~/components/AreaPillNav";
+import { SelectMenu, type SelectMenuOption } from "~/components/ui/SelectMenu";
 
 export const handle = { areaPills: true };
 
@@ -64,7 +66,7 @@ function parseStatus(raw: string | null): MemberStatus {
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   const portalRedirect = redirectApplicantToPortal(auth);
   if (portalRedirect) return portalRedirect;
 
@@ -197,7 +199,7 @@ const PROFILE_TEXT_FIELDS = [
 
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   const portalRedirect = redirectApplicantToPortal(auth);
   if (portalRedirect) return portalRedirect;
   if (!(await isCore(auth.user.sub))) {
@@ -501,25 +503,23 @@ function DomainFilter({
   selected: string;
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
+  const options: SelectMenuOption<string>[] = [
+    { value: "", label: "All domains" },
+    ...domains.map((d) => ({ value: d.id, label: d.displayName })),
+  ];
   return (
-    <select
+    <SelectMenu
       value={selected}
-      onChange={(e) => {
+      options={options}
+      ariaLabel="Filter by domain"
+      buttonClassName="inline-flex w-full items-center justify-between gap-1 px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground transition-colors hover:bg-muted/40 sm:w-44"
+      onChange={(value) => {
         const next = new URLSearchParams(searchParams);
-        if (e.target.value) next.set("domain", e.target.value);
+        if (value) next.set("domain", value);
         else next.delete("domain");
         setSearchParams(next);
       }}
-      aria-label="Filter by domain"
-      className="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground sm:w-44"
-    >
-      <option value="">All domains</option>
-      {domains.map((d) => (
-        <option key={d.id} value={d.id}>
-          {d.displayName}
-        </option>
-      ))}
-    </select>
+    />
   );
 }
 

@@ -4,6 +4,7 @@ import { Calendar, Globe, History, Plus, Users, X } from "lucide-react";
 import type { Route } from "./+types/projects.$id.public-view";
 import { prisma } from "~/lib/db";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { ensurePublicWriteupPage } from "~/lib/pages";
@@ -59,7 +60,7 @@ const CONTENT_INTENTS = ["showcase-card", "showcase-image", "showcase-writeup"];
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   const portalRedirect = redirectApplicantToPortal(auth);
   if (portalRedirect) return portalRedirect;
 
@@ -98,7 +99,7 @@ function optional(form: FormData, name: string): string | null {
 
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   const portalRedirect = redirectApplicantToPortal(auth);
   if (portalRedirect) return portalRedirect;
 

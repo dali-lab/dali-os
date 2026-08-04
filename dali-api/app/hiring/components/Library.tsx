@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Link, Form, useLoaderData, useSearchParams } from "react-router";
+import { SelectMenu, type SelectMenuOption } from "~/components/ui/SelectMenu";
 import {
   Plus,
   FileText,
@@ -115,19 +116,16 @@ function ChallengesPanel({
           </p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          <select
+          <SelectMenu
             value={activeDomain}
-            onChange={(e) => setActiveDomain(e.target.value)}
-            aria-label="Domain"
-            className="px-3 py-2 rounded-lg border border-border bg-card text-sm font-medium text-foreground hover:bg-muted/50 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
-          >
-            <option value={GENERAL_TAB_ID}>General</option>
-            {domains.map((domain: any) => (
-              <option key={domain.id} value={domain.id}>
-                {domain.name}
-              </option>
-            ))}
-          </select>
+            options={[
+              { value: GENERAL_TAB_ID, label: "General" },
+              ...domains.map((domain: any) => ({ value: domain.id, label: domain.name })),
+            ] as SelectMenuOption<string>[]}
+            ariaLabel="Domain"
+            buttonClassName="inline-flex items-center justify-between gap-1 px-3 py-2 rounded-lg border border-border bg-card text-sm font-medium text-foreground transition-colors hover:bg-muted/40"
+            onChange={(value) => setActiveDomain(value)}
+          />
           <Button variant="primary" size="sm" onClick={() => setShowModal(true)}>
             <Plus className="w-4 h-4" />
             New Challenge

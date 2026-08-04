@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useRevalidator } from "react-router";
+import { SelectMenu } from "~/components/ui/SelectMenu";
 import type { DragEndEvent } from "@dnd-kit/core";
 import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
 import {
@@ -630,29 +631,21 @@ export function StaffingBoard({
           }}
         />
         <div className="flex items-center gap-2">
-          <label className="sr-only" htmlFor="staffing-term">
-            Term
-          </label>
-          <select
-            id="staffing-term"
+          <SelectMenu
             value={termId}
-            onChange={(e) => {
+            options={terms.map((t) => ({ value: t.id, label: t.code }))}
+            ariaLabel="Term"
+            buttonClassName="inline-flex items-center justify-between gap-1 text-sm px-2 py-1 border border-border rounded-md bg-background text-foreground transition-colors hover:bg-muted/40"
+            onChange={(value) => {
               setSearchParams(
                 (prev) => {
-                  prev.set("term", e.target.value);
+                  prev.set("term", value);
                   return prev;
                 },
                 { replace: true },
               );
             }}
-            className="text-sm px-2 py-1 border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-          >
-            {terms.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.code}
-              </option>
-            ))}
-          </select>
+          />
         </div>
       </div>
 

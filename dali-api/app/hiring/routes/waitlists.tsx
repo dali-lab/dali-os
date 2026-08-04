@@ -5,6 +5,7 @@ import { Tooltip } from "~/components/ui/IconButton";
 import { useDialog } from "~/components/ui/dialog";
 import type { Route } from "./+types/waitlists";
 import { requireAuth } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
 import { hiringPills } from "~/hiring/components/hiringPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
@@ -21,7 +22,7 @@ export const meta: Route.MetaFunction = () => [
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   const roles = await getUserRoles(auth.user.sub);
   if (!roles.isCore) return redirect("/");
 

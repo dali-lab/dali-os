@@ -1,4 +1,5 @@
 import { redirect, useLoaderData } from "react-router";
+import { redirectToLogin } from "~/lib/login-next";
 import type { Route } from "./+types/education.$offeringId.apply";
 import { requireAuth } from "~/lib/auth";
 import { redirectDartmouthToPortal } from "~/education/lib/access.server";
@@ -37,7 +38,7 @@ export const handle = {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   const portalRedirect = redirectDartmouthToPortal(auth);
   if (portalRedirect) return redirect(`/portal/education/${params.offeringId}/apply`);
 

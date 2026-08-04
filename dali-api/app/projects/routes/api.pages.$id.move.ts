@@ -1,37 +1,66 @@
 import type { Route } from "./+types/api.pages.$id.move";
-import type { AuthSuccess } from "~/lib/auth";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireMemberSession, requireProjectEditAccess } from "~/lib/auth";
+import { requireAuth } from "~/lib/auth";
+import { isCore, isProjectMember, isLabMember } from "~/lib/roles";
+import { canManageSharing } from "~/lib/page-share-access.server";
+import { logAuditEvent } from "~/lib/audit";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
+import type { Prisma } from "~/generated/prisma/client";
 
-// POST /api/pages/:id/move — move and/or reorder a document within its
-// Documents view. Body: { parentPageId: string | null, beforeId?: string | null }.
-//   - parentPageId: the folder to nest under, or null for the top level.
-//   - beforeId: the sibling to drop directly before; omitted/null appends last.
-// Works for both Lab pages (the lab-wide Documents hub — any lab member) and
-// Project pages (the project hub — project editors). Folders stay top-level
-// (they may be reordered but never nested). Enforces the 2-level cap: a
-// document only nests directly under a top-level Folder in the same workspace.
+// POST /api/pages/:id/move — move and/or reorder a document.
+//   { parentPageId, beforeId? }                  → reorder within its workspace
+//   { parentPageId, beforeId?, workspaceType, workspaceId } → move to another
+//     workspace (Lab ↔ Project, Project ↔ Project). Moving a doc into a project
+//     IS adding it to that project (membership is just these two columns).
+//
+// Same-workspace reorder is unchanged when the workspace fields are omitted.
+// Folders stay top-level; docs nest one level under a top-level folder (the
+// 2-level cap). Cross-workspace: the actor must be able to manage the doc where
+// it lives AND edit in the destination; system folders and a project's
+// Overview/PRD can't leave; partner/public sharing and the pin reset on the way
+// out. The collab room (doc:{pageId}:body) is workspace-independent, so content
+// is untouched.
 
 const BodySchema = z.object({
   parentPageId: z.string().min(1).nullable(),
   beforeId: z.string().min(1).nullable().optional(),
+  // Destination workspace. Omit both for a same-workspace reorder.
+  // EducationOffering/Member are intentionally not movable (enrollment /
+  // privacy audiences), so the enum rejects them.
+  workspaceType: z.enum(["Lab", "Project"]).optional(),
+  workspaceId: z.string().min(1).nullable().optional(),
 });
 
 export async function action({ request, params }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
   if (preflight) return preflight;
-
   if (request.method !== "POST") {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
 
+  const auth = await requireAuth(request);
+  if (!auth.ok) return withCors(request, auth.response);
+  const userId = auth.user.sub;
   const pageId = params.id!;
+
   const page = await prisma.page.findUnique({
     where: { id: pageId },
-    select: { id: true, workspaceType: true, workspaceId: true, kind: true, archivedAt: true },
+    select: {
+      id: true,
+      workspaceType: true,
+      workspaceId: true,
+      kind: true,
+      archivedAt: true,
+      createdById: true,
+      labRestricted: true,
+      systemKey: true,
+      partnerVisible: true,
+      publicVisible: true,
+      projectAsOverview: { select: { id: true } },
+      projectAsPRD: { select: { id: true } },
+    },
   });
   if (
     !page ||
@@ -42,28 +71,66 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Document not found" }, { status: 404 }));
   }
 
-  let auth: AuthSuccess;
-  if (page.workspaceType === "Lab") {
-    const gate = await requireMemberSession(request);
-    if (!gate.ok) return withCors(request, gate.response);
-    auth = gate.auth;
-  } else {
-    const gate = await requireProjectEditAccess(request, page.workspaceId!);
-    if (!gate.ok) return gate.response;
-    auth = gate.auth;
-  }
-  void auth;
-
   const body = await parseJson(request, BodySchema);
   if (body instanceof Response) return withCors(request, body);
 
+  // Destination. Absent workspaceType → reorder in place.
+  let dest: { type: "Lab" | "Project"; id: string | null };
+  if (!body.workspaceType) {
+    dest = { type: page.workspaceType as "Lab" | "Project", id: page.workspaceId };
+  } else if (body.workspaceType === "Lab") {
+    dest = { type: "Lab", id: null };
+  } else {
+    if (!body.workspaceId) {
+      return withCors(request, Response.json({ error: "Project destination needs a workspaceId" }, { status: 400 }));
+    }
+    dest = { type: "Project", id: body.workspaceId };
+  }
+  const sameWorkspace = dest.type === page.workspaceType && dest.id === page.workspaceId;
+
+  // Source authority: must be able to manage this doc where it currently lives.
+  const canManageSource = await canManageSharing(
+    {
+      id: page.id,
+      workspaceType: page.workspaceType,
+      workspaceId: page.workspaceId,
+      createdById: page.createdById,
+      labRestricted: page.labRestricted,
+    },
+    userId,
+  );
+  if (!canManageSource) {
+    return withCors(request, Response.json({ error: "You can't move this document" }, { status: 403 }));
+  }
+
+  // Destination authority (cross-workspace only): must be able to edit there.
+  if (!sameWorkspace) {
+    const canDest =
+      dest.type === "Lab"
+        ? await isLabMember(userId)
+        : (await isCore(userId)) || (await isProjectMember(userId, dest.id!));
+    if (!canDest) {
+      return withCors(request, Response.json({ error: "You can't move documents into that destination" }, { status: 403 }));
+    }
+  }
+
+  // Guardrails.
   if (body.parentPageId === pageId) {
     return withCors(request, Response.json({ error: "A document can't be moved into itself" }, { status: 400 }));
   }
   if (page.kind === "Folder" && body.parentPageId !== null) {
     return withCors(request, Response.json({ error: "Folders can't be nested inside another folder" }, { status: 400 }));
   }
+  if (!sameWorkspace) {
+    if (page.systemKey) {
+      return withCors(request, Response.json({ error: "This default folder can't be moved to another workspace" }, { status: 400 }));
+    }
+    if (page.projectAsOverview || page.projectAsPRD) {
+      return withCors(request, Response.json({ error: "The Overview and PRD docs can't be moved out of their project" }, { status: 400 }));
+    }
+  }
 
+  // Parent folder (if nesting) must live in the DESTINATION and be top-level.
   let parentPageId: string | null = null;
   if (body.parentPageId) {
     const parent = await prisma.page.findUnique({
@@ -73,8 +140,8 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (
       !parent ||
       parent.archivedAt !== null ||
-      parent.workspaceType !== page.workspaceType ||
-      parent.workspaceId !== page.workspaceId
+      parent.workspaceType !== dest.type ||
+      parent.workspaceId !== dest.id
     ) {
       return withCors(request, Response.json({ error: "Folder not found" }, { status: 404 }));
     }
@@ -84,16 +151,21 @@ export async function action({ request, params }: Route.ActionArgs) {
     parentPageId = body.parentPageId;
   }
 
-  // Rebuild the destination sibling order with the moved page inserted before
-  // `beforeId` (or appended), then rewrite positions 0..n so the order is
-  // stable. Done in a transaction so a concurrent move can't interleave.
+  // When a folder crosses workspaces, its children come along (their workspace
+  // columns change; they stay under the folder with their own positions).
+  const childIds =
+    page.kind === "Folder" && !sameWorkspace
+      ? (
+          await prisma.page.findMany({
+            where: { parentPageId: pageId, archivedAt: null },
+            select: { id: true },
+          })
+        ).map((c) => c.id)
+      : [];
+
+  // Rebuild the destination sibling order (in the destination workspace).
   const siblings = await prisma.page.findMany({
-    where: {
-      workspaceType: page.workspaceType,
-      workspaceId: page.workspaceId,
-      parentPageId,
-      archivedAt: null,
-    },
+    where: { workspaceType: dest.type, workspaceId: dest.id, parentPageId, archivedAt: null },
     orderBy: { position: "asc" },
     select: { id: true },
   });
@@ -102,12 +174,43 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (beforeIndex >= 0) order.splice(beforeIndex, 0, pageId);
   else order.push(pageId);
 
+  const leavesProject = page.workspaceType === "Project" && dest.type !== "Project";
+  const crossData: Prisma.PageUncheckedUpdateInput = sameWorkspace
+    ? {}
+    : {
+        workspaceType: dest.type,
+        workspaceId: dest.id,
+        // A pin means "top of THIS view", so it doesn't carry across a move.
+        pinnedAt: null,
+        // partner/public sharing is Project-only — clear it when leaving.
+        ...(leavesProject ? { partnerVisible: false, publicVisible: false } : {}),
+      };
+  const childData: Prisma.PageUncheckedUpdateInput = {
+    workspaceType: dest.type,
+    workspaceId: dest.id,
+    ...(leavesProject ? { partnerVisible: false, publicVisible: false } : {}),
+  };
+
   await prisma.$transaction([
-    prisma.page.update({ where: { id: pageId }, data: { parentPageId } }),
-    ...order.map((id, index) =>
-      prisma.page.update({ where: { id }, data: { position: index } }),
-    ),
+    prisma.page.update({ where: { id: pageId }, data: { parentPageId, ...crossData } }),
+    ...childIds.map((id) => prisma.page.update({ where: { id }, data: childData })),
+    ...order.map((id, index) => prisma.page.update({ where: { id }, data: { position: index } })),
   ]);
+
+  if (!sameWorkspace) {
+    await logAuditEvent({
+      action: "page.move-workspace",
+      userId,
+      targetId: pageId,
+      metadata: {
+        from: { type: page.workspaceType, id: page.workspaceId },
+        to: { type: dest.type, id: dest.id },
+        kind: page.kind,
+        childCount: childIds.length,
+      },
+      request,
+    });
+  }
 
   return withCors(request, Response.json({ ok: true }));
 }

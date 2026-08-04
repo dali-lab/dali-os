@@ -95,7 +95,9 @@ describe("payroll page loader — auth gate", () => {
       context: {},
     } as any)) as Response;
     expect(res.status).toBe(302);
-    expect(res.headers.get("location")).toBe("/login");
+    expect(res.headers.get("location")).toBe(
+      `/login?next=${encodeURIComponent("/admin/payroll")}`,
+    );
     expect(getReconciliation).not.toHaveBeenCalled();
   });
 
@@ -132,7 +134,9 @@ describe("payroll.csv loader — auth gate + view", () => {
       context: {},
     } as any)) as Response;
     expect(res.status).toBe(302);
-    expect(res.headers.get("location")).toBe("/login");
+    expect(res.headers.get("location")).toBe(
+      `/login?next=${encodeURIComponent("/admin/payroll.csv?view=summary")}`,
+    );
   });
 
   it("returns 403 for non-admins", async () => {

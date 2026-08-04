@@ -7,7 +7,7 @@ import { parseSessionCookie } from "~/lib/cookies";
 import { fullName } from "~/lib/display";
 import { getPresenceUser } from "~/lib/presence-user";
 import { getPageAccess } from "~/lib/pageAccess.server";
-import { labDocAccess } from "~/lib/lab-documents.server";
+import { canManageSharing } from "~/lib/page-share-access.server";
 import { normalizePageTypography } from "~/lib/page-typography";
 import { DocumentEditor } from "~/components/DocumentEditor";
 import { AttendanceChecklist, type AttendanceRow } from "~/components/AttendanceChecklist";
@@ -96,6 +96,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       updatedAt: true,
       createdById: true,
       labRestricted: true,
+      partnerVisible: true,
+      profileVisible: true,
+      labListing: true,
+      linkAccess: true,
+      linkPermission: true,
       createdBy: { select: { firstName: true, lastName: true } },
       lastEditedBy: { select: { firstName: true, lastName: true } },
       tags: { select: { tag: { select: { id: true, label: true, slug: true, color: true } } } },
@@ -112,17 +117,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     throw new Response("Not found", { status: 404 });
   }
 
-  // Personal notes have a real read gate: only the owner (or a share) may view.
-  if (page.workspaceType === "Member") {
-    const { noteAccess } = await import("~/members/lib/personal-notes.server");
-    const access = await noteAccess(page.id, auth.user.sub).catch(() => null);
-    if (!access?.canView) throw new Response("Not found", { status: 404 });
-  }
-
-  // Unified permission resolution — single call replaces the old inline block.
-  // createdById/labRestricted must be passed through: without them the Lab
-  // branch would read every lab page as unrestricted and open a narrowed
-  // document to the whole lab.
+  // Unified permission resolution. Passing the full field set (createdById,
+  // labRestricted, the general-access + note-visibility flags) makes this match
+  // the by-id path exactly — the Lab branch needs labRestricted to not open a
+  // narrowed doc to the whole lab, and the share/General-access layers need the
+  // rest. The Member read gate is folded in here (getPageAccess handles notes),
+  // so there's no separate noteAccess pre-check.
   const access = await getPageAccess(auth.user.sub, {
     id: page.id,
     workspaceType: page.workspaceType,
@@ -130,16 +130,29 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     archivedAt: page.archivedAt,
     createdById: page.createdById,
     labRestricted: page.labRestricted,
+    partnerVisible: page.partnerVisible,
+    profileVisible: page.profileVisible,
+    labListing: page.labListing,
+    linkAccess: page.linkAccess,
+    linkPermission: page.linkPermission,
   });
   const { canEdit, canComment, canResolve } = access;
   if (!access.canView) throw new Response("Not found", { status: 404 });
 
-  // Only lab documents carry a per-page audience; everywhere else the workspace
-  // decides who reads, so there's nothing to manage.
-  const canManageAccess =
-    page.workspaceType === "Lab"
-      ? (await labDocAccess(page, auth.user.sub)).canManageAccess
-      : false;
+  // Every workspace type now carries a shareable audience (named shares +
+  // General access), so the Share button shows wherever the viewer may manage
+  // it — the creator/Core on a lab doc, project staff, the note owner, an
+  // instructor, or anyone granted Full access.
+  const canManageAccess = await canManageSharing(
+    {
+      id: page.id,
+      workspaceType: page.workspaceType,
+      workspaceId: page.workspaceId,
+      createdById: page.createdById,
+      labRestricted: page.labRestricted,
+    },
+    auth.user.sub,
+  );
 
   const allTags = await prisma.docTag.findMany({
     where: { archivedAt: null },
@@ -263,6 +276,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     pageId: page.id,
     title: page.title,
     workspaceType: page.workspaceType,
+    workspaceId: page.workspaceId,
     hubName,
     hubHref,
     hubIconEmoji,
@@ -291,6 +305,8 @@ export default function DocumentPage() {
   const {
     pageId,
     title,
+    workspaceType,
+    workspaceId,
     tags,
     allTags,
     canEdit,
@@ -351,6 +367,8 @@ export default function DocumentPage() {
         canComment={canComment}
         canResolve={canResolve}
         canManageAccess={canManageAccess}
+        workspaceType={workspaceType}
+        workspaceId={workspaceId}
         tags={tags}
         allTags={allTags}
         iconEmoji={iconEmoji}

@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { redirect, useLoaderData, useFetcher, Link } from "react-router";
+import { useLoaderData, useFetcher, Link } from "react-router";
 import type { Route } from "./+types/intern-to-full";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { requireMember } from "~/lib/roles";
 import { getActiveCycle } from "~/hiring/lib/cycles";
 import { reconcileDomainApplications } from "~/hiring/lib/domain-application";
@@ -28,7 +29,7 @@ export const meta: Route.MetaFunction = () => [
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
 
   const member = await requireMember(auth.user.sub);
   if (!member) {

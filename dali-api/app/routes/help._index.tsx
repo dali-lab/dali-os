@@ -9,13 +9,14 @@ import {
   Users,
 } from "lucide-react";
 import { requireAuth } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import type { Route } from "./+types/help._index";
 
 export const meta: Route.MetaFunction = () => [{ title: "Help · DALI OS" }];
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   if (auth.user.type === "applicant") return redirect("/portal");
   return null;
 }

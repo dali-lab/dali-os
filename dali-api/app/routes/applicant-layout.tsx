@@ -1,13 +1,14 @@
-import { Outlet, redirect, useLoaderData, Link } from "react-router";
+import { Outlet, useLoaderData, Link } from "react-router";
 import type { Route } from "./+types/applicant-layout";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { userInitials } from "~/lib/display";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 import { PortalProfileMenu } from "~/components/PortalProfileMenu";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) return partnerRedirect;
   return { user: auth.user };

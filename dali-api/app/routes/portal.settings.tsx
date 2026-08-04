@@ -1,7 +1,8 @@
-import { Form, redirect, useLoaderData, useNavigation } from "react-router";
+import { Form, useLoaderData, useNavigation } from "react-router";
 import type { Route } from "./+types/portal.settings";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { isValidTimezone } from "~/lib/timezone";
 import { AppearanceSettingsBlock } from "~/components/settings/AppearanceSettingsBlock";
 
@@ -12,7 +13,7 @@ export const meta: Route.MetaFunction = () => [{ title: "Settings · DALI OS" }]
 // and a phone number for interview scheduling are the fields that matter.
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   const me = await prisma.user.findUnique({
     where: { id: auth.user.sub },
     select: {
@@ -25,13 +26,13 @@ export async function loader({ request }: Route.LoaderArgs) {
       timeZone: true,
     },
   });
-  if (!me) return redirect("/login");
+  if (!me) return redirectToLogin(request);
   return { me };
 }
 
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
 
   const form = await request.formData();
   const firstName = (form.get("firstName") as string | null)?.trim() ?? "";

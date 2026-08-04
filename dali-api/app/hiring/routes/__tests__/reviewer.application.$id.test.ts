@@ -218,7 +218,9 @@ describe("reviewer.application.$id loader — domain scoping", () => {
 
     expect(thrown).toBeInstanceOf(Response);
     expect(thrown.status).toBe(302);
-    expect(thrown.headers.get("location")).toBe("/login");
+    expect(thrown.headers.get("location")).toBe(
+      `/login?next=${encodeURIComponent(`/hiring/reviewer/application/${APPLICATION_ID}`)}`,
+    );
     // Domain scoping queries should not run if access is denied.
     expect(mockPrisma.domainApplication.findMany).not.toHaveBeenCalled();
     expect(mockPrisma.cycleReviewer.findMany).not.toHaveBeenCalled();

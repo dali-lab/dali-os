@@ -1,4 +1,5 @@
 import { redirect, useLoaderData, Form, Link } from "react-router";
+import { redirectToLogin } from "~/lib/login-next";
 import type { Route } from "./+types/education.manage.assignments.$assignmentId";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db";
@@ -26,7 +27,7 @@ export const handle = {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   const portalRedirect = redirectDartmouthToPortal(auth);
   if (portalRedirect) return portalRedirect;
 

@@ -143,6 +143,14 @@ export async function authorizeCollabDoc(
         partnerVisible: true,
         createdById: true,
         studentEditable: true,
+        // Read by getPageAccess's object path — keep this select in sync so the
+        // collab socket honors restricted lab docs, named-share tiers, and the
+        // General access setting exactly as the by-id path does.
+        labRestricted: true,
+        profileVisible: true,
+        labListing: true,
+        linkAccess: true,
+        linkPermission: true,
       },
     });
     if (!page || page.archivedAt !== null) return deny;

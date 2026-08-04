@@ -6,7 +6,8 @@ import { Breadcrumbs } from '~/components/Breadcrumbs'
 import { PageDocProvider, PageDocButton, PageDocOutlet } from '~/components/page-docs/PageDocButton'
 import { LaunchWelcome } from '~/components/LaunchWelcome'
 import { TimeZonePrompt } from '~/components/TimeZonePrompt'
-import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
+import { requireAuth, redirectPartnerToPortal } from "~/lib/auth"
+import { redirectToLogin } from '~/lib/login-next';
 import { getUserRoles, isLabMentor } from '~/lib/roles'
 import { getAppGateOutstanding } from '~/signing/lib/state.server'
 import { getActiveCycle } from '~/hiring/lib/cycles'
@@ -21,7 +22,24 @@ import type { Route } from './+types/layout'
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request)
-  if (!auth.ok) return redirect('/login')
+  if (!auth.ok) {
+    // "Anyone with the link" documents render to signed-out visitors. The
+    // canonical copied link is the plain /documents/:pageId URL, so route an
+    // anonymous visitor of a public doc to its shell-free read-only view rather
+    // than bouncing them to login. Only runs on the unauthenticated path.
+    const path = new URL(request.url).pathname
+    const match = path.match(/^\/documents\/([^/]+)$/)
+    if (match) {
+      const page = await prisma.page.findUnique({
+        where: { id: match[1] },
+        select: { linkAccess: true, archivedAt: true },
+      })
+      if (page && page.archivedAt === null && page.linkAccess === "Public") {
+        return redirect(`/documents/${match[1]}/public`)
+      }
+    }
+    return redirectToLogin(request)
+  }
   if (auth.user.type === 'applicant') return redirect('/portal')
 
   // Onboarding is NOT a hard gate: a new member can use the whole app freely.

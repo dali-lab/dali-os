@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from "react";
 import { Bell, Check } from "lucide-react";
 import type { Route } from "./+types/onboarding";
 import { requireAuth, unauthorized, forbidden } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { isCore, getUserRoles } from "~/lib/roles";
 import { hiringPills } from "~/hiring/components/hiringPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
@@ -215,7 +216,7 @@ async function loadOnboardingRows(args: {
 // provisioning state, the same sensitivity tier as the hiring lead dashboard.
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   const roles = await getUserRoles(auth.user.sub);
   if (!roles.isCore) return redirect("/");
 

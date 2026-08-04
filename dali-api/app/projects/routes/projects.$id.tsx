@@ -12,8 +12,9 @@ import {
   useSubmit,
   type ShouldRevalidateFunctionArgs,
 } from "react-router";
-import { CalendarDays, CalendarX, ChartNoAxesGantt, Check, Globe, Handshake, History, List, Pencil, Pin, X, Settings, Folder, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink } from "lucide-react";
+import { CalendarDays, CalendarX, ChartNoAxesGantt, Check, Globe, Handshake, History, List, Pencil, Pin, X, Settings, Folder, FolderInput, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink } from "lucide-react";
 import { Modal, ModalHeader } from "~/components/Modal";
+import { MoveToDialog } from "~/components/sharing/MoveToDialog";
 import { useDialog, useConfirmSubmit } from "~/components/ui/dialog";
 import { Tooltip } from "~/components/ui/IconButton";
 import { EditableSection } from "~/components/EditableSection";
@@ -26,6 +27,7 @@ import { prisma } from "~/lib/db";
 import { ensureProjectGroup } from "~/lib/groups";
 import { ensureMeetingNotesFolder } from "~/lib/pages";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { formatDateShort, formatDateTime, fullName, UNKNOWN_LABEL } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { USER_NAME_SELECT } from "~/lib/prisma-shapes";
@@ -192,7 +194,7 @@ function relativeTime(iso: string): string {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   const portalRedirect = redirectApplicantToPortal(auth);
   if (portalRedirect) return portalRedirect;
 
@@ -214,6 +216,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       slackChannelId: true,
       chartStringType: true,
       chartString: true,
+      isPrivate: true,
       overviewPageId: true,
       prdPageId: true,
       projectTerms: {
@@ -988,6 +991,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       slackChannelId: project.slackChannelId,
       chartStringType: project.chartStringType,
       chartString: project.chartString,
+      isPrivate: project.isPrivate,
       overviewPageId: project.overviewPageId,
       prdPageId: project.prdPageId,
       startTerm,
@@ -1078,7 +1082,7 @@ export function shouldRevalidate({
 
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   const portalRedirect = redirectApplicantToPortal(auth);
   if (portalRedirect) return portalRedirect;
 
@@ -1092,7 +1096,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const form = await request.formData();
   const intent = (form.get("intent") as string | null) ?? "details";
 
-  const SCOPE_INTENTS = ["scopesBulk", "domains", "terms"];
+  const SCOPE_INTENTS = ["scopesBulk", "domains", "terms", "visibility"];
   if (SCOPE_INTENTS.includes(intent) && !core) {
     return { error: "Only Core or Admin can change project settings." };
   }
@@ -1166,6 +1170,15 @@ export async function action({ request, params }: Route.ActionArgs) {
     await prisma.project.update({
       where: { id: params.id },
       data: { imageUrl: imageUrlRaw === "" ? null : imageUrlRaw },
+    });
+    return redirect(`/projects/${params.id}`);
+  }
+
+  // Private flag. An unchecked checkbox posts nothing, so absence means false.
+  if (intent === "visibility") {
+    await prisma.project.update({
+      where: { id: params.id },
+      data: { isPrivate: form.get("isPrivate") === "on" },
     });
     return redirect(`/projects/${params.id}`);
   }
@@ -1485,7 +1498,7 @@ export default function ProjectDetail() {
           <ModalHeader
             titleId="scope-settings-title"
             title="Project settings"
-            subtitle="Declared domains, planned terms, and the per-domain challenge for each term."
+            subtitle="Visibility, declared domains, planned terms, and the per-domain challenge for each term."
             onClose={() => setScopeSettingsOpen(false)}
             closeLabel="Close scope settings"
           />
@@ -1770,6 +1783,65 @@ function DescriptionSegment({
 // optimistic state can't accumulate. When no domains are declared and the
 // project has bids/assignments, the derived union is shown read-only as a
 // hint so the user can see what staffing has implied so far.
+// Private toggle. "Private" only affects form reference questions today: a
+// private project is dropped from every `projects:*` source in
+// forms/lib/reference-sources.ts, so nobody can pick it as a bid/preference
+// answer. It stays fully visible in the hub, search, and to its own team —
+// the description below says so, since "private" otherwise reads as broader.
+function VisibilitySegment({
+  isPrivate,
+  canEdit,
+}: {
+  isPrivate: boolean;
+  canEdit: boolean;
+}) {
+  const submit = useSubmit();
+  const formRef = useRef<HTMLFormElement | null>(null);
+
+  return (
+    <EditableSection
+      title="Visibility"
+      canEdit={canEdit}
+      description="Private projects can't be selected as an answer on forms that pull from the project database."
+      onSave={() => {
+        if (formRef.current) submit(formRef.current);
+      }}
+    >
+      {({ editing, resetKey }) =>
+        editing ? (
+          <Form method="post" ref={formRef} key={resetKey}>
+            <input type="hidden" name="intent" value="visibility" />
+            <label className="flex items-start gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                name="isPrivate"
+                defaultChecked={isPrivate}
+                className="mt-0.5 accent-accent-coral"
+              />
+              <span>
+                <span className="text-foreground">Private project</span>
+                <span className="block text-xs text-muted-foreground">
+                  Hidden from project dropdowns on forms. Still listed in the
+                  project hub and search.
+                </span>
+              </span>
+            </label>
+          </Form>
+        ) : (
+          <p className="text-sm text-foreground">
+            {isPrivate ? "Private" : "Standard"}
+            <span className="block text-xs text-muted-foreground">
+              {isPrivate
+                ? "Not offered as a choice on forms that query projects."
+                : "Selectable on forms that query projects."}
+            </span>
+          </p>
+        )
+      }
+    </EditableSection>
+  );
+}
+
 function DomainsSegment({
   declared,
   derived,
@@ -2855,6 +2927,8 @@ function ScopeTab({
         </div>
       )}
 
+      <VisibilitySegment isPrivate={project.isPrivate} canEdit={canEdit} />
+
       {/* Declared domains — editable; if none declared the derived set from
           assignments + bids is shown as a fallback so a freshly-created
           project that's mid-staffing still has visible domain context. */}
@@ -2925,7 +2999,7 @@ function PartnersSection({
           <select
             name="partnerOrgId"
             required
-            className="flex-1 min-w-[220px] rounded-lg border border-border bg-background px-3 py-2 text-sm"
+            className="h-9 flex-1 min-w-[220px] rounded-lg border border-border bg-background px-3 text-sm"
           >
             <option value="">Select an organization…</option>
             {linkablePartnerOrgs.map((o) => (
@@ -2936,7 +3010,7 @@ function PartnersSection({
           </select>
           <button
             type="submit"
-            className="rounded-lg bg-dark-blue text-white text-sm font-medium px-4 py-2 hover:opacity-90 transition"
+            className="h-9 rounded-lg bg-dark-blue text-white text-sm font-medium px-4 hover:opacity-90 transition"
           >
             Link
           </button>
@@ -3069,6 +3143,8 @@ function DocumentsBlock({
   const revalidator = useRevalidator();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // "Move to…" dialog state — tracks which doc the user wants to move.
+  const [moveDoc, setMoveDoc] = useState<{ id: string; title: string } | null>(null);
   // Folders default open so the (usually few) default folders' contents are
   // visible without an extra click; new folders created this session are
   // added here too (see createFolder).
@@ -3390,6 +3466,18 @@ function DocumentsBlock({
               </button>
             </Tooltip>
           )}
+          {canEdit && !doc.isSystem && (
+            <Tooltip label="Move to…">
+              <button
+                type="button"
+                onClick={() => setMoveDoc({ id: doc.id, title: doc.title })}
+                aria-label="Move document"
+                className="text-muted-foreground hover:text-foreground disabled:opacity-60"
+              >
+                <FolderInput className="w-3.5 h-3.5" />
+              </button>
+            </Tooltip>
+          )}
           {canEdit && (
             <Tooltip label="Delete document">
               <button
@@ -3591,6 +3679,18 @@ function DocumentsBlock({
           )}
         </div>
       )}
+
+      <MoveToDialog
+        open={!!moveDoc}
+        pageId={moveDoc?.id ?? ""}
+        title={moveDoc?.title ?? ""}
+        current={{ type: "Project", id: projectId }}
+        onClose={() => setMoveDoc(null)}
+        onMoved={() => {
+          setMoveDoc(null);
+          revalidator.revalidate();
+        }}
+      />
     </section>
   );
 }

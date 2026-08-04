@@ -3,6 +3,8 @@
 // the query / domain state and the actual filtering. The domain dropdown is
 // optional — the configurable database view filters by free text only.
 
+import { SelectMenu, type SelectMenuOption } from "~/components/ui/SelectMenu";
+
 type Domain = { id: string; name: string };
 
 export function SubmissionFilters({
@@ -30,19 +32,16 @@ export function SubmissionFilters({
         className="flex-1 px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
       />
       {showDomain && (
-        <select
+        <SelectMenu
           value={domainId ?? ""}
-          onChange={(e) => onDomainChange!(e.target.value)}
-          aria-label="Filter by domain"
-          className="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground sm:w-56"
-        >
-          <option value="">All domains</option>
-          {domains!.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name}
-            </option>
-          ))}
-        </select>
+          options={[
+            { value: "", label: "All domains" },
+            ...domains!.map((d) => ({ value: d.id, label: d.name })),
+          ]}
+          ariaLabel="Filter by domain"
+          buttonClassName="inline-flex w-full items-center justify-between gap-1 px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground transition-colors hover:bg-muted/40 sm:w-56"
+          onChange={(value) => onDomainChange!(value)}
+        />
       )}
     </div>
   );

@@ -2,6 +2,7 @@ import { redirect, useLoaderData, Link } from "react-router";
 import type { Route } from "./+types/portal";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { getActiveCycle } from "~/hiring/lib/cycles";
 import { listCatalog, registrationOpen } from "~/education/lib/offerings.server";
 import { listUpcomingSessionsForUser } from "~/education/lib/schedule.server";
@@ -16,7 +17,7 @@ export const meta: Route.MetaFunction = () => [{ title: "DALI Portal" }];
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   // Lab members have the full app; the portal is the non-member surface.
   if (auth.user.type === "member") return redirect("/");
 

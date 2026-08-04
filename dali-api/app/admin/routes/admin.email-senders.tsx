@@ -8,6 +8,7 @@ import type { Route } from "./+types/admin.email-senders";
 import { adminHandle } from "~/admin/adminNav";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { isCore, isAdmin } from "~/lib/roles";
 import { listSenderIntegrations } from "~/lib/gmail-integration";
 import { buttonClasses } from "~/components/ui/Button";
@@ -25,7 +26,7 @@ export const meta: Route.MetaFunction = () => [
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   if (!(await isCore(auth.user.sub))) return redirect("/");
 
   const rows = await listSenderIntegrations();

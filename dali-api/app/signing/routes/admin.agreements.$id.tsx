@@ -6,6 +6,7 @@ import { redirect } from "react-router";
 import type { Route } from "./+types/admin.agreements.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles, isCore } from "~/lib/roles";
 import { adminHandle } from "~/admin/adminNav";
 import { logAuditEvent } from "~/lib/audit";
@@ -33,7 +34,7 @@ function parseRoles(raw: string | null): string[] {
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   const roles = await getUserRoles(auth.user.sub);
   if (!roles.isCore) return redirect("/");
 
@@ -109,7 +110,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
-  if (!auth.ok) return redirect("/login");
+  if (!auth.ok) return redirectToLogin(request);
   if (!(await isCore(auth.user.sub))) return redirect("/");
 
   const formData = await request.formData();

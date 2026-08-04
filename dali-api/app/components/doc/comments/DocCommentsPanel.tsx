@@ -241,7 +241,7 @@ export function DocCommentsPanel({
       </div>
 
       {fetchErr && (
-        <div className="px-3 py-2 text-xs text-destructive">{fetchErr}</div>
+        <div className={`py-2 text-xs text-destructive ${inline ? "" : "px-3"}`}>{fetchErr}</div>
       )}
 
       <div className={inline ? "" : "flex-1 overflow-y-auto min-h-0"}>
@@ -418,7 +418,10 @@ export function DocCommentsPanel({
 
       {/* Doc-level composer */}
       {canComment && filter === "open" && (
-        <div className="border-t border-border px-3 py-2 shrink-0">
+        // Inline, the composer is part of the page flow, so it takes the same
+        // full width as the header and the thread list above it. Only the
+        // floating panel needs its own gutter.
+        <div className={`border-t border-border py-2 shrink-0 ${inline ? "" : "px-3"}`}>
           <form
             onSubmit={async (e) => {
               e.preventDefault();

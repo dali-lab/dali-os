@@ -1,5 +1,6 @@
 import { useNavigate, useSearchParams } from "react-router";
 import { STATUS_COLORS, STATUS_LABELS } from "~/hiring/lib/labels";
+import { SelectMenu } from "~/components/ui/SelectMenu";
 
 interface CycleSelectorProps {
   cycles: Array<{ id: string; name: string; status: string }>;
@@ -11,25 +12,21 @@ export function CycleSelector({ cycles, selectedCycleId }: CycleSelectorProps) {
   const [searchParams] = useSearchParams();
   const selectedCycle = cycles.find((c) => c.id === selectedCycleId);
 
-  function handleChange(e: React.ChangeEvent<HTMLSelectElement>) {
+  function handleChange(value: string) {
     const params = new URLSearchParams(searchParams);
-    params.set("cycleId", e.target.value);
+    params.set("cycleId", value);
     navigate({ search: `?${params.toString()}` });
   }
 
   return (
     <div className="flex shrink-0 items-center gap-3">
-      <select
+      <SelectMenu
         value={selectedCycleId}
+        options={cycles.map((c) => ({ value: c.id, label: c.name }))}
+        ariaLabel="Select hiring cycle"
+        buttonClassName="inline-flex items-center justify-between gap-1 px-3 py-1.5 text-sm border border-border rounded-md bg-card text-foreground transition-colors hover:bg-muted/40"
         onChange={handleChange}
-        className="px-3 py-1.5 text-sm border border-border rounded-md bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-blue-500"
-      >
-        {cycles.map((c) => (
-          <option key={c.id} value={c.id}>
-            {c.name}
-          </option>
-        ))}
-      </select>
+      />
       {selectedCycle && (
         <span
           className={`inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full ${STATUS_COLORS[selectedCycle.status] ?? "bg-muted text-foreground/80"}`}
