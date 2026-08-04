@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link2, Users, X } from "lucide-react";
+import { Link2, User, Users, X } from "lucide-react";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { buttonClasses } from "~/components/ui/Button";
@@ -19,6 +19,7 @@ type Share = {
   principalId: string;
   permission: Permission;
   label: string;
+  memberCount?: number;
 };
 type Context = {
   linkAccess: LinkAccess;
@@ -300,7 +301,7 @@ export function ShareDialog({
         <ul className="flex flex-col gap-1">
           {ctx?.owner && (
             <li className="flex items-center gap-2 text-sm px-2.5 py-1.5 rounded-md border border-border bg-muted">
-              <Users className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+              <User className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
               <span className="flex-1 min-w-0 truncate text-foreground">
                 {ctx.owner.name}
                 {ctx.owner.isYou && <span className="text-muted-foreground"> (you)</span>}
@@ -317,8 +318,22 @@ export function ShareDialog({
                 key={s.id}
                 className="flex items-center gap-2 text-sm px-2.5 py-1.5 rounded-md border border-border bg-muted"
               >
-                <Users className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                <span className="flex-1 min-w-0 truncate text-foreground">{s.label}</span>
+                {/* A person and a group are different kinds of grant, so they
+                    get different marks — one icon for both made a 500-person
+                    group read like a single colleague. */}
+                {s.principalType === "Group" ? (
+                  <Users className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                ) : (
+                  <User className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                )}
+                <span className="flex-1 min-w-0">
+                  <span className="block truncate text-foreground">{s.label}</span>
+                  {s.principalType === "Group" && s.memberCount !== undefined && (
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {s.memberCount === 1 ? "1 person" : `${s.memberCount} people`}
+                    </span>
+                  )}
+                </span>
                 <Select
                   value={s.permission}
                   options={PERMISSION_OPTIONS}
