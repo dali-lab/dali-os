@@ -32,7 +32,6 @@ export interface PageShape {
   archivedAt?: Date | null;
   createdById?: string | null;
   partnerVisible?: boolean | null;
-  labRestricted?: boolean | null;
   profileVisible?: boolean | null;
   labListing?: string | null;
   // Loose like workspaceType/labListing above — the enum values live in the DB;
@@ -143,7 +142,6 @@ export async function getPageAccess(
         archivedAt: true,
         partnerVisible: true,
         createdById: true,
-        labRestricted: true,
         profileVisible: true,
         labListing: true,
         linkAccess: true,
@@ -185,21 +183,14 @@ export async function getPageAccess(
   const core = await isCore(userSub);
 
   // ── Lab-workspace pages ──────────────────────────────────────────────────
-  // Any lab member can view AND edit an unrestricted Lab page; a restricted one
-  // is limited to its creator and Core. labDocAccess.canEdit is true for exactly
-  // those role-based full-access cases — everything else (including a restricted
-  // doc's share list) flows through `extra` with its proper tier.
+  // The creator and Core always get full access (and manage rights). Every
+  // other lab member reaches the doc through `extra`: General access
+  // "Everyone in the lab" (linkAccess=LabMembers) carries the doc's
+  // View/Comment/Edit tier via linkPermission, and named people/group shares
+  // carry theirs. "Only people you add" is just linkAccess=Restricted — the
+  // creator/Core base plus whatever's on the share list.
   if (page.workspaceType === "Lab") {
-    const { labDocAccess } = await import("~/lib/lab-documents.server");
-    const access = await labDocAccess(
-      {
-        id: page.id,
-        createdById: page.createdById ?? null,
-        labRestricted: (page.labRestricted as boolean | undefined) ?? false,
-      },
-      userSub,
-    );
-    const base = access.canEdit ? FULL : DENIED;
+    const base = core || page.createdById === userSub ? FULL : DENIED;
     return merge(base, extra);
   }
 

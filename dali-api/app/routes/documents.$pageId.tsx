@@ -95,7 +95,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       typography: true,
       updatedAt: true,
       createdById: true,
-      labRestricted: true,
       partnerVisible: true,
       profileVisible: true,
       labListing: true,
@@ -117,19 +116,17 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     throw new Response("Not found", { status: 404 });
   }
 
-  // Unified permission resolution. Passing the full field set (createdById,
-  // labRestricted, the general-access + note-visibility flags) makes this match
-  // the by-id path exactly — the Lab branch needs labRestricted to not open a
-  // narrowed doc to the whole lab, and the share/General-access layers need the
-  // rest. The Member read gate is folded in here (getPageAccess handles notes),
-  // so there's no separate noteAccess pre-check.
+  // Unified permission resolution. Passing the full field set (createdById, the
+  // general-access + note-visibility flags) makes this match the by-id path
+  // exactly — the Lab branch keys off createdById/Core plus the General-access
+  // and share layers. The Member read gate is folded in here (getPageAccess
+  // handles notes), so there's no separate noteAccess pre-check.
   const access = await getPageAccess(auth.user.sub, {
     id: page.id,
     workspaceType: page.workspaceType,
     workspaceId: page.workspaceId,
     archivedAt: page.archivedAt,
     createdById: page.createdById,
-    labRestricted: page.labRestricted,
     partnerVisible: page.partnerVisible,
     profileVisible: page.profileVisible,
     labListing: page.labListing,
@@ -149,7 +146,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       workspaceType: page.workspaceType,
       workspaceId: page.workspaceId,
       createdById: page.createdById,
-      labRestricted: page.labRestricted,
     },
     auth.user.sub,
   );

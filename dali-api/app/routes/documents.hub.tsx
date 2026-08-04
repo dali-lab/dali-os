@@ -134,7 +134,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         ...labVisibility,
       },
       orderBy: { position: "asc" },
-      select: { ...pageSelect, createdById: true, labRestricted: true },
+      select: { ...pageSelect, createdById: true, linkAccess: true },
     }),
     prisma.project.findMany({
       where: {
@@ -168,12 +168,12 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const projectById = new Map(projects.map((p) => [p.id, p]));
   const toDto = (
-    // Lab rows carry createdById/labRestricted; project rows don't select them
+    // Lab rows carry createdById/linkAccess; project rows don't select them
     // and don't need them — access for project docs is the project's business.
-    p: Omit<(typeof labPages)[number], "createdById" | "labRestricted"> & {
+    p: Omit<(typeof labPages)[number], "createdById" | "linkAccess"> & {
       workspaceId?: string | null;
       createdById?: string;
-      labRestricted?: boolean;
+      linkAccess?: string;
     },
     workspaceKey: string,
     workspaceLabel: string,
@@ -193,7 +193,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     workspaceKey,
     workspaceLabel,
     workspaceKind,
-    restricted: workspaceKind === "lab" && p.labRestricted === true,
+    restricted: workspaceKind === "lab" && p.linkAccess === "Restricted",
   });
 
   const docs: DocOut[] = [
