@@ -22,6 +22,7 @@ export function FavoriteRouteButton({
   onToggled,
   compact = false,
   suppressWhenPills = false,
+  className = "",
 }: {
   /** Defaults to the page's own title. */
   label?: string;
@@ -35,6 +36,7 @@ export function FavoriteRouteButton({
   compact?: boolean;
   /** Set by the layout: pill pages render it in the pill row instead. */
   suppressWhenPills?: boolean;
+  className?: string;
 }) {
   const matches = useMatches();
   const location = useLocation();
@@ -48,6 +50,13 @@ export function FavoriteRouteButton({
   const [favorited, setFavorited] = useState(favoritedProp ?? false);
   const [ready, setReady] = useState(known);
   const [busy, setBusy] = useState(false);
+
+  // The owner may learn the answer after we first render — a tab bar resolves
+  // its whole row in one request — and useState only reads its initial value,
+  // so adopt the prop when it changes.
+  useEffect(() => {
+    if (favoritedProp !== undefined) setFavorited(favoritedProp);
+  }, [favoritedProp]);
 
   // Ask the server whether this URL is already starred. Client-side because the
   // bar renders on 41 different routes — threading the answer through every one
@@ -98,7 +107,13 @@ export function FavoriteRouteButton({
   if (suppressWhenPills && hasAreaPills) return null;
 
   return (
-    <Tooltip label={favorited ? "In your favourites" : "Add this page to your favourites"}>
+    // portal when compact: these sit inside the tab bar's horizontal scroller,
+    // and an absolutely-positioned tip counts toward a scroll container's
+    // overflow — 20px of phantom vertical scroll before this.
+    <Tooltip
+      label={favorited ? "In your favourites" : "Add this page to your favourites"}
+      portal={compact}
+    >
       <button
         type="button"
         disabled={busy || !ready}
@@ -110,10 +125,12 @@ export function FavoriteRouteButton({
         aria-label={favorited ? "Remove from favourites" : "Add to favourites"}
         aria-pressed={favorited}
         className={`inline-flex items-center justify-center transition-colors disabled:opacity-40 ${
-          compact ? "" : "rounded-md p-1.5"
+          // ml-auto so it holds the right edge when it is the only action in
+          // the header row (Guide absent).
+          compact ? "" : "ml-auto shrink-0 rounded-md p-1.5"
         } ${
           favorited ? "text-accent-coral" : "text-muted-foreground hover:text-foreground"
-        } ${compact ? "" : "hover:bg-muted"}`}
+        } ${compact ? "" : "hover:bg-muted"} ${className}`}
       >
         <Star
           className={`${compact ? "h-3.5 w-3.5" : "h-4 w-4"} ${favorited ? "fill-current" : ""}`}
