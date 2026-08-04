@@ -63,6 +63,9 @@ export async function createLabMeetingPage(input: {
       position,
       createdById: input.createdById,
       meetingNoteId: input.meetingNoteId ?? null,
+      // Lab docs default to the communal shelf: everyone in the lab can edit.
+      linkAccess: "LabMembers",
+      linkPermission: "Edit",
     },
     select: { id: true },
   });
@@ -96,6 +99,9 @@ export async function createLabPage(input: {
       position,
       parentPageId,
       createdById: input.createdById,
+      // Lab docs default to the communal shelf: everyone in the lab can edit.
+      linkAccess: "LabMembers",
+      linkPermission: "Edit",
     },
     select: { id: true },
   });

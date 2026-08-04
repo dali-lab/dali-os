@@ -45,7 +45,6 @@ function labPage(over: Record<string, unknown> = {}) {
     kind: "FreeForm",
     archivedAt: null,
     createdById: "u1",
-    labRestricted: false,
     systemKey: null,
     partnerVisible: false,
     publicVisible: false,
@@ -94,6 +93,9 @@ describe("POST /api/pages/:id/move", () => {
     expect(data.workspaceType).toBe("Project");
     expect(data.workspaceId).toBe("projA");
     expect(data.pinnedAt).toBeNull();
+    // Leaving the lab shelf drops lab-wide access so it can't follow the doc.
+    expect(data.linkAccess).toBe("Restricted");
+    expect(data.linkPermission).toBe("View");
     expect(logAuditEvent).toHaveBeenCalledWith(
       expect.objectContaining({ action: "page.move-workspace" }),
     );
@@ -108,6 +110,9 @@ describe("POST /api/pages/:id/move", () => {
     expect(data.workspaceType).toBe("Lab");
     expect(data.partnerVisible).toBe(false);
     expect(data.publicVisible).toBe(false);
+    // Landing on the lab shelf opens it to the whole lab (edit), the shelf default.
+    expect(data.linkAccess).toBe("LabMembers");
+    expect(data.linkPermission).toBe("Edit");
   });
 
   it("403 when the actor can't manage the source", async () => {

@@ -3836,19 +3836,6 @@ model Page {
   // dali.website" for project pages. Two different publics.
   profileVisible Boolean @default(false)
 
-  // ─── Lab-workspace visibility (meaningless elsewhere; stays false) ───────
-  //
-  // Lab documents are readable and editable by every lab member by default —
-  // that's what "lab-wide" means, and the default keeps it true for every doc
-  // that existed before this column. Flipping it narrows the doc to its
-  // creator plus whoever is on the PageShare list, the same additive model
-  // personal notes use.
-  //
-  // Core keeps access either way: the hub is lab property that Core curates,
-  // so this is "not on the lab's shelf", not "sealed from leadership". The
-  // manage-access dialog says so rather than implying a privacy it can't give.
-  labRestricted Boolean @default(false)
-
   // Owner-proposed, Core-approved promotion of a personal note onto the
   // lab-wide Documents hub. The hub is the lab's curated shelf, so the owner
   // can only ask; Core decides. Reviewer fields are null until then.

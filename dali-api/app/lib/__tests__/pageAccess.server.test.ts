@@ -53,7 +53,6 @@ function page(overrides: Record<string, unknown> = {}) {
     archivedAt: null,
     partnerVisible: false,
     createdById: null,
-    labRestricted: false,
     profileVisible: false,
     labListing: "None",
     linkAccess: "Restricted",
@@ -127,42 +126,56 @@ describe("Member workspace", () => {
 });
 
 // ── Lab workspace ────────────────────────────────────────────────────────────
+// Lab audience is General access now: "Everyone in the lab" = linkAccess
+// LabMembers at the doc's linkPermission tier; "Only people you add" = linkAccess
+// Restricted (creator + Core + named shares). No labRestricted boolean.
 describe("Lab workspace", () => {
-  it("allows any lab member full access to an unrestricted doc", async () => {
+  const everyone = (over: Record<string, unknown> = {}) =>
+    page({ linkAccess: "LabMembers", linkPermission: "Edit", ...over });
+
+  it("gives every lab member edit on an 'Everyone in the lab · Edit' doc", async () => {
     vi.mocked(isLabMember).mockResolvedValue(true);
-    const result = await getPageAccess("lab-member", page());
-    expect(result).toEqual(full);
+    expect(await getPageAccess("lab-member", everyone())).toEqual(full);
   });
 
-  it("denies non-members", async () => {
-    const result = await getPageAccess("stranger", page());
-    expect(result).toEqual(denied());
+  it("'Everyone in the lab · View' grants a lab member view only — not edit", async () => {
+    vi.mocked(isLabMember).mockResolvedValue(true);
+    const result = await getPageAccess("lab-member", everyone({ linkPermission: "View" }));
+    expect(result).toEqual({ canView: true, canEdit: false, canComment: false, canResolve: false });
   });
 
-  it("a View share never downgrades an unrestricted lab member", async () => {
+  it("denies non-members even on a doc open to the lab", async () => {
+    expect(await getPageAccess("stranger", everyone())).toEqual(denied());
+  });
+
+  it("a View share never downgrades a lab member on an open · Edit doc", async () => {
     vi.mocked(isLabMember).mockResolvedValue(true);
     withShare("View");
-    const result = await getPageAccess("lab-member", page());
+    expect(await getPageAccess("lab-member", everyone())).toEqual(full);
+  });
+
+  it("the creator keeps full access on an 'Only people you add' doc", async () => {
+    const result = await getPageAccess("creator", page({ createdById: "creator" }));
     expect(result).toEqual(full);
   });
 
-  it("an Edit share on a restricted doc grants edit to a non-creator", async () => {
+  it("Core keeps full access on an 'Only people you add' doc", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    const result = await getPageAccess("core-user", page({ createdById: "someone-else" }));
+    expect(result).toEqual(full);
+  });
+
+  it("an Edit share grants edit to a non-creator on an 'Only people you add' doc", async () => {
     vi.mocked(isLabMember).mockResolvedValue(true);
     withShare("Edit");
-    const result = await getPageAccess(
-      "outsider",
-      page({ labRestricted: true, createdById: "someone-else" }),
-    );
+    const result = await getPageAccess("outsider", page({ createdById: "someone-else" }));
     expect(result.canView).toBe(true);
     expect(result.canEdit).toBe(true);
   });
 
-  it("a restricted doc denies an unshared non-creator lab member", async () => {
+  it("'Only people you add' denies an unshared non-creator lab member", async () => {
     vi.mocked(isLabMember).mockResolvedValue(true);
-    const result = await getPageAccess(
-      "outsider",
-      page({ labRestricted: true, createdById: "someone-else" }),
-    );
+    const result = await getPageAccess("outsider", page({ createdById: "someone-else" }));
     expect(result).toEqual(denied());
   });
 });
@@ -273,7 +286,9 @@ describe("pageId string overload", () => {
 
   it("fetches the page and computes access", async () => {
     vi.mocked(isLabMember).mockResolvedValue(true);
-    mockPrisma.page.findUnique.mockResolvedValue(page({ workspaceType: "Lab" }));
+    mockPrisma.page.findUnique.mockResolvedValue(
+      page({ workspaceType: "Lab", linkAccess: "LabMembers", linkPermission: "Edit" }),
+    );
     const result = await getPageAccess("lab-member", "p1");
     expect(result).toEqual(full);
   });

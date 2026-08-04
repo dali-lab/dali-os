@@ -7,7 +7,7 @@
 // General access setting (Google's "General access" row). The right to do so is
 // derived from workspace role, reusing the existing per-workspace gates so the
 // rule never diverges from how each workspace already decides who's in charge:
-//   - Lab     → any lab member (creator/Core once restricted) — labDocAccess
+//   - Lab     → the doc's creator or Core — labDocAccess
 //   - Member  → the note's owner — noteAccess
 //   - Project → Core or a project member — same as requireProjectEditAccess
 //   - Education → Core or an assigned instructor
@@ -51,7 +51,6 @@ export type ManagePageShape = {
   workspaceType: WorkspaceType;
   workspaceId: string | null;
   createdById: string | null;
-  labRestricted: boolean;
 };
 
 /**
@@ -65,10 +64,7 @@ export async function canManageSharing(
   switch (page.workspaceType) {
     case "Lab": {
       const { labDocAccess } = await import("~/lib/lab-documents.server");
-      const access = await labDocAccess(
-        { id: page.id, createdById: page.createdById, labRestricted: page.labRestricted },
-        userId,
-      );
+      const access = await labDocAccess({ id: page.id, createdById: page.createdById }, userId);
       if (access.canManageAccess) return true;
       break;
     }
@@ -110,7 +106,6 @@ export type PageShareManagerContext = {
   linkPermission: SharePermission;
   // Current workspace-specific visibility toggles, so the dialog renders the
   // right switches with their live values without a second fetch.
-  labRestricted: boolean;
   profileVisible: boolean;
   labListing: string;
   partnerVisible: boolean;
@@ -128,7 +123,6 @@ const MANAGE_SELECT = {
   workspaceId: true,
   createdById: true,
   archivedAt: true,
-  labRestricted: true,
   profileVisible: true,
   labListing: true,
   partnerVisible: true,
@@ -159,7 +153,6 @@ export async function requirePageShareManager(
       workspaceType: page.workspaceType,
       workspaceId: page.workspaceId,
       createdById: page.createdById,
-      labRestricted: page.labRestricted,
     },
     userId,
   );
@@ -203,7 +196,6 @@ export async function requirePageShareManager(
     hasActivePartner,
     linkAccess: page.linkAccess,
     linkPermission: page.linkPermission,
-    labRestricted: page.labRestricted,
     profileVisible: page.profileVisible,
     labListing: page.labListing,
     partnerVisible: page.partnerVisible,

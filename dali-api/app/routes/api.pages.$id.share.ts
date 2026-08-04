@@ -18,11 +18,6 @@ import {
   PageShareNotFoundError,
   GeneralAccessError,
 } from "~/lib/page-share-access.server";
-import {
-  setLabDocRestricted,
-  LabDocForbiddenError,
-  LabDocNotFoundError,
-} from "~/lib/lab-documents.server";
 import type { SharePermission, LinkAccess } from "~/generated/prisma/client";
 
 // POST /api/pages/:id/share — the one sharing endpoint for every document
@@ -142,21 +137,14 @@ export async function action({ request, params }: Route.ActionArgs) {
         });
         return withCors(request, Response.json({ ok: true, ...result }));
       }
-      case "restrict": {
-        // Lab-only base audience: everyone-in-lab vs restricted-to-shares.
-        // setLabDocRestricted re-gates (and rejects non-Lab pages), so this is
-        // a no-op for other workspace types.
-        await setLabDocRestricted(pageId, me, str("restricted") === "true");
-        return withCors(request, Response.json({ ok: true }));
-      }
       default:
         return withCors(request, Response.json({ error: "Unknown action" }, { status: 400 }));
     }
   } catch (err) {
-    if (err instanceof PageShareNotFoundError || err instanceof LabDocNotFoundError) {
+    if (err instanceof PageShareNotFoundError) {
       return withCors(request, Response.json({ error: err.message }, { status: 404 }));
     }
-    if (err instanceof PageShareForbiddenError || err instanceof LabDocForbiddenError) {
+    if (err instanceof PageShareForbiddenError) {
       return withCors(request, Response.json({ error: err.message }, { status: 403 }));
     }
     if (err instanceof SharePrincipalError || err instanceof GeneralAccessError) {

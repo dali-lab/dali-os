@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, Globe, Link2, Lock, Users, X } from "lucide-react";
+import { Link2, Users, X } from "lucide-react";
 import { Checkbox } from "~/components/ui/Checkbox";
-import { Radio } from "~/components/ui/Radio";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { buttonClasses } from "~/components/ui/Button";
 import { Select, type SelectOption } from "~/components/ui/floating";
@@ -24,7 +23,6 @@ type Share = {
 type Context = {
   linkAccess: LinkAccess;
   linkPermission: Permission;
-  labRestricted: boolean;
   workspaceType: string;
   owner: { id: string; name: string; isYou: boolean } | null;
   partnerVisible: boolean;
@@ -46,12 +44,24 @@ const AUDIENCE_OPTIONS: SelectOption<LinkAccess>[] = [
   { value: "Public", label: "Anyone with the link", description: "Anyone on the internet — read-only, no account." },
 ];
 
+// Lab docs live on the lab's shared shelf, so the audience wording is the doc's
+// primary access control — not a "with the link" caveat. Same LinkAccess values,
+// plain-language labels, and a permission tier ("Everyone in the lab" can be set
+// to Can view / comment / edit just like a named person).
+const LAB_AUDIENCE_OPTIONS: SelectOption<LinkAccess>[] = [
+  { value: "Restricted", label: "Only people you add", description: "Only you and the people and groups above." },
+  { value: "LabMembers", label: "Everyone in the lab", description: "Any lab member can open it." },
+  { value: "Public", label: "Anyone with the link", description: "Anyone on the internet — read-only, no account." },
+];
+
 function baseAccessLine(ctx: Context): string {
   switch (ctx.workspaceType) {
     case "Lab":
-      return ctx.labRestricted
+      return ctx.linkAccess === "Restricted"
         ? "Only you and the people below can open it."
-        : "Everyone in the lab can view and edit.";
+        : ctx.linkAccess === "Public"
+          ? "Anyone with the link can view it."
+          : "Everyone in the lab can access it.";
     case "Project":
       return "Project staff can edit · lab members can view.";
     case "EducationOffering":
@@ -109,7 +119,6 @@ export function ShareDialog({
         setCtx({
           linkAccess: d.context.linkAccess,
           linkPermission: d.context.linkPermission,
-          labRestricted: d.context.labRestricted,
           workspaceType: d.context.page?.workspaceType ?? page.workspaceType,
           owner: d.context.owner ?? null,
           partnerVisible: !!d.context.partnerVisible,
@@ -155,7 +164,6 @@ export function ShareDialog({
       setCtx({
         linkAccess: d.context.linkAccess,
         linkPermission: d.context.linkPermission,
-        labRestricted: d.context.labRestricted,
         workspaceType: d.context.page?.workspaceType ?? page.workspaceType,
         owner: d.context.owner ?? null,
         partnerVisible: !!d.context.partnerVisible,
@@ -200,6 +208,9 @@ export function ShareDialog({
 
   const alreadyShared = new Set(shares.map((s) => `${s.principalType}:${s.principalId}`));
   const isLab = (ctx?.workspaceType ?? page.workspaceType) === "Lab";
+  // Lab docs get plain-language audience labels ("Everyone in the lab" / "Only
+  // people you add"); every other workspace keeps the link-centric wording.
+  const audienceOptions = isLab ? LAB_AUDIENCE_OPTIONS : AUDIENCE_OPTIONS;
 
   return (
     <Modal
@@ -342,47 +353,6 @@ export function ShareDialog({
         </ul>
       </div>
 
-      {/* Lab base audience (everyone-in-lab vs restricted) */}
-      {isLab && (
-        <fieldset className="flex flex-col gap-2 mb-5">
-          <legend className="text-xs font-semibold text-muted-foreground mb-1">Lab access</legend>
-          {(
-            [
-              [false, Globe, "Everyone in the lab", "Any lab member can open and edit it."],
-              [true, Lock, "Only people you add", "You and the people above."],
-            ] as const
-          ).map(([value, Icon, label, hint]) => {
-            const active = (ctx?.labRestricted ?? false) === value;
-            return (
-              <Radio
-                key={label}
-                name="lab-access"
-                checked={active}
-                disabled={busy}
-                onChange={() =>
-                  void run({ intent: "restrict", restricted: String(value) }, refresh)
-                }
-                className={`items-start rounded-md border px-3 py-2 transition-colors ${
-                  active ? "border-accent-coral bg-accent-coral/5" : "border-border hover:bg-muted/30"
-                }`}
-                label={
-                  <>
-                    <Icon
-                      className={`w-4 h-4 mt-0.5 shrink-0 ${active ? "text-accent-coral" : "text-muted-foreground"}`}
-                    />
-                    <span className="flex flex-col min-w-0">
-                      <span className="text-sm font-medium text-foreground">{label}</span>
-                      <span className="text-xs text-muted-foreground">{hint}</span>
-                    </span>
-                    {active && <Check className="w-4 h-4 text-accent-coral shrink-0" />}
-                  </>
-                }
-              />
-            );
-          })}
-        </fieldset>
-      )}
-
       {/* General access (Google's row): audience + role, plus copy link */}
       <div className="flex flex-col gap-2 mb-4 border-t border-border pt-4">
         <h3 className="text-xs font-semibold text-muted-foreground">General access</h3>
@@ -391,18 +361,25 @@ export function ShareDialog({
           <div className="flex-1 min-w-0 flex flex-col gap-1">
             <Select
               value={ctx?.linkAccess ?? "Restricted"}
-              options={AUDIENCE_OPTIONS}
+              options={audienceOptions}
               disabled={busy || !ctx}
               ariaLabel="General access audience"
               buttonClassName="inline-flex items-center gap-1 self-start rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-foreground transition-colors hover:bg-muted/40 disabled:opacity-60"
               onChange={(linkAccess) => {
                 // Public can only be view-only (no identity to attribute writes).
-                const linkPermission = linkAccess === "Public" ? "View" : (ctx?.linkPermission ?? "View");
+                // "Everyone in the lab" defaults to edit — the historical lab-wide
+                // default — but stays adjustable via the role dropdown.
+                const linkPermission =
+                  linkAccess === "Public"
+                    ? "View"
+                    : linkAccess === "LabMembers" && isLab
+                      ? "Edit"
+                      : (ctx?.linkPermission ?? "View");
                 void run({ intent: "general-access", linkAccess, linkPermission }, refresh);
               }}
             />
             <span className="text-xs text-muted-foreground">
-              {AUDIENCE_OPTIONS.find((a) => a.value === (ctx?.linkAccess ?? "Restricted"))?.description}
+              {audienceOptions.find((a) => a.value === (ctx?.linkAccess ?? "Restricted"))?.description}
             </span>
           </div>
           {ctx && ctx.linkAccess !== "Restricted" && (
