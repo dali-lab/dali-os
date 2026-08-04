@@ -5,7 +5,6 @@ import {
   useNavigate,
   useSearchParams,
 } from "react-router";
-import { useEffect, useRef, useState } from "react";
 import { Bell, Check } from "lucide-react";
 import type { Route } from "./+types/onboarding";
 import { requireAuth, unauthorized, forbidden } from "~/lib/auth";
@@ -16,6 +15,7 @@ import { AreaPillNav } from "~/components/AreaPillNav";
 import { IconButton } from "~/components/ui/IconButton";
 import { useDialog } from "~/components/ui/dialog";
 import { Avatar } from "~/components/ui/Avatar";
+import { Checkbox } from "~/components/ui/Checkbox";
 import { prisma } from "~/lib/db";
 import { resolvePhotoUrl } from "~/lib/photo";
 import {
@@ -24,6 +24,7 @@ import {
   type OnboardingReminderStep,
   type OnboardingRemindVia,
 } from "~/members/lib/welcome.server";
+import { Menu, Select, type SelectOption } from "~/components/ui/floating";
 
 export const handle = { areaPills: true };
 
@@ -316,12 +317,10 @@ function FigmaCheckbox({ userId, invited }: { userId: string; invited: boolean }
   const checked = pending != null ? pending === "true" : invited;
 
   return (
-    <label
-      className="inline-flex cursor-pointer items-center gap-2 text-xs text-muted-foreground"
-      onClick={(e) => e.stopPropagation()}
-    >
-      <input
-        type="checkbox"
+    // eslint-disable-next-line jsx-a11y/click-events-have-key-events
+    <span onClick={(e) => e.stopPropagation()}>
+      <Checkbox
+        className="inline-flex cursor-pointer items-center gap-2 text-xs text-muted-foreground"
         checked={checked}
         disabled={fetcher.state !== "idle"}
         onChange={() =>
@@ -330,10 +329,9 @@ function FigmaCheckbox({ userId, invited }: { userId: string; invited: boolean }
             { method: "post" },
           )
         }
-        className="h-4 w-4 rounded border-border accent-green-600"
+        label={checked ? "Invited" : "Not invited"}
       />
-      {checked ? "Invited" : "Not invited"}
-    </label>
+    </span>
   );
 }
 
@@ -400,30 +398,11 @@ function RemindHeader({
     error?: string;
   }>();
   const dialog = useDialog();
-  const [menuOpen, setMenuOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
   const busy = fetcher.state !== "idle" && fetcher.formData?.get("step") === step;
   // This fetcher is scoped to this step's RemindHeader, so idle + ok already
   // means this step's send just succeeded. (formData is cleared once idle, so
   // it can't be read here.)
   const justSent = fetcher.state === "idle" && !!fetcher.data?.ok;
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    function onPointerDown(e: PointerEvent) {
-      if (menuRef.current?.contains(e.target as Node)) return;
-      setMenuOpen(false);
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setMenuOpen(false);
-    }
-    document.addEventListener("pointerdown", onPointerDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [menuOpen]);
 
   const tooltip = busy
     ? "Sending…"
@@ -438,7 +417,6 @@ function RemindHeader({
         : `Remind ${incompleteCount} incomplete on ${STEP_LABELS[step]}`;
 
   async function sendVia(via: OnboardingRemindVia) {
-    setMenuOpen(false);
     if (incompleteCount === 0) return;
     const label = STEP_LABELS[step];
     const channel =
@@ -473,46 +451,38 @@ function RemindHeader({
 
   return (
     <th className="px-5 py-3 font-heading font-semibold text-dark-blue align-bottom">
-      <div className="relative flex items-center gap-1.5" ref={menuRef}>
+      <div className="flex items-center gap-1.5">
         <span>{STEP_HEADERS[step]}</span>
-        <IconButton
-          label={tooltip}
-          icon={justSent ? Check : Bell}
-          disabled={busy || incompleteCount === 0}
-          tooltipSide="top"
-          tooltipPortal
-          onClick={(e) => {
-            e.stopPropagation();
-            if (busy || incompleteCount === 0) return;
-            setMenuOpen((o) => !o);
-          }}
-          className="text-accent-coral hover:bg-accent-coral/10 hover:text-accent-coral"
-          iconClassName="h-3.5 w-3.5"
-        />
-        {menuOpen ? (
-          <div
-            role="menu"
-            className="absolute left-0 top-full z-30 mt-1 w-56 rounded-md border border-border bg-background py-1 shadow-md"
-          >
-            <p className="px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              Send via
-            </p>
-            {REMIND_VIA_OPTIONS.filter((opt) => opt.hideForStep !== step).map(
-              (opt) => (
-                <button
-                  key={opt.via}
-                  type="button"
-                  role="menuitem"
-                  className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left text-sm hover:bg-muted"
-                  onClick={() => sendVia(opt.via)}
-                >
+        <Menu
+          align="left"
+          ariaLabel="Send reminder via"
+          trigger={
+            <IconButton
+              label={tooltip}
+              icon={justSent ? Check : Bell}
+              disabled={busy || incompleteCount === 0}
+              tooltipSide="top"
+              tooltipPortal
+              className="text-accent-coral hover:bg-accent-coral/10 hover:text-accent-coral"
+              iconClassName="h-3.5 w-3.5"
+            />
+          }
+        >
+          {REMIND_VIA_OPTIONS.filter((opt) => opt.hideForStep !== step).map(
+            (opt) => (
+              <Menu.Item
+                key={opt.via}
+                onSelect={() => void sendVia(opt.via)}
+                disabled={busy}
+              >
+                <span className="flex flex-col items-start gap-0.5">
                   <span className="font-medium text-foreground">{opt.label}</span>
                   <span className="text-xs text-muted-foreground">{opt.detail}</span>
-                </button>
-              ),
-            )}
-          </div>
-        ) : null}
+                </span>
+              </Menu.Item>
+            ),
+          )}
+        </Menu>
       </div>
     </th>
   );
@@ -559,32 +529,27 @@ export default function HiringOnboarding() {
         </div>
         <div className="flex flex-wrap items-center gap-3">
           {domains.length > 0 && (
-            <select
+            <Select
               value={selectedDomain ?? ""}
-              onChange={(e) => setParam("domain", e.target.value || null)}
-              className="rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-dark-blue"
-            >
-              <option value="">All domains</option>
-              {domains.map((d) => (
-                <option key={d.key} value={d.key}>
-                  {d.label}
-                </option>
-              ))}
-            </select>
+              placeholder="All domains"
+              onChange={(v) => setParam("domain", v || null)}
+              options={[
+                { value: "", label: "All domains" },
+                ...domains.map((d) => ({ value: d.key, label: d.label })),
+              ]}
+              buttonClassName="rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-dark-blue inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+            />
           )}
           {cycles.length > 0 && (
-            <select
+            <Select
               value={cycleValue}
-              onChange={(e) => setParam("cycle", e.target.value || null)}
-              className="rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-dark-blue"
-            >
-              <option value="all">All cycles</option>
-              {cycles.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+              onChange={(v) => setParam("cycle", v || null)}
+              options={[
+                { value: "all", label: "All cycles" },
+                ...cycles.map((c) => ({ value: c.id, label: c.name })),
+              ]}
+              buttonClassName="rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-dark-blue inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+            />
           )}
         </div>
       </div>

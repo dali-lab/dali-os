@@ -8,6 +8,7 @@ import {
   useRevalidator,
   useSubmit,
 } from "react-router";
+import { Select, type SelectOption } from "~/components/ui/floating";
 import { Pencil } from "lucide-react";
 import type { Route } from "./+types/partners.applications.$id";
 import { prisma } from "~/lib/db";
@@ -449,21 +450,19 @@ function Header({
         )}
 
         {canEdit ? (
-          <Form method="post" onChange={(e) => submit(e.currentTarget)}>
-            <input type="hidden" name="intent" value="status" />
-            <select
-              name="status"
-              defaultValue={application.status}
-              aria-label="Application status"
-              className="text-xs px-2 py-1 border border-border rounded-full bg-background text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-            >
-              {STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {STATUS_LABEL[s]}
-                </option>
-              ))}
-            </select>
-          </Form>
+          <Select
+            name="status"
+            defaultValue={application.status}
+            ariaLabel="Application status"
+            onChange={(value) => {
+              const fd = new FormData();
+              fd.set("intent", "status");
+              fd.set("status", value);
+              submit(fd, { method: "post" });
+            }}
+            options={STATUSES.map((s) => ({ value: s, label: STATUS_LABEL[s] }))}
+            buttonClassName="text-xs px-2 py-1 border border-border rounded-full bg-background text-muted-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+          />
         ) : (
           <span className="text-[11px] px-2 py-0.5 rounded-full border border-border text-muted-foreground">
             {STATUS_LABEL[application.status]}
@@ -627,25 +626,21 @@ function TargetTermsField({
 
       {rows.map((value, i) => (
         <div key={i} className="flex items-center gap-2">
-          <select
+          <Select
             name="targetTermId"
             value={value}
-            onChange={(e) =>
-              setRows((r) =>
-                r.map((v, j) => (j === i ? e.target.value : v)),
-              )
+            onChange={(newValue) =>
+              setRows((r) => r.map((v, j) => (j === i ? newValue : v)))
             }
-            className="flex-1 px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-          >
-            <option value="">Select a term…</option>
-            {terms
-              .filter((t) => t.id === value || !chosen.has(t.id))
-              .map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.code}
-                </option>
-              ))}
-          </select>
+            placeholder="Select a term…"
+            options={[
+              { value: "", label: "Select a term…" },
+              ...terms
+                .filter((t) => t.id === value || !chosen.has(t.id))
+                .map((t) => ({ value: t.id, label: t.code })),
+            ]}
+            buttonClassName="flex-1 px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+          />
           <button
             type="button"
             onClick={() => setRows((r) => r.filter((_, j) => j !== i))}
@@ -762,19 +757,16 @@ function DomainScopeBlock({
         >
           <label className="flex flex-col gap-1 text-xs flex-1">
             <span className="text-muted-foreground">Domain</span>
-            <select
-              autoFocus
+            <Select
               value={newDomainId}
-              onChange={(e) => setNewDomainId(e.target.value)}
-              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-            >
-              <option value="">Select a domain…</option>
-              {availableDomains.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.displayName}
-                </option>
-              ))}
-            </select>
+              onChange={(value) => setNewDomainId(value)}
+              placeholder="Select a domain…"
+              options={[
+                { value: "", label: "Select a domain…" },
+                ...availableDomains.map((d) => ({ value: d.id, label: d.displayName })),
+              ]}
+              buttonClassName="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+            />
           </label>
           <button
             type="submit"

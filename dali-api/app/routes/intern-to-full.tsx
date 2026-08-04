@@ -15,7 +15,8 @@ import type { Question } from "~/types";
 import { normalizeQuestionBodies } from "~/lib/question-blocks.server";
 import { FormFieldList } from "~/forms/components/FormField";
 import { findMissingRequired } from "~/lib/form-answers";
-import { APPLICATION_TZ, APPLICATION_TZ_LABEL } from "~/lib/timezone";
+import { formatInstantWithZoneLabel, resolveUserTimeZone } from "~/lib/timezone";
+import { Checkbox } from "~/components/ui/Checkbox";
 
 export const meta: Route.MetaFunction = () => [
   { title: "Fellowship · DALI OS" },
@@ -68,8 +69,15 @@ export async function loader({ request }: Route.LoaderArgs) {
   });
   const status = draft?.statusUpdates[0]?.newStatus ?? null;
 
+  const viewer = await prisma.user.findUnique({
+    where: { id: auth.user.sub },
+    select: { timeZone: true },
+  });
+  const viewerTimeZone = resolveUserTimeZone(viewer);
+
   return {
     reason: "ok" as const,
+    viewerTimeZone,
     cycle: {
       id: cycle.id,
       name: cycle.name,
@@ -254,7 +262,7 @@ export default function InternToFullRoute() {
     );
   }
 
-  const { cycle, internDomains, draft } = data;
+  const { cycle, internDomains, draft, viewerTimeZone } = data;
   const submitted = draft?.status === "Submitted";
   const withdrawn = draft?.status === "Withdrawn";
 
@@ -267,12 +275,7 @@ export default function InternToFullRoute() {
         <p className="text-sm text-muted-foreground">
           {cycle.name}
           {cycle.closeDate &&
-            ` · closes ${new Date(cycle.closeDate).toLocaleDateString("en-US", {
-              month: "long",
-              day: "numeric",
-              year: "numeric",
-              timeZone: APPLICATION_TZ,
-            })} ${APPLICATION_TZ_LABEL}`}
+            ` · closes ${formatInstantWithZoneLabel(cycle.closeDate, viewerTimeZone)}`}
         </p>
         {internDomains.length > 0 && (
           <p className="mt-2 text-xs text-muted-foreground">
@@ -375,22 +378,17 @@ function FormView({
           {cycle.targetDomains.map((d) => {
             const checked = selectedDomainIds.includes(d.id);
             return (
-              <label
+              <Checkbox
                 key={d.id}
-                className={`flex items-center gap-3 px-4 py-3 rounded-lg border cursor-pointer transition ${
+                checked={checked}
+                onChange={() => toggleDomain(d.id)}
+                label={<span className="text-sm font-medium text-dark-blue">{d.displayName}</span>}
+                className={`px-4 py-3 rounded-lg border transition ${
                   checked
                     ? "border-accent-coral bg-accent-coral/10"
                     : "border-border hover:border-accent-coral/50"
                 }`}
-              >
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={() => toggleDomain(d.id)}
-                  className="w-4 h-4 accent-accent-coral"
-                />
-                <span className="text-sm font-medium text-dark-blue">{d.displayName}</span>
-              </label>
+              />
             );
           })}
         </div>

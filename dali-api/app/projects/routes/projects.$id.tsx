@@ -12,11 +12,13 @@ import {
   useSubmit,
   type ShouldRevalidateFunctionArgs,
 } from "react-router";
+import { Select } from "~/components/ui/floating";
 import { CalendarDays, CalendarX, ChartNoAxesGantt, Check, Globe, Handshake, History, List, Pencil, Pin, X, Settings, Folder, FolderInput, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink } from "lucide-react";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { MoveToDialog } from "~/components/sharing/MoveToDialog";
 import { useDialog, useConfirmSubmit } from "~/components/ui/dialog";
 import { Tooltip } from "~/components/ui/IconButton";
+import { Checkbox } from "~/components/ui/Checkbox";
 import { EditableSection } from "~/components/EditableSection";
 import { PageIcon } from "~/components/PageIcon";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
@@ -1632,18 +1634,13 @@ function ProjectHeader({
                   autoFocus
                   className="font-heading text-xl font-bold text-foreground px-2 py-1 border border-border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
                 />
-                <select
+                <Select
                   name="status"
                   defaultValue={project.status}
-                  aria-label="Project status"
-                  className="text-xs px-2 py-1 border border-border rounded-full bg-background text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-                >
-                  {STATUSES.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
+                  ariaLabel="Project status"
+                  options={STATUSES.map((s) => ({ value: s, label: s }))}
+                  buttonClassName="text-xs px-2 py-1 border border-border rounded-full bg-background text-muted-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                />
               </Form>
             ) : (
               <>
@@ -1807,21 +1804,13 @@ function VisibilitySegment({
         editing ? (
           <Form method="post" ref={formRef} key={resetKey}>
             <input type="hidden" name="intent" value="visibility" />
-            <label className="flex items-start gap-2 text-sm cursor-pointer">
-              <input
-                type="checkbox"
-                name="isPrivate"
-                defaultChecked={isPrivate}
-                className="mt-0.5 accent-accent-coral"
-              />
-              <span>
-                <span className="text-foreground">Private project</span>
-                <span className="block text-xs text-muted-foreground">
-                  Hidden from project dropdowns on forms. Still listed in the
-                  project hub and search.
-                </span>
-              </span>
-            </label>
+            <Checkbox
+              name="isPrivate"
+              defaultChecked={isPrivate}
+              label="Private project"
+              description="Hidden from project dropdowns on forms. Still listed in the project hub and search."
+              className="text-sm"
+            />
           </Form>
         ) : (
           <p className="text-sm text-foreground">
@@ -2538,13 +2527,11 @@ function TeamLevelEditor({
 
   return (
     <span className="inline-flex items-center gap-1">
-      <select
-        aria-label={`Level for ${member.name} in ${member.domain}`}
-        className="text-xs bg-transparent text-muted-foreground rounded border border-transparent hover:border-border focus:border-border focus:outline-none px-0.5"
+      <Select
+        ariaLabel={`Level for ${member.name} in ${member.domain}`}
         value={value}
         disabled={busy}
-        onChange={(e) => {
-          const next = e.target.value;
+        onChange={(next) => {
           if (next === member.level) return;
           fetcher.submit(
             { level: next },
@@ -2555,17 +2542,17 @@ function TeamLevelEditor({
             },
           );
         }}
-      >
-        {LEVEL_OPTIONS.map((opt) => {
+        options={LEVEL_OPTIONS.map((opt) => {
           const reason = disabledReason(opt);
-          return (
-            <option key={opt} value={opt} disabled={reason !== null} title={reason ?? undefined}>
-              {opt}
-              {reason ? " (locked)" : ""}
-            </option>
-          );
+          return {
+            value: opt,
+            label: `${opt}${reason ? " (locked)" : ""}`,
+            description: reason ?? undefined,
+            disabled: reason !== null,
+          };
         })}
-      </select>
+        buttonClassName="text-xs bg-transparent text-muted-foreground rounded border border-transparent hover:border-border focus:border-border focus:outline-none px-0.5 inline-flex items-center justify-between gap-1 transition-colors"
+      />
       {error && (
         <span className="text-[10px] leading-tight text-destructive" role="alert">
           {error}
@@ -3002,18 +2989,16 @@ function PartnersSection({
       {linking && canManage && (
         <Form method="post" className="flex flex-wrap items-end gap-3 bg-muted/20 rounded-lg p-3 mb-3">
           <input type="hidden" name="intent" value="partner-link" />
-          <select
+          <Select
             name="partnerOrgId"
             required
-            className="h-9 flex-1 min-w-[220px] rounded-lg border border-border bg-background px-3 text-sm"
-          >
-            <option value="">Select an organization…</option>
-            {linkablePartnerOrgs.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.name}
-              </option>
-            ))}
-          </select>
+            placeholder="Select an organization…"
+            options={[
+              { value: "", label: "Select an organization…" },
+              ...linkablePartnerOrgs.map((o) => ({ value: o.id, label: o.name })),
+            ]}
+            buttonClassName="h-9 flex-1 min-w-[220px] rounded-lg border border-border bg-background px-3 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+          />
           <button
             type="submit"
             className="h-9 rounded-lg bg-dark-blue text-white text-sm font-medium px-4 hover:opacity-90 transition"

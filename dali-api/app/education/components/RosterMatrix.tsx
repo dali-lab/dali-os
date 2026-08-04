@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Form } from "react-router";
 import { Check, Minus, X } from "lucide-react";
 import { Button } from "~/components/ui/Button";
+import { Select } from "~/components/ui/floating";
 
 // The roster answers two questions with one grid: who is falling behind
 // (rows × every session, with a running total) and who was here today (the
@@ -62,17 +63,15 @@ export function RosterMatrix({
       <div className="flex flex-wrap items-center gap-2">
         <label className="flex items-center gap-2">
           <span className="text-xs font-semibold text-muted-foreground">Session</span>
-          <select
+          <Select
             value={activeSessionId ?? ""}
-            onChange={(e) => onSelectSession(e.target.value)}
-            className="rounded-md border border-border bg-card px-2 py-1.5 text-sm"
-          >
-            {sessions.map((s) => (
-              <option key={s.id} value={s.id}>
-                Session {s.sequence} — {formatSessionDate(s.datetime)}
-              </option>
-            ))}
-          </select>
+            onChange={(value) => onSelectSession(value)}
+            options={sessions.map((s) => ({
+              value: s.id,
+              label: `Session ${s.sequence} — ${formatSessionDate(s.datetime)}`,
+            }))}
+            buttonClassName="rounded-md border border-border bg-card px-2 py-1.5 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+          />
         </label>
         {active && (
           <Button

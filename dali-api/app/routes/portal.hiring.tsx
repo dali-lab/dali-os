@@ -16,9 +16,10 @@ import { InterviewSlotPicker } from "~/hiring/components/InterviewSlotPicker";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 import { Confetti } from "~/components/Confetti";
 import { formatInterviewDate, formatInterviewTimeRangeDual } from "~/hiring/lib/interview-time";
-import { resolveUserTimeZone } from "~/lib/timezone";
+import { formatInstantWithZoneLabel, resolveUserTimeZone } from "~/lib/timezone";
 import { APPLICATIONS_FROM_EMAIL } from "~/lib/app-env";
 import { Button } from "~/components/ui/Button";
+import { Checkbox } from "~/components/ui/Checkbox";
 
 export const meta: Route.MetaFunction = () => [{ title: "Apply to DALI · DALI OS" }];
 
@@ -209,14 +210,11 @@ function formatInterviewLocation(location?: string): string {
   return "Online";
 }
 
-function formatDeadline(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", {
-    timeZone: "America/New_York",
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
+function formatDeadline(iso: string, timeZone: string): string {
+  // In the applicant's own zone (viewerTimeZone resolves to ET when unset), with
+  // time + zone abbreviation. Date-only in a hardcoded ET showed the wrong day
+  // for applicants far from ET (11:59 PM ET is the next calendar day in Tokyo).
+  return formatInstantWithZoneLabel(iso, timeZone);
 }
 
 function formatRemaining(iso: string): { label: string; tone: "urgent" | "warn" | "ok" } | null {
@@ -232,9 +230,17 @@ function formatRemaining(iso: string): { label: string; tone: "urgent" | "warn" 
   return { label: `Closes in ${mins} minute${mins === 1 ? "" : "s"}`, tone: "urgent" };
 }
 
-// Deadline rendering happens after hydration so toLocaleString uses the
-// browser's locale/timezone without producing an SSR/CSR text mismatch.
-function DeadlineLine({ closeDate, originalCloseDate }: { closeDate: string; originalCloseDate?: string | null }) {
+// The countdown/extension state renders after hydration (it reads Date.now());
+// the deadline label is formatted in the applicant's timezone (viewerTimeZone).
+function DeadlineLine({
+  closeDate,
+  originalCloseDate,
+  timeZone,
+}: {
+  closeDate: string;
+  originalCloseDate?: string | null;
+  timeZone: string;
+}) {
   const [label, setLabel] = useState<string>("");
   const [originalLabel, setOriginalLabel] = useState<string>("");
   const [remaining, setRemaining] = useState<{ label: string; tone: "urgent" | "warn" | "ok" } | null>(null);
@@ -244,8 +250,8 @@ function DeadlineLine({ closeDate, originalCloseDate }: { closeDate: string; ori
   // Only true on the client to avoid SSR/CSR mismatch on the strikethrough.
   const [showExtension, setShowExtension] = useState(false);
   useEffect(() => {
-    setLabel(formatDeadline(closeDate));
-    setOriginalLabel(originalCloseDate ? formatDeadline(originalCloseDate) : "");
+    setLabel(formatDeadline(closeDate, timeZone));
+    setOriginalLabel(originalCloseDate ? formatDeadline(originalCloseDate, timeZone) : "");
     const tick = () => {
       setRemaining(formatRemaining(closeDate));
       if (originalCloseDate) {
@@ -260,7 +266,7 @@ function DeadlineLine({ closeDate, originalCloseDate }: { closeDate: string; ori
     tick();
     const id = setInterval(tick, 60_000);
     return () => clearInterval(id);
-  }, [closeDate, originalCloseDate]);
+  }, [closeDate, originalCloseDate, timeZone]);
   if (!label) return null;
   const toneStyles: Record<"urgent" | "warn" | "ok", string> = {
     urgent: "text-red-700",
@@ -889,22 +895,22 @@ function AcceptedView({ cycleName }: { cycleName: string }) {
         </div>
         <div className="divide-y divide-green-100">
           {CHECKLIST.map(item => (
-            <label key={item.id} className="flex items-start gap-4 px-6 py-4 cursor-pointer hover:bg-green-50/50 transition">
-              <input
-                type="checkbox"
-                checked={!!checked[item.id]}
-                onChange={e => setChecked(prev => ({ ...prev, [item.id]: e.target.checked }))}
-                className="mt-0.5 w-5 h-5 rounded accent-accent-coral flex-shrink-0"
-              />
-              <div>
+            <Checkbox
+              key={item.id}
+              checked={!!checked[item.id]}
+              onChange={e => setChecked(prev => ({ ...prev, [item.id]: e.target.checked }))}
+              label={
                 <span className={`text-sm font-semibold transition-colors ${checked[item.id] ? "text-muted-foreground/70 line-through" : "text-dark-blue"}`}>
                   {item.label}
                 </span>
-                <p className={`text-xs mt-0.5 transition-colors ${checked[item.id] ? "text-muted-foreground/50" : "text-muted-foreground"}`}>
+              }
+              description={
+                <span className={`text-xs mt-0.5 transition-colors ${checked[item.id] ? "text-muted-foreground/50" : "text-muted-foreground"}`}>
                   {item.description}
-                </p>
-              </div>
-            </label>
+                </span>
+              }
+              className="flex items-start gap-4 px-6 py-4 hover:bg-green-50/50 transition"
+            />
           ))}
         </div>
       </div>
@@ -1082,7 +1088,7 @@ export default function Portal() {
           <h1 className="font-heading text-xl font-bold text-dark-blue">
             {cycleName} Application Portal
           </h1>
-          {cycleStatus === "Open" && closeDate && <DeadlineLine closeDate={closeDate} originalCloseDate={originalCloseDate} />}
+          {cycleStatus === "Open" && closeDate && <DeadlineLine closeDate={closeDate} originalCloseDate={originalCloseDate} timeZone={viewerTimeZone} />}
         </div>
       </div>
 

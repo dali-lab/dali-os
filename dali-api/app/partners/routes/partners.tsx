@@ -20,6 +20,7 @@ import { ViewToggle, useViewPreference } from "~/components/ViewToggle";
 import { buttonClasses } from "~/components/ui/Button";
 import { OPEN_APPLICATION_STATUSES } from "../lib/partner-application";
 import { FileText, LayoutGrid } from "lucide-react";
+import { Checkbox } from "~/components/ui/Checkbox";
 
 export const handle = { areaPills: true };
 
@@ -195,10 +196,11 @@ export default function PartnersOrganizations() {
                 className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
               />
             </label>
-            <label className="flex items-center gap-2 text-sm text-foreground sm:col-span-2">
-              <input type="checkbox" name="isIndividual" className="rounded" />
-              Individual
-            </label>
+            <Checkbox
+              name="isIndividual"
+              label="Individual"
+              className="text-sm text-foreground sm:col-span-2"
+            />
           </div>
           <div className="flex justify-end gap-2">
             <button

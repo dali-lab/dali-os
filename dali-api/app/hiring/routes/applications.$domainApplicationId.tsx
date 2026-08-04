@@ -20,6 +20,7 @@ import { DecisionHistoryList } from "~/hiring/components/DecisionHistoryList";
 import { getEducationEngagement } from "~/education/lib/engagement.server";
 import { EducationEngagementPanel } from "~/education/components/EducationEngagementPanel";
 import type { Question, RubricCriterion } from "~/types";
+import { Select, type SelectOption } from "~/components/ui/floating";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const name = (data as { applicantName?: string } | undefined)?.applicantName;
@@ -493,22 +494,16 @@ export default function ApplicationReadOnlyDetail() {
                   >
                     Reviewer
                   </label>
-                  <select
-                    id="review-select"
+                  <Select
                     value={data.selectedReviewId ?? ""}
-                    onChange={(e) => {
+                    onChange={(reviewId) => {
                       const next = new URLSearchParams(searchParams);
-                      next.set("review", e.target.value);
+                      next.set("review", reviewId);
                       setSearchParams(next);
                     }}
-                    className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
-                  >
-                    {data.reviews.map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {r.reviewerName}
-                      </option>
-                    ))}
-                  </select>
+                    options={data.reviews.map((r) => ({ value: r.id, label: r.reviewerName }))}
+                    buttonClassName="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                  />
                 </div>
 
                 {selected && (

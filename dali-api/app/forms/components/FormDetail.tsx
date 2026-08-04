@@ -16,11 +16,14 @@ import { FormBuilderTab } from "~/components/form-builder/FormBuilder";
 import { DocEditor } from "~/components/doc";
 import { isEmptyBlocks } from "~/lib/blocks";
 import { Button, buttonClasses } from "~/components/ui/Button";
+import { Checkbox } from "~/components/ui/Checkbox";
+import { Radio } from "~/components/ui/Radio";
 import { Tooltip } from "~/components/ui/IconButton";
 import type { Question } from "~/types";
 import type { loader } from "~/forms/routes/forms.edit.$formId";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { formatInTimeZone } from "~/lib/timezone";
+import { DateField } from "~/components/ui/DateField";
 
 function formatDateTime(iso: string, tz: string) {
   return (
@@ -688,56 +691,27 @@ function FormSettingsCard({
     }
   }
 
-  const checkboxClass =
-    "mt-0.5 w-4 h-4 rounded border-border text-accent-coral focus:ring-accent-coral/30";
-
   return (
     <div className="mt-3 rounded-lg border border-border bg-card p-4 flex flex-col gap-3">
       <span className="text-sm font-medium text-foreground">Settings</span>
-      <label className="flex items-start gap-2 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={oneResponse}
-          onChange={(e) => saveSettings(e.target.checked, notify, isListed)}
-          className={checkboxClass}
-        />
-        <span className="text-sm">
-          <span className="text-foreground">One response per member</span>
-          <span className="block text-xs text-muted-foreground">
-            Signed-in members can only submit this form once. Doesn't apply to
-            staffing or education fills.
-          </span>
-        </span>
-      </label>
-      <label className="flex items-start gap-2 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={notify}
-          onChange={(e) => saveSettings(oneResponse, e.target.checked, isListed)}
-          className={checkboxClass}
-        />
-        <span className="text-sm">
-          <span className="text-foreground">Notify on submission</span>
-          <span className="block text-xs text-muted-foreground">
-            Get an in-app notification whenever someone submits a response.
-          </span>
-        </span>
-      </label>
-      <label className="flex items-start gap-2 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={isListed}
-          onChange={(e) => saveSettings(oneResponse, notify, e.target.checked)}
-          className={checkboxClass}
-        />
-        <span className="text-sm">
-          <span className="text-foreground">List in Forms for you</span>
-          <span className="block text-xs text-muted-foreground">
-            Show this form on Home for people its audience includes. Unlisted
-            forms are reachable only by link.
-          </span>
-        </span>
-      </label>
+      <Checkbox
+        checked={oneResponse}
+        onChange={(e) => saveSettings(e.target.checked, notify, isListed)}
+        label="One response per member"
+        description="Signed-in members can only submit this form once. Doesn't apply to staffing or education fills."
+      />
+      <Checkbox
+        checked={notify}
+        onChange={(e) => saveSettings(oneResponse, e.target.checked, isListed)}
+        label="Notify on submission"
+        description="Get an in-app notification whenever someone submits a response."
+      />
+      <Checkbox
+        checked={isListed}
+        onChange={(e) => saveSettings(oneResponse, notify, e.target.checked)}
+        label="List in Forms for you"
+        description="Show this form on Home for people its audience includes. Unlisted forms are reachable only by link."
+      />
 
       <div className="border-t border-border pt-3 flex flex-col gap-2">
         <span className="text-sm font-medium text-foreground">Schedule</span>
@@ -747,20 +721,20 @@ function FormSettingsCard({
         </span>
         <label className="flex items-center gap-2 text-sm">
           <span className="w-14 text-muted-foreground">Opens</span>
-          <input
-            type="datetime-local"
+          <DateField
+            mode="datetime-local"
             value={draftOpensAt}
-            onChange={(e) => setDraftOpensAt(e.target.value)}
-            className="rounded-md border border-border bg-card px-2 py-1 text-sm"
+            onChange={(value) => setDraftOpensAt(value)}
+            ariaLabel="Opens at"
           />
         </label>
         <label className="flex items-center gap-2 text-sm">
           <span className="w-14 text-muted-foreground">Closes</span>
-          <input
-            type="datetime-local"
+          <DateField
+            mode="datetime-local"
             value={draftClosesAt}
-            onChange={(e) => setDraftClosesAt(e.target.value)}
-            className="rounded-md border border-border bg-card px-2 py-1 text-sm"
+            onChange={(value) => setDraftClosesAt(value)}
+            ariaLabel="Closes at"
           />
         </label>
         {windowDirty && (
@@ -780,21 +754,14 @@ function FormSettingsCard({
           Who can fill this form
         </span>
         {AUDIENCE_OPTIONS.map((opt) => (
-          <label key={opt.value} className="flex items-start gap-2 cursor-pointer">
-            <input
-              type="radio"
-              name="form-audience"
-              checked={draftAudience === opt.value}
-              onChange={() => pickAudience(opt.value)}
-              className="mt-0.5 w-4 h-4 border-border text-accent-coral focus:ring-accent-coral/30"
-            />
-            <span className="text-sm">
-              <span className="text-foreground">{opt.label}</span>
-              <span className="block text-xs text-muted-foreground">
-                {opt.description}
-              </span>
-            </span>
-          </label>
+          <Radio
+            key={opt.value}
+            name="form-audience"
+            checked={draftAudience === opt.value}
+            onChange={() => pickAudience(opt.value)}
+            label={opt.label}
+            description={opt.description}
+          />
         ))}
 
         {draftAudience === "Groups" && (
@@ -805,23 +772,19 @@ function FormSettingsCard({
               </span>
             ) : (
               groups.map((g) => (
-                <label
+                <Checkbox
                   key={g.id}
-                  className="flex items-center gap-2 cursor-pointer"
-                >
-                  <input
-                    type="checkbox"
-                    checked={groupSel.has(g.id)}
-                    onChange={() => toggleGroup(g.id)}
-                    className="w-4 h-4 rounded border-border text-accent-coral focus:ring-accent-coral/30"
-                  />
-                  <span className="text-sm text-foreground truncate">
-                    {g.name}
-                  </span>
-                  <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full shrink-0">
-                    {g.type}
-                  </span>
-                </label>
+                  checked={groupSel.has(g.id)}
+                  onChange={() => toggleGroup(g.id)}
+                  label={
+                    <>
+                      <span className="text-sm text-foreground truncate">{g.name}</span>
+                      <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full shrink-0">
+                        {g.type}
+                      </span>
+                    </>
+                  }
+                />
               ))
             )}
             {groupSel.size === 0 && (

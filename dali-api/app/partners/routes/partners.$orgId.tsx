@@ -7,7 +7,9 @@ import {
   useLoaderData,
   useSubmit,
 } from "react-router";
+import { Select, type SelectOption } from "~/components/ui/floating";
 import { Building2, FolderKanban, Mail, Users, Unlink } from "lucide-react";
+import { Checkbox } from "~/components/ui/Checkbox";
 import { Tooltip } from "~/components/ui/IconButton";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { ProjectIcon } from "~/components/ProjectIcon";
@@ -486,18 +488,15 @@ export default function PartnerOrgDetail() {
               <div>
                 <div className="text-xs font-medium text-muted-foreground mb-1">Primary contact</div>
                 {editing ? (
-                  <select
+                  <Select
                     name="primaryContactId"
                     defaultValue={org.primaryContactId ?? ""}
-                    className={inputClass}
-                  >
-                    <option value="">None</option>
-                    {org.users.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {memberName(m.user)}
-                      </option>
-                    ))}
-                  </select>
+                    options={[
+                      { value: "", label: "None" },
+                      ...org.users.map((m) => ({ value: m.id, label: memberName(m.user) })),
+                    ]}
+                    buttonClassName={`${inputClass} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
+                  />
                 ) : (
                   <div className="text-sm text-foreground">
                     {memberName(
@@ -510,19 +509,21 @@ export default function PartnerOrgDetail() {
                   </div>
                 )}
               </div>
-              <label className="flex items-center gap-2 text-sm text-foreground">
-                {editing ? (
-                  <input
-                    type="checkbox"
-                    name="isIndividual"
-                    defaultChecked={org.isIndividual}
-                    className="rounded"
-                  />
-                ) : (
-                  <input type="checkbox" checked={org.isIndividual} disabled className="rounded" />
-                )}
-                Individual (not an organization)
-              </label>
+              {editing ? (
+                <Checkbox
+                  name="isIndividual"
+                  defaultChecked={org.isIndividual}
+                  label="Individual (not an organization)"
+                  className="text-sm text-foreground"
+                />
+              ) : (
+                <Checkbox
+                  checked={org.isIndividual}
+                  disabled
+                  label="Individual (not an organization)"
+                  className="text-sm text-foreground"
+                />
+              )}
             </div>
           )}
         </EditableSection>
@@ -639,21 +640,14 @@ export default function PartnerOrgDetail() {
                   >
                     <input type="hidden" name="intent" value="member-move" />
                     <input type="hidden" name="partnerUserId" value={m.id} />
-                    <select
+                    <Select
                       name="targetOrgId"
                       required
                       defaultValue=""
-                      className="flex-1 px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-                    >
-                      <option value="" disabled>
-                        Move to…
-                      </option>
-                      {otherOrgs.map((o) => (
-                        <option key={o.id} value={o.id}>
-                          {o.name}
-                        </option>
-                      ))}
-                    </select>
+                      placeholder="Move to…"
+                      options={otherOrgs.map((o) => ({ value: o.id, label: o.name }))}
+                      buttonClassName="flex-1 px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                    />
                     <button
                       type="submit"
                       className="px-3 py-1.5 text-xs font-medium rounded-md bg-dark-blue text-white hover:opacity-90 transition"
@@ -729,14 +723,14 @@ export default function PartnerOrgDetail() {
               <label className="block text-xs font-medium text-muted-foreground mb-1">
                 Project
               </label>
-              <select name="projectId" required className={inputClass}>
-                <option value="">Select a project…</option>
-                {linkableProjects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
+              <Select
+                name="projectId"
+                required
+                defaultValue=""
+                placeholder="Select a project…"
+                options={linkableProjects.map((p) => ({ value: p.id, label: p.name }))}
+                buttonClassName={`${inputClass} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
+              />
             </div>
             <button
               type="submit"

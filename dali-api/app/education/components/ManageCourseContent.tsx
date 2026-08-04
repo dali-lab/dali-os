@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Form, Link, useFetcher } from "react-router";
 import { FileText, Folder, Users } from "lucide-react";
+import { Select, type SelectOption } from "~/components/ui/floating";
 import { AddFormModal } from "./AddFormModal";
 import { Button, buttonClasses } from "~/components/ui/Button";
 import { useConfirmSubmit } from "~/components/ui/dialog";
@@ -9,6 +10,7 @@ import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { formatDateTime } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { toDatetimeLocal } from "./OfferingFields";
+import { DateField } from "~/components/ui/DateField";
 
 // Manager-side course content tabs: Materials (offering-workspace pages),
 // Assignments (CRUD + inline collab instructions), Announcements (composer).
@@ -185,14 +187,16 @@ export function ManageMaterials({
         </label>
         <label className="block">
           <span className={LABEL}>Folder (optional)</span>
-          <select name="parentPageId" className={INPUT} defaultValue="">
-            <option value="">Top level</option>
-            {folders.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.title}
-              </option>
-            ))}
-          </select>
+          <Select
+            name="parentPageId"
+            defaultValue=""
+            placeholder="Top level"
+            options={[
+              { value: "", label: "Top level" },
+              ...folders.map((f) => ({ value: f.id, label: f.title })),
+            ]}
+            buttonClassName={INPUT}
+          />
         </label>
       </AddFormModal>
 
@@ -353,20 +357,26 @@ export function ManageAssignments({
               </label>
               <label className="block">
                 <span className={LABEL}>Due</span>
-                <input
-                  type="datetime-local"
+                <DateField
+                  mode="datetime-local"
                   name="dueAt"
                   defaultValue={a.dueAt ? toDatetimeLocal(a.dueAt) : ""}
-                  className={INPUT}
+                  className="w-full"
+                  ariaLabel="Due"
                 />
               </label>
               <label className="block">
                 <span className={LABEL}>Type</span>
-                <select name="submissionType" defaultValue={a.submissionType} className={INPUT}>
-                  <option value="Text">Text</option>
-                  <option value="File">File</option>
-                  <option value="Mixed">Text + files</option>
-                </select>
+                <Select
+                  name="submissionType"
+                  defaultValue={a.submissionType}
+                  options={[
+                    { value: "Text", label: "Text" },
+                    { value: "File", label: "File" },
+                    { value: "Mixed", label: "Text + files" },
+                  ]}
+                  buttonClassName={INPUT}
+                />
               </label>
               <div className="flex justify-end">
                 <Button type="submit" variant="secondary" size="sm">
@@ -436,27 +446,34 @@ export function ManageAssignments({
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="block">
             <span className={LABEL}>Due (optional)</span>
-            <input type="datetime-local" name="dueAt" className={INPUT} />
+            <DateField mode="datetime-local" name="dueAt" className="w-full" ariaLabel="Due (optional)" />
           </label>
           <label className="block">
             <span className={LABEL}>Type</span>
-            <select name="submissionType" defaultValue="Mixed" className={INPUT}>
-              <option value="Text">Text</option>
-              <option value="File">File</option>
-              <option value="Mixed">Text + files</option>
-            </select>
+            <Select
+              name="submissionType"
+              defaultValue="Mixed"
+              options={[
+                { value: "Text", label: "Text" },
+                { value: "File", label: "File" },
+                { value: "Mixed", label: "Text + files" },
+              ]}
+              buttonClassName={INPUT}
+            />
           </label>
         </div>
         <label className="block">
           <span className={LABEL}>Session (optional)</span>
-          <select name="sessionId" defaultValue="" className={INPUT}>
-            <option value="">Whole offering</option>
-            {sessions.map((s) => (
-              <option key={s.id} value={s.id}>
-                Session {s.sequence}
-              </option>
-            ))}
-          </select>
+          <Select
+            name="sessionId"
+            defaultValue=""
+            placeholder="Whole offering"
+            options={[
+              { value: "", label: "Whole offering" },
+              ...sessions.map((s) => ({ value: s.id, label: `Session ${s.sequence}` })),
+            ]}
+            buttonClassName={INPUT}
+          />
         </label>
       </AddFormModal>
     </div>

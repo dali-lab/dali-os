@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, Eye, Landmark, Lock, Trash2, Users, X } from "lucide-react";
+import { Radio } from "~/components/ui/Radio";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { buttonClasses } from "~/components/ui/Button";
+import { Select } from "~/components/ui/floating";
 import type { NoteSummary } from "~/members/lib/personal-notes.server";
 
 // Everything about a note's audience, in one place: who can see it at all,
@@ -117,38 +119,37 @@ export function NoteShareModal({
             [true, Eye, "On your profile", "Anyone who can see your profile can read it."],
           ] as const
         ).map(([value, Icon, label, hint]) => (
-          <label
+          <Radio
             key={label}
-            className={`flex items-start gap-3 rounded-md border px-3 py-2 cursor-pointer transition-colors ${
+            name="note-visibility"
+            checked={isPublic === value}
+            disabled={busy}
+            onChange={() => {
+              setIsPublic(value);
+              void run({
+                intent: "visibility",
+                pageId: note.id,
+                public: String(value),
+              });
+            }}
+            className={`items-start rounded-md border px-3 py-2 transition-colors ${
               isPublic === value
                 ? "border-accent-coral bg-accent-coral/5"
                 : "border-border hover:bg-muted/30"
             }`}
-          >
-            <input
-              type="radio"
-              name="note-visibility"
-              className="sr-only"
-              checked={isPublic === value}
-              disabled={busy}
-              onChange={() => {
-                setIsPublic(value);
-                void run({
-                  intent: "visibility",
-                  pageId: note.id,
-                  public: String(value),
-                });
-              }}
-            />
-            <Icon
-              className={`w-4 h-4 mt-0.5 shrink-0 ${isPublic === value ? "text-accent-coral" : "text-muted-foreground"}`}
-            />
-            <span className="flex flex-col min-w-0">
-              <span className="text-sm font-medium text-foreground">{label}</span>
-              <span className="text-xs text-muted-foreground">{hint}</span>
-            </span>
-            {isPublic === value && <Check className="w-4 h-4 text-accent-coral shrink-0" />}
-          </label>
+            label={
+              <>
+                <Icon
+                  className={`w-4 h-4 mt-0.5 shrink-0 ${isPublic === value ? "text-accent-coral" : "text-muted-foreground"}`}
+                />
+                <span className="flex flex-col min-w-0">
+                  <span className="text-sm font-medium text-foreground">{label}</span>
+                  <span className="text-xs text-muted-foreground">{hint}</span>
+                </span>
+                {isPublic === value && <Check className="w-4 h-4 text-accent-coral shrink-0" />}
+              </>
+            }
+          />
         ))}
       </fieldset>
 
@@ -236,13 +237,14 @@ export function NoteShareModal({
         {groups.length > 0 && (
           <label className="flex flex-col gap-1 text-xs">
             <span className="text-muted-foreground">Or share with a group</span>
-            <select
+            <Select
+              key={shares.length}
               disabled={busy}
-              defaultValue=""
-              onChange={(e) => {
-                if (!e.target.value) return;
-                const id = e.target.value;
-                e.target.value = "";
+              placeholder="Pick a group…"
+              options={groups
+                .filter((g) => !alreadyShared.has(`Group:${g.id}`))
+                .map((g) => ({ value: g.id, label: g.label }))}
+              onChange={(id) => {
                 void run(
                   {
                     intent: "share-add",
@@ -253,17 +255,8 @@ export function NoteShareModal({
                   refreshShares,
                 );
               }}
-              className="px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground"
-            >
-              <option value="">Pick a group…</option>
-              {groups
-                .filter((g) => !alreadyShared.has(`Group:${g.id}`))
-                .map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.label}
-                  </option>
-                ))}
-            </select>
+              buttonClassName="px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+            />
           </label>
         )}
       </div>

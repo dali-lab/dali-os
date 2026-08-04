@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, Fragment } from 'react'
 import { Form, Link, useParams, useLoaderData, useSearchParams, redirect } from 'react-router'
+import { Select, type SelectOption } from "~/components/ui/floating"
 import type { Route } from "./+types/lead.cycle.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
@@ -24,6 +25,8 @@ import { Modal, ModalHeader } from "~/components/Modal";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { ChallengePreviewModal } from "~/hiring/components/ChallengePreviewModal";
 import { Tooltip } from "~/components/ui/IconButton";
+import { Checkbox } from "~/components/ui/Checkbox";
+import { DateField } from "~/components/ui/DateField";
 import { useToast } from "~/components/ui/toast";
 import { Settings, Users, Calendar, AlertTriangle, Trash2, Plus, CheckCircle, ArrowRight, Circle, ChevronRight, X, LayoutDashboard, Eye, Mail } from 'lucide-react'
 import { formatVersionLabel, buildVersionNumberMap } from "~/lib/formatVersion";
@@ -1873,20 +1876,16 @@ export default function HiringLeadCycleDetails() {
               <Form method="post" preventScrollReset className="flex items-end gap-3 pt-2 border-t border-border">
                 <input type="hidden" name="intent" value="add-domain" />
                 <div className="flex-1">
-                  <label htmlFor="add-domain-select" className="block text-xs font-medium text-muted-foreground mb-1">Add Domain</label>
-                  <select
-                    id="add-domain-select"
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">Add Domain</label>
+                  <Select
                     name="domainId"
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
                     defaultValue=""
-                  >
-                    <option value="" disabled>Select domain...</option>
-                    {(loaderData?.allDomains ?? [])
+                    placeholder="Select domain..."
+                    options={(loaderData?.allDomains ?? [])
                       .filter((d: any) => !(cycle?.domains ?? []).some((cd: any) => cd.domainId === d.id))
-                      .map((d: any) => (
-                        <option key={d.id} value={d.id}>{d.name}</option>
-                      ))}
-                  </select>
+                      .map((d: any): SelectOption => ({ value: d.id, label: d.name }))}
+                    buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                  />
                 </div>
                 <button
                   type="submit"
@@ -1958,34 +1957,27 @@ export default function HiringLeadCycleDetails() {
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
               <div>
-                <label htmlFor="reviewer-member-select" className="block text-xs font-medium text-muted-foreground mb-1">DALI Member</label>
-                <select
-                  id="reviewer-member-select"
+                <label className="block text-xs font-medium text-muted-foreground mb-1">DALI Member</label>
+                <Select
                   value={newMemberId}
-                  onChange={e => setNewMemberId(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                >
-                  <option value="">Select member...</option>
-                  {allMembers.map(m => (
-                    <option key={m.id} value={m.id}>
-                      {m.firstName && m.lastName ? `${m.firstName} ${m.lastName}` : m.daliEmail}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(value) => setNewMemberId(value)}
+                  placeholder="Select member..."
+                  options={allMembers.map((m): SelectOption => ({
+                    value: m.id,
+                    label: m.firstName && m.lastName ? `${m.firstName} ${m.lastName}` : m.daliEmail,
+                  }))}
+                  buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                />
               </div>
               <div>
-                <label htmlFor="reviewer-domain-select" className="block text-xs font-medium text-muted-foreground mb-1">Domain</label>
-                <select
-                  id="reviewer-domain-select"
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Domain</label>
+                <Select
                   value={newDomainId}
-                  onChange={e => setNewDomainId(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                >
-                  <option value="">Select domain...</option>
-                  {allDomains.map(d => (
-                    <option key={d.id} value={d.id}>{d.name}</option>
-                  ))}
-                </select>
+                  onChange={(value) => setNewDomainId(value)}
+                  placeholder="Select domain..."
+                  options={allDomains.map((d): SelectOption => ({ value: d.id, label: d.name }))}
+                  buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                />
               </div>
               <button
                 onClick={addReviewer}
@@ -2131,32 +2123,30 @@ export default function HiringLeadCycleDetails() {
           <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
             {hasAnyRows && (
               <div className="px-4 sm:px-6 py-3 border-b border-border bg-card flex flex-wrap items-center gap-3">
-                <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+                <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
                   <span className="font-medium">Domain</span>
-                  <select
+                  <Select
                     value={interviewDomainFilter}
-                    onChange={(e) => setInterviewDomainFilter(e.target.value)}
-                    className="text-sm rounded-md border border-border bg-card px-2 py-1 text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/40"
-                  >
-                    <option value="all">All domains</option>
-                    {availableDomains.map(name => (
-                      <option key={name} value={name}>{name}</option>
-                    ))}
-                  </select>
-                </label>
-                <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+                    onChange={(value) => setInterviewDomainFilter(value)}
+                    options={[
+                      { value: "all", label: "All domains" },
+                      ...availableDomains.map((name): SelectOption => ({ value: name, label: name })),
+                    ]}
+                    buttonClassName="text-sm rounded-md border border-border bg-card px-2 py-1 text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                  />
+                </span>
+                <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
                   <span className="font-medium">Status</span>
-                  <select
+                  <Select
                     value={interviewStatusFilter}
-                    onChange={(e) => setInterviewStatusFilter(e.target.value)}
-                    className="text-sm rounded-md border border-border bg-card px-2 py-1 text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/40"
-                  >
-                    <option value="all">All statuses</option>
-                    {availableStatuses.map(s => (
-                      <option key={s} value={s}>{s}</option>
-                    ))}
-                  </select>
-                </label>
+                    onChange={(value) => setInterviewStatusFilter(value)}
+                    options={[
+                      { value: "all", label: "All statuses" },
+                      ...availableStatuses.map((s): SelectOption => ({ value: s, label: s })),
+                    ]}
+                    buttonClassName="text-sm rounded-md border border-border bg-card px-2 py-1 text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                  />
+                </span>
                 {filtersActive && (
                   <button
                     type="button"
@@ -2167,15 +2157,12 @@ export default function HiringLeadCycleDetails() {
                     Clear filters
                   </button>
                 )}
-                <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={showCancelledInterviews}
-                    onChange={(e) => setShowCancelledInterviews(e.target.checked)}
-                    className="w-3.5 h-3.5 rounded border-border accent-accent-coral"
-                  />
-                  <span>Show cancelled{hiddenCancelledCount > 0 && !showCancelledInterviews ? ` (${hiddenCancelledCount})` : ''}</span>
-                </label>
+                <Checkbox
+                  checked={showCancelledInterviews}
+                  onChange={(e) => setShowCancelledInterviews(e.target.checked)}
+                  label={`Show cancelled${hiddenCancelledCount > 0 && !showCancelledInterviews ? ` (${hiddenCancelledCount})` : ''}`}
+                  className="text-xs text-muted-foreground select-none"
+                />
                 <span className="ml-auto text-xs text-muted-foreground">
                   Showing {totalRows} of {totalAll}
                 </span>
@@ -2284,10 +2271,9 @@ export default function HiringLeadCycleDetails() {
                       <td className="px-4 py-3">
                         {isFuture && interview.status === 'Scheduled' ? (
                           <span className="inline-flex items-center gap-1">
-                            <select
+                            <Select
                               value={interview.location}
-                              onChange={async (e) => {
-                                const newLocation = e.target.value
+                              onChange={async (newLocation) => {
                                 const res = await fetch(`/api/hiring/interviews/${interview.id}/location`, {
                                   method: 'PATCH',
                                   credentials: 'include',
@@ -2304,12 +2290,13 @@ export default function HiringLeadCycleDetails() {
                                   toast.error(body.error ?? 'Failed to update location')
                                 }
                               }}
-                              className="text-xs border border-border rounded px-1.5 py-0.5 bg-card"
-                            >
-                              <option value="PodAppa">Pod Appa</option>
-                              <option value="PodMomo">Pod Momo</option>
-                              <option value="Online">Online</option>
-                            </select>
+                              options={[
+                                { value: "PodAppa", label: "Pod Appa" },
+                                { value: "PodMomo", label: "Pod Momo" },
+                                { value: "Online", label: "Online" },
+                              ]}
+                              buttonClassName="text-xs border border-border rounded px-1.5 py-0.5 bg-card inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                            />
                             <EmailMarker recipients="applicant + both interviewers" label="Changing fires location-change email" />
                           </span>
                         ) : (
@@ -2365,32 +2352,31 @@ export default function HiringLeadCycleDetails() {
                               <div key={a.id} className="flex items-center gap-1">
                                 <span>{name} ({roleLabel})</span>
                                 {isFuture && interview.status === 'Scheduled' && (
-                                  <select
-                                    className="ml-1 text-xs border border-gray-300 rounded px-1.5 py-0.5"
-                                    aria-label={`Reassign ${a.role === 'InDomain' ? 'in-domain' : 'cross-domain'} interviewer`}
-                                    defaultValue=""
-                                    onChange={async (e) => {
-                                      if (!e.target.value) return
+                                  <Select
+                                    value=""
+                                    onChange={async (value) => {
+                                      if (!value) return
                                       await fetch(`/api/hiring/interviews/${interview.id}/reassign`, {
                                         method: 'POST', credentials: 'include',
                                         headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ assignmentId: a.id, newCycleInterviewerId: e.target.value }),
+                                        body: JSON.stringify({ assignmentId: a.id, newCycleInterviewerId: value }),
                                       })
                                       window.location.reload()
                                     }}
-                                  >
-                                    <option value="">Reassign...</option>
-                                    {interviewers
+                                    placeholder="Reassign..."
+                                    ariaLabel={`Reassign ${a.role === 'InDomain' ? 'in-domain' : 'cross-domain'} interviewer`}
+                                    options={interviewers
                                       .filter((i: any) => a.role === 'InDomain'
                                         ? i.domain?.name === a.cycleInterviewer.domain.name
                                         : i.domain?.name !== domainName)
                                       .filter((i: any) => i.id !== a.cycleInterviewerId)
-                                      .map((i: any) => {
+                                      .map((i: any): SelectOption => {
                                         const im = i.user
                                         const iName = im?.firstName && im?.lastName ? `${im.firstName} ${im.lastName}` : im?.daliEmail ?? i.id
-                                        return <option key={i.id} value={i.id}>{iName}</option>
+                                        return { value: i.id, label: iName }
                                       })}
-                                  </select>
+                                    buttonClassName="ml-1 text-xs border border-gray-300 rounded px-1.5 py-0.5 inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                                  />
                                 )}
                                 {isFuture && interview.status === 'Scheduled' && (
                                   <EmailMarker recipients="removed + replacement interviewer" label="Reassigning fires emails" />
@@ -2497,10 +2483,9 @@ export default function HiringLeadCycleDetails() {
                     <div>
                       <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Location</div>
                       {editable ? (
-                        <select
+                        <Select
                           value={interview.location}
-                          onChange={async (e) => {
-                            const newLocation = e.target.value
+                          onChange={async (newLocation) => {
                             const res = await fetch(`/api/hiring/interviews/${interview.id}/location`, {
                               method: 'PATCH', credentials: 'include',
                               headers: { 'Content-Type': 'application/json' },
@@ -2516,12 +2501,13 @@ export default function HiringLeadCycleDetails() {
                               toast.error(body.error ?? 'Failed to update location')
                             }
                           }}
-                          className="w-full text-xs border border-border rounded px-1.5 py-1 bg-card"
-                        >
-                          <option value="PodAppa">Pod Appa</option>
-                          <option value="PodMomo">Pod Momo</option>
-                          <option value="Online">Online</option>
-                        </select>
+                          options={[
+                            { value: "PodAppa", label: "Pod Appa" },
+                            { value: "PodMomo", label: "Pod Momo" },
+                            { value: "Online", label: "Online" },
+                          ]}
+                          buttonClassName="w-full text-xs border border-border rounded px-1.5 py-1 bg-card inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                        />
                       ) : (
                         <span className="text-xs text-muted-foreground">
                           {interview.location === 'PodAppa' ? 'Pod Appa' :
@@ -2575,32 +2561,31 @@ export default function HiringLeadCycleDetails() {
                               <div key={a.id} className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
                                 <span>{name} ({roleLabel})</span>
                                 {editable && (
-                                  <select
-                                    className="text-xs border border-gray-300 rounded px-1.5 py-0.5"
-                                    aria-label={`Reassign ${a.role === 'InDomain' ? 'in-domain' : 'cross-domain'} interviewer`}
-                                    defaultValue=""
-                                    onChange={async (e) => {
-                                      if (!e.target.value) return
+                                  <Select
+                                    value=""
+                                    onChange={async (value) => {
+                                      if (!value) return
                                       await fetch(`/api/hiring/interviews/${interview.id}/reassign`, {
                                         method: 'POST', credentials: 'include',
                                         headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ assignmentId: a.id, newCycleInterviewerId: e.target.value }),
+                                        body: JSON.stringify({ assignmentId: a.id, newCycleInterviewerId: value }),
                                       })
                                       window.location.reload()
                                     }}
-                                  >
-                                    <option value="">Reassign...</option>
-                                    {interviewers
+                                    placeholder="Reassign..."
+                                    ariaLabel={`Reassign ${a.role === 'InDomain' ? 'in-domain' : 'cross-domain'} interviewer`}
+                                    options={interviewers
                                       .filter((i: any) => a.role === 'InDomain'
                                         ? i.domain?.name === a.cycleInterviewer.domain.name
                                         : i.domain?.name !== domainName)
                                       .filter((i: any) => i.id !== a.cycleInterviewerId)
-                                      .map((i: any) => {
+                                      .map((i: any): SelectOption => {
                                         const im = i.user
                                         const iName = im?.firstName && im?.lastName ? `${im.firstName} ${im.lastName}` : im?.daliEmail ?? i.id
-                                        return <option key={i.id} value={i.id}>{iName}</option>
+                                        return { value: i.id, label: iName }
                                       })}
-                                  </select>
+                                    buttonClassName="text-xs border border-gray-300 rounded px-1.5 py-0.5 inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                                  />
                                 )}
                                 {editable && (
                                   <EmailMarker recipients="removed + replacement interviewer" label="Reassigning fires emails" />
@@ -2671,34 +2656,27 @@ export default function HiringLeadCycleDetails() {
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
               <div>
-                <label htmlFor="interviewer-member-select" className="block text-xs font-medium text-muted-foreground mb-1">DALI Member</label>
-                <select
-                  id="interviewer-member-select"
+                <label className="block text-xs font-medium text-muted-foreground mb-1">DALI Member</label>
+                <Select
                   value={newInterviewerMemberId}
-                  onChange={e => setNewInterviewerMemberId(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                >
-                  <option value="">Select member...</option>
-                  {allMembers.map(m => (
-                    <option key={m.id} value={m.id}>
-                      {m.firstName && m.lastName ? `${m.firstName} ${m.lastName}` : m.daliEmail}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(value) => setNewInterviewerMemberId(value)}
+                  placeholder="Select member..."
+                  options={allMembers.map((m): SelectOption => ({
+                    value: m.id,
+                    label: m.firstName && m.lastName ? `${m.firstName} ${m.lastName}` : m.daliEmail,
+                  }))}
+                  buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                />
               </div>
               <div>
-                <label htmlFor="interviewer-domain-select" className="block text-xs font-medium text-muted-foreground mb-1">Domain</label>
-                <select
-                  id="interviewer-domain-select"
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Domain</label>
+                <Select
                   value={newInterviewerDomainId}
-                  onChange={e => setNewInterviewerDomainId(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                >
-                  <option value="">Select domain...</option>
-                  {allDomains.map(d => (
-                    <option key={d.id} value={d.id}>{d.name}</option>
-                  ))}
-                </select>
+                  onChange={(value) => setNewInterviewerDomainId(value)}
+                  placeholder="Select domain..."
+                  options={allDomains.map((d): SelectOption => ({ value: d.id, label: d.name }))}
+                  buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                />
               </div>
               <button
                 onClick={addInterviewer}
@@ -2913,98 +2891,87 @@ export default function HiringLeadCycleDetails() {
           <div className="bg-card rounded-xl border border-border shadow-sm p-6 space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label htmlFor="slot-duration" className="block text-sm font-bold text-foreground/80 mb-1">Slot Duration</label>
-              <select
-                id="slot-duration"
-                value={config.slotDurationMinutes}
-                onChange={e => setConfig(c => ({ ...c, slotDurationMinutes: Number(e.target.value) }))}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-              >
-                {DURATION_OPTIONS.map(d => <option key={d} value={d}>{d} minutes</option>)}
-              </select>
+              <label className="block text-sm font-bold text-foreground/80 mb-1">Slot Duration</label>
+              <Select
+                value={String(config.slotDurationMinutes)}
+                onChange={(value) => setConfig(c => ({ ...c, slotDurationMinutes: Number(value) }))}
+                options={DURATION_OPTIONS.map((d): SelectOption => ({ value: String(d), label: `${d} minutes` }))}
+                buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+              />
             </div>
             <div>
-              <label htmlFor="buffer-minutes" className="block text-sm font-bold text-foreground/80 mb-1">Buffer Between Interviews</label>
-              <select
-                id="buffer-minutes"
-                value={config.bufferMinutes}
-                onChange={e => setConfig(c => ({ ...c, bufferMinutes: Number(e.target.value) }))}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-              >
-                {BUFFER_OPTIONS.map(b => <option key={b} value={b}>{b} minutes</option>)}
-              </select>
+              <label className="block text-sm font-bold text-foreground/80 mb-1">Buffer Between Interviews</label>
+              <Select
+                value={String(config.bufferMinutes)}
+                onChange={(value) => setConfig(c => ({ ...c, bufferMinutes: Number(value) }))}
+                options={BUFFER_OPTIONS.map((b): SelectOption => ({ value: String(b), label: `${b} minutes` }))}
+                buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+              />
             </div>
             <div>
-              <label htmlFor="day-start-hour" className="block text-sm font-bold text-foreground/80 mb-1">Day Start</label>
-              <select
-                id="day-start-hour"
-                value={config.dayStartHour}
-                onChange={e => setConfig(c => ({ ...c, dayStartHour: Number(e.target.value) }))}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-              >
-                {HOUR_OPTIONS.map(h => <option key={h} value={h}>{formatHour(h)}</option>)}
-              </select>
+              <label className="block text-sm font-bold text-foreground/80 mb-1">Day Start</label>
+              <Select
+                value={String(config.dayStartHour)}
+                onChange={(value) => setConfig(c => ({ ...c, dayStartHour: Number(value) }))}
+                options={HOUR_OPTIONS.map((h): SelectOption => ({ value: String(h), label: formatHour(h) }))}
+                buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+              />
             </div>
             <div>
-              <label htmlFor="day-end-hour" className="block text-sm font-bold text-foreground/80 mb-1">Day End</label>
-              <select
-                id="day-end-hour"
-                value={config.dayEndHour}
-                onChange={e => setConfig(c => ({ ...c, dayEndHour: Number(e.target.value) }))}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-              >
-                {HOUR_OPTIONS.map(h => <option key={h} value={h}>{formatHour(h)}</option>)}
-              </select>
+              <label className="block text-sm font-bold text-foreground/80 mb-1">Day End</label>
+              <Select
+                value={String(config.dayEndHour)}
+                onChange={(value) => setConfig(c => ({ ...c, dayEndHour: Number(value) }))}
+                options={HOUR_OPTIONS.map((h): SelectOption => ({ value: String(h), label: formatHour(h) }))}
+                buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+              />
             </div>
             <div>
               <label htmlFor="interview-start-date" className="block text-sm font-bold text-foreground/80 mb-1">Interview Start Date</label>
-              <input
-                id="interview-start-date"
-                type="date"
+              <DateField
+                mode="date"
                 value={config.interviewStartDate}
-                onChange={e => setConfig(c => ({ ...c, interviewStartDate: e.target.value }))}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                onChange={(value) => setConfig(c => ({ ...c, interviewStartDate: value }))}
+                className="w-full"
+                ariaLabel="Interview start date"
               />
             </div>
             <div>
               <label htmlFor="interview-end-date" className="block text-sm font-bold text-foreground/80 mb-1">Interview End Date</label>
-              <input
-                id="interview-end-date"
-                type="date"
+              <DateField
+                mode="date"
                 value={config.interviewEndDate}
-                onChange={e => setConfig(c => ({ ...c, interviewEndDate: e.target.value }))}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                onChange={(value) => setConfig(c => ({ ...c, interviewEndDate: value }))}
+                className="w-full"
+                ariaLabel="Interview end date"
               />
             </div>
             <div>
               <label className="block text-sm font-bold text-foreground/80 mb-1">Booking Notice</label>
-              <select
-                value={config.bookingNoticeHours}
-                onChange={e => setConfig(c => ({ ...c, bookingNoticeHours: Number(e.target.value) }))}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-              >
-                {[0, 1, 2, 4, 6, 8, 12, 24, 48].map(h => <option key={h} value={h}>{h === 0 ? 'No minimum' : `${h} hours ahead`}</option>)}
-              </select>
+              <Select
+                value={String(config.bookingNoticeHours)}
+                onChange={(value) => setConfig(c => ({ ...c, bookingNoticeHours: Number(value) }))}
+                options={[0, 1, 2, 4, 6, 8, 12, 24, 48].map((h): SelectOption => ({ value: String(h), label: h === 0 ? 'No minimum' : `${h} hours ahead` }))}
+                buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+              />
             </div>
             <div>
               <label className="block text-sm font-bold text-foreground/80 mb-1">Reschedule Notice</label>
-              <select
-                value={config.rescheduleNoticeHours}
-                onChange={e => setConfig(c => ({ ...c, rescheduleNoticeHours: Number(e.target.value) }))}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-              >
-                {[0, 2, 4, 6, 8, 12, 24, 48].map(h => <option key={h} value={h}>{h === 0 ? 'No minimum' : `${h} hours before`}</option>)}
-              </select>
+              <Select
+                value={String(config.rescheduleNoticeHours)}
+                onChange={(value) => setConfig(c => ({ ...c, rescheduleNoticeHours: Number(value) }))}
+                options={[0, 2, 4, 6, 8, 12, 24, 48].map((h): SelectOption => ({ value: String(h), label: h === 0 ? 'No minimum' : `${h} hours before` }))}
+                buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+              />
             </div>
             <div>
               <label className="block text-sm font-bold text-foreground/80 mb-1">Cancel Notice</label>
-              <select
-                value={config.cancelNoticeHours}
-                onChange={e => setConfig(c => ({ ...c, cancelNoticeHours: Number(e.target.value) }))}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-              >
-                {[0, 2, 4, 6, 8, 12, 24, 48].map(h => <option key={h} value={h}>{h === 0 ? 'Up until start' : `${h} hours before`}</option>)}
-              </select>
+              <Select
+                value={String(config.cancelNoticeHours)}
+                onChange={(value) => setConfig(c => ({ ...c, cancelNoticeHours: Number(value) }))}
+                options={[0, 2, 4, 6, 8, 12, 24, 48].map((h): SelectOption => ({ value: String(h), label: h === 0 ? 'Up until start' : `${h} hours before` }))}
+                buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+              />
             </div>
           </div>
 
@@ -3084,32 +3051,30 @@ export default function HiringLeadCycleDetails() {
             </div>
             {pendingDecisions.length > 0 && (
               <div className="px-4 sm:px-6 py-3 border-b border-border bg-card flex flex-wrap items-center gap-3">
-                <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+                <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
                   <span className="font-medium">Domain</span>
-                  <select
+                  <Select
                     value={decisionDomainFilter}
-                    onChange={(e) => setDecisionDomainFilter(e.target.value)}
-                    className="text-sm rounded-md border border-border bg-card px-2 py-1 text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/40"
-                  >
-                    <option value="all">All domains</option>
-                    {availableDomains.map((name) => (
-                      <option key={name} value={name}>{name}</option>
-                    ))}
-                  </select>
-                </label>
-                <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+                    onChange={(value) => setDecisionDomainFilter(value)}
+                    options={[
+                      { value: "all", label: "All domains" },
+                      ...availableDomains.map((name): SelectOption => ({ value: name, label: name })),
+                    ]}
+                    buttonClassName="text-sm rounded-md border border-border bg-card px-2 py-1 text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                  />
+                </span>
+                <span className="inline-flex items-center gap-2 text-xs text-muted-foreground">
                   <span className="font-medium">Decision</span>
-                  <select
+                  <Select
                     value={decisionTypeFilter}
-                    onChange={(e) => setDecisionTypeFilter(e.target.value)}
-                    className="text-sm rounded-md border border-border bg-card px-2 py-1 text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/40"
-                  >
-                    <option value="all">All decisions</option>
-                    {availableTypes.map((t) => (
-                      <option key={t} value={t}>{t}</option>
-                    ))}
-                  </select>
-                </label>
+                    onChange={(value) => setDecisionTypeFilter(value)}
+                    options={[
+                      { value: "all", label: "All decisions" },
+                      ...availableTypes.map((t): SelectOption => ({ value: t, label: t })),
+                    ]}
+                    buttonClassName="text-sm rounded-md border border-border bg-card px-2 py-1 text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                  />
+                </span>
                 {filtersActive && (
                   <button
                     type="button"
@@ -3746,11 +3711,12 @@ function CloseDateCard({ cycle, cycleStatus }: { cycle: any; cycleStatus: string
         <Form method="post" preventScrollReset className="flex flex-col sm:flex-row sm:items-end gap-3">
           <input type="hidden" name="intent" value="set-close-date" />
           <div className="flex-1">
-            <input
-              type="date"
+            <DateField
+              mode="date"
               name="closeDate"
               defaultValue={pickerDateValue}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              className="w-full"
+              ariaLabel="Application close date"
             />
           </div>
           <button
@@ -3860,17 +3826,17 @@ function ExtensionSection({
               />
             </div>
             <div>
-              <label className="block text-xs text-muted-foreground mb-1" htmlFor={`extend-unit-${cycleId}`}>Unit</label>
-              <select
-                id={`extend-unit-${cycleId}`}
+              <label className="block text-xs text-muted-foreground mb-1">Unit</label>
+              <Select
                 name="unit"
                 value={unit}
-                onChange={(e) => setUnit(e.target.value as "hours" | "days")}
-                className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
-              >
-                <option value="hours">hours</option>
-                <option value="days">days</option>
-              </select>
+                onChange={(value) => setUnit(value as "hours" | "days")}
+                options={[
+                  { value: "hours", label: "hours" },
+                  { value: "days", label: "days" },
+                ]}
+                buttonClassName="rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+              />
             </div>
           </div>
           <button
@@ -4027,23 +3993,24 @@ function GeneralRubricPicker({ currentRubricVersionId, rubricVersionOptions, loc
         <Form method="post" preventScrollReset className="flex items-end gap-3" onSubmit={() => setEditing(false)}>
           <input type="hidden" name="intent" value="set-general-rubric" />
           <div className="flex-1">
-            <select
+            <Select
               name="rubricVersionId"
               defaultValue={currentRubricVersionId ?? ""}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-            >
-              <option value="">No rubric assigned</option>
-              {rubricVersionOptions.map((rv: any) => (
-                <option key={rv.id} value={rv.id}>
-                  {formatVersionLabel({
+              placeholder="No rubric assigned"
+              options={[
+                { value: "", label: "No rubric assigned" },
+                ...rubricVersionOptions.map((rv: any): SelectOption => ({
+                  value: rv.id,
+                  label: formatVersionLabel({
                     name: rv.rubric?.name ?? 'Rubric',
                     versionNumber: rv.versionNumber,
                     createdAt: rv.createdAt,
                     createdBy: rv.createdBy,
-                  })}
-                </option>
-              ))}
-            </select>
+                  }),
+                })),
+              ]}
+              buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+            />
           </div>
           <button
             type="submit"
@@ -4230,25 +4197,23 @@ function DomainOverridePanel({
               <input type="hidden" name="intent" value="hl-add-domain-challenge" />
               <input type="hidden" name="domainId" value={domain.domainId} />
               <div className="flex-1 min-w-0">
-                <select
+                <Select
                   name="challengeVersionId"
                   value={pickerCvId}
-                  onChange={(e) => setPickerCvId(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                  aria-label={`Add challenge version for ${domain.domain?.name ?? domain.domainId}`}
-                >
-                  <option value="" disabled>Add a challenge version...</option>
-                  {addableOptions.map((cv: any) => (
-                    <option key={cv.id} value={cv.id}>
-                      {formatVersionLabel({
-                        name: cv.challenge?.name ?? 'Untitled',
-                        versionNumber: cv.versionNumber,
-                        createdAt: cv.createdAt,
-                        createdBy: cv.createdBy,
-                      })}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(value) => setPickerCvId(value)}
+                  placeholder="Add a challenge version..."
+                  ariaLabel={`Add challenge version for ${domain.domain?.name ?? domain.domainId}`}
+                  options={addableOptions.map((cv: any): SelectOption => ({
+                    value: cv.id,
+                    label: formatVersionLabel({
+                      name: cv.challenge?.name ?? 'Untitled',
+                      versionNumber: cv.versionNumber,
+                      createdAt: cv.createdAt,
+                      createdBy: cv.createdBy,
+                    }),
+                  }))}
+                  buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                />
               </div>
               {pickerCvId && (
                 <Tooltip label="Preview">
@@ -4304,25 +4269,26 @@ function DomainOverridePanel({
               <input type="hidden" name="intent" value="hl-set-domain-rubric" />
               <input type="hidden" name="domainId" value={domain.domainId} />
               <div className="flex-1 min-w-0">
-                <select
+                <Select
                   name="rubricVersionId"
                   value={selectedRubricId}
-                  onChange={(e) => setSelectedRubricId(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                  aria-label={`Select rubric version for ${domain.domain?.name ?? domain.domainId}`}
-                >
-                  <option value="">No rubric assigned</option>
-                  {rubricOptions.map((rv: any) => (
-                    <option key={rv.id} value={rv.id}>
-                      {formatVersionLabel({
+                  onChange={(value) => setSelectedRubricId(value)}
+                  placeholder="No rubric assigned"
+                  ariaLabel={`Select rubric version for ${domain.domain?.name ?? domain.domainId}`}
+                  options={[
+                    { value: "", label: "No rubric assigned" },
+                    ...rubricOptions.map((rv: any): SelectOption => ({
+                      value: rv.id,
+                      label: formatVersionLabel({
                         name: rv.rubric?.name ?? 'Rubric',
                         versionNumber: rv.versionNumber,
                         createdAt: rv.createdAt,
                         createdBy: rv.createdBy,
-                      })}
-                    </option>
-                  ))}
-                </select>
+                      }),
+                    })),
+                  ]}
+                  buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                />
               </div>
               {selectedRubricId && (
                 <Tooltip label="Preview">
@@ -4572,23 +4538,21 @@ function GeneralFormPicker({ currentCvId, currentCvLabel, options, locked }: {
         <Form method="post" preventScrollReset className="flex items-end gap-3" onSubmit={() => setEditing(false)}>
           <input type="hidden" name="intent" value="link-general-form" />
           <div className="flex-1">
-            <select
+            <Select
               name="challengeVersionId"
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
               defaultValue={currentCvId ?? ""}
-            >
-              <option value="" disabled>Select a general form...</option>
-              {options.map((cv: any) => (
-                <option key={cv.id} value={cv.id}>
-                  {formatVersionLabel({
-                    name: cv.challenge?.name ?? 'Untitled',
-                    versionNumber: cv.versionNumber,
-                    createdAt: cv.createdAt,
-                    createdBy: cv.createdBy,
-                  })}
-                </option>
-              ))}
-            </select>
+              placeholder="Select a general form..."
+              options={options.map((cv: any): SelectOption => ({
+                value: cv.id,
+                label: formatVersionLabel({
+                  name: cv.challenge?.name ?? 'Untitled',
+                  versionNumber: cv.versionNumber,
+                  createdAt: cv.createdAt,
+                  createdBy: cv.createdBy,
+                }),
+              }))}
+              buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+            />
           </div>
           <button
             type="submit"
@@ -4722,22 +4686,23 @@ function DecisionEmailPicker({ slot, binding, emailTemplates, locked }: {
           <input type="hidden" name="intent" value="set-decision-email" />
           <input type="hidden" name="decisionType" value={slot.type} />
           <div className="flex-1 min-w-[14rem]">
-            <select
+            <Select
               name="emailTemplateVersionId"
               defaultValue={currentVersionId ?? ""}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-            >
-              <option value="">No template (skip email)</option>
-              {emailTemplates
-                .filter((t: any) => t.versions.length > 0)
-                .flatMap((t: any) =>
-                  t.versions.map((v: any) => (
-                    <option key={v.id} value={v.id}>
-                      {t.name} — v{v.versionNumber}
-                    </option>
-                  ))
-                )}
-            </select>
+              placeholder="No template (skip email)"
+              options={[
+                { value: "", label: "No template (skip email)" },
+                ...emailTemplates
+                  .filter((t: any) => t.versions.length > 0)
+                  .flatMap((t: any) =>
+                    t.versions.map((v: any): SelectOption => ({
+                      value: v.id,
+                      label: `${t.name} — v${v.versionNumber}`,
+                    }))
+                  ),
+              ]}
+              buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+            />
           </div>
           <button
             type="submit"
@@ -4846,22 +4811,23 @@ function NotificationEmailPicker({ slot, binding, emailTemplates }: {
           <input type="hidden" name="intent" value="set-notification-email" />
           <input type="hidden" name="notificationType" value={slot.type} />
           <div className="flex-1 min-w-[14rem]">
-            <select
+            <Select
               name="emailTemplateVersionId"
               defaultValue={currentVersionId ?? ""}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-            >
-              <option value="">No template (skip email)</option>
-              {emailTemplates
-                .filter((t: any) => t.versions.length > 0)
-                .flatMap((t: any) =>
-                  t.versions.map((v: any) => (
-                    <option key={v.id} value={v.id}>
-                      {t.name} — v{v.versionNumber}
-                    </option>
-                  ))
-                )}
-            </select>
+              placeholder="No template (skip email)"
+              options={[
+                { value: "", label: "No template (skip email)" },
+                ...emailTemplates
+                  .filter((t: any) => t.versions.length > 0)
+                  .flatMap((t: any) =>
+                    t.versions.map((v: any): SelectOption => ({
+                      value: v.id,
+                      label: `${t.name} — v${v.versionNumber}`,
+                    }))
+                  ),
+              ]}
+              buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+            />
           </div>
           <button
             type="submit"
@@ -4974,22 +4940,21 @@ function ConfidentialityAgreementPicker({
             value="set-confidentiality-agreement"
           />
           <div className="flex-1">
-            <select
+            <Select
               name="confidentialityAgreementVersionId"
-              defaultValue={
-                currentBinding?.confidentialityAgreementVersionId ?? ""
-              }
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-            >
-              <option value="">No agreement bound</option>
-              {agreementOptions.map((a: any) =>
-                (a.versions ?? []).map((v: any) => (
-                  <option key={v.id} value={v.id}>
-                    {a.name} — v{v.versionNumber}
-                  </option>
-                )),
-              )}
-            </select>
+              defaultValue={currentBinding?.confidentialityAgreementVersionId ?? ""}
+              placeholder="No agreement bound"
+              options={[
+                { value: "", label: "No agreement bound" },
+                ...agreementOptions.flatMap((a: any) =>
+                  (a.versions ?? []).map((v: any): SelectOption => ({
+                    value: v.id,
+                    label: `${a.name} — v${v.versionNumber}`,
+                  }))
+                ),
+              ]}
+              buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+            />
           </div>
           <button
             type="submit"

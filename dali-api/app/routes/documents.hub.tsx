@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useMemo, useState, useCallback, useEffect } from "react";
 import {
   redirect,
   useLoaderData,
@@ -30,6 +30,7 @@ import { redirectToLogin } from "~/lib/login-next";
 import { isCore, isLabMember, currentTerm } from "~/lib/roles";
 import { visibleLabDocFilter } from "~/lib/lab-documents.server";
 import { Tooltip } from "~/components/ui/IconButton";
+import { Menu } from "~/components/ui/floating";
 import { useDialog } from "~/components/ui/dialog";
 import { PageIcon } from "~/components/PageIcon";
 import { ProjectIcon } from "~/components/ProjectIcon";
@@ -264,26 +265,6 @@ export default function DocumentsHub() {
   const [busy, setBusy] = useState(false);
   const [query, setQuery] = useState("");
   const [scope, setScope] = useState<"all" | "lab" | "project">("all");
-  const [newMenuOpen, setNewMenuOpen] = useState(false);
-  const newMenuRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!newMenuOpen) return;
-    const onDown = (e: MouseEvent) => {
-      if (newMenuRef.current && !newMenuRef.current.contains(e.target as Node)) {
-        setNewMenuOpen(false);
-      }
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setNewMenuOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [newMenuOpen]);
   const [selectedTagIds, setSelectedTagIds] = useState<Set<string>>(() => new Set());
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(
     () => new Set(docs.filter((d) => d.kind === "Folder").map((d) => d.id)),
@@ -955,61 +936,44 @@ export default function DocumentsHub() {
             Split button: the left half does the common thing outright, the
             chevron opens the alternatives. */}
         {canManageLab && (
-          <div ref={newMenuRef} className="relative flex-shrink-0">
-            <div className="inline-flex overflow-hidden rounded-md">
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void createLabDocument()}
-                className="inline-flex items-center gap-1.5 bg-accent-coral px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-coral/90 disabled:opacity-60"
-              >
-                <Plus className="w-4 h-4" /> New document
-              </button>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => setNewMenuOpen((o) => !o)}
-                aria-haspopup="menu"
-                aria-expanded={newMenuOpen}
-                aria-label="More ways to add"
-                className="inline-flex items-center border-l border-white/25 bg-accent-coral px-1.5 py-1.5 text-white hover:bg-accent-coral/90 disabled:opacity-60"
-              >
-                <ChevronDown className="w-4 h-4" />
-              </button>
-            </div>
-            {newMenuOpen && (
-              <div
-                role="menu"
-                className="absolute right-0 z-30 mt-1 w-52 rounded-md border border-border bg-card p-1 shadow-brand-2"
-              >
+          <div className="inline-flex overflow-hidden rounded-md flex-shrink-0">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void createLabDocument()}
+              className="inline-flex items-center gap-1.5 bg-accent-coral px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-coral/90 disabled:opacity-60"
+            >
+              <Plus className="w-4 h-4" /> New document
+            </button>
+            <Menu
+              align="right"
+              ariaLabel="More ways to add"
+              trigger={
                 <button
                   type="button"
-                  role="menuitem"
                   disabled={busy}
-                  onClick={() => {
-                    setNewMenuOpen(false);
-                    void createLabFolder();
-                  }}
-                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-foreground hover:bg-muted disabled:opacity-60"
+                  aria-label="More ways to add"
+                  className="inline-flex items-center border-l border-white/25 bg-accent-coral px-1.5 py-1.5 text-white hover:bg-accent-coral/90 disabled:opacity-60"
                 >
-                  <FolderPlus className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
-                  New folder
+                  <ChevronDown className="w-4 h-4" />
                 </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  disabled={busy}
-                  onClick={() => {
-                    setNewMenuOpen(false);
-                    void openTemplatePicker();
-                  }}
-                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-foreground hover:bg-muted disabled:opacity-60"
-                >
-                  <LayoutTemplate className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
-                  From template…
-                </button>
-              </div>
-            )}
+              }
+            >
+              <Menu.Item
+                icon={<FolderPlus className="w-3.5 h-3.5" />}
+                onSelect={() => void createLabFolder()}
+                disabled={busy}
+              >
+                New folder
+              </Menu.Item>
+              <Menu.Item
+                icon={<LayoutTemplate className="w-3.5 h-3.5" />}
+                onSelect={() => void openTemplatePicker()}
+                disabled={busy}
+              >
+                From template…
+              </Menu.Item>
+            </Menu>
           </div>
         )}
       </div>

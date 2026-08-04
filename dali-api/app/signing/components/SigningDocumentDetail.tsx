@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { Form, Link, useLoaderData } from "react-router";
+import { Menu, Select } from "~/components/ui/floating";
 import {
   Plus,
   Clock,
+  ChevronDown,
   User as UserIcon,
   Pencil,
   CheckCircle2,
@@ -17,6 +19,7 @@ import {
   insertVariable,
   type DocEditorInstance,
 } from "~/components/doc";
+import { useConfirmSubmit } from "~/components/ui/dialog";
 import {
   FIELD_LABEL,
   SIGNING_FIELD_TYPES,
@@ -76,18 +79,13 @@ function SigningInsertControls({
   return (
     <div className="flex flex-wrap items-center gap-1 border-b border-border px-2 py-1.5">
       <span className="text-xs font-medium text-muted-foreground mr-1">Insert:</span>
-      <select
+      <Select
         value={effectiveRole}
-        onChange={(e) => setRole(e.target.value)}
-        title="Signer role for inserted fields"
-        className="rounded border border-border bg-card px-1.5 py-1 text-xs text-foreground"
-      >
-        {roles.map((r) => (
-          <option key={r} value={r}>
-            {r}
-          </option>
-        ))}
-      </select>
+        onChange={(value) => setRole(value)}
+        ariaLabel="Signer role for inserted fields"
+        options={roles.map((r) => ({ value: r, label: r }))}
+        buttonClassName="rounded border border-border bg-card px-1.5 py-1 text-xs text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+      />
       {SIGNING_FIELD_TYPES.map((type) => (
         <button
           key={type}
@@ -103,23 +101,27 @@ function SigningInsertControls({
           {FIELD_LABEL[type]}
         </button>
       ))}
-      <select
-        value=""
-        disabled={!editor}
-        onChange={(e) => {
-          handleVariable(e.target.value);
-          e.currentTarget.value = "";
-        }}
-        title="Insert a merge variable"
-        className="rounded border border-border bg-card px-1.5 py-1 text-xs text-muted-foreground disabled:opacity-40"
+      <Menu
+        align="left"
+        ariaLabel="Insert merge variable"
+        trigger={
+          <button
+            type="button"
+            disabled={!editor}
+            title="Insert a merge variable"
+            className="inline-flex items-center gap-1 rounded border border-border bg-card px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/40 disabled:opacity-40"
+          >
+            + Variable
+            <ChevronDown className="w-3 h-3" />
+          </button>
+        }
       >
-        <option value="">+ Variable</option>
         {ALL_SIGNING_VARIABLES.map((v) => (
-          <option key={v} value={v}>
+          <Menu.Item key={v} onSelect={() => handleVariable(v)}>
             {`{{${v}}}`}
-          </option>
+          </Menu.Item>
         ))}
-      </select>
+      </Menu>
     </div>
   );
 }
@@ -127,6 +129,7 @@ function SigningInsertControls({
 export function SigningDocumentDetail() {
   const { document, isAdmin } = useLoaderData<typeof loader>();
   const tz = useUserTimeZone();
+  const confirmSubmit = useConfirmSubmit();
 
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(
     document.versions[0]?.id ?? null,
@@ -222,7 +225,14 @@ export function SigningDocumentDetail() {
               New Version
             </button>
           )}
-          <Form method="post" onSubmit={(e) => { if (!confirm("Archive this agreement?")) e.preventDefault(); }}>
+          <Form
+            method="post"
+            onSubmit={confirmSubmit({
+              title: "Archive this agreement?",
+              tone: "destructive",
+              confirmLabel: "Archive",
+            })}
+          >
             <input type="hidden" name="intent" value="archive" />
             <button
               type="submit"

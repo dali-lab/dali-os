@@ -7,8 +7,9 @@ import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isAdmin } from "~/lib/roles";
 import { Download, FileDown, AlertTriangle, Users } from "lucide-react";
+import { Checkbox } from "~/components/ui/Checkbox";
 import { buttonClasses } from "~/components/ui/Button";
-import { SelectMenu } from "~/components/ui/SelectMenu";
+import { Select } from "~/components/ui/floating";
 import {
   buildPayrollRows,
   listCoreCandidates,
@@ -138,7 +139,7 @@ export default function PayrollExport() {
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             <label className="text-sm text-muted-foreground">Term</label>
-            <SelectMenu
+            <Select
               value={selectedTermId}
               ariaLabel="Term"
               options={terms.map((t) => ({ value: t.id, label: t.code }))}
@@ -332,12 +333,10 @@ function CandidateSection({
                   className={`hover:bg-muted/50 ${checked ? "" : "opacity-50"}`}
                 >
                   <td className="px-3 py-2">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={checked}
                       onChange={() => toggle(c.userId)}
                       aria-label={`Include ${c.firstName} ${c.lastName} in payroll export`}
-                      className="cursor-pointer"
                     />
                   </td>
                   <td className="px-3 py-2 text-foreground font-mono">{c.netId || "—"}</td>

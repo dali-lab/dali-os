@@ -6,7 +6,7 @@
 import { useState } from "react";
 import { useFetcher } from "react-router";
 import { Button } from "~/components/ui/Button";
-import { SelectMenu } from "~/components/ui/SelectMenu";
+import { Select } from "~/components/ui/floating";
 
 type SelectableForm = { id: string; name: string; published: boolean };
 
@@ -60,7 +60,7 @@ export function SlotFormPicker({
             className="flex flex-1 flex-col sm:flex-row gap-2"
           >
             <input type="hidden" name="intent" value="set-slot-form" />
-            <SelectMenu
+            <Select
               name="formId"
               value={selected}
               onChange={(v) => setSelected(v)}

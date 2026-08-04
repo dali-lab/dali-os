@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Checkbox } from "~/components/ui/Checkbox";
 
 export type AttendanceRow = { userId: string; name: string; present: boolean };
 
@@ -57,18 +58,13 @@ export function AttendanceChecklist({
       </div>
       <ul className="flex flex-col gap-1.5">
         {rows.map((r) => (
-          <li key={r.userId} className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id={`attendance-${r.userId}`}
+          <li key={r.userId}>
+            <Checkbox
               checked={r.present}
               disabled={!canEdit || pendingIds.has(r.userId)}
               onChange={(e) => toggle(r.userId, e.target.checked)}
-              className="h-4 w-4 rounded border-border"
+              label={r.name}
             />
-            <label htmlFor={`attendance-${r.userId}`} className="text-sm text-foreground">
-              {r.name}
-            </label>
           </li>
         ))}
       </ul>

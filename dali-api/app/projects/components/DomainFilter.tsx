@@ -3,7 +3,7 @@
 // from buildSubmissionView). Standalone so it can sit next to TermFilter,
 // matching its look.
 
-import { SelectMenu, type SelectMenuOption } from "~/components/ui/SelectMenu";
+import { Select, type SelectOption } from "~/components/ui/floating";
 
 type Domain = { id: string; name: string };
 
@@ -16,12 +16,12 @@ export function DomainFilter({
   value: string;
   onChange: (id: string) => void;
 }) {
-  const options: SelectMenuOption<string>[] = [
+  const options: SelectOption<string>[] = [
     { value: "", label: "All domains" },
     ...domains.map((d) => ({ value: d.id, label: d.name })),
   ];
   return (
-    <SelectMenu
+    <Select
       value={value}
       options={options}
       ariaLabel="Filter by domain"

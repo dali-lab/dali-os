@@ -1,6 +1,6 @@
 import { useSearchParams } from "react-router";
 import { ALL_TERMS, type TermOption } from "~/lib/terms.shared";
-import { SelectMenu, type SelectMenuOption } from "~/components/ui/SelectMenu";
+import { Select, type SelectOption } from "~/components/ui/floating";
 
 // Term dropdown shared by the Projects hub, Members database, Intent to Work
 // and Project Bids. Drives the loader via the `?term=` search param so pages
@@ -16,13 +16,13 @@ export function TermFilter({
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const options: SelectMenuOption<string>[] = [
+  const options: SelectOption<string>[] = [
     ...terms.map((t) => ({ value: t.id, label: t.code })),
     { value: ALL_TERMS, label: "All terms" },
   ];
 
   return (
-    <SelectMenu
+    <Select
       value={selected}
       options={options}
       ariaLabel="Filter by term"

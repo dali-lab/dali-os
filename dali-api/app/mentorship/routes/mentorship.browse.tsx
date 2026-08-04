@@ -23,7 +23,7 @@ import { AreaPillNav } from "~/components/AreaPillNav";
 import { mentorshipPills } from "../components/mentorshipPills";
 import { TemplatesModal } from "../components/TemplatesModal";
 import { MentorGrid } from "../components/MentorGrid";
-import { SelectMenu } from "~/components/ui/SelectMenu";
+import { Select } from "~/components/ui/floating";
 import {
   buildGrid,
   type MentorGridResult,
@@ -270,7 +270,7 @@ export default function MentorshipBrowse() {
               Templates
             </button>
           )}
-          <SelectMenu
+          <Select
             ariaLabel="Filter by term"
             value={data.filters.termId}
             onChange={(v) => {
@@ -400,7 +400,7 @@ function FilterSelect({
   return (
     <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
       {label}
-      <SelectMenu
+      <Select
         name={name}
         defaultValue={value}
         options={[

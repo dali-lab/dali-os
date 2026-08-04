@@ -3,6 +3,7 @@ import { Link, redirect, useLoaderData, useSearchParams } from "react-router";
 import { redirectToLogin } from "~/lib/login-next";
 import { Download, Search } from "lucide-react";
 import { Tooltip } from "~/components/ui/IconButton";
+import { Select } from "~/components/ui/floating";
 import type { Route } from "./+types/forms.responses.$formId";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
@@ -267,34 +268,30 @@ export default function FormResponses() {
         <>
           <div className="flex flex-col sm:flex-row sm:items-center gap-2">
             {versionOptions.length > 1 && (
-              <select
-                aria-label="Filter by version"
+              <Select
+                ariaLabel="Filter by version"
                 value={version}
-                onChange={(e) => setVersion(e.target.value)}
-                className="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground sm:w-40"
-              >
-                <option value="">All versions</option>
-                {versionOptions.map((v) => (
-                  <option key={v} value={String(v)}>
-                    v{v}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setVersion(v)}
+                placeholder="All versions"
+                options={[
+                  { value: "", label: "All versions" },
+                  ...versionOptions.map((v) => ({ value: String(v), label: `v${v}` })),
+                ]}
+                buttonClassName="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground sm:w-40 inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+              />
             )}
             {hasSlotColumn && (
-              <select
-                aria-label="Filter by slot"
+              <Select
+                ariaLabel="Filter by slot"
                 value={slot}
-                onChange={(e) => setSlot(e.target.value)}
-                className="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground sm:w-48"
-              >
-                <option value="">All slots</option>
-                {slotOptions.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setSlot(v)}
+                placeholder="All slots"
+                options={[
+                  { value: "", label: "All slots" },
+                  ...slotOptions.map((s) => ({ value: s, label: s })),
+                ]}
+                buttonClassName="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground sm:w-48 inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+              />
             )}
             <div className="relative w-full sm:ml-auto sm:w-64 min-w-[12rem]">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70 pointer-events-none" />

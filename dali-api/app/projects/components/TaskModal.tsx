@@ -15,7 +15,10 @@ import { MentionTextInput } from "~/components/MentionTextInput";
 import { DocEditor } from "~/components/doc";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { useDialog } from "~/components/ui/dialog";
+import { Checkbox } from "~/components/ui/Checkbox";
+import { DateField } from "~/components/ui/DateField";
 import { uploadFileToS3 } from "~/lib/upload-client";
+import { Select } from "~/components/ui/floating";
 import {
   normalizeChecklist,
   CHECKLIST_MAX_ITEMS,
@@ -678,97 +681,92 @@ export function TaskModal({
             properties rather than a wall of fields. */}
         <div className="rounded-lg border border-border divide-y divide-border">
           <PropRow label="Status">
-            <select
+            <Select
               value={status}
               disabled={!canManage}
-              onChange={(e) => setStatus(e.target.value as TaskStatus)}
-              className={PROP_CONTROL}
-            >
-              {TASK_STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {TASK_STATUS_LABELS[s]}
-                </option>
-              ))}
-            </select>
+              onChange={(value) => setStatus(value as TaskStatus)}
+              options={TASK_STATUSES.map((s) => ({ value: s, label: TASK_STATUS_LABELS[s] }))}
+              buttonClassName={PROP_CONTROL}
+            />
           </PropRow>
 
           <PropRow label="Priority">
-            <select
+            <Select
               value={priority}
               disabled={!canManage}
-              onChange={(e) => setPriority(e.target.value as Priority)}
-              className={PROP_CONTROL}
-            >
-              {PRIORITIES.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </select>
+              onChange={(value) => setPriority(value as Priority)}
+              options={PRIORITIES.map((p) => ({ value: p, label: p }))}
+              buttonClassName={PROP_CONTROL}
+            />
           </PropRow>
 
           <PropRow label="Epic">
-            <select
+            <Select
               value={epicId}
               disabled={!canManage}
-              onChange={(e) => changeEpic(e.target.value)}
-              className={PROP_CONTROL}
-            >
-              <option value="">No epic</option>
-              {options.epics.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.title}
-                </option>
-              ))}
-            </select>
+              onChange={(value) => changeEpic(value)}
+              placeholder="No epic"
+              options={[
+                { value: "", label: "No epic" },
+                ...options.epics.map((e) => ({ value: e.id, label: e.title })),
+              ]}
+              buttonClassName={PROP_CONTROL}
+            />
           </PropRow>
 
           <PropRow label="Sprint">
-            <select
+            <Select
               value={sprintId}
               disabled={!canManage || epicSprints.length === 0}
-              onChange={(e) => setSprintId(e.target.value)}
-              className={PROP_CONTROL}
-            >
-              <option value="">
-                {epicSprints.length === 0
+              onChange={(value) => setSprintId(value)}
+              placeholder={
+                epicSprints.length === 0
                   ? epicId
                     ? "No sprints in this epic"
                     : "Pick an epic first"
-                  : "None"}
-              </option>
-              {epicSprints.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                  {s.status === "Closed" ? " (closed)" : ""}
-                </option>
-              ))}
-            </select>
+                  : "None"
+              }
+              options={[
+                {
+                  value: "",
+                  label:
+                    epicSprints.length === 0
+                      ? epicId
+                        ? "No sprints in this epic"
+                        : "Pick an epic first"
+                      : "None",
+                },
+                ...epicSprints.map((s) => ({
+                  value: s.id,
+                  label: `${s.name}${s.status === "Closed" ? " (closed)" : ""}`,
+                })),
+              ]}
+              buttonClassName={PROP_CONTROL}
+            />
           </PropRow>
 
           <PropRow label="Domain">
-            <select
+            <Select
               value={domainId}
               disabled={!canManage}
-              onChange={(e) => setDomainId(e.target.value)}
-              className={PROP_CONTROL}
-            >
-              <option value="">—</option>
-              {options.domains.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                </option>
-              ))}
-            </select>
+              onChange={(value) => setDomainId(value)}
+              placeholder="—"
+              options={[
+                { value: "", label: "—" },
+                ...options.domains.map((d) => ({ value: d.id, label: d.name })),
+              ]}
+              buttonClassName={PROP_CONTROL}
+            />
           </PropRow>
 
           <PropRow label="Deadline">
-            <input
-              type="date"
+            <DateField
+              mode="date"
               value={dueDate}
               disabled={!canManage}
-              onChange={(e) => setDueDate(e.target.value)}
-              className={PROP_CONTROL}
+              onChange={(value) => setDueDate(value)}
+              className="w-full"
+              ariaLabel="Deadline"
             />
           </PropRow>
 
@@ -790,8 +788,7 @@ export function TaskModal({
             </span>
             {checklist.map((item, i) => (
               <div key={i} className="flex items-center gap-2">
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={item.done}
                   disabled={!canManage}
                   onChange={() => void toggleChecklistItem(i)}
@@ -837,26 +834,19 @@ export function TaskModal({
 
         {isCreate && canManage && githubRepos.length > 0 && (
           <div className="flex flex-col gap-2 pt-2 border-t border-border">
-            <label className="flex items-center gap-2 text-sm text-foreground">
-              <input
-                type="checkbox"
-                checked={githubEnabled}
-                onChange={(e) => setGithubEnabled(e.target.checked)}
-              />
-              Create GitHub issue
-            </label>
+            <Checkbox
+              label="Create GitHub issue"
+              checked={githubEnabled}
+              onChange={(e) => setGithubEnabled(e.target.checked)}
+              className="text-sm text-foreground"
+            />
             {githubEnabled && (
-              <select
+              <Select
                 value={githubRepo}
-                onChange={(e) => setGithubRepo(e.target.value)}
-                className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
-              >
-                {githubRepos.map((r) => (
-                  <option key={r} value={r}>
-                    {r}
-                  </option>
-                ))}
-              </select>
+                onChange={(value) => setGithubRepo(value)}
+                options={githubRepos.map((r) => ({ value: r, label: r }))}
+                buttonClassName="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+              />
             )}
           </div>
         )}
@@ -886,17 +876,12 @@ export function TaskModal({
               </div>
             ) : linkOpen ? (
               <div className="flex flex-col gap-2">
-                <select
+                <Select
                   value={linkRepo}
-                  onChange={(e) => setLinkRepo(e.target.value)}
-                  className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
-                >
-                  {githubRepos.map((r) => (
-                    <option key={r} value={r}>
-                      {r}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(value) => setLinkRepo(value)}
+                  options={githubRepos.map((r) => ({ value: r, label: r }))}
+                  buttonClassName="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                />
                 <div className="flex items-center gap-2">
                   <Button
                     variant="secondary"
@@ -1000,20 +985,18 @@ export function TaskModal({
                 ) &&
                   (attachOpen ? (
                     <span className="flex items-center gap-2">
-                      <select
+                      <Select
                         value={attachFileId}
-                        onChange={(e) => setAttachFileId(e.target.value)}
-                        className="px-2 py-1 text-xs border border-border rounded-md bg-background text-foreground"
-                      >
-                        <option value="">Choose a file…</option>
-                        {options.projectFiles
-                          .filter((f) => !artifacts.some((a) => a.id === f.id))
-                          .map((f) => (
-                            <option key={f.id} value={f.id}>
-                              {f.title}
-                            </option>
-                          ))}
-                      </select>
+                        onChange={(value) => setAttachFileId(value)}
+                        placeholder="Choose a file…"
+                        options={[
+                          { value: "", label: "Choose a file…" },
+                          ...options.projectFiles
+                            .filter((f) => !artifacts.some((a) => a.id === f.id))
+                            .map((f) => ({ value: f.id, label: f.title })),
+                        ]}
+                        buttonClassName="px-2 py-1 text-xs border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                      />
                       <button
                         type="button"
                         onClick={() => void handleAttachArtifact()}
@@ -1268,21 +1251,21 @@ function AssigneePicker({
   return (
     <div className="max-h-32 overflow-y-auto border border-border rounded-md bg-background p-1.5 flex flex-col gap-0.5">
       {all.map((m) => (
-        <label
+        <Checkbox
           key={m.id}
-          className={`flex items-center gap-2 px-1.5 py-1 text-sm rounded ${
+          checked={selected.includes(m.id)}
+          disabled={disabled}
+          onChange={() => toggle(m.id)}
+          label={
+            <span className="flex items-center gap-2">
+              <Avatar photoUrl={m.photoUrl} name={m.name} size="xs" className="shrink-0" />
+              <span className="text-foreground">{m.name}</span>
+            </span>
+          }
+          className={`px-1.5 py-1 text-sm rounded ${
             disabled ? "" : "hover:bg-muted/40 cursor-pointer"
           }`}
-        >
-          <input
-            type="checkbox"
-            checked={selected.includes(m.id)}
-            disabled={disabled}
-            onChange={() => toggle(m.id)}
-          />
-          <Avatar photoUrl={m.photoUrl} name={m.name} size="xs" className="shrink-0" />
-          <span className="text-foreground">{m.name}</span>
-        </label>
+        />
       ))}
     </div>
   );

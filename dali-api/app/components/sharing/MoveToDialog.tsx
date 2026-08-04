@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { buttonClasses } from "~/components/ui/Button";
-import { SelectMenu, type SelectMenuOption } from "~/components/ui/SelectMenu";
+import { Select, type SelectOption } from "~/components/ui/floating";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
 
@@ -63,7 +63,7 @@ export function MoveToDialog({
 
   const selectedDest = destinations.find((d) => (d.type === "Lab" ? "lab" : d.id) === destKey);
 
-  const destOptions: SelectMenuOption<string>[] = destinations.map((d) => {
+  const destOptions: SelectOption<string>[] = destinations.map((d) => {
     const key = d.type === "Lab" ? "lab" : d.id!;
     return {
       value: key,
@@ -72,7 +72,7 @@ export function MoveToDialog({
       description: key === currentKey ? "Where it is now" : undefined,
     };
   });
-  const folderOptions: SelectMenuOption<string>[] = [
+  const folderOptions: SelectOption<string>[] = [
     { value: "", label: "No folder (top level)" },
     ...(selectedDest?.folders ?? []).map((f) => ({ value: f.id, label: f.title })),
   ];
@@ -131,7 +131,7 @@ export function MoveToDialog({
       <div className="flex flex-col gap-3">
         <label className="flex flex-col gap-1 text-xs">
           <span className="font-medium text-muted-foreground">Destination</span>
-          <SelectMenu
+          <Select
             value={destKey}
             options={destOptions}
             ariaLabel="Destination"
@@ -146,7 +146,7 @@ export function MoveToDialog({
         {selectedDest && selectedDest.folders.length > 0 && (
           <label className="flex flex-col gap-1 text-xs">
             <span className="font-medium text-muted-foreground">Folder (optional)</span>
-            <SelectMenu
+            <Select
               value={folderId}
               options={folderOptions}
               ariaLabel="Folder"

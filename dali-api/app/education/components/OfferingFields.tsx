@@ -1,5 +1,9 @@
 // Shared field set for the create + edit offering forms. Values are posted as
 // plain form fields and parsed server-side in runOfferingAction.
+import { Checkbox } from "~/components/ui/Checkbox";
+import { DateField } from "~/components/ui/DateField";
+
+import { Select, type SelectOption } from "~/components/ui/floating";
 
 type Values = {
   type?: "Miniseries" | "Workshop";
@@ -38,15 +42,16 @@ export function OfferingFields({
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="block">
           <span className={LABEL}>Type</span>
-          <select
+          <Select
             name="type"
             defaultValue={values.type ?? "Workshop"}
             disabled={typeLocked}
-            className={INPUT}
-          >
-            <option value="Workshop">Workshop (single session, RSVP)</option>
-            <option value="Miniseries">Miniseries (multi-session, reviewed)</option>
-          </select>
+            options={[
+              { value: "Workshop", label: "Workshop (single session, RSVP)" },
+              { value: "Miniseries", label: "Miniseries (multi-session, reviewed)" },
+            ]}
+            buttonClassName={INPUT}
+          />
         </label>
         <label className="block">
           <span className={LABEL}>Capacity</span>
@@ -76,57 +81,57 @@ export function OfferingFields({
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="block">
           <span className={LABEL}>Registration opens</span>
-          <input
-            type="datetime-local"
+          <DateField
+            mode="datetime-local"
             name="registrationOpensAt"
             required
             defaultValue={toDatetimeLocal(values.registrationOpensAt)}
-            className={INPUT}
+            className="w-full"
+            ariaLabel="Registration opens"
           />
         </label>
         <label className="block">
           <span className={LABEL}>Registration closes</span>
-          <input
-            type="datetime-local"
+          <DateField
+            mode="datetime-local"
             name="registrationClosesAt"
             required
             defaultValue={toDatetimeLocal(values.registrationClosesAt)}
-            className={INPUT}
+            className="w-full"
+            ariaLabel="Registration closes"
           />
         </label>
         <label className="block">
           <span className={LABEL}>Starts</span>
-          <input
-            type="datetime-local"
+          <DateField
+            mode="datetime-local"
             name="startsAt"
             required
             defaultValue={toDatetimeLocal(values.startsAt)}
-            className={INPUT}
+            className="w-full"
+            ariaLabel="Starts"
           />
         </label>
         <label className="block">
           <span className={LABEL}>Ends</span>
-          <input
-            type="datetime-local"
+          <DateField
+            mode="datetime-local"
             name="endsAt"
             required
             defaultValue={toDatetimeLocal(values.endsAt)}
-            className={INPUT}
+            className="w-full"
+            ariaLabel="Ends"
           />
         </label>
       </div>
 
-      <label className="flex items-center gap-2 text-sm text-foreground">
-        <input
-          type="checkbox"
-          name="requiresReview"
-          value="true"
-          defaultChecked={values.requiresReview ?? false}
-          className="rounded border-border"
-        />
-        Applications need instructor review (uncheck for RSVP auto-approval up
-        to capacity)
-      </label>
+      <Checkbox
+        name="requiresReview"
+        value="true"
+        defaultChecked={values.requiresReview ?? false}
+        label="Applications need instructor review (uncheck for RSVP auto-approval up to capacity)"
+        className="text-sm text-foreground"
+      />
     </>
   );
 }
