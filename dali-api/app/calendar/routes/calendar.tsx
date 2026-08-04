@@ -2242,11 +2242,14 @@ function dayHourToLocal(dayDateUtc: Date, hour: number): string {
 
 // Small fixed palette for coloring Timesheet blocks by role — accent-coral is
 // reserved for "other calendars" context blocks, so it's excluded here.
+// All four fills are light brand accents, so they take the same dark ink every
+// other event block uses — white washed out on the green and pink, and
+// `text-foreground` inverted to near-white on the yellow in dark mode.
 const ROLE_COLOR_PALETTE: { className: string; borderClassName: string; dot: string }[] = [
-  { className: "bg-accent-teal text-white", borderClassName: "border-accent-teal", dot: "var(--color-accent-teal)" },
-  { className: "bg-accent-green text-white", borderClassName: "border-accent-green", dot: "var(--color-accent-green)" },
-  { className: "bg-accent-pink text-white", borderClassName: "border-accent-pink", dot: "var(--color-accent-pink)" },
-  { className: "bg-accent-yellow text-foreground", borderClassName: "border-accent-yellow", dot: "var(--color-accent-yellow)" },
+  { className: `bg-accent-teal ${EVENT_TEXT}`, borderClassName: "border-accent-teal", dot: "var(--color-accent-teal)" },
+  { className: `bg-accent-green ${EVENT_TEXT}`, borderClassName: "border-accent-green", dot: "var(--color-accent-green)" },
+  { className: `bg-accent-pink ${EVENT_TEXT}`, borderClassName: "border-accent-pink", dot: "var(--color-accent-pink)" },
+  { className: `bg-accent-yellow ${EVENT_TEXT}`, borderClassName: "border-accent-yellow", dot: "var(--color-accent-yellow)" },
 ];
 
 // Deterministic hash of a role bucket key into the palette — stable across

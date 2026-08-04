@@ -52,11 +52,18 @@ const EPIC_BAR: Record<EpicStatus, string> = {
   Cancelled: "bg-destructive/70",
 };
 
+// Solid, mode-invariant fills. The earlier translucent versions composited
+// against the page wash, so in light mode Planned and Closed came out pale
+// enough that the white sprint name on top disappeared. These three tokens
+// (brand neutral + the teal pair) hold their value in dark mode, so one dark
+// ink reads on all of them either way — see SPRINT_LABEL_INK.
 const SPRINT_BAR: Record<SprintStatus, string> = {
-  Planned: "bg-muted-foreground/50 ring-1 ring-inset ring-border/60",
+  Planned: "bg-brand-gray ring-1 ring-inset ring-border/60",
   Active: "bg-accent-teal",
-  Closed: "bg-accent-teal/55",
+  Closed: "bg-accent-teal-light",
 };
+
+const SPRINT_LABEL_INK = "text-navy-deep";
 
 const EPIC_LABEL: Record<EpicStatus, string> = {
   Backlog: "Backlog",
@@ -624,11 +631,12 @@ export function EpicsTimeline({
                                 },
                               ]}
                             >
-                              {/* Name printed on the bar itself; white + soft
-                                  shadow keeps it legible on every fill, and it
-                                  clips (rather than wraps) when the sprint is
-                                  too short to fit — the full name stays on hover. */}
-                              <span className="pointer-events-none block w-full truncate px-1.5 text-[10px] font-medium leading-none text-white [text-shadow:0_1px_1.5px_rgba(0,0,0,0.4)]">
+                              {/* Name printed on the bar itself. It clips
+                                  (rather than wraps) when the sprint is too
+                                  short to fit — the full name stays on hover. */}
+                              <span
+                                className={`pointer-events-none block w-full truncate px-1.5 text-[10px] font-medium leading-none ${SPRINT_LABEL_INK}`}
+                              >
                                 {s.name}
                               </span>
                             </HoverBar>

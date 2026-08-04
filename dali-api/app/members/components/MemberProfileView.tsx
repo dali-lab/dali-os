@@ -210,8 +210,11 @@ export function MemberProfileView({
                   Alumni
                 </span>
               )}
+              {/* accent-green is an illustration tint, not an ink — as a label
+                  on its own wash it was the faintest of the three pills. Keep
+                  the tint, set the text in foreground. */}
               {member.gradProgram && (
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-accent-green/15 text-accent-green">
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-accent-green/15 text-foreground">
                   {member.gradProgram}
                 </span>
               )}
