@@ -22,6 +22,7 @@ import { Checkbox } from "~/components/ui/Checkbox";
 import { EditableSection } from "~/components/EditableSection";
 import { PageIcon } from "~/components/PageIcon";
 import { FavoriteStar } from "~/components/FavoriteStar";
+import { FavoriteRouteButton } from "~/components/FavoriteRouteButton";
 import { favoritePageIds } from "~/lib/user-pages.server";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { PresenceBar } from "~/components/collab/PresenceBar";
@@ -1445,10 +1446,15 @@ export default function ProjectDetail() {
             {TAB_LABELS[t]}
           </button>
         ))}
+        {/* Favourite this project hub. The row's first right-aligned item, so
+            the gear keeps its place beside it. */}
+        <span className="ml-auto flex items-center self-center">
+          <FavoriteRouteButton label={project.name} />
+        </span>
         {/* Scope/challenge config lives behind this gear, visible only to
             Core/Admin/Staff. */}
         {canViewScope && (
-          <Tooltip label="Project settings" className="ml-auto -mb-px">
+          <Tooltip label="Project settings" className="-mb-px">
             <button
               type="button"
               onClick={() => setScopeSettingsOpen(true)}

@@ -2,6 +2,7 @@ import { Link, useMatches } from "react-router";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { PageDocButton } from "~/components/page-docs/PageDocButton";
+import { FavoriteRouteButton } from "~/components/FavoriteRouteButton";
 
 // Horizontal sub-navigation between an area's sibling surfaces. Used where a
 // sidebar area collapsed to a single entry: the area's landing page carries
@@ -82,6 +83,10 @@ export function AreaPillNav({
   // A lone tab is pure noise — the page is already the only destination.
   if (items.length <= 1) return null;
 
+  // What the favourite gets called: the tab you're on, which is the thing being
+  // starred. Falls back to the first tab when nothing is marked active.
+  const activeLabel = (items.find((i) => i.active) ?? items[0]).label;
+
   // The pill row is the natural home for a page-level action, so the "Docs"
   // icon rides the row's right edge rather than floating in a row of its own
   // above it. It's the last flex item pushed right by ml-auto, so it sits at
@@ -101,11 +106,10 @@ export function AreaPillNav({
           <SubtabLabel label={item.label} icon={item.icon} />
         </Link>
       ))}
-      {hasDoc && (
-        <span className="ml-auto flex items-center self-center pl-2 pr-2">
-          <PageDocButton />
-        </span>
-      )}
+      <span className="ml-auto flex items-center gap-1 self-center pl-2 pr-2">
+        <FavoriteRouteButton label={activeLabel} />
+        {hasDoc && <PageDocButton />}
+      </span>
     </nav>
   );
 }
@@ -139,11 +143,10 @@ export function UnderlineTabButtons({
           <SubtabLabel label={item.label} icon={item.icon} />
         </button>
       ))}
-      {hasDoc && (
-        <span className="ml-auto flex items-center self-center pl-2 pr-2">
-          <PageDocButton />
-        </span>
-      )}
+      <span className="ml-auto flex items-center gap-1 self-center pl-2 pr-2">
+        <FavoriteRouteButton label={(items.find((i) => i.active) ?? items[0])?.label ?? ""} />
+        {hasDoc && <PageDocButton />}
+      </span>
     </div>
   );
 }

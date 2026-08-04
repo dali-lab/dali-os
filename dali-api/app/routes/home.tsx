@@ -12,6 +12,7 @@ import {
   FileText,
   CalendarClock,
   GraduationCap,
+  Compass,
   MapPin,
   Star,
   UserRound,
@@ -26,6 +27,7 @@ import { listFavoritesAndRecents, type FavoritePage } from "~/lib/user-pages.ser
 import { ProjectIcon } from "~/components/ProjectIcon";
 import { PageIcon } from "~/components/PageIcon";
 import { FavoriteStar } from "~/components/FavoriteStar";
+import { FavoriteRouteButton } from "~/components/FavoriteRouteButton";
 import { listedFormsFor, type ListedForm } from "~/forms/lib/public-form";
 import { listCatalog, registrationOpen } from "~/education/lib/offerings.server";
 import { listUpcomingSessionsForUser } from "~/education/lib/schedule.server";
@@ -490,17 +492,28 @@ function PageRow({ page, onChanged }: { page: FavoritePage; onChanged: () => voi
   return (
     // Link + star are siblings: the star must not navigate.
     <div className="group flex items-center gap-1 rounded-md hover:bg-muted/50 transition-colors">
-      <a
-        href={`/documents/${page.id}`}
-        className="flex flex-1 min-w-0 items-center gap-2 px-2 py-1.5 text-sm"
-      >
-        <PageIcon iconEmoji={page.iconEmoji} />
+      <a href={page.href} className="flex flex-1 min-w-0 items-center gap-2 px-2 py-1.5 text-sm">
+        {/* Routes aren't documents, so they don't get the page glyph. */}
+        {page.isRoute ? (
+          <Compass className="w-3.5 h-3.5 shrink-0 text-muted-foreground" aria-hidden />
+        ) : (
+          <PageIcon iconEmoji={page.iconEmoji} />
+        )}
         <span className="truncate text-foreground">{page.title || "Untitled"}</span>
       </a>
       {/* Recents show a hollow star on hover — a way to keep the page without
           hunting for it — while a favourite always shows its filled one. */}
       <span className={`pr-2 ${page.favorited ? "" : "opacity-0 group-hover:opacity-100 focus-within:opacity-100"}`}>
-        <FavoriteStar pageId={page.id} favorited={page.favorited} onToggled={onChanged} />
+        {page.isRoute ? (
+          <FavoriteRouteButton
+            href={page.href}
+            label={page.title}
+            favorited={page.favorited}
+            onToggled={onChanged}
+          />
+        ) : (
+          <FavoriteStar pageId={page.id} favorited={page.favorited} onToggled={onChanged} />
+        )}
       </span>
     </div>
   );

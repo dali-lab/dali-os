@@ -214,7 +214,7 @@ model User {
   // ─── Phase 1: page-tree back-relations ────────────────────────────────────
   createdPages    Page[] @relation("PageCreatedBy")
   lastEditedPages Page[] @relation("PageLastEditedBy")
-  pageStates      UserPage[]
+  favorites       UserFavorite[]
 
   // ─── Phase 1: notification back-relations ─────────────────────────────────
   notificationPreferences NotificationPreference[]
@@ -3860,7 +3860,7 @@ model Page {
   linkPermission SharePermission @default(View)
 
   shares PageShare[]
-  userStates UserPage[]
+  favorites UserFavorite[]
 
   // Pinned to the top of the project's Documents block. Timestamp so pins can
   // be ordered most-recent-first. Null = not pinned. (Distinct from the
@@ -3975,20 +3975,36 @@ model PageShare {
 //
 // One row per user per page, upserted — a cursor, not a history, so it stays
 // bounded by (people × pages they've touched) and there is nothing to prune.
-model UserPage {
-  id          String    @id @default(cuid())
-  userId      String
-  pageId      String
+model UserFavorite {
+  id     String @id @default(cuid())
+  userId String
+
+  // Exactly one target is set.
+  //
+  // `pageId` — a document. FK'd, so a deleted page takes its favourites with
+  // it and the title always renders live rather than from a stale copy.
+  //
+  // `href` — anywhere else in the app that isn't a Page: a project hub, a
+  // subtab. There is no row to point at, so the destination is the URL itself
+  // and `label` is a snapshot taken when it was starred. That snapshot can go
+  // stale (a renamed project keeps its old label) — the alternative is
+  // resolving arbitrary routes to titles on every home load, which would mean
+  // teaching this module every route in the app.
+  pageId String?
+  href   String?
+  label  String?
+
   // Null = not favourited. Timestamped so pins order most-recent-first.
   favoritedAt DateTime?
-  // Null = never opened (a page can be favourited without a visit row of its
-  // own if it was pinned from a list).
-  visitedAt   DateTime?
+  // Null = never opened. Only pages record visits — "recently opened" is about
+  // documents, and every route would drown them out.
+  visitedAt DateTime?
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  page Page @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  page Page? @relation(fields: [pageId], references: [id], onDelete: Cascade)
 
   @@unique([userId, pageId])
+  @@unique([userId, href])
   @@index([userId, favoritedAt])
   @@index([userId, visitedAt])
 }
