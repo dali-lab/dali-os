@@ -8,7 +8,7 @@ import {
   type RefObject,
 } from "react";
 import { useNavigate, useRevalidator } from "react-router";
-import { Copy, FileDown, History, LayoutTemplate, Link, MessageSquare, MoreHorizontal, Printer, Search, Upload, Users } from "lucide-react";
+import { Copy, FileDown, FolderInput, History, LayoutTemplate, Link, MessageSquare, MoreHorizontal, Printer, Search, Upload, Users } from "lucide-react";
 import { DocEditor, type TocHeading } from "~/components/doc";
 import type { DocEditorInstance } from "~/components/doc/schema/build";
 import { DocCommentsPanel, useDocThreadCounts } from "~/components/doc/comments";
@@ -23,6 +23,7 @@ import { DocToc } from "./doc-chrome/DocToc";
 import { relativeTime } from "~/lib/relative-time";
 import { Tooltip } from "~/components/ui/IconButton";
 import { ShareDialog } from "~/components/sharing/ShareDialog";
+import { MoveToDialog } from "~/components/sharing/MoveToDialog";
 import { FindReplaceBar } from "./doc/find";
 import {
   DEFAULT_TYPOGRAPHY,
@@ -71,6 +72,7 @@ export function DocumentEditor({
   aiEnabled = false,
   canManageAccess = false,
   workspaceType,
+  workspaceId = null,
 }: {
   pageId: string;
   initialTitle: string;
@@ -104,8 +106,10 @@ export function DocumentEditor({
   // staff, the note owner, an instructor, or a Full-access grantee.
   canManageAccess?: boolean;
   // Workspace the page lives in — drives the Share dialog's per-workspace copy
-  // (lab-access toggle, base-access line).
+  // (lab-access toggle, base-access line) and the "Move to…" picker's current
+  // location.
   workspaceType: string;
+  workspaceId?: string | null;
   // True when the server has an AI provider key configured — shows the AI slash items.
   aiEnabled?: boolean;
 }) {
@@ -127,6 +131,7 @@ export function DocumentEditor({
   const [panelFilter, setPanelFilter] = useState<"open" | "resolved">("open");
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [accessOpen, setAccessOpen] = useState(false);
+  const [moveOpen, setMoveOpen] = useState(false);
   // Optimistic local reflection of isTemplate — revalidator syncs server truth.
   const [templateMarked, setTemplateMarked] = useState(isTemplate);
   const [backlinksOpen, setBacklinksOpen] = useState(false);
@@ -633,6 +638,19 @@ export function DocumentEditor({
               <Copy className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
               Duplicate
             </button>
+            {canManageAccess && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMoveOpen(true);
+                  setMoreMenuOpen(false);
+                }}
+                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground hover:bg-muted"
+              >
+                <FolderInput className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                Move to…
+              </button>
+            )}
             {canEdit && (
               <button
                 type="button"
@@ -980,6 +998,16 @@ export function DocumentEditor({
           open={accessOpen}
           onClose={() => setAccessOpen(false)}
           onChanged={() => revalidator.revalidate()}
+        />
+      )}
+      {canManageAccess && (
+        <MoveToDialog
+          pageId={pageId}
+          title={initialTitle}
+          current={{ type: workspaceType, id: workspaceId }}
+          open={moveOpen}
+          onClose={() => setMoveOpen(false)}
+          onMoved={() => revalidator.revalidate()}
         />
       )}
     </div>

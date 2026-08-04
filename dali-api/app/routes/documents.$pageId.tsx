@@ -276,6 +276,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     pageId: page.id,
     title: page.title,
     workspaceType: page.workspaceType,
+    workspaceId: page.workspaceId,
     hubName,
     hubHref,
     hubIconEmoji,
@@ -305,6 +306,7 @@ export default function DocumentPage() {
     pageId,
     title,
     workspaceType,
+    workspaceId,
     tags,
     allTags,
     canEdit,
@@ -366,6 +368,7 @@ export default function DocumentPage() {
         canResolve={canResolve}
         canManageAccess={canManageAccess}
         workspaceType={workspaceType}
+        workspaceId={workspaceId}
         tags={tags}
         allTags={allTags}
         iconEmoji={iconEmoji}

@@ -25,6 +25,8 @@ type Context = {
   labRestricted: boolean;
   workspaceType: string;
   owner: { id: string; name: string; isYou: boolean } | null;
+  partnerVisible: boolean;
+  hasActivePartner: boolean;
 };
 
 // Full tiers for the per-person dropdown; general access never offers Full.
@@ -108,6 +110,8 @@ export function ShareDialog({
           labRestricted: d.context.labRestricted,
           workspaceType: d.context.page?.workspaceType ?? page.workspaceType,
           owner: d.context.owner ?? null,
+          partnerVisible: !!d.context.partnerVisible,
+          hasActivePartner: !!d.context.hasActivePartner,
         });
       }
       setShares(d.shares ?? []);
@@ -152,9 +156,33 @@ export function ShareDialog({
         labRestricted: d.context.labRestricted,
         workspaceType: d.context.page?.workspaceType ?? page.workspaceType,
         owner: d.context.owner ?? null,
+        partnerVisible: !!d.context.partnerVisible,
+        hasActivePartner: !!d.context.hasActivePartner,
       });
     }
     setShares(d.shares ?? []);
+  }
+
+  // Partner sharing is its own audience (the project's partner portal), not the
+  // lab/link "General access" — it posts to the existing per-project endpoint.
+  async function setPartnerVisible(next: boolean) {
+    setBusy(true);
+    setError(null);
+    const res = await fetch(`/api/pages/${page.id}/partner-visible`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ partnerVisible: next }),
+      credentials: "include",
+    })
+      .then((r) => r.json())
+      .catch(() => ({}));
+    setBusy(false);
+    if (res?.error) {
+      setError(res.error);
+      return;
+    }
+    await refresh();
+    onChanged?.();
   }
 
   async function copyLink() {
@@ -403,6 +431,29 @@ export function ShareDialog({
           )}
         </div>
       </div>
+
+      {/* Partners — a project's partner-portal audience, kept distinct from the
+          lab "General access" above (share-with-people vs external org). */}
+      {ctx?.workspaceType === "Project" && ctx.hasActivePartner && (
+        <div className="flex flex-col gap-2 mb-4 border-t border-border pt-4">
+          <h3 className="text-xs font-semibold text-muted-foreground">Partners</h3>
+          <label className="flex items-start gap-3 rounded-md border border-border px-3 py-2 cursor-pointer">
+            <input
+              type="checkbox"
+              className="mt-0.5 accent-accent-coral"
+              checked={ctx.partnerVisible}
+              disabled={busy}
+              onChange={(e) => void setPartnerVisible(e.target.checked)}
+            />
+            <span className="flex flex-col min-w-0">
+              <span className="text-sm font-medium text-foreground">Visible to partners on this project</span>
+              <span className="text-xs text-muted-foreground">
+                Partner accounts on this project can open and comment on it in the partner portal.
+              </span>
+            </span>
+          </label>
+        </div>
+      )}
 
       <div className="flex items-center justify-between pt-1">
         <button

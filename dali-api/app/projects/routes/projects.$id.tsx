@@ -12,8 +12,9 @@ import {
   useSubmit,
   type ShouldRevalidateFunctionArgs,
 } from "react-router";
-import { CalendarDays, CalendarX, ChartNoAxesGantt, Check, Globe, Handshake, History, List, Pencil, Pin, X, Settings, Folder, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink } from "lucide-react";
+import { CalendarDays, CalendarX, ChartNoAxesGantt, Check, Globe, Handshake, History, List, Pencil, Pin, X, Settings, Folder, FolderInput, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink } from "lucide-react";
 import { Modal, ModalHeader } from "~/components/Modal";
+import { MoveToDialog } from "~/components/sharing/MoveToDialog";
 import { useDialog, useConfirmSubmit } from "~/components/ui/dialog";
 import { Tooltip } from "~/components/ui/IconButton";
 import { EditableSection } from "~/components/EditableSection";
@@ -3142,6 +3143,8 @@ function DocumentsBlock({
   const revalidator = useRevalidator();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // "Move to…" dialog state — tracks which doc the user wants to move.
+  const [moveDoc, setMoveDoc] = useState<{ id: string; title: string } | null>(null);
   // Folders default open so the (usually few) default folders' contents are
   // visible without an extra click; new folders created this session are
   // added here too (see createFolder).
@@ -3463,6 +3466,18 @@ function DocumentsBlock({
               </button>
             </Tooltip>
           )}
+          {canEdit && !doc.isSystem && (
+            <Tooltip label="Move to…">
+              <button
+                type="button"
+                onClick={() => setMoveDoc({ id: doc.id, title: doc.title })}
+                aria-label="Move document"
+                className="text-muted-foreground hover:text-foreground disabled:opacity-60"
+              >
+                <FolderInput className="w-3.5 h-3.5" />
+              </button>
+            </Tooltip>
+          )}
           {canEdit && (
             <Tooltip label="Delete document">
               <button
@@ -3664,6 +3679,18 @@ function DocumentsBlock({
           )}
         </div>
       )}
+
+      <MoveToDialog
+        open={!!moveDoc}
+        pageId={moveDoc?.id ?? ""}
+        title={moveDoc?.title ?? ""}
+        current={{ type: "Project", id: projectId }}
+        onClose={() => setMoveDoc(null)}
+        onMoved={() => {
+          setMoveDoc(null);
+          revalidator.revalidate();
+        }}
+      />
     </section>
   );
 }

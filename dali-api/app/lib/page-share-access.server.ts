@@ -116,6 +116,9 @@ export type PageShareManagerContext = {
   partnerVisible: boolean;
   publicVisible: boolean;
   studentEditable: boolean;
+  // True only for a Project doc whose project has an active partner — gates the
+  // dialog's "Partners" section (there's nothing to share with otherwise).
+  hasActivePartner: boolean;
 };
 
 const MANAGE_SELECT = {
@@ -179,6 +182,16 @@ export async function requirePageShareManager(
     }
   }
 
+  let hasActivePartner = false;
+  if (page.workspaceType === "Project" && page.workspaceId) {
+    const { activeProjectPartnerWhere } = await import("~/partners/lib/partner-access");
+    hasActivePartner =
+      (await prisma.projectPartner.findFirst({
+        where: { projectId: page.workspaceId, ...activeProjectPartnerWhere() },
+        select: { id: true },
+      })) !== null;
+  }
+
   return {
     page: {
       id: page.id,
@@ -187,6 +200,7 @@ export async function requirePageShareManager(
       workspaceId: page.workspaceId,
     },
     owner,
+    hasActivePartner,
     linkAccess: page.linkAccess,
     linkPermission: page.linkPermission,
     labRestricted: page.labRestricted,
