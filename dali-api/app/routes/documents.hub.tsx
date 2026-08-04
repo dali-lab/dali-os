@@ -563,18 +563,26 @@ export default function DocumentsHub() {
               }
             : undefined
         }
-        onDragEnd={draggable ? () => setDragDocId(null) : undefined}
+        onDragEnd={
+          draggable
+            ? () => {
+                setDragDocId(null);
+                setDropTarget(null);
+              }
+            : undefined
+        }
         onDragOver={
           dragDocId && dragDocId !== doc.id
             ? (e) => {
                 e.preventDefault();
+                // Deepest zone under the cursor wins — without this the event
+                // bubbles and every ancestor also claims the target, so the drop
+                // indicator oscillates between levels.
+                e.stopPropagation();
                 e.dataTransfer.dropEffect = "move";
                 if (dropTarget !== doc.id) setDropTarget(doc.id);
               }
             : undefined
-        }
-        onDragLeave={
-          dragDocId ? () => setDropTarget((t) => (t === doc.id ? null : t)) : undefined
         }
         onDrop={
           dragDocId && dragDocId !== doc.id
@@ -686,13 +694,11 @@ export default function DocumentsHub() {
             isDropZone && dragDocId
               ? (e) => {
                   e.preventDefault();
+                  e.stopPropagation();
                   e.dataTransfer.dropEffect = "move";
                   if (dropTarget !== doc.id) setDropTarget(doc.id);
                 }
               : undefined
-          }
-          onDragLeave={
-            isDropZone ? () => setDropTarget((t) => (t === doc.id ? null : t)) : undefined
           }
           onDrop={
             isDropZone && dragDocId
@@ -817,14 +823,14 @@ export default function DocumentsHub() {
             onDragOver={
               labCanManage && dragDocId
                 ? (e) => {
+                    // Only fires when the cursor is over the tree's own empty
+                    // space — child rows stopPropagation, so this is the "drop
+                    // at the lab top level" zone.
                     e.preventDefault();
                     e.dataTransfer.dropEffect = "move";
                     if (dropTarget !== "root") setDropTarget("root");
                   }
                 : undefined
-            }
-            onDragLeave={
-              labCanManage ? () => setDropTarget((t) => (t === "root" ? null : t)) : undefined
             }
             onDrop={
               labCanManage && dragDocId
@@ -871,14 +877,10 @@ export default function DocumentsHub() {
           dragDocId
             ? (e) => {
                 e.preventDefault();
+                e.stopPropagation();
                 e.dataTransfer.dropEffect = "move";
                 if (dropTarget !== workspace.key) setDropTarget(workspace.key);
               }
-            : undefined
-        }
-        onDragLeave={
-          dragDocId
-            ? () => setDropTarget((t) => (t === workspace.key ? null : t))
             : undefined
         }
         onDrop={
