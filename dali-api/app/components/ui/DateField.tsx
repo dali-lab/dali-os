@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Calendar, ChevronLeft, ChevronRight, Clock } from "lucide-react";
 import { SelectMenu, type SelectMenuOption } from "~/components/ui/SelectMenu";
@@ -129,18 +129,22 @@ export function DateField({
     emit(build(mode, { ...base, hh, mm }));
   }
 
-  useLayoutEffect(() => {
-    if (!open || !triggerRef.current) return;
+  const reposition = useCallback(() => {
+    if (!triggerRef.current) return;
     const r = triggerRef.current.getBoundingClientRect();
     const minWidth = Math.max(r.width, 260);
     const left = Math.min(r.left, window.innerWidth - minWidth - 8);
     const top = r.bottom + 4;
     setPos({ top, left, minWidth });
-  }, [open]);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    reposition();
+  }, [open, reposition]);
 
   useEffect(() => {
     if (!open) return;
-    const close = () => setOpen(false);
     function onDown(e: MouseEvent) {
       const t = e.target as Node;
       if (triggerRef.current?.contains(t) || popRef.current?.contains(t)) return;
@@ -151,15 +155,17 @@ export function DateField({
     }
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
-    window.addEventListener("scroll", close, true);
-    window.addEventListener("resize", close);
+    // Keep the calendar pinned to the trigger while scrolling (e.g. inside a
+    // scrollable dialog) rather than closing it.
+    window.addEventListener("scroll", reposition, true);
+    window.addEventListener("resize", reposition);
     return () => {
       document.removeEventListener("mousedown", onDown);
       document.removeEventListener("keydown", onKey);
-      window.removeEventListener("scroll", close, true);
-      window.removeEventListener("resize", close);
+      window.removeEventListener("scroll", reposition, true);
+      window.removeEventListener("resize", reposition);
     };
-  }, [open]);
+  }, [open, reposition]);
 
   const minKey = min && parts(mode, min) ? min.slice(0, 10) : null;
   const maxKey = max && parts(mode, max) ? max.slice(0, 10) : null;
