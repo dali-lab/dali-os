@@ -7,6 +7,8 @@ vi.mock("~/lib/db", () => ({
     interview: { findUnique: vi.fn() },
     domainApplication: { findUnique: vi.fn() },
     epic: { findFirst: vi.fn() },
+    project: { findUnique: vi.fn() },
+    task: { findUnique: vi.fn() },
     page: { findUnique: vi.fn() },
     partnerApplication: { findUnique: vi.fn() },
     partnerUser: { findUnique: vi.fn() },
@@ -369,6 +371,49 @@ describe("authorizeCollabDoc", () => {
 
       mockPrisma.instructorAssignment.findFirst.mockResolvedValue({ id: "ia1" });
       expect(await authorizeCollabDoc("instr1", "edusubmission:s1:feedback")).toMatchObject(allowed());
+    });
+  });
+
+  describe("project description docs (project:{id}:description)", () => {
+    it("rejects when the project is not found", async () => {
+      mockPrisma.project.findUnique.mockResolvedValue(null);
+      expect(await authorizeCollabDoc("user1", "project:p1:description")).toMatchObject(denied());
+    });
+
+    it("rejects a non-member non-Core user", async () => {
+      mockPrisma.project.findUnique.mockResolvedValue({ id: "p1" });
+      expect(await authorizeCollabDoc("user1", "project:p1:description")).toMatchObject(denied());
+    });
+
+    it("allows a project member", async () => {
+      mockPrisma.project.findUnique.mockResolvedValue({ id: "p1" });
+      (isProjectMember as any).mockResolvedValue(true);
+      expect(await authorizeCollabDoc("user1", "project:p1:description")).toEqual(allowed());
+    });
+
+    it("allows Core", async () => {
+      mockPrisma.project.findUnique.mockResolvedValue({ id: "p1" });
+      (isCore as any).mockResolvedValue(true);
+      expect(await authorizeCollabDoc("user1", "project:p1:description")).toEqual(allowed());
+    });
+  });
+
+  describe("task description docs (task:{id}:description)", () => {
+    it("rejects when the task is not found", async () => {
+      mockPrisma.task.findUnique.mockResolvedValue(null);
+      expect(await authorizeCollabDoc("user1", "task:t1:description")).toMatchObject(denied());
+    });
+
+    it("rejects a non-member non-Core user", async () => {
+      mockPrisma.task.findUnique.mockResolvedValue({ projectId: "p1" });
+      expect(await authorizeCollabDoc("user1", "task:t1:description")).toMatchObject(denied());
+    });
+
+    it("allows a member of the task's project", async () => {
+      mockPrisma.task.findUnique.mockResolvedValue({ projectId: "p1" });
+      (isProjectMember as any).mockResolvedValue(true);
+      expect(await authorizeCollabDoc("user1", "task:t1:description")).toEqual(allowed());
+      expect(isProjectMember).toHaveBeenCalledWith("user1", "p1");
     });
   });
 

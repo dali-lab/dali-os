@@ -55,6 +55,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     ? await readDocAsBlocks(result.assignment.instructionsDocId)
     : null;
 
+  // Feedback is authored in a collab doc the student can't connect to; read
+  // the released blocks server-side once graded so they render read-only.
+  const feedbackContent =
+    result.submission?.gradedAt != null
+      ? await readDocAsBlocks(`edusubmission:${result.submission.id}:feedback`)
+      : null;
+
   const offering = await prisma.educationOffering.findUnique({
     where: { id: params.offeringId! },
     select: { title: true },
@@ -68,6 +75,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       ? {
           ...result.submission,
           files: (result.submission.files as { key: string; name: string }[]) ?? [],
+          feedbackContent,
         }
       : null,
     canSubmit: applicationId !== null,

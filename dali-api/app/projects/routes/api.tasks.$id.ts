@@ -131,7 +131,6 @@ export async function action({ request, params }: Route.ActionArgs) {
   const data: {
     dueAt?: Date | null;
     title?: string;
-    description?: string | null;
     priority?: Priority;
     domainId?: string | null;
     sprintId?: string | null;
@@ -152,10 +151,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
     data.title = trimmed;
   }
-  if ("description" in body) {
-    const trimmed = body.description?.trim() ?? "";
-    data.description = trimmed === "" ? null : trimmed;
-  }
+  // Task description is a live collab doc (task:{id}:description); its plaintext
+  // is mirrored to Task.description by the collab store hook, so it is not
+  // accepted here.
   if ("priority" in body && body.priority) {
     data.priority = body.priority;
   }
