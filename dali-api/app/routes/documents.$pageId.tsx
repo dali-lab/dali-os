@@ -7,6 +7,7 @@ import { parseSessionCookie } from "~/lib/cookies";
 import { fullName } from "~/lib/display";
 import { getPresenceUser } from "~/lib/presence-user";
 import { getPageAccess } from "~/lib/pageAccess.server";
+import { isFavorited, recordPageVisit } from "~/lib/user-pages.server";
 import { canManageSharing } from "~/lib/page-share-access.server";
 import { normalizePageTypography } from "~/lib/page-typography";
 import { DocumentEditor } from "~/components/DocumentEditor";
@@ -135,6 +136,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
   const { canEdit, canComment, canResolve } = access;
   if (!access.canView) throw new Response("Not found", { status: 404 });
+
+  // After the gate, so a 404 never lands in someone's recents. Detached — a
+  // failed bookkeeping write must not cost the reader their document.
+  recordPageVisit(auth.user.sub, page.id);
+  const favorited = await isFavorited(auth.user.sub, page.id);
 
   // Every workspace type now carries a shareable audience (named shares +
   // General access), so the Share button shows wherever the viewer may manage
@@ -287,6 +293,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     canComment,
     canResolve,
     canManageAccess,
+    favorited,
     collabToken,
     userName: presenceUser?.name ?? fallbackName,
     currentUserId: auth.user.sub,
@@ -309,6 +316,7 @@ export default function DocumentPage() {
     canComment,
     canResolve,
     canManageAccess,
+    favorited,
     collabToken,
     userName,
     currentUserId,
@@ -363,6 +371,7 @@ export default function DocumentPage() {
         canComment={canComment}
         canResolve={canResolve}
         canManageAccess={canManageAccess}
+        favorited={favorited}
         workspaceType={workspaceType}
         workspaceId={workspaceId}
         tags={tags}

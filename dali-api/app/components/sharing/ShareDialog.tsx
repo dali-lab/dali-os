@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link2, Users, X } from "lucide-react";
+import { Link2, User, Users, X } from "lucide-react";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { buttonClasses } from "~/components/ui/Button";
@@ -19,6 +19,7 @@ type Share = {
   principalId: string;
   permission: Permission;
   label: string;
+  memberCount?: number;
 };
 type Context = {
   linkAccess: LinkAccess;
@@ -229,7 +230,7 @@ export function ShareDialog({
       )}
 
       {/* Add people / groups */}
-      <div className="flex flex-col gap-2 mb-2">
+      <div className="flex flex-col gap-2.5 mb-6">
         <input
           ref={searchRef}
           type="search"
@@ -272,7 +273,7 @@ export function ShareDialog({
           </ul>
         )}
         {groups.length > 0 && (
-          <label className="flex flex-col gap-1 text-xs">
+          <label className="flex flex-col gap-1.5 text-xs">
             <span className="text-muted-foreground">Or add a group</span>
             <Select
               key={shares.length}
@@ -294,13 +295,13 @@ export function ShareDialog({
       </div>
 
       {/* People with access */}
-      <div className="flex flex-col gap-2 mb-5">
+      <div className="flex flex-col gap-2.5 mb-6">
         <h3 className="text-xs font-semibold text-muted-foreground">People with access</h3>
-        <p className="text-xs text-muted-foreground -mt-1">{ctx ? baseAccessLine(ctx) : "…"}</p>
-        <ul className="flex flex-col gap-1">
+        <p className="text-xs text-muted-foreground -mt-1.5">{ctx ? baseAccessLine(ctx) : "…"}</p>
+        <ul className="flex flex-col gap-1.5">
           {ctx?.owner && (
-            <li className="flex items-center gap-2 text-sm px-2.5 py-1.5 rounded-md border border-border bg-muted">
-              <Users className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+            <li className="flex items-center gap-2.5 text-sm px-3 py-2.5 rounded-md border border-border bg-muted">
+              <User className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
               <span className="flex-1 min-w-0 truncate text-foreground">
                 {ctx.owner.name}
                 {ctx.owner.isYou && <span className="text-muted-foreground"> (you)</span>}
@@ -315,10 +316,24 @@ export function ShareDialog({
             .map((s) => (
               <li
                 key={s.id}
-                className="flex items-center gap-2 text-sm px-2.5 py-1.5 rounded-md border border-border bg-muted"
+                className="flex items-center gap-2.5 text-sm px-3 py-2.5 rounded-md border border-border bg-muted"
               >
-                <Users className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                <span className="flex-1 min-w-0 truncate text-foreground">{s.label}</span>
+                {/* A person and a group are different kinds of grant, so they
+                    get different marks — one icon for both made a 500-person
+                    group read like a single colleague. */}
+                {s.principalType === "Group" ? (
+                  <Users className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                ) : (
+                  <User className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                )}
+                <span className="flex-1 min-w-0">
+                  <span className="block truncate text-foreground">{s.label}</span>
+                  {s.principalType === "Group" && s.memberCount !== undefined && (
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {s.memberCount === 1 ? "1 person" : `${s.memberCount} people`}
+                    </span>
+                  )}
+                </span>
                 <Select
                   value={s.permission}
                   options={PERMISSION_OPTIONS}
@@ -354,9 +369,9 @@ export function ShareDialog({
       </div>
 
       {/* General access (Google's row): audience + role, plus copy link */}
-      <div className="flex flex-col gap-2 mb-4 border-t border-border pt-4">
+      <div className="flex flex-col gap-2.5 mb-6 border-t border-border pt-5">
         <h3 className="text-xs font-semibold text-muted-foreground">General access</h3>
-        <div className="flex items-start gap-3 rounded-md border border-border px-3 py-2">
+        <div className="flex items-start gap-3 rounded-md border border-border px-3 py-3">
           <Link2 className="w-4 h-4 mt-1 shrink-0 text-muted-foreground" />
           <div className="flex-1 min-w-0 flex flex-col gap-1">
             <Select
@@ -405,7 +420,7 @@ export function ShareDialog({
       {/* Partners — a project's partner-portal audience, kept distinct from the
           lab "General access" above (share-with-people vs external org). */}
       {ctx?.workspaceType === "Project" && ctx.hasActivePartner && (
-        <div className="flex flex-col gap-2 mb-4 border-t border-border pt-4">
+        <div className="flex flex-col gap-2.5 mb-6 border-t border-border pt-5">
           <h3 className="text-xs font-semibold text-muted-foreground">Partners</h3>
           <Checkbox
             className="items-start rounded-md border border-border px-3 py-2"
@@ -418,7 +433,7 @@ export function ShareDialog({
         </div>
       )}
 
-      <div className="flex items-center justify-between pt-1">
+      <div className="flex items-center justify-between border-t border-border pt-4">
         <button
           type="button"
           onClick={copyLink}

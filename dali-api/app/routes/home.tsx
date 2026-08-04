@@ -12,7 +12,9 @@ import {
   FileText,
   CalendarClock,
   GraduationCap,
+  Compass,
   MapPin,
+  Star,
   UserRound,
   X,
 } from "lucide-react";
@@ -21,7 +23,11 @@ import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { listOpenTasks, type Task } from "~/lib/tasks";
+import { listFavoritesAndRecents, type FavoritePage } from "~/lib/user-pages.server";
 import { ProjectIcon } from "~/components/ProjectIcon";
+import { PageIcon } from "~/components/PageIcon";
+import { FavoriteStar } from "~/components/FavoriteStar";
+import { FavoriteRouteButton } from "~/components/FavoriteRouteButton";
 import { listedFormsFor, type ListedForm } from "~/forms/lib/public-form";
 import { listCatalog, registrationOpen } from "~/education/lib/offerings.server";
 import { listUpcomingSessionsForUser } from "~/education/lib/schedule.server";
@@ -88,7 +94,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     tz,
   );
 
-  const [items, tasks, rawEvents, formsForYou, assignedTasks, catalog, upcomingSessions] =
+  const [items, tasks, rawEvents, formsForYou, assignedTasks, catalog, upcomingSessions, pages] =
     await Promise.all([
     prisma.notification.findMany({
       // Hide invites whose meeting was Cancelled — they shouldn't appear in the
@@ -152,6 +158,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     // open-assignment counts) and the viewer's next few sessions.
     listCatalog(auth.user.sub),
     listUpcomingSessionsForUser(auth.user.sub, { limit: 3 }),
+    listFavoritesAndRecents(auth.user.sub),
   ]);
 
   const enrolledOfferings = catalog.filter((o) => o.myStatus === "Approved");
@@ -254,6 +261,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     timeZone: tz,
     formsForYou,
     education,
+    pages,
   };
 }
 
@@ -308,8 +316,17 @@ export default function Home() {
     timeZone,
     formsForYou,
     education,
+    pages,
   } = useLoaderData<typeof loader>();
   const firstName = user.firstName || user.email.split("@")[0];
+
+  // Only the blocks that will actually render — see the grid below.
+  const compactBlocks = [
+    myProjectTasks.length > 0 && <MyTasksPanel tasks={myProjectTasks} />,
+    <FavoritesPanel pages={pages} />,
+    formsForYou.length > 0 && <FormsForYouPanel forms={formsForYou} />,
+    hasEducationContent(education) && <EducationPanel education={education} />,
+  ].filter(Boolean);
 
   return (
     <div className="flex flex-col gap-6">
@@ -324,11 +341,21 @@ export default function Home() {
 
       <AttentionBanner tasks={tasks} notifications={notifications} />
 
-      <MyTasksPanel tasks={myProjectTasks} />
-
-      <FormsForYouPanel forms={formsForYou} />
-
-      <EducationPanel education={education} />
+      {/* The compact blocks flow two-up on wide screens. Each hides itself when
+          empty, so the list is built here from what will actually render —
+          otherwise a hidden block leaves a hole in the grid. A lone block takes
+          the full width rather than sitting in a half-empty row. */}
+      <div
+        className={`grid grid-cols-1 gap-6 lg:items-start ${
+          compactBlocks.length > 1 ? "lg:grid-cols-2" : ""
+        }`}
+      >
+        {compactBlocks.map((block, i) => (
+          <div key={i} className="min-w-0">
+            {block}
+          </div>
+        ))}
+      </div>
 
       <div className="flex flex-col gap-6">
         <WeekCalendarPanel
@@ -349,14 +376,17 @@ export default function Home() {
 /* the widget works for everyone (including non-students).               */
 /* ------------------------------------------------------------------ */
 
+// Whether the Education block has anything to say. Exported shape so the home
+// layout can count visible blocks without duplicating the rule.
+function hasEducationContent(e: EducationSummary): boolean {
+  return (
+    e.enrolledCount > 0 || e.openOfferings > 0 || e.pendingCount > 0 || e.upcoming.length > 0
+  );
+}
+
 function EducationPanel({ education }: { education: EducationSummary }) {
   const { enrolledCount, openAssignments, openOfferings, pendingCount, upcoming } = education;
-  if (
-    enrolledCount === 0 &&
-    openOfferings === 0 &&
-    pendingCount === 0 &&
-    upcoming.length === 0
-  ) {
+  if (!hasEducationContent(education)) {
     return null;
   }
   const blurb =
@@ -427,13 +457,11 @@ function EducationPanel({ education }: { education: EducationSummary }) {
 function FormsForYouPanel({ forms }: { forms: ListedForm[] }) {
   if (forms.length === 0) return null;
   return (
-    <div className="bg-card border border-border shadow-brand-1 rounded-lg p-3">
-      <div className="flex items-center gap-2 mb-2">
+    <div className="bg-card border border-border shadow-brand-1 rounded-lg p-4">
+      <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground mb-2">
         <FileText className="w-4 h-4 text-accent-coral" />
-        <span className="font-heading font-semibold text-sm text-foreground">
-          Forms for you
-        </span>
-      </div>
+        Forms for you
+      </h2>
       <div className="flex flex-col gap-1">
         {forms.map((f) => (
           <a
@@ -456,16 +484,105 @@ function FormsForYouPanel({ forms }: { forms: ListedForm[] }) {
 /* project board. Collapses to nothing when the viewer has none.         */
 /* ------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------ */
+/* Favourites — pages you starred, then the ones you opened most recently. */
+/* ------------------------------------------------------------------ */
+
+function PageRow({ page, onChanged }: { page: FavoritePage; onChanged: () => void }) {
+  return (
+    // Link + star are siblings: the star must not navigate.
+    <div className="group flex items-center gap-1 rounded-md hover:bg-muted/50 transition-colors">
+      <a href={page.href} className="flex flex-1 min-w-0 items-center gap-2 px-2 py-1.5 text-sm">
+        {/* Routes aren't documents, so they don't get the page glyph. */}
+        {page.isRoute ? (
+          <Compass className="w-3.5 h-3.5 shrink-0 text-muted-foreground" aria-hidden />
+        ) : (
+          <PageIcon iconEmoji={page.iconEmoji} />
+        )}
+        <span className="truncate text-foreground">{page.title || "Untitled"}</span>
+      </a>
+      {/* Recents show a hollow star on hover — a way to keep the page without
+          hunting for it — while a favourite always shows its filled one. */}
+      <span className={`pr-2 ${page.favorited ? "" : "opacity-0 group-hover:opacity-100 focus-within:opacity-100"}`}>
+        {page.isRoute ? (
+          <FavoriteRouteButton
+            href={page.href}
+            label={page.title}
+            favorited={page.favorited}
+            onToggled={onChanged}
+            compact
+          />
+        ) : (
+          <FavoriteStar pageId={page.id} favorited={page.favorited} onToggled={onChanged} />
+        )}
+      </span>
+    </div>
+  );
+}
+
+function FavoritesPanel({
+  pages,
+}: {
+  pages: { favorites: FavoritePage[]; recents: FavoritePage[] };
+}) {
+  const revalidator = useRevalidator();
+  // Starring here re-sorts the panel: an un-starred page drops to Recent, and a
+  // starred one rises out of it.
+  const onChanged = () => revalidator.revalidate();
+  const { favorites, recents } = pages;
+  // Nothing starred and nothing opened yet — a brand-new account. Say what the
+  // panel is for rather than showing an empty box.
+  const empty = favorites.length === 0 && recents.length === 0;
+
+  return (
+    <div className="bg-card border border-border shadow-brand-1 rounded-lg p-4">
+      <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground mb-2">
+        <Star className="w-4 h-4 text-accent-coral" />
+        Favourites
+      </h2>
+
+      {empty ? (
+        <p className="px-2 py-1.5 text-sm text-muted-foreground italic">
+          Star a document to keep it here — recently opened pages show up too.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {favorites.length > 0 && (
+            <div className="flex flex-col gap-1">
+              {favorites.map((p) => (
+                <PageRow key={p.id} page={p} onChanged={onChanged} />
+              ))}
+            </div>
+          )}
+
+          {recents.length > 0 && (
+            <div className="flex flex-col gap-1">
+              {/* Only label the recents when pins sit above them; on its own the
+                  heading is noise. */}
+              {favorites.length > 0 && (
+                <span className="px-2 pt-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+                  Recent
+                </span>
+              )}
+              {recents.map((p) => (
+                <PageRow key={p.id} page={p} onChanged={onChanged} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MyTasksPanel({ tasks }: { tasks: MyProjectTask[] }) {
   if (tasks.length === 0) return null;
   return (
-    <div className="bg-card border border-border shadow-brand-1 rounded-lg p-3">
-      <div className="flex items-center gap-2 mb-2">
+    <div className="bg-card border border-border shadow-brand-1 rounded-lg p-4">
+      <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground mb-2">
         <ListChecks className="w-4 h-4 text-accent-coral" />
-        <span className="font-heading font-semibold text-sm text-foreground">
-          My tasks
-        </span>
-      </div>
+        My tasks
+      </h2>
       <div className="flex flex-col gap-1">
         {tasks.map((t) => {
           const url = `/projects/${t.projectId}?tab=board&task=${t.id}`;

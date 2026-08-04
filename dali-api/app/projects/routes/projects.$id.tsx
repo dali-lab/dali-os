@@ -21,6 +21,8 @@ import { Tooltip } from "~/components/ui/IconButton";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { EditableSection } from "~/components/EditableSection";
 import { PageIcon } from "~/components/PageIcon";
+import { FavoriteStar } from "~/components/FavoriteStar";
+import { favoritePageIds } from "~/lib/user-pages.server";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { PresenceBar } from "~/components/collab/PresenceBar";
 import { DocEditor, countWords } from "~/components/doc";
@@ -396,6 +398,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     if (list) list.push(p);
     else childrenByParent.set(p.parentPageId, [p]);
   }
+  const favoriteIds = await favoritePageIds(auth.user.sub);
   const toDocumentDto = (d: (typeof pageRows)[number]) => ({
     id: d.id,
     title: d.title,
@@ -405,6 +408,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     publicVisible: d.publicVisible,
     pinned: d.pinnedAt !== null,
     iconEmoji: d.iconEmoji,
+    favorited: favoriteIds.has(d.id),
   });
   // Top-level docs for the main list. Pinned ones are lifted into
   // `pinnedDocuments` (rendered above), so they don't appear twice.
@@ -3420,6 +3424,9 @@ function DocumentsBlock({
           <span className="truncate">{doc.title}</span>
         </button>
         <div className="flex items-center gap-3 flex-shrink-0">
+          {doc.kind !== "Folder" && (
+            <FavoriteStar pageId={doc.id} favorited={doc.favorited} />
+          )}
           {doc.partnerVisible && !canEdit && (
             <Tooltip label="Shared with partner — partners on this project can open and edit this page">
               <span className="flex items-center text-accent-teal">

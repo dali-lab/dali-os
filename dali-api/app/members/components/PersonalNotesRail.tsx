@@ -10,6 +10,7 @@ import {
   Users,
 } from "lucide-react";
 import { PageIcon } from "~/components/PageIcon";
+import { FavoriteStar } from "~/components/FavoriteStar";
 import { buttonClasses } from "~/components/ui/Button";
 import { Tooltip } from "~/components/ui/IconButton";
 import type { NoteSummary } from "~/members/lib/personal-notes.server";
@@ -73,21 +74,25 @@ function NoteRow({
   note,
   showOwner,
   canManage,
+  favorited,
   onOpen,
   onManage,
 }: {
   note: NoteSummary;
   showOwner: boolean;
   canManage: boolean;
+  favorited: boolean;
   onOpen: (note: NoteSummary) => void;
   onManage: (note: NoteSummary) => void;
 }) {
   return (
-    <li>
+    // The row is a button, so the star sits beside it rather than inside —
+    // a button within a button is invalid and swallows the click.
+    <li className="flex items-center gap-1 pr-2">
       <button
         type="button"
         onClick={() => onOpen(note)}
-        className="group w-full text-left px-2 py-1.5 rounded-md hover:bg-muted/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-coral/40 transition-colors"
+        className="group flex-1 min-w-0 text-left px-2 py-1.5 rounded-md hover:bg-muted/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-coral/40 transition-colors"
       >
         <span className="flex items-center gap-2 min-w-0">
           <PageIcon iconEmoji={note.iconEmoji} />
@@ -135,6 +140,7 @@ function NoteRow({
           </span>
         )}
       </button>
+      <FavoriteStar pageId={note.id} favorited={favorited} />
     </li>
   );
 }
@@ -145,6 +151,7 @@ export function PersonalNotesRail({
   isSelf,
   notes,
   sharedWithMe,
+  favoriteIds = [],
   onOpenNote,
 }: {
   ownerId: string;
@@ -152,8 +159,11 @@ export function PersonalNotesRail({
   isSelf: boolean;
   notes: NoteSummary[];
   sharedWithMe: NoteSummary[];
+  /** Page ids the viewer has starred, for the per-row favourite toggle. */
+  favoriteIds?: string[];
   onOpenNote: (note: NoteSummary) => void;
 }) {
+  const favorites = new Set(favoriteIds);
   const [tab, setTab] = useState<Tab>("mine");
   const [managing, setManaging] = useState<NoteSummary | null>(null);
   const revalidator = useRevalidator();
@@ -250,6 +260,7 @@ export function PersonalNotesRail({
               key={note.id}
               note={note}
               showOwner={showOwner}
+              favorited={favorites.has(note.id)}
               canManage={isSelf && tab === "mine"}
               onOpen={onOpenNote}
               onManage={setManaging}
