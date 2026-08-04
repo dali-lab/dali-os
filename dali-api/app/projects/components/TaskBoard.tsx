@@ -34,6 +34,8 @@ type Props = {
   // session, so it's display-only here).
   currentUserId: string;
   currentUserName: string;
+  // Collab auth for the edit-modal's rich task-description doc.
+  collabToken: string | null;
 };
 
 const PRIORITY_TONE: Record<Priority, string> = {
@@ -63,6 +65,7 @@ export function TaskBoard({
   canManage,
   currentUserId,
   currentUserName,
+  collabToken,
 }: Props) {
   // Optimistic board state + rollback live in the shared hook. Server data is
   // adopted whenever it changes and no save is in flight, so teammate edits,
@@ -609,6 +612,8 @@ export function TaskBoard({
           projectId={projectId}
           options={options}
           canManage={canManage}
+          collabToken={collabToken}
+          userName={currentUserName}
           onClose={() => setOpenTaskId(null)}
           onPatch={(patch) => patchTask(openTask.id, patch)}
           onDelete={() => deleteTask(openTask.id)}

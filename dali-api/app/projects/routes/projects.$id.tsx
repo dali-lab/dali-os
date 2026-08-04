@@ -21,6 +21,7 @@ import { EditableSection } from "~/components/EditableSection";
 import { PageIcon } from "~/components/PageIcon";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { PresenceBar } from "~/components/collab/PresenceBar";
+import { DocEditor } from "~/components/doc";
 import { uploadFileToS3, formatBytes } from "~/lib/upload-client";
 import type { Route } from "./+types/projects.$id";
 import { prisma } from "~/lib/db";
@@ -1152,17 +1153,6 @@ export async function action({ request, params }: Route.ActionArgs) {
     return redirect(`/projects/${params.id}`);
   }
 
-  // Description segment: its own form/submit so it doesn't blank the other
-  // detail fields.
-  if (intent === "description") {
-    const descriptionRaw = (form.get("description") as string | null)?.trim() ?? "";
-    await prisma.project.update({
-      where: { id: params.id },
-      data: { description: descriptionRaw === "" ? null : descriptionRaw },
-    });
-    return redirect(`/projects/${params.id}`);
-  }
-
   // Image-only update: the banner saves immediately on upload (its own fetcher),
   // independent of the details form. Same gate as above (already checked).
   if (intent === "update-image") {
@@ -1484,6 +1474,8 @@ export default function ProjectDetail() {
           domainScopeGrid={domainScopeGrid}
           plannedTerms={plannedTerms}
           currentTerm={currentTerm}
+          collabToken={collabToken}
+          userName={userName}
         />
       )}
 
@@ -1528,6 +1520,7 @@ export default function ProjectDetail() {
           canManage={canEdit}
           currentUserId={currentUserId}
           currentUserName={userName}
+          collabToken={collabToken}
         />
       )}
 
@@ -1733,47 +1726,50 @@ function ProjectHeader({
 }
 
 function DescriptionSegment({
+  projectId,
   description,
   canEdit,
+  collabToken,
+  userName,
 }: {
+  projectId: string;
   description: string | null;
   canEdit: boolean;
+  collabToken: string | null;
+  userName: string;
 }) {
-  const submit = useSubmit();
-  const formRef = useRef<HTMLFormElement | null>(null);
-
   return (
-    <EditableSection
-      title="Description"
-      icon={<FileText className="w-4 h-4" />}
-      canEdit={canEdit}
-      onSave={() => { if (formRef.current) submit(formRef.current); }}
-    >
-      {({ editing }) =>
-        editing ? (
-          <Form method="post" ref={formRef} className="flex flex-col gap-1.5">
-            <input type="hidden" name="intent" value="description" />
-            <textarea
-              name="description"
-              rows={6}
-              defaultValue={description ?? ""}
-              placeholder="Add a short description… (Markdown supported)"
-              className="px-2 py-1.5 text-sm font-mono border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-              autoFocus
-            />
-            <p className="text-[11px] text-muted-foreground">
-              Supports Markdown — **bold**, headings, lists, links, `code`.
-            </p>
-          </Form>
-        ) : description ? (
-          <Markdown>{description}</Markdown>
-        ) : (
-          <p className="text-sm text-muted-foreground italic">
-            No description.
-          </p>
-        )
-      }
-    </EditableSection>
+    <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
+      <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
+        <FileText className="w-4 h-4" />
+        Description
+      </h2>
+      {/* Editors get the live collab doc; everyone else reads the plaintext
+          mirror (Project.description, synced on every save) so viewers never
+          need a collab socket. */}
+      {canEdit && collabToken ? (
+        <PresenceProvider
+          pageId={`project:${projectId}`}
+          token={collabToken}
+          userName={userName}
+        >
+          <DocEditor
+            features="notes"
+            collab={{
+              documentName: `project:${projectId}:description`,
+              token: collabToken,
+              userName,
+            }}
+            placeholder="Add a short description…"
+            className="border border-border rounded-md"
+          />
+        </PresenceProvider>
+      ) : description ? (
+        <Markdown>{description}</Markdown>
+      ) : (
+        <p className="text-sm text-muted-foreground italic">No description.</p>
+      )}
+    </section>
   );
 }
 
@@ -2597,6 +2593,8 @@ function OverviewTab({
   domainScopeGrid,
   plannedTerms,
   currentTerm,
+  collabToken,
+  userName,
 }: {
   project: LoaderData["project"];
   teams: LoaderData["teams"];
@@ -2615,6 +2613,8 @@ function OverviewTab({
   domainScopeGrid: LoaderData["domainScopeGrid"];
   plannedTerms: LoaderData["plannedTerms"];
   currentTerm: LoaderData["currentTerm"];
+  collabToken: string | null;
+  userName: string;
 }) {
   const [showFutureChallenges, setShowFutureChallenges] = useState(false);
   const tz = useUserTimeZone();
@@ -2647,7 +2647,13 @@ function OverviewTab({
   return (
     <div className="flex flex-col gap-4">
       {/* Description — its own segment on top, separate from Project details */}
-      <DescriptionSegment description={project.description} canEdit={canEdit} />
+      <DescriptionSegment
+        projectId={project.id}
+        description={project.description}
+        canEdit={canEdit}
+        collabToken={collabToken}
+        userName={userName}
+      />
 
       {/* Challenge for the current term, per declared domain (read-only). */}
       {currentTerm &&
