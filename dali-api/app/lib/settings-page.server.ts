@@ -111,6 +111,7 @@ export async function loadSettingsPageData(request: Request) {
         daliEmail: true,
         dartmouthEmail: true,
         personalEmail: true,
+        hideActivity: true,
       },
     }),
     prisma.session.findMany({
@@ -222,6 +223,9 @@ export async function loadSettingsPageData(request: Request) {
       slackUserId: user?.slackUserId ?? null,
       configured: !!process.env.SLACK_BOT_TOKEN,
       emails: slackEmails,
+    },
+    workspace: {
+      hideActivity: user?.hideActivity ?? false,
     },
     currentSessionId: auth.sessionId,
     sessions,

@@ -16,6 +16,8 @@ const DEFAULT_RECOMMENDATION_TONE: Record<string, string> = {
 export interface ReviewSummaryProps {
   reviewerName?: string;
   reviewerPhotoUrl?: string | null;
+  /** Optional reviewer user id for presence dot. */
+  reviewerId?: string;
   submittedAt?: string | Date | null;
   overallRecommendation?: string | null;
   // Maps a recommendation value to its badge classes. Defaults to a
@@ -34,6 +36,7 @@ export interface ReviewSummaryProps {
 export function ReviewSummary({
   reviewerName,
   reviewerPhotoUrl,
+  reviewerId,
   submittedAt,
   overallRecommendation,
   recommendationTone = DEFAULT_RECOMMENDATION_TONE,
@@ -51,7 +54,7 @@ export function ReviewSummary({
       {showHeader && (
         <div className="flex items-center gap-2">
           {reviewerName && (
-            <Avatar photoUrl={reviewerPhotoUrl} name={reviewerName} size="sm" className="shrink-0" />
+            <Avatar photoUrl={reviewerPhotoUrl} name={reviewerName} size="sm" className="shrink-0" userId={reviewerId} />
           )}
           <div>
             {reviewerName && (

@@ -315,6 +315,8 @@ export default [
   route("api/timezone/update", "routes/api.timezone.update.ts"),
   route("api/notifications", "routes/api.notifications.ts"),
   route("api/notifications/stream", "routes/api.notifications.stream.ts"),
+  route("api/presence/statuses", "routes/api.presence.statuses.ts"),
+  route("api/presence/hide-activity", "routes/api.presence.hide-activity.ts"),
   route("api/notifications/send", "admin/routes/api.notifications.send.ts"),
   route("api/notifications/:id/read", "routes/api.notifications.$id.read.ts"),
   route("api/notifications/:id/rsvp", "routes/api.notifications.$id.rsvp.ts"),

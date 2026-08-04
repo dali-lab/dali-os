@@ -43,6 +43,7 @@ export function MentorGrid({
               photoUrl={group.mentor.photoUrl}
               name={fullName(group.mentor)}
               size="sm"
+              userId={group.mentor.id}
             />
             {fullName(group.mentor)}
           </>

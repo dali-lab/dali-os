@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useRevalidator } from "react-router";
 
 const POLL_INTERVAL_MS = 60_000;
 
@@ -31,6 +32,12 @@ function usePolledCounts(): Polled {
     taskCount: 0,
     tasks: [],
   });
+  const { revalidate } = useRevalidator();
+  // Stable ref so the once-mounted SSE listener always calls the latest
+  // revalidate without needing to re-subscribe (mirrors StaffingBoard).
+  const revalidateRef = useRef(revalidate);
+  revalidateRef.current = revalidate;
+
   useEffect(() => {
     let cancelled = false;
     const refresh = async () => {
@@ -55,10 +62,25 @@ function usePolledCounts(): Polled {
     refresh();
     const id = window.setInterval(refresh, POLL_INTERVAL_MS);
     window.addEventListener(TASKS_CHANGED_EVENT, refresh);
+
+    // SSE stream for sub-second delivery on the same machine; `sync` every
+    // 60s is the cross-instance backstop when prod runs multiple servers.
+    // EventSource auto-reconnects, so a dropped connection self-heals.
+    const es = new EventSource("/api/notifications/stream", {
+      withCredentials: true,
+    });
+    const onPush = () => {
+      void refresh();
+      revalidateRef.current();
+    };
+    es.addEventListener("change", onPush);
+    es.addEventListener("sync", onPush);
+
     return () => {
       cancelled = true;
       window.clearInterval(id);
       window.removeEventListener(TASKS_CHANGED_EVENT, refresh);
+      es.close();
     };
   }, []);
   return state;

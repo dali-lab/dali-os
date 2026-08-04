@@ -383,7 +383,7 @@ function MemberRow({
   return (
     <li className="flex flex-col gap-3 px-4 py-3.5 transition-colors hover:bg-muted/40 lg:flex-row lg:items-start lg:gap-6">
       <div className="flex min-w-0 items-center gap-3 lg:w-72 lg:shrink-0">
-        <Avatar photoUrl={member.photoUrl} name={name} size="sm" />
+        <Avatar photoUrl={member.photoUrl} name={name} size="sm" userId={member.id} />
         <div className="min-w-0">
           <p className="truncate text-sm font-medium text-foreground">{name}</p>
           <p className="truncate text-xs text-muted-foreground">

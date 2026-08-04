@@ -18,6 +18,7 @@ import { NavigationProgress } from "~/components/NavigationProgress";
 import { ThemeSync } from "~/components/ThemeSync";
 import { DialogProvider } from "~/components/ui/dialog";
 import { ToastProvider } from "~/components/ui/toast";
+import { PresenceStatusProvider } from "~/components/presence/PresenceStatusProvider";
 import { THEME_BOOT_SRC } from "~/lib/theme";
 
 export const links: Route.LinksFunction = () => [
@@ -89,7 +90,15 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <ThemeSync />
         <NavigationProgress />
         <ToastProvider>
-          <DialogProvider>{children}</DialogProvider>
+          <DialogProvider>
+            {/* Mounted at the document root so avatar presence dots work inside
+                every workspace iframe too (each iframe is its own document).
+                currentUserId is null here — root has no authed user; own-avatar
+                status just resolves "active" via the normal status fetch. */}
+            <PresenceStatusProvider currentUserId={null}>
+              {children}
+            </PresenceStatusProvider>
+          </DialogProvider>
         </ToastProvider>
         <AnalyticsErrorReporter />
         <ScrollRestoration />

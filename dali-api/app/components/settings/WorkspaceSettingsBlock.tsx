@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useFetcher } from "react-router";
 import { PanelTop, Square } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { readTablessPreference, setTablessPreference } from "~/lib/tabless";
@@ -24,7 +25,7 @@ const OPTIONS: {
   },
 ];
 
-// Both prefs are cookie-backed and change the server-rendered shell, so applying
+// Both cookie-backed prefs change the server-rendered shell, so applying
 // one reloads the top window. In tab mode this block renders inside a workspace
 // iframe, so reload the parent, not the frame.
 function reloadSettings() {
@@ -37,7 +38,7 @@ function reloadSettings() {
   top.location.replace("/settings");
 }
 
-export function WorkspaceSettingsBlock() {
+export function WorkspaceSettingsBlock({ hideActivity }: { hideActivity: boolean }) {
   // Matches AppearanceSettingsBlock: render defaults on the server, then correct
   // to the cookie-backed values on mount to avoid a hydration mismatch.
   const [tabless, setTabless] = useState(true);
@@ -60,6 +61,21 @@ export function WorkspaceSettingsBlock() {
     setFocusPreference(next);
     setFocus(next);
     reloadSettings();
+  }
+
+  // Appear away is a server-persisted pref — use fetcher for optimistic toggle.
+  const hideActivityFetcher = useFetcher();
+  // Optimistic: if a submission is in flight, use the submitted value.
+  const appearAway =
+    hideActivityFetcher.formData
+      ? hideActivityFetcher.formData.get("hideActivity") === "true"
+      : hideActivity;
+
+  function toggleAppearAway() {
+    hideActivityFetcher.submit(
+      { hideActivity: String(!appearAway) },
+      { method: "post", action: "/api/presence/hide-activity" },
+    );
   }
 
   return (
@@ -118,6 +134,34 @@ export function WorkspaceSettingsBlock() {
             className={cn(
               "inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform",
               focus ? "translate-x-5" : "translate-x-0.5",
+            )}
+          />
+        </button>
+      </div>
+
+      <div className="flex items-center justify-between gap-4 border-t border-border pt-4">
+        <div className="min-w-0">
+          <p className="font-heading text-sm font-semibold text-foreground">Appear away</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Hide your online status from other members. Your activity is still recorded;
+            only the visible dot is hidden.
+          </p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={appearAway}
+          aria-label="Appear away"
+          onClick={toggleAppearAway}
+          className={cn(
+            "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors",
+            appearAway ? "bg-accent-coral" : "bg-muted",
+          )}
+        >
+          <span
+            className={cn(
+              "inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform",
+              appearAway ? "translate-x-5" : "translate-x-0.5",
             )}
           />
         </button>
