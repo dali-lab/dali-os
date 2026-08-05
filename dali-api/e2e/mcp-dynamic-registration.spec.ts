@@ -52,7 +52,9 @@ test('DCR: register → authorize → consent → token → /mcp whoami', async 
   expect(reg.token_endpoint_auth_method).toBe('none');
   expect(reg.grant_types).toEqual(['authorization_code']);
   expect(reg.response_types).toEqual(['code']);
-  expect(reg.scope).toBe('mcp:read mcp:write');
+  // mcp:admin is advertised at registration too; it's only *granted* at consent
+  // for Core/Admin users (role-gated in oauth.consent.tsx).
+  expect(reg.scope).toBe('mcp:read mcp:write mcp:admin');
   expect(typeof reg.client_id_issued_at).toBe('number');
 
   const clientId = reg.client_id as string;

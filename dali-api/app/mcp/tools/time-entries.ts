@@ -35,6 +35,7 @@ const CONFIRM_PROPERTY = {
 } as const;
 
 export class TimeEntryNotFoundError extends Error {
+  status = 404;
   constructor(id: string) {
     super(`Time entry ${id} not found`);
     this.name = "TimeEntryNotFoundError";
@@ -42,6 +43,7 @@ export class TimeEntryNotFoundError extends Error {
 }
 
 export class TimeEntryInvalidError extends Error {
+  status = 400;
   constructor(message: string) {
     super(message);
     this.name = "TimeEntryInvalidError";

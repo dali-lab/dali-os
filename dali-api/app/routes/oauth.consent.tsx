@@ -5,11 +5,27 @@ import { getOAuthClient, generateAuthorizationCode } from "~/lib/oauth";
 import { parseSessionId } from "~/lib/cookies";
 import { lookupSession } from "~/lib/session";
 import { displayEmail } from "~/lib/display";
+import { isCore, isAdmin } from "~/lib/roles";
 
 const SCOPE_DESCRIPTIONS: Record<string, string> = {
   "mcp:read": "Read your DALI OS data on your behalf",
   "mcp:write": "Make changes to DALI OS on your behalf",
+  "mcp:admin":
+    "Perform elevated lab-admin actions on your behalf (announcements, jobs, staffing/decision provisioning)",
 };
+
+// mcp:admin is only grantable to Core/Admin users. For everyone else it is
+// silently dropped from the granted set (and hidden on the consent screen), so
+// a non-privileged user can never hold the scope. Every admin tool re-checks
+// the role at call time regardless. See specs/mcp-expansion.md §3.
+async function canGrantAdminScope(userId: string): Promise<boolean> {
+  const [core, admin] = await Promise.all([isCore(userId), isAdmin(userId)]);
+  return core || admin;
+}
+
+function filterGrantableScopes(scopes: string[], canGrantAdmin: boolean): string[] {
+  return canGrantAdmin ? scopes : scopes.filter((s) => s !== "mcp:admin");
+}
 
 type LoaderData =
   | {
@@ -61,11 +77,16 @@ export async function loader({ request }: Route.LoaderArgs): Promise<LoaderData>
   });
   const userEmail = (user ? displayEmail(user) : "") || "(unknown)";
 
+  // Hide mcp:admin from the consent screen unless this user could actually be
+  // granted it — mirrors the drop applied when the grant is persisted.
+  const canGrantAdmin = await canGrantAdminScope(oauthSession.userId);
+  const scopes = filterGrantableScopes(oauthSession.scopes ?? [], canGrantAdmin);
+
   return {
     ok: true,
     sessionId: oauthSession.id,
     clientName: client.name,
-    scopes: oauthSession.scopes ?? [],
+    scopes,
     userEmail,
   };
 }
@@ -119,8 +140,29 @@ export async function action({ request }: Route.ActionArgs) {
       userId_clientId: { userId: oauthSession.userId, clientId: client.clientId },
     },
   });
+
+  // Role-gate mcp:admin at the source. Persist the filtered set back onto the
+  // OAuthSession so the /oauth/token code exchange (which re-unions the session
+  // scopes) can't re-widen the grant for a non-privileged user.
+  const canGrantAdmin = await canGrantAdminScope(oauthSession.userId);
+  const grantedRequestScopes = filterGrantableScopes(
+    oauthSession.scopes ?? [],
+    canGrantAdmin,
+  );
+  if (
+    (oauthSession.scopes ?? []).length !== grantedRequestScopes.length
+  ) {
+    await prisma.oAuthSession.update({
+      where: { id: oauthSession.id },
+      data: { scopes: grantedRequestScopes },
+    });
+  }
+
   const nextScopes = Array.from(
-    new Set([...(existing?.scopes ?? []), ...(oauthSession.scopes ?? [])]),
+    new Set([
+      ...filterGrantableScopes(existing?.scopes ?? [], canGrantAdmin),
+      ...grantedRequestScopes,
+    ]),
   );
   await prisma.oAuthGrant.upsert({
     where: {

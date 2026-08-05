@@ -5,10 +5,32 @@ import { Check, Copy } from "lucide-react";
 import type { Route } from "./+types/help.mcp";
 import { getApiBaseUrl } from "~/lib/app-env";
 
+// This page intentionally describes the MCP surface by CATEGORY rather than
+// enumerating every tool: the catalog is large (~140 tools) and changes often,
+// and importing the live tool defs here would pull the server tool graph
+// (prisma, collab auth, notifications) into the client bundle. The client's own
+// tools/list is the always-current, authoritative catalog.
 export async function loader() {
   const base = getApiBaseUrl();
   return { mcpUrl: `${base}/mcp` };
 }
+
+// Category → what an assistant can do there. Scope column is the *minimum* the
+// client must be granted; every call is additionally filtered by your real role.
+const TOOL_CATEGORIES: { area: string; scope: string; blurb: string }[] = [
+  { area: "You & directory", scope: "read", blurb: "whoami, your roles, member search + profiles, groups, terms, domains" },
+  { area: "Notifications", scope: "read / write", blurb: "list + read your inbox, RSVP, manage notification preferences" },
+  { area: "Calendar", scope: "read / write", blurb: "upcoming meetings, free/busy, group availability, schedule / cancel / check in, manual blocks" },
+  { area: "Tasks & projects", scope: "read / write", blurb: "your tasks + boards, create/update tasks, manage_sprint / manage_epic / manage_story, project overview & settings" },
+  { area: "Docs, notes & search", scope: "read / write", blurb: "global search, pages & lab documents, comments, personal notes, doc tags, version history" },
+  { area: "Timesheets", scope: "read / write", blurb: "your roles + logged time, manage_time_entry (with a confirm-first preview)" },
+  { area: "Hiring", scope: "read only", blurb: "cycles, applications + full context, reviews, decisions, interviews, waitlist — read-only by design" },
+  { area: "Education", scope: "read / write", blurb: "offerings, assignments, CE standing; apply/withdraw; instructors manage offerings, sessions, attendance, decisions" },
+  { area: "Mentorship", scope: "read / write", blurb: "mentor notes + pairs (mentors & Core only; never visible to mentees)" },
+  { area: "Signing & forms", scope: "read / write", blurb: "documents to sign + sign them; submit forms; Core manages agreements & the form library" },
+  { area: "Partners", scope: "read / write / admin", blurb: "partner orgs, applications pipeline, membership; promote an application to a project (admin)" },
+  { area: "Lab admin", scope: "admin", blurb: "announcements, groups, domain leads, audit logs, background jobs, staffing finalize — Core/Admin only" },
+];
 
 function CopyBlock({ content }: { content: string }) {
   const [copied, setCopied] = useState(false);
@@ -92,44 +114,40 @@ export default function McpHelpPage({ loaderData }: Route.ComponentProps) {
       <section className="mt-6">
         <h2 className="text-lg font-semibold">What can an assistant do?</h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          DALI OS currently exposes these tools over MCP. Read tools need only{" "}
-          <code className="font-mono">mcp:read</code>; write tools need{" "}
-          <code className="font-mono">mcp:write</code>.
+          DALI OS exposes a large MCP catalog (~140 tools) across the areas
+          below. Two things always hold: reads only ever return what you're
+          already allowed to see, and <code className="font-mono">mcp:admin</code>{" "}
+          actions additionally require you to personally hold the relevant lab
+          role (Core/Admin) — the scope alone isn't enough. Your client's{" "}
+          <em>tools/list</em> shows the full, current catalog with per-tool
+          descriptions.
         </p>
-        <ul className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-sm text-foreground list-disc pl-5">
-          <li><code className="font-mono">whoami</code> — identity + role tier</li>
-          <li><code className="font-mono">search_directory</code> — find a member</li>
-          <li><code className="font-mono">get_member_profile</code> — single member</li>
-          <li><code className="font-mono">list_groups</code> — your lab groups</li>
-          <li><code className="font-mono">list_my_notifications</code> — inbox</li>
-          <li><code className="font-mono">mark_notification_read</code> — clear one</li>
-          <li><code className="font-mono">rsvp_to_notification</code> — accept/decline an invite</li>
-          <li><code className="font-mono">list_notification_preferences</code> — your channel settings</li>
-          <li><code className="font-mono">set_notification_preference</code> — change one event's channels</li>
-          <li><code className="font-mono">list_my_upcoming_meetings</code> — next N days</li>
-          <li><code className="font-mono">list_my_calendar_links</code> — Google calendars</li>
-          <li><code className="font-mono">find_mutual_freebusy</code> — group availability</li>
-          <li><code className="font-mono">schedule_meeting</code> — create one</li>
-          <li><code className="font-mono">cancel_meeting</code> — cancel one you organize</li>
-          <li><code className="font-mono">list_my_projects</code> — projects you're on</li>
-          <li><code className="font-mono">get_project_overview</code> — project detail</li>
-          <li><code className="font-mono">list_my_tasks</code> — your project tasks</li>
-          <li><code className="font-mono">update_task_status</code> — move a task</li>
-          <li><code className="font-mono">create_task</code> / <code className="font-mono">update_task</code> / <code className="font-mono">delete_task</code> — Core-only</li>
-          <li><code className="font-mono">add_task_comment</code> — comment on a task (assignees + Core)</li>
-          <li><code className="font-mono">set_task_checklist</code> — subtasks (assignees + Core)</li>
-          <li><code className="font-mono">list_sprints</code> — sprints on a project</li>
-          <li><code className="font-mono">create_sprint</code> / <code className="font-mono">update_sprint</code> / <code className="font-mono">delete_sprint</code> — Core-only</li>
-          <li><code className="font-mono">set_sprint_status</code> — Planned / Active / Closed</li>
-          <li><code className="font-mono">list_epics</code> — epics + their user stories</li>
-          <li><code className="font-mono">create_epic</code> / <code className="font-mono">update_epic</code> / <code className="font-mono">delete_epic</code> — Core-only</li>
-          <li><code className="font-mono">create_story</code> / <code className="font-mono">update_story</code> / <code className="font-mono">delete_story</code> — Core-only</li>
-          <li><code className="font-mono">list_project_pages</code> — workspace page tree</li>
-          <li><code className="font-mono">read_page</code> — page body as Markdown</li>
-          <li><code className="font-mono">create_page</code> — new free-form page (Core-only)</li>
-          <li><code className="font-mono">list_project_files</code> — uploaded files (current version)</li>
-          <li><code className="font-mono">link_task_to_github</code> / <code className="font-mono">unlink_task_from_github</code> — Core-only</li>
-        </ul>
+        <div className="mt-3 overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
+                <th className="py-1 pr-4 font-medium">Area</th>
+                <th className="py-1 pr-4 font-medium">Scope</th>
+                <th className="py-1 font-medium">Examples</th>
+              </tr>
+            </thead>
+            <tbody>
+              {TOOL_CATEGORIES.map((c) => (
+                <tr key={c.area} className="border-t border-border align-top">
+                  <td className="py-1.5 pr-4 font-medium text-foreground whitespace-nowrap">{c.area}</td>
+                  <td className="py-1.5 pr-4 text-muted-foreground whitespace-nowrap">{c.scope}</td>
+                  <td className="py-1.5 text-muted-foreground">{c.blurb}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-3 text-xs text-muted-foreground">
+          Scopes: <code className="font-mono">mcp:read</code> (reads),{" "}
+          <code className="font-mono">mcp:write</code> (your own + role-scoped
+          work), <code className="font-mono">mcp:admin</code> (elevated lab
+          admin — only granted to Core/Admin at authorization time).
+        </p>
       </section>
 
       <section className="mt-6">
@@ -142,8 +160,8 @@ export default function McpHelpPage({ loaderData }: Route.ComponentProps) {
           <li><code className="font-mono">dali://me</code> — your profile, roles, domain eligibilities</li>
           <li><code className="font-mono">dali://announcements/active</code> — your unread lab announcements (markdown)</li>
           <li><code className="font-mono">dali://forms/pending</code> — published forms you've been asked to fill</li>
-          <li><code className="font-mono">dali://projects/{"{projectId}"}/board</code> — full sprint board for a project</li>
-          <li><code className="font-mono">dali://projects/{"{projectId}"}/backlog</code> — unscheduled tasks for a project</li>
+          <li><code className="font-mono">dali://project/{"{projectId}"}/board</code> — full sprint board for a project</li>
+          <li><code className="font-mono">dali://project/{"{projectId}"}/backlog</code> — unscheduled tasks for a project</li>
         </ul>
       </section>
 
