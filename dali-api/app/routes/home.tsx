@@ -32,7 +32,12 @@ import { listedFormsFor, type ListedForm } from "~/forms/lib/public-form";
 import { listCatalog, registrationOpen } from "~/education/lib/offerings.server";
 import { listUpcomingSessionsForUser } from "~/education/lib/schedule.server";
 import { fetchGeneralCalendarEvents } from "~/lib/general-calendar";
-import { getZonedYMD, resolveUserTimeZone, zonedDayStartUtc } from "~/lib/timezone";
+import {
+  getZonedHourFraction,
+  getZonedYMD,
+  resolveUserTimeZone,
+  zonedDayStartUtc,
+} from "~/lib/timezone";
 import { RsvpButtons, notifyTasksChanged } from "~/components/RsvpButtons";
 import type { Route } from "./+types/home";
 
@@ -993,6 +998,19 @@ const HOURS = [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21];
 const HOUR_PX = 44;
 const DAY_KEYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 
+// Ticking "current time" for the now-line. Returns null on the first render so
+// SSR and the initial client paint agree (no hydration mismatch), then fills in
+// after mount and re-ticks every minute.
+function useNow(intervalMs = 60_000): Date | null {
+  const [now, setNow] = useState<Date | null>(null);
+  useEffect(() => {
+    setNow(new Date());
+    const id = setInterval(() => setNow(new Date()), intervalMs);
+    return () => clearInterval(id);
+  }, [intervalMs]);
+  return now;
+}
+
 // Fixed dark text that doesn't flip in dark mode — paired only with the light
 // accent tints below so it stays high-contrast in both themes. (The saturated
 // `accent-teal` made dark text hard to read in light mode; use its light twin.)
@@ -1022,6 +1040,15 @@ function WeekCalendarPanel({
     event: HomeWeekEvent;
     anchor: { colIdx: number; top: number; height: number };
   } | null>(null);
+  // Pixel offset of the current-time line within a column body, or null when
+  // "now" falls outside the visible 9am–9pm window (line is hidden, not pinned).
+  const now = useNow();
+  const nowLineTop = (() => {
+    if (!now) return null;
+    const frac = getZonedHourFraction(now, timeZone);
+    if (frac < HOURS[0] || frac >= HOURS[HOURS.length - 1] + 1) return null;
+    return (frac - HOURS[0]) * HOUR_PX;
+  })();
   // Paging is a plain link, so the loader re-windows the ICS fetch server-side
   // and the week survives a refresh or a shared URL.
   const weekHref = (offset: number) => (offset === 0 ? "/" : `/?week=${offset}`);
@@ -1120,6 +1147,15 @@ function WeekCalendarPanel({
                   style={{ top: i * HOUR_PX }}
                 />
               ))}
+              {days[idx]?.isToday && nowLineTop != null && (
+                <div
+                  className="absolute left-0 right-0 h-0.5 bg-accent-coral pointer-events-none z-30"
+                  style={{ top: nowLineTop }}
+                  aria-label="Current time"
+                >
+                  <div className="absolute left-0 -top-[3px] w-2 h-2 rounded-full bg-accent-coral" />
+                </div>
+              )}
               {events
                 .filter((e) => e.colIdx === idx)
                 .map((e, i) => {

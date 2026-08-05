@@ -1,5 +1,5 @@
 import { Link, useFetcher, useLoaderData, useRevalidator } from "react-router";
-import { Fragment, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   ChevronLeft,
@@ -1164,7 +1164,7 @@ function AvailabilityView({ data }: { data: LoaderData }) {
           <ManualBlocksCard blocks={data.manualBlocks} timezone={data.timezone} />
         </aside>
       )}
-      <div className="lg:overflow-hidden lg:min-h-0">
+      <div className="lg:flex lg:flex-col lg:overflow-hidden lg:min-h-0">
         <AvailabilityWeekGrid data={data} enableDragCreate />
       </div>
     </div>
@@ -1956,6 +1956,9 @@ function WeekToolbar({
 // midnight). Every downstream bound derives from HOURS[0] / last+1.
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const HOUR_PX = 54;
+// When the grid scrolls internally, open it here (7 AM) instead of pinned to
+// midnight; the rest of the 24h day stays reachable by scrolling up/down.
+const INITIAL_SCROLL_HOUR = 7;
 // Grid is snapped/subdivided into 10-minute cells.
 const SUBDIVISIONS_PER_HOUR = 6; // 60 / 10
 const SNAP_HOURS = 1 / SUBDIVISIONS_PER_HOUR; // 10 minutes as a fraction of an hour
@@ -2094,7 +2097,7 @@ function AvailabilityWeekGrid({
   }
 
   return (
-    <section className="bg-card border border-border shadow-brand-1 rounded-lg p-4 flex flex-col">
+    <section className="bg-card border border-border shadow-brand-1 rounded-lg p-4 flex flex-col lg:flex-1 lg:min-h-0">
       <WeekToolbar
         monthLabel={monthLabel}
         weekStartIso={data.weekStartIso}
@@ -2118,6 +2121,7 @@ function AvailabilityWeekGrid({
         </p>
       )}
       <WeekGrid
+        fillAndScroll
         days={days}
         showProviderRow
         showSubHourGrid
@@ -5123,6 +5127,7 @@ function WeekGrid({
   showSubHourGrid = false,
   timezone,
   markPayPeriodEnds = false,
+  fillAndScroll = false,
 }: {
   days: { dayOfWeek: number; num: number; dateUtc: Date }[];
   eventsByDay: Record<number, EventBlock[]>;
@@ -5146,6 +5151,11 @@ function WeekGrid({
   // visible where hours stop accruing to one period and start on the next.
   // Availability has no payroll meaning, so it doesn't ask for this.
   markPayPeriodEnds?: boolean;
+  // Fill the parent's bounded height and scroll internally (24h stays fully
+  // reachable) instead of rendering a fixed 24h block clipped at midnight.
+  // Also makes the day-header row + hour axis sticky. Availability opts in;
+  // Schedule/Timesheet keep the page-flow layout.
+  fillAndScroll?: boolean;
 }) {
   // Current time, in this timezone, for the today-highlight + now-line. Both are
   // skipped until `now` is set (post-mount) and when no timezone is provided.
@@ -5198,6 +5208,22 @@ function WeekGrid({
 
   const MIN_HOUR = HOURS[0];
   const MAX_HOUR = HOURS[HOURS.length - 1] + 1;
+
+  // In fill-and-scroll mode the grid scrolls internally: keep the day-header row
+  // and hour axis pinned, and open scrolled to the working-day start (once, so a
+  // later user scroll isn't yanked back). Assigning scrollTop in the ref callback
+  // runs on the client before paint — no midnight-then-jump flash, no SSR effect.
+  const headerStickyCls = fillAndScroll ? "lg:sticky lg:top-0 lg:z-40" : "";
+  const didInitScroll = useRef(false);
+  const scrollRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      if (fillAndScroll && el && !didInitScroll.current) {
+        el.scrollTop = INITIAL_SCROLL_HOUR * HOUR_PX;
+        didInitScroll.current = true;
+      }
+    },
+    [fillAndScroll],
+  );
 
   const hourFromY = (offsetY: number): number => {
     const raw = MIN_HOUR + offsetY / HOUR_PX;
@@ -5325,11 +5351,18 @@ function WeekGrid({
   }, [move, selection, onSelectionResize, MIN_HOUR, MAX_HOUR]);
 
   return (
-    <div className="relative">
-    <div className="flex border border-border rounded-md overflow-hidden select-none">
+    <div className={`relative ${fillAndScroll ? "lg:flex lg:flex-col lg:flex-1 lg:min-h-0" : ""}`}>
+    <div
+      ref={scrollRef}
+      className={`flex border border-border rounded-md overflow-hidden select-none ${
+        fillAndScroll ? "lg:flex-1 lg:min-h-0 lg:overflow-y-auto lg:overflow-x-hidden" : ""
+      }`}
+    >
       {/* Hour axis */}
       <div className="flex flex-col w-14 border-r border-border bg-card text-[11px] text-muted-foreground">
-        <div className={showProviderRow ? "h-16 border-b border-border" : "h-9 border-b border-border"} />
+        <div
+          className={`bg-card border-b border-border ${showProviderRow ? "h-16" : "h-9"} ${headerStickyCls}`}
+        />
         {HOURS.map((h) => (
           <div key={h} style={{ height: HOUR_PX }} className="px-2 pt-1 text-right">
             {formatHour(h)}
@@ -5350,7 +5383,18 @@ function WeekGrid({
             periodEnd ? "border-r-2 border-r-accent-teal" : "border-border"
           }`}
         >
-          <div className={`flex flex-col items-center justify-center border-b border-border ${showProviderRow ? "h-16" : "h-9"} ${isToday ? "bg-accent-coral/10" : periodEnd ? "bg-accent-teal/10" : ""}`}>
+          <div className={`flex flex-col items-center justify-center border-b border-border ${showProviderRow ? "h-16" : "h-9"} ${headerStickyCls} ${
+            // Sticky headers need an opaque fill so scrolled rows don't bleed
+            // through the faint today/period tint; today stays marked by its
+            // coral date circle + now-line.
+            fillAndScroll
+              ? "bg-card"
+              : isToday
+                ? "bg-accent-coral/10"
+                : periodEnd
+                  ? "bg-accent-teal/10"
+                  : ""
+          }`}>
             <div className={`text-[10px] font-semibold tracking-wide ${isToday ? "text-accent-coral" : "text-muted-foreground"}`}>{DAY_KEYS[d.dayOfWeek]}</div>
             <div className={isToday ? "flex items-center justify-center w-6 h-6 rounded-full bg-accent-coral text-sm font-bold text-white" : "text-sm font-bold text-foreground"}>{d.num}</div>
             {periodEnd && !showProviderRow && (
