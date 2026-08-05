@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
+// Mock db so the real ~/lib/roles pulled in via orig() below doesn't load the
+// generated Prisma client (absent in CI). Uses the manual mock in __mocks__/db.
+vi.mock("~/lib/db");
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, canManageStaffing: vi.fn() };
