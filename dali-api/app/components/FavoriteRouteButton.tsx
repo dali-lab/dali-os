@@ -3,18 +3,12 @@ import { useLocation, useMatches } from "react-router";
 import { Star } from "lucide-react";
 import { Tooltip } from "~/components/ui/IconButton";
 
-// Stars the page you're currently on — for destinations that aren't documents:
-// a project hub, an area landing, any subtab.
+// Stars a page you're currently on — for DB-backed detail pages (project,
+// person, partner org). Document pages use FavoriteStar instead.
 //
-// Placement follows the Guide button exactly (see PageDocButton): the layout
-// header owns it, except on pill pages where AreaPillNav does. Both land in the
-// same top-right cluster either way — the header row on a pill page sits above
-// the tabs in an otherwise empty band, and a lone star floating up there reads
-// as detached from the page.
-//
-// The current URL comes from the router. Search params are included — subtabs
-// are ?tab=…, and dropping them would make every tab of a page one favourite.
-// The label defaults to the document title, which every route already sets.
+// On detail pages the star sits inline after the breadcrumb trail via
+// handle.favoriteRoute on the route. Navbar-linked hubs no longer show a
+// page-level star.
 export function FavoriteRouteButton({
   label: labelProp,
   href: hrefProp,
@@ -22,6 +16,7 @@ export function FavoriteRouteButton({
   onToggled,
   compact = false,
   suppressWhenPills = false,
+  inline = false,
   className = "",
 }: {
   /** Defaults to the page's own title. */
@@ -36,6 +31,8 @@ export function FavoriteRouteButton({
   compact?: boolean;
   /** Set by the layout: pill pages render it in the pill row instead. */
   suppressWhenPills?: boolean;
+  /** Breadcrumb placement — no ml-auto push to the far edge. */
+  inline?: boolean;
   className?: string;
 }) {
   const matches = useMatches();
@@ -125,9 +122,7 @@ export function FavoriteRouteButton({
         aria-label={favorited ? "Remove from favourites" : "Add to favourites"}
         aria-pressed={favorited}
         className={`inline-flex items-center justify-center transition-colors disabled:opacity-40 ${
-          // ml-auto so it holds the right edge when it is the only action in
-          // the header row (Guide absent).
-          compact ? "" : "ml-auto shrink-0 rounded-md p-1.5"
+          compact ? "" : inline ? "shrink-0 rounded-md p-1" : "ml-auto shrink-0 rounded-md p-1.5"
         } ${
           favorited ? "text-accent-coral" : "text-muted-foreground hover:text-foreground"
         } ${compact ? "" : "hover:bg-muted"} ${className}`}

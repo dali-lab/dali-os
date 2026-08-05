@@ -1,4 +1,4 @@
-import { useState, type MouseEvent } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
 import { Link, redirect, useLoaderData, useRevalidator } from "react-router";
 import {
   AlignLeft,
@@ -1018,12 +1018,25 @@ function WeekCalendarPanel({
   timeZone: string;
 }) {
   const hasEvents = events.length > 0;
-  const [selected, setSelected] = useState<HomeWeekEvent | null>(null);
+  const [selected, setSelected] = useState<{
+    event: HomeWeekEvent;
+    anchor: { colIdx: number; top: number; height: number };
+  } | null>(null);
   // Paging is a plain link, so the loader re-windows the ICS fetch server-side
   // and the week survives a refresh or a shared URL.
   const weekHref = (offset: number) => (offset === 0 ? "/" : `/?week=${offset}`);
+
+  useEffect(() => {
+    if (!selected) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSelected(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selected]);
+
   return (
-    <section className="bg-card border border-border shadow-brand-1 rounded-lg p-4 flex flex-col">
+    <section className="bg-card border border-border shadow-brand-1 rounded-lg p-4 flex flex-col overflow-visible">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
         <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
           <CalendarDays className="w-4 h-4 text-accent-coral" />
@@ -1068,8 +1081,8 @@ function WeekCalendarPanel({
           No events this week, or the DALI General Calendar isn't connected yet.
         </p>
       )}
-      <div className="flex border border-border rounded-md overflow-hidden">
-        <div className="flex flex-col w-12 border-r border-border bg-card text-[10px] text-muted-foreground">
+      <div className="relative flex border border-border rounded-md overflow-visible">
+        <div className="flex flex-col w-12 border-r border-border bg-card text-[10px] text-muted-foreground shrink-0">
           <div className="h-9 border-b border-border" />
           {HOURS.map((h) => (
             <div key={h} style={{ height: HOUR_PX }} className="px-1.5 pt-0.5 text-right">
@@ -1099,7 +1112,7 @@ function WeekCalendarPanel({
                 {days[idx]?.num ?? ""}
               </div>
             </div>
-            <div className="relative" style={{ height: HOURS.length * HOUR_PX }}>
+            <div className="relative overflow-visible" style={{ height: HOURS.length * HOUR_PX }}>
               {HOURS.map((_, i) => (
                 <div
                   key={i}
@@ -1122,10 +1135,14 @@ function WeekCalendarPanel({
                     <button
                       key={i}
                       type="button"
-                      onClick={() => setSelected(e)}
+                      onClick={() =>
+                        setSelected({ event: e, anchor: { colIdx: idx, top, height } })
+                      }
                       // Inset left edge gives the flat tint some depth and mirrors
                       // the /calendar blocks, so home reads as the same system.
                       className={`absolute left-0 right-0 mx-0.5 px-1.5 py-0.5 rounded-sm overflow-hidden text-left shadow-[inset_3px_0_0_0_rgba(0,0,0,0.16)] transition-shadow hover:shadow-[inset_3px_0_0_0_rgba(0,0,0,0.32)] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-coral ${
+                        selected?.event.startAt === e.startAt ? "ring-2 ring-accent-coral ring-offset-1" : ""
+                      } ${
                         EVENT_FILLS[i % EVENT_FILLS.length]
                       }`}
                       style={{ top, height }}
@@ -1144,35 +1161,32 @@ function WeekCalendarPanel({
                     </button>
                   );
                 })}
+              {selected?.anchor.colIdx === idx && (
+                <EventDetailPanel
+                  event={selected.event}
+                  anchor={selected.anchor}
+                  timeZone={timeZone}
+                  onClose={() => setSelected(null)}
+                />
+              )}
             </div>
           </div>
         ))}
       </div>
-      {selected && (
-        <EventDetailPanel
-          event={selected}
-          timeZone={timeZone}
-          onClose={() => setSelected(null)}
-        />
-      )}
     </section>
   );
 }
 
-// Google-Calendar-style detail popover for one event. Anchored bottom-right of
-// the panel rather than as a modal: the grid stays visible behind it, so you can
-// read an event without losing your place in the week.
-//
-// Everything here comes from the ICS feed, and most VEVENTs carry only a
-// summary and times — each field is rendered only when the feed actually
-// supplied it, so a sparse event shows a small card rather than a list of
-// blanks.
+// Google-Calendar-style detail popover for one event. Anchored beside the
+// clicked block inside its day column so the week grid stays in view.
 function EventDetailPanel({
   event,
+  anchor,
   timeZone,
   onClose,
 }: {
   event: HomeWeekEvent;
+  anchor: { colIdx: number; top: number; height: number };
   timeZone: string;
   onClose: () => void;
 }) {
@@ -1191,11 +1205,21 @@ function EventDetailPanel({
       timeZone,
     }).format(d);
 
+  // Flip to the left on the last two columns so the card doesn't clip off-screen.
+  const flipLeft = anchor.colIdx >= 5;
+  const panelTop = Math.max(
+    0,
+    Math.min(anchor.top, HOURS.length * HOUR_PX - 120),
+  );
+
   return (
     <div
       role="dialog"
       aria-label={event.label}
-      className="mt-3 rounded-lg border border-border bg-card p-4 shadow-brand-2"
+      className={`absolute z-30 w-64 rounded-lg border border-border bg-card p-3 shadow-brand-2 ${
+        flipLeft ? "right-full mr-1.5" : "left-full ml-1.5"
+      }`}
+      style={{ top: panelTop }}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">

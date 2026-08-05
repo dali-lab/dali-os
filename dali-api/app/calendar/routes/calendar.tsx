@@ -1,8 +1,9 @@
 import { Link, useFetcher, useLoaderData, useRevalidator } from "react-router";
-import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   ChevronLeft,
+  ChevronDown,
   ChevronRight,
   PanelLeftClose,
   PanelLeftOpen,
@@ -1217,15 +1218,28 @@ function CalendarIntegrationsCard({
 
 function CalendarLinkBlock({ link }: { link: CalendarLinkDTO }) {
   const removeFetcher = useFetcher();
+  const [open, setOpen] = useState(false);
+  const bodyId = useId();
+  const Chevron = open ? ChevronDown : ChevronRight;
   return (
     <div className="bg-card border border-border shadow-brand-1 border-l-4 border-l-accent-teal rounded-md overflow-hidden">
-      <div className="flex items-center justify-between px-3 py-2 bg-accent-teal/10">
-        <div className="flex items-center gap-2 min-w-0">
+      <div className="flex items-center justify-between bg-accent-teal/10 pr-3">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          aria-controls={bodyId}
+          className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left"
+        >
+          <Chevron className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
           <GoogleIcon />
           <span className="font-semibold text-sm text-foreground truncate">
             {link.displayName ?? link.externalEmail}
           </span>
-        </div>
+          {!open && link.syncError && (
+            <span className="flex-shrink-0 text-[11px] text-destructive">Sync error</span>
+          )}
+        </button>
         <removeFetcher.Form method="post">
           <input type="hidden" name="intent" value="remove-calendar-link" />
           <input type="hidden" name="linkId" value={link.id} />
@@ -1238,25 +1252,27 @@ function CalendarLinkBlock({ link }: { link: CalendarLinkDTO }) {
           </button>
         </removeFetcher.Form>
       </div>
-      <div className="px-3 py-3 flex flex-col gap-2">
-        {link.syncError && (
-          <div className="text-[11px] text-destructive">Sync error: {link.syncError}</div>
-        )}
-        <p className="text-xs text-muted-foreground">
-          Select which calendars should block your availability:
-        </p>
-        {link.subCalendars === null ? (
-          <div className="text-xs text-muted-foreground italic">
-            Couldn't load this account's calendars.
-          </div>
-        ) : link.subCalendars.length === 0 ? (
-          <div className="text-xs text-muted-foreground italic">No calendars found.</div>
-        ) : (
-          link.subCalendars.map((cal) => (
-            <SubCalendarRow key={cal.id} linkId={link.id} cal={cal} />
-          ))
-        )}
-      </div>
+      {open && (
+        <div id={bodyId} className="px-3 py-3 flex flex-col gap-2">
+          {link.syncError && (
+            <div className="text-[11px] text-destructive">Sync error: {link.syncError}</div>
+          )}
+          <p className="text-xs text-muted-foreground">
+            Select which calendars should block your availability:
+          </p>
+          {link.subCalendars === null ? (
+            <div className="text-xs text-muted-foreground italic">
+              Couldn't load this account's calendars.
+            </div>
+          ) : link.subCalendars.length === 0 ? (
+            <div className="text-xs text-muted-foreground italic">No calendars found.</div>
+          ) : (
+            link.subCalendars.map((cal) => (
+              <SubCalendarRow key={cal.id} linkId={link.id} cal={cal} />
+            ))
+          )}
+        </div>
+      )}
     </div>
   );
 }

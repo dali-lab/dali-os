@@ -3,6 +3,7 @@ import { Link, useMatches, useLocation } from 'react-router'
 import { Check, ChevronDown, ChevronRight } from 'lucide-react'
 import { cn } from '~/lib/cn'
 import { Menu } from '~/components/ui/floating'
+import { FavoriteRouteButton } from '~/components/FavoriteRouteButton'
 
 export type Crumb = {
   label: string
@@ -47,6 +48,9 @@ type Handle = {
   // app/components/page-docs/PageDocButton.tsx.
   docKey?: string
   docTitle?: string
+  /** DB-backed detail pages (project, person, partner org) — star sits inline
+   *  after the trail, not in the layout header. */
+  favoriteRoute?: boolean
 }
 
 // Shared shape so PageDocButton can read the same handle contract. Exported
@@ -303,10 +307,12 @@ export function Breadcrumbs() {
 
   // Deepest match wins — only ever one route in practice defines this.
   let action: ReactNode = null
+  let favoriteRoute = false
   for (const m of matches as { handle?: Handle; data?: unknown }[]) {
     if (m.handle?.headerAction && m.data != null) {
       action = m.handle.headerAction(m.data)
     }
+    if (m.handle?.favoriteRoute) favoriteRoute = true
   }
 
   // Home / single-segment pages get no trail (but still show a page action).
@@ -316,26 +322,29 @@ export function Breadcrumbs() {
 
   return (
     <div className="flex items-center justify-between gap-3 flex-wrap w-full min-w-0 flex-1">
-      <nav
-        aria-label="Breadcrumb"
-        className="flex flex-wrap items-center gap-1 text-sm text-muted-foreground"
-      >
-        {crumbs.map((c, i) => (
-          <span key={i} className="flex items-center gap-1">
-            {i > 0 && <ChevronRight className="w-3.5 h-3.5 opacity-50" />}
-            {c.icon}
-            {c.siblings ? (
-              <CrumbSwitcher label={c.label} siblings={c.siblings} />
-            ) : c.to ? (
-              <Link to={c.to} className="hover:text-foreground transition-colors">
-                {c.label}
-              </Link>
-            ) : (
-              <span className="text-foreground font-medium">{c.label}</span>
-            )}
-          </span>
-        ))}
-      </nav>
+      <div className="flex min-w-0 items-center gap-1.5">
+        <nav
+          aria-label="Breadcrumb"
+          className="flex flex-wrap items-center gap-1 text-sm text-muted-foreground"
+        >
+          {crumbs.map((c, i) => (
+            <span key={i} className="flex items-center gap-1">
+              {i > 0 && <ChevronRight className="w-3.5 h-3.5 opacity-50" />}
+              {c.icon}
+              {c.siblings ? (
+                <CrumbSwitcher label={c.label} siblings={c.siblings} />
+              ) : c.to ? (
+                <Link to={c.to} className="hover:text-foreground transition-colors">
+                  {c.label}
+                </Link>
+              ) : (
+                <span className="text-foreground font-medium">{c.label}</span>
+              )}
+            </span>
+          ))}
+        </nav>
+        {favoriteRoute && <FavoriteRouteButton inline />}
+      </div>
       {action}
     </div>
   )

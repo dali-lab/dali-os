@@ -41,6 +41,14 @@ export const meta: Route.MetaFunction = ({ data }) => {
   return [{ title: name ? `${name} · DALI OS` : "Organization · DALI OS" }];
 };
 
+export const handle = {
+  breadcrumb: (data: unknown) => {
+    const org = (data as { org?: { name: string } } | undefined)?.org;
+    return org?.name;
+  },
+  favoriteRoute: true,
+};
+
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);

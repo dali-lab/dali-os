@@ -3,7 +3,6 @@ import { Outlet, redirect, useLoaderData, useLocation, useMatches, useNavigate, 
 import { cn } from '~/lib/cn'
 import { Layout } from '~/components/Layout'
 import { Breadcrumbs } from '~/components/Breadcrumbs'
-import { FavoriteRouteButton } from '~/components/FavoriteRouteButton'
 import { PageDocProvider, PageDocButton, PageDocOutlet } from '~/components/page-docs/PageDocButton'
 import { LaunchWelcome } from '~/components/LaunchWelcome'
 import { TimeZonePrompt } from '~/components/TimeZonePrompt'
@@ -363,7 +362,6 @@ export default function AppLayoutRoute() {
               wrapper would still count as content and defeat `empty:mb-0`,
               leaving an 8px band above the tabs. */}
           <PageDocButton suppressWhenPills />
-          <FavoriteRouteButton suppressWhenPills />
         </div>
         <PageDocOutlet>
           <Outlet />
