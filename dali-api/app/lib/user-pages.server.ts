@@ -7,6 +7,7 @@
 
 import { prisma } from "~/lib/db";
 import { getPageAccess, type PageShape } from "~/lib/pageAccess.server";
+import { isNavbarRoute } from "~/lib/navbar-routes";
 
 export type FavoritePage = {
   /** Page id, or the href for a route favourite. Used as the React key. */
@@ -117,7 +118,9 @@ export async function listFavoritesAndRecents(userId: string): Promise<{
     isRoute: false,
   });
 
-  const routes: FavoritePage[] = routeRows.map((r) => ({
+  const routes: FavoritePage[] = routeRows
+    .filter((r) => !isNavbarRoute(r.href!))
+    .map((r) => ({
     id: r.href!,
     title: r.label ?? r.href!,
     iconEmoji: null,

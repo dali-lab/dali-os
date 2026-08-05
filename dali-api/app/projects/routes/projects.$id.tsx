@@ -92,6 +92,7 @@ export const handle = {
     if (!d?.project) return null;
     return <ProjectViewSwitch projectId={d.project.id} current="internal" />;
   },
+  favoriteRoute: true,
 };
 
 // Open a project document as a split-screen tab. This page renders inside a

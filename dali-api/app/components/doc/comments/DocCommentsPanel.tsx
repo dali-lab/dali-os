@@ -198,14 +198,40 @@ export function DocCommentsPanel({
   const visibleDocRoots = docRoots.filter((c) =>
     filter === "resolved" ? c.resolved : !c.resolved,
   );
+  const openCount = docRoots.filter((c) => !c.resolved).length;
+
+  const filterToggle = (
+    <div className="inline-flex rounded-full bg-muted/60 p-0.5 text-xs">
+      <button
+        type="button"
+        onClick={() => handleFilterChange("open")}
+        className={`rounded-full px-2.5 py-1 transition-colors ${
+          filter === "open"
+            ? "bg-card font-semibold text-foreground shadow-sm"
+            : "text-muted-foreground hover:text-foreground"
+        }`}
+      >
+        Open{openCount > 0 ? ` (${openCount})` : ""}
+      </button>
+      <button
+        type="button"
+        onClick={() => handleFilterChange("resolved")}
+        className={`rounded-full px-2.5 py-1 transition-colors ${
+          filter === "resolved"
+            ? "bg-card font-semibold text-foreground shadow-sm"
+            : "text-muted-foreground hover:text-foreground"
+        }`}
+      >
+        Resolved
+      </button>
+    </div>
+  );
 
   return (
     <div
       className={
-        // Inline: no card. It sits at the foot of the document as a continuation
-        // of the page, separated by a rule rather than boxed in its own panel.
         inline
-          ? "w-full flex flex-col border-t border-border pt-4"
+          ? "w-full flex flex-col rounded-lg border border-border/80 bg-gradient-to-b from-muted/30 to-card p-4 shadow-brand-1"
           : "absolute right-0 top-full z-30 mt-1 w-[380px] rounded-md border border-border bg-card shadow-brand-2 flex flex-col"
       }
       style={inline ? undefined : { maxHeight: "60vh" }}
@@ -214,30 +240,16 @@ export function DocCommentsPanel({
       {/* Header */}
       <div
         className={`flex items-center justify-between shrink-0 ${
-          inline ? "pb-2" : "px-3 py-2 border-b border-border"
+          inline ? "pb-3" : "px-3 py-2 border-b border-border"
         }`}
       >
         <div className="flex items-center gap-2">
-          <MessageSquare className="w-3.5 h-3.5 text-muted-foreground" />
-          <span className="text-xs font-semibold text-foreground">Comments</span>
+          <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-accent-coral/15">
+            <MessageSquare className="w-3.5 h-3.5 text-accent-coral" />
+          </span>
+          <span className="text-sm font-semibold text-foreground">Comments</span>
         </div>
-        {/* Open / Resolved filter pills */}
-        <div className="flex rounded-md border border-border overflow-hidden text-xs">
-          <button
-            type="button"
-            onClick={() => handleFilterChange("open")}
-            className={`px-2 py-1 ${filter === "open" ? "bg-accent text-accent-foreground font-medium" : "text-muted-foreground hover:bg-muted"}`}
-          >
-            Open
-          </button>
-          <button
-            type="button"
-            onClick={() => handleFilterChange("resolved")}
-            className={`px-2 py-1 border-l border-border ${filter === "resolved" ? "bg-accent text-accent-foreground font-medium" : "text-muted-foreground hover:bg-muted"}`}
-          >
-            Resolved
-          </button>
-        </div>
+        {filterToggle}
       </div>
 
       {fetchErr && (
@@ -279,20 +291,30 @@ export function DocCommentsPanel({
           {postErr && <p className="text-xs text-destructive mb-2">{postErr}</p>}
 
           {visibleDocRoots.length === 0 ? (
-            <p className="text-xs text-muted-foreground italic">
-              {filter === "resolved" ? "No resolved comments." : "No comments yet."}
-            </p>
+            <div className="flex flex-col items-center gap-2 rounded-md border border-dashed border-border/80 bg-muted/20 px-4 py-8 text-center">
+              <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-accent-teal/10">
+                <MessageSquare className="h-5 w-5 text-accent-teal" />
+              </span>
+              <p className="text-sm font-medium text-foreground">
+                {filter === "resolved" ? "No resolved comments" : "Start the conversation"}
+              </p>
+              <p className="max-w-xs text-xs text-muted-foreground">
+                {filter === "resolved"
+                  ? "Resolved threads will appear here once you close them out."
+                  : "Leave a note for your team — document comments stay visible to everyone with access."}
+              </p>
+            </div>
           ) : (
-            <ul className="flex flex-col gap-2">
+            <ul className="flex flex-col gap-2.5">
               {visibleDocRoots.map((root) => {
                 const replies = docComments.filter((c) => c.parentId === root.id);
                 return (
                   <li
                     key={root.id}
-                    className={`rounded-md border p-2 text-sm ${
+                    className={`rounded-lg border p-3 text-sm shadow-sm transition-colors ${
                       root.resolved
-                        ? "border-border bg-muted/40 opacity-70"
-                        : "border-border bg-card"
+                        ? "border-border/70 bg-muted/30 opacity-80"
+                        : "border-border bg-card hover:border-accent-teal/30"
                     }`}
                   >
                     {/* Root comment */}
@@ -418,10 +440,7 @@ export function DocCommentsPanel({
 
       {/* Doc-level composer */}
       {canComment && filter === "open" && (
-        // Inline, the composer is part of the page flow, so it takes the same
-        // full width as the header and the thread list above it. Only the
-        // floating panel needs its own gutter.
-        <div className={`border-t border-border py-2 shrink-0 ${inline ? "" : "px-3"}`}>
+        <div className={`border-t border-border/70 pt-3 shrink-0 ${inline ? "mt-3" : "px-3 py-2"}`}>
           <form
             onSubmit={async (e) => {
               e.preventDefault();
@@ -429,21 +448,21 @@ export function DocCommentsPanel({
               const ok = await postDocComment(draft.trim(), null);
               if (ok) setDraft("");
             }}
-            className="flex flex-col gap-1"
+            className="flex flex-col gap-2"
           >
             <MentionTextInput
               multiline
               value={draft}
               onChange={setDraft}
-              rows={2}
+              rows={3}
               placeholder="Add a document comment…"
-              className="w-full px-2 py-1 text-xs border border-border rounded bg-background focus:outline-none focus:ring-1 focus:ring-accent-teal/40"
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm shadow-inner focus:outline-none focus:ring-2 focus:ring-accent-teal/30"
             />
             <div className="flex justify-end">
               <button
                 type="submit"
                 disabled={busy || !draft.trim()}
-                className="text-xs px-2 py-1 rounded bg-accent-teal text-white disabled:opacity-50"
+                className="rounded-md bg-accent-teal px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-opacity disabled:opacity-50"
               >
                 Comment
               </button>

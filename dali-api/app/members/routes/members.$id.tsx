@@ -23,6 +23,7 @@ export const handle = {
       ?.member;
     return m ? `${m.firstName} ${m.lastName}`.trim() : undefined;
   },
+  favoriteRoute: true,
 };
 
 export async function loader({ request, params }: Route.LoaderArgs) {
