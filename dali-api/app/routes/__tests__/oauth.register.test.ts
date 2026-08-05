@@ -59,7 +59,7 @@ describe("POST /oauth/register", () => {
     expect(body.token_endpoint_auth_method).toBe("none");
     expect(body.grant_types).toEqual(["authorization_code"]);
     expect(body.response_types).toEqual(["code"]);
-    expect(body.scope).toBe("mcp:read mcp:write");
+    expect(body.scope).toBe("mcp:read mcp:write mcp:admin");
 
     // The created row must have the MCP policy locked in regardless of input.
     expect(mockCreate).toHaveBeenCalledTimes(1);
@@ -67,7 +67,9 @@ describe("POST /oauth/register", () => {
     expect(createArgs.allowedProviders).toEqual(["google"]);
     expect(createArgs.requiredAccountType).toBe("member");
     expect(createArgs.requireMembership).toBe(true);
-    expect(createArgs.allowedScopes).toEqual(["mcp:read", "mcp:write"]);
+    // mcp:admin is offered to every client but only *granted* at consent for
+    // Core/Admin users (role-gated in oauth.consent.tsx).
+    expect(createArgs.allowedScopes).toEqual(["mcp:read", "mcp:write", "mcp:admin"]);
     expect(createArgs.isLoopback).toBe(true);
     expect(createArgs.isFirstParty).toBe(false);
   });

@@ -18,7 +18,10 @@ import { safeJson } from "~/lib/safe-json";
 const RATE_LIMIT_MAX = 5;
 const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
 
-const ALLOWED_SCOPES = ["mcp:read", "mcp:write"];
+// mcp:admin is offered to any client, but only *granted* at consent when the
+// consenting user is Core/Admin (role-gated in oauth.consent.tsx); every admin
+// tool also re-checks the role at call time. See specs/mcp-expansion.md §3.
+const ALLOWED_SCOPES = ["mcp:read", "mcp:write", "mcp:admin"];
 
 export const loader = preflightLoader;
 

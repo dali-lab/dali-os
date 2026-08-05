@@ -22,6 +22,7 @@ import type { AssignmentType } from "~/generated/prisma/client";
 const ASSIGNMENT_TYPES = ["Project", "Core", "Instructor", "DomainLead", "Admin"] as const;
 
 export class ManualBlockNotFoundError extends Error {
+  status = 404;
   constructor(id: string) {
     super(`Manual block ${id} not found`);
     this.name = "ManualBlockNotFoundError";
@@ -29,6 +30,7 @@ export class ManualBlockNotFoundError extends Error {
 }
 
 export class ManualBlockInvalidError extends Error {
+  status = 400;
   constructor(message: string) {
     super(message);
     this.name = "ManualBlockInvalidError";

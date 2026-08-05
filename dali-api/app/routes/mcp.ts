@@ -9,6 +9,11 @@ import { checkRateLimit } from "~/lib/rate-limit";
 import { logAuditEvent } from "~/lib/audit";
 import { safeJson } from "~/lib/safe-json";
 import { validateInput, type JsonSchema } from "~/lib/mcp-input";
+import {
+  findRegistryTool,
+  registryToolDefs,
+  mapToolError,
+} from "~/mcp/registry";
 import { WHOAMI_TOOL, runWhoami } from "~/mcp/tools/whoami";
 import {
   LIST_MY_NOTIFICATIONS_TOOL,
@@ -116,59 +121,9 @@ import {
   CreateProjectError,
 } from "~/mcp/tools/create-project";
 import {
-  CREATE_SPRINT_TOOL,
-  runCreateSprint,
-  CreateSprintError,
-} from "~/mcp/tools/create-sprint";
-import {
-  UPDATE_SPRINT_TOOL,
-  runUpdateSprint,
-  UpdateSprintError,
-} from "~/mcp/tools/update-sprint";
-import {
-  SET_SPRINT_STATUS_TOOL,
-  runSetSprintStatus,
-  SetSprintStatusError,
-} from "~/mcp/tools/set-sprint-status";
-import {
-  DELETE_SPRINT_TOOL,
-  runDeleteSprint,
-  DeleteSprintError,
-} from "~/mcp/tools/delete-sprint";
-import {
   LIST_EPICS_TOOL,
   runListEpics,
 } from "~/mcp/tools/list-epics";
-import {
-  CREATE_EPIC_TOOL,
-  runCreateEpic,
-  CreateEpicError,
-} from "~/mcp/tools/create-epic";
-import {
-  UPDATE_EPIC_TOOL,
-  runUpdateEpic,
-  UpdateEpicError,
-} from "~/mcp/tools/update-epic";
-import {
-  DELETE_EPIC_TOOL,
-  runDeleteEpic,
-  DeleteEpicError,
-} from "~/mcp/tools/delete-epic";
-import {
-  CREATE_STORY_TOOL,
-  runCreateStory,
-  CreateStoryError,
-} from "~/mcp/tools/create-story";
-import {
-  UPDATE_STORY_TOOL,
-  runUpdateStory,
-  UpdateStoryError,
-} from "~/mcp/tools/update-story";
-import {
-  DELETE_STORY_TOOL,
-  runDeleteStory,
-  DeleteStoryError,
-} from "~/mcp/tools/delete-story";
 import {
   LIST_PROJECT_PAGES_TOOL,
   runListProjectPages,
@@ -285,24 +240,12 @@ import {
   runListMyRoles,
   LIST_MY_TIME_ENTRIES_TOOL,
   runListMyTimeEntries,
-  ADD_TIME_ENTRY_TOOL,
-  runAddTimeEntry,
-  UPDATE_TIME_ENTRY_TOOL,
-  runUpdateTimeEntry,
-  DELETE_TIME_ENTRY_TOOL,
-  runDeleteTimeEntry,
   TimeEntryNotFoundError,
   TimeEntryInvalidError,
 } from "~/mcp/tools/time-entries";
 import {
   LIST_MY_MANUAL_BLOCKS_TOOL,
   runListMyManualBlocks,
-  ADD_MANUAL_BLOCK_TOOL,
-  runAddManualBlock,
-  UPDATE_MANUAL_BLOCK_TOOL,
-  runUpdateManualBlock,
-  DELETE_MANUAL_BLOCK_TOOL,
-  runDeleteManualBlock,
   ManualBlockNotFoundError,
   ManualBlockInvalidError,
 } from "~/mcp/tools/manual-blocks";
@@ -335,14 +278,6 @@ import {
 import {
   LIST_DOCUMENT_SHARING_TOOL,
   runListDocumentSharing,
-  SET_DOCUMENT_SHARING_TOOL,
-  runSetDocumentSharing,
-  DELETE_PROJECT_DOCUMENT_TOOL,
-  runDeleteProjectDocument,
-  SET_FILE_SHARING_TOOL,
-  runSetFileSharing,
-  DELETE_PROJECT_FILE_TOOL,
-  runDeleteProjectFile,
   CurationNotFoundError,
   CurationForbiddenError,
   CurationInvalidError,
@@ -378,17 +313,7 @@ const TOOLS = [
   ADD_TASK_COMMENT_TOOL,
   SET_TASK_CHECKLIST_TOOL,
   LIST_SPRINTS_TOOL,
-  CREATE_SPRINT_TOOL,
-  UPDATE_SPRINT_TOOL,
-  SET_SPRINT_STATUS_TOOL,
-  DELETE_SPRINT_TOOL,
   LIST_EPICS_TOOL,
-  CREATE_EPIC_TOOL,
-  UPDATE_EPIC_TOOL,
-  DELETE_EPIC_TOOL,
-  CREATE_STORY_TOOL,
-  UPDATE_STORY_TOOL,
-  DELETE_STORY_TOOL,
   LIST_PROJECT_PAGES_TOOL,
   READ_PAGE_TOOL,
   CREATE_PAGE_TOOL,
@@ -402,13 +327,7 @@ const TOOLS = [
   // Timesheet + calendar-block additions:
   LIST_MY_ROLES_TOOL,
   LIST_MY_TIME_ENTRIES_TOOL,
-  ADD_TIME_ENTRY_TOOL,
-  UPDATE_TIME_ENTRY_TOOL,
-  DELETE_TIME_ENTRY_TOOL,
   LIST_MY_MANUAL_BLOCKS_TOOL,
-  ADD_MANUAL_BLOCK_TOOL,
-  UPDATE_MANUAL_BLOCK_TOOL,
-  DELETE_MANUAL_BLOCK_TOOL,
   // Project settings (read), showcase, staffing, document/file curation:
   GET_PROJECT_SETTINGS_TOOL,
   GET_PROJECT_SHOWCASE_TOOL,
@@ -417,10 +336,6 @@ const TOOLS = [
   SET_STAFFING_ASSIGNMENT_TOOL,
   SET_DOMAIN_ELIGIBILITY_TOOL,
   LIST_DOCUMENT_SHARING_TOOL,
-  SET_DOCUMENT_SHARING_TOOL,
-  DELETE_PROJECT_DOCUMENT_TOOL,
-  SET_FILE_SHARING_TOOL,
-  DELETE_PROJECT_FILE_TOOL,
 ] as const;
 
 type JsonRpcRequest = {
@@ -490,16 +405,6 @@ function rpcErrorFromTool(id: unknown, err: unknown): Response | null {
     DeleteTaskError,
     AddTaskCommentError,
     SetTaskChecklistError,
-    CreateSprintError,
-    UpdateSprintError,
-    SetSprintStatusError,
-    DeleteSprintError,
-    CreateEpicError,
-    UpdateEpicError,
-    DeleteEpicError,
-    CreateStoryError,
-    UpdateStoryError,
-    DeleteStoryError,
     ListProjectPagesError,
     ReadPageError,
     CreatePageError,
@@ -573,16 +478,70 @@ export async function action({ request }: Route.ActionArgs) {
 
     case "tools/list":
       return rpcResult(body.id, {
-        tools: TOOLS.map((t) => ({
-          name: t.name,
-          description: t.description,
-          inputSchema: t.inputSchema,
-        })),
+        tools: [
+          ...TOOLS.map((t) => ({
+            name: t.name,
+            description: t.description,
+            inputSchema: t.inputSchema,
+          })),
+          ...registryToolDefs().map((d) => ({
+            name: d.name,
+            description: d.description,
+            inputSchema: d.inputSchema,
+          })),
+        ],
       });
 
     case "tools/call": {
       const params = body.params as { name?: string; arguments?: unknown } | undefined;
       const toolName = params?.name;
+
+      // Registry path (additive). New tools live in app/mcp/registry.ts and are
+      // dispatched here; the legacy switch below covers tools not yet migrated.
+      const registryTool = toolName ? findRegistryTool(toolName) : undefined;
+      if (registryTool) {
+        if (!auth.scopes.includes(registryTool.def.requiredScope)) {
+          return rpcError(
+            body.id,
+            -32002,
+            `Missing required scope: ${registryTool.def.requiredScope}`,
+          );
+        }
+        const validated = validateInput(
+          params?.arguments,
+          registryTool.def.inputSchema as JsonSchema,
+        );
+        if (!validated.ok) {
+          return rpcError(body.id, -32602, `Invalid params: ${validated.error}`);
+        }
+        try {
+          const payload = await registryTool.run(
+            { user: auth.user, scopes: auth.scopes, request },
+            validated.value as Record<string, unknown>,
+          );
+          await logAuditEvent({
+            action: "mcp.tool_called",
+            userId: auth.user.id,
+            metadata: {
+              toolName: registryTool.def.name,
+              clientId: auth.clientId,
+              clientName: auth.clientName,
+              grantId: auth.grantId,
+            },
+            request,
+          });
+          return rpcResult(body.id, {
+            content: [{ type: "text", text: JSON.stringify(payload) }],
+            structuredContent: payload,
+          });
+        } catch (err) {
+          const mapped = mapToolError(err);
+          if (mapped) return rpcError(body.id, mapped.code, mapped.message);
+          const message = err instanceof Error ? err.message : "Tool execution failed";
+          return rpcError(body.id, -32000, message);
+        }
+      }
+
       const tool = TOOLS.find((t) => t.name === toolName);
       if (!tool) {
         return rpcError(body.id, -32601, `Unknown tool: ${toolName}`);
@@ -681,30 +640,6 @@ export async function action({ request }: Route.ActionArgs) {
               args as Parameters<typeof runListDocumentSharing>[1],
             );
             break;
-          case "set_document_sharing":
-            payload = await runSetDocumentSharing(
-              auth.user.id,
-              args as Parameters<typeof runSetDocumentSharing>[1],
-            );
-            break;
-          case "delete_project_document":
-            payload = await runDeleteProjectDocument(
-              auth.user.id,
-              args as Parameters<typeof runDeleteProjectDocument>[1],
-            );
-            break;
-          case "set_file_sharing":
-            payload = await runSetFileSharing(
-              auth.user.id,
-              args as Parameters<typeof runSetFileSharing>[1],
-            );
-            break;
-          case "delete_project_file":
-            payload = await runDeleteProjectFile(
-              auth.user.id,
-              args as Parameters<typeof runDeleteProjectFile>[1],
-            );
-            break;
           case "list_my_roles":
             payload = await runListMyRoles(
               auth.user.id,
@@ -717,46 +652,10 @@ export async function action({ request }: Route.ActionArgs) {
               args as Parameters<typeof runListMyTimeEntries>[1],
             );
             break;
-          case "add_time_entry":
-            payload = await runAddTimeEntry(
-              auth.user.id,
-              args as Parameters<typeof runAddTimeEntry>[1],
-            );
-            break;
-          case "update_time_entry":
-            payload = await runUpdateTimeEntry(
-              auth.user.id,
-              args as Parameters<typeof runUpdateTimeEntry>[1],
-            );
-            break;
-          case "delete_time_entry":
-            payload = await runDeleteTimeEntry(
-              auth.user.id,
-              args as Parameters<typeof runDeleteTimeEntry>[1],
-            );
-            break;
           case "list_my_manual_blocks":
             payload = await runListMyManualBlocks(
               auth.user.id,
               args as Parameters<typeof runListMyManualBlocks>[1],
-            );
-            break;
-          case "add_manual_block":
-            payload = await runAddManualBlock(
-              auth.user.id,
-              args as Parameters<typeof runAddManualBlock>[1],
-            );
-            break;
-          case "update_manual_block":
-            payload = await runUpdateManualBlock(
-              auth.user.id,
-              args as Parameters<typeof runUpdateManualBlock>[1],
-            );
-            break;
-          case "delete_manual_block":
-            payload = await runDeleteManualBlock(
-              auth.user.id,
-              args as Parameters<typeof runDeleteManualBlock>[1],
             );
             break;
           case "mark_notification_read":
@@ -873,70 +772,10 @@ export async function action({ request }: Route.ActionArgs) {
               args as Parameters<typeof runCreateProject>[1],
             );
             break;
-          case "create_sprint":
-            payload = await runCreateSprint(
-              auth.user.id,
-              args as Parameters<typeof runCreateSprint>[1],
-            );
-            break;
-          case "update_sprint":
-            payload = await runUpdateSprint(
-              auth.user.id,
-              args as Parameters<typeof runUpdateSprint>[1],
-            );
-            break;
-          case "set_sprint_status":
-            payload = await runSetSprintStatus(
-              auth.user.id,
-              args as Parameters<typeof runSetSprintStatus>[1],
-            );
-            break;
-          case "delete_sprint":
-            payload = await runDeleteSprint(
-              auth.user.id,
-              args as Parameters<typeof runDeleteSprint>[1],
-            );
-            break;
           case "list_epics":
             payload = await runListEpics(
               auth.user.id,
               args as Parameters<typeof runListEpics>[1],
-            );
-            break;
-          case "create_epic":
-            payload = await runCreateEpic(
-              auth.user.id,
-              args as Parameters<typeof runCreateEpic>[1],
-            );
-            break;
-          case "update_epic":
-            payload = await runUpdateEpic(
-              auth.user.id,
-              args as Parameters<typeof runUpdateEpic>[1],
-            );
-            break;
-          case "delete_epic":
-            payload = await runDeleteEpic(
-              auth.user.id,
-              args as Parameters<typeof runDeleteEpic>[1],
-            );
-            break;
-          case "create_story":
-            payload = await runCreateStory(
-              auth.user.id,
-              args as Parameters<typeof runCreateStory>[1],
-            );
-            break;
-          case "update_story":
-            payload = await runUpdateStory(
-              auth.user.id,
-              args as Parameters<typeof runUpdateStory>[1],
-            );
-            break;
-          case "delete_story":
-            payload = await runDeleteStory(
-              auth.user.id,
-              args as Parameters<typeof runDeleteStory>[1],
             );
             break;
           case "list_project_pages":

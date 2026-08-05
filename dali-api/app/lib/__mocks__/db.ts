@@ -30,8 +30,43 @@ export const prisma = {
   interviewConfig: {
     findUnique: vi.fn(),
   },
+  applicationCycle: {
+    findUnique: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+    create: vi.fn(),
+    update: vi.fn(),
+  },
+  domainApplication: {
+    findUnique: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+    findFirst: vi.fn(),
+    count: vi.fn().mockResolvedValue(0),
+  },
+  domainApplicationCycle: {
+    findUnique: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+  },
   cycleReviewer: {
-    findMany: vi.fn(),
+    findFirst: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+  },
+  cycleInterviewer: {
+    findFirst: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+  },
+  delibsSession: {
+    findUnique: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+    upsert: vi.fn(),
+    update: vi.fn(),
+  },
+  rubricVersion: {
+    findUnique: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+  },
+  collabDocumentVersion: {
+    findMany: vi.fn().mockResolvedValue([]),
+    create: vi.fn(),
   },
   interviewAssignment: {
     findUnique: vi.fn(),
@@ -284,12 +319,36 @@ export const prisma = {
   groupDefinition: {
     findUnique: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
+    create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
     upsert: vi.fn(),
   },
   mentorshipPair: {
     count: vi.fn().mockResolvedValue(0),
     findMany: vi.fn().mockResolvedValue([]),
     findFirst: vi.fn(),
+    findUnique: vi.fn(),
+    create: vi.fn(),
+    delete: vi.fn(),
+    deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+  },
+  mentorNote: {
+    findMany: vi.fn().mockResolvedValue([]),
+    findUnique: vi.fn(),
+    findFirst: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+  },
+  mentorNoteTemplate: {
+    findMany: vi.fn().mockResolvedValue([]),
+    findUnique: vi.fn(),
+    findFirst: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+    delete: vi.fn(),
   },
   applicationReview: {
     findMany: vi.fn().mockResolvedValue([]),
@@ -396,6 +455,8 @@ export const prisma = {
   domainLeadAssignment: {
     findFirst: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
+    create: vi.fn(),
+    delete: vi.fn(),
   },
   instructorAssignment: {
     findFirst: vi.fn(),
@@ -502,6 +563,7 @@ export const prisma = {
     findMany: vi.fn().mockResolvedValue([]),
     create: vi.fn(),
     update: vi.fn(),
+    count: vi.fn().mockResolvedValue(0),
   },
   emailTemplate: {
     findMany: vi.fn().mockResolvedValue([]),

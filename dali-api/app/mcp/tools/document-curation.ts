@@ -18,6 +18,7 @@ import { isCore, isProjectMember } from "~/lib/roles";
 import { logAuditEvent, type AuditAction } from "~/lib/audit";
 
 export class CurationNotFoundError extends Error {
+  status = 404;
   constructor(what: string) {
     super(`${what} not found`);
     this.name = "CurationNotFoundError";
@@ -25,6 +26,7 @@ export class CurationNotFoundError extends Error {
 }
 
 export class CurationForbiddenError extends Error {
+  status = 403;
   constructor() {
     super("Only Core or a member staffed on this project can curate its documents");
     this.name = "CurationForbiddenError";
@@ -32,6 +34,7 @@ export class CurationForbiddenError extends Error {
 }
 
 export class CurationInvalidError extends Error {
+  status = 400;
   constructor(message: string) {
     super(message);
     this.name = "CurationInvalidError";
