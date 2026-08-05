@@ -265,24 +265,36 @@ export function DocCommentsRail({
       {/* Rail header */}
       <div className="dali-doc-rail__header flex items-center justify-between px-1 pb-2">
         <div className="flex items-center gap-1.5">
-          <MessageSquare className="w-3.5 h-3.5 text-muted-foreground" />
+          <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-accent-coral/15">
+            <MessageSquare className="w-3 h-3 text-accent-coral" />
+          </span>
           <span className="text-xs font-semibold text-foreground">Comments</span>
           {displayCount > 0 && (
-            <span className="text-[10px] text-muted-foreground">({displayCount})</span>
+            <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+              {displayCount}
+            </span>
           )}
         </div>
-        <div className="flex rounded-md border border-border overflow-hidden text-xs bg-card">
+        <div className="inline-flex rounded-full bg-muted/60 p-0.5 text-xs">
           <button
             type="button"
             onClick={() => onFilterChange("open")}
-            className={`px-2 py-1 ${filter === "open" ? "bg-accent text-accent-foreground font-medium" : "text-muted-foreground hover:bg-muted"}`}
+            className={`rounded-full px-2 py-0.5 transition-colors ${
+              filter === "open"
+                ? "bg-card font-semibold text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
           >
             Open
           </button>
           <button
             type="button"
             onClick={() => onFilterChange("resolved")}
-            className={`px-2 py-1 border-l border-border ${filter === "resolved" ? "bg-accent text-accent-foreground font-medium" : "text-muted-foreground hover:bg-muted"}`}
+            className={`rounded-full px-2 py-0.5 transition-colors ${
+              filter === "resolved"
+                ? "bg-card font-semibold text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
           >
             Resolved
           </button>

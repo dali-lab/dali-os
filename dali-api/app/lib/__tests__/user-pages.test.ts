@@ -124,6 +124,20 @@ describe("route favourites", () => {
     expect(recents.every((r) => !r.isRoute)).toBe(true);
   });
 
+  it("drops navbar route favourites (home, settings, hub pages)", async () => {
+    rows(
+      [],
+      [],
+      [
+        { href: "/", label: "Home" },
+        { href: "/settings", label: "Settings" },
+        { href: "/projects/p1", label: "Hood Museum AR" },
+      ],
+    );
+    const { favorites } = await listFavoritesAndRecents(USER);
+    expect(favorites.map((f) => f.href)).toEqual(["/projects/p1"]);
+  });
+
   it("re-stars an existing row rather than creating a duplicate", async () => {
     mockPrisma.userFavorite.findFirst.mockResolvedValue({ id: "row-1" });
     await setRouteFavorite(USER, "/projects/p1", "Hood", true);

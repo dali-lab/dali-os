@@ -3,7 +3,6 @@ import { Outlet, redirect, useLoaderData, useLocation, useMatches, useNavigate, 
 import { cn } from '~/lib/cn'
 import { Layout } from '~/components/Layout'
 import { Breadcrumbs } from '~/components/Breadcrumbs'
-import { FavoriteRouteButton } from '~/components/FavoriteRouteButton'
 import { PageDocProvider, PageDocButton, PageDocOutlet } from '~/components/page-docs/PageDocButton'
 import { LaunchWelcome } from '~/components/LaunchWelcome'
 import { TimeZonePrompt } from '~/components/TimeZonePrompt'
@@ -19,6 +18,7 @@ import { isTablessRequest } from '~/lib/tabless'
 import { isFocusRequest } from '~/lib/focus-mode'
 import { isValidTimezone, resolveUserTimeZone } from '~/lib/timezone'
 import { readDismissedTimeZone } from '~/lib/tz-prompt'
+import { isNavbarHubPage } from '~/lib/navbar-routes'
 import type { Route } from './+types/layout'
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -208,6 +208,8 @@ export default function AppLayoutRoute() {
   const roomyBreadcrumb = matches.some(
     (m) => (m as { handle?: { roomyBreadcrumb?: boolean } }).handle?.roomyBreadcrumb,
   )
+  const hideBreadcrumbRow =
+    !hasAreaSubnav && isNavbarHubPage(`${location.pathname}${location.search}`)
 
   // After a client-side navigation inside the workspace iframe, the loader
   // re-runs via fetch — which carries `Sec-Fetch-Dest: empty`, not `iframe` —
@@ -351,20 +353,17 @@ export default function AppLayoutRoute() {
           hasAreaSubnav ? 'pt-0' : 'pt-4 sm:pt-8 md:pt-12',
         )}
       >
-        <div
-          className={cn(
-            'flex items-start justify-between gap-3',
-            roomyBreadcrumb ? 'mb-5 sm:mb-6 empty:mb-0' : 'mb-2 empty:mb-0',
-          )}
-        >
-          <Breadcrumbs />
-          {/* Page-level actions, rendered as direct children rather than in a
-              wrapper: on pill pages both suppress themselves, and an empty
-              wrapper would still count as content and defeat `empty:mb-0`,
-              leaving an 8px band above the tabs. */}
-          <PageDocButton suppressWhenPills />
-          <FavoriteRouteButton suppressWhenPills />
-        </div>
+        {!hideBreadcrumbRow && (
+          <div
+            className={cn(
+              'flex items-start justify-between gap-3',
+              roomyBreadcrumb ? 'mb-5 sm:mb-6 empty:mb-0' : 'mb-2 empty:mb-0',
+            )}
+          >
+            <Breadcrumbs />
+            <PageDocButton suppressWhenPills />
+          </div>
+        )}
         <PageDocOutlet>
           <Outlet />
         </PageDocOutlet>
