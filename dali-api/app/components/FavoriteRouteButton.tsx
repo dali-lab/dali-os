@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useLocation, useMatches } from "react-router";
 import { Star } from "lucide-react";
 import { Tooltip } from "~/components/ui/IconButton";
+import { isNavbarRoute } from "~/lib/navbar-routes";
 
 // Stars a page you're currently on — for DB-backed detail pages (project,
 // person, partner org). Document pages use FavoriteStar instead.
@@ -102,6 +103,7 @@ export function FavoriteRouteButton({
   }
 
   if (suppressWhenPills && hasAreaPills) return null;
+  if (isNavbarRoute(href)) return null;
 
   return (
     // portal when compact: these sit inside the tab bar's horizontal scroller,
