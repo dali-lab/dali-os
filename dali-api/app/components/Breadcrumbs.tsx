@@ -4,6 +4,7 @@ import { Check, ChevronDown, ChevronRight } from 'lucide-react'
 import { cn } from '~/lib/cn'
 import { Menu } from '~/components/ui/floating'
 import { FavoriteRouteButton } from '~/components/FavoriteRouteButton'
+import { isNavbarRoute } from '~/lib/navbar-routes'
 
 export type Crumb = {
   label: string
@@ -221,7 +222,7 @@ function CrumbSwitcher({
 
 export function Breadcrumbs() {
   const matches = useMatches()
-  const { pathname } = useLocation()
+  const { pathname, search } = useLocation()
 
   // Wayfinding contract with AreaPillNav: exactly one row per page. Landing
   // pages carry a pill row (the active pill marks the location, the Hub pill
@@ -314,6 +315,7 @@ export function Breadcrumbs() {
     }
     if (m.handle?.favoriteRoute) favoriteRoute = true
   }
+  if (favoriteRoute && isNavbarRoute(`${pathname}${search}`)) favoriteRoute = false
 
   // Home / single-segment pages get no trail (but still show a page action).
   if (crumbs.length <= 1) {

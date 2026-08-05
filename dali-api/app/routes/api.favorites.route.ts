@@ -2,6 +2,7 @@ import type { Route } from "./+types/api.favorites.route";
 import { requireMemberSession } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { favoriteHrefs, setRouteFavorite } from "~/lib/user-pages.server";
+import { isNavbarRoute } from "~/lib/navbar-routes";
 
 // POST /api/favorites/route — star or un-star a URL inside the app (a project
 // hub, a subtab). Body: { href, label, favorited }.
@@ -65,6 +66,9 @@ export async function action({ request }: Route.ActionArgs) {
   }
   if (!isSafePath(body.href)) {
     return withCors(request, Response.json({ error: "Invalid href" }, { status: 400 }));
+  }
+  if (body.favorited && isNavbarRoute(body.href)) {
+    return withCors(request, Response.json({ error: "This page cannot be favourited" }, { status: 400 }));
   }
 
   const label = body.label.trim().slice(0, 200) || body.href;
