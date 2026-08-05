@@ -25,8 +25,6 @@ import { FavoriteStar } from "~/components/FavoriteStar";
 import { favoritePageIds } from "~/lib/user-pages.server";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { PresenceBar } from "~/components/collab/PresenceBar";
-import { DocEditor, countWords } from "~/components/doc";
-import { readDocAsBlocks } from "~/collab/read";
 import { uploadFileToS3, formatBytes } from "~/lib/upload-client";
 import type { Route } from "./+types/projects.$id";
 import { prisma } from "~/lib/db";
@@ -981,20 +979,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     }));
   }
 
-  // Rich description blocks (read server-side) so non-editors see the formatted
-  // doc rather than the flattened plaintext mirror. Empty for legacy rows that
-  // have never been opened in the editor — those fall back to <Markdown>.
-  const descriptionContent = await readDocAsBlocks(
-    `project:${project.id}:description`,
-  );
-
   return {
     project: {
       id: project.id,
       name: project.name,
       iconEmoji: project.iconEmoji,
       description: project.description,
-      descriptionContent,
       status: project.status,
       calendarEmail: project.calendarEmail,
       teamGroupEmail: project.teamGroupEmail,
@@ -1165,6 +1155,17 @@ export async function action({ request, params }: Route.ActionArgs) {
       data: { name, status: status as ProjectStatus, iconEmoji: iconRaw || null },
     });
     await ensureProjectGroup(params.id, name);
+    return redirect(`/projects/${params.id}`);
+  }
+
+  // Description segment: its own form/submit so it doesn't blank the other
+  // detail fields.
+  if (intent === "description") {
+    const descriptionRaw = (form.get("description") as string | null)?.trim() ?? "";
+    await prisma.project.update({
+      where: { id: params.id },
+      data: { description: descriptionRaw === "" ? null : descriptionRaw },
+    });
     return redirect(`/projects/${params.id}`);
   }
 
@@ -1489,8 +1490,6 @@ export default function ProjectDetail() {
           domainScopeGrid={domainScopeGrid}
           plannedTerms={plannedTerms}
           currentTerm={currentTerm}
-          collabToken={collabToken}
-          userName={userName}
         />
       )}
 
@@ -1736,71 +1735,47 @@ function ProjectHeader({
 }
 
 function DescriptionSegment({
-  projectId,
   description,
-  descriptionContent,
   canEdit,
-  collabToken,
-  userName,
 }: {
-  projectId: string;
   description: string | null;
-  descriptionContent: unknown;
   canEdit: boolean;
-  collabToken: string | null;
-  userName: string;
 }) {
-  // Editors edit the live collab doc behind the section's edit toggle: the
-  // editor stays mounted (showing live content) and only becomes writable in
-  // edit mode — same shape as the Epic description. Collab autosaves, so Save/
-  // Cancel just leave edit mode.
-  if (canEdit && collabToken) {
-    return (
-      <EditableSection
-        title="Description"
-        icon={<FileText className="w-4 h-4" />}
-        canEdit
-        onSave={() => {}}
-      >
-        {({ editing }) => (
-          <PresenceProvider
-            pageId={`project:${projectId}`}
-            token={collabToken}
-            userName={userName}
-          >
-            <DocEditor
-              features="notes"
-              editable={editing}
-              collab={{
-                documentName: `project:${projectId}:description`,
-                token: collabToken,
-                userName,
-              }}
-              placeholder="Add a short description…"
-              className="border border-border rounded-md"
-            />
-          </PresenceProvider>
-        )}
-      </EditableSection>
-    );
-  }
+  const submit = useSubmit();
+  const formRef = useRef<HTMLFormElement | null>(null);
 
-  // Viewers render the doc read-only from server-loaded blocks (no collab
-  // socket); legacy rows with no doc yet fall back to the Markdown mirror.
   return (
-    <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
-      <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
-        <FileText className="w-4 h-4" />
-        Description
-      </h2>
-      {countWords(descriptionContent) > 0 ? (
-        <DocEditor features="notes" editable={false} initialContent={descriptionContent} />
-      ) : description ? (
-        <Markdown>{description}</Markdown>
-      ) : (
-        <p className="text-sm text-muted-foreground italic">No description.</p>
-      )}
-    </section>
+    <EditableSection
+      title="Description"
+      icon={<FileText className="w-4 h-4" />}
+      canEdit={canEdit}
+      onSave={() => { if (formRef.current) submit(formRef.current); }}
+    >
+      {({ editing }) =>
+        editing ? (
+          <Form method="post" ref={formRef} className="flex flex-col gap-1.5">
+            <input type="hidden" name="intent" value="description" />
+            <textarea
+              name="description"
+              rows={6}
+              defaultValue={description ?? ""}
+              placeholder="Add a short description… (Markdown supported)"
+              className="px-2 py-1.5 text-sm font-mono border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+              autoFocus
+            />
+            <p className="text-[11px] text-muted-foreground">
+              Supports Markdown — **bold**, headings, lists, links, `code`.
+            </p>
+          </Form>
+        ) : description ? (
+          <Markdown>{description}</Markdown>
+        ) : (
+          <p className="text-sm text-muted-foreground italic">
+            No description.
+          </p>
+        )
+      }
+    </EditableSection>
   );
 }
 
@@ -2614,8 +2589,6 @@ function OverviewTab({
   domainScopeGrid,
   plannedTerms,
   currentTerm,
-  collabToken,
-  userName,
 }: {
   project: LoaderData["project"];
   teams: LoaderData["teams"];
@@ -2634,8 +2607,6 @@ function OverviewTab({
   domainScopeGrid: LoaderData["domainScopeGrid"];
   plannedTerms: LoaderData["plannedTerms"];
   currentTerm: LoaderData["currentTerm"];
-  collabToken: string | null;
-  userName: string;
 }) {
   const [showFutureChallenges, setShowFutureChallenges] = useState(false);
   const tz = useUserTimeZone();
@@ -2668,14 +2639,7 @@ function OverviewTab({
   return (
     <div className="flex flex-col gap-4">
       {/* Description — its own segment on top, separate from Project details */}
-      <DescriptionSegment
-        projectId={project.id}
-        description={project.description}
-        descriptionContent={project.descriptionContent}
-        canEdit={canEdit}
-        collabToken={collabToken}
-        userName={userName}
-      />
+      <DescriptionSegment description={project.description} canEdit={canEdit} />
 
       {/* Challenge for the current term, per declared domain (read-only). */}
       {currentTerm &&

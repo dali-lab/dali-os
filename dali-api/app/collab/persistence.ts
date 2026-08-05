@@ -59,13 +59,6 @@ async function seedContent(name: string): Promise<string | null> {
     }
   }
 
-  if (entity === "project") {
-    if (field === "description") {
-      const project = await prisma.project.findUnique({ where: { id } });
-      return project?.description ?? "";
-    }
-  }
-
   if (entity === "task") {
     if (field === "description") {
       const task = await prisma.task.findUnique({ where: { id } });
@@ -312,15 +305,6 @@ export async function storeDocument(
       await prisma.domainApplication.update({
         where: { id },
         data: { interviewPrepNote: plainText },
-      });
-    }
-  }
-
-  if (entity === "project") {
-    if (field === "description") {
-      await prisma.project.update({
-        where: { id },
-        data: { description: plainText },
       });
     }
   }
