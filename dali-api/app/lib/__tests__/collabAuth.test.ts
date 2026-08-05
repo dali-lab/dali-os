@@ -374,30 +374,6 @@ describe("authorizeCollabDoc", () => {
     });
   });
 
-  describe("project description docs (project:{id}:description)", () => {
-    it("rejects when the project is not found", async () => {
-      mockPrisma.project.findUnique.mockResolvedValue(null);
-      expect(await authorizeCollabDoc("user1", "project:p1:description")).toMatchObject(denied());
-    });
-
-    it("rejects a non-member non-Core user", async () => {
-      mockPrisma.project.findUnique.mockResolvedValue({ id: "p1" });
-      expect(await authorizeCollabDoc("user1", "project:p1:description")).toMatchObject(denied());
-    });
-
-    it("allows a project member", async () => {
-      mockPrisma.project.findUnique.mockResolvedValue({ id: "p1" });
-      (isProjectMember as any).mockResolvedValue(true);
-      expect(await authorizeCollabDoc("user1", "project:p1:description")).toEqual(allowed());
-    });
-
-    it("allows Core", async () => {
-      mockPrisma.project.findUnique.mockResolvedValue({ id: "p1" });
-      (isCore as any).mockResolvedValue(true);
-      expect(await authorizeCollabDoc("user1", "project:p1:description")).toEqual(allowed());
-    });
-  });
-
   describe("task description docs (task:{id}:description)", () => {
     it("rejects when the task is not found", async () => {
       mockPrisma.task.findUnique.mockResolvedValue(null);

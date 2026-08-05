@@ -218,19 +218,6 @@ export async function authorizeCollabDoc(
     return partnerUser?.partnerOrgId === application.partnerOrgId ? allow : deny;
   }
 
-  // project:{projectId}:description — edit = Core or project member. Viewers
-  // (lab members, partners) read the plaintext mirror (Project.description)
-  // directly via <Markdown>, so only editors open the collab socket.
-  if (entity === "project") {
-    const project = await prisma.project.findUnique({
-      where: { id },
-      select: { id: true },
-    });
-    if (!project) return deny;
-    if (await isCore(userSub)) return allow;
-    return (await isProjectMember(userSub, id)) ? allow : deny;
-  }
-
   // task:{taskId}:description — same gate as the task's project.
   if (entity === "task") {
     const task = await prisma.task.findUnique({
