@@ -1,6 +1,6 @@
 import { useState, useEffect, type CSSProperties, type ReactNode } from 'react'
 import { Select } from '~/components/ui/floating'
-import { GripVertical, Plus, Pencil, Trash2, Save, Check, Loader2 } from 'lucide-react'
+import { GripVertical, Plus, Pencil, Trash2, Save, Check, Loader2, Eye } from 'lucide-react'
 import {
   DndContext,
   PointerSensor,
@@ -138,6 +138,10 @@ interface FormBuilderTabProps {
   // Terms offered for term-scoped reference sources (e.g. projects active in a
   // chosen term). Empty/omitted when no term picker is needed.
   terms?: { id: string; code: string }[]
+  // When provided, renders a "Preview" button that hands back the current
+  // in-progress questions/description (live builder state, not yet saved).
+  // Omitted by hiring's challenge builder — only Forms wires this up.
+  onPreview?: (payload: { questions: Question[]; description: unknown }) => void
 }
 export function FormBuilderTab({
   initialQuestions = [],
@@ -150,6 +154,7 @@ export function FormBuilderTab({
   isGeneralForm = false,
   allowCheckbox = false,
   terms = [],
+  onPreview,
 }: FormBuilderTabProps) {
   const [questions, setQuestions] = useState<Question[]>(initialQuestions)
   const [description, setDescription] = useState<unknown>(initialDescription ?? null)
@@ -674,6 +679,15 @@ export function FormBuilderTab({
           const busy = saveStatus === 'saving-draft' || saveStatus === 'saving-version'
           return (
             <>
+              {onPreview && (
+                <button
+                  type="button"
+                  onClick={() => onPreview({ questions, description })}
+                  className="inline-flex items-center px-4 py-2 border border-border shadow-sm text-sm font-medium rounded-lg text-foreground/80 bg-card hover:bg-muted/50 mr-auto"
+                >
+                  <Eye className="w-4 h-4 mr-2" /> Preview
+                </button>
+              )}
               {onCancel && (
                 <button
                   onClick={onCancel}

@@ -11,8 +11,10 @@ import {
   Copy,
   Check,
   Inbox,
+  Eye,
 } from "lucide-react";
 import { FormBuilderTab } from "~/components/form-builder/FormBuilder";
+import { FormPreviewModal } from "~/forms/components/FormPreviewModal";
 import { DocEditor } from "~/components/doc";
 import { isEmptyBlocks } from "~/lib/blocks";
 import { Button, buttonClasses } from "~/components/ui/Button";
@@ -115,6 +117,14 @@ export function FormDetail() {
   // revalidation (e.g. after a draft save flips hasDraft), which would wipe the
   // user's in-progress edits and the "Saved" flash.
   const [editKey, setEditKey] = useState(0);
+
+  // Set to open FormPreviewModal, showing what the form would look like once
+  // published — either the builder's live in-progress state or a saved
+  // version's frozen questions, depending on which "Preview" button was used.
+  const [previewData, setPreviewData] = useState<{
+    questions: Question[];
+    description: unknown;
+  } | null>(null);
 
   // Open the builder and switch to it, seeded from (in order): an explicit
   // source version, the resumable draft, the latest frozen version (so "New
@@ -406,6 +416,7 @@ export function FormDetail() {
                 onSave={handleSaveVersion}
                 saveLabel="Save as version"
                 saveStatus={saveStatus}
+                onPreview={setPreviewData}
                 onCancel={
                   form.versions.length === 0 && !hasDraft
                     ? undefined
@@ -430,10 +441,25 @@ export function FormDetail() {
                     {formatDateTime(selectedVersion.createdAt, tz)}
                   </p>
                 </div>
-                <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                  <Lock className="w-3.5 h-3.5" />
-                  Read-only
-                </span>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setPreviewData({
+                        questions: selectedVersion.questions,
+                        description: selectedVersion.description,
+                      })
+                    }
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground/80 hover:text-foreground px-2.5 py-1.5 rounded-md border border-border bg-card hover:bg-muted/50"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    Preview
+                  </button>
+                  <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                    <Lock className="w-3.5 h-3.5" />
+                    Read-only
+                  </span>
+                </div>
               </div>
 
               <div className="p-6 space-y-4">
@@ -525,6 +551,15 @@ export function FormDetail() {
           )}
         </div>
       </div>
+
+      {previewData && (
+        <FormPreviewModal
+          formName={form.name}
+          description={previewData.description}
+          questions={previewData.questions}
+          onClose={() => setPreviewData(null)}
+        />
+      )}
     </div>
   );
 }
