@@ -5,7 +5,7 @@ import { getPageAccess } from "~/lib/pageAccess.server";
 import { setFavorite } from "~/lib/user-pages.server";
 
 // POST /api/pages/:id/favorite — add or remove this page from the caller's own
-// Favourites. Body: { favorited: boolean }.
+// Favorites. Body: { favorited: boolean }.
 //
 // Distinct from /api/pages/:id/pin, which sets Page.pinnedAt — one shared pin
 // on a project's Documents block that everyone sees. This one is personal and

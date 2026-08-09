@@ -1,9 +1,9 @@
 import { test, expect } from './fixtures';
 
 // Section content is rendered inside an iframe inside the workspace shell.
-// The Hiring sidebar area is childless, so direct navigation seeds the tab
-// with the area label ("Hiring"); lateral moves between hiring tools happen
-// via the in-page pill row and keep the same iframe.
+// Direct navigation seeds the tab with the area label ("Hiring"); lateral
+// moves between hiring tools now happen via the sidebar's active-area
+// children, each opening its own workspace tab.
 const domainFrame = (page: import('@playwright/test').Page) =>
   page.frameLocator('iframe[title="Hiring"]');
 
@@ -52,15 +52,14 @@ test.describe('domain lead workflow', () => {
     await expect(frame.getByText('Engineering Challenge')).toBeVisible();
   });
 
-  test('domain lead can reach Rubrics via the hiring pills', async ({ page }) => {
+  test('domain lead can reach Rubrics via the sidebar', async ({ page }) => {
     await page.goto('/hiring/domain-lead');
-    const frame = domainFrame(page);
-    // The sidebar Library entry is gone — lateral navigation between hiring
-    // tools is the in-page pill row, which navigates within the same iframe.
-    await frame.getByRole('link', { name: 'Library' }).click();
+    // Lateral navigation between hiring tools is the sidebar's active-area
+    // children now; clicking Library opens it in its own workspace tab.
+    await page.locator('aside').getByRole('button', { name: 'Library' }).click();
+    const frame = page.frameLocator('iframe[title="Library"]');
     // Wait for the Library route to finish loading inside the iframe before
-    // interacting — otherwise the Rubrics tab click can race the iframe's
-    // navigation and land on a not-yet-ready frame.
+    // interacting — otherwise the Rubrics tab click can race the navigation.
     const rubricsTab = frame.getByRole('tab', { name: 'Rubrics' });
     await expect(rubricsTab).toBeVisible();
     await rubricsTab.click();

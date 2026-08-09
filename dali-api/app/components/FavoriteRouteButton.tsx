@@ -110,7 +110,7 @@ export function FavoriteRouteButton({
     // and an absolutely-positioned tip counts toward a scroll container's
     // overflow — 20px of phantom vertical scroll before this.
     <Tooltip
-      label={favorited ? "In your favourites" : "Add this page to your favourites"}
+      label={favorited ? "In your favorites" : "Add this page to your favorites"}
       portal={compact}
     >
       <button
@@ -121,7 +121,7 @@ export function FavoriteRouteButton({
           e.stopPropagation();
           void toggle();
         }}
-        aria-label={favorited ? "Remove from favourites" : "Add to favourites"}
+        aria-label={favorited ? "Remove from favorites" : "Add to favorites"}
         aria-pressed={favorited}
         className={`inline-flex items-center justify-center transition-colors disabled:opacity-40 ${
           compact ? "" : inline ? "shrink-0 rounded-md p-1" : "ml-auto shrink-0 rounded-md p-1.5"

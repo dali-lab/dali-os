@@ -18,7 +18,7 @@ function page(id: string) {
   return { page: { id, title: id, iconEmoji: null, workspaceType: "Lab" } };
 }
 
-/** Queue the three findMany calls: route favourites, then pages, then recents. */
+/** Queue the three findMany calls: route favorites, then pages, then recents. */
 function rows(favorites: string[], recents: string[], routes: { href: string; label: string }[] = []) {
   mockPrisma.userFavorite.findMany
     .mockResolvedValueOnce(routes)
@@ -35,21 +35,21 @@ beforeEach(() => {
 });
 
 describe("listFavoritesAndRecents", () => {
-  it("keeps the query's order — favourites and recents are already sorted", async () => {
+  it("keeps the query's order — favorites and recents are already sorted", async () => {
     rows(["fav-1", "fav-2"], ["recent-1", "recent-2"]);
     const { favorites, recents } = await listFavoritesAndRecents(USER);
     expect(favorites.map((p) => p.id)).toEqual(["fav-1", "fav-2"]);
     expect(recents.map((p) => p.id)).toEqual(["recent-1", "recent-2"]);
   });
 
-  it("marks favourites so the caller can tell the two lists apart", async () => {
+  it("marks favorites so the caller can tell the two lists apart", async () => {
     rows(["fav-1"], ["recent-1"]);
     const { favorites, recents } = await listFavoritesAndRecents(USER);
     expect(favorites[0].favorited).toBe(true);
     expect(recents[0].favorited).toBe(false);
   });
 
-  it("asks the database to exclude favourites from recents, so no page is listed twice", async () => {
+  it("asks the database to exclude favorites from recents, so no page is listed twice", async () => {
     rows(["fav-1"], []);
     await listFavoritesAndRecents(USER);
     const recentsQuery = mockPrisma.userFavorite.findMany.mock.calls[2][0];
@@ -98,7 +98,7 @@ describe("listFavoritesAndRecents", () => {
   });
 });
 
-describe("route favourites", () => {
+describe("route favorites", () => {
   it("lists starred URLs alongside starred pages", async () => {
     rows(["fav-page"], [], [{ href: "/projects/p1", label: "Hood Museum AR" }]);
     const { favorites } = await listFavoritesAndRecents(USER);
@@ -124,7 +124,7 @@ describe("route favourites", () => {
     expect(recents.every((r) => !r.isRoute)).toBe(true);
   });
 
-  it("drops navbar route favourites (home, settings, hub pages)", async () => {
+  it("drops navbar route favorites (home, settings, hub pages)", async () => {
     rows(
       [],
       [],

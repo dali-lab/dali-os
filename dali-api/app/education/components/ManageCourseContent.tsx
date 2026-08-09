@@ -33,7 +33,7 @@ export function ManageMaterials({
     children: { id: string; title: string }[];
   }[];
   workspaceDocs: { id: string; title: string }[];
-  /** Page ids the viewer has starred, for the per-row favourite toggle. */
+  /** Page ids the viewer has starred, for the per-row favorite toggle. */
   favoriteIds?: string[];
 }) {
   const [addPageOpen, setAddPageOpen] = useState(false);
