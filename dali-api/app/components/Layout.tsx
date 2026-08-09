@@ -14,7 +14,10 @@ import {
   Search,
   ChevronsUpDown,
   Check,
+  Compass,
+  FileText,
 } from 'lucide-react'
+import type { FavoritePage } from '~/lib/user-pages.server'
 import { userInitials } from '~/lib/display'
 import { TabWorkspace, type TabWorkspaceHandle, type OpenTabRequest } from '~/components/TabWorkspace'
 import { useOpenTasks, TASKS_CHANGED_EVENT } from '~/components/NotificationBell'
@@ -42,6 +45,10 @@ interface LayoutProps {
   hasHiringAccess?: boolean
   isLabMentor?: boolean
   isInstructor?: boolean
+  /** Starred pages/routes, most-recently pinned first (sidebar Favorites). */
+  favorites?: FavoritePage[]
+  /** Recently opened pages not already starred (sidebar Recent). */
+  recents?: FavoritePage[]
   /** Focus mode: hide the sidebar entirely; navigate via ⌘K + breadcrumbs.
    *  A floating launcher keeps search + "show sidebar" reachable. */
   focusMode?: boolean
@@ -57,7 +64,7 @@ const SIDEBAR_COLLAPSED_KEY = 'dali:sidebar:collapsed'
 // sidebar reopens on the section you were last working in.
 const LAST_AREA_KEY = 'dali:sidebar:area'
 
-export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDomainLead = false, canViewForms = false, canViewStaffing = false, isInterviewer = false, hasHiringAccess = false, isLabMentor = false, isInstructor = false, focusMode = false, children }: LayoutProps) {
+export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDomainLead = false, canViewForms = false, canViewStaffing = false, isInterviewer = false, hasHiringAccess = false, isLabMentor = false, isInstructor = false, favorites = [], recents = [], focusMode = false, children }: LayoutProps) {
   const location = useLocation()
   const navigate = useNavigate()
   const { revalidate } = useRevalidator()
@@ -318,6 +325,27 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
         : path.startsWith('/help')
           ? 'Help'
           : routeArea?.label
+
+  // A Favorites/Recent row: a launcher (open-only) that respects tab/tabless
+  // mode. Route favorites get a compass; pages show their emoji or a doc icon.
+  const renderPageRow = (p: FavoritePage) => (
+    <button
+      key={p.id}
+      type="button"
+      title={p.title || 'Untitled'}
+      {...tabClickProps({ url: p.href, label: p.title || 'Untitled' })}
+      className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] font-medium text-left text-white/55 hover:text-white hover:bg-white/5 transition-colors"
+    >
+      {p.isRoute ? (
+        <Compass className="w-4 h-4 flex-shrink-0 text-white/40" />
+      ) : p.iconEmoji ? (
+        <span className="w-4 h-4 flex-shrink-0 text-center text-sm leading-4" aria-hidden>{p.iconEmoji}</span>
+      ) : (
+        <FileText className="w-4 h-4 flex-shrink-0 text-white/40" />
+      )}
+      <span className="truncate">{p.title || 'Untitled'}</span>
+    </button>
+  )
 
   const initials = userInitials(user)
   const openTasks = useOpenTasks()
@@ -628,6 +656,27 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
                     </button>
                   )
                 })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Favorites + Recent — starred and recently opened pages, from the
+            same source as the Home panel. Hidden collapsed (text-first rows).
+            Recent refreshes on shell reload / tabless nav, not on in-iframe
+            moves. */}
+        {!collapsed && (favorites.length > 0 || recents.length > 0) && (
+          <div className="mt-2 pt-2 border-t border-white/10 flex flex-col gap-3">
+            {favorites.length > 0 && (
+              <div className="flex flex-col gap-0.5">
+                <div className="px-2.5 pb-0.5 text-[11px] font-semibold uppercase tracking-wide text-white/35">Favorites</div>
+                {favorites.map(renderPageRow)}
+              </div>
+            )}
+            {recents.length > 0 && (
+              <div className="flex flex-col gap-0.5">
+                <div className="px-2.5 pb-0.5 text-[11px] font-semibold uppercase tracking-wide text-white/35">Recent</div>
+                {recents.map(renderPageRow)}
               </div>
             )}
           </div>
