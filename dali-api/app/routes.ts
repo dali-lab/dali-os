@@ -168,6 +168,7 @@ export default [
     // Static `edit`/`responses` segments must precede the :folderId catch so
     // /forms/edit/* and /forms/responses/* aren't read as folder ids.
     route("forms/edit/:formId", "forms/routes/forms.edit.$formId.tsx"),
+    route("forms/preview-resolve", "forms/routes/forms.preview-resolve.ts"),
     route("forms/responses/:formId", "forms/routes/forms.responses.$formId.tsx"),
     route("forms/:folderId", "forms/routes/forms.$folderId.tsx"),
 
