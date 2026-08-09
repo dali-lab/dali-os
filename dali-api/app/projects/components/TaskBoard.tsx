@@ -261,6 +261,26 @@ export function TaskBoard({
   const board = useMemo(() => buildTaskBoard(filteredTasks), [filteredTasks]);
   const openTask = openTaskId ? tasks.find((t) => t.id === openTaskId) ?? null : null;
 
+  // Clear the unread dot the moment a task is opened: optimistically locally
+  // (so it disappears from the board immediately) and on the server (so it
+  // stays cleared on the next load). Keyed on id alone so re-renders from
+  // unrelated patches to the same open task don't re-fire the request.
+  useEffect(() => {
+    if (!openTaskId) return;
+    const task = tasks.find((t) => t.id === openTaskId);
+    if (!task?.hasUnread) return;
+    setItems((cur) =>
+      cur.map((t) => (t.id === openTaskId ? { ...t, hasUnread: false } : t)),
+    );
+    void fetch(`/api/tasks/${openTaskId}/view`, {
+      method: "POST",
+      credentials: "include",
+    }).catch(() => {
+      /* best-effort — the dot just won't stay cleared next load */
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openTaskId]);
+
   // Apply an optimistic local patch, then PATCH the row. On failure the hook
   // restores the snapshot and surfaces the error. Used by both inline (card)
   // edits and the modal; the returned result lets the modal stay open and
@@ -418,6 +438,7 @@ export function TaskBoard({
         files: [],
         createdBy: { id: currentUserId, name: currentUserName },
         createdAt: new Date().toISOString(),
+        hasUnread: false,
       },
     ]);
     setIsCreating(false);
@@ -807,10 +828,17 @@ function TaskCard({
   return (
     <div
       {...dragHandleProps}
-      className={`border border-border rounded-md bg-background text-sm flex focus-within:ring-2 focus-within:ring-accent-coral/30 ${
+      className={`relative border border-border rounded-md bg-background text-sm flex focus-within:ring-2 focus-within:ring-accent-coral/30 ${
         isDragging ? "opacity-40" : "hover:bg-muted/20"
       }`}
     >
+      {card.hasUnread && (
+        <span
+          className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-accent-coral ring-2 ring-background"
+          title="New updates since you last opened this task"
+          aria-label="New updates since you last opened this task"
+        />
+      )}
       <div
         role="button"
         tabIndex={0}

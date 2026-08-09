@@ -32,6 +32,7 @@ function task(
     files: [],
     createdBy: { id: "u1", name: "U" },
     createdAt: "2026-07-01T00:00:00.000Z",
+    hasUnread: false,
   };
 }
 

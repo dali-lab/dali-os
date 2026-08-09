@@ -70,7 +70,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
     await prisma.task.update({
       where: { id: params.id },
-      data: { githubRepo: null, githubIssueNumber: null, githubIssueUrl: null },
+      data: { githubRepo: null, githubIssueNumber: null, githubIssueUrl: null, activityAt: new Date() },
     });
     return withCors(request, Response.json({ ok: true }));
   }
@@ -166,6 +166,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       githubRepo: normalized,
       githubIssueNumber: parsed.issueNumber,
       githubIssueUrl: issueUrl,
+      activityAt: new Date(),
     },
   });
 

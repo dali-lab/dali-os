@@ -59,6 +59,11 @@ export type TaskCardModel = {
   createdBy: { id: string; name: string };
   // ISO timestamp (UTC).
   createdAt: string;
+  // True when the task has meaningful activity (status/field edit, assignee
+  // change, comment, GitHub link — see Task.activityAt) since the viewer
+  // last opened it. False for tasks the viewer has never opened, so a fresh
+  // board isn't flagged "new" wall-to-wall. Drives the board's unread dot.
+  hasUnread: boolean;
 };
 
 export type BoardSprint = {
