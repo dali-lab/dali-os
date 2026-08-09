@@ -2339,6 +2339,18 @@ function DomainScopesSegment({
   const cell = (domainId: string, termId: string): string =>
     grid.find((c) => c.domainId === domainId && c.termId === termId)?.scope ??
     "";
+  // terms is already sorted newest-first (plannedTerms), so terms[0] is this
+  // project's latest term — the only one expanded by default.
+  const [expandedTermIds, setExpandedTermIds] = useState<Set<string>>(
+    () => new Set(terms[0] ? [terms[0].id] : []),
+  );
+  const toggleTerm = (id: string) =>
+    setExpandedTermIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   return (
     <EditableSection
@@ -2350,43 +2362,63 @@ function DomainScopesSegment({
       {({ editing }) => (
         <Form method="post" ref={formRef} className="flex flex-col gap-4">
           <input type="hidden" name="intent" value="scopesBulk" />
-          {terms.map((t) => (
-            <div key={t.id} className="flex flex-col gap-2">
-              <h3 className="text-sm font-semibold text-foreground">{t.code}</h3>
-              <div className="flex flex-col gap-3">
-                {domains.map((d) => {
-                  const value = cell(d.id, t.id);
-                  return (
-                    <div
-                      key={`${d.id}:${t.id}`}
-                      className="rounded-md border border-border p-2 flex flex-col gap-1"
-                    >
-                      <span className="text-[11px] font-medium text-muted-foreground">
-                        {d.name}
-                      </span>
-                      {editing ? (
-                        <textarea
-                          name={`scope:${d.id}:${t.id}`}
-                          defaultValue={value}
-                          rows={3}
-                          placeholder="+ Add challenge"
-                          className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 resize-y"
-                        />
-                      ) : value ? (
-                        <p className="text-sm text-foreground whitespace-pre-wrap">
-                          {value}
-                        </p>
-                      ) : (
-                        <p className="text-sm text-muted-foreground italic">
-                          No challenge.
-                        </p>
-                      )}
-                    </div>
-                  );
-                })}
+          {terms.map((t) => {
+            // Editing needs every term's fields mounted so a save doesn't
+            // wipe out cells in a folded term; folding only applies to viewing.
+            const open = editing || expandedTermIds.has(t.id);
+            return (
+              <div key={t.id} className="flex flex-col gap-2">
+                {editing ? (
+                  <h3 className="text-sm font-semibold text-foreground">{t.code}</h3>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => toggleTerm(t.id)}
+                    className="flex items-center gap-1.5 text-left text-sm font-semibold text-foreground"
+                  >
+                    {open ? (
+                      <ChevronDown className="w-3.5 h-3.5 flex-shrink-0 text-muted-foreground" />
+                    ) : (
+                      <ChevronRight className="w-3.5 h-3.5 flex-shrink-0 text-muted-foreground" />
+                    )}
+                    {t.code}
+                  </button>
+                )}
+                <div className={`flex flex-col gap-3 ${open ? "" : "hidden"}`}>
+                  {domains.map((d) => {
+                    const value = cell(d.id, t.id);
+                    return (
+                      <div
+                        key={`${d.id}:${t.id}`}
+                        className="rounded-md border border-border p-2 flex flex-col gap-1"
+                      >
+                        <span className="text-[11px] font-medium text-muted-foreground">
+                          {d.name}
+                        </span>
+                        {editing ? (
+                          <textarea
+                            name={`scope:${d.id}:${t.id}`}
+                            defaultValue={value}
+                            rows={3}
+                            placeholder="+ Add challenge"
+                            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30 resize-y"
+                          />
+                        ) : value ? (
+                          <p className="text-sm text-foreground whitespace-pre-wrap">
+                            {value}
+                          </p>
+                        ) : (
+                          <p className="text-sm text-muted-foreground italic">
+                            No challenge.
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </Form>
       )}
     </EditableSection>
