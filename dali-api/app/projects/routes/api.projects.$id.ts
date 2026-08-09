@@ -74,11 +74,27 @@ export async function action({ request, params }: Route.ActionArgs) {
   const systemPageIds = [project.overviewPageId, project.prdPageId].filter(
     (id): id is string => id !== null,
   );
+  // The "Team meeting notes" / "Partner meeting notes" folders (see
+  // ensureMeetingNotesFolder in ~/lib/pages.ts) are backfilled on every project
+  // page view and can't be archived (api.documents.$id.ts refuses systemKey
+  // pages), so without this they'd count as permanent, un-clearable "documents"
+  // and block deletion forever. They're empty Folder-kind containers, not
+  // authored content, so exclude and clean them up the same way as overview/PRD.
+  const meetingNotesFolders = await prisma.page.findMany({
+    where: {
+      workspaceType: "Project",
+      workspaceId: projectId,
+      kind: "Folder",
+      systemKey: { not: null },
+    },
+    select: { id: true, contentDocId: true },
+  });
+  const excludedPageIds = [...systemPageIds, ...meetingNotesFolders.map((p) => p.id)];
   const authoredPages = await prisma.page.count({
     where: {
       workspaceType: "Project",
       workspaceId: projectId,
-      id: { notIn: systemPageIds },
+      id: { notIn: excludedPageIds },
     },
   });
 
@@ -109,7 +125,11 @@ export async function action({ request, params }: Route.ActionArgs) {
   });
   // A FreeForm page's body lives in a CollabDocument keyed by name — the
   // pageDocName() shape unless the page overrides it. Versions cascade off it.
-  const docNames = systemPages.map((p) => p.contentDocId ?? pageDocName(p.id));
+  // Folders (the meeting-notes pages) never have content, but computing a name
+  // for them anyway is harmless — deleteMany below just matches nothing.
+  const docNames = [...systemPages, ...meetingNotesFolders].map(
+    (p) => p.contentDocId ?? pageDocName(p.id),
+  );
 
   await prisma.$transaction(async (tx) => {
     // Project references its own overview/PRD pages, so drop those references
@@ -119,8 +139,8 @@ export async function action({ request, params }: Route.ActionArgs) {
       data: { overviewPageId: null, prdPageId: null },
     });
     await tx.project.delete({ where: { id: projectId } });
-    if (systemPageIds.length) {
-      await tx.page.deleteMany({ where: { id: { in: systemPageIds } } });
+    if (excludedPageIds.length) {
+      await tx.page.deleteMany({ where: { id: { in: excludedPageIds } } });
     }
     if (docNames.length) {
       await tx.collabDocument.deleteMany({ where: { name: { in: docNames } } });
@@ -131,7 +151,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     action: "project.delete",
     userId: gate.auth.user.sub,
     targetId: projectId,
-    metadata: { name: project.name, systemPagesDeleted: systemPageIds.length },
+    metadata: { name: project.name, systemPagesDeleted: excludedPageIds.length },
     request,
   });
 
