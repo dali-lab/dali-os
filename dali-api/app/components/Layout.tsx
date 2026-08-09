@@ -16,10 +16,8 @@ import {
   Check,
   Compass,
   FileText,
-  Star,
 } from 'lucide-react'
 import type { FavoritePage } from '~/lib/user-pages.server'
-import { isNavbarRoute } from '~/lib/navbar-routes'
 import { userInitials } from '~/lib/display'
 import { TabWorkspace, type TabWorkspaceHandle, type OpenTabRequest } from '~/components/TabWorkspace'
 import { useOpenTasks, TASKS_CHANGED_EVENT } from '~/components/NotificationBell'
@@ -32,7 +30,6 @@ import {
   visibleAreas,
   visibleSubtabs,
   type NavArea,
-  type SubTab,
   type RoleFlags,
 } from '~/lib/nav-areas'
 
@@ -298,27 +295,6 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
   const activeArea = routeArea ?? areas.find((a) => a.key === lastAreaKey) ?? areas[0]
   const activeSubtabs = activeArea ? visibleSubtabs(activeArea, roleFlags) : []
   const activeHref = activeArea ? activeSubtabHref(activeArea, path) : undefined
-  // Route hrefs the viewer has starred, so a sub-tab knows whether to show a
-  // filled star. Derived from the same favorites the sidebar list renders.
-  const favedHrefs = new Set(favorites.filter((f) => f.isRoute).map((f) => f.href))
-
-  // Star/unstar a sub-tab route via the shared route-favorites endpoint, then
-  // revalidate the shell so the sidebar Favorites list reflects the change.
-  const toggleRouteFavorite = async (t: SubTab, isFav: boolean, e: React.MouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    try {
-      await fetch('/api/favorites/route', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ href: t.href, label: t.label, favorited: !isFav }),
-      })
-      revalidate()
-    } catch {
-      // Network hiccup — the star simply stays as it was.
-    }
-  }
 
   // Remember the section as you move through it, so returning to a pinned
   // surface reopens the dropdown where you left off. Persist on area routes only.
@@ -665,58 +641,19 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
               <div className={collapsed ? 'flex flex-col gap-0.5' : 'ml-4 pl-2 border-l border-white/10 flex flex-col gap-0.5'}>
                 {activeSubtabs.map((t) => {
                   const active = t.href === activeHref
-                  if (collapsed) {
-                    return (
-                      <button
-                        key={t.href}
-                        type="button"
-                        title={t.label}
-                        {...tabClickProps({ url: t.href, label: t.label })}
-                        className={`flex items-center justify-center px-3 py-2 rounded-md text-[13px] font-medium transition-colors hover:bg-white/5 ${
-                          active ? 'text-white' : 'text-white/55 hover:text-white'
-                        }`}
-                      >
-                        <t.icon className="w-4 h-4 flex-shrink-0" />
-                      </button>
-                    )
-                  }
-                  // Hub roots and other navbar-linked routes can't be starred
-                  // (they're always reachable) — the endpoint rejects them, so
-                  // don't offer the affordance.
-                  const favoritable = !isNavbarRoute(t.href)
-                  const fav = favedHrefs.has(t.href)
                   return (
-                    <div
+                    <button
                       key={t.href}
-                      className="group flex items-center rounded-md hover:bg-white/5 transition-colors"
+                      type="button"
+                      title={collapsed ? t.label : undefined}
+                      {...tabClickProps({ url: t.href, label: t.label })}
+                      className={`flex items-center gap-2.5 rounded-md ${collapsed ? 'px-3 py-2 justify-center' : 'px-2.5 py-1.5'} text-[13px] font-medium text-left transition-colors hover:bg-white/5 ${
+                        active ? 'text-white' : 'text-white/55 hover:text-white'
+                      }`}
                     >
-                      <button
-                        type="button"
-                        {...tabClickProps({ url: t.href, label: t.label })}
-                        className={`flex flex-1 min-w-0 items-center gap-2.5 px-2.5 py-1.5 text-[13px] font-medium text-left transition-colors ${
-                          active ? 'text-white' : 'text-white/55 group-hover:text-white'
-                        }`}
-                      >
-                        <t.icon className="w-4 h-4 flex-shrink-0" />
-                        <span className="truncate">{t.label}</span>
-                      </button>
-                      {favoritable && (
-                        <button
-                          type="button"
-                          onClick={(e) => toggleRouteFavorite(t, fav, e)}
-                          title={fav ? 'Remove from favorites' : 'Add to favorites'}
-                          aria-label={fav ? 'Remove from favorites' : 'Add to favorites'}
-                          aria-pressed={fav}
-                          className={`mr-1 shrink-0 rounded p-1 transition-colors ${
-                            fav
-                              ? 'text-accent-coral'
-                              : 'text-white/30 hover:text-white opacity-0 group-hover:opacity-100 focus:opacity-100'
-                          }`}
-                        >
-                          <Star className={`w-3.5 h-3.5 ${fav ? 'fill-current' : ''}`} />
-                        </button>
-                      )}
-                    </div>
+                      <t.icon className="w-4 h-4 flex-shrink-0" />
+                      {!collapsed && <span className="truncate">{t.label}</span>}
+                    </button>
                   )
                 })}
               </div>

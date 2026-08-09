@@ -216,6 +216,15 @@ export function activeSubtabHref(area: NavArea, path: string): string | undefine
   return best;
 }
 
+// True when the path is exactly a non-hub area sub-tab (e.g. /projects/staffing).
+// Drives the breadcrumb favorite star: every sub-tab landing page is directly
+// pinnable, using the same affordance as project/person/partner detail pages.
+export function isAreaSubtabPath(path: string): boolean {
+  return NAV_AREAS.some((a) =>
+    a.subtabs.some((t) => t.href !== a.hubPath && t.href === path),
+  );
+}
+
 export function visibleAreas(r: RoleFlags): NavArea[] {
   return NAV_AREAS.filter((a) => !a.gate || a.gate(r));
 }
