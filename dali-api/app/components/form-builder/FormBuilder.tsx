@@ -142,6 +142,9 @@ interface FormBuilderTabProps {
   // in-progress questions/description (live builder state, not yet saved).
   // Omitted by hiring's challenge builder — only Forms wires this up.
   onPreview?: (payload: { questions: Question[]; description: unknown }) => void
+  // Preview resolution (reference-question option cards) is in flight —
+  // spins the Preview button and blocks re-clicks. Ignored if onPreview isn't.
+  previewPending?: boolean
 }
 export function FormBuilderTab({
   initialQuestions = [],
@@ -155,6 +158,7 @@ export function FormBuilderTab({
   allowCheckbox = false,
   terms = [],
   onPreview,
+  previewPending = false,
 }: FormBuilderTabProps) {
   const [questions, setQuestions] = useState<Question[]>(initialQuestions)
   const [description, setDescription] = useState<unknown>(initialDescription ?? null)
@@ -683,9 +687,15 @@ export function FormBuilderTab({
                 <button
                   type="button"
                   onClick={() => onPreview({ questions, description })}
-                  className="inline-flex items-center px-4 py-2 border border-border shadow-sm text-sm font-medium rounded-lg text-foreground/80 bg-card hover:bg-muted/50 mr-auto"
+                  disabled={previewPending}
+                  className="inline-flex items-center px-4 py-2 border border-border shadow-sm text-sm font-medium rounded-lg text-foreground/80 bg-card hover:bg-muted/50 mr-auto disabled:opacity-60"
                 >
-                  <Eye className="w-4 h-4 mr-2" /> Preview
+                  {previewPending ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Eye className="w-4 h-4 mr-2" />
+                  )}
+                  Preview
                 </button>
               )}
               {onCancel && (
