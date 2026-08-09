@@ -85,6 +85,7 @@ describe("projects:* option cards", () => {
 
     expect(option.card).toEqual({
       description: "A blurb.",
+      imageUrl: null,
       partners: ["Acme"],
       challenges: [
         { domain: "Design", scope: "Design it" },
@@ -115,6 +116,7 @@ describe("projects:* option cards", () => {
 
     expect(option.card).toEqual({
       description: "A blurb.",
+      imageUrl: null,
       partners: [],
       challenges: [],
       sowPageId: null,
