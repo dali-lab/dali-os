@@ -31,6 +31,8 @@ export type ReferenceSourceKey = keyof typeof REFERENCE_SOURCE_LABELS;
 // latest term). Both are omitted/empty when that term has nothing recorded.
 export type ProjectOptionCard = {
   description: string | null;
+  /** Ready-to-use `<img src>` (already presigned if it was a private upload), or null. */
+  imageUrl: string | null;
   /** Names of currently-linked partner orgs (ended partnerships excluded). */
   partners: string[];
   /** This term's per-domain challenge text, alphabetical by domain. */
