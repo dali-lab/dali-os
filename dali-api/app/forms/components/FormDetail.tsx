@@ -12,6 +12,7 @@ import {
   Check,
   Inbox,
   Eye,
+  Loader2,
 } from "lucide-react";
 import { FormBuilderTab } from "~/components/form-builder/FormBuilder";
 import { FormPreviewModal } from "~/forms/components/FormPreviewModal";
@@ -121,10 +122,33 @@ export function FormDetail() {
   // Set to open FormPreviewModal, showing what the form would look like once
   // published — either the builder's live in-progress state or a saved
   // version's frozen questions, depending on which "Preview" button was used.
+  // `reference` questions only store a source key, so the modal can't render
+  // their option cards until forms/preview-resolve fills them in — the button
+  // stays in a loading state until that round-trip lands.
   const [previewData, setPreviewData] = useState<{
     questions: Question[];
     description: unknown;
   } | null>(null);
+  const previewFetcher = useFetcher<
+    { ok: true; questions: Question[] } | { error: string }
+  >();
+  const previewPendingDescription = useRef<unknown>(null);
+  function requestPreview(payload: { questions: Question[]; description: unknown }) {
+    previewPendingDescription.current = payload.description;
+    const fd = new FormData();
+    fd.set("questions", JSON.stringify(payload.questions));
+    previewFetcher.submit(fd, { method: "post", action: "/forms/preview-resolve" });
+  }
+  useEffect(() => {
+    const data = previewFetcher.data;
+    if (data && "questions" in data) {
+      setPreviewData({
+        questions: data.questions,
+        description: previewPendingDescription.current,
+      });
+    }
+  }, [previewFetcher.data]);
+  const previewResolving = previewFetcher.state !== "idle";
 
   // Open the builder and switch to it, seeded from (in order): an explicit
   // source version, the resumable draft, the latest frozen version (so "New
@@ -416,7 +440,8 @@ export function FormDetail() {
                 onSave={handleSaveVersion}
                 saveLabel="Save as version"
                 saveStatus={saveStatus}
-                onPreview={setPreviewData}
+                onPreview={requestPreview}
+                previewPending={previewResolving}
                 onCancel={
                   form.versions.length === 0 && !hasDraft
                     ? undefined
@@ -444,15 +469,20 @@ export function FormDetail() {
                 <div className="flex items-center gap-3">
                   <button
                     type="button"
+                    disabled={previewResolving}
                     onClick={() =>
-                      setPreviewData({
+                      requestPreview({
                         questions: selectedVersion.questions,
                         description: selectedVersion.description,
                       })
                     }
-                    className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground/80 hover:text-foreground px-2.5 py-1.5 rounded-md border border-border bg-card hover:bg-muted/50"
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground/80 hover:text-foreground px-2.5 py-1.5 rounded-md border border-border bg-card hover:bg-muted/50 disabled:opacity-60"
                   >
-                    <Eye className="w-3.5 h-3.5" />
+                    {previewResolving ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Eye className="w-3.5 h-3.5" />
+                    )}
                     Preview
                   </button>
                   <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
