@@ -97,7 +97,7 @@ describe("PATCH /api/tasks/:id sprint", () => {
     expect(res.status).toBe(200);
     expect(mockPrisma.task.update).toHaveBeenCalledWith({
       where: { id: TASK_ID },
-      data: { sprintId: "sprint-1" },
+      data: { sprintId: "sprint-1", activityAt: expect.any(Date) },
     });
   });
 
@@ -107,7 +107,7 @@ describe("PATCH /api/tasks/:id sprint", () => {
     expect(mockPrisma.sprint.findUnique).not.toHaveBeenCalled();
     expect(mockPrisma.task.update).toHaveBeenCalledWith({
       where: { id: TASK_ID },
-      data: { sprintId: null },
+      data: { sprintId: null, activityAt: expect.any(Date) },
     });
   });
 });
@@ -126,7 +126,7 @@ describe("PATCH /api/tasks/:id epic", () => {
     expect(res.status).toBe(200);
     expect(mockPrisma.task.update).toHaveBeenCalledWith({
       where: { id: TASK_ID },
-      data: { epicId: "epic-1" },
+      data: { epicId: "epic-1", activityAt: expect.any(Date) },
     });
   });
 });
@@ -165,6 +165,7 @@ describe("PATCH /api/tasks/:id checklist", () => {
           { text: "write tests", done: true },
           { text: "ship it", done: false },
         ],
+        activityAt: expect.any(Date),
       },
     });
   });
@@ -174,7 +175,7 @@ describe("PATCH /api/tasks/:id checklist", () => {
     expect(res.status).toBe(200);
     expect(mockPrisma.task.update).toHaveBeenCalledWith({
       where: { id: TASK_ID },
-      data: { checklist: Prisma.JsonNull },
+      data: { checklist: Prisma.JsonNull, activityAt: expect.any(Date) },
     });
   });
 
@@ -183,7 +184,7 @@ describe("PATCH /api/tasks/:id checklist", () => {
     expect(res.status).toBe(200);
     expect(mockPrisma.task.update).toHaveBeenCalledWith({
       where: { id: TASK_ID },
-      data: { checklist: Prisma.JsonNull },
+      data: { checklist: Prisma.JsonNull, activityAt: expect.any(Date) },
     });
   });
 });

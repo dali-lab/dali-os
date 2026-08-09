@@ -168,6 +168,7 @@ export default [
     // Static `edit`/`responses` segments must precede the :folderId catch so
     // /forms/edit/* and /forms/responses/* aren't read as folder ids.
     route("forms/edit/:formId", "forms/routes/forms.edit.$formId.tsx"),
+    route("forms/preview-resolve", "forms/routes/forms.preview-resolve.ts"),
     route("forms/responses/:formId", "forms/routes/forms.responses.$formId.tsx"),
     route("forms/:folderId", "forms/routes/forms.$folderId.tsx"),
 
@@ -387,6 +388,7 @@ export default [
     "projects/routes/api.projects.$id.tasks.archive.ts",
   ),
   route("api/tasks/:id/move", "projects/routes/api.tasks.$id.move.ts"),
+  route("api/tasks/:id/view", "projects/routes/api.tasks.$id.view.ts"),
   route("api/tasks/:id/comments", "projects/routes/api.tasks.$id.comments.ts"),
   route("api/tasks/:id/github", "projects/routes/api.tasks.$id.github.ts"),
   route("api/tasks/:id/files", "projects/routes/api.tasks.$id.files.ts"),

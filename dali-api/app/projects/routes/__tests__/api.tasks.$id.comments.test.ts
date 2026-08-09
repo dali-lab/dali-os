@@ -21,11 +21,12 @@ const TASK_ID = "task-1";
 const CALLER = "user-1";
 
 const mockPrisma = prisma as unknown as {
-  task: { findUnique: ReturnType<typeof vi.fn> };
+  task: { findUnique: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
   taskComment: {
     findMany: ReturnType<typeof vi.fn>;
     create: ReturnType<typeof vi.fn>;
   };
+  $transaction: ReturnType<typeof vi.fn>;
 };
 
 function get() {
@@ -54,6 +55,7 @@ beforeEach(() => {
       id: TASK_ID,
       assignees: [{ userId: CALLER }],
     }),
+    update: vi.fn().mockResolvedValue({}),
   };
   mockPrisma.taskComment = {
     findMany: vi.fn().mockResolvedValue([]),
@@ -64,6 +66,7 @@ beforeEach(() => {
       author: { id: CALLER, firstName: "Ada", lastName: "Lovelace" },
     }),
   };
+  mockPrisma.$transaction = vi.fn((ops: Promise<unknown>[]) => Promise.all(ops));
 });
 
 describe("GET /api/tasks/:id/comments", () => {

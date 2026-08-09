@@ -83,18 +83,27 @@ export async function action({ request, params }: Route.ActionArgs) {
       );
     }
     const status = body.status;
+    // Only the dragged task's own status change counts as "activity" — the
+    // other ids in the list are just being renumbered because it landed
+    // among them, not because anything about them changed.
+    const draggedData =
+      status === task.status ? { position: 0 } : { status, position: 0, activityAt: new Date() };
     await prisma.$transaction(
       body.orderedIds.map((id, index) =>
         prisma.task.update({
           where: { id },
-          data: id === params.id ? { status, position: index } : { position: index },
+          data: id === params.id ? { ...draggedData, position: index } : { position: index },
         }),
       ),
     );
   } else {
     await prisma.task.update({
       where: { id: params.id },
-      data: { status: body.status, position: body.position },
+      data: {
+        status: body.status,
+        position: body.position,
+        ...(body.status !== task.status ? { activityAt: new Date() } : {}),
+      },
     });
   }
 

@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { ChevronDown, ExternalLink } from "lucide-react";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { Radio } from "~/components/ui/Radio";
 import type { Question } from "~/types";
@@ -12,6 +13,7 @@ import {
 import { SKILLS_RATING_UNRATED, parseSkillsRating } from "~/lib/skills-rating";
 import type { ReferenceOption } from "~/forms/lib/reference-sources.shared";
 import { Select } from "~/components/ui/floating";
+import { ProjectCoverImage } from "~/projects/components/ProjectCoverImage";
 
 export type UrlCheckState = {
   status: "idle" | "checking" | "done";
@@ -97,10 +99,137 @@ function CheckboxField({
   );
 }
 
+// One card in the `projects:*` picker. A thumbnail + name + blurb is enough
+// to scan the list; per-domain challenges and the SOW link are lower-signal
+// (long, term-specific text) so they're tucked behind "View details" rather
+// than forcing every card open to a wall of text.
+//
+// Only the summary is wrapped in the radio's <label>. The disclosure and the
+// details it reveals sit outside it, because a click anywhere inside a label
+// picks the option — which made reading a project's challenges or opening its
+// SOW impossible without also bidding on it.
+function ReferenceProjectCard({
+  groupName,
+  option,
+  selected,
+  onChange,
+  disabled,
+}: {
+  groupName: string;
+  option: ReferenceOption;
+  selected: boolean;
+  onChange: () => void;
+  disabled: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const card = option.card;
+  const hasDetails = !!card && (card.challenges.length > 0 || !!card.sowPageId);
+  const detailsId = `${groupName}-${option.value}-details`;
+
+  return (
+    <div
+      className={`rounded-lg border transition-colors ${
+        selected
+          ? "border-accent-coral bg-accent-coral/5"
+          : "border-border bg-card hover:border-accent-coral/40"
+      }`}
+    >
+      <Radio
+        name={groupName}
+        value={option.value}
+        checked={selected}
+        onChange={onChange}
+        disabled={disabled}
+        className="w-full items-start p-3"
+        label={
+          <div className="flex gap-3 min-w-0 flex-1">
+            <ProjectCoverImage
+              name={option.label}
+              imageUrl={card?.imageUrl}
+              className="w-16 h-16 rounded-md object-cover flex-shrink-0"
+              placeholderClassName="w-16 h-16 rounded-md flex-shrink-0"
+            />
+            <div className="min-w-0 flex-1 flex flex-col gap-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-semibold text-dark-blue">{option.label}</span>
+                {card?.partners.map((p) => (
+                  <span
+                    key={p}
+                    className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground"
+                  >
+                    {p}
+                  </span>
+                ))}
+              </div>
+
+              {card?.description && (
+                <p className="text-sm text-muted-foreground line-clamp-2">
+                  {card.description}
+                </p>
+              )}
+            </div>
+          </div>
+        }
+      />
+
+      {hasDetails && card && (
+        // Indented to line up with the summary text: p-3 + the 4-unit radio + gap-2.
+        <div className="px-3 pb-3 pl-9">
+          <button
+            type="button"
+            aria-expanded={expanded}
+            aria-controls={detailsId}
+            onClick={() => setExpanded((x) => !x)}
+            className="inline-flex items-center gap-1 text-xs font-medium text-accent-coral hover:text-accent-coral/80"
+          >
+            <ChevronDown
+              className={`w-3 h-3 transition-transform ${expanded ? "rotate-180" : ""}`}
+            />
+            {expanded ? "Hide details" : "View details"}
+          </button>
+
+          {expanded && (
+            <div
+              id={detailsId}
+              className="mt-2 pt-2 border-t border-border/60 flex flex-col gap-1.5"
+            >
+              {card.challenges.length > 0 && (
+                <dl className="flex flex-col gap-1">
+                  {card.challenges.map((c) => (
+                    <div key={c.domain} className="text-sm">
+                      <dt className="inline font-medium text-dark-blue">
+                        {c.domain}:{" "}
+                      </dt>
+                      {/* Challenge text is authored as multi-line plain text. */}
+                      <dd className="inline whitespace-pre-line text-muted-foreground">
+                        {c.scope}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
+
+              {card.sowPageId && (
+                <a
+                  href={`/documents/${card.sowPageId}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="self-start inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border border-accent-coral/40 text-accent-coral hover:bg-accent-coral/10"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                  SOW
+                </a>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Card picker for `projects:*` reference options. Same contract as the
-// <select> it replaces — one value, stored as the project id — but each
-// choice renders its context: partner, blurb, this term's per-domain
-// challenges, and a link to the term's SOW page when one is set.
+// <select> it replaces — one value, stored as the project id.
 function ReferenceCardField({
   groupName,
   groupLabel,
@@ -122,76 +251,16 @@ function ReferenceCardField({
       aria-label={groupLabel}
       className={`flex flex-col gap-2 ${disabled ? "opacity-60" : ""}`}
     >
-      {options.map((o) => {
-        const selected = value === o.value;
-        const card = o.card;
-        return (
-          <Radio
-            key={o.value}
-            name={groupName}
-            value={o.value}
-            checked={selected}
-            onChange={() => onChange(o.value)}
-            disabled={disabled}
-            className={`items-start rounded-lg border p-4 transition-colors ${
-              selected
-                ? "border-accent-coral bg-accent-coral/5"
-                : "border-border bg-card hover:border-accent-coral/40"
-            }`}
-            label={
-              <div className="min-w-0 flex flex-col gap-1.5">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-semibold text-dark-blue">{o.label}</span>
-                  {card?.partners.map((p) => (
-                    <span
-                      key={p}
-                      className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground"
-                    >
-                      {p}
-                    </span>
-                  ))}
-                </div>
-
-                {card?.description && (
-                  <p className="text-sm text-muted-foreground">
-                    {card.description}
-                  </p>
-                )}
-
-                {card && card.challenges.length > 0 && (
-                  <dl className="flex flex-col gap-1 mt-0.5">
-                    {card.challenges.map((c) => (
-                      <div key={c.domain} className="text-sm">
-                        <dt className="inline font-medium text-dark-blue">
-                          {c.domain}:{" "}
-                        </dt>
-                        {/* Challenge text is authored as multi-line plain text. */}
-                        <dd className="inline whitespace-pre-line text-muted-foreground">
-                          {c.scope}
-                        </dd>
-                      </div>
-                    ))}
-                  </dl>
-                )}
-
-                {card?.sowPageId && (
-                  // Inside a <label>, so a bare click would also toggle the
-                  // radio — stop it so the link only opens the doc.
-                  <a
-                    href={`/documents/${card.sowPageId}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    onClick={(e) => e.stopPropagation()}
-                    className="self-start text-xs px-2 py-0.5 rounded-full border border-accent-coral/40 text-accent-coral hover:bg-accent-coral/10"
-                  >
-                    SOW
-                  </a>
-                )}
-              </div>
-            }
-          />
-        );
-      })}
+      {options.map((o) => (
+        <ReferenceProjectCard
+          key={o.value}
+          groupName={groupName}
+          option={o}
+          selected={value === o.value}
+          onChange={() => onChange(o.value)}
+          disabled={disabled}
+        />
+      ))}
     </div>
   );
 }

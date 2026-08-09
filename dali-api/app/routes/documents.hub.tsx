@@ -4,7 +4,6 @@ import {
   useLoaderData,
   useNavigate,
   useRevalidator,
-  useSearchParams,
 } from "react-router";
 import type { Route } from "./+types/documents.hub";
 import {
@@ -27,12 +26,14 @@ import {
 import { prisma } from "~/lib/db";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { isCore, isLabMember, currentTerm } from "~/lib/roles";
+import { isCore, isLabMember } from "~/lib/roles";
 import { visibleLabDocFilter } from "~/lib/lab-documents.server";
 import { Tooltip } from "~/components/ui/IconButton";
 import { FavoriteStar } from "~/components/FavoriteStar";
 import { favoritePageIds } from "~/lib/user-pages.server";
 import { Menu } from "~/components/ui/floating";
+import { TermFilter } from "~/components/TermFilter";
+import { resolveTermFilter } from "~/lib/terms";
 import { useDialog } from "~/components/ui/dialog";
 import { PageIcon } from "~/components/PageIcon";
 import { ProjectIcon } from "~/components/ProjectIcon";
@@ -48,10 +49,10 @@ export const meta: Route.MetaFunction = () => [{ title: "Documents · DALI OS" }
 // (their create/archive stays in the project hub). Tags are applied in each
 // document's editor; here they only drive the filter bar.
 //
-// Project list defaults to Active + current-term (same as the projects hub
-// term view). `?projects=all` includes Paused/Archived and non-current-term
-// projects so older workspaces stay reachable. Archived *pages* (archivedAt)
-// stay hidden either way.
+// Project list is scoped by the same term dropdown as the projects hub
+// (`~/components/TermFilter` + `resolveTermFilter`) — defaults to the current
+// term, `?term=all` includes every term's projects. Archived *pages*
+// (archivedAt) stay hidden either way.
 
 type DocTagOut = { id: string; label: string; slug: string; color: string | null };
 
@@ -86,12 +87,6 @@ type WorkspaceOut = {
   projectIconEmoji?: string | null;
 };
 
-type ProjectFilter = "active" | "all";
-
-function parseProjectFilter(raw: string | null): ProjectFilter {
-  return raw === "all" ? "all" : "active";
-}
-
 const pageSelect = {
   id: true,
   title: true,
@@ -112,21 +107,19 @@ export async function loader({ request }: Route.LoaderArgs) {
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) return partnerRedirect;
 
-  const url = new URL(request.url);
-  const projectFilter = parseProjectFilter(url.searchParams.get("projects"));
+  const { terms, selected, termId, isAll } = await resolveTermFilter(request);
 
-  const [member, core, term] = await Promise.all([
+  const [member, core] = await Promise.all([
     isLabMember(auth.user.sub),
     isCore(auth.user.sub),
-    currentTerm(),
   ]);
 
   // Lab-wide pages + projects whose docs the viewer may see (Core sees all;
-  // everyone else sees projects they're staffed on). Active (default) matches
-  // the projects hub term view — current-term Active only. All drops the
-  // status/term gates so archived + older-term projects stay reachable.
-  // Restricted lab docs drop out of the list for everyone but their creator,
-  // the people they're shared with, and Core.
+  // everyone else sees projects they're staffed on). The term dropdown scopes
+  // to projects that run in the selected term (same as the projects hub);
+  // "All terms" drops that gate so older projects stay reachable. Restricted
+  // lab docs drop out of the list for everyone but their creator, the people
+  // they're shared with, and Core.
   const labVisibility = core ? {} : await visibleLabDocFilter(auth.user.sub);
 
   const [labPages, projects] = await Promise.all([
@@ -142,12 +135,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     }),
     prisma.project.findMany({
       where: {
-        ...(projectFilter === "active"
-          ? {
-              status: "Active" as const,
-              ...(term ? { projectTerms: { some: { termId: term.id } } } : {}),
-            }
-          : {}),
+        ...(isAll || !termId ? {} : { projectTerms: { some: { termId } } }),
         ...(core ? {} : { assignments: { some: { userId: auth.user.sub } } }),
       },
       orderBy: [{ status: "asc" }, { name: "asc" }],
@@ -225,7 +213,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     ),
   ];
 
-  return { docs, workspaces, allTags, projectFilter };
+  return { docs, workspaces, allTags, terms, selectedTerm: selected };
 }
 
 // Open a document as a split-screen tab beside the hub. This page renders
@@ -259,11 +247,10 @@ function TagChip({ tag }: { tag: DocTagOut }) {
 }
 
 export default function DocumentsHub() {
-  const { docs, workspaces, allTags, projectFilter } = useLoaderData() as Exclude<
+  const { docs, workspaces, allTags, terms, selectedTerm } = useLoaderData() as Exclude<
     Awaited<ReturnType<typeof loader>>,
     Response
   >;
-  const [, setSearchParams] = useSearchParams();
   const revalidator = useRevalidator();
   const navigate = useNavigate();
   const dialog = useDialog();
@@ -282,18 +269,6 @@ export default function DocumentsHub() {
   const [collapsedWorkspaces, setCollapsedWorkspaces] = useState<Set<string>>(
     () => new Set(workspaces.filter((w) => w.kind === "project").map((w) => w.key)),
   );
-
-  function setProjectFilter(next: ProjectFilter) {
-    setSearchParams(
-      (prev) => {
-        const params = new URLSearchParams(prev);
-        if (next === "active") params.delete("projects");
-        else params.set("projects", "all");
-        return params;
-      },
-      { replace: true },
-    );
-  }
 
   // A rename happens in the doc's own split-screen tab (separate loader). The
   // shell relays `dali:documentTitleChanged` to open tabs — revalidate so the
@@ -1076,29 +1051,10 @@ export default function DocumentsHub() {
             ))}
           </div>
           {scope !== "lab" && (
-            <div className="inline-flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">Projects</span>
-              <div className="inline-flex rounded-md border border-border bg-card p-0.5 text-sm">
-                {([
-                  ["active", "This term"],
-                  ["all", "All time"],
-                ] as const).map(([value, label]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => setProjectFilter(value)}
-                    aria-pressed={projectFilter === value}
-                    className={`px-3 py-1 rounded font-medium transition-colors ${
-                      projectFilter === value
-                        ? "bg-accent-coral/10 text-accent-coral"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+              Term
+              <TermFilter terms={terms} selected={selectedTerm} />
+            </label>
           )}
         </div>
         {allTags.length > 0 && (

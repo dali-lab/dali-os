@@ -222,9 +222,9 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   let addedAssigneeIds: string[] = [];
   await prisma.$transaction(async (tx) => {
-    if (Object.keys(data).length > 0) {
-      await tx.task.update({ where: { id: params.id }, data });
-    }
+    // Any real edit here — a field or the assignee set — is "activity" for
+    // the board's new-updates indicator (see Task.activityAt).
+    await tx.task.update({ where: { id: params.id }, data: { ...data, activityAt: new Date() } });
     if (wantsAssignees) {
       const prior = await tx.taskAssignee.findMany({
         where: { taskId: params.id },

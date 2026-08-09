@@ -176,6 +176,7 @@ model User {
   createdTasks               Task[]               @relation("TaskCreatedBy")
   taskAssignees              TaskAssignee[]
   taskComments               TaskComment[]
+  taskViews                  TaskView[]
   projectDomainScopesUpdated ProjectDomainScope[] @relation("ProjectDomainScopeUpdatedBy")
 
   // ─── Phase 1: staffing back-relations ─────────────────────────────────────
@@ -2867,6 +2868,14 @@ model Task {
   // deleted, so it stays reportable/restorable.
   archivedAt DateTime?
 
+  // Last *meaningful* change (status/field edit, assignee change, comment,
+  // GitHub link) — deliberately separate from `updatedAt`, which also gets
+  // bumped by drag-and-drop reordering of column-mates that didn't actually
+  // change. Compared against TaskView.viewedAt to drive the "new updates"
+  // dot on the board. Mutation routes set this explicitly; it is not
+  // `@updatedAt`.
+  activityAt DateTime @default(now())
+
   // Optional mirror to a GitHub issue. All three populated together when the
   // task was created with the "Create GitHub issue" toggle on; null when not
   // mirrored. The (githubRepo, githubIssueNumber) pair is the lookup key for
@@ -2883,6 +2892,7 @@ model Task {
   comments  TaskComment[]
   reminders TaskReminder[]
   files     TaskFileLink[]
+  views     TaskView[]
 
   createdById String
   createdBy   User     @relation("TaskCreatedBy", fields: [createdById], references: [id])
@@ -2958,6 +2968,22 @@ model TaskComment {
   author User @relation(fields: [authorId], references: [id])
 
   @@index([taskId, createdAt])
+}
+
+// Per-user "last opened this task" stamp. Compared against Task.activityAt
+// to render the board's "new updates" indicator — a row only exists once a
+// user has opened the task at least once, so a task nobody on the viewer's
+// side has ever opened isn't flagged "new" (that would just be every task).
+model TaskView {
+  id       String   @id @default(cuid())
+  taskId   String
+  userId   String
+  viewedAt DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([taskId, userId])
 }
 
 // ─── Education ───────────────────────────────────────────────────────────────

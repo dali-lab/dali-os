@@ -1,5 +1,6 @@
 import { prisma } from "~/lib/db";
 import { currentTerm } from "~/lib/roles";
+import { resolvePhotoUrl } from "~/lib/photo";
 import {
   REFERENCE_SOURCE_LABELS,
   isReferenceSourceKey,
@@ -52,6 +53,7 @@ const PROJECT_CARD_SELECT = {
   id: true,
   name: true,
   description: true,
+  imageUrl: true,
   // Current partners only; an ended partnership isn't who you'd be working with.
   partners: {
     where: { endedAt: null },
@@ -68,6 +70,7 @@ type ProjectCardRow = {
   id: string;
   name: string;
   description: string | null;
+  imageUrl: string | null;
   partners: { partnerOrg: { name: string } }[];
   domainScopes: { termId: string; scope: string; domain: { name: string } }[];
   termStatuses: { termId: string; sowPageId: string | null }[];
@@ -78,10 +81,10 @@ type ProjectCardRow = {
 // null for the term-less `projects:active` — which falls back to the
 // project's latest term (highest sortKey) so its card still shows the most
 // recent challenges and SOW rather than nothing.
-function toProjectOption(
+async function toProjectOption(
   p: ProjectCardRow,
   scopeTermId: string | null,
-): ReferenceOption {
+): Promise<ReferenceOption> {
   const latestTermId =
     [...p.projectTerms].sort((a, b) => b.term.sortKey - a.term.sortKey)[0]
       ?.termId ?? null;
@@ -92,6 +95,7 @@ function toProjectOption(
     label: p.name,
     card: {
       description: p.description,
+      imageUrl: await resolvePhotoUrl(p.imageUrl),
       partners: p.partners.map((pp) => pp.partnerOrg.name),
       challenges: p.domainScopes
         .filter((s) => s.termId === termId && s.scope.trim() !== "")
@@ -122,7 +126,7 @@ const LOADERS = {
       orderBy: { name: "asc" },
       select: PROJECT_CARD_SELECT,
     });
-    return projects.map((p) => toProjectOption(p, term.id));
+    return Promise.all(projects.map((p) => toProjectOption(p, term.id)));
   },
   // Every non-archived project, regardless of term.
   "projects:active": async () => {
@@ -131,7 +135,7 @@ const LOADERS = {
       orderBy: { name: "asc" },
       select: PROJECT_CARD_SELECT,
     });
-    return projects.map((p) => toProjectOption(p, null));
+    return Promise.all(projects.map((p) => toProjectOption(p, null)));
   },
   // Non-archived projects whose term set includes the term the form author
   // chose (ctx.termId, from the question's data.referenceTermId). Term-scoped:
@@ -148,7 +152,7 @@ const LOADERS = {
       orderBy: { name: "asc" },
       select: PROJECT_CARD_SELECT,
     });
-    return projects.map((p) => toProjectOption(p, ctx.termId!));
+    return Promise.all(projects.map((p) => toProjectOption(p, ctx.termId!)));
   },
   // Active domains (Design, Dev, …).
   "domains:active": async () => {

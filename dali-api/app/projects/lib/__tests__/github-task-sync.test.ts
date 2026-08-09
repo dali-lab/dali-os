@@ -150,6 +150,7 @@ describe("createIssueForTask", () => {
         githubRepo: "o/r",
         githubIssueNumber: 7,
         githubIssueUrl: "https://github.com/o/r/issues/7",
+        activityAt: expect.any(Date),
       },
     });
     expect(issues.addLabels).toHaveBeenCalledWith(

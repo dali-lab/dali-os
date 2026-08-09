@@ -95,6 +95,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       workspaceType: "Project",
       workspaceId: projectId,
       id: { notIn: excludedPageIds },
+      archivedAt: null,
     },
   });
 
