@@ -1,7 +1,9 @@
+import { useEffect, useState } from "react";
 import { Link, useMatches } from "react-router";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { PageDocButton } from "~/components/page-docs/PageDocButton";
+import { FavoriteRouteButton } from "~/components/FavoriteRouteButton";
 
 // Horizontal sub-navigation between an area's sibling surfaces. Used where a
 // sidebar area collapsed to a single entry: the area's landing page carries
@@ -92,6 +94,23 @@ export function AreaPillNav({
     (m) => (m as { handle?: { docKey?: string } }).handle?.docKey,
   );
 
+  // Which of this row's destinations are starred. One request for the row
+  // rather than one per tab; null until it lands, so nothing flashes as
+  // unfavourited on the way in.
+  const [favorites, setFavorites] = useState<Set<string> | null>(null);
+  useEffect(() => {
+    let live = true;
+    fetch("/api/favorites/route", { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (live && Array.isArray(d?.hrefs)) setFavorites(new Set<string>(d.hrefs));
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
+
   // A lone tab is pure noise — the page is already the only destination.
   if (items.length <= 1) return null;
 
@@ -99,14 +118,41 @@ export function AreaPillNav({
     <nav className={cn(underlineTabBarClass, className)} aria-label="Section">
       <span className={underlineTabListClass}>
         {items.map((item) => (
-          <Link
-            key={item.to}
-            to={item.to}
-            aria-current={item.active ? "page" : undefined}
-            className={underlineTabItemClass(!!item.active)}
-          >
-            <SubtabLabel label={item.label} icon={item.icon} />
-          </Link>
+          // The star is a sibling of the Link, not inside it — nesting a button
+          // in a link is invalid and would swallow the click.
+          <span key={item.to} className={cn(underlineTabItemClass(!!item.active), "group gap-1")}>
+            <Link
+              to={item.to}
+              aria-current={item.active ? "page" : undefined}
+              className="inline-flex items-center gap-1.5"
+            >
+              <SubtabLabel label={item.label} icon={item.icon} />
+            </Link>
+            {/* Always visible — a control you can only find by hovering is one
+                most people never find. Dimmed so the row still reads as
+                wayfinding first, and lit once favourited. Self-suppresses via
+                isNavbarRoute for any pill that points at a sidebar hub itself
+                (e.g. a "Hub" pill back to the section root). */}
+            <FavoriteRouteButton
+              href={item.to}
+              label={item.label}
+              favorited={favorites?.has(item.to) ?? false}
+              onToggled={(next) =>
+                setFavorites((prev) => {
+                  const s = new Set(prev ?? []);
+                  if (next) s.add(item.to);
+                  else s.delete(item.to);
+                  return s;
+                })
+              }
+              compact
+              className={
+                favorites?.has(item.to)
+                  ? ""
+                  : "text-muted-foreground/45 transition-colors group-hover:text-muted-foreground"
+              }
+            />
+          </span>
         ))}
       </span>
       {hasDoc && (
