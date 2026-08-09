@@ -137,4 +137,14 @@ describe("DELETE /api/projects/:id", () => {
       expect.arrayContaining([{ label: "documents", count: 1 }]),
     );
   });
+
+  it("does not treat already-archived documents as blocking", async () => {
+    // Deleting a document from the hub is a soft delete (archivedAt set) —
+    // the count query must filter those out or a project stays undeletable
+    // forever after its docs are "removed" from the UI.
+    await call();
+
+    const countArgs = mockPrisma.page.count.mock.calls[0]![0];
+    expect(countArgs.where.archivedAt).toBe(null);
+  });
 });
