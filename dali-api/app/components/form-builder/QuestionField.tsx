@@ -140,18 +140,20 @@ function ReferenceProjectCard({
         checked={selected}
         onChange={onChange}
         disabled={disabled}
-        className="w-full items-start p-3"
+        className="w-full items-start p-5"
         label={
-          <div className="flex gap-3 min-w-0 flex-1">
+          <div className="flex gap-4 min-w-0 flex-1">
             <ProjectCoverImage
               name={option.label}
               imageUrl={card?.imageUrl}
-              className="w-16 h-16 rounded-md object-cover flex-shrink-0"
-              placeholderClassName="w-16 h-16 rounded-md flex-shrink-0"
+              className="w-28 h-28 rounded-lg object-cover flex-shrink-0"
+              placeholderClassName="w-28 h-28 rounded-lg flex-shrink-0"
             />
-            <div className="min-w-0 flex-1 flex flex-col gap-1">
+            <div className="min-w-0 flex-1 flex flex-col gap-2">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="font-semibold text-dark-blue">{option.label}</span>
+                <span className="text-base font-semibold text-dark-blue">
+                  {option.label}
+                </span>
                 {card?.partners.map((p) => (
                   <span
                     key={p}
@@ -162,8 +164,10 @@ function ReferenceProjectCard({
                 ))}
               </div>
 
+              {/* Unclamped: picking a project to work on for a term is a real
+                  decision, so the blurb is worth the vertical space. */}
               {card?.description && (
-                <p className="text-sm text-muted-foreground line-clamp-2">
+                <p className="text-sm text-muted-foreground whitespace-pre-line">
                   {card.description}
                 </p>
               )}
@@ -173,8 +177,8 @@ function ReferenceProjectCard({
       />
 
       {hasDetails && card && (
-        // Indented to line up with the summary text: p-3 + the 4-unit radio + gap-2.
-        <div className="px-3 pb-3 pl-9">
+        // Indented to line up with the summary text: p-5 + the 4-unit radio + gap-2.
+        <div className="px-5 pb-5 pl-11">
           <button
             type="button"
             aria-expanded={expanded}
@@ -214,10 +218,10 @@ function ReferenceProjectCard({
                   href={`/documents/${card.sowPageId}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="self-start inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border border-accent-coral/40 text-accent-coral hover:bg-accent-coral/10"
+                  className="self-start inline-flex items-center gap-1.5 mt-0.5 text-xs font-medium px-2.5 py-1 rounded-full border border-accent-coral/40 text-accent-coral hover:bg-accent-coral/10"
                 >
                   <ExternalLink className="w-3 h-3" />
-                  SOW
+                  Statement of Work
                 </a>
               )}
             </div>

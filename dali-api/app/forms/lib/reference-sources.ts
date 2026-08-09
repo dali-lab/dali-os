@@ -46,9 +46,9 @@ export type ReferenceContext = {
 const NOT_PRIVATE = { isPrivate: false } as const;
 
 // One shared select for every `projects:*` source, so all three render the
-// same card. The per-term bits (domainScopes, termStatuses) are fetched
-// unfiltered and narrowed to the card's term in toProjectOption — a project
-// runs few terms, so this stays one query per source rather than one per row.
+// same card. domainScopes is fetched unfiltered and narrowed to the card's
+// term in toProjectOption — a project runs few terms, so this stays one query
+// per source rather than one per row.
 const PROJECT_CARD_SELECT = {
   id: true,
   name: true,
@@ -62,7 +62,6 @@ const PROJECT_CARD_SELECT = {
   domainScopes: {
     select: { termId: true, scope: true, domain: { select: { name: true } } },
   },
-  termStatuses: { select: { termId: true, sowPageId: true } },
   projectTerms: { select: { termId: true, term: { select: { sortKey: true } } } },
 } as const;
 
@@ -73,17 +72,52 @@ type ProjectCardRow = {
   imageUrl: string | null;
   partners: { partnerOrg: { name: string } }[];
   domainScopes: { termId: string; scope: string; domain: { name: string } }[];
-  termStatuses: { termId: string; sowPageId: string | null }[];
   projectTerms: { termId: string; term: { sortKey: number } }[];
 };
+
+// A project's Statement of Work is whichever of its documents carries the
+// "SOW" doc tag — there is no dedicated column for it (ProjectTermStatus has
+// a sowPageId, but nothing in the app ever writes it). Tags are lab-wide and
+// slugified from the label, so "SOW" lands on this slug.
+const SOW_TAG_SLUG = "sow";
+
+// Resolved for the whole option list in one query rather than per card. If a
+// project somehow carries the tag on several documents, the first in page
+// order wins so the pick is stable between loads.
+async function sowPageIdByProject(
+  projectIds: string[],
+): Promise<Map<string, string>> {
+  const byProject = new Map<string, string>();
+  if (projectIds.length === 0) return byProject;
+
+  const pages = await prisma.page.findMany({
+    where: {
+      workspaceType: "Project",
+      workspaceId: { in: projectIds },
+      archivedAt: null,
+      isTemplate: false,
+      tags: { some: { tag: { slug: SOW_TAG_SLUG, archivedAt: null } } },
+    },
+    orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+    select: { id: true, workspaceId: true },
+  });
+
+  for (const page of pages) {
+    if (page.workspaceId && !byProject.has(page.workspaceId)) {
+      byProject.set(page.workspaceId, page.id);
+    }
+  }
+  return byProject;
+}
 
 // Build one card option. `scopeTermId` is the term the source scopes to, or
 // null for the term-less `projects:active` — which falls back to the
 // project's latest term (highest sortKey) so its card still shows the most
-// recent challenges and SOW rather than nothing.
+// recent challenges rather than nothing.
 async function toProjectOption(
   p: ProjectCardRow,
   scopeTermId: string | null,
+  sowPageId: string | null,
 ): Promise<ReferenceOption> {
   const latestTermId =
     [...p.projectTerms].sort((a, b) => b.term.sortKey - a.term.sortKey)[0]
@@ -101,10 +135,21 @@ async function toProjectOption(
         .filter((s) => s.termId === termId && s.scope.trim() !== "")
         .map((s) => ({ domain: s.domain.name, scope: s.scope }))
         .sort((a, b) => a.domain.localeCompare(b.domain)),
-      sowPageId:
-        p.termStatuses.find((t) => t.termId === termId)?.sowPageId ?? null,
+      sowPageId,
     },
   };
+}
+
+// Every `projects:*` loader ends here, so the SOW lookup can't be forgotten
+// by a new source.
+async function toProjectOptions(
+  projects: ProjectCardRow[],
+  scopeTermId: string | null,
+): Promise<ReferenceOption[]> {
+  const sowPages = await sowPageIdByProject(projects.map((p) => p.id));
+  return Promise.all(
+    projects.map((p) => toProjectOption(p, scopeTermId, sowPages.get(p.id) ?? null)),
+  );
 }
 
 const LOADERS = {
@@ -126,7 +171,7 @@ const LOADERS = {
       orderBy: { name: "asc" },
       select: PROJECT_CARD_SELECT,
     });
-    return Promise.all(projects.map((p) => toProjectOption(p, term.id)));
+    return toProjectOptions(projects, term.id);
   },
   // Every non-archived project, regardless of term.
   "projects:active": async () => {
@@ -135,7 +180,7 @@ const LOADERS = {
       orderBy: { name: "asc" },
       select: PROJECT_CARD_SELECT,
     });
-    return Promise.all(projects.map((p) => toProjectOption(p, null)));
+    return toProjectOptions(projects, null);
   },
   // Non-archived projects whose term set includes the term the form author
   // chose (ctx.termId, from the question's data.referenceTermId). Term-scoped:
@@ -152,7 +197,7 @@ const LOADERS = {
       orderBy: { name: "asc" },
       select: PROJECT_CARD_SELECT,
     });
-    return Promise.all(projects.map((p) => toProjectOption(p, ctx.termId!)));
+    return toProjectOptions(projects, ctx.termId);
   },
   // Active domains (Design, Dev, …).
   "domains:active": async () => {
