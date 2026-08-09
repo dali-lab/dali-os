@@ -194,7 +194,7 @@ export function shouldRevalidate({ formAction, currentUrl, nextUrl, defaultShoul
 }
 
 export default function AppLayoutRoute() {
-  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, isLabMentor: isLabMentorFlag, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone } = useLoaderData<typeof loader>()
+  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone } = useLoaderData<typeof loader>()
   const [searchParams] = useSearchParams()
   const location = useLocation()
   const navigationType = useNavigationType()
@@ -378,7 +378,7 @@ export default function AppLayoutRoute() {
 
   return (
     <>
-      <Layout user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} hasHiringAccess={hasHiringAccess} isLabMentor={isLabMentorFlag} focusMode={focus}>
+      <Layout user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} hasHiringAccess={hasHiringAccess} isInstructor={isInstructor} isLabMentor={isLabMentorFlag} focusMode={focus}>
         {tabless ? <div className="flex-1 overflow-x-hidden">{pageContent}</div> : undefined}
       </Layout>
       <LaunchWelcome firstName={user.firstName || user.email.split('@')[0]} hasCalendarLink={hasCalendarLink} shouldShowTour={shouldShowTour} tabless={tabless} />

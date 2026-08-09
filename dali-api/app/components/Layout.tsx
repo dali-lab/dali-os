@@ -7,20 +7,13 @@ import {
   X,
   PanelLeftClose,
   PanelLeftOpen,
-  Briefcase,
   Settings,
-  FolderKanban,
-  UsersRound,
-  Handshake,
-  Heart,
   Home,
-  Workflow,
-  ClipboardList,
-  FileText,
-  GraduationCap,
   ListTodo,
   HelpCircle,
   Search,
+  ChevronsUpDown,
+  Check,
 } from 'lucide-react'
 import { userInitials } from '~/lib/display'
 import { TabWorkspace, type TabWorkspaceHandle, type OpenTabRequest } from '~/components/TabWorkspace'
@@ -28,6 +21,14 @@ import { useOpenTasks, TASKS_CHANGED_EVENT } from '~/components/NotificationBell
 import { DesktopBanner } from '~/components/DesktopBanner'
 import { CommandPalette } from '~/components/CommandPalette'
 import { setFocusPreference } from '~/lib/focus-mode'
+import {
+  areaForPath,
+  activeSubtabHref,
+  visibleAreas,
+  visibleSubtabs,
+  type NavArea,
+  type RoleFlags,
+} from '~/lib/nav-areas'
 
 interface LayoutProps {
   user: { email: string; firstName?: string; lastName?: string }
@@ -40,6 +41,7 @@ interface LayoutProps {
   isInterviewer?: boolean
   hasHiringAccess?: boolean
   isLabMentor?: boolean
+  isInstructor?: boolean
   /** Focus mode: hide the sidebar entirely; navigate via ⌘K + breadcrumbs.
    *  A floating launcher keeps search + "show sidebar" reachable. */
   focusMode?: boolean
@@ -50,19 +52,12 @@ interface LayoutProps {
 }
 
 const SIDEBAR_COLLAPSED_KEY = 'dali:sidebar:collapsed'
+// The area shown in the sidebar's active-area dropdown when the current route
+// isn't itself inside an area (Home / My Tasks / Calendar). Persisted so the
+// sidebar reopens on the section you were last working in.
+const LAST_AREA_KEY = 'dali:sidebar:area'
 
-// One sidebar behavior everywhere: every entry is a childless button that
-// opens its surface's hub. Lateral navigation inside an area is the in-page
-// AreaPillNav row; the sidebar never nests and never remembers deep links.
-type NavEntry = {
-  key: string
-  label: string
-  to: string
-  icon: typeof Home
-  show: boolean
-}
-
-export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDomainLead = false, canViewForms = false, canViewStaffing = false, isInterviewer = false, hasHiringAccess = false, isLabMentor = false, focusMode = false, children }: LayoutProps) {
+export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDomainLead = false, canViewForms = false, canViewStaffing = false, isInterviewer = false, hasHiringAccess = false, isLabMentor = false, isInstructor = false, focusMode = false, children }: LayoutProps) {
   const location = useLocation()
   const navigate = useNavigate()
   const { revalidate } = useRevalidator()
@@ -81,6 +76,11 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
   const path = focusedTabUrl ?? location.pathname
   const [collapsed, setCollapsed] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  // The area the dropdown falls back to on non-area routes. Kept in sync with
+  // the route below, and seeded from localStorage on mount.
+  const [lastAreaKey, setLastAreaKey] = useState('projects')
+  const [areaMenuOpen, setAreaMenuOpen] = useState(false)
+  const areaMenuRef = useRef<HTMLDivElement | null>(null)
   const workspaceRef = useRef<TabWorkspaceHandle | null>(null)
 
   const [paletteOpen, setPaletteOpen] = useState(false)
@@ -173,11 +173,35 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
   useEffect(() => {
     if (typeof window === 'undefined') return
     setCollapsed(window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1')
+    const savedArea = window.localStorage.getItem(LAST_AREA_KEY)
+    if (savedArea) setLastAreaKey(savedArea)
   }, [])
 
   useEffect(() => {
     setMobileNavOpen(false)
+    setAreaMenuOpen(false)
   }, [path])
+
+  // Close the active-area menu on an outside click or Escape. The sidebar is a
+  // `fixed z-20` stacking context, so a plain fixed overlay would sit above the
+  // in-flow menu and swallow option clicks — hence a document listener instead.
+  useEffect(() => {
+    if (!areaMenuOpen) return
+    const onDown = (e: MouseEvent) => {
+      if (areaMenuRef.current && !areaMenuRef.current.contains(e.target as Node)) {
+        setAreaMenuOpen(false)
+      }
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setAreaMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [areaMenuOpen])
 
   // Listen for "open in new tab" requests from embedded iframes (e.g. a
   // notification card in the Home tab whose link would otherwise navigate
@@ -243,37 +267,57 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
     })
   }
 
-  // Every entry navigates to its surface's hub — the area root. Order here is
-  // the sidebar order, running from everyday surfaces down to the ones only
-  // some roles see. Home and My Tasks are pinned above this list (rendered
-  // separately), so they aren't entries here.
-  const navEntries: NavEntry[] = [
-    { key: 'calendar', label: 'Calendar', to: '/calendar', icon: Calendar, show: true },
-    { key: 'projects', label: 'Projects', to: '/projects', icon: FolderKanban, show: true },
-    { key: 'members', label: 'People', to: '/members', icon: UsersRound, show: true },
-    { key: 'internal-processes', label: 'Lab Processes', to: '/internal-processes', icon: Workflow, show: true },
-    // Hidden from mentees entirely; the routes are gated server-side by
-    // canViewMentorship. Mentors only see own-domain notes; Core/Admin see all.
-    { key: 'mentorship', label: 'Mentorship', to: '/mentorship', icon: Heart, show: isLabMentor || isCore },
-    { key: 'documents', label: 'Documents', to: '/documents', icon: FileText, show: true },
-    { key: 'education', label: 'Education', to: '/education', icon: GraduationCap, show: true },
-    { key: 'partners', label: 'Partners', to: '/partners', icon: Handshake, show: true },
-    { key: 'hiring', label: 'Hiring', to: '/hiring', icon: Briefcase, show: hasHiringAccess },
-    { key: 'forms', label: 'Forms', to: '/forms', icon: ClipboardList, show: canViewForms },
-    { key: 'admin', label: 'Admin', to: '/admin', icon: Settings, show: isCore },
-  ].filter((e) => e.show)
+  // The sidebar's secondary nav is one "active area" dropdown whose children
+  // are that area's sub-tabs. The area auto-follows the current route; on the
+  // pinned surfaces (Home / My Tasks / Calendar) it falls back to the last
+  // area worked in. Role gating for both the area list and its sub-tabs lives
+  // in the nav-areas registry, evaluated against these flags.
+  const roleFlags: RoleFlags = {
+    isCore,
+    isAdmin,
+    isDomainLead,
+    isInterviewer,
+    canViewForms,
+    canViewStaffing,
+    hasHiringAccess,
+    isLabMentor,
+    isInstructor,
+  }
+  const areas = visibleAreas(roleFlags)
+  const routeArea = areaForPath(path)
+  const activeArea = routeArea ?? areas.find((a) => a.key === lastAreaKey) ?? areas[0]
+  const activeSubtabs = activeArea ? visibleSubtabs(activeArea, roleFlags) : []
+  const activeHref = activeArea ? activeSubtabHref(activeArea, path) : undefined
 
-  const isEntryActive = (entry: NavEntry) => path.startsWith(entry.to)
+  // Remember the section as you move through it, so returning to a pinned
+  // surface reopens the dropdown where you left off. Persist on area routes only.
+  const routeAreaKey = routeArea?.key
+  useEffect(() => {
+    if (!routeAreaKey) return
+    setLastAreaKey(routeAreaKey)
+    if (typeof window !== 'undefined') window.localStorage.setItem(LAST_AREA_KEY, routeAreaKey)
+  }, [routeAreaKey])
+
+  const selectArea = (area: NavArea, e: React.MouseEvent) => {
+    setAreaMenuOpen(false)
+    setLastAreaKey(area.key)
+    if (typeof window !== 'undefined') window.localStorage.setItem(LAST_AREA_KEY, area.key)
+    // Reuse the tab/tabless click behavior (and modifier shortcuts) of a
+    // normal sidebar button by invoking its onClick with this event.
+    tabClickProps({ url: area.hubPath, label: area.label }).onClick(e)
+  }
+
   // Label for a workspace tab seeded by direct navigation (deep link) — the
-  // entry whose prefix owns the current path, or the footer surfaces
-  // (My Tasks / Settings / Help) that have no nav entry.
+  // active area, or the pinned/footer surfaces that aren't areas.
   const initialTabLabel = path.startsWith('/notifications')
     ? 'My Tasks'
-    : path.startsWith('/settings')
-      ? 'Settings'
-      : path.startsWith('/help')
-        ? 'Help'
-        : navEntries.find(isEntryActive)?.label
+    : path.startsWith('/calendar')
+      ? 'Calendar'
+      : path.startsWith('/settings')
+        ? 'Settings'
+        : path.startsWith('/help')
+          ? 'Help'
+          : routeArea?.label
 
   const initials = userInitials(user)
   const openTasks = useOpenTasks()
@@ -491,23 +535,103 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
             </>
           )
         })()}
-        {navEntries.map((entry) => {
-          const active = isEntryActive(entry)
-          return (
-            <button
-              key={entry.key}
-              type="button"
-              title={collapsed ? entry.label : undefined}
-              {...tabClickProps({ url: entry.to, label: entry.label })}
-              className={`flex items-center gap-3 rounded-md ${collapsed ? 'px-3 py-2 justify-center' : 'px-3 py-2'} text-sm font-heading font-semibold text-left transition-colors hover:bg-white/5 ${
-                active ? 'text-white' : 'text-white/65 hover:text-white'
-              }`}
-            >
-              <entry.icon className="w-4 h-4 flex-shrink-0" />
-              {!collapsed && <span className="truncate">{entry.label}</span>}
-            </button>
-          )
-        })}
+        {/* Calendar — pinned everyday surface alongside Home and My Tasks. */}
+        <button
+          type="button"
+          title={collapsed ? 'Calendar' : undefined}
+          {...tabClickProps({ url: '/calendar', label: 'Calendar' })}
+          className={`flex items-center gap-3 rounded-md ${collapsed ? 'px-3 py-2 justify-center' : 'px-3 py-2'} text-sm font-heading font-semibold text-left transition-colors hover:bg-white/5 ${
+            path.startsWith('/calendar') ? 'text-white' : 'text-white/65 hover:text-white'
+          }`}
+        >
+          <Calendar className="w-4 h-4 flex-shrink-0" />
+          {!collapsed && <span className="truncate">Calendar</span>}
+        </button>
+
+        {/* Active-area section: one dropdown that swaps which area's sub-tabs
+            show as vertical children. Auto-follows the current route; falls
+            back to the last-visited area on the pinned surfaces above. */}
+        {activeArea && (
+          <div className="mt-2 pt-2 border-t border-white/10 flex flex-col gap-0.5">
+            {collapsed ? (
+              // No menu chrome fits in a 4rem rail — the area icon links to its
+              // hub and its sub-tabs sit beneath it as icons.
+              <button
+                type="button"
+                title={activeArea.label}
+                {...tabClickProps({ url: activeArea.hubPath, label: activeArea.label })}
+                className="flex items-center justify-center px-3 py-2 rounded-md text-white/90 hover:bg-white/5 transition-colors"
+              >
+                <activeArea.icon className="w-4 h-4 flex-shrink-0" />
+              </button>
+            ) : (
+              // In-flow (not absolutely positioned): the menu can't be clipped
+              // by the scrolling <nav>, and it pushes the sub-tabs down while
+              // open. A full-screen catcher closes it on an outside click.
+              <div ref={areaMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setAreaMenuOpen((v) => !v)}
+                  aria-haspopup="listbox"
+                  aria-expanded={areaMenuOpen}
+                  className="w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-heading font-semibold text-white/90 hover:bg-white/5 transition-colors"
+                >
+                  <activeArea.icon className="w-4 h-4 flex-shrink-0" />
+                  <span className="truncate">{activeArea.label}</span>
+                  <ChevronsUpDown className="w-3.5 h-3.5 ml-auto text-white/40 flex-shrink-0" />
+                </button>
+                {areaMenuOpen && (
+                  <div
+                    role="listbox"
+                    className="mt-1 max-h-80 overflow-y-auto rounded-md bg-white/5 ring-1 ring-white/10 py-1"
+                  >
+                    {areas.map((a) => {
+                        const selected = a.key === activeArea.key
+                        return (
+                          <button
+                            key={a.key}
+                            type="button"
+                            role="option"
+                            aria-selected={selected}
+                            onClick={(e) => selectArea(a, e)}
+                            className={`w-full flex items-center gap-3 px-3 py-2 text-sm text-left transition-colors hover:bg-white/10 ${
+                              selected ? 'text-white' : 'text-white/70'
+                            }`}
+                          >
+                            <a.icon className="w-4 h-4 flex-shrink-0" />
+                            <span className="truncate">{a.label}</span>
+                            {selected && <Check className="w-3.5 h-3.5 ml-auto flex-shrink-0" />}
+                          </button>
+                        )
+                      })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!areaMenuOpen && activeSubtabs.length > 0 && (
+              <div className={collapsed ? 'flex flex-col gap-0.5' : 'ml-4 pl-2 border-l border-white/10 flex flex-col gap-0.5'}>
+                {activeSubtabs.map((t) => {
+                  const active = t.href === activeHref
+                  return (
+                    <button
+                      key={t.href}
+                      type="button"
+                      title={collapsed ? t.label : undefined}
+                      {...tabClickProps({ url: t.href, label: t.label })}
+                      className={`flex items-center gap-2.5 rounded-md ${collapsed ? 'px-3 py-2 justify-center' : 'px-2.5 py-1.5'} text-[13px] font-medium text-left transition-colors hover:bg-white/5 ${
+                        active ? 'text-white' : 'text-white/55 hover:text-white'
+                      }`}
+                    >
+                      <t.icon className="w-4 h-4 flex-shrink-0" />
+                      {!collapsed && <span className="truncate">{t.label}</span>}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </nav>
 
       {/* Footer — user + logout */}

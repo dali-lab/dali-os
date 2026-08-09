@@ -6,11 +6,8 @@ import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
 import { prisma } from "~/lib/db";
-import { hiringPills } from "~/hiring/components/hiringPills";
-import { AreaPillNav } from "~/components/AreaPillNav";
 import { Select, type SelectOption } from "~/components/ui/floating";
 
-export const handle = { areaPills: true };
 
 export const meta: Route.MetaFunction = () => [
   { title: "Applications · Hiring · DALI OS" },
@@ -236,14 +233,9 @@ export default function ApplicationsDatabase() {
     });
   }, [rows, domainId, status, query]);
 
-  const areaPills = (
-    <AreaPillNav items={hiringPills({ ...data.pillRoles, active: "applications" })} />
-  );
-
   if (data.gate === "empty") {
     return (
       <div className="flex flex-col gap-4">
-        {areaPills}
         <Header />
         <p className="text-sm text-muted-foreground">
           {data.isCore
@@ -260,7 +252,6 @@ export default function ApplicationsDatabase() {
 
   return (
     <div className="flex flex-col gap-4">
-      {areaPills}
       <Header />
 
       <div className="flex flex-col sm:flex-row sm:items-center gap-2">

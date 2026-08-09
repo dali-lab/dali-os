@@ -13,7 +13,6 @@ import { RolePills } from "~/components/ui/RolePills";
 import { deriveCoreTitles } from "~/lib/core-titles";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { useConfirmSubmit } from "~/components/ui/dialog";
-import { AreaPillNav } from "~/components/AreaPillNav";
 import {
   Users,
   Plus,
@@ -27,7 +26,6 @@ import {
 } from "lucide-react";
 import { Radio } from "~/components/ui/Radio";
 
-export const handle = { areaPills: true };
 
 export const meta: Route.MetaFunction = () => [{ title: "Groups · Members · DALI OS" }];
 
@@ -269,12 +267,6 @@ export default function AdminConsoleGroups() {
 
   return (
     <div className="space-y-6">
-      <AreaPillNav
-        items={[
-          { label: "Hub", to: "/members", icon: LayoutGrid },
-          { label: "Groups", to: "/members/groups", active: true, icon: Users },
-        ]}
-      />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Users className="w-6 h-6 text-foreground/80" />

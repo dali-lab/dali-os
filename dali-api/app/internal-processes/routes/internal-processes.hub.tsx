@@ -6,8 +6,6 @@ import type { Route } from "./+types/internal-processes.hub";
 import { prisma } from "~/lib/db";
 import { requireAuth, forbidden, redirectApplicantToPortal } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
-import { labProcessesPills } from "~/internal-processes/labProcessesPills";
-import { AreaPillNav } from "~/components/AreaPillNav";
 import { Modal, ModalHeader, ModalFooter } from "~/components/Modal";
 import { Pencil, X } from "lucide-react";
 import { cn } from "~/lib/cn";
@@ -16,7 +14,6 @@ import {
   type LabStickerId,
 } from "~/internal-processes/LabProcessStickers";
 
-export const handle = { areaPills: true };
 
 export const meta: Route.MetaFunction = () => [{ title: "Lab Processes · DALI OS" }];
 
@@ -462,10 +459,6 @@ export default function LabProcessesHub() {
         }
       `}</style>
 
-      <AreaPillNav
-        items={labProcessesPills({ active: "hub" })}
-        className="relative z-40 !mx-0 !mb-0 shrink-0"
-      />
 
       <section
         aria-label="Term roadmap"

@@ -28,10 +28,8 @@ import { TermFilter } from "~/components/TermFilter";
 import { resolveTermFilter } from "~/lib/terms";
 import { deriveCoreTitles } from "~/lib/core-titles";
 import { LayoutGrid, UsersRound } from "lucide-react";
-import { AreaPillNav } from "~/components/AreaPillNav";
 import { Select, type SelectOption } from "~/components/ui/floating";
 
-export const handle = { areaPills: true };
 
 export const meta: Route.MetaFunction = () => [{ title: "Directory · People · DALI OS" }];
 
@@ -304,12 +302,6 @@ export default function MembersList() {
 
   return (
     <div className="flex flex-col gap-4">
-      <AreaPillNav
-        items={[
-          { label: "Hub", to: "/members", active: true, icon: LayoutGrid },
-          ...(canSeeGroups ? [{ label: "Groups", to: "/members/groups", icon: UsersRound }] : []),
-        ]}
-      />
       <header className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="font-heading text-2xl font-bold text-foreground">

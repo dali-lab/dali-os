@@ -13,8 +13,6 @@ import type { Route } from "./+types/projects.hub";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore, canViewStaffing } from "~/lib/roles";
-import { projectsPills } from "../components/projectsPills";
-import { AreaPillNav } from "~/components/AreaPillNav";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { prisma } from "~/lib/db";
 import { resolvePhotoUrl } from "~/lib/photo";
@@ -37,7 +35,6 @@ import {
 } from "../lib/showcase-filter";
 
 export const handle = {
-  areaPills: true,
   docKey: "projects.hub",
   docTitle: "Projects",
 };
@@ -283,7 +280,6 @@ export default function ProjectsListPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <AreaPillNav items={projectsPills({ canViewStaffing: canStaff, active: "hub" })} />
       <header className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="font-heading text-2xl font-bold text-foreground">

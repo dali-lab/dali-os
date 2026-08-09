@@ -2,8 +2,6 @@ import { useState, useEffect, useCallback } from 'react'
 import { Link, useLoaderData } from 'react-router'
 import { CalendarDays, Video } from 'lucide-react'
 import { getUserRoles } from '~/lib/roles'
-import { hiringPills } from '~/hiring/components/hiringPills'
-import { AreaPillNav } from '~/components/AreaPillNav'
 import { CycleSelector } from '~/hiring/components/CycleSelector'
 import { Section } from '~/hiring/components/Section'
 import { getActiveCycle } from '~/hiring/lib/cycles'
@@ -15,7 +13,6 @@ import { useDialog } from '~/components/ui/dialog'
 import { useToast } from '~/components/ui/toast'
 import type { Route } from './+types/interviews'
 
-export const handle = { areaPills: true };
 
 export const meta: Route.MetaFunction = () => [{ title: "Interviews · Hiring · DALI OS" }]
 
@@ -116,10 +113,6 @@ export default function InterviewsDashboard() {
     useLoaderData<typeof loader>()
   const dialog = useDialog()
   const toast = useToast()
-
-  const areaPills = pillRoles && (
-    <AreaPillNav items={hiringPills({ ...pillRoles, active: 'interviews' })} />
-  )
 
   const [scheduledInterviews, setScheduledInterviews] = useState<any[]>([])
   // Interview Availability State (API-connected)
@@ -319,7 +312,6 @@ export default function InterviewsDashboard() {
   if (!activeCycle) {
     return (
       <div className="space-y-8">
-        {areaPills}
         <h1 className="text-2xl font-bold text-foreground">Interviews</h1>
         <div className="bg-card rounded-xl border border-border shadow-sm p-8 text-center">
           <p className="text-muted-foreground">You are not assigned as an interviewer for any active cycle.</p>
@@ -330,7 +322,6 @@ export default function InterviewsDashboard() {
 
   return (
     <div className="space-y-6">
-      {areaPills}
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Interviews</h1>

@@ -5,8 +5,6 @@ import { requireCoreOrDomainLead } from "~/lib/auth";
 import { getUserRoles } from "~/lib/roles";
 import Library from "~/hiring/components/Library";
 
-export const handle = { areaPills: true };
-
 export const meta: Route.MetaFunction = () => [{ title: "Library · Hiring · DALI OS" }];
 
 // Single home for the reusable hiring artifacts — challenges, rubrics, and

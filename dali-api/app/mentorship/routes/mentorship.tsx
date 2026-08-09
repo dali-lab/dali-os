@@ -8,15 +8,11 @@ import { isCore, currentTerm } from "~/lib/roles";
 import { canViewMentorship } from "../lib/visibility";
 import { currentWeekStart } from "../lib/week";
 import { buildGrid, type MentorGridResult } from "../lib/mentor-grid.server";
-import { AreaPillNav } from "~/components/AreaPillNav";
-import { mentorshipPills } from "../components/mentorshipPills";
 import { MentorGrid } from "../components/MentorGrid";
 
 export const meta: Route.MetaFunction = () => [{ title: "Mentorship · DALI OS" }];
 
-// Surfaces the area subtab row (see layout.tsx's areaPills handling).
 export const handle = {
-  areaPills: true,
   docKey: "mentorship.hub",
   docTitle: "Mentorship",
 };
@@ -111,7 +107,6 @@ export default function MentorshipHub() {
 
   return (
     <main className="flex flex-col gap-6">
-      <AreaPillNav items={mentorshipPills({ active: "hub" })} />
       <header className="flex flex-col gap-1">
         <h1 className="font-heading text-2xl font-bold text-foreground">
           Mentorship

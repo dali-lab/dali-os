@@ -15,14 +15,12 @@ import { canViewStaffing, isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
-import { AreaPillNav } from "~/components/AreaPillNav";
 import { ViewToggle, useViewPreference } from "~/components/ViewToggle";
 import { buttonClasses } from "~/components/ui/Button";
 import { OPEN_APPLICATION_STATUSES } from "../lib/partner-application";
 import { FileText, LayoutGrid } from "lucide-react";
 import { Checkbox } from "~/components/ui/Checkbox";
 
-export const handle = { areaPills: true };
 
 export const meta: Route.MetaFunction = () => [{ title: "Partners · DALI OS" }];
 
@@ -136,12 +134,6 @@ export default function PartnersOrganizations() {
 
   return (
     <div className="flex flex-col gap-4">
-      <AreaPillNav
-        items={[
-          { label: "Hub", to: "/partners", active: true, icon: LayoutGrid },
-          { label: "Applications", to: "/partners/applications", icon: FileText },
-        ]}
-      />
       <header className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="font-heading text-2xl font-bold text-foreground">

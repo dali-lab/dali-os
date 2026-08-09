@@ -4,10 +4,7 @@ import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { requireMember, canViewStaffing } from "~/lib/roles";
 import { listMemberStaffingForms } from "../lib/member-staffing.server";
-import { projectsPills } from "../components/projectsPills";
-import { AreaPillNav } from "~/components/AreaPillNav";
 
-export const handle = { areaPills: true };
 
 export const meta: Route.MetaFunction = () => [
   { title: "My Staffing · DALI OS" },
@@ -38,9 +35,6 @@ export default function MyStaffingPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <AreaPillNav
-        items={projectsPills({ canViewStaffing: canStaff, active: "my-staffing" })}
-      />
       <header>
         <h1 className="font-heading text-2xl font-bold text-foreground">
           My Staffing
