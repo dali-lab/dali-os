@@ -101,15 +101,20 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
   }
 
-  const comment = await prisma.taskComment.create({
-    data: { taskId: params.id, authorId: userId, body: text },
-    select: {
-      id: true,
-      body: true,
-      createdAt: true,
-      author: { select: { id: true, firstName: true, lastName: true, photoUrl: true } },
-    },
-  });
+  const [comment] = await prisma.$transaction([
+    prisma.taskComment.create({
+      data: { taskId: params.id, authorId: userId, body: text },
+      select: {
+        id: true,
+        body: true,
+        createdAt: true,
+        author: { select: { id: true, firstName: true, lastName: true, photoUrl: true } },
+      },
+    }),
+    // A comment doesn't touch any other Task field, so it needs its own bump
+    // — see Task.activityAt.
+    prisma.task.update({ where: { id: params.id }, data: { activityAt: new Date() } }),
+  ]);
 
   void notifyTaskComment({ taskId: params.id, authorId: userId, body: text }).catch(
     (err) => console.error(`task ${params.id}: comment notify failed`, err),

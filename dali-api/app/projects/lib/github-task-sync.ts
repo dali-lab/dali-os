@@ -140,6 +140,7 @@ export async function createIssueForTask(
         githubRepo: repo,
         githubIssueNumber: res.data.number,
         githubIssueUrl: res.data.html_url,
+        activityAt: new Date(),
       },
     });
 

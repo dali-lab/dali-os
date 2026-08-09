@@ -604,36 +604,44 @@ export function TaskModal({
       open
       onClose={guardedClose}
       labelledBy="task-modal-title"
-      containerClassName="bg-card rounded-2xl shadow-brand-2 max-w-2xl w-full p-5 sm:p-6 my-auto"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 sm:p-6 overflow-y-auto"
+      containerClassName="bg-card rounded-2xl shadow-brand-2 w-full max-w-4xl my-8 max-h-[85vh] flex flex-col"
     >
-      <div className="flex flex-col gap-4">
-        <div className="flex items-start justify-between gap-3">
-          <textarea
-            id="task-modal-title"
-            ref={titleRef}
-            rows={1}
-            autoFocus={isCreate}
-            value={title}
-            disabled={!canManage}
-            onChange={(e) => setTitle(e.target.value)}
-            onKeyDown={(e) => {
-              // Titles stay single-line logically; Enter just shouldn't
-              // insert a newline (this textarea only wraps for visibility).
-              if (e.key === "Enter") e.preventDefault();
-            }}
-            className="flex-1 text-lg font-semibold text-foreground bg-transparent border-0 border-b border-transparent focus:border-border focus:outline-none px-0 py-1 disabled:opacity-100 resize-none overflow-hidden"
-            placeholder={isCreate ? "New task title" : "Task title"}
-          />
-          <button
-            type="button"
-            onClick={guardedClose}
-            className="text-muted-foreground/70 hover:text-foreground rounded p-1 hover:bg-muted"
-            aria-label="Close"
-          >
-            <X className="w-5 h-5" aria-hidden />
-          </button>
-        </div>
+      <div className="flex items-start justify-between gap-3 px-5 sm:px-6 py-4 border-b border-border flex-shrink-0">
+        <textarea
+          id="task-modal-title"
+          ref={titleRef}
+          rows={1}
+          autoFocus={isCreate}
+          value={title}
+          disabled={!canManage}
+          onChange={(e) => setTitle(e.target.value)}
+          onKeyDown={(e) => {
+            // Titles stay single-line logically; Enter just shouldn't
+            // insert a newline (this textarea only wraps for visibility).
+            if (e.key === "Enter") e.preventDefault();
+          }}
+          className="flex-1 text-lg font-semibold text-foreground bg-transparent border-0 border-b border-transparent focus:border-border focus:outline-none px-0 py-1 disabled:opacity-100 resize-none overflow-hidden"
+          placeholder={isCreate ? "New task title" : "Task title"}
+        />
+        <button
+          type="button"
+          onClick={guardedClose}
+          className="text-muted-foreground/70 hover:text-foreground rounded p-1 hover:bg-muted"
+          aria-label="Close"
+        >
+          <X className="w-5 h-5" aria-hidden />
+        </button>
+      </div>
 
+      {/* Two columns once there's room: content (description, subtasks) on the
+          left, properties + activity (details, GitHub, files, comments) on
+          the right — the same split Linear/Notion use, so the wide majority
+          of fields aren't competing with the description for the same
+          640px-wide column. Each side scrolls independently past lg so a long
+          comment thread doesn't push the description out of view. */}
+      <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6 p-5 sm:p-6">
+        <div className="min-h-0 lg:overflow-y-auto flex flex-col gap-4 pr-1">
         <Field label="Description">
           {/* Create mode has no task id yet, so it collects an initial
               description via a textarea (persisted to Task.description, which
@@ -676,6 +684,60 @@ export function TaskModal({
           )}
         </Field>
 
+        {!isCreate && (
+          <div className="flex flex-col gap-1.5 text-xs">
+            <span className="text-muted-foreground font-medium uppercase tracking-wide">
+              Checklist
+              {checklist.length > 0 && ` (${checklistDone}/${checklist.length})`}
+            </span>
+            {checklist.map((item, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <Checkbox
+                  checked={item.done}
+                  disabled={!canManage}
+                  onChange={() => void toggleChecklistItem(i)}
+                  aria-label={item.text}
+                />
+                <span
+                  className={`flex-1 text-sm ${
+                    item.done ? "line-through text-muted-foreground" : "text-foreground"
+                  }`}
+                >
+                  {item.text}
+                </span>
+                {canManage && (
+                  <button
+                    type="button"
+                    onClick={() => removeChecklistItem(i)}
+                    aria-label={`Remove "${item.text}"`}
+                    className="text-muted-foreground/70 hover:text-foreground rounded p-0.5 hover:bg-muted"
+                  >
+                    <X className="w-3.5 h-3.5" aria-hidden />
+                  </button>
+                )}
+              </div>
+            ))}
+            {canManage && checklist.length < CHECKLIST_MAX_ITEMS && (
+              <input
+                type="text"
+                value={newItemText}
+                maxLength={CHECKLIST_MAX_TEXT}
+                onChange={(e) => setNewItemText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addChecklistItem();
+                  }
+                }}
+                placeholder="Add checklist item and press Enter"
+                className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
+              />
+            )}
+          </div>
+        )}
+        </div>
+
+        <div className="min-h-0 lg:overflow-y-auto flex flex-col gap-4 pr-1">
         {/* Details — one tidy property panel (label · control rows) instead of
             a grid of boxed inputs, so the metadata reads as scannable
             properties rather than a wall of fields. */}
@@ -779,58 +841,6 @@ export function TaskModal({
             />
           </PropRow>
         </div>
-
-        {!isCreate && (
-          <div className="flex flex-col gap-1.5 text-xs">
-            <span className="text-muted-foreground font-medium uppercase tracking-wide">
-              Checklist
-              {checklist.length > 0 && ` (${checklistDone}/${checklist.length})`}
-            </span>
-            {checklist.map((item, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <Checkbox
-                  checked={item.done}
-                  disabled={!canManage}
-                  onChange={() => void toggleChecklistItem(i)}
-                  aria-label={item.text}
-                />
-                <span
-                  className={`flex-1 text-sm ${
-                    item.done ? "line-through text-muted-foreground" : "text-foreground"
-                  }`}
-                >
-                  {item.text}
-                </span>
-                {canManage && (
-                  <button
-                    type="button"
-                    onClick={() => removeChecklistItem(i)}
-                    aria-label={`Remove "${item.text}"`}
-                    className="text-muted-foreground/70 hover:text-foreground rounded p-0.5 hover:bg-muted"
-                  >
-                    <X className="w-3.5 h-3.5" aria-hidden />
-                  </button>
-                )}
-              </div>
-            ))}
-            {canManage && checklist.length < CHECKLIST_MAX_ITEMS && (
-              <input
-                type="text"
-                value={newItemText}
-                maxLength={CHECKLIST_MAX_TEXT}
-                onChange={(e) => setNewItemText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    addChecklistItem();
-                  }
-                }}
-                placeholder="Add checklist item and press Enter"
-                className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
-              />
-            )}
-          </div>
-        )}
 
         {isCreate && canManage && githubRepos.length > 0 && (
           <div className="flex flex-col gap-2 pt-2 border-t border-border">
@@ -1102,10 +1112,13 @@ export function TaskModal({
             )}
           </div>
         )}
+        </div>
+      </div>
 
+      <div className="flex-shrink-0 border-t border-border px-5 sm:px-6 py-4 flex flex-col gap-2">
         {saveError && <p className="text-xs text-accent-coral">{saveError}</p>}
 
-        <div className="flex items-center gap-2 pt-2 border-t border-border">
+        <div className="flex items-center gap-2">
           {!isCreate && canManage && onDelete &&
             (confirmingDelete ? (
               <div className="mr-auto flex items-center gap-2 text-sm">
