@@ -33,10 +33,22 @@ export function timed<T>(
   if (!request) return thunk();
   const start = performance.now();
   const p = thunk();
-  const done = () => record(request, name, performance.now() - start);
+  const done = () => {
+    const dur = performance.now() - start;
+    record(request, name, dur);
+    // Direct log (independent of the Server-Timing header path, which depends on
+    // handleDataRequest receiving the same Request instance the loader saw —
+    // not guaranteed under single-fetch). Any phase over the threshold names
+    // itself in `fly logs`, so the slow phase is findable without the header.
+    if (dur >= PHASE_LOG_THRESHOLD_MS) {
+      console.log(`[perf-phase] ${name} ${dur.toFixed(0)}ms`);
+    }
+  };
   p.then(done, done);
   return p;
 }
+
+const PHASE_LOG_THRESHOLD_MS = 200;
 
 /**
  * Build the `Server-Timing` header value from a request's recorded marks, or
