@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
+import { redirect } from "react-router";
 import { Download } from "lucide-react";
 import type { Route } from "./+types/download";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
+import { getUserRoles } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 
 const RELEASES_BASE = "https://dali-os-desktop-releases.s3.us-east-1.amazonaws.com";
 // Stable, version-less artifacts published by the release workflow each release —
@@ -50,6 +53,12 @@ export const meta: Route.MetaFunction = () => {
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
+  // The desktop app is gated by the "desktop-app" feature flag — until it's on
+  // for this user, the download page isn't available.
+  const roles = await getUserRoles(auth.user.sub);
+  if (!(await isFeatureEnabled("desktop-app", auth.user.sub, roles))) {
+    return redirect("/");
+  }
   const version = await getLatestVersion();
   return { version, dmgUrl: STABLE_DMG_URL, appImageUrl: STABLE_APPIMAGE_URL, windowsUrl: STABLE_WINDOWS_URL };
 }

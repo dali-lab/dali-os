@@ -4,12 +4,15 @@ import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getHiringHubData } from "~/hiring/lib/hub.server";
 import { getPipelineData } from "~/hiring/lib/pipeline.server";
+import { hiringPills } from "~/hiring/components/hiringPills";
+import { AreaPillNav } from "~/components/AreaPillNav";
 import { PipelinePanel } from "~/hiring/components/analytics/PipelinePanel";
 import { buttonClasses } from "~/components/ui/Button";
 import { formatInterviewDateInZone, formatInterviewTimeRangeInZone } from "~/hiring/lib/interview-time";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { cn } from "~/lib/cn";
 
+export const handle = { areaPills: true };
 
 export const meta: Route.MetaFunction = () => [{ title: "Hiring · DALI OS" }];
 
@@ -90,6 +93,7 @@ export default function HiringHub() {
 
   return (
     <div className="flex flex-col gap-5">
+      <AreaPillNav items={hiringPills({ ...hub.roles, active: "hub" })} />
 
       <header>
         <h1 className="font-heading text-2xl font-bold text-foreground">Hiring</h1>

@@ -11,11 +11,14 @@ import {
   remindNonCompliant,
 } from "~/education/lib/ce-credits.server";
 import { redirectDartmouthToPortal } from "~/education/lib/access.server";
+import { educationPills } from "~/education/components/educationPills";
+import { AreaPillNav } from "~/components/AreaPillNav";
 import { TermFilter } from "~/components/TermFilter";
 import { Button } from "~/components/ui/Button";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { cn } from "~/lib/cn";
 
+export const handle = { areaPills: true };
 
 export const meta: Route.MetaFunction = () => [
   { title: "CE Compliance · DALI OS" },
@@ -83,6 +86,9 @@ export default function CECompliance() {
 
   return (
     <div className="flex flex-col gap-4">
+      <AreaPillNav
+        items={educationPills({ canManage: true, isCore: true, active: "compliance" })}
+      />
       <div className="flex flex-col gap-4 max-w-3xl">
       <header className="flex items-start justify-between gap-4">
         <div>

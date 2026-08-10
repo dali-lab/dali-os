@@ -28,10 +28,13 @@ import {
 import { buildSubmissionView } from "../lib/submission-view.server";
 import { deriveSlotStatus, type SlotStatus } from "../lib/slot-status.server";
 import { SlotStatusStrip } from "../components/SlotStatusStrip";
+import { projectsPills } from "../components/projectsPills";
+import { AreaPillNav } from "~/components/AreaPillNav";
 import type { Question } from "~/types";
 
 const SLOT = "intent-to-work" as const;
 
+export const handle = { areaPills: true };
 
 export const meta: Route.MetaFunction = () => [
   { title: "Intent to Work · DALI OS" },
@@ -373,6 +376,7 @@ function Header({
 }) {
   return (
     <>
+    <AreaPillNav items={projectsPills({ canViewStaffing: true, active: "intent" })} />
     <header className="flex items-start justify-between gap-3">
       <div>
         <h1 className="font-heading text-2xl font-bold text-foreground">

@@ -1,12 +1,20 @@
-import { useMatches } from "react-router";
+import { Link, useMatches } from "react-router";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { PageDocButton } from "~/components/page-docs/PageDocButton";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 
-// Horizontal underline tabs for in-page view switching (e.g. the calendar's
-// day/week/month toggle). Area-level navigation now lives in the sidebar's
-// active-area dropdown (see app/lib/nav-areas.ts), so the old Link-based
-// AreaPillNav was retired — only the button-driven UnderlineTabButtons remains.
+// Horizontal sub-navigation between an area's sibling surfaces. Used where a
+// sidebar area collapsed to a single entry: the area's landing page carries
+// its role-gated sub-surfaces here instead of as sidebar children. Callers
+// pass only the tabs the viewer may access.
+
+export type AreaPill = {
+  label: string;
+  to: string;
+  active?: boolean;
+  icon?: LucideIcon;
+};
 
 export type UnderlineTabButton = {
   label: string;
@@ -67,6 +75,53 @@ function SubtabLabel({
       {Icon && <Icon className="h-4 w-4 shrink-0" aria-hidden />}
       {label}
     </>
+  );
+}
+
+export function AreaPillNav({
+  items,
+  className,
+}: {
+  items: AreaPill[];
+  className?: string;
+}) {
+  // Only reserve room + host the Docs button when this page actually declares a
+  // guide — otherwise the pill row stays exactly as it was. (Hook must run
+  // before the early return below.)
+  const matches = useMatches();
+  const hasDoc = matches.some(
+    (m) => (m as { handle?: { docKey?: string } }).handle?.docKey,
+  );
+
+  // Under the new left-nav, an area's sub-surfaces live in the sidebar dropdown,
+  // so the in-page pill row is suppressed for flagged users. Off (default) it
+  // renders exactly as today. Hook runs before the early return below.
+  const redesign = useFeatureFlag("sidebar-redesign");
+  if (redesign) return null;
+
+  // A lone tab is pure noise — the page is already the only destination.
+  if (items.length <= 1) return null;
+
+  return (
+    <nav className={cn(underlineTabBarClass, className)} aria-label="Section">
+      <span className={underlineTabListClass}>
+        {items.map((item) => (
+          <Link
+            key={item.to}
+            to={item.to}
+            aria-current={item.active ? "page" : undefined}
+            className={underlineTabItemClass(!!item.active)}
+          >
+            <SubtabLabel label={item.label} icon={item.icon} />
+          </Link>
+        ))}
+      </span>
+      {hasDoc && (
+        <span className={tabBarActionsClass}>
+          <PageDocButton />
+        </span>
+      )}
+    </nav>
   );
 }
 

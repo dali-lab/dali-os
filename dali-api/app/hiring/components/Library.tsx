@@ -11,6 +11,8 @@ import {
 } from "lucide-react";
 import { Button } from "~/components/ui/Button";
 import { Modal, ModalHeader } from "~/components/Modal";
+import { hiringPills } from "~/hiring/components/hiringPills";
+import { AreaPillNav } from "~/components/AreaPillNav";
 import type { loader } from "~/hiring/routes/library";
 
 type Tab = "challenges" | "rubrics" | "agreements";
@@ -38,6 +40,7 @@ export default function Library() {
 
   return (
     <div className="space-y-8">
+      <AreaPillNav items={hiringPills({ ...data.pillRoles, active: "library" })} />
       <div
         className="inline-flex self-start rounded-lg border border-border bg-muted/40 p-0.5"
         role="tablist"

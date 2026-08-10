@@ -19,6 +19,8 @@ import {
   mentorshipPairWhere,
 } from "../lib/visibility";
 import { isCore, currentTerm } from "~/lib/roles";
+import { AreaPillNav } from "~/components/AreaPillNav";
+import { mentorshipPills } from "../components/mentorshipPills";
 import { TemplatesModal } from "../components/TemplatesModal";
 import { MentorGrid } from "../components/MentorGrid";
 import { Select } from "~/components/ui/floating";
@@ -31,6 +33,9 @@ import { VIBES, VIBE_META } from "../lib/vibe";
 export const meta: Route.MetaFunction = () => [
   { title: "Notes · DALI OS" },
 ];
+
+// Surfaces the area subtab row (see layout.tsx's areaPills handling).
+export const handle = { areaPills: true };
 
 type FilterOption = { id: string; label: string };
 
@@ -249,6 +254,7 @@ export default function MentorshipBrowse() {
 
   return (
     <main className="flex flex-col gap-6">
+      <AreaPillNav items={mentorshipPills({ active: "browse" })} />
       <header className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="font-heading text-2xl font-bold text-foreground">
           Mentorship notes

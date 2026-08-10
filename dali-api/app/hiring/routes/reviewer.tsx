@@ -3,6 +3,8 @@ import { Link, useLoaderData, useRevalidator, useSearchParams } from 'react-rout
 import { CheckCircle, FileText, EyeOff, ListOrdered } from 'lucide-react'
 import { getReviewStatus } from '~/hiring/lib/review-status'
 import { getUserRoles } from '~/lib/roles'
+import { hiringPills } from '~/hiring/components/hiringPills'
+import { AreaPillNav } from '~/components/AreaPillNav'
 import { CycleSelector } from '~/hiring/components/CycleSelector'
 import { Section } from '~/hiring/components/Section'
 import { getActiveCycle, cycleStatusToStage, inferUnderReviewStage } from '~/hiring/lib/cycles'
@@ -15,6 +17,7 @@ import { requireAuth } from "~/lib/auth";
 import { inReviewPipelineFilter } from '~/hiring/lib/application-pipeline-filter'
 import type { Route } from './+types/reviewer'
 
+export const handle = { areaPills: true };
 
 export const meta: Route.MetaFunction = () => [{ title: "Reviews · Hiring · DALI OS" }]
 
@@ -249,9 +252,14 @@ export default function ReviewerDashboard() {
     pillRoles,
   } = useLoaderData<typeof loader>()
 
+  const areaPills = pillRoles && (
+    <AreaPillNav items={hiringPills({ ...pillRoles, active: 'reviews' })} />
+  )
+
   if (!activeCycle) {
     return (
       <div className="space-y-8">
+        {areaPills}
         <h1 className="text-2xl font-bold text-foreground">Reviews</h1>
         <div className="bg-card rounded-xl border border-border shadow-sm p-8 text-center">
           <p className="text-muted-foreground">You are not assigned as a reviewer for any active cycle.</p>
@@ -321,6 +329,7 @@ export default function ReviewerDashboard() {
 
   return (
     <div className="space-y-6">
+      {areaPills}
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">

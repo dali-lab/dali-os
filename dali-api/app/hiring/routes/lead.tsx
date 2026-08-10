@@ -5,11 +5,14 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore, getUserRoles } from "~/lib/roles";
+import { hiringPills } from "~/hiring/components/hiringPills";
+import { AreaPillNav } from "~/components/AreaPillNav";
 import { ChevronRight, ChevronDown, Plus } from "lucide-react";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { STATUS_COLORS, STATUS_LABELS } from "~/hiring/lib/labels";
 import { Select, type SelectOption } from "~/components/ui/floating";
 
+export const handle = { areaPills: true };
 
 export const meta: Route.MetaFunction = () => [{ title: "Hiring lead · DALI OS" }];
 
@@ -73,6 +76,9 @@ export default function HiringLeadDashboard() {
 
   return (
     <div className="space-y-6">
+      {data?.pillRoles && (
+        <AreaPillNav items={hiringPills({ ...data.pillRoles, active: "cycles" })} />
+      )}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-foreground">Hiring Cycles</h1>
         <div className="flex items-center gap-2">

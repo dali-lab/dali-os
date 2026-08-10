@@ -7,11 +7,14 @@ import type { Route } from "./+types/waitlists";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
+import { hiringPills } from "~/hiring/components/hiringPills";
+import { AreaPillNav } from "~/components/AreaPillNav";
 import {
   listActiveWaitlistEntries,
   type WaitlistEntry,
 } from "~/hiring/lib/waitlist.server";
 
+export const handle = { areaPills: true };
 
 export const meta: Route.MetaFunction = () => [
   { title: "Waitlists · Hiring · DALI OS" },
@@ -92,6 +95,7 @@ export default function WaitlistsPage() {
 
   return (
     <div className="space-y-6">
+      <AreaPillNav items={hiringPills({ ...pillRoles, active: "waitlists" })} />
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-foreground">Waitlists</h1>
         <span className="text-sm text-muted-foreground">

@@ -7,8 +7,11 @@ import { redirectDartmouthToPortal } from "~/education/lib/access.server";
 import { listCatalog, listMyApplications } from "~/education/lib/offerings.server";
 import { myCreditStanding } from "~/education/lib/ce-credits.server";
 import { OfferingCard } from "~/education/components/OfferingCard";
+import { educationPills } from "~/education/components/educationPills";
+import { AreaPillNav } from "~/components/AreaPillNav";
 import { Link } from "react-router";
 
+export const handle = { areaPills: true };
 
 export const meta: Route.MetaFunction = () => [{ title: "Education · DALI OS" }];
 
@@ -54,6 +57,7 @@ export default function EducationCatalog() {
 
   return (
     <div className="flex flex-col gap-6">
+      <AreaPillNav items={educationPills({ canManage, isCore, active: "hub" })} />
       <header>
         <h1 className="font-heading text-2xl font-bold text-foreground">
           Education

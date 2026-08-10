@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Outlet, redirect, useLoaderData, useLocation, useMatches, useNavigate, useNavigationType, useSearchParams, type ShouldRevalidateFunctionArgs } from 'react-router'
 import { cn } from '~/lib/cn'
 import { Layout } from '~/components/Layout'
+import { LayoutClassic } from '~/components/LayoutClassic'
 import { Breadcrumbs } from '~/components/Breadcrumbs'
 import { PageDocProvider, PageDocButton, PageDocOutlet } from '~/components/page-docs/PageDocButton'
 import { LaunchWelcome } from '~/components/LaunchWelcome'
@@ -20,6 +21,8 @@ import { isValidTimezone, resolveUserTimeZone } from '~/lib/timezone'
 import { readDismissedTimeZone } from '~/lib/tz-prompt'
 import { isNavbarHubPage } from '~/lib/navbar-routes'
 import { listFavoritesAndRecents } from '~/lib/user-pages.server'
+import { resolveFeatureFlags } from '~/lib/feature-flags.server'
+import { FeatureFlagsProvider } from '~/components/FeatureFlags'
 import type { Route } from './+types/layout'
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -112,7 +115,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   let hasHiringAccess =
     core || admin || domainLead || (isLabMember && isInterviewerAnyCycle)
 
-  const [activeInterviewer, anyCycleReviewer, labMentor, photoUrl] = await Promise.all([
+  const [activeInterviewer, anyCycleReviewer, labMentor, photoUrl, flags] = await Promise.all([
     isLabMember && activeCycle
       ? prisma.cycleInterviewer.findFirst({
           where: { userId: auth.user.sub, applicationCycleId: activeCycle.id },
@@ -125,6 +128,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     // from mentees and non-mentor members entirely.
     isLabMember && !core ? isLabMentor(auth.user.sub) : false,
     resolvePhotoUrl(me?.photoUrl),
+    // Feature flags resolved once, plumbed to the client via FeatureFlagsProvider.
+    resolveFeatureFlags(auth.user.sub, roles),
   ])
 
   const isInterviewer = !!activeInterviewer
@@ -169,7 +174,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     sessionId: auth.sessionId,
   })
 
-  return { user: auth.user, photoUrl, hasCalendarLink, shouldShowTour, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, favorites: sidebarPages.favorites, recents: sidebarPages.recents, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone }
+  return { user: auth.user, photoUrl, hasCalendarLink, shouldShowTour, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, favorites: sidebarPages.favorites, recents: sidebarPages.recents, flags, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone }
 }
 
 // Layout data (roles, avatar, hiring access) changes rarely, but default
@@ -198,14 +203,21 @@ export function shouldRevalidate({ formAction, currentUrl, nextUrl, defaultShoul
 }
 
 export default function AppLayoutRoute() {
-  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, favorites, recents, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone } = useLoaderData<typeof loader>()
+  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, favorites, recents, flags, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone } = useLoaderData<typeof loader>()
   const [searchParams] = useSearchParams()
   const location = useLocation()
   const navigationType = useNavigationType()
   const matches = useMatches()
   const navigate = useNavigate()
+  // Two subnav signals: `areaSubnav` (always renders a row, e.g. calendar) and
+  // `areaPills` (the flag-gated in-page pill row). The pill row only exists when
+  // the sidebar redesign is OFF, so its flush top spacing is only reserved then.
+  const redesign = flags['sidebar-redesign'] ?? false
   const hasAreaSubnav = matches.some(
-    (m) => (m as { handle?: { areaPills?: boolean } }).handle?.areaPills,
+    (m) => {
+      const h = (m as { handle?: { areaSubnav?: boolean; areaPills?: boolean } }).handle
+      return h?.areaSubnav || (!redesign && h?.areaPills)
+    },
   )
   // Pages that land directly on their own title, with no subnav in between,
   // ask for a wider gap under the trail (see adminHandle).
@@ -375,18 +387,31 @@ export default function AppLayoutRoute() {
     </PageDocProvider>
   )
 
-  // Skip the sidebar shell when rendered inside a TabWorkspace iframe.
+  // Skip the sidebar shell when rendered inside a TabWorkspace iframe. Each
+  // iframe runs this loader, so the flag map is present in every document.
   if (embedded) {
-    return <div className="min-h-dvh bg-page overflow-x-hidden">{pageContent}</div>
+    return (
+      <FeatureFlagsProvider flags={flags}>
+        <div className="min-h-dvh bg-page overflow-x-hidden">{pageContent}</div>
+      </FeatureFlagsProvider>
+    )
   }
 
+  const tablessChild = tabless ? <div className="flex-1 overflow-x-hidden">{pageContent}</div> : undefined
+
   return (
-    <>
-      <Layout user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} hasHiringAccess={hasHiringAccess} isInstructor={isInstructor} isLabMentor={isLabMentorFlag} favorites={favorites} recents={recents} focusMode={focus}>
-        {tabless ? <div className="flex-1 overflow-x-hidden">{pageContent}</div> : undefined}
-      </Layout>
+    <FeatureFlagsProvider flags={flags}>
+      {redesign ? (
+        <Layout user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} hasHiringAccess={hasHiringAccess} isInstructor={isInstructor} isLabMentor={isLabMentorFlag} favorites={favorites} recents={recents} focusMode={focus}>
+          {tablessChild}
+        </Layout>
+      ) : (
+        <LayoutClassic user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} hasHiringAccess={hasHiringAccess} isLabMentor={isLabMentorFlag} focusMode={focus}>
+          {tablessChild}
+        </LayoutClassic>
+      )}
       <LaunchWelcome firstName={user.firstName || user.email.split('@')[0]} hasCalendarLink={hasCalendarLink} shouldShowTour={shouldShowTour} tabless={tabless} />
       <TimeZonePrompt userTimeZone={userTimeZone} userTimeZoneIsExplicit={userTimeZoneIsExplicit} dismissedZone={tzDismissedZone} />
-    </>
+    </FeatureFlagsProvider>
   )
 }

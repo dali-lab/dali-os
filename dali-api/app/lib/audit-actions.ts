@@ -35,6 +35,7 @@ export const AUDIT_ACTIONS = [
   "group.delete",
   "jobs.toggle",
   "jobs.run",
+  "feature-flags.update",
   "staffing.assign",
   "staffing.finalize",
   "staffing.term_channel",

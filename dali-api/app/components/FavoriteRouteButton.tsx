@@ -3,6 +3,7 @@ import { useLocation, useMatches } from "react-router";
 import { Star } from "lucide-react";
 import { Tooltip } from "~/components/ui/IconButton";
 import { isNavbarRoute } from "~/lib/navbar-routes";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 
 // Stars a page you're currently on — for DB-backed detail pages (project,
 // person, partner org). Document pages use FavoriteStar instead.
@@ -78,7 +79,10 @@ export function FavoriteRouteButton({
     };
   }, [href, known]);
 
-  const hasAreaPills = matches.some(
+  // Pills only render when the sidebar redesign is off (AreaPillNav returns null
+  // when on), so "on a pill page" is only true in that mode.
+  const redesign = useFeatureFlag("sidebar-redesign");
+  const hasAreaPills = !redesign && matches.some(
     (m) => (m as { handle?: { areaPills?: boolean } }).handle?.areaPills,
   );
 

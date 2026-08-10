@@ -10,6 +10,8 @@ import type { Route } from "./+types/onboarding";
 import { requireAuth, unauthorized, forbidden } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore, getUserRoles } from "~/lib/roles";
+import { hiringPills } from "~/hiring/components/hiringPills";
+import { AreaPillNav } from "~/components/AreaPillNav";
 import { IconButton } from "~/components/ui/IconButton";
 import { useDialog } from "~/components/ui/dialog";
 import { Avatar } from "~/components/ui/Avatar";
@@ -24,6 +26,7 @@ import {
 } from "~/members/lib/welcome.server";
 import { Menu, Select, type SelectOption } from "~/components/ui/floating";
 
+export const handle = { areaPills: true };
 
 export const meta: Route.MetaFunction = () => [
   { title: "Onboarding · Hiring · DALI OS" },
@@ -516,6 +519,7 @@ export default function HiringOnboarding() {
 
   return (
     <div className="flex flex-col gap-4">
+      <AreaPillNav items={hiringPills({ ...pillRoles, active: "onboarding" })} />
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="font-heading text-2xl font-bold text-foreground">Onboarding</h1>

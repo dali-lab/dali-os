@@ -12,6 +12,7 @@ import {
 import { useLocation, useMatches, useSearchParams } from "react-router";
 import { BookOpen } from "lucide-react";
 import type { DocHandle } from "~/components/Breadcrumbs";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 
 const PageDocPage = lazy(() =>
   import("./PageDocPage").then((m) => ({ default: m.PageDocPage })),
@@ -95,7 +96,10 @@ function usePageDoc(): PageDocContextValue {
 export function PageDocButton({ suppressWhenPills = false }: { suppressWhenPills?: boolean }) {
   const matches = useMatches();
   const { docKey, open, setOpen } = usePageDoc();
-  const hasAreaPills = matches.some(
+  // Pills only render when the sidebar redesign is off; when it's on AreaPillNav
+  // returns null, so the guide CTA belongs back on the breadcrumb row.
+  const redesign = useFeatureFlag("sidebar-redesign");
+  const hasAreaPills = !redesign && matches.some(
     (m) => (m as { handle?: { areaPills?: boolean } }).handle?.areaPills,
   );
 
@@ -122,6 +126,7 @@ export function PageDocOutlet({ children }: { children: ReactNode }) {
   const { open, docKey, docTitle, setOpen, focusCommentId } = usePageDoc();
   const location = useLocation();
   const matches = useMatches();
+  const redesignOpen = useFeatureFlag("sidebar-redesign");
 
   if (open && docKey) {
     // On pill pages the layout zeroes its own top padding because AreaPillNav
@@ -129,7 +134,7 @@ export function PageDocOutlet({ children }: { children: ReactNode }) {
     // included, so nothing is left to space it off the breadcrumb row. Put the
     // layout's usual padding back for those routes only, so the guide starts
     // at the same height as ordinary page content either way.
-    const hasAreaPills = matches.some(
+    const hasAreaPills = !redesignOpen && matches.some(
       (m) => (m as { handle?: { areaPills?: boolean } }).handle?.areaPills,
     );
     return (
