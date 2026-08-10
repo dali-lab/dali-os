@@ -58,3 +58,26 @@ export type FeatureFlagMap = Record<FeatureFlagKey, boolean>;
 export function isFeatureFlagKey(value: string): value is FeatureFlagKey {
   return FEATURE_FLAGS.some((f) => f.key === value);
 }
+
+// The evaluable shape of a flag — either a DB FeatureFlag row or a registry
+// default synthesized for a flag with no row yet.
+export type FlagConfig = {
+  enabled: boolean;
+  everyone: boolean;
+  roles: string[];
+  userIds: string[];
+};
+
+// A flag is on for a user iff the master switch is set AND any targeting rule
+// matches: everyone, an explicit allowlist entry, or a held role. Pure (no DB)
+// so it lives in the client-safe module and can be unit-tested directly.
+export function evaluateFlag(
+  config: FlagConfig,
+  userId: string,
+  roles: UserRoles,
+): boolean {
+  if (!config.enabled) return false;
+  if (config.everyone) return true;
+  if (config.userIds.includes(userId)) return true;
+  return config.roles.some((k) => k in roles && roles[k as keyof UserRoles]);
+}

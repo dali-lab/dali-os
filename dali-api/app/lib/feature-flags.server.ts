@@ -3,21 +3,14 @@ import type { UserRoles } from "~/lib/roles";
 import {
   FEATURE_FLAGS,
   ROLE_TARGETS,
+  evaluateFlag,
   isFeatureFlagKey,
   type FeatureFlagDef,
   type FeatureFlagKey,
   type FeatureFlagMap,
+  type FlagConfig,
   type RoleTarget,
 } from "~/lib/feature-flags";
-
-// The evaluable shape of a flag — either a DB FeatureFlag row or a registry
-// default synthesized for a flag that has no row yet.
-type FlagConfig = {
-  enabled: boolean;
-  everyone: boolean;
-  roles: string[];
-  userIds: string[];
-};
 
 function defaultConfig(def: FeatureFlagDef): FlagConfig {
   return {
@@ -26,20 +19,6 @@ function defaultConfig(def: FeatureFlagDef): FlagConfig {
     roles: [],
     userIds: [],
   };
-}
-
-// A flag is on for a user iff the master switch is set AND any targeting rule
-// matches: everyone, an explicit allowlist entry, or a held role. Missing
-// row => registry default (off unless the def opts in), evaluated identically.
-export function evaluateFlag(
-  config: FlagConfig,
-  userId: string,
-  roles: UserRoles,
-): boolean {
-  if (!config.enabled) return false;
-  if (config.everyone) return true;
-  if (config.userIds.includes(userId)) return true;
-  return config.roles.some((k) => k in roles && roles[k as keyof UserRoles]);
 }
 
 // Resolve every registered flag for a user in one query. Call once per request

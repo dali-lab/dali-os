@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evaluateFlag } from "../feature-flags.server";
+import { evaluateFlag } from "../feature-flags";
 import type { UserRoles } from "../roles";
 
 const noRoles: UserRoles = {
