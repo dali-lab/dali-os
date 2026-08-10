@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Link, useLocation, useNavigate, useRevalidator } from 'react-router'
+import { Link, useLocation, useMatches, useNavigate, useRevalidator } from 'react-router'
 import {
   LogOut,
   Calendar,
@@ -23,6 +23,7 @@ import { TabWorkspace, type TabWorkspaceHandle, type OpenTabRequest } from '~/co
 import { useOpenTasks, TASKS_CHANGED_EVENT } from '~/components/NotificationBell'
 import { DesktopBanner } from '~/components/DesktopBanner'
 import { CommandPalette } from '~/components/CommandPalette'
+import { TablessHistoryNav } from '~/components/TablessHistoryNav'
 import { setFocusPreference } from '~/lib/focus-mode'
 import {
   areaForPath,
@@ -67,8 +68,15 @@ const LAST_AREA_KEY = 'dali:sidebar:area'
 export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDomainLead = false, canViewForms = false, canViewStaffing = false, isInterviewer = false, hasHiringAccess = false, isLabMentor = false, isInstructor = false, favorites = [], recents = [], focusMode = false, children }: LayoutProps) {
   const location = useLocation()
   const navigate = useNavigate()
+  const matches = useMatches()
   const { revalidate } = useRevalidator()
   const tabless = children !== undefined
+  // Pages with their own AreaPillNav/UnderlineTabButtons row host the
+  // tabless history arrows inline (see TablessHistoryNavInline) — skip the
+  // standalone bar there so the arrows don't stack a second row on top.
+  const hasAreaSubnav = matches.some(
+    (m) => (m as { handle?: { areaPills?: boolean } }).handle?.areaPills,
+  )
   // Held in refs so the message listener (mounted once) always calls the
   // latest values without needing to re-subscribe.
   const revalidateRef = useRef(revalidate)
@@ -841,7 +849,10 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
             like /hiring/domain-lead/application/:id open in the iframe instead
             of the section root. */}
         {tabless ? (
-          children
+          <div className="flex flex-1 min-h-0 flex-col">
+            {!hasAreaSubnav && <TablessHistoryNav />}
+            {children}
+          </div>
         ) : (
           <TabWorkspace
             apiRef={workspaceRef}

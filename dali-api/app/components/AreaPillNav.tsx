@@ -3,6 +3,10 @@ import type { LucideIcon } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { PageDocButton } from "~/components/page-docs/PageDocButton";
 import { useFeatureFlag } from "~/components/FeatureFlags";
+import {
+  TablessHistoryNavInline,
+  useShowTablessHistoryNav,
+} from "~/components/TablessHistoryNav";
 
 // Horizontal sub-navigation between an area's sibling surfaces. Used where a
 // sidebar area collapsed to a single entry: the area's landing page carries
@@ -45,6 +49,12 @@ const underlineTabListClass =
 
 // Actions never scroll with the tabs and keep the row's right edge.
 const tabBarActionsClass = "flex shrink-0 items-center gap-2 self-center pl-2 pr-2";
+
+// Leading slot for the desktop tabless history arrows — bleeds to the same
+// edge as the tab list (-mx-3 sm:-mx-6 lg:-mx-10 on the bar) so it lines up
+// with page content above it instead of floating mid-row.
+const tabBarLeadingClass =
+  "flex shrink-0 items-center self-stretch pl-3 sm:pl-6 lg:pl-10";
 
 // A 2px coral rule on a white page was doing all the work of saying "this tab
 // is selected", and losing — at that weight the tint reads as a hairline rather
@@ -92,6 +102,7 @@ export function AreaPillNav({
   const hasDoc = matches.some(
     (m) => (m as { handle?: { docKey?: string } }).handle?.docKey,
   );
+  const showHistoryNav = useShowTablessHistoryNav();
 
   // Under the new left-nav, an area's sub-surfaces live in the sidebar dropdown,
   // so the in-page pill row is suppressed for flagged users. Off (default) it
@@ -100,21 +111,30 @@ export function AreaPillNav({
   if (redesign) return null;
 
   // A lone tab is pure noise — the page is already the only destination.
-  if (items.length <= 1) return null;
+  // Still render the row if the history arrows need somewhere to live,
+  // otherwise the desktop tabless nav has no row on pages whose pills
+  // collapse to one (see educationPills etc.).
+  if (items.length <= 1 && !showHistoryNav) return null;
 
   return (
     <nav className={cn(underlineTabBarClass, className)} aria-label="Section">
+      {showHistoryNav && (
+        <span className={tabBarLeadingClass}>
+          <TablessHistoryNavInline />
+        </span>
+      )}
       <span className={underlineTabListClass}>
-        {items.map((item) => (
-          <Link
-            key={item.to}
-            to={item.to}
-            aria-current={item.active ? "page" : undefined}
-            className={underlineTabItemClass(!!item.active)}
-          >
-            <SubtabLabel label={item.label} icon={item.icon} />
-          </Link>
-        ))}
+        {items.length > 1 &&
+          items.map((item) => (
+            <Link
+              key={item.to}
+              to={item.to}
+              aria-current={item.active ? "page" : undefined}
+              className={underlineTabItemClass(!!item.active)}
+            >
+              <SubtabLabel label={item.label} icon={item.icon} />
+            </Link>
+          ))}
       </span>
       {hasDoc && (
         <span className={tabBarActionsClass}>
@@ -136,9 +156,15 @@ export function UnderlineTabButtons({
   const hasDoc = matches.some(
     (m) => (m as { handle?: { docKey?: string } }).handle?.docKey,
   );
+  const showHistoryNav = useShowTablessHistoryNav();
 
   return (
     <div className={underlineTabBarClass} role="tablist" aria-label={label}>
+      {showHistoryNav && (
+        <span className={tabBarLeadingClass}>
+          <TablessHistoryNavInline />
+        </span>
+      )}
       <span className={underlineTabListClass}>
         {items.map((item) => (
           <button
