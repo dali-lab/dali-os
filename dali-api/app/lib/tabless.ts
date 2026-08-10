@@ -24,29 +24,14 @@ export function isTablessRequest(request: Request): boolean {
   return tablessFromCookies(request.headers.get("Cookie") ?? "");
 }
 
-// Whether this device has ever made an explicit choice either way, as
-// opposed to just riding the default. Callers that want to plant a
-// non-default starting preference (e.g. desktop's handoff route) check this
-// first so they don't clobber a choice the user already made.
-export function hasExplicitTablessPreference(request: Request): boolean {
-  const cookieString = request.headers.get("Cookie") ?? "";
-  return cookieString
-    .split(";")
-    .some((part) => part.split("=")[0]?.trim() === TABLESS_COOKIE);
-}
-
 export function readTablessPreference(): boolean {
   if (typeof document === "undefined") return true;
   return tablessFromCookies(document.cookie);
 }
 
-export function tablessCookieHeader(on: boolean): string {
-  // Persist both choices (rather than deleting on the default) so an explicit
-  // pick survives a future default change.
-  return `${TABLESS_COOKIE}=${on ? "1" : "0"}; Max-Age=${MAX_AGE_SECONDS}; Path=/; SameSite=Lax`;
-}
-
 export function setTablessPreference(on: boolean): void {
   if (typeof document === "undefined") return;
-  document.cookie = tablessCookieHeader(on);
+  // Persist both choices (rather than deleting on the default) so an explicit
+  // pick survives a future default change.
+  document.cookie = `${TABLESS_COOKIE}=${on ? "1" : "0"}; Max-Age=${MAX_AGE_SECONDS}; Path=/; SameSite=Lax`;
 }
