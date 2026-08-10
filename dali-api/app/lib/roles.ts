@@ -1,5 +1,6 @@
 import { prisma } from "~/lib/db";
 import { cycleSortKeyRange } from "~/lib/core-cycle";
+import { cachedForRequest } from "~/lib/request-cache";
 import type { AssignmentType, OfferingType } from "~/generated/prisma/client";
 
 export function getAdminUserIdsFromEnv(): string[] {
@@ -353,8 +354,22 @@ export async function getRoleLabel(
  * cycle remains active for the handoff. If the Term table is empty
  * (e.g. seed hasn't run), Admin is the only path that passes.
  */
-/** Lab member: has a DALIMember marker row. The broad "signed-in member" gate. */
-export async function isLabMember(userId: string): Promise<boolean> {
+/**
+ * Lab member: has a DALIMember marker row. The broad "signed-in member" gate.
+ *
+ * Pass `request` to memoize the check for the duration of one navigation. This
+ * gate is re-evaluated per page inside `getPageAccess`, so the sidebar
+ * Favorites/Recents read (dozens of pages) otherwise fired the same identical
+ * query dozens of times in series.
+ */
+export async function isLabMember(userId: string, request?: Request): Promise<boolean> {
+  if (request) {
+    return cachedForRequest(request, `isLabMember:${userId}`, () => computeIsLabMember(userId));
+  }
+  return computeIsLabMember(userId);
+}
+
+async function computeIsLabMember(userId: string): Promise<boolean> {
   const member = await prisma.dALIMember.findUnique({
     where: { userId },
     select: { id: true },
@@ -362,7 +377,15 @@ export async function isLabMember(userId: string): Promise<boolean> {
   return member !== null;
 }
 
-export async function isCore(userId: string): Promise<boolean> {
+/** Core (or Admin). Pass `request` to memoize per navigation — see `isLabMember`. */
+export async function isCore(userId: string, request?: Request): Promise<boolean> {
+  if (request) {
+    return cachedForRequest(request, `isCore:${userId}`, () => computeIsCore(userId));
+  }
+  return computeIsCore(userId);
+}
+
+async function computeIsCore(userId: string): Promise<boolean> {
   const envIds = getAdminUserIdsFromEnv();
   if (envIds.includes(userId)) return true;
   const admin = await prisma.adminMembership.findUnique({
@@ -484,7 +507,17 @@ export async function tier(userId: string): Promise<Tier> {
 export async function isProjectMember(
   userId: string,
   projectId: string,
+  request?: Request,
 ): Promise<boolean> {
+  if (request) {
+    return cachedForRequest(request, `isProjectMember:${userId}:${projectId}`, () =>
+      computeIsProjectMember(userId, projectId),
+    );
+  }
+  return computeIsProjectMember(userId, projectId);
+}
+
+async function computeIsProjectMember(userId: string, projectId: string): Promise<boolean> {
   const row = await prisma.projectAssignment.findFirst({
     where: { userId, projectId },
     select: { id: true },

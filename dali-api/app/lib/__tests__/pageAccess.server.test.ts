@@ -189,7 +189,7 @@ describe("Project workspace", () => {
     vi.mocked(isProjectMember).mockResolvedValue(true);
     const result = await getPageAccess("member", projectPage());
     expect(result).toEqual(full);
-    expect(isProjectMember).toHaveBeenCalledWith("member", "proj-1");
+    expect(isProjectMember).toHaveBeenCalledWith("member", "proj-1", undefined);
   });
 
   it("grants view+comment to a non-member lab member", async () => {
