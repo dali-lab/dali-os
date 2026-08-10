@@ -1,8 +1,9 @@
 // Admin → System & Insights → Feature Flags. Per-flag targeting: a master
 // Enabled switch, an Everyone toggle, role checkboxes, and a named-user
 // allowlist. The registry (app/lib/feature-flags.ts) declares which flags
-// exist; the FeatureFlag row is authoritative for targeting once saved. Admin
-// only — flags gate rollout, so this is not a Core-wide control.
+// exist; the FeatureFlag row is authoritative for targeting once saved.
+// Core-visible (Admin + current-cycle Core) — same tier as the rest of the
+// System & Insights cluster.
 
 import { redirect, useFetcher, useLoaderData, useRevalidator } from "react-router";
 import { useEffect, useMemo, useState } from "react";
@@ -11,7 +12,7 @@ import { adminHandle } from "~/admin/adminNav";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { isAdmin, currentTermMemberWhere } from "~/lib/roles";
+import { isCore, isAdmin, currentTermMemberWhere } from "~/lib/roles";
 import { MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { fullName } from "~/lib/display";
 import { ROLE_TARGETS, type RoleTarget } from "~/lib/feature-flags";
@@ -38,22 +39,23 @@ const ROLE_LABELS: Record<RoleTarget, string> = {
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  if (!(await isAdmin(auth.user.sub))) return redirect("/");
+  if (!(await isCore(auth.user.sub))) return redirect("/");
 
   const memberWhere = await currentTermMemberWhere();
-  const [flags, users] = await Promise.all([
+  const [flags, users, viewerIsAdmin] = await Promise.all([
     listFlagsForAdmin(),
     prisma.user.findMany({
       where: memberWhere,
       orderBy: MEMBER_LIST_ORDER_BY,
       select: { id: true, firstName: true, lastName: true, daliEmail: true },
     }),
+    isAdmin(auth.user.sub),
   ]);
 
   return {
     flags,
     members: users.map((u) => ({ id: u.id, name: fullName(u), email: u.daliEmail })),
-    viewerIsAdmin: true,
+    viewerIsAdmin,
   };
 }
 

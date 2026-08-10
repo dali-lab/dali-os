@@ -1,4 +1,4 @@
-// Admin control for a feature flag: PATCH { enabled, everyone, roles, userIds,
+// Core control for a feature flag: PATCH { enabled, everyone, roles, userIds,
 // note } replaces the flag's targeting. The DB row is authoritative at
 // evaluation time (see feature-flags.server.ts), so writes are validated
 // against the registry (known key) and ROLE_TARGETS (known role keys).
@@ -6,7 +6,7 @@
 import type { Route } from "./+types/api.feature-flags.$key";
 import { z } from "zod";
 import { requireAuth, forbidden } from "~/lib/auth";
-import { isAdmin } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
 import { logAuditEvent } from "~/lib/audit";
 import { isFeatureFlagKey, ROLE_TARGETS } from "~/lib/feature-flags";
@@ -23,7 +23,7 @@ const PatchSchema = z.object({
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
-  if (!(await isAdmin(auth.user.sub))) return forbidden(request);
+  if (!(await isCore(auth.user.sub))) return forbidden(request);
 
   const key = params.key!;
   if (!isFeatureFlagKey(key)) {
