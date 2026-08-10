@@ -28,6 +28,7 @@ import { timed } from '~/lib/server-timing'
 import type { Route } from './+types/layout'
 
 export async function loader({ request }: Route.LoaderArgs) {
+  const __loaderStart = performance.now()
   const auth = await timed(request, 'auth', () => requireAuth(request))
   if (!auth.ok) {
     // "Anyone with the link" documents render to signed-out visitors. The
@@ -168,6 +169,9 @@ export async function loader({ request }: Route.LoaderArgs) {
     userId: auth.user.sub,
     sessionId: auth.sessionId,
   })
+
+  const __loaderTotal = performance.now() - __loaderStart
+  if (__loaderTotal >= 400) console.log(`[perf-total] layout loader ${__loaderTotal.toFixed(0)}ms`)
 
   return { user: auth.user, photoUrl, hasCalendarLink, shouldShowTour, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, favorites: sidebarPages.favorites, recents: sidebarPages.recents, flags, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone }
 }

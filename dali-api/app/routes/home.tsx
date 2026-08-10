@@ -25,6 +25,7 @@ import { prisma } from "~/lib/db";
 import { listOpenTasks, type Task } from "~/lib/tasks";
 import { listFavoritesAndRecents, type FavoritePage } from "~/lib/user-pages.server";
 import { loadShellUser } from "~/lib/shell-user.server";
+import { timed } from "~/lib/server-timing";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import { PageIcon } from "~/components/PageIcon";
 import { FavoriteStar } from "~/components/FavoriteStar";
@@ -56,6 +57,7 @@ type HomeNotification = {
 };
 
 export async function loader({ request }: Route.LoaderArgs) {
+  const __loaderStart = performance.now();
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
   if (auth.user.type === "applicant") return redirect("/portal");
@@ -102,7 +104,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const [items, tasks, rawEvents, formsForYou, assignedTasks, catalog, upcomingSessions, pages] =
     await Promise.all([
-    prisma.notification.findMany({
+    timed(request, 'home.notifications', () => prisma.notification.findMany({
       // Hide invites whose meeting was Cancelled — they shouldn't appear in the
       // banner, just as they're dropped from tasks and the bell. Also hide
       // already-answered invites (Accepted/Declined/Tentative): once the user has
@@ -134,16 +136,16 @@ export async function loader({ request }: Route.LoaderArgs) {
         scheduledMeetingId: true,
         rsvp: true,
       },
-    }),
-    listOpenTasks(auth.user.sub),
+    })),
+    timed(request, 'home.openTasks', () => listOpenTasks(auth.user.sub)),
     // Real events from the public DALI General Calendar (empty when unconfigured
     // or on fetch failure — the panel then shows an empty grid + hint).
-    fetchGeneralCalendarEvents(weekStart, weekEnd),
-    listedFormsFor(auth.user.sub),
+    timed(request, 'home.ics', () => fetchGeneralCalendarEvents(weekStart, weekEnd)),
+    timed(request, 'home.forms', () => listedFormsFor(auth.user.sub)),
     // Open board tasks assigned to the viewer, across all their projects
     // (Archived projects are retired — their tasks are noise here). One
     // bounded query: soonest deadline first (undated last), then priority.
-    prisma.task.findMany({
+    timed(request, 'home.assignedTasks', () => prisma.task.findMany({
       where: {
         status: { in: ["Todo", "InProgress", "InReview"] },
         assignees: { some: { userId: auth.user.sub } },
@@ -159,14 +161,14 @@ export async function loader({ request }: Route.LoaderArgs) {
         projectId: true,
         project: { select: { name: true, iconEmoji: true } },
       },
-    }),
+    })),
     // Education for the home card: catalog (enrolled + open-registration +
     // open-assignment counts) and the viewer's next few sessions.
-    listCatalog(auth.user.sub),
-    listUpcomingSessionsForUser(auth.user.sub, { limit: 3 }),
+    timed(request, 'home.catalog', () => listCatalog(auth.user.sub)),
+    timed(request, 'home.sessions', () => listUpcomingSessionsForUser(auth.user.sub, { limit: 3 })),
     // `request` reuses the read the shell's sidebar already kicked off for the
     // same navigation instead of re-running the per-row access checks.
-    listFavoritesAndRecents(auth.user.sub, request),
+    timed(request, 'home.favorites', () => listFavoritesAndRecents(auth.user.sub, request)),
   ]);
 
   const enrolledOfferings = catalog.filter((o) => o.myStatus === "Approved");
@@ -256,6 +258,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Label for the range being shown, formatted server-side in the viewer's zone
   // so the client doesn't re-derive it in the browser's.
   const weekLabel = formatWeekRange(weekStart, tz);
+
+  const __loaderTotal = performance.now() - __loaderStart;
+  if (__loaderTotal >= 400) console.log(`[perf-total] home loader ${__loaderTotal.toFixed(0)}ms`);
 
   return {
     user: auth.user,
