@@ -14,6 +14,7 @@ import { SKILLS_RATING_UNRATED, parseSkillsRating } from "~/lib/skills-rating";
 import type { ReferenceOption } from "~/forms/lib/reference-sources.shared";
 import { Select } from "~/components/ui/floating";
 import { ProjectCoverImage } from "~/projects/components/ProjectCoverImage";
+import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 
 export type UrlCheckState = {
   status: "idle" | "checking" | "done";
@@ -142,36 +143,41 @@ function ReferenceProjectCard({
         disabled={disabled}
         className="w-full items-start p-5"
         label={
-          <div className="flex gap-4 min-w-0 flex-1">
-            <ProjectCoverImage
-              name={option.label}
-              imageUrl={card?.imageUrl}
-              className="w-28 h-28 rounded-lg object-cover flex-shrink-0"
-              placeholderClassName="w-28 h-28 rounded-lg flex-shrink-0"
-            />
-            <div className="min-w-0 flex-1 flex flex-col gap-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-base font-semibold text-dark-blue">
+          <div className="min-w-0 flex-1 flex flex-col gap-3">
+            <div className="flex gap-3 min-w-0 items-center">
+              <ProjectCoverImage
+                name={option.label}
+                imageUrl={card?.imageUrl}
+                className="w-16 h-16 rounded-lg object-cover flex-shrink-0"
+                placeholderClassName="w-16 h-16 rounded-lg flex-shrink-0"
+              />
+              <div className="min-w-0 flex flex-col gap-1.5">
+                <span className="font-heading text-base font-bold text-dark-blue leading-snug">
                   {option.label}
                 </span>
-                {card?.partners.map((p) => (
-                  <span
-                    key={p}
-                    className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground"
-                  >
-                    {p}
-                  </span>
-                ))}
+                {card && card.partners.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {card.partners.map((p) => (
+                      <span
+                        key={p}
+                        className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground"
+                      >
+                        {p}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
-
-              {/* Unclamped: picking a project to work on for a term is a real
-                  decision, so the blurb is worth the vertical space. */}
-              {card?.description && (
-                <p className="text-sm text-muted-foreground whitespace-pre-line">
-                  {card.description}
-                </p>
-              )}
             </div>
+
+            {/* Full card width, below the header row rather than squeezed
+                beside the thumbnail — unclamped, since picking a project to
+                work on for a term is a real decision worth the vertical space. */}
+            {card?.description && (
+              <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line">
+                {card.description}
+              </p>
+            )}
           </div>
         }
       />
@@ -198,7 +204,7 @@ function ReferenceProjectCard({
               className="mt-2 pt-2 border-t border-border/60 flex flex-col gap-1.5"
             >
               {card.challenges.length > 0 && (
-                <dl className="flex flex-col gap-1">
+                <dl className="flex flex-col gap-3">
                   {card.challenges.map((c) => (
                     <div key={c.domain} className="text-sm">
                       <dt className="inline font-medium text-dark-blue">
@@ -214,15 +220,24 @@ function ReferenceProjectCard({
               )}
 
               {card.sowPageId && (
-                <a
-                  href={`/documents/${card.sowPageId}`}
-                  target="_blank"
-                  rel="noreferrer"
+                // Not a real <a>: inside the desktop app's single webview a
+                // target="_blank" click has no window to open into and silently
+                // does nothing. requestOpenTabIfEmbedded opens it as a workspace
+                // tab when embedded in one (web); otherwise this just navigates,
+                // same as every other internal link in the app (see workspace-link.ts).
+                <button
+                  type="button"
+                  onClick={() => {
+                    const url = `/documents/${card.sowPageId}`;
+                    if (!requestOpenTabIfEmbedded(url, `${option.label} — SOW`)) {
+                      window.location.href = url;
+                    }
+                  }}
                   className="self-start inline-flex items-center gap-1.5 mt-0.5 text-xs font-medium px-2.5 py-1 rounded-full border border-accent-coral/40 text-accent-coral hover:bg-accent-coral/10"
                 >
                   <ExternalLink className="w-3 h-3" />
                   Statement of Work
-                </a>
+                </button>
               )}
             </div>
           )}
