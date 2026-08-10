@@ -8,6 +8,7 @@
 import { prisma } from "~/lib/db";
 import { getPageAccess, type PageShape } from "~/lib/pageAccess.server";
 import { isNavbarRoute } from "~/lib/navbar-routes";
+import { cachedForRequest } from "~/lib/request-cache";
 
 export type FavoritePage = {
   /** Page id, or the href for a route favorite. Used as the React key. */
@@ -63,8 +64,27 @@ async function viewable<T extends { page: PageShape }>(
 /**
  * The home panel's list: favorites first (most recently pinned first), then
  * the most recently opened pages that aren't already pinned.
+ *
+ * Pass `request` to dedupe within one page load: the sidebar (layout.tsx) and
+ * the home Favorites panel both read this, and the per-row access checks make it
+ * one of the heavier loader helpers — running it twice doubled that cost.
  */
-export async function listFavoritesAndRecents(userId: string): Promise<{
+export async function listFavoritesAndRecents(
+  userId: string,
+  request?: Request,
+): Promise<{
+  favorites: FavoritePage[];
+  recents: FavoritePage[];
+}> {
+  if (request) {
+    return cachedForRequest(request, `favoritesAndRecents:${userId}`, () =>
+      computeFavoritesAndRecents(userId),
+    );
+  }
+  return computeFavoritesAndRecents(userId);
+}
+
+async function computeFavoritesAndRecents(userId: string): Promise<{
   favorites: FavoritePage[];
   recents: FavoritePage[];
 }> {
