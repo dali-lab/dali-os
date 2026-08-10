@@ -51,6 +51,7 @@ async function viewable<T extends { page: PageShape }>(
   rows: T[],
   userId: string,
   limit: number,
+  request?: Request,
 ): Promise<T[]> {
   // Access checks are independent per page, so run them concurrently instead of
   // in a sequential await loop. getPageAccess is ~3-5 Neon round trips each, and
@@ -61,7 +62,7 @@ async function viewable<T extends { page: PageShape }>(
   // small, fixed over-fetch that collapses the latency to one wave. We still keep
   // the first `limit` viewable rows in their original (recency) order.
   const canView = await Promise.all(
-    rows.map((row) => getPageAccess(userId, row.page).then((a) => a.canView)),
+    rows.map((row) => getPageAccess(userId, row.page, request).then((a) => a.canView)),
   );
   const kept: T[] = [];
   for (let i = 0; i < rows.length && kept.length < limit; i++) {
@@ -87,13 +88,13 @@ export async function listFavoritesAndRecents(
 }> {
   if (request) {
     return cachedForRequest(request, `favoritesAndRecents:${userId}`, () =>
-      computeFavoritesAndRecents(userId),
+      computeFavoritesAndRecents(userId, request),
     );
   }
   return computeFavoritesAndRecents(userId);
 }
 
-async function computeFavoritesAndRecents(userId: string): Promise<{
+async function computeFavoritesAndRecents(userId: string, request?: Request): Promise<{
   favorites: FavoritePage[];
   recents: FavoritePage[];
 }> {
@@ -133,8 +134,8 @@ async function computeFavoritesAndRecents(userId: string): Promise<{
     rows.filter((r): r is T & { page: PageShape } => r.page != null);
 
   const [favorites, recents] = await Promise.all([
-    viewable(withPage(pinnedRows), userId, RECENT_LIMIT * 2),
-    viewable(withPage(recentRows), userId, RECENT_LIMIT),
+    viewable(withPage(pinnedRows), userId, RECENT_LIMIT * 2, request),
+    viewable(withPage(recentRows), userId, RECENT_LIMIT, request),
   ]);
 
   const shape = (row: { page: PageShape }, favorited: boolean): FavoritePage => ({

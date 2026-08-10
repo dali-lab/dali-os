@@ -95,11 +95,15 @@ function higher(a: SharePermission | null, b: SharePermission): SharePermission 
  * only (not partner/applicant/non-member Dartmouth accounts); `Public` grants a
  * read-only view to any caller that reaches getPageAccess.
  */
-async function shareAndLinkGrant(page: PageShape, userSub: string): Promise<PageAccessResult> {
+async function shareAndLinkGrant(
+  page: PageShape,
+  userSub: string,
+  request?: Request,
+): Promise<PageAccessResult> {
   let level = await sharePermissionFor(page.id, userSub);
   const linkAccess = (page.linkAccess as LinkAccess | null | undefined) ?? "Restricted";
   if (linkAccess === "LabMembers") {
-    if (await isLabMember(userSub)) {
+    if (await isLabMember(userSub, request)) {
       level = higher(level, (page.linkPermission as SharePermission | null | undefined) ?? "View");
     }
   } else if (linkAccess === "Public") {
@@ -115,6 +119,7 @@ async function shareAndLinkGrant(page: PageShape, userSub: string): Promise<Page
 export async function getPageAccess(
   userSub: string,
   page: PageShape,
+  request?: Request,
 ): Promise<PageAccessResult>;
 
 /**
@@ -124,11 +129,17 @@ export async function getPageAccess(
 export async function getPageAccess(
   userSub: string,
   pageId: string,
+  request?: Request,
 ): Promise<PageAccessResult>;
 
+// `request` (optional) scopes the per-user role checks (isCore/isLabMember/
+// isProjectMember) to one navigation via cachedForRequest. Callers that fan
+// this out over many pages in a single request — the sidebar Favorites/Recents
+// read — pass it so those identical per-user queries run once, not once per page.
 export async function getPageAccess(
   userSub: string,
   pageOrId: PageShape | string,
+  request?: Request,
 ): Promise<PageAccessResult> {
   let page: PageShape;
 
@@ -163,7 +174,7 @@ export async function getPageAccess(
   // each workspace's role-based base below. They only ever grant more access —
   // never a downgrade — and carry the exact View/Comment/Edit/FullAccess tier,
   // so a "View" share does not confer comment the way role-based viewing does.
-  const extra = await shareAndLinkGrant(page, userSub);
+  const extra = await shareAndLinkGrant(page, userSub, request);
 
   // ── Member-workspace (personal notes) ────────────────────────────────────
   // Privacy is the whole point. Core gets NO bypass here — only the owner (full)
@@ -180,7 +191,7 @@ export async function getPageAccess(
   }
 
   // ── Core shortcut (Admin ⊆ Core) — applies to Lab/Project/Education ─────
-  const core = await isCore(userSub);
+  const core = await isCore(userSub, request);
 
   // ── Lab-workspace pages ──────────────────────────────────────────────────
   // The creator and Core always get full access (and manage rights). Every
@@ -197,12 +208,12 @@ export async function getPageAccess(
   // ── Project-workspace pages ──────────────────────────────────────────────
   if (page.workspaceType === "Project" && page.workspaceId) {
     let base = DENIED;
-    if (core || (await isProjectMember(userSub, page.workspaceId))) {
+    if (core || (await isProjectMember(userSub, page.workspaceId, request))) {
       base = FULL;
     } else if (page.partnerVisible && (await partnerHasProjectAccess(userSub, page.workspaceId))) {
       // Partner users may view (and comment) on partner-visible pages.
       base = VIEW_COMMENT;
-    } else if (await isLabMember(userSub)) {
+    } else if (await isLabMember(userSub, request)) {
       // Lab members can view (and comment) any project page.
       base = VIEW_COMMENT;
     }
@@ -221,7 +232,7 @@ export async function getPageAccess(
         select: { id: true },
       });
       if (instructor) base = FULL;
-      else if (await isLabMember(userSub)) base = VIEW_COMMENT;
+      else if (await isLabMember(userSub, request)) base = VIEW_COMMENT;
     }
     return merge(base, extra);
   }
