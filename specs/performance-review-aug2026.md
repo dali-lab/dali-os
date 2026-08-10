@@ -7,10 +7,11 @@ the same as raw byte counts — see the bundle section for why.
 
 ## TL;DR
 
-- The shell, auth, and home loaders are **already well-optimized** (PR #931 +
-  #1172): two-wave `Promise.all`, per-request memoization of `requireAuth` /
-  `loadShellUser`, throttled heartbeat writes, `shouldRevalidate` on the layout.
-  Don't re-litigate these.
+- The shell loader's round-trip *count* was parallelized (PR #931 + #1172), but a
+  **nested per-row N+1** hid inside it: the sidebar Favorites/Recent access checks
+  ran sequentially, producing dozens of serial Neon round trips and ~2.8s
+  navigation TTFB on a warm machine. **Fixed in this PR.** Auth/home fan-out
+  (memoized `requireAuth`/`loadShellUser`, throttled heartbeats) is otherwise fine.
 - The dominant driver of *perceived* "everything got slower" is **architectural,
   not a single slow query**: the iframe-per-tab shell reboots the whole app on
   every sidebar click, and `shouldRevalidate` is absent on all but 2 of 107
@@ -43,7 +44,27 @@ Verified against a fresh `npm run build`:
   occurrences in the login chunk went from present to **0**.
 - No component-bearing route ships the Prisma/db chunk.
 
-### 2. Regression guard: `app/lib/__tests__/client-bundle-leak.test.ts`
+### 2. Fixed the shell-loader N+1 behind ~2.8s navigation TTFB (the real one)
+A `/_root.data` request on staging measured **2.77s "waiting for server
+response" on a warm machine** (ruling out Fly/Neon cold start). Traced to
+`listFavoritesAndRecents` (runs in the shell loader on *every* navigation, powers
+the sidebar Favorites + Recent lists): its `viewable()` helper ran
+`getPageAccess()` in a **sequential await loop** over up to ~15 candidate pages,
+for both the pinned and recent lists. `getPageAccess` is ~3–5 Neon round trips
+each (`shareAndLinkGrant` → `isCore` → `isProjectMember`/`isLabMember`…), so this
+was dozens of round trips *in series* per navigation.
+
+Fix: run the per-page checks concurrently (`Promise.all`), then keep the first
+`limit` viewable rows in original recency order. Collapses O(rows × queries) serial
+latency into a single wave. Candidate set is bounded by `READ_MULTIPLIER`, so the
+small over-fetch (checking all rows vs. stopping early) is worth the parallelism.
+48 `user-pages`/`pageAccess` tests green; order/limit semantics unchanged.
+
+This corrects the July framing that the shell loader was "already optimized" —
+the round-trip *count* was parallelized, but this nested per-row N+1 inside a
+Promise.all member was the actual latency sink.
+
+### 3. Regression guard: `app/lib/__tests__/client-bundle-leak.test.ts`
 The July review flagged that no CI check existed for this class of leak. Added a
 Vitest guard that reads the built React Router manifest and **fails if any
 route with `hasDefaultExport` (i.e. one the browser actually loads) ships a
