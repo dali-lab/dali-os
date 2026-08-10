@@ -24,10 +24,11 @@ import { listFavoritesAndRecents } from '~/lib/user-pages.server'
 import { loadShellUser } from '~/lib/shell-user.server'
 import { resolveFeatureFlags } from '~/lib/feature-flags.server'
 import { FeatureFlagsProvider } from '~/components/FeatureFlags'
+import { timed } from '~/lib/server-timing'
 import type { Route } from './+types/layout'
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const auth = await requireAuth(request)
+  const auth = await timed(request, 'auth', () => requireAuth(request))
   if (!auth.ok) {
     // "Anyone with the link" documents render to signed-out visitors. The
     // canonical copied link is the plain /documents/:pageId URL, so route an
@@ -56,16 +57,16 @@ export async function loader({ request }: Route.LoaderArgs) {
   // load/revalidation, so this stays in sync after a profile edit. Also tells
   // the launch tour whether to offer the "connect your calendar" step.
   const [partnerRedirect, roles, activeCycle, sidebarPages, me] = await Promise.all([
-    redirectPartnerToPortal(auth),
-    getUserRoles(auth.user.sub),
-    getActiveCycle(),
+    timed(request, 'partnerCheck', () => redirectPartnerToPortal(auth)),
+    timed(request, 'roles', () => getUserRoles(auth.user.sub)),
+    timed(request, 'activeCycle', () => getActiveCycle()),
     // Powers the sidebar Favorites + Recent lists (same source as the Home
     // panel). Access re-checked per read, so a restricted/moved page drops out.
     // `request` shares one read with the Home panel on the same navigation.
-    listFavoritesAndRecents(auth.user.sub, request),
+    timed(request, 'favorites', () => listFavoritesAndRecents(auth.user.sub, request)),
     // Per-request memoized so the Home loader reads the same row (its timezone)
     // without a second lookup — both loaders run concurrently for one nav.
-    loadShellUser(auth.user.sub, request),
+    timed(request, 'shellUser', () => loadShellUser(auth.user.sub, request)),
   ])
   if (partnerRedirect) return partnerRedirect
 
@@ -90,7 +91,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     const gateExempt =
       path === '/sign' || path.startsWith('/sign/') || path.startsWith('/logout')
     if (isLabMember && !gateExempt) {
-      const outstanding = await getAppGateOutstanding(auth.user.sub)
+      const outstanding = await timed(request, 'appGate', () => getAppGateOutstanding(auth.user.sub))
       if (outstanding) {
         return redirect(
           `/sign/${outstanding.bindingId}?next=${encodeURIComponent(path + url.search)}`,
@@ -108,20 +109,22 @@ export async function loader({ request }: Route.LoaderArgs) {
     core || admin || domainLead || (isLabMember && isInterviewerAnyCycle)
 
   const [activeInterviewer, anyCycleReviewer, labMentor, photoUrl, flags] = await Promise.all([
-    isLabMember && activeCycle
-      ? prisma.cycleInterviewer.findFirst({
-          where: { userId: auth.user.sub, applicationCycleId: activeCycle.id },
-        })
-      : null,
+    timed(request, 'hiringGate', () =>
+      isLabMember && activeCycle
+        ? prisma.cycleInterviewer.findFirst({
+            where: { userId: auth.user.sub, applicationCycleId: activeCycle.id },
+          })
+        : Promise.resolve(null)),
     !hasHiringAccess && isLabMember
       ? prisma.cycleReviewer.findFirst({ where: { userId: auth.user.sub }, select: { id: true } })
       : null,
     // Mentorship area gate: Core (with admin) + any active lab mentor. Hidden
     // from mentees and non-mentor members entirely.
-    isLabMember && !core ? isLabMentor(auth.user.sub) : false,
+    timed(request, 'mentorGate', () =>
+      isLabMember && !core ? isLabMentor(auth.user.sub) : Promise.resolve(false)),
     resolvePhotoUrl(me?.photoUrl),
     // Feature flags resolved once, plumbed to the client via FeatureFlagsProvider.
-    resolveFeatureFlags(auth.user.sub, roles),
+    timed(request, 'flags', () => resolveFeatureFlags(auth.user.sub, roles)),
   ])
 
   const isInterviewer = !!activeInterviewer
