@@ -12,6 +12,7 @@
 
 import { prisma } from "~/lib/db";
 import { resolveGroupMembers } from "~/lib/groups";
+import { cachedForRequest } from "~/lib/request-cache";
 import type { SharePrincipalType, SharePermission } from "~/generated/prisma/client";
 
 export type ShareRow = {
@@ -45,7 +46,19 @@ export function permissionAtLeast(a: SharePermission, b: SharePermission): boole
  * "in a group" has to stay identical to notifications and meeting invites, or
  * sharing would quietly diverge from every other audience in the app.
  */
-export async function groupIdsForUser(userId: string): Promise<string[]> {
+export async function groupIdsForUser(userId: string, request?: Request): Promise<string[]> {
+  // Resolving this walks every active group's membership (resolveGroupMembers
+  // per group) — hundreds of ms with dozens of groups. It's purely per-user, but
+  // getPageAccess re-derives it once per page, so the sidebar Favorites/Recents
+  // read (dozens of pages) multiplied it into seconds of navigation TTFB. Memoize
+  // per navigation when a request is threaded through.
+  if (request) {
+    return cachedForRequest(request, `groupIdsForUser:${userId}`, () => computeGroupIdsForUser(userId));
+  }
+  return computeGroupIdsForUser(userId);
+}
+
+async function computeGroupIdsForUser(userId: string): Promise<string[]> {
   const groups = await prisma.groupDefinition.findMany({
     where: { archivedAt: null },
     select: { id: true },
@@ -85,8 +98,9 @@ export async function isSharedWith(pageId: string, userId: string): Promise<bool
 export async function sharePermissionFor(
   pageId: string,
   userId: string,
+  request?: Request,
 ): Promise<SharePermission | null> {
-  const groupIds = await groupIdsForUser(userId);
+  const groupIds = await groupIdsForUser(userId, request);
   const rows = await prisma.pageShare.findMany({
     where: {
       pageId,
