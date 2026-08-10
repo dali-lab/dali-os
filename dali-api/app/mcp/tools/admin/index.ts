@@ -9,6 +9,7 @@ import { MANAGE_GROUP_TOOL, runManageGroup } from "./manage-group";
 import { MANAGE_DOMAIN_LEAD_TOOL, runManageDomainLead } from "./manage-domain-lead";
 import { LIST_AUDIT_LOGS_TOOL, runListAuditLogs } from "./list-audit-logs";
 import { MANAGE_JOB_TOOL, runManageJob } from "./manage-job";
+import { MANAGE_FEATURE_FLAG_TOOL, runManageFeatureFlag } from "./manage-feature-flag";
 import { LIST_EMAIL_SENDERS_TOOL, runListEmailSenders } from "./list-email-senders";
 import { LIST_EMAIL_TEMPLATES_TOOL, runListEmailTemplates } from "./list-email-templates";
 import { MANAGE_EMAIL_TEMPLATE_TOOL, runManageEmailTemplate } from "./manage-email-template";
@@ -42,6 +43,11 @@ export const ADMIN_TOOLS: McpTool[] = [
     def: MANAGE_JOB_TOOL,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     run: (ctx, args) => runManageJob(ctx, args as any),
+  },
+  {
+    def: MANAGE_FEATURE_FLAG_TOOL,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    run: (ctx, args) => runManageFeatureFlag(ctx, args as any),
   },
   {
     def: LIST_EMAIL_SENDERS_TOOL,
