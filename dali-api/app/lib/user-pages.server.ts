@@ -52,11 +52,20 @@ async function viewable<T extends { page: PageShape }>(
   userId: string,
   limit: number,
 ): Promise<T[]> {
+  // Access checks are independent per page, so run them concurrently instead of
+  // in a sequential await loop. getPageAccess is ~3-5 Neon round trips each, and
+  // this helper runs in the shell loader on every navigation (sidebar Favorites
+  // + Recent) — the serial loop turned that into dozens of round trips in series
+  // and dominated navigation TTFB. Candidate rows are bounded by READ_MULTIPLIER,
+  // so checking them all in parallel (rather than stopping early at `limit`) is a
+  // small, fixed over-fetch that collapses the latency to one wave. We still keep
+  // the first `limit` viewable rows in their original (recency) order.
+  const canView = await Promise.all(
+    rows.map((row) => getPageAccess(userId, row.page).then((a) => a.canView)),
+  );
   const kept: T[] = [];
-  for (const row of rows) {
-    if (kept.length >= limit) break;
-    const access = await getPageAccess(userId, row.page);
-    if (access.canView) kept.push(row);
+  for (let i = 0; i < rows.length && kept.length < limit; i++) {
+    if (canView[i]) kept.push(rows[i]);
   }
   return kept;
 }
