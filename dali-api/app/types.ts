@@ -118,6 +118,10 @@ export interface Question {
     | 'reference'
     // A non-question prose block rendered inline in the form (see `body`).
     | 'info'
+    // A layout-only page divider. Splits the form into steps at render time;
+    // carries no answer. `data.label` is the optional section title and
+    // `data.description` the optional subtitle for the page it begins.
+    | 'pageBreak'
   required: boolean
   data: {
     label: string

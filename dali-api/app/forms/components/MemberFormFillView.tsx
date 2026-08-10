@@ -1,6 +1,12 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { FormQuestionField } from "~/components/form-builder/QuestionField";
 import { FormFieldList } from "~/forms/components/FormField";
+import {
+  useFormPager,
+  FormPagerNav,
+  FormPageHeading,
+} from "~/forms/components/FormPager";
+import { paginateQuestions } from "~/lib/form-pages";
 import { DocEditor } from "~/components/doc";
 import { isEmptyBlocks } from "~/lib/blocks";
 import { Button } from "~/components/ui/Button";
@@ -37,6 +43,8 @@ export function MemberFormFillView({
   const [state, setState] = useState<"idle" | "submitting" | "done">("idle");
   const [error, setError] = useState<string | null>(null);
   const questions = data.questions;
+  const pages = useMemo(() => paginateQuestions(questions), [questions]);
+  const pager = useFormPager(pages, { excludeFileType: true });
 
   function set(key: string, v: string) {
     setAnswers((a) => ({ ...a, [key]: v }));
@@ -113,8 +121,9 @@ export function MemberFormFillView({
       )}
 
       <form onSubmit={submit} className="mt-6 flex flex-col gap-5">
+        <FormPageHeading page={pager.page} />
         <FormFieldList
-          questions={questions}
+          questions={pager.page.questions}
           values={answers}
           onChange={set}
           renderField={(q) =>
@@ -132,15 +141,23 @@ export function MemberFormFillView({
           }
         />
 
-        <Button
-          type="submit"
-          variant="primary"
-          size="sm"
-          disabled={state === "submitting"}
-          className="self-start"
-        >
-          {state === "submitting" ? "Submitting…" : "Submit"}
-        </Button>
+        <FormPagerNav
+          pager={pager}
+          getValue={(q) => answers[q.key]}
+          onInvalid={(q) => setError(`"${q.data.label}" is required.`)}
+          onAdvance={() => setError(null)}
+          submitSlot={
+            <Button
+              type="submit"
+              variant="primary"
+              size="sm"
+              disabled={state === "submitting"}
+              className="self-start"
+            >
+              {state === "submitting" ? "Submitting…" : "Submit"}
+            </Button>
+          }
+        />
       </form>
     </>
   );

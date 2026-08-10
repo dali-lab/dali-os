@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Form, redirect, useLoaderData, useNavigation } from "react-router";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { ChevronDown } from "lucide-react";
@@ -12,6 +12,12 @@ import { loadApplicationForm } from "~/partners/lib/application-form.server";
 import { validateAnswers } from "~/forms/lib/public-form";
 import { notifyFormSubmission } from "~/forms/lib/submission-notify.server";
 import { FormFieldList } from "~/forms/components/FormField";
+import {
+  useFormPager,
+  FormPagerNav,
+  FormPageHeading,
+} from "~/forms/components/FormPager";
+import { paginateQuestions } from "~/lib/form-pages";
 import { FormQuestionField } from "~/components/form-builder/QuestionField";
 import { DocEditor } from "~/components/doc";
 import { isEmptyBlocks } from "~/lib/blocks";
@@ -181,6 +187,13 @@ export default function PartnerApply({ actionData }: Route.ComponentProps) {
   // an expanded-but-unchecked row's input is silently dropped on submit.
   const [checkedDomains, setCheckedDomains] = useState<Set<string>>(new Set());
   const [clientError, setClientError] = useState<string | null>(null);
+  // Custom-question pages ride alongside the fixed project fields: the fixed
+  // fields live on step 0, page breaks in the bound form add further steps.
+  const pages = useMemo(
+    () => paginateQuestions(applicationForm?.questions ?? []),
+    [applicationForm],
+  );
+  const pager = useFormPager(pages, { excludeFileType: true });
 
   function selectDomain(id: string) {
     setCheckedDomains((prev) => {
@@ -194,15 +207,23 @@ export default function PartnerApply({ actionData }: Route.ComponentProps) {
     clientError ??
     (actionData && "error" in actionData ? actionData.error : null);
 
-  // The bound form's fields are controlled components, so required-ness is
-  // checked here before the post (the action re-validates server-side).
+  // Final submit only fires on the last step. Required-ness is checked here
+  // before the post (the action re-validates server-side). The project title's
+  // native `required` is dropped because a required control on a hidden
+  // (paginated-away) step breaks native submit — it's validated here instead.
   function checkRequired(e: React.FormEvent<HTMLFormElement>) {
-    if (!applicationForm) return;
-    const missing = findMissingRequired(
-      applicationForm.questions,
-      (q) => formAnswers[q.key],
-      { excludeFileType: true },
-    );
+    const title = String(new FormData(e.currentTarget).get("title") ?? "").trim();
+    if (!title) {
+      e.preventDefault();
+      setClientError("Project title is required.");
+      pager.reset();
+      return;
+    }
+    const missing = applicationForm
+      ? findMissingRequired(applicationForm.questions, (q) => formAnswers[q.key], {
+          excludeFileType: true,
+        })
+      : [];
     if (missing.length > 0) {
       e.preventDefault();
       setClientError(`"${missing[0].data.label}" is required.`);
@@ -232,11 +253,15 @@ export default function PartnerApply({ actionData }: Route.ComponentProps) {
       )}
 
       <Form method="post" onSubmit={checkRequired} className="flex flex-col gap-6">
+        {/* Fixed project fields ride on step 0. Kept mounted (hidden, not
+            unmounted) on later steps so their native/uncontrolled inputs still
+            submit. */}
+        <div className={pager.index === 0 ? "flex flex-col gap-6" : "hidden"}>
         <div>
           <label htmlFor="title" className={labelClass}>
             Project title<span className="text-accent-coral ml-0.5">*</span>
           </label>
-          <input id="title" name="title" required className={inputClass} />
+          <input id="title" name="title" className={inputClass} />
         </div>
 
         {terms.length > 0 && (
@@ -318,23 +343,30 @@ export default function PartnerApply({ actionData }: Route.ComponentProps) {
           </div>
         </fieldset>
 
+        </div>
+
         {applicationForm && applicationForm.questions.length > 0 && (
           <section className="flex flex-col gap-5 border-t border-border pt-6">
-            <h2 className="font-heading text-lg font-semibold text-dark-blue">
-              A few more questions
-            </h2>
-            {!isEmptyBlocks(applicationForm.description) && (
-              <div className="text-sm text-muted-foreground -mt-1">
-                <DocEditor
-                  features="notes"
-                  density="compact"
-                  editable={false}
-                  initialContent={applicationForm.description}
-                />
-              </div>
+            {pager.index === 0 && (
+              <>
+                <h2 className="font-heading text-lg font-semibold text-dark-blue">
+                  A few more questions
+                </h2>
+                {!isEmptyBlocks(applicationForm.description) && (
+                  <div className="text-sm text-muted-foreground -mt-1">
+                    <DocEditor
+                      features="notes"
+                      density="compact"
+                      editable={false}
+                      initialContent={applicationForm.description}
+                    />
+                  </div>
+                )}
+              </>
             )}
+            <FormPageHeading page={pager.page} />
             <FormFieldList
-              questions={applicationForm.questions}
+              questions={pager.page.questions}
               values={formAnswers}
               onChange={(k, v) => setFormAnswers((a) => ({ ...a, [k]: v }))}
               renderField={(q) =>
@@ -361,13 +393,21 @@ export default function PartnerApply({ actionData }: Route.ComponentProps) {
           </section>
         )}
 
-        <button
-          type="submit"
-          disabled={submitting}
-          className="rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
-        >
-          {submitting ? "Submitting…" : "Submit application"}
-        </button>
+        <FormPagerNav
+          pager={pager}
+          getValue={(q) => formAnswers[q.key]}
+          onInvalid={(q) => setClientError(`"${q.data.label}" is required.`)}
+          onAdvance={() => setClientError(null)}
+          submitSlot={
+            <button
+              type="submit"
+              disabled={submitting}
+              className="rounded-xl bg-dark-blue text-white font-heading font-semibold py-3 hover:opacity-90 transition disabled:opacity-50"
+            >
+              {submitting ? "Submitting…" : "Submit application"}
+            </button>
+          }
+        />
       </Form>
     </div>
   );
