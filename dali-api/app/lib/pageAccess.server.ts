@@ -100,7 +100,7 @@ async function shareAndLinkGrant(
   userSub: string,
   request?: Request,
 ): Promise<PageAccessResult> {
-  let level = await sharePermissionFor(page.id, userSub);
+  let level = await sharePermissionFor(page.id, userSub, request);
   const linkAccess = (page.linkAccess as LinkAccess | null | undefined) ?? "Restricted";
   if (linkAccess === "LabMembers") {
     if (await isLabMember(userSub, request)) {
