@@ -18,6 +18,7 @@ import { AreaPillNav } from "~/components/AreaPillNav";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { prisma } from "~/lib/db";
 import { resolvePhotoUrl } from "~/lib/photo";
+import { timed } from "~/lib/server-timing";
 import { githubTeamSlug } from "~/lib/github-slug";
 import { ensureProjectGroup } from "~/lib/groups";
 import { ViewToggle, useViewPreference } from "~/components/ViewToggle";
@@ -91,9 +92,10 @@ export async function loader({ request }: Route.LoaderArgs) {
   const portalRedirect = redirectApplicantToPortal(auth);
   if (portalRedirect) return portalRedirect;
 
-  const { terms, selected, termId, isAll } = await resolveTermFilter(request);
+  const { terms, selected, termId, isAll } = await timed(request, 'hub.terms', () =>
+    resolveTermFilter(request));
 
-  const projects = await prisma.project.findMany({
+  const projects = await timed(request, 'hub.projects', () => prisma.project.findMany({
     // A term filter scopes to projects that run in the selected term — i.e. the
     // term is in the project's ProjectTerm set — since a project may span
     // several terms. Status is deliberately not part of the filter: most of the
@@ -118,7 +120,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       },
       showcase: { select: { status: true } },
     },
-  });
+  }));
 
   const rows: ProjectRow[] = await Promise.all(
     projects.map(async (p) => {
@@ -147,7 +149,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const filteringByTerm = !isAll && !!termId;
 
   const [partnerOrgs, canEdit, canStaff, myAssignments, totalProjects] =
-    await Promise.all([
+    await timed(request, 'hub.meta', () => Promise.all([
       prisma.partnerOrg.findMany({
         orderBy: { name: "asc" },
         select: { id: true, name: true },
@@ -164,7 +166,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       // Only needed to tell "the term filter hid everything" apart from "no
       // projects at all"; with the filter off, rows already is everything.
       filteringByTerm ? prisma.project.count() : Promise.resolve(0),
-    ]);
+    ]));
 
   return {
     rows,
