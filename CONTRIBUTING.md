@@ -45,6 +45,10 @@ CI runs all three against a real Postgres service container. If `test.yml`, `bui
 - Never commit `.env` values or secrets.
 - Never add routes that return the full user table or bypass role checks.
 
+## Feature flags
+
+Gate new or in-progress features behind a flag rather than an ad-hoc boolean. Add one entry to `dali-api/app/lib/feature-flags.ts`, then check it: `useFeatureFlag("your-key")` on the client, `isFeatureEnabled(...)` on the server. Targeting (everyone / role / specific users) is configured from **Admin → System & Insights → Feature Flags** (Core), so who sees a feature is a runtime decision, not a code change. Flags default off until enabled there.
+
 ## Desktop app (`desktop/`)
 
 The Tauri application has its own development flow — see `desktop/README.md`. Releases are cut by tagging `desktop-v*`; CI handles signing. Avoid touching `desktop-release.yml` or the signing configuration.

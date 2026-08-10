@@ -3,6 +3,7 @@ import { useLocation, useMatches } from "react-router";
 import { Star } from "lucide-react";
 import { Tooltip } from "~/components/ui/IconButton";
 import { isNavbarRoute } from "~/lib/navbar-routes";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 
 // Stars a page you're currently on — for DB-backed detail pages (project,
 // person, partner org). Document pages use FavoriteStar instead.
@@ -78,7 +79,10 @@ export function FavoriteRouteButton({
     };
   }, [href, known]);
 
-  const hasAreaPills = matches.some(
+  // Pills only render when the sidebar redesign is off (AreaPillNav returns null
+  // when on), so "on a pill page" is only true in that mode.
+  const redesign = useFeatureFlag("sidebar-redesign");
+  const hasAreaPills = !redesign && matches.some(
     (m) => (m as { handle?: { areaPills?: boolean } }).handle?.areaPills,
   );
 
@@ -110,7 +114,7 @@ export function FavoriteRouteButton({
     // and an absolutely-positioned tip counts toward a scroll container's
     // overflow — 20px of phantom vertical scroll before this.
     <Tooltip
-      label={favorited ? "In your favourites" : "Add this page to your favourites"}
+      label={favorited ? "In your favorites" : "Add this page to your favorites"}
       portal={compact}
     >
       <button
@@ -121,7 +125,7 @@ export function FavoriteRouteButton({
           e.stopPropagation();
           void toggle();
         }}
-        aria-label={favorited ? "Remove from favourites" : "Add to favourites"}
+        aria-label={favorited ? "Remove from favorites" : "Add to favorites"}
         aria-pressed={favorited}
         className={`inline-flex items-center justify-center transition-colors disabled:opacity-40 ${
           compact ? "" : inline ? "shrink-0 rounded-md p-1" : "ml-auto shrink-0 rounded-md p-1.5"

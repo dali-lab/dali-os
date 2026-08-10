@@ -5,6 +5,7 @@ import { cn } from '~/lib/cn'
 import { Menu } from '~/components/ui/floating'
 import { FavoriteRouteButton } from '~/components/FavoriteRouteButton'
 import { isNavbarRoute } from '~/lib/navbar-routes'
+import { isAreaSubtabPath } from '~/lib/nav-areas'
 
 export type Crumb = {
   label: string
@@ -315,6 +316,9 @@ export function Breadcrumbs() {
     }
     if (m.handle?.favoriteRoute) favoriteRoute = true
   }
+  // Area sub-tab landing pages (Board, Intent to Work, Manage, …) are directly
+  // pinnable too, without each route opting in via handle.
+  if (!favoriteRoute && isAreaSubtabPath(pathname)) favoriteRoute = true
   if (favoriteRoute && isNavbarRoute(`${pathname}${search}`)) favoriteRoute = false
 
   // Home / single-segment pages get no trail (but still show a page action).

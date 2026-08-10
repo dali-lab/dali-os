@@ -4226,6 +4226,32 @@ enum JobRunStatus {
   Error
 }
 
+// A UI-configurable feature flag. The registry (app/lib/feature-flags.ts) is
+// the source of truth for which flags exist and their seed defaults; this row
+// is authoritative for the operator-edited targeting once it exists (edited in
+// Admin → Feature Flags). Rows self-heal — a wiped/rebuilt DB just falls back
+// to registry defaults (a missing row is evaluated as off). See ScheduledJob
+// for the same registry-seeds/row-wins contract.
+model FeatureFlag {
+  key      String  @id // registry key, e.g. "desktop-app"
+  // Master kill switch. When false the flag is off for everyone regardless of
+  // the targeting below.
+  enabled  Boolean @default(false)
+  // When enabled: on for all users.
+  everyone Boolean @default(false)
+  // Role keys from getUserRoles() (app/lib/roles.ts), e.g. "isCore","isAdmin".
+  // A user matches if they hold any listed role. Constrained to ROLE_TARGETS
+  // at write time by the admin action.
+  roles    String[] @default([])
+  // Explicit User.id allowlist. Not an FK: a deleted user simply stops
+  // matching; the flag config should not cascade-delete.
+  userIds  String[] @default([])
+  note     String?
+
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+}
+
 // A composed announcement waiting for its send time. Payload + audience
 // mirror the /api/notifications/send schema; the scheduled-announcements job
 // fires due rows through the same shared fan-out (app/lib/announcements.server).

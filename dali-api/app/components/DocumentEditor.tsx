@@ -106,7 +106,7 @@ export function DocumentEditor({
   // the doc's manager on any workspace type — creator/Core on a lab doc, project
   // staff, the note owner, an instructor, or a Full-access grantee.
   canManageAccess?: boolean;
-  // Whether the viewer has this page in their own Favourites (home panel).
+  // Whether the viewer has this page in their own Favorites (home panel).
   favorited?: boolean;
   // Workspace the page lives in — drives the Share dialog's per-workspace copy
   // (lab-access toggle, base-access line) and the "Move to…" picker's current
@@ -604,13 +604,13 @@ export function DocumentEditor({
         </Tooltip>
       )}
 
-      {/* Favourite — personal, unlike the ⋯ "Pin" which moves the document for
+      {/* Favorite — personal, unlike the ⋯ "Pin" which moves the document for
           everyone. Anyone who can read the page can bookmark it. */}
-      <Tooltip label={favorited ? "Remove from favourites" : "Add to favourites"}>
+      <Tooltip label={favorited ? "Remove from favorites" : "Add to favorites"}>
         <button
           type="button"
           onClick={() => void toggleFavorite()}
-          aria-label={favorited ? "Remove from favourites" : "Add to favourites"}
+          aria-label={favorited ? "Remove from favorites" : "Add to favorites"}
           aria-pressed={favorited}
           className={`inline-flex items-center justify-center rounded-md border p-1.5 transition-colors ${
             favorited

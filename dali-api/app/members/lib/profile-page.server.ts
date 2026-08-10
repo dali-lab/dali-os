@@ -110,7 +110,7 @@ export type ProfilePageData = {
    *  the viewer; `sharedWithMe` is populated only on your own profile. */
   notes: NoteSummary[];
   sharedWithMe: NoteSummary[];
-  /** Page ids the viewer has starred — drives the per-row favourite toggle. */
+  /** Page ids the viewer has starred — drives the per-row favorite toggle. */
   favoriteIds: string[];
   /** Milestone medals shown above the notes rail. Always the full catalog —
    *  the view hides unearned ones on other people's profiles. */

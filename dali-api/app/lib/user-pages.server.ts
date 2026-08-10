@@ -1,5 +1,5 @@
-// Per-user page state — favourites and last-visited — behind the home
-// Favourites panel.
+// Per-user page state — favorites and last-visited — behind the home
+// Favorites panel.
 //
 // Access is re-checked on read, never cached into the row. Favouriting a page
 // is a bookmark, not a grant: if a doc is later restricted or moved, it drops
@@ -10,7 +10,7 @@ import { getPageAccess, type PageShape } from "~/lib/pageAccess.server";
 import { isNavbarRoute } from "~/lib/navbar-routes";
 
 export type FavoritePage = {
-  /** Page id, or the href for a route favourite. Used as the React key. */
+  /** Page id, or the href for a route favorite. Used as the React key. */
   id: string;
   title: string;
   iconEmoji: string | null;
@@ -18,7 +18,7 @@ export type FavoritePage = {
   favorited: boolean;
   /** Where the row links. Pages resolve to /documents/:id. */
   href: string;
-  /** Route favourites have no Page, so the star must target the href. */
+  /** Route favorites have no Page, so the star must target the href. */
   isRoute: boolean;
 };
 
@@ -61,7 +61,7 @@ async function viewable<T extends { page: PageShape }>(
 }
 
 /**
- * The home panel's list: favourites first (most recently pinned first), then
+ * The home panel's list: favorites first (most recently pinned first), then
  * the most recently opened pages that aren't already pinned.
  */
 export async function listFavoritesAndRecents(userId: string): Promise<{
@@ -69,7 +69,7 @@ export async function listFavoritesAndRecents(userId: string): Promise<{
   recents: FavoritePage[];
 }> {
   const [routeRows, pinnedRows, recentRows] = await Promise.all([
-    // Route favourites (project hubs, subtabs). No Page to check access on —
+    // Route favorites (project hubs, subtabs). No Page to check access on —
     // the destination re-authorises itself when opened, and the label is a
     // snapshot, so the worst case is a dead link the owner can un-star.
     prisma.userFavorite.findMany({
@@ -98,7 +98,7 @@ export async function listFavoritesAndRecents(userId: string): Promise<{
     }),
   ]);
 
-  // pageId is nullable now (route favourites), so narrow before the access
+  // pageId is nullable now (route favorites), so narrow before the access
   // check — these two queries only ever match page rows anyway.
   const withPage = <T extends { page: unknown }>(rows: T[]) =>
     rows.filter((r): r is T & { page: PageShape } => r.page != null);
@@ -193,7 +193,7 @@ export function recordPageVisit(userId: string, pageId: string): void {
 }
 
 /**
- * Which of this user's pages are favourited, as a Set for O(1) row flagging.
+ * Which of this user's pages are favorited, as a Set for O(1) row flagging.
  * One query per list view rather than one per row.
  */
 export async function favoritePageIds(userId: string): Promise<Set<string>> {

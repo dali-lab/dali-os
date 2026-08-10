@@ -68,7 +68,7 @@ export async function action({ request }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Invalid href" }, { status: 400 }));
   }
   if (body.favorited && isNavbarRoute(body.href)) {
-    return withCors(request, Response.json({ error: "This page cannot be favourited" }, { status: 400 }));
+    return withCors(request, Response.json({ error: "This page cannot be favorited" }, { status: 400 }));
   }
 
   const label = body.label.trim().slice(0, 200) || body.href;

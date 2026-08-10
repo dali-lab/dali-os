@@ -6,7 +6,7 @@ import { Tooltip } from "~/components/ui/IconButton";
 // Documents block, education materials, profile pages.
 //
 // Personal, unlike the shared Pin: it only affects the clicker's own home
-// Favourites, so it needs no permission gate beyond being able to see the row.
+// Favorites, so it needs no permission gate beyond being able to see the row.
 //
 // Optimistic, and it does NOT revalidate the route on success: these stars live
 // in long lists where a full reload on every click would be felt. The server is
@@ -21,7 +21,7 @@ export function FavoriteStar({
   favorited: boolean;
   className?: string;
   /** Called after a successful write. Home uses it to re-sort the panel, since
-   *  un-starring there should move the row out of Favourites immediately. */
+   *  un-starring there should move the row out of Favorites immediately. */
   onToggled?: (favorited: boolean) => void;
 }) {
   const [favorited, setFavorited] = useState(initial);
@@ -48,7 +48,7 @@ export function FavoriteStar({
   }
 
   return (
-    <Tooltip label={favorited ? "In your favourites" : "Add to your favourites"}>
+    <Tooltip label={favorited ? "In your favorites" : "Add to your favorites"}>
       <button
         type="button"
         disabled={busy}
@@ -59,7 +59,7 @@ export function FavoriteStar({
           e.stopPropagation();
           void toggle();
         }}
-        aria-label={favorited ? "Remove from favourites" : "Add to favourites"}
+        aria-label={favorited ? "Remove from favorites" : "Add to favorites"}
         aria-pressed={favorited}
         className={`flex items-center disabled:opacity-60 transition-colors ${
           favorited ? "text-accent-coral" : "text-muted-foreground hover:text-foreground"
