@@ -21,6 +21,7 @@ import { isValidTimezone, resolveUserTimeZone } from '~/lib/timezone'
 import { readDismissedTimeZone } from '~/lib/tz-prompt'
 import { isNavbarHubPage } from '~/lib/navbar-routes'
 import { listFavoritesAndRecents } from '~/lib/user-pages.server'
+import { loadShellUser } from '~/lib/shell-user.server'
 import { resolveFeatureFlags } from '~/lib/feature-flags.server'
 import { FeatureFlagsProvider } from '~/components/FeatureFlags'
 import type { Route } from './+types/layout'
@@ -60,20 +61,11 @@ export async function loader({ request }: Route.LoaderArgs) {
     getActiveCycle(),
     // Powers the sidebar Favorites + Recent lists (same source as the Home
     // panel). Access re-checked per read, so a restricted/moved page drops out.
-    listFavoritesAndRecents(auth.user.sub),
-    prisma.user.findUnique({
-      where: { id: auth.user.sub },
-      select: {
-        photoUrl: true,
-        timeZone: true,
-        calendarLinks: {
-          where: { provider: "Google", enabled: true },
-          select: { id: true },
-          take: 1,
-        },
-        daliMember: { select: { onboardedAt: true, tourCompletedAt: true } },
-      },
-    }),
+    // `request` shares one read with the Home panel on the same navigation.
+    listFavoritesAndRecents(auth.user.sub, request),
+    // Per-request memoized so the Home loader reads the same row (its timezone)
+    // without a second lookup — both loaders run concurrently for one nav.
+    loadShellUser(auth.user.sub, request),
   ])
   if (partnerRedirect) return partnerRedirect
 

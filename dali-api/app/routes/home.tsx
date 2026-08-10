@@ -24,6 +24,7 @@ import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { listOpenTasks, type Task } from "~/lib/tasks";
 import { listFavoritesAndRecents, type FavoritePage } from "~/lib/user-pages.server";
+import { loadShellUser } from "~/lib/shell-user.server";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import { PageIcon } from "~/components/PageIcon";
 import { FavoriteStar } from "~/components/FavoriteStar";
@@ -73,11 +74,10 @@ export async function loader({ request }: Route.LoaderArgs) {
   })();
 
   // The chosen week (Sunday→following Sunday) in the viewer's timezone, used
-  // both to build the day columns and to window the calendar fetch.
-  const me = await prisma.user.findUnique({
-    where: { id: auth.user.sub },
-    select: { timeZone: true },
-  });
+  // both to build the day columns and to window the calendar fetch. The shell
+  // loads this same user row concurrently, so the memoized read shares it
+  // rather than issuing a second lookup.
+  const me = await loadShellUser(auth.user.sub, request);
   const tz = resolveUserTimeZone(me);
   const now = new Date();
   const ymd = getZonedYMD(now, tz);
@@ -164,7 +164,9 @@ export async function loader({ request }: Route.LoaderArgs) {
     // open-assignment counts) and the viewer's next few sessions.
     listCatalog(auth.user.sub),
     listUpcomingSessionsForUser(auth.user.sub, { limit: 3 }),
-    listFavoritesAndRecents(auth.user.sub),
+    // `request` reuses the read the shell's sidebar already kicked off for the
+    // same navigation instead of re-running the per-row access checks.
+    listFavoritesAndRecents(auth.user.sub, request),
   ]);
 
   const enrolledOfferings = catalog.filter((o) => o.myStatus === "Approved");
