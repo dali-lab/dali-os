@@ -107,6 +107,56 @@ describe("FormQuestionField — question types render", () => {
   });
 });
 
+describe("FormQuestionField — projects:* reference cards", () => {
+  const projectQuestion: Question = {
+    key: "project",
+    type: "reference",
+    required: false,
+    data: {
+      label: "Project",
+      referenceSource: "projects:open-this-term",
+      referenceOptions: [
+        {
+          value: "p1",
+          label: "Deserto",
+          card: {
+            description: "A project",
+            imageUrl: null,
+            partners: ["DALI"],
+            challenges: [{ domain: "Design", scope: "Redesign the flow" }],
+            sowPageId: "page-1",
+          },
+        },
+      ],
+    },
+  };
+
+  it("puts the details disclosure outside the option's <label>", () => {
+    // Anything inside the label selects the option when clicked, so the
+    // disclosure — and the challenges and SOW link it reveals — has to live
+    // after the label closes to be reachable without bidding on the project.
+    const html = renderField({ question: projectQuestion, value: "", onChange: () => {} });
+    expect(html).toContain("View details");
+    expect(html.indexOf("View details")).toBeGreaterThan(html.lastIndexOf("</label>"));
+  });
+
+  it("falls back to the plain select when the options carry no card", () => {
+    const q: Question = {
+      key: "domain",
+      type: "reference",
+      required: false,
+      data: {
+        label: "Domain",
+        referenceSource: "domains:active",
+        referenceOptions: [{ value: "d1", label: "Design" }],
+      },
+    };
+    const html = renderField({ question: q, value: "", onChange: () => {} });
+    expect(html).toMatch(/<button[^>]*aria-haspopup="listbox"/);
+    expect(html).not.toContain("View details");
+  });
+});
+
 describe("FormQuestionField — disabled propagates to underlying inputs", () => {
   it("text input is disabled and aria-disabled when disabled=true", () => {
     const q: Question = { key: "name", type: "text", required: false, data: { label: "Name" } };

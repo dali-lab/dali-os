@@ -388,6 +388,7 @@ export default [
     "projects/routes/api.projects.$id.tasks.archive.ts",
   ),
   route("api/tasks/:id/move", "projects/routes/api.tasks.$id.move.ts"),
+  route("api/tasks/:id/view", "projects/routes/api.tasks.$id.view.ts"),
   route("api/tasks/:id/comments", "projects/routes/api.tasks.$id.comments.ts"),
   route("api/tasks/:id/github", "projects/routes/api.tasks.$id.github.ts"),
   route("api/tasks/:id/files", "projects/routes/api.tasks.$id.files.ts"),

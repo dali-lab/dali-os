@@ -231,7 +231,7 @@ export function DocCommentsPanel({
     <div
       className={
         inline
-          ? "w-full flex flex-col rounded-lg border border-border/80 bg-gradient-to-b from-muted/30 to-card p-4 shadow-brand-1"
+          ? "w-full flex flex-col p-4"
           : "absolute right-0 top-full z-30 mt-1 w-[380px] rounded-md border border-border bg-card shadow-brand-2 flex flex-col"
       }
       style={inline ? undefined : { maxHeight: "60vh" }}
@@ -440,7 +440,11 @@ export function DocCommentsPanel({
 
       {/* Doc-level composer */}
       {canComment && filter === "open" && (
-        <div className={`border-t border-border/70 pt-3 shrink-0 ${inline ? "mt-3" : "px-3 py-2"}`}>
+        <div
+          className={`shrink-0 ${
+            inline ? "mt-3" : "border-t border-border/70 pt-3 px-3 py-2"
+          }`}
+        >
           <form
             onSubmit={async (e) => {
               e.preventDefault();

@@ -25,10 +25,11 @@ export type ReferenceSourceKey = keyof typeof REFERENCE_SOURCE_LABELS;
 // they're picking. Only `projects:*` sources populate this; `domains:*`
 // options stay plain and render as a <select>.
 //
-// `challenges` and `sowPageId` are per-(project, term), so each source
-// resolves them for the term its options are scoped to (the chosen term, the
-// current term, or — for the term-less `projects:active` — the project's
-// latest term). Both are omitted/empty when that term has nothing recorded.
+// `challenges` is per-(project, term), so each source resolves it for the term
+// its options are scoped to (the chosen term, the current term, or — for the
+// term-less `projects:active` — the project's latest term). It's empty when
+// that term has nothing recorded. `sowPageId` is not term-scoped: it's the
+// project document tagged "SOW", whichever term it was written for.
 export type ProjectOptionCard = {
   description: string | null;
   /** Ready-to-use `<img src>` (already presigned if it was a private upload), or null. */
@@ -37,7 +38,7 @@ export type ProjectOptionCard = {
   partners: string[];
   /** This term's per-domain challenge text, alphabetical by domain. */
   challenges: { domain: string; scope: string }[];
-  /** Page id of the term's Statement of Work, if one is set. */
+  /** Page id of the project document tagged "SOW", if one carries the tag. */
   sowPageId: string | null;
 };
 
