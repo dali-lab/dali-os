@@ -16,6 +16,7 @@ import { DocEditor } from '~/components/doc'
 import { Tooltip } from '~/components/ui/IconButton'
 import { referenceSourceChoices, referenceSourceNeedsTerm } from '~/forms/lib/reference-sources.shared'
 import { Checkbox } from '~/components/ui/Checkbox'
+import { isLayoutOnly } from '~/lib/form-answers'
 
 const ACCEPT_PRESETS = [
   { label: 'PDF', value: 'application/pdf' },
@@ -215,6 +216,24 @@ export function FormBuilderTab({
   const handleDelete = (key: string) => {
     setQuestions(questions.filter((q) => q.key !== key))
     if (editingKey === key) resetEditState()
+  }
+
+  // Page breaks are ordinary array items (so dnd reorder + delete already work)
+  // but layout-only: edited inline via their own title/subtitle inputs rather
+  // than the question edit buffer.
+  const handleAddPageBreak = () => {
+    const key = `q-${Date.now()}`
+    setQuestions((prev) => [
+      ...prev,
+      { key, type: 'pageBreak', required: false, data: { label: '', description: '' } },
+    ])
+  }
+  const updatePageBreak = (key: string, patch: { label?: string; description?: string }) => {
+    setQuestions((prev) =>
+      prev.map((q) =>
+        q.key === key ? { ...q, data: { ...q.data, ...patch } } : q,
+      ),
+    )
   }
 
   // Auto-commit: edits to the inline form flow straight into the question list,
@@ -580,7 +599,49 @@ export function FormBuilderTab({
               <SortableQuestionRow key={q.key} id={q.key} disabled={editingKey === q.key}>
                 {(dragHandleProps, isDragging) => (
                   <div className={`rounded-xl ${isDragging ? 'opacity-40' : ''}`}>
-                    {editingKey === q.key ? (
+                    {q.type === 'pageBreak' ? (
+                      <div
+                        className={`flex items-start gap-4 bg-muted/40 p-4 rounded-xl border border-dashed shadow-sm group transition-colors duration-150 ${activeId ? 'border-gray-300' : 'border-border'}`}
+                      >
+                        <div
+                          {...dragHandleProps}
+                          aria-label="Reorder page break"
+                          className="mt-1 cursor-grab active:cursor-grabbing text-muted-foreground/70 hover:text-muted-foreground select-none touch-none"
+                        >
+                          <GripVertical className="w-5 h-5" />
+                        </div>
+                        <div className="flex-1 space-y-2">
+                          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            <span className="flex-1 border-t border-dashed border-border" />
+                            Page break
+                            <span className="flex-1 border-t border-dashed border-border" />
+                          </div>
+                          <input
+                            type="text"
+                            value={q.data.label || ''}
+                            onChange={(e) => updatePageBreak(q.key, { label: e.target.value })}
+                            className="block w-full rounded-md border border-gray-300 bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
+                            placeholder="Section title (optional)"
+                          />
+                          <input
+                            type="text"
+                            value={q.data.description || ''}
+                            onChange={(e) => updatePageBreak(q.key, { description: e.target.value })}
+                            className="block w-full rounded-md border border-gray-300 bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
+                            placeholder="Subtitle (optional)"
+                          />
+                        </div>
+                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={() => handleDelete(q.key)}
+                            aria-label="Remove page break"
+                            className="p-1.5 text-muted-foreground/70 hover:text-red-600 rounded-md hover:bg-red-50"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ) : editingKey === q.key ? (
                       renderEditForm()
                     ) : (
                       <div
@@ -597,7 +658,7 @@ export function FormBuilderTab({
                         <div className="flex-1">
                           <div className="flex items-center gap-3 mb-1">
                             <span className="text-sm font-medium text-muted-foreground">
-                              Q{index + 1}
+                              Q{questions.slice(0, index + 1).filter((qq) => !isLayoutOnly(qq.type)).length}
                             </span>
                             <h4 className="text-base font-medium text-foreground">
                               {q.data.label}
@@ -669,13 +730,22 @@ export function FormBuilderTab({
           </SortableContext>
         </DndContext>
 
-        <button
-          onClick={handleAddQuestion}
-          className="w-full py-4 border-2 border-dashed border-border rounded-xl text-muted-foreground hover:text-accent-coral hover:border-accent-coral/50 hover:bg-muted/40 transition-colors flex items-center justify-center gap-2 font-medium"
-        >
-          <Plus className="w-5 h-5" />
-          Add Question
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={handleAddQuestion}
+            className="flex-1 py-4 border-2 border-dashed border-border rounded-xl text-muted-foreground hover:text-accent-coral hover:border-accent-coral/50 hover:bg-muted/40 transition-colors flex items-center justify-center gap-2 font-medium"
+          >
+            <Plus className="w-5 h-5" />
+            Add Question
+          </button>
+          <button
+            onClick={handleAddPageBreak}
+            className="py-4 px-5 border-2 border-dashed border-border rounded-xl text-muted-foreground hover:text-accent-coral hover:border-accent-coral/50 hover:bg-muted/40 transition-colors flex items-center justify-center gap-2 font-medium"
+          >
+            <Plus className="w-5 h-5" />
+            Add Page Break
+          </button>
+        </div>
       </div>
 
       <div className="flex justify-end gap-3 pt-4 border-t border-border">

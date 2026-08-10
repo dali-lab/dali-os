@@ -1,7 +1,13 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useSubmit, useActionData, useNavigation } from "react-router";
 import { FormQuestionField } from "~/components/form-builder/QuestionField";
 import { FormFieldList } from "~/forms/components/FormField";
+import {
+  useFormPager,
+  FormPagerNav,
+  FormPageHeading,
+} from "~/forms/components/FormPager";
+import { paginateQuestions } from "~/lib/form-pages";
 import { DocEditor, countWords } from "~/components/doc";
 import { Button } from "~/components/ui/Button";
 import { findMissingRequired } from "~/lib/form-answers";
@@ -30,6 +36,8 @@ export function OfferingApplyForm({
   const actionData = useActionData<{ error?: string }>();
   const navigation = useNavigation();
   const submit = useSubmit();
+  const pages = useMemo(() => paginateQuestions(questions), [questions]);
+  const pager = useFormPager(pages, { excludeFileType: true });
 
   function set(key: string, v: string) {
     setAnswers((a) => ({ ...a, [key]: v }));
@@ -69,8 +77,9 @@ export function OfferingApplyForm({
       )}
 
       <form onSubmit={onSubmit} className="mt-4 flex flex-col gap-5">
+        <FormPageHeading page={pager.page} />
         <FormFieldList
-          questions={questions}
+          questions={pager.page.questions}
           values={answers}
           onChange={set}
           renderField={(q) =>
@@ -87,14 +96,22 @@ export function OfferingApplyForm({
             )
           }
         />
-        <Button
-          type="submit"
-          size="sm"
-          disabled={navigation.state !== "idle"}
-          className="self-start"
-        >
-          {navigation.state !== "idle" ? "Submitting…" : submitLabel}
-        </Button>
+        <FormPagerNav
+          pager={pager}
+          getValue={(q) => answers[q.key]}
+          onInvalid={(q) => setClientError(`"${q.data.label}" is required.`)}
+          onAdvance={() => setClientError(null)}
+          submitSlot={
+            <Button
+              type="submit"
+              size="sm"
+              disabled={navigation.state !== "idle"}
+              className="self-start"
+            >
+              {navigation.state !== "idle" ? "Submitting…" : submitLabel}
+            </Button>
+          }
+        />
       </form>
     </div>
   );

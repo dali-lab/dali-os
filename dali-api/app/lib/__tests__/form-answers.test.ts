@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isAnswered, findMissingRequired } from "../form-answers";
+import { isAnswered, findMissingRequired, isLayoutOnly } from "../form-answers";
 import type { Question } from "~/types";
 
 function q(partial: Partial<Question> & { key: string }): Question {
@@ -32,6 +32,12 @@ describe("isAnswered", () => {
     const info = q({ key: "intro", type: "info", required: false });
     expect(isAnswered("", info)).toBe(true);
     expect(isAnswered(undefined, info)).toBe(true);
+  });
+
+  it("treats pageBreak dividers as always answered (layout-only)", () => {
+    const brk = q({ key: "pb", type: "pageBreak", required: false });
+    expect(isAnswered("", brk)).toBe(true);
+    expect(isAnswered(undefined, brk)).toBe(true);
   });
 
   describe("skills_rating — delegates to isSkillsRatingComplete", () => {
@@ -72,6 +78,15 @@ describe("isAnswered", () => {
   });
 });
 
+describe("isLayoutOnly", () => {
+  it("is true for info and pageBreak, false for real question types", () => {
+    expect(isLayoutOnly("info")).toBe(true);
+    expect(isLayoutOnly("pageBreak")).toBe(true);
+    expect(isLayoutOnly("text")).toBe(false);
+    expect(isLayoutOnly("checkbox")).toBe(false);
+  });
+});
+
 describe("findMissingRequired", () => {
   const text = q({ key: "name", type: "text", required: true });
   const optional = q({ key: "bio", type: "textarea", required: false });
@@ -98,6 +113,12 @@ describe("findMissingRequired", () => {
     const requiredInfo = q({ key: "intro", type: "info", required: true });
     const missing = findMissingRequired([requiredInfo], () => "");
     expect(missing).toEqual([]);
+  });
+
+  it("excludes pageBreak dividers", () => {
+    const brk = q({ key: "pb", type: "pageBreak", required: true });
+    const missing = findMissingRequired([brk, text], () => "");
+    expect(missing.map((m) => m.key)).toEqual(["name"]);
   });
 
   it("treats answered required questions as satisfied", () => {

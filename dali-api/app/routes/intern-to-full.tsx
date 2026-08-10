@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useLoaderData, useFetcher, Link } from "react-router";
 import type { Route } from "./+types/intern-to-full";
 import { prisma } from "~/lib/db";
@@ -14,6 +14,8 @@ import {
 import type { Question } from "~/types";
 import { normalizeQuestionBodies } from "~/lib/question-blocks.server";
 import { FormFieldList } from "~/forms/components/FormField";
+import { useFormPager, FormPageHeading } from "~/forms/components/FormPager";
+import { paginateQuestions } from "~/lib/form-pages";
 import { findMissingRequired } from "~/lib/form-answers";
 import { formatInstantWithZoneLabel, resolveUserTimeZone } from "~/lib/timezone";
 import { Checkbox } from "~/components/ui/Checkbox";
@@ -334,6 +336,8 @@ function FormView({
   const [answers, setAnswers] = useState<Record<string, string>>(initial.answers);
   const [selectedDomainIds, setSelectedDomainIds] = useState<string[]>(initial.selectedDomainIds);
   const [error, setError] = useState<string | null>(null);
+  const pages = useMemo(() => paginateQuestions(cycle.questions), [cycle.questions]);
+  const pager = useFormPager(pages, { excludeFileType: false });
 
   const busy = fetcher.state !== "idle";
   const justSaved = fetcher.data && "saved" in fetcher.data && fetcher.state === "idle";
@@ -367,7 +371,7 @@ function FormView({
 
   return (
     <div className="space-y-8">
-      <section>
+      <section className={pager.index === 0 ? undefined : "hidden"}>
         <h2 className="font-heading text-sm font-bold uppercase tracking-wider text-dark-blue mb-3">
           Target domains
         </h2>
@@ -399,8 +403,9 @@ function FormView({
           Questions
         </h2>
         <div className="space-y-5">
+          <FormPageHeading page={pager.page} />
           <FormFieldList
-            questions={cycle.questions}
+            questions={pager.page.questions}
             labelClassName="font-semibold"
             values={answers}
             onChange={(key, v) => setAnswers((prev) => ({ ...prev, [key]: v }))}
@@ -420,6 +425,21 @@ function FormView({
       )}
 
       <div className="flex flex-wrap items-center gap-3">
+        {!pager.isFirst && (
+          <button
+            type="button"
+            onClick={pager.goBack}
+            disabled={busy}
+            className="px-5 py-2 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-accent-coral hover:text-accent-coral transition disabled:opacity-50"
+          >
+            Back
+          </button>
+        )}
+        {pager.multi && (
+          <span className="text-xs text-muted-foreground">
+            Step {pager.index + 1} of {pager.pages.length}
+          </span>
+        )}
         <button
           type="button"
           onClick={() => submitForm("save-draft")}
@@ -428,14 +448,28 @@ function FormView({
         >
           {busy && fetcher.formData?.get("intent") === "save-draft" ? "Saving…" : "Save draft"}
         </button>
-        <button
-          type="button"
-          onClick={() => submitForm("submit")}
-          disabled={busy}
-          className="px-6 py-2.5 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50"
-        >
-          {busy && fetcher.formData?.get("intent") === "submit" ? "Submitting…" : "Submit"}
-        </button>
+        {pager.isLast ? (
+          <button
+            type="button"
+            onClick={() => submitForm("submit")}
+            disabled={busy}
+            className="px-6 py-2.5 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition disabled:opacity-50"
+          >
+            {busy && fetcher.formData?.get("intent") === "submit" ? "Submitting…" : "Submit"}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => {
+              const missing = pager.goNext((q) => answers[q.key]);
+              if (missing) setError(`"${missing.data.label}" is required.`);
+              else setError(null);
+            }}
+            className="px-6 py-2.5 rounded-full bg-accent-coral text-white text-sm font-semibold hover:bg-accent-coral/90 transition"
+          >
+            Next
+          </button>
+        )}
       </div>
     </div>
   );

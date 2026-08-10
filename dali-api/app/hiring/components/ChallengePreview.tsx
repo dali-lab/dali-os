@@ -1,5 +1,9 @@
+import { useMemo, useState } from "react";
 import type { Question } from "~/types";
 import { FormFieldList } from "~/forms/components/FormField";
+import { FormPageHeading } from "~/forms/components/FormPager";
+import { paginateQuestions } from "~/lib/form-pages";
+import { Button } from "~/components/ui/Button";
 import { DocEditor } from "~/components/doc";
 import { isEmptyBlocks } from "~/lib/blocks";
 
@@ -9,6 +13,12 @@ export interface ChallengePreviewProps {
 }
 
 export function ChallengePreview({ description, questions }: ChallengePreviewProps) {
+  const pages = useMemo(() => paginateQuestions(questions), [questions]);
+  const [index, setIndex] = useState(0);
+  const active = Math.min(index, pages.length - 1);
+  const page = pages[active];
+  const multi = pages.length > 1;
+
   return (
     <div className="space-y-6">
       <p className="text-xs text-muted-foreground italic">
@@ -30,8 +40,9 @@ export function ChallengePreview({ description, questions }: ChallengePreviewPro
         <p className="text-sm text-muted-foreground/70 italic">No questions in this version.</p>
       ) : (
         <div className="space-y-6">
+          <FormPageHeading page={page} />
           <FormFieldList
-            questions={questions}
+            questions={page.questions}
             disabled
             labelClassName="font-semibold"
             labelSuffix={q =>
@@ -42,6 +53,34 @@ export function ChallengePreview({ description, questions }: ChallengePreviewPro
               ) : null
             }
           />
+          {multi && (
+            <div className="flex items-center gap-3 pt-2">
+              {active > 0 && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setIndex((i) => Math.max(0, i - 1))}
+                >
+                  Back
+                </Button>
+              )}
+              <span className="text-xs text-muted-foreground">
+                Step {active + 1} of {pages.length}
+              </span>
+              {active < pages.length - 1 && (
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  className="ml-auto"
+                  onClick={() => setIndex((i) => Math.min(pages.length - 1, i + 1))}
+                >
+                  Next
+                </Button>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
