@@ -6,19 +6,30 @@ const CLEANUP_INTERVAL_MS = 60_000;
 const hits = new Map<string, { windowMs: number; timestamps: number[] }>();
 
 // Periodically purge expired entries so the map doesn't grow unbounded.
-const cleanup = setInterval(() => {
-  const now = Date.now();
-  for (const [key, entry] of hits) {
-    const horizon = Math.max(entry.windowMs, CLEANUP_INTERVAL_MS);
-    const fresh = entry.timestamps.filter((t) => t > now - horizon);
-    if (fresh.length === 0) hits.delete(key);
-    else entry.timestamps = fresh;
-  }
-}, CLEANUP_INTERVAL_MS);
-// unref exists only on Node's Timeout — in a browser setInterval returns a
-// number. Optional-call so this module can't crash a page at init if it ever
-// gets pulled into a client bundle again (it took down the activity viewer).
-cleanup.unref?.();
+// Started lazily on the first checkRateLimit() call rather than at module load:
+// a top-level setInterval is a module side effect that Vite/rolldown cannot
+// tree-shake, which pinned this module — and its transitive `~/lib/db` import,
+// the 4.8MB Prisma query-compiler wasm — into the client bundle of every route
+// that (even transitively, via ~/lib/audit) imports it. Deferring the timer
+// makes the module side-effect-free so it drops out of client chunks entirely.
+// (This module previously took down the activity viewer when it leaked.)
+let cleanupStarted = false;
+function ensureCleanupTimer() {
+  if (cleanupStarted) return;
+  cleanupStarted = true;
+  const cleanup = setInterval(() => {
+    const now = Date.now();
+    for (const [key, entry] of hits) {
+      const horizon = Math.max(entry.windowMs, CLEANUP_INTERVAL_MS);
+      const fresh = entry.timestamps.filter((t) => t > now - horizon);
+      if (fresh.length === 0) hits.delete(key);
+      else entry.timestamps = fresh;
+    }
+  }, CLEANUP_INTERVAL_MS);
+  // unref exists only on Node's Timeout — keep the process from being held open
+  // by this housekeeping timer.
+  cleanup.unref?.();
+}
 
 export function getClientIp(request: Request): string {
   return (
@@ -33,6 +44,7 @@ export function checkRateLimit(
   { max, windowMs }: { max: number; windowMs: number },
   key?: string,
 ): Response | null {
+  ensureCleanupTimer();
   const id = key ?? getClientIp(request);
   const now = Date.now();
   const timestamps = (hits.get(id)?.timestamps ?? []).filter(
