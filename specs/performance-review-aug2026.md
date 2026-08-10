@@ -64,6 +64,15 @@ This corrects the July framing that the shell loader was "already optimized" —
 the round-trip *count* was parallelized, but this nested per-row N+1 inside a
 Promise.all member was the actual latency sink.
 
+Same fix applied to `listedFormsFor` (the Home "Forms for you" card): its
+per-form access + already-submitted checks ran in a sequential loop too. Smaller
+blast radius (listing is opt-in, so usually a handful) but the identical shape,
+and it grows with the number of listed forms — parallelized for consistency and
+future-proofing. Order (by name) preserved.
+
+> Landing note: PR #1173 was squash-merged while it only carried the rate-limit
+> fix; the `viewable` N+1 fix + this forms fix land in the follow-up PR.
+
 ### 3. Regression guard: `app/lib/__tests__/client-bundle-leak.test.ts`
 The July review flagged that no CI check existed for this class of leak. Added a
 Vitest guard that reads the built React Router manifest and **fails if any

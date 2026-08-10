@@ -299,8 +299,7 @@ export async function formFillAccess(
 // controls who CAN fill, listed controls whether the form is discoverable
 // at all; unlisted forms stay reachable only by link. One-response forms the
 // member already submitted are dropped (no point nudging them toward the
-// "already filled out" panel). Sequential access checks are fine at the
-// handful-of-listed-forms scale.
+// "already filled out" panel).
 export type ListedForm = { id: string; name: string; fillUrl: string };
 
 export async function listedFormsFor(userId: string): Promise<ListedForm[]> {
@@ -317,22 +316,31 @@ export async function listedFormsFor(userId: string): Promise<ListedForm[]> {
     },
   });
 
-  const visible: ListedForm[] = [];
-  for (const form of forms) {
-    if ((await formFillAccess(form, userId)) !== "ok") continue;
-    if (
-      form.oneResponsePerMember &&
-      (await existingOrdinarySubmission(form.id, userId))
-    ) {
-      continue;
-    }
-    visible.push({
+  // Per-form access + already-submitted checks are independent, so resolve them
+  // concurrently rather than in a sequential await loop. This runs in the Home
+  // loader; listing is opt-in so the set is usually a handful, but the loop is
+  // the same serial-round-trip shape as the sidebar Favorites N+1 and grows with
+  // the number of listed forms. `forms` stays ordered by name; we keep that order.
+  const checks = await Promise.all(
+    forms.map(async (form) => {
+      if ((await formFillAccess(form, userId)) !== "ok") return false;
+      if (
+        form.oneResponsePerMember &&
+        (await existingOrdinarySubmission(form.id, userId))
+      ) {
+        return false;
+      }
+      return true;
+    }),
+  );
+
+  return forms
+    .filter((_, i) => checks[i])
+    .map((form) => ({
       id: form.id,
       name: form.name,
       fillUrl: `/forms/fill/${form.publicToken}`,
-    });
-  }
-  return visible;
+    }));
 }
 
 export type MemberSubmitResult =
