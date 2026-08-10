@@ -8,12 +8,16 @@ import { isbot } from "isbot";
 import { startCollabServer } from "~/collab/server";
 import { startJobRunner } from "~/jobs/runner.server";
 import { securityHeaders } from "~/lib/security-headers";
+import { warmGeneralCalendarFeed } from "~/lib/general-calendar";
 
 // Start Hocuspocus collab server on a second port (runs once due to module caching).
 startCollabServer();
 // Start the background job tick (cross-machine dedup via DB lease; see
 // app/jobs/runner.server.ts).
 startJobRunner();
+// Warm the General Calendar ICS cache off the request path so the first home
+// load after a deploy/restart isn't blocked on the external fetch.
+void warmGeneralCalendarFeed();
 
 export const streamTimeout = 5_000;
 

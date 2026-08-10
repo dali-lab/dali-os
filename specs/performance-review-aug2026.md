@@ -7,11 +7,20 @@ the same as raw byte counts — see the bundle section for why.
 
 ## TL;DR
 
-- The shell loader's round-trip *count* was parallelized (PR #931 + #1172), but a
-  **nested per-row N+1** hid inside it: the sidebar Favorites/Recent access checks
-  ran sequentially, producing dozens of serial Neon round trips and ~2.8s
-  navigation TTFB on a warm machine. **Fixed in this PR.** Auth/home fan-out
-  (memoized `requireAuth`/`loadShellUser`, throttled heartbeats) is otherwise fine.
+- **ROOT CAUSE of the multi-second navigation TTFB (found via HAR + measurement,
+  not guesswork): the Home loader blocked on an external Google Calendar ICS
+  fetch.** `/` is the root index route, so `/_root.data` runs the layout loader
+  **plus the Home loader**; Home's `Promise.all` waited on `fetchGeneralCalendarEvents`,
+  whose feed cache goes stale after 5 min (and cold after every deploy) and was
+  refreshed *synchronously on the request path*. A slow/large .ics took ~4s and
+  gated the whole page. Confirmed: warm Fly machine, every Home DB query ~15ms, so
+  the seconds could only be the external fetch. **Fixed** with stale-while-revalidate
+  + a startup cache warm so the ICS fetch is never on the critical path.
+- Two earlier fixes (below) were real but were NOT this bottleneck — an honest
+  correction: the shell **round-trip count** was parallelized (#931/#1172) and a
+  nested Favorites/Recent access-check **N+1** was fixed (#1174), but neither moved
+  the TTFB because the ICS block dominated. Lesson: measure the actual slow request
+  (HAR/Server-Timing) before attributing cause.
 - The dominant driver of *perceived* "everything got slower" is **architectural,
   not a single slow query**: the iframe-per-tab shell reboots the whole app on
   every sidebar click, and `shouldRevalidate` is absent on all but 2 of 107
