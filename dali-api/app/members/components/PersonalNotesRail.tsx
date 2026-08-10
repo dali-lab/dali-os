@@ -159,7 +159,7 @@ export function PersonalNotesRail({
   isSelf: boolean;
   notes: NoteSummary[];
   sharedWithMe: NoteSummary[];
-  /** Page ids the viewer has starred, for the per-row favourite toggle. */
+  /** Page ids the viewer has starred, for the per-row favorite toggle. */
   favoriteIds?: string[];
   onOpenNote: (note: NoteSummary) => void;
 }) {

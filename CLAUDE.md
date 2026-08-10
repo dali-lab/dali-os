@@ -69,6 +69,7 @@ These live in `.github/workflows/` — treat their failures as blocking:
 - **Adding a notification type**: add one entry to `app/lib/notification-events.ts` and dispatch via `notify()` (`app/lib/notify.server.ts`) — **never write `prisma.notification` directly** for member-facing notifications; the settings page, preference matching, and digest grouping all derive from the registry. Pick defaults that preserve behavior for users with no preference rows. Renaming an `eventType` requires backfilling both `Notification` and `NotificationPreference`.
 - **Outbound gating**: `sendEmail` handles env safety itself (dev skips, staging redirects to the test inbox); Slack DMs are prod-only (`NOTIFY_SLACK_DM_OVERRIDE=1` to test). Applicant/portal/partner transactional email stays on its direct per-feature pipelines, outside the preference layer.
 - Manual trigger: `POST /internal/jobs/tick` (`x-jobs-secret` header or an Admin session), or Run-now in Admin → Jobs. Digest jobs self-gate on wall clock — Run-now outside the send window is a no-op by design.
+- **Feature flags**: gate new/in-progress features behind a flag, not an ad-hoc boolean. Add one entry to `app/lib/feature-flags.ts`, then check `useFeatureFlag("key")` (client) or `isFeatureEnabled(...)` (server). Targeting (everyone/role/user) is edited in Admin → Feature Flags; flags default off. `evaluateFlag` stays in the client-safe `feature-flags.ts` (not `.server`) so its test needs no Prisma client.
 
 ## Operating rules when running in CI
 

@@ -491,7 +491,7 @@ function FormsForYouPanel({ forms }: { forms: ListedForm[] }) {
 /* ------------------------------------------------------------------ */
 
 /* ------------------------------------------------------------------ */
-/* Favourites — pages you starred, then the ones you opened most recently. */
+/* Favorites — pages you starred, then the ones you opened most recently. */
 /* ------------------------------------------------------------------ */
 
 function PageRow({ page, onChanged }: { page: FavoritePage; onChanged: () => void }) {
@@ -508,7 +508,7 @@ function PageRow({ page, onChanged }: { page: FavoritePage; onChanged: () => voi
         <span className="truncate text-foreground">{page.title || "Untitled"}</span>
       </a>
       {/* Recents show a hollow star on hover — a way to keep the page without
-          hunting for it — while a favourite always shows its filled one. */}
+          hunting for it — while a favorite always shows its filled one. */}
       {(page.favorited || !page.isRoute || !isNavbarRoute(page.href)) && (
         <span className={`pr-2 ${page.favorited ? "" : "opacity-0 group-hover:opacity-100 focus-within:opacity-100"}`}>
           {page.isRoute ? (
@@ -546,7 +546,7 @@ function FavoritesPanel({
     <div className="bg-card border border-border shadow-brand-1 rounded-lg p-4">
       <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground mb-2">
         <Star className="w-4 h-4 text-accent-coral" />
-        Favourites
+        Favorites
       </h2>
 
       {empty ? (
