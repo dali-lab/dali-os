@@ -63,6 +63,10 @@ export type Assignment = {
 
 export type MemberCardModel = {
   userId: string;
+  // The column this card sits in: UNASSIGNED or a projectId. A member staffed on
+  // multiple projects has one card (with a distinct columnKey) per project, so
+  // card identity on the board is (userId, columnKey), not userId alone.
+  columnKey: string;
   firstName: string;
   lastName: string;
   email: string | null;
@@ -100,35 +104,39 @@ export type MemberCardModel = {
 export const UNASSIGNED = "__unassigned__";
 
 /**
- * A member can hold both a Proposed and a Confirmed StaffingAssignment in the
- * same cycle: dragging after finalize writes a fresh Proposed row without
- * touching the audit-trail Confirmed one. The board (and finalize) treat a
- * member's LIVE assignment(s) as their Proposed rows if any, else Confirmed —
- * so an in-progress re-edit wins over the already-finalized position. Declined
- * rows are audit only and must be filtered out before calling this.
+ * A member can hold both a Proposed and a Confirmed StaffingAssignment on the
+ * same project in a cycle: dragging after finalize writes a fresh Proposed row
+ * without touching the audit-trail Confirmed one. The board (and finalize) treat
+ * a member's LIVE assignment(s) on a project as their Proposed rows if any, else
+ * Confirmed — so an in-progress re-edit wins over the already-finalized position.
+ * Declined rows are audit only and must be filtered out before calling this.
  *
- * Multiple domains per user on one project are allowed (one row per
- * userId+domainId). When the user has any Proposed row, Confirmed rows for
- * other domains/projects are dropped so a drag-away doesn't leave them on
- * two projects at once.
+ * A member can be staffed on multiple projects at once (one card per project),
+ * so dedup is scoped per (userId, projectId): Proposed wins over Confirmed within
+ * a single (user, project), and rows on OTHER projects are never dropped. Within
+ * a (user, project), once any Proposed row exists it is the live roster, so
+ * leftover Confirmed domains for that project are dropped (re-edit wins).
  */
 export function dedupeLiveAssignments<
-  T extends { userId: string; status: string; domainId?: string },
+  T extends { userId: string; projectId: string; status: string; domainId?: string },
 >(rows: T[]): T[] {
-  const byDomain = new Map<string, T>();
+  const byKey = new Map<string, T>();
   for (const r of rows) {
-    const key = `${r.userId}|${r.domainId ?? ""}`;
-    const existing = byDomain.get(key);
+    const key = `${r.userId}|${r.projectId}|${r.domainId ?? ""}`;
+    const existing = byKey.get(key);
     if (!existing || (existing.status === "Confirmed" && r.status === "Proposed")) {
-      byDomain.set(key, r);
+      byKey.set(key, r);
     }
   }
-  const collapsed = Array.from(byDomain.values());
-  const usersWithProposed = new Set(
-    collapsed.filter((r) => r.status === "Proposed").map((r) => r.userId),
+  const collapsed = Array.from(byKey.values());
+  const proposedByProject = new Set(
+    collapsed
+      .filter((r) => r.status === "Proposed")
+      .map((r) => `${r.userId}|${r.projectId}`),
   );
   return collapsed.filter(
-    (r) => r.status === "Proposed" || !usersWithProposed.has(r.userId),
+    (r) =>
+      r.status === "Proposed" || !proposedByProject.has(`${r.userId}|${r.projectId}`),
   );
 }
 
@@ -161,11 +169,21 @@ export function buildBoard(args: {
     m.set(o.userId, o.sortKey);
   }
 
-  const byUser = new Map<string, Assignment[]>();
+  const projectSet = new Set(projectIds);
+  // userId → (projectId → that project's assignment rows). Rows on a project that
+  // isn't a board column (e.g. an archived project a member bid) are ignored here
+  // so the card falls back to Unassigned.
+  const byUserProject = new Map<string, Map<string, Assignment[]>>();
   for (const a of assignments) {
-    const list = byUser.get(a.userId) ?? [];
+    if (!projectSet.has(a.projectId)) continue;
+    let projects = byUserProject.get(a.userId);
+    if (!projects) {
+      projects = new Map();
+      byUserProject.set(a.userId, projects);
+    }
+    const list = projects.get(a.projectId) ?? [];
     list.push(a);
-    byUser.set(a.userId, list);
+    projects.set(a.projectId, list);
   }
 
   // Initialise columns even when empty so the UI can render placeholders.
@@ -173,16 +191,16 @@ export function buildBoard(args: {
   for (const pid of projectIds) columns[pid] = [];
 
   for (const m of members) {
-    const userAssignments = byUser.get(m.userId) ?? [];
-    // All live domains for a user share one project (assign API enforces that).
-    const primary = userAssignments[0] ?? null;
-    const columnKey =
-      primary?.projectId && columns[primary.projectId]
-        ? primary.projectId
-        : UNASSIGNED;
-
-    const card = toCard(m, columnKey, primary, userAssignments);
-    columns[columnKey].push(card);
+    const projects = byUserProject.get(m.userId);
+    if (!projects || projects.size === 0) {
+      // No live assignment on any board column → sits in the Unassigned pool.
+      columns[UNASSIGNED].push(toCard(m, UNASSIGNED, []));
+      continue;
+    }
+    // One card per project the member is staffed on.
+    for (const [projectId, rows] of projects) {
+      columns[projectId].push(toCard(m, projectId, rows));
+    }
   }
 
   // Order within each column: cards with a manual sortKey lead (ascending),
@@ -207,11 +225,12 @@ export function buildBoard(args: {
   return columns;
 }
 
+// Build the card for a member in one column. `columnAssignments` are that
+// column's live rows for the member (empty for the Unassigned pool).
 function toCard(
   member: MemberInput,
   columnKey: string,
-  primary: Assignment | null,
-  userAssignments: Assignment[],
+  columnAssignments: Assignment[],
 ): MemberCardModel {
   const prefsByProject = new Map(member.preferences.map((p) => [p.projectId, p]));
   const rank = { P1: 1, P2: 2, P3: 3 } as const;
@@ -219,17 +238,18 @@ function toCard(
   let level: Level | null;
   if (columnKey === UNASSIGNED) {
     level = topPreference(member.preferences)?.level ?? null;
-  } else if (userAssignments.length > 0) {
-    level = userAssignments.reduce<Level>(
+  } else if (columnAssignments.length > 0) {
+    level = columnAssignments.reduce<Level>(
       (best, a) => (rank[a.level] > rank[best] ? a.level : best),
-      userAssignments[0].level,
+      columnAssignments[0].level,
     );
   } else {
-    level = primary?.level ?? prefsByProject.get(columnKey)?.level ?? null;
+    level = prefsByProject.get(columnKey)?.level ?? null;
   }
 
   return {
     userId: member.userId,
+    columnKey,
     firstName: member.firstName,
     lastName: member.lastName,
     email: member.email,
@@ -238,7 +258,7 @@ function toCard(
     coreTitles: member.coreTitles,
     domainLevels: member.domainLevels,
     level,
-    assignmentDomainIds: userAssignments.map((a) => a.domainId),
+    assignmentDomainIds: columnAssignments.map((a) => a.domainId),
     topPreferences: topPreferences(member.preferences),
     unresolvedBid: member.unresolvedBid ?? false,
     manuallyAdded: member.manuallyAdded ?? false,

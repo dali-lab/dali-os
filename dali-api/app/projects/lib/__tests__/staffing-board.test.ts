@@ -120,6 +120,51 @@ describe("buildBoard", () => {
     expect(board.p1[0].topPreferences.map((p) => p.projectId)).toEqual(["p1"]);
   });
 
+  it("places a member staffed on two projects as a card in BOTH columns", () => {
+    const board = buildBoard({
+      projectIds: ["p1", "p2"],
+      members: [member()],
+      assignments: [
+        { userId: "u1", projectId: "p1", domainId: "d1", level: "P2" },
+        { userId: "u1", projectId: "p2", domainId: "d2", level: "P3" },
+      ],
+    });
+    expect(board[UNASSIGNED]).toEqual([]);
+    expect(board.p1).toHaveLength(1);
+    expect(board.p2).toHaveLength(1);
+    // Each card carries its own column and only that project's domains/level.
+    expect(board.p1[0].columnKey).toBe("p1");
+    expect(board.p2[0].columnKey).toBe("p2");
+    expect(board.p1[0].assignmentDomainIds).toEqual(["d1"]);
+    expect(board.p2[0].assignmentDomainIds).toEqual(["d2"]);
+    expect(board.p1[0].level).toBe("P2");
+    expect(board.p2[0].level).toBe("P3");
+  });
+
+  it("scopes a card's domains + level to that project (multi-domain on one project)", () => {
+    const board = buildBoard({
+      projectIds: ["p1"],
+      members: [member()],
+      assignments: [
+        { userId: "u1", projectId: "p1", domainId: "d1", level: "P2" },
+        { userId: "u1", projectId: "p1", domainId: "d2", level: "P3" },
+      ],
+    });
+    expect(board.p1).toHaveLength(1);
+    expect(board.p1[0].assignmentDomainIds.sort()).toEqual(["d1", "d2"]);
+    // Highest level (P3 > P2) among selected domains drives the card badge.
+    expect(board.p1[0].level).toBe("P3");
+  });
+
+  it("tags an Unassigned card with the UNASSIGNED columnKey", () => {
+    const board = buildBoard({
+      projectIds: ["p1"],
+      members: [member()],
+      assignments: [],
+    });
+    expect(board[UNASSIGNED][0].columnKey).toBe(UNASSIGNED);
+  });
+
   it("falls back to Unassigned if the assignment points at a column we're not rendering", () => {
     const board = buildBoard({
       projectIds: ["p1"],
@@ -347,21 +392,34 @@ describe("dedupeLiveAssignments", () => {
     expect(out).toEqual([row("u1", "Confirmed", "p1")]);
   });
 
-  it("prefers Proposed over Confirmed for the same user+domain (in-progress re-edit wins)", () => {
-    // User was confirmed on p1, then dragged to p2 (fresh Proposed row).
+  it("prefers Proposed over Confirmed for the same user+project+domain (re-edit wins)", () => {
+    // User was confirmed on p1, then re-edited on p1 (fresh Proposed row).
     const out = dedupeLiveAssignments([
       row("u1", "Confirmed", "p1"),
-      row("u1", "Proposed", "p2"),
+      row("u1", "Proposed", "p1"),
     ]);
-    expect(out).toEqual([row("u1", "Proposed", "p2")]);
+    expect(out).toEqual([row("u1", "Proposed", "p1")]);
   });
 
   it("prefers Proposed regardless of input order", () => {
     const out = dedupeLiveAssignments([
-      row("u1", "Proposed", "p2"),
+      row("u1", "Proposed", "p1"),
       row("u1", "Confirmed", "p1"),
     ]);
-    expect(out).toEqual([row("u1", "Proposed", "p2")]);
+    expect(out).toEqual([row("u1", "Proposed", "p1")]);
+  });
+
+  it("keeps a Confirmed row on one project when the user has a Proposed row on ANOTHER (multi-project)", () => {
+    // A member staffed on p1 (finalized) and then added to p2: both are live.
+    const out = dedupeLiveAssignments([
+      row("u1", "Confirmed", "p1"),
+      row("u1", "Proposed", "p2"),
+    ]);
+    expect(out).toHaveLength(2);
+    expect(Object.fromEntries(out.map((r) => [r.projectId, r.status]))).toEqual({
+      p1: "Confirmed",
+      p2: "Proposed",
+    });
   });
 
   it("keeps multiple Proposed domains for the same user on one project", () => {
@@ -373,13 +431,13 @@ describe("dedupeLiveAssignments", () => {
     expect(out.map((r) => r.domainId).sort()).toEqual(["d1", "d2"]);
   });
 
-  it("drops Confirmed domains when the user has any Proposed (re-edit wins)", () => {
+  it("drops leftover Confirmed domains on a project once that project has any Proposed row", () => {
     const out = dedupeLiveAssignments([
       row("u1", "Confirmed", "p1", "d1"),
       row("u1", "Confirmed", "p1", "d2"),
-      row("u1", "Proposed", "p2", "d1"),
+      row("u1", "Proposed", "p1", "d1"),
     ]);
-    expect(out).toEqual([row("u1", "Proposed", "p2", "d1")]);
+    expect(out).toEqual([row("u1", "Proposed", "p1", "d1")]);
   });
 
   it("returns live rows across a mixed set (one per user+domain)", () => {
