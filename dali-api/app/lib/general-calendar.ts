@@ -342,3 +342,47 @@ function parseIcsDate(namePart: string, value: string): { date: Date; allDay: bo
     return { date: new Date(Date.UTC(y, mon - 1, day, hour, min, sec)), allDay: false };
   }
 }
+
+// ─── Subscribing a member's own Google account ──────────────────────────────
+//
+// Separate from the ICS reader above: My Availability prompts members who
+// haven't added the shared calendar to one of their linked Google accounts, and
+// that needs the calendar's Google *id*. The public .ics URL already embeds it,
+// so the id is derived from the same env var rather than needing a second
+// secret. Set DALI_GENERAL_CALENDAR_ID when the feed isn't a Google one (or to
+// override).
+
+export function generalCalendarId(): string | null {
+  const explicit = process.env.DALI_GENERAL_CALENDAR_ID?.trim();
+  if (explicit) return explicit;
+  const ics = process.env.DALI_GENERAL_CALENDAR_ICS?.trim();
+  return ics ? calendarIdFromIcsUrl(ics) : null;
+}
+
+// https://calendar.google.com/calendar/ical/<url-encoded id>/public/basic.ics
+export function calendarIdFromIcsUrl(url: string): string | null {
+  const match = url.match(/\/calendar\/ical\/([^/]+)\//);
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1]) || null;
+  } catch {
+    return null;
+  }
+}
+
+// Whether the viewer still needs to add the general calendar to one of their
+// linked Google accounts, derived from the calendar lists the availability
+// loader already fetched. "unknown" when a list read failed — better to stay
+// quiet than to nag someone who is already subscribed.
+export type GeneralCalendarState = "linked" | "missing" | "unknown" | "not-configured";
+
+export function generalCalendarState(
+  links: { provider: string; subCalendars: { id: string }[] | null }[],
+): GeneralCalendarState {
+  const generalId = generalCalendarId();
+  if (!generalId) return "not-configured";
+  const google = links.filter((l) => l.provider === "Google");
+  if (google.some((l) => l.subCalendars?.some((c) => c.id === generalId))) return "linked";
+  if (google.some((l) => l.subCalendars === null)) return "unknown";
+  return "missing";
+}

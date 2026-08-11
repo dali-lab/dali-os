@@ -122,6 +122,13 @@ export const ToggleSubCalendarSchema = z.object({
   enabled: z.boolean(),
 });
 
+// Add the shared DALI General Calendar to one linked Google account. The
+// calendar id comes from env server-side, so the form only names the account.
+export const SubscribeGeneralCalendarSchema = z.object({
+  intent: z.literal("subscribe-general-calendar"),
+  linkId: z.string().min(1),
+});
+
 // Timesheet-tab entries. Meeting / Block rows are also created by attendance
 // and manual-block sync, but the timesheet edit popover can update or delete
 // any owned TimeEntry (Block updates also mirror the linked ManualBlock).
@@ -197,6 +204,7 @@ export const CalendarActionSchema = z.discriminatedUnion("intent", [
   RemoveManualBlockSchema,
   RemoveCalendarLinkSchema,
   ToggleSubCalendarSchema,
+  SubscribeGeneralCalendarSchema,
   AddTimeEntrySchema,
   UpdateTimeEntrySchema,
   DeleteTimeEntrySchema,

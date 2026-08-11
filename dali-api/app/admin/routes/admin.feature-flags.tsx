@@ -70,6 +70,7 @@ function FlagCard({ flag, members }: { flag: AdminFlagView; members: Member[] })
   const [everyone, setEveryone] = useState(flag.everyone);
   const [roles, setRoles] = useState<RoleTarget[]>(flag.roles);
   const [userIds, setUserIds] = useState<string[]>(flag.userIds);
+  const [variant, setVariant] = useState<string | null>(flag.variant);
   const [search, setSearch] = useState("");
 
   const memberById = useMemo(
@@ -92,6 +93,7 @@ function FlagCard({ flag, members }: { flag: AdminFlagView; members: Member[] })
   const dirty =
     enabled !== flag.enabled ||
     everyone !== flag.everyone ||
+    variant !== flag.variant ||
     roles.slice().sort().join() !== flag.roles.slice().sort().join() ||
     userIds.slice().sort().join() !== flag.userIds.slice().sort().join();
 
@@ -103,7 +105,7 @@ function FlagCard({ flag, members }: { flag: AdminFlagView; members: Member[] })
 
   function save() {
     saveFetcher.submit(
-      { enabled, everyone, roles, userIds, note: flag.note },
+      { enabled, everyone, roles, userIds, note: flag.note, variant },
       {
         method: "PATCH",
         action: `/api/feature-flags/${flag.key}`,
@@ -143,6 +145,39 @@ function FlagCard({ flag, members }: { flag: AdminFlagView; members: Member[] })
       </div>
 
       <div className={`mt-4 flex flex-col gap-4 ${enabled ? "" : "opacity-50"}`}>
+        {flag.variants.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              Which one
+            </p>
+            <div className="mt-1.5 flex flex-col gap-1.5">
+              {flag.variants.map((v) => (
+                <label
+                  key={v.value}
+                  className={`flex items-start gap-2 rounded-md border px-2.5 py-2 text-sm ${
+                    variant === v.value
+                      ? "border-accent-coral bg-accent-coral/5"
+                      : "border-zinc-200"
+                  } ${enabled ? "cursor-pointer" : "opacity-50"}`}
+                >
+                  <input
+                    type="radio"
+                    name={`${flag.key}-variant`}
+                    className="mt-1"
+                    checked={variant === v.value}
+                    disabled={!enabled}
+                    onChange={() => setVariant(v.value)}
+                  />
+                  <span>
+                    <span className="font-medium text-zinc-900">{v.label}</span>
+                    <span className="block text-xs text-zinc-500">{v.description}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
+
         <label className="flex items-center gap-2 text-sm text-zinc-700">
           <input
             type="checkbox"
@@ -272,7 +307,9 @@ export default function AdminFeatureFlags() {
         <p className="mt-1 text-sm text-muted-foreground">
           Roll a feature out gradually. A flag is on for a user when it's enabled
           and any target matches — everyone, a listed role, or a named person.
-          Disable the master switch to turn it off for everyone at once.
+          Disable the master switch to turn it off for everyone at once. Some
+          flags offer a choice rather than on/off: pick which one the people
+          they target get.
         </p>
       </header>
       <div className="flex flex-col gap-3">

@@ -4248,6 +4248,10 @@ model FeatureFlag {
   // Explicit User.id allowlist. Not an FK: a deleted user simply stops
   // matching; the flag config should not cascade-delete.
   userIds  String[] @default([])
+  // Multi-value flags only (FeatureFlagDef.variants): which option targeted
+  // users get. Null falls back to the registry's defaultVariant. Ignored by
+  // plain on/off flags.
+  variant  String?
   note     String?
 
   updatedAt DateTime @updatedAt

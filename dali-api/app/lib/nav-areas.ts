@@ -194,12 +194,23 @@ export const NAV_AREAS: NavArea[] = [
   },
 ];
 
+// These matchers are handed a live URL, not a bare pathname: in tab mode the
+// sidebar tracks the focused tab, whose url keeps its query string (layout.tsx
+// cleanUrl), and favorites are stored as `pathname + search`
+// (FavoriteRouteButton). An area and its sub-tab are a function of the path
+// alone, so trim the query/hash before matching — otherwise
+// /projects/staffing?term=25F matches no sub-tab and drops the sidebar back to
+// the bare area.
+function pathnameOf(path: string): string {
+  const cut = path.search(/[?#]/);
+  return cut === -1 ? path : path.slice(0, cut);
+}
+
 // The area that owns a path: its hubPath equals the path or is a path-segment
 // prefix of it. hubPaths never nest, so at most one matches.
 export function areaForPath(path: string): NavArea | undefined {
-  return NAV_AREAS.find(
-    (a) => path === a.hubPath || path.startsWith(a.hubPath + "/"),
-  );
+  const p = pathnameOf(path);
+  return NAV_AREAS.find((a) => p === a.hubPath || p.startsWith(a.hubPath + "/"));
 }
 
 // The sub-tab to highlight for a path within its area. The Hub tab (href ===
@@ -207,10 +218,11 @@ export function areaForPath(path: string): NavArea | undefined {
 // every other tab matches its own subtree. Longest matching href wins so
 // nested surfaces prefer the more specific tab.
 export function activeSubtabHref(area: NavArea, path: string): string | undefined {
+  const p = pathnameOf(path);
   let best: string | undefined;
   for (const t of area.subtabs) {
     const isHub = t.href === area.hubPath;
-    const matches = isHub ? path === t.href : path === t.href || path.startsWith(t.href + "/");
+    const matches = isHub ? p === t.href : p === t.href || p.startsWith(t.href + "/");
     if (matches && (best === undefined || t.href.length > best.length)) best = t.href;
   }
   return best;
@@ -220,8 +232,9 @@ export function activeSubtabHref(area: NavArea, path: string): string | undefine
 // Drives the breadcrumb favorite star: every sub-tab landing page is directly
 // pinnable, using the same affordance as project/person/partner detail pages.
 export function isAreaSubtabPath(path: string): boolean {
+  const p = pathnameOf(path);
   return NAV_AREAS.some((a) =>
-    a.subtabs.some((t) => t.href !== a.hubPath && t.href === path),
+    a.subtabs.some((t) => t.href !== a.hubPath && t.href === p),
   );
 }
 

@@ -115,6 +115,25 @@ export async function listCalendarsForLink(linkId: string): Promise<GoogleCalend
   return data.items ?? [];
 }
 
+// Subscribe a linked account to an existing calendar it doesn't own (adds the
+// calendar to that Google account's calendar list). Google answers 409 when it
+// is already there, which is the same end state the caller wants.
+export async function subscribeCalendarForLink(
+  linkId: string,
+  calendarId: string,
+): Promise<void> {
+  const token = await getValidAccessTokenForLink(linkId);
+  const res = await fetch("https://www.googleapis.com/calendar/v3/users/me/calendarList", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ id: calendarId }),
+  });
+  if (!res.ok && res.status !== 409) {
+    const detail = await extractGoogleErrorDetail(res);
+    throw new Error(`Google calendarList insert failed (${res.status}): ${detail}`);
+  }
+}
+
 async function extractGoogleErrorDetail(res: Response): Promise<string> {
   try {
     const data = (await res.clone().json()) as { error?: { message?: string; errors?: { reason?: string }[] } };
