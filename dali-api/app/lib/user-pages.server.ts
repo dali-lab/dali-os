@@ -10,6 +10,7 @@ import { getPageAccess, type PageShape } from "~/lib/pageAccess.server";
 import { isNavbarRoute } from "~/lib/navbar-routes";
 import { isAreaSubtabPath } from "~/lib/nav-areas";
 import { cachedForRequest } from "~/lib/request-cache";
+import { resolvePhotoUrl } from "~/lib/photo";
 
 /** How a Favorites/Recent row draws its leading icon. */
 export type FavoriteIconKind =
@@ -370,6 +371,17 @@ async function resolveRouteIcons(hrefs: string[]): Promise<Map<string, ResolvedR
       });
     }
   }
+  // Stored photoUrl/logoUrl values are often S3 object keys that need a
+  // short-lived presigned URL before a browser can load them (see photo.ts).
+  // resolveRouteIcons runs in a loader, so resolve here — otherwise the raw
+  // key ships to the client and the avatar <img> 404s (falls back to initials).
+  await Promise.all(
+    [...out.values()]
+      .filter((r) => r.photoUrl)
+      .map(async (r) => {
+        r.photoUrl = await resolvePhotoUrl(r.photoUrl);
+      }),
+  );
   return out;
 }
 
