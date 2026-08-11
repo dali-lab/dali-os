@@ -102,12 +102,18 @@ export function PageDocButton({ suppressWhenPills = false }: { suppressWhenPills
   const hasAreaPills = !redesign && matches.some(
     (m) => (m as { handle?: { areaPills?: boolean } }).handle?.areaPills,
   );
+  // `areaSubnav` routes (e.g. calendar) render their own subnav row that owns
+  // the guide CTA, regardless of the redesign flag — so the layout's copy must
+  // stand down there too, or the page shows two Guide buttons.
+  const hasAreaSubnav = matches.some(
+    (m) => (m as { handle?: { areaSubnav?: boolean } }).handle?.areaSubnav,
+  );
 
   if (!docKey) return null;
   // The open guide renders its own Close (X) in the page header, so this CTA
   // only ever opens.
   if (open) return null;
-  if (suppressWhenPills && hasAreaPills) return null;
+  if (suppressWhenPills && (hasAreaPills || hasAreaSubnav)) return null;
 
   return (
     <button
