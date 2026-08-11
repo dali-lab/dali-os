@@ -18,6 +18,9 @@ const PatchSchema = z.object({
   roles: z.array(z.enum(ROLE_TARGETS)),
   userIds: z.array(z.string().min(1)).max(500),
   note: z.string().max(500).nullable().default(null),
+  // Multi-value flags only; updateFlag rejects options the registry doesn't
+  // declare and ignores it entirely for plain on/off flags.
+  variant: z.string().min(1).max(64).nullable().default(null),
 });
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -36,7 +39,14 @@ export async function action({ request, params }: Route.ActionArgs) {
   const parsed = await parseJson(request, PatchSchema);
   if (parsed instanceof Response) return parsed;
 
-  await updateFlag(key, parsed);
+  try {
+    await updateFlag(key, parsed);
+  } catch (err) {
+    return Response.json(
+      { error: err instanceof Error ? err.message : "Couldn't save the flag" },
+      { status: 400 },
+    );
+  }
   await logAuditEvent({
     action: "feature-flags.update",
     userId: auth.user.sub,
@@ -46,6 +56,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       everyone: parsed.everyone,
       roles: parsed.roles,
       userCount: parsed.userIds.length,
+      variant: parsed.variant,
     },
     request,
   });

@@ -36,7 +36,7 @@ import { listCatalog, registrationOpen } from "~/education/lib/offerings.server"
 import { listUpcomingSessionsForUser } from "~/education/lib/schedule.server";
 import { fetchGeneralCalendarEvents } from "~/lib/general-calendar";
 import { getUserRoles } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { resolveHomeSurface } from "~/lib/feature-flags.server";
 import { TYPE_META } from "~/components/CommandPalette";
 import { MIN_QUERY_LENGTH, type SearchResult } from "~/lib/search";
 import { Avatar } from "~/components/ui/Avatar";
@@ -69,12 +69,14 @@ export async function loader({ request }: Route.LoaderArgs) {
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) return partnerRedirect;
 
-  // The home redesign ships with the new left navigation: same gate, so a
-  // flagged-in member gets both halves of the redesign at once. Off (the
-  // default) leaves today's home — including its general-calendar week —
-  // exactly as it is.
+  // Which home this member gets — see the "home-surface" flag. The calendar
+  // surface is the real /calendar route rather than a copy of it here: it owns
+  // its own loader, action, and sub-tab chrome, so home hands the member over
+  // instead of trying to re-host all three.
   const roles = await getUserRoles(auth.user.sub);
-  const redesign = await isFeatureEnabled("sidebar-redesign", auth.user.sub, roles);
+  const surface = await resolveHomeSurface(auth.user.sub, roles);
+  if (surface === "calendar") return redirect("/calendar");
+  const redesign = surface === "search";
 
   // Which week to show. ?week=<n> is an offset from the current one (0 = this
   // week, -1 = last, 1 = next) so the panel can page without a client-side

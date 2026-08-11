@@ -4,13 +4,24 @@ import {
   FEATURE_FLAGS,
   ROLE_TARGETS,
   evaluateFlag,
+  evaluateVariant,
   isFeatureFlagKey,
+  isHomeSurface,
   type FeatureFlagDef,
   type FeatureFlagKey,
   type FeatureFlagMap,
   type FlagConfig,
+  type FlagVariant,
+  type HomeSurface,
   type RoleTarget,
 } from "~/lib/feature-flags";
+
+// The registry as plain defs: FEATURE_FLAGS is `as const`, so its entries narrow
+// to per-flag literal types and the optional fields (variants, defaultVariant)
+// only exist on the flags that declare them. Lookups that read those go through
+// this widened view; the resolve loop still uses FEATURE_FLAGS so `def.key`
+// keeps its literal type for FeatureFlagMap.
+const DEFS: readonly FeatureFlagDef[] = FEATURE_FLAGS;
 
 function defaultConfig(def: FeatureFlagDef): FlagConfig {
   return {
@@ -18,6 +29,7 @@ function defaultConfig(def: FeatureFlagDef): FlagConfig {
     everyone: def.defaultEveryone ?? false,
     roles: [],
     userIds: [],
+    variant: null,
   };
 }
 
@@ -34,7 +46,13 @@ export async function resolveFeatureFlags(
   for (const def of FEATURE_FLAGS) {
     const row = byKey.get(def.key);
     const config: FlagConfig = row
-      ? { enabled: row.enabled, everyone: row.everyone, roles: row.roles, userIds: row.userIds }
+      ? {
+          enabled: row.enabled,
+          everyone: row.everyone,
+          roles: row.roles,
+          userIds: row.userIds,
+          variant: row.variant,
+        }
       : defaultConfig(def);
     map[def.key] = evaluateFlag(config, userId, roles);
   }
@@ -52,9 +70,49 @@ export async function isFeatureEnabled(
   if (!def) return false;
   const row = await prisma.featureFlag.findUnique({ where: { key } });
   const config: FlagConfig = row
-    ? { enabled: row.enabled, everyone: row.everyone, roles: row.roles, userIds: row.userIds }
+    ? {
+        enabled: row.enabled,
+        everyone: row.everyone,
+        roles: row.roles,
+        userIds: row.userIds,
+        variant: row.variant,
+      }
     : defaultConfig(def);
   return evaluateFlag(config, userId, roles);
+}
+
+// Which of a multi-value flag's options applies to this user, or null when the
+// flag doesn't target them.
+export async function resolveFlagVariant(
+  key: FeatureFlagKey,
+  userId: string,
+  roles: UserRoles,
+): Promise<string | null> {
+  const def = DEFS.find((f) => f.key === key);
+  if (!def?.variants) return null;
+  const row = await prisma.featureFlag.findUnique({ where: { key } });
+  const config: FlagConfig = row
+    ? {
+        enabled: row.enabled,
+        everyone: row.everyone,
+        roles: row.roles,
+        userIds: row.userIds,
+        variant: row.variant,
+      }
+    : defaultConfig(def);
+  return evaluateVariant(def, config, userId, roles);
+}
+
+// Which home page this member lands on. "home-surface" decides when it targets
+// them; otherwise the home redesign travels with the new left navigation, so
+// members on that get the search-first home and everyone else keeps today's.
+export async function resolveHomeSurface(
+  userId: string,
+  roles: UserRoles,
+): Promise<HomeSurface> {
+  const chosen = await resolveFlagVariant("home-surface", userId, roles);
+  if (isHomeSurface(chosen)) return chosen;
+  return (await isFeatureEnabled("sidebar-redesign", userId, roles)) ? "search" : "classic";
 }
 
 export type AdminFlagView = {
@@ -66,6 +124,10 @@ export type AdminFlagView = {
   roles: RoleTarget[];
   userIds: string[];
   note: string | null;
+  /** Empty for plain on/off flags. */
+  variants: readonly FlagVariant[];
+  /** The option targeted users get; null (and unused) for on/off flags. */
+  variant: string | null;
 };
 
 // Registry defs left-joined with their rows (registry defaults fill unseeded
@@ -73,13 +135,20 @@ export type AdminFlagView = {
 export async function listFlagsForAdmin(): Promise<AdminFlagView[]> {
   const rows = await prisma.featureFlag.findMany();
   const byKey = new Map(rows.map((r) => [r.key, r]));
-  return FEATURE_FLAGS.map((def) => {
+  return DEFS.map((def) => {
     const row = byKey.get(def.key);
     const config = row
-      ? { enabled: row.enabled, everyone: row.everyone, roles: row.roles, userIds: row.userIds, note: row.note }
+      ? {
+          enabled: row.enabled,
+          everyone: row.everyone,
+          roles: row.roles,
+          userIds: row.userIds,
+          variant: row.variant,
+          note: row.note,
+        }
       : { ...defaultConfig(def), note: null };
     return {
-      key: def.key,
+      key: def.key as FeatureFlagKey,
       label: def.label,
       description: def.description,
       enabled: config.enabled,
@@ -91,6 +160,10 @@ export async function listFlagsForAdmin(): Promise<AdminFlagView[]> {
       ),
       userIds: config.userIds,
       note: config.note,
+      variants: def.variants ?? [],
+      variant: def.variants
+        ? (config.variant ?? def.defaultVariant ?? null)
+        : null,
     };
   });
 }
@@ -99,16 +172,31 @@ export async function listFlagsForAdmin(): Promise<AdminFlagView[]> {
 // defaults, then applies the change (same create-then-apply shape as jobs).
 export async function updateFlag(
   key: string,
-  patch: { enabled: boolean; everyone: boolean; roles: string[]; userIds: string[]; note: string | null },
+  patch: {
+    enabled: boolean;
+    everyone: boolean;
+    roles: string[];
+    userIds: string[];
+    note: string | null;
+    variant?: string | null;
+  },
 ): Promise<void> {
   if (!isFeatureFlagKey(key)) throw new Error(`Unknown feature flag: ${key}`);
+  const def = DEFS.find((f) => f.key === key)!;
   const roles = patch.roles.filter((r) => (ROLE_TARGETS as readonly string[]).includes(r));
+  // Only multi-value flags carry a variant, and only one the registry declares
+  // — an unknown option would resolve to the default anyway, so reject it at
+  // the write instead of storing a value that silently does nothing.
+  if (patch.variant != null && !def.variants?.some((v) => v.value === patch.variant)) {
+    throw new Error(`Unknown variant for ${key}: ${patch.variant}`);
+  }
   const data = {
     enabled: patch.enabled,
     everyone: patch.everyone,
     roles,
     userIds: patch.userIds,
     note: patch.note,
+    variant: def.variants ? (patch.variant ?? def.defaultVariant ?? null) : null,
   };
   await prisma.featureFlag.upsert({
     where: { key },
