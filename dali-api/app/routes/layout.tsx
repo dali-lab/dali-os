@@ -223,8 +223,14 @@ export default function AppLayoutRoute() {
   const roomyBreadcrumb = matches.some(
     (m) => (m as { handle?: { roomyBreadcrumb?: boolean } }).handle?.roomyBreadcrumb,
   )
+  // A page's Guide CTA lives on this row when its pill row is gone (redesign on).
+  // Keep the row on hub pages that declare a docKey so the button has somewhere
+  // to render — otherwise the redesign hides it entirely.
+  const hasDoc = matches.some(
+    (m) => (m as { handle?: { docKey?: string } }).handle?.docKey,
+  )
   const hideBreadcrumbRow =
-    !hasAreaSubnav && isNavbarHubPage(`${location.pathname}${location.search}`)
+    !hasAreaSubnav && !hasDoc && isNavbarHubPage(`${location.pathname}${location.search}`)
 
   // After a client-side navigation inside the workspace iframe, the loader
   // re-runs via fetch — which carries `Sec-Fetch-Dest: empty`, not `iframe` —
