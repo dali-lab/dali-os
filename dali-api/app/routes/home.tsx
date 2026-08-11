@@ -1,4 +1,4 @@
-import { useEffect, useState, type MouseEvent } from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { Link, redirect, useLoaderData, useRevalidator } from "react-router";
 import {
   AlignLeft,
@@ -37,7 +37,9 @@ import { listUpcomingSessionsForUser } from "~/education/lib/schedule.server";
 import { fetchGeneralCalendarEvents } from "~/lib/general-calendar";
 import { getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
-import { requestOpenPalette } from "~/components/workspace-link";
+import { TYPE_META } from "~/components/CommandPalette";
+import { MIN_QUERY_LENGTH, type SearchResult } from "~/lib/search";
+import { Avatar } from "~/components/ui/Avatar";
 import {
   getZonedHourFraction,
   getZonedYMD,
@@ -355,15 +357,15 @@ function HomeRedesign() {
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-10">
-      <div className="flex flex-col items-center gap-5 pt-4 sm:pt-10">
+      <div className="flex flex-col items-center gap-5 pt-12 sm:pt-20">
         {/* The blue mark disappears against the dark page, so each theme gets
             its own file rather than a filter. */}
-        <img src="/logo-blue.svg" alt="DALI Lab" className="h-14 w-auto sm:h-16 dark:hidden" />
+        <img src="/logo-blue.svg" alt="DALI Lab" className="h-20 w-auto sm:h-24 dark:hidden" />
         <img
           src="/logo-white.svg"
           alt=""
           aria-hidden
-          className="hidden h-14 w-auto sm:h-16 dark:block"
+          className="hidden h-20 w-auto sm:h-24 dark:block"
         />
         <p className="text-sm text-muted-foreground">Welcome back, {firstName}</p>
         <HomeSearch />
@@ -396,26 +398,165 @@ function HomeRedesign() {
 }
 
 /* ------------------------------------------------------------------ */
-/* Search — the front door to the same indexed search the navbar uses.  */
-/* Clicking opens the command palette (⌘K) rather than duplicating its  */
-/* query/permission handling here.                                      */
+/* Search — a real input, answered in place. It queries the same         */
+/* /api/search endpoint the command palette uses (so permissions and     */
+/* ranking stay in one place), but the home page is the search surface:  */
+/* typing here does not open the palette modal.                          */
 /* ------------------------------------------------------------------ */
 
 function HomeSearch() {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<SearchResult[]>([]);
+  const [active, setActive] = useState(0);
+  const [open, setOpen] = useState(false);
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  // Debounced + abortable, mirroring the palette: aborting per keystroke also
+  // drops stale in-flight responses so a slow one can't overwrite a newer query.
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < MIN_QUERY_LENGTH) {
+      setResults([]);
+      return;
+    }
+    const ctrl = new AbortController();
+    const t = setTimeout(() => {
+      fetch(`/api/search?q=${encodeURIComponent(q)}`, {
+        credentials: "include",
+        signal: ctrl.signal,
+      })
+        .then((r) => (r.ok ? r.json() : { results: [] }))
+        .then((d) => {
+          setResults(d.results ?? []);
+          setActive(0);
+        })
+        .catch(() => {
+          /* aborted or network error — leave prior results */
+        });
+    }, 150);
+    return () => {
+      clearTimeout(t);
+      ctrl.abort();
+    };
+  }, [query]);
+
+  // Close the result list on an outside click, leaving the query in the field.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: globalThis.MouseEvent) => {
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  const show = open && query.trim().length >= MIN_QUERY_LENGTH;
+
+  // Home renders inside the workspace iframe, so a result opens as a workspace
+  // tab rather than navigating this view away — same rule as every other link
+  // on this page.
+  const openResult = (r: SearchResult) => {
+    if (window.self !== window.top) {
+      window.parent.postMessage(
+        { type: "dali:openTab", url: r.url, label: r.title },
+        window.location.origin,
+      );
+    } else {
+      window.location.assign(r.url);
+    }
+    setOpen(false);
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Escape") {
+      setOpen(false);
+      return;
+    }
+    if (!show || results.length === 0) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActive((i) => (i + 1) % results.length);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActive((i) => (i - 1 + results.length) % results.length);
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const hit = results[active];
+      if (hit) openResult(hit);
+    }
+  };
+
   return (
-    <button
-      type="button"
-      onClick={requestOpenPalette}
-      className="flex w-full max-w-xl items-center gap-3 rounded-full border border-border bg-card px-5 py-3 text-left shadow-brand-1 transition-colors hover:bg-muted/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-teal"
-    >
-      <Search className="h-4 w-4 flex-shrink-0 text-muted-foreground" aria-hidden />
-      <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
-        Search people, projects, documents…
-      </span>
-      <kbd className="hidden flex-shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground sm:inline">
-        ⌘K
-      </kbd>
-    </button>
+    <div ref={boxRef} className="relative w-full max-w-2xl">
+      <div className="flex items-center gap-3 rounded-full border border-border bg-card px-6 py-4 shadow-brand-1 focus-within:ring-2 focus-within:ring-accent-teal">
+        <Search className="h-5 w-5 flex-shrink-0 text-muted-foreground" aria-hidden />
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          onKeyDown={onKeyDown}
+          placeholder="Search people, projects, documents…"
+          aria-label="Search"
+          role="combobox"
+          aria-expanded={show}
+          aria-controls="home-search-results"
+          autoComplete="off"
+          className="min-w-0 flex-1 bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground"
+        />
+      </div>
+
+      {show && (
+        // Absolute so a long result list never pushes the shortcut tiles down.
+        <div
+          id="home-search-results"
+          role="listbox"
+          className="absolute inset-x-0 top-full z-20 mt-2 max-h-96 overflow-y-auto rounded-2xl border border-border bg-card py-2 text-left shadow-brand-2"
+        >
+          {results.length === 0 ? (
+            <p className="px-5 py-3 text-sm text-muted-foreground">
+              No matches for “{query.trim()}”
+            </p>
+          ) : (
+            results.map((r, i) => {
+              const Icon = TYPE_META[r.type].icon;
+              return (
+                <button
+                  key={`${r.type}-${r.id}`}
+                  type="button"
+                  role="option"
+                  aria-selected={i === active}
+                  onMouseEnter={() => setActive(i)}
+                  onClick={() => openResult(r)}
+                  className={`flex w-full items-center gap-3 px-5 py-2.5 text-left transition-colors ${
+                    i === active ? "bg-muted/60" : "hover:bg-muted/40"
+                  }`}
+                >
+                  {r.type === "person" ? (
+                    <Avatar photoUrl={r.photoUrl} name={r.title} size="xs" />
+                  ) : r.iconEmoji ? (
+                    <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center leading-none">
+                      {r.iconEmoji}
+                    </span>
+                  ) : (
+                    <Icon className="h-4 w-4 flex-shrink-0 text-muted-foreground" aria-hidden />
+                  )}
+                  <span className="min-w-0 flex-1 truncate text-sm text-foreground">{r.title}</span>
+                  {r.subtitle && (
+                    <span className="max-w-[40%] flex-shrink-0 truncate text-xs text-muted-foreground">
+                      {r.subtitle}
+                    </span>
+                  )}
+                </button>
+              );
+            })
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -439,15 +580,10 @@ function ShortcutTiles({
   const onChanged = () => revalidator.revalidate();
   const shortcuts = [...pages.favorites, ...pages.recents].slice(0, SHORTCUT_LIMIT);
 
-  // Nothing starred and nothing opened yet — a brand-new account. Say what the
-  // row is for rather than showing an empty gap.
-  if (shortcuts.length === 0) {
-    return (
-      <p className="max-w-xl text-center text-sm italic text-muted-foreground">
-        Star a document to keep it here — recently opened pages show up too.
-      </p>
-    );
-  }
+  // Nothing starred and nothing opened yet — a brand-new account. Render
+  // nothing: the search box above is the only thing to do here, and a line of
+  // instructions under it just crowds that.
+  if (shortcuts.length === 0) return null;
 
   return (
     // Wrapping row rather than a grid so a partial last row stays centered

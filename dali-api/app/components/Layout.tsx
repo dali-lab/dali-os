@@ -22,7 +22,6 @@ import { TabWorkspace, type TabWorkspaceHandle, type OpenTabRequest } from '~/co
 import { useOpenTasks, TASKS_CHANGED_EVENT } from '~/components/NotificationBell'
 import { DesktopBanner } from '~/components/DesktopBanner'
 import { CommandPalette } from '~/components/CommandPalette'
-import { OPEN_PALETTE_MESSAGE } from '~/components/workspace-link'
 import { TablessHistoryNav, useRecordTablessHistory } from '~/components/TablessHistoryNav'
 import { setFocusPreference } from '~/lib/focus-mode'
 import { cn } from '~/lib/cn'
@@ -186,23 +185,6 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [tabless, togglePalette])
-
-  // Pages ask for the palette rather than owning one: the redesigned home's
-  // search box calls requestOpenPalette(), which posts from inside a workspace
-  // iframe and fires a plain event at top level (tabless mode). Both land here.
-  useEffect(() => {
-    const open = () => setPaletteOpen(true)
-    const onMessage = (e: MessageEvent) => {
-      if (e.origin !== window.location.origin) return
-      if (e.data?.type === OPEN_PALETTE_MESSAGE) open()
-    }
-    window.addEventListener('message', onMessage)
-    window.addEventListener(OPEN_PALETTE_MESSAGE, open)
-    return () => {
-      window.removeEventListener('message', onMessage)
-      window.removeEventListener(OPEN_PALETTE_MESSAGE, open)
-    }
-  }, [])
 
   const openInWorkspace = (req: OpenTabRequest) => {
     if (tabless) {
