@@ -12,7 +12,7 @@ import { prisma } from "~/lib/db";
 import { listVisibleGroupsForUser } from "~/lib/groups";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { isCore, isAdmin, currentTermMemberWhere } from "~/lib/roles";
+import { isCore, isAdmin } from "~/lib/roles";
 import { MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { fullName } from "~/lib/display";
 import {
@@ -44,13 +44,14 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!auth.ok) return redirectToLogin(request);
   if (!(await isCore(auth.user.sub))) return redirect("/");
 
-  // Recipient picker is for sending to current lab members — alumni and
-  // applicants are excluded so a stale autocomplete suggestion can't
-  // accidentally notify someone who's no longer on the lab roster.
-  const memberWhere = await currentTermMemberWhere();
+  // Recipient picker + the "Whole lab" count are the current-members audience:
+  // a DALIMember who is Active (not an alumnus). Term-independent so it matches
+  // resolveAllLabMembers on the send side and reaches members with no
+  // assignments this term yet (e.g. next-term hires). Alumni are excluded here —
+  // reach them via the "Alumni" group instead.
   const [users, visibleGroups, forms, scheduledRows] = await Promise.all([
     prisma.user.findMany({
-      where: memberWhere,
+      where: { daliMember: { isNot: null }, membershipStatus: "Active" },
       orderBy: MEMBER_LIST_ORDER_BY,
       select: { id: true, firstName: true, lastName: true, daliEmail: true },
     }),
