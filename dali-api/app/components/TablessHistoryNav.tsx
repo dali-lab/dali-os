@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useLocation, useNavigate, useNavigationType } from "react-router";
 import {
-  navigateHistoryStacks,
-  recordNavigation,
-  type NavigationHistoryStacks,
-} from "~/lib/navigation-history";
+  getSnapshot,
+  observeNavigation,
+  stepHistory,
+  subscribe,
+} from "~/lib/navigation-history-store";
 import { readTablessPreference } from "~/lib/tabless";
 import { desktopVersion } from "~/lib/desktop";
 
@@ -25,52 +26,31 @@ function currentUrlFromLocation(pathname: string, search: string): string {
   return pathname + search;
 }
 
+// Feed every location change into the shared history store. Lives on the
+// always-mounted shell (Layout) rather than the arrow component, so a
+// navigation is recorded exactly once even when the arrow host is remounting
+// across the transition — and still recorded when no arrow host is rendered.
+export function useRecordTablessHistory() {
+  const location = useLocation();
+  const navigationType = useNavigationType();
+  const currentUrl = currentUrlFromLocation(location.pathname, location.search);
+  useEffect(() => {
+    observeNavigation(currentUrl, navigationType);
+  }, [currentUrl, navigationType]);
+}
+
 function useTablessHistory() {
   const location = useLocation();
   const navigate = useNavigate();
-  const navigationType = useNavigationType();
   const currentUrl = currentUrlFromLocation(location.pathname, location.search);
 
-  const [stacks, setStacks] = useState<NavigationHistoryStacks>({
-    backStack: [],
-    forwardStack: [],
-  });
-  const stacksRef = useRef(stacks);
-  stacksRef.current = stacks;
-  const pendingTargetRef = useRef<string | null>(null);
-  const prevUrlRef = useRef(currentUrl);
-
-  useEffect(() => {
-    const prev = prevUrlRef.current;
-    if (prev === currentUrl) return;
-
-    if (pendingTargetRef.current === currentUrl) {
-      pendingTargetRef.current = null;
-      prevUrlRef.current = currentUrl;
-      return;
-    }
-
-    if (navigationType === "REPLACE" || navigationType === "POP") {
-      prevUrlRef.current = currentUrl;
-      return;
-    }
-
-    setStacks((s) => recordNavigation(s, prev, currentUrl));
-    prevUrlRef.current = currentUrl;
-  }, [currentUrl, navigationType]);
+  const stacks = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
   const go = useCallback(
     (direction: "back" | "forward", steps = 1) => {
-      const result = navigateHistoryStacks(
-        stacksRef.current,
-        currentUrl,
-        direction,
-        steps,
-      );
-      if (!result) return;
-      pendingTargetRef.current = result.target;
-      setStacks(result.stacks);
-      navigate(result.target);
+      const target = stepHistory(currentUrl, direction, steps);
+      if (target === null) return;
+      navigate(target);
     },
     [currentUrl, navigate],
   );

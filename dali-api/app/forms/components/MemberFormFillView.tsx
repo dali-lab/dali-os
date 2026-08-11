@@ -1,4 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { ChevronLeft } from "lucide-react";
+import { useNavigate } from "react-router";
+import { desktopVersion } from "~/lib/desktop";
 import { FormQuestionField } from "~/components/form-builder/QuestionField";
 import { FormFieldList } from "~/forms/components/FormField";
 import {
@@ -163,12 +166,46 @@ export function MemberFormFillView({
   );
 }
 
-// The branded card chrome both routes wrap the form in.
-export function MemberFormShell({ children }: { children: React.ReactNode }) {
+// The branded card chrome both routes wrap the form in. This route renders
+// outside the app layout, so on the desktop shell (a bare WKWebView with no
+// browser back button) `allowExit` adds a Back control — otherwise the form is
+// a dead end with no way out. Web keeps its own browser chrome; onboarding
+// opts out entirely.
+export function MemberFormShell({
+  children,
+  allowExit = false,
+}: {
+  children: React.ReactNode;
+  allowExit?: boolean;
+}) {
+  const navigate = useNavigate();
+  const [isDesktop, setIsDesktop] = useState(false);
+  useEffect(() => {
+    setIsDesktop(desktopVersion() !== null);
+  }, []);
+
+  const exit = () => {
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      navigate(-1);
+    } else {
+      navigate("/");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-section-bg p-4 sm:p-8 pt-10 sm:pt-16">
       <div className="mx-auto max-w-2xl bg-card border border-border shadow-brand-1 rounded-xl p-6 sm:p-8">
         <div className="flex items-center gap-2 mb-6">
+          {allowExit && isDesktop && (
+            <button
+              type="button"
+              onClick={exit}
+              aria-label="Back"
+              className="-ml-1 mr-1 flex items-center justify-center rounded-md p-1 text-muted-foreground hover:text-foreground hover:bg-muted"
+            >
+              <ChevronLeft className="w-[18px] h-[18px]" />
+            </button>
+          )}
           <div className="w-7 h-7 bg-accent-coral rounded-md flex items-center justify-center">
             <span className="text-white font-bold text-base leading-none font-heading">
               D
