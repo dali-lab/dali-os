@@ -5,6 +5,7 @@ import type { Route } from "./+types/mentorship.notes.$id";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
+import { recordRouteVisit } from "~/lib/user-pages.server";
 import { isCore } from "~/lib/roles";
 import { parseSessionCookie } from "~/lib/cookies";
 import { DocEditor } from "~/components/doc";
@@ -74,6 +75,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!(await canViewMentorNote(auth.user.sub, note))) {
     throw new Response("Forbidden", { status: 403 });
   }
+
+  // After the visibility gate — the note the viewer can open lands in recents.
+  recordRouteVisit(
+    auth.user.sub,
+    `/mentorship/notes/${note.id}`,
+    `${fullName(note.mentee)} — mentor note`,
+  );
 
   const [project, term, domain, core, me] = await Promise.all([
     prisma.project.findUnique({

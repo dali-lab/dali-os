@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { redirect, useLoaderData, useSubmit } from 'react-router'
 import { HelpCircle, X, Check } from 'lucide-react'
 import { prisma } from '~/lib/db'
+import { recordRouteVisit } from '~/lib/user-pages.server'
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from '~/lib/login-next'
 import { hasCycleAccess } from '~/lib/roles'
@@ -72,6 +73,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     request,
   )
   if (confRedirect) return confRedirect
+
+  // After the cycle-access + confidentiality gates — the application the
+  // reviewer can open lands in their recents, keyed to the applicant's name.
+  recordRouteVisit(
+    auth.user.sub,
+    `/hiring/reviewer/application/${params.id}`,
+    `${applicationBase.user.firstName} ${applicationBase.user.lastName}`.trim(),
+  )
 
   // Scope domainApplications to only the domains this reviewer is assigned to
   // for this cycle. Reviewers assigned to one domain should not see that the

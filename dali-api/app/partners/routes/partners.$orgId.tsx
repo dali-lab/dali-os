@@ -16,6 +16,7 @@ import { ProjectIcon } from "~/components/ProjectIcon";
 import type { Route } from "./+types/partners.$orgId";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
+import { recordRouteVisit } from "~/lib/user-pages.server";
 import { prisma } from "~/lib/db";
 import { canViewStaffing, isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
@@ -101,6 +102,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
   });
   if (!org) throw new Response("Not found", { status: 404 });
+
+  // After the gate, so a 404 never lands in someone's recents. Detached — a
+  // failed bookkeeping write must not cost the reader their org page.
+  recordRouteVisit(auth.user.sub, `/partners/${org.id}`, org.name);
 
   const [pendingInvites, linkableProjects, otherOrgs] = await Promise.all([
     canEdit ? listPendingInvites(org.id) : Promise.resolve([]),

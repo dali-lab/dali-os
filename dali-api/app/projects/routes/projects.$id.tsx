@@ -22,7 +22,7 @@ import { Checkbox } from "~/components/ui/Checkbox";
 import { EditableSection } from "~/components/EditableSection";
 import { PageIcon } from "~/components/PageIcon";
 import { FavoriteStar } from "~/components/FavoriteStar";
-import { favoritePageIds } from "~/lib/user-pages.server";
+import { favoritePageIds, recordRouteVisit } from "~/lib/user-pages.server";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { PresenceBar } from "~/components/collab/PresenceBar";
 import { uploadFileToS3, formatBytes } from "~/lib/upload-client";
@@ -360,6 +360,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
   });
   if (!project) throw new Response("Not found", { status: 404 });
+
+  // After the gate, so a 404 never lands in someone's recents. Detached —
+  // a failed bookkeeping write must not cost the reader their project.
+  recordRouteVisit(auth.user.sub, `/projects/${project.id}`, project.name);
 
   // Backfill the two default, undeletable meeting-note folders (idempotent —
   // no-ops once they exist) so every project's Documents block always shows
