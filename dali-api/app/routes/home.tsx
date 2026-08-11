@@ -10,6 +10,7 @@ import {
   ChevronRight,
   ExternalLink,
   FileText,
+  Search,
   CalendarClock,
   GraduationCap,
   MapPin,
@@ -34,6 +35,9 @@ import { listedFormsFor, type ListedForm } from "~/forms/lib/public-form";
 import { listCatalog, registrationOpen } from "~/education/lib/offerings.server";
 import { listUpcomingSessionsForUser } from "~/education/lib/schedule.server";
 import { fetchGeneralCalendarEvents } from "~/lib/general-calendar";
+import { getUserRoles } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { requestOpenPalette } from "~/components/workspace-link";
 import {
   getZonedHourFraction,
   getZonedYMD,
@@ -62,6 +66,13 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (auth.user.type === "applicant") return redirect("/portal");
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) return partnerRedirect;
+
+  // The home redesign ships with the new left navigation: same gate, so a
+  // flagged-in member gets both halves of the redesign at once. Off (the
+  // default) leaves today's home — including its general-calendar week —
+  // exactly as it is.
+  const roles = await getUserRoles(auth.user.sub);
+  const redesign = await isFeatureEnabled("sidebar-redesign", auth.user.sub, roles);
 
   // Which week to show. ?week=<n> is an offset from the current one (0 = this
   // week, -1 = last, 1 = next) so the panel can page without a client-side
@@ -138,8 +149,11 @@ export async function loader({ request }: Route.LoaderArgs) {
     })),
     timed(request, 'home.openTasks', () => listOpenTasks(auth.user.sub)),
     // Real events from the public DALI General Calendar (empty when unconfigured
-    // or on fetch failure — the panel then shows an empty grid + hint).
-    timed(request, 'home.ics', () => fetchGeneralCalendarEvents(weekStart, weekEnd)),
+    // or on fetch failure — the panel then shows an empty grid + hint). The
+    // redesigned home drops the week panel, so its external fetch goes too.
+    redesign
+      ? []
+      : timed(request, 'home.ics', () => fetchGeneralCalendarEvents(weekStart, weekEnd)),
     timed(request, 'home.forms', () => listedFormsFor(auth.user.sub)),
     // Open board tasks assigned to the viewer, across all their projects
     // (Archived projects are retired — their tasks are noise here). One
@@ -262,6 +276,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (__loaderTotal >= 400) console.log(`[perf-total] home loader ${__loaderTotal.toFixed(0)}ms`);
 
   return {
+    redesign,
     user: auth.user,
     notifications,
     tasks,
@@ -316,6 +331,180 @@ type HomeWeekEvent = {
 };
 
 export default function Home() {
+  const data = useLoaderData<typeof loader>();
+  return data.redesign ? <HomeRedesign /> : <HomeClassic />;
+}
+
+/* ------------------------------------------------------------------ */
+/* Redesigned home (behind `sidebar-redesign`, alongside the new left   */
+/* navigation): a search-first landing page — logo, the same indexed    */
+/* search the navbar runs, shortcuts to starred/recent pages, and the   */
+/* attention surfaces below. No general-calendar week panel.            */
+/* ------------------------------------------------------------------ */
+
+function HomeRedesign() {
+  const { user, notifications, tasks, myProjectTasks, formsForYou, education, pages } =
+    useLoaderData<typeof loader>();
+  const firstName = user.firstName || user.email.split("@")[0];
+
+  const compactBlocks = [
+    myProjectTasks.length > 0 && <MyTasksPanel tasks={myProjectTasks} />,
+    formsForYou.length > 0 && <FormsForYouPanel forms={formsForYou} />,
+    hasEducationContent(education) && <EducationPanel education={education} />,
+  ].filter(Boolean);
+
+  return (
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-10">
+      <div className="flex flex-col items-center gap-5 pt-4 sm:pt-10">
+        {/* The blue mark disappears against the dark page, so each theme gets
+            its own file rather than a filter. */}
+        <img src="/logo-blue.svg" alt="DALI Lab" className="h-14 w-auto sm:h-16 dark:hidden" />
+        <img
+          src="/logo-white.svg"
+          alt=""
+          aria-hidden
+          className="hidden h-14 w-auto sm:h-16 dark:block"
+        />
+        <p className="text-sm text-muted-foreground">Welcome back, {firstName}</p>
+        <HomeSearch />
+        <ShortcutTiles pages={pages} />
+      </div>
+
+      <div className="flex flex-col gap-6">
+        <AttentionBanner tasks={tasks} notifications={notifications} />
+
+        {compactBlocks.length > 1 ? (
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+            {[0, 1].map((col) => (
+              <div key={col} className="flex min-w-0 flex-1 flex-col gap-6">
+                {compactBlocks
+                  .filter((_, i) => i % 2 === col)
+                  .map((block, i) => (
+                    <div key={i} className="min-w-0">
+                      {block}
+                    </div>
+                  ))}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="min-w-0">{compactBlocks[0]}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Search — the front door to the same indexed search the navbar uses.  */
+/* Clicking opens the command palette (⌘K) rather than duplicating its  */
+/* query/permission handling here.                                      */
+/* ------------------------------------------------------------------ */
+
+function HomeSearch() {
+  return (
+    <button
+      type="button"
+      onClick={requestOpenPalette}
+      className="flex w-full max-w-xl items-center gap-3 rounded-full border border-border bg-card px-5 py-3 text-left shadow-brand-1 transition-colors hover:bg-muted/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-teal"
+    >
+      <Search className="h-4 w-4 flex-shrink-0 text-muted-foreground" aria-hidden />
+      <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
+        Search people, projects, documents…
+      </span>
+      <kbd className="hidden flex-shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground sm:inline">
+        ⌘K
+      </kbd>
+    </button>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Shortcuts — starred pages first, then the ones you opened recently,  */
+/* as a tile row under the search box. Replaces the Favorites list      */
+/* panel on the redesigned home.                                        */
+/* ------------------------------------------------------------------ */
+
+/** Tiles fill at most two rows on a wide screen. */
+const SHORTCUT_LIMIT = 10;
+
+function ShortcutTiles({
+  pages,
+}: {
+  pages: { favorites: FavoritePage[]; recents: FavoritePage[] };
+}) {
+  const revalidator = useRevalidator();
+  // Starring here re-sorts the row: an un-starred page drops back among the
+  // recents, and a starred one rises out of them.
+  const onChanged = () => revalidator.revalidate();
+  const shortcuts = [...pages.favorites, ...pages.recents].slice(0, SHORTCUT_LIMIT);
+
+  // Nothing starred and nothing opened yet — a brand-new account. Say what the
+  // row is for rather than showing an empty gap.
+  if (shortcuts.length === 0) {
+    return (
+      <p className="max-w-xl text-center text-sm italic text-muted-foreground">
+        Star a document to keep it here — recently opened pages show up too.
+      </p>
+    );
+  }
+
+  return (
+    // Wrapping row rather than a grid so a partial last row stays centered
+    // under the search box.
+    <div className="flex w-full max-w-xl flex-wrap justify-center gap-1">
+      {shortcuts.map((p) => (
+        <ShortcutTile key={p.id} page={p} onChanged={onChanged} />
+      ))}
+    </div>
+  );
+}
+
+function ShortcutTile({ page, onChanged }: { page: FavoritePage; onChanged: () => void }) {
+  return (
+    // Link + star are siblings: the star must not navigate.
+    <div className="group relative w-20">
+      <a
+        href={page.href}
+        className="flex flex-col items-center gap-1.5 rounded-lg px-1 py-3 transition-colors hover:bg-muted/50"
+      >
+        <span className="flex h-11 w-11 items-center justify-center rounded-full border border-border bg-card shadow-brand-1">
+          <FavoriteIcon page={page} />
+        </span>
+        <span className="w-full truncate text-center text-[11px] text-foreground">
+          {page.title || "Untitled"}
+        </span>
+      </a>
+      {/* Recents show a hollow star on hover — a way to keep the page without
+          hunting for it — while a favorite always shows its filled one. */}
+      {(page.favorited || !page.isRoute || !isNavbarRoute(page.href)) && (
+        <span
+          className={`absolute right-0 top-1 ${
+            page.favorited ? "" : "opacity-0 focus-within:opacity-100 group-hover:opacity-100"
+          }`}
+        >
+          {page.isRoute ? (
+            <FavoriteRouteButton
+              href={page.href}
+              label={page.title}
+              favorited={page.favorited}
+              onToggled={onChanged}
+              compact
+            />
+          ) : (
+            <FavoriteStar pageId={page.id} favorited={page.favorited} onToggled={onChanged} />
+          )}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Today's home, unchanged — what everyone sees with the flag off.      */
+/* ------------------------------------------------------------------ */
+
+function HomeClassic() {
   const {
     user,
     notifications,

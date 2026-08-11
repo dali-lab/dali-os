@@ -35,7 +35,16 @@ import {
 } from "~/lib/roles";
 import { CalendarActionSchema, validateTimeEntryRange } from "~/lib/calendar-schemas";
 import { syncManualBlockTimeEntry } from "~/lib/time-entry-sync";
-import { fetchBusyEvents, listCalendarsForLink } from "~/lib/google-calendar";
+import {
+  fetchBusyEvents,
+  listCalendarsForLink,
+  subscribeCalendarForLink,
+} from "~/lib/google-calendar";
+import {
+  generalCalendarId,
+  generalCalendarState,
+  type GeneralCalendarState,
+} from "~/lib/general-calendar";
 import { getZonedHourFraction, getZonedYMD, resolveUserTimeZone, zonedDayStartUtc } from "~/lib/timezone";
 import { formatPayPeriod, isPayPeriodEnd, payPeriodFor } from "~/lib/pay-period";
 import { timeEntryDayUtc } from "~/calendar/lib/timesheet-day";
@@ -158,6 +167,7 @@ type LoaderData = {
   hasPersistedWorkingHours: boolean;
   manualBlocks: ManualBlockDTO[];
   calendarLinks: CalendarLinkDTO[];
+  generalCalendar: GeneralCalendarState;
   weekStartIso: string;
   weekEndIso: string;
   // External (Google) events for display: real titles + per-calendar colour,
@@ -470,6 +480,10 @@ export async function loader({ request }: Route.LoaderArgs) {
     ];
   });
 
+  // Derived from the calendar lists already fetched above — no extra Google
+  // round-trip.
+  const generalCalendar = generalCalendarState(calendarLinks);
+
   const data: LoaderData = {
     timezone,
     defaultEventBufferMin: bufferMin,
@@ -486,6 +500,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       roleRefId: b.roleRefId,
     })),
     calendarLinks,
+    generalCalendar,
     weekStartIso: weekStart.toISOString(),
     weekEndIso: weekEnd.toISOString(),
     externalEvents: externalBusyRaw.map((e) => ({
@@ -794,6 +809,26 @@ export async function action({ request }: Route.ActionArgs) {
       return null;
     }
 
+    case "subscribe-general-calendar": {
+      const generalId = generalCalendarId();
+      if (!generalId) {
+        return Response.json({ error: "No DALI calendar is configured" }, { status: 400 });
+      }
+      const link = await prisma.userCalendarLink.findUnique({ where: { id: input.linkId } });
+      if (!link || link.userId !== userId || link.provider !== "Google") {
+        return Response.json({ error: "Not found" }, { status: 404 });
+      }
+      try {
+        await subscribeCalendarForLink(link.id, generalId);
+      } catch (err) {
+        return Response.json(
+          { error: err instanceof Error ? err.message : "Couldn't add the DALI calendar" },
+          { status: 502 },
+        );
+      }
+      return null;
+    }
+
     case "add-time-entry": {
       const rangeError = validateTimeEntryRange(input);
       if (rangeError) return Response.json({ error: rangeError }, { status: 400 });
@@ -1004,6 +1039,8 @@ function coerceFormToAction(raw: Record<string, FormDataEntryValue>): unknown {
         calendarId: get("calendarId"),
         enabled: asBool(get("enabled")),
       };
+    case "subscribe-general-calendar":
+      return { intent, linkId: get("linkId") };
     case "add-time-entry":
       return {
         intent,
@@ -1158,7 +1195,11 @@ function AvailabilityView({ data }: { data: LoaderData }) {
               <PanelLeftClose className="h-4 w-4" />
             </button>
           </header>
-          <CalendarIntegrationsCard links={data.calendarLinks} ingestionError={data.ingestionError} />
+          <CalendarIntegrationsCard
+            links={data.calendarLinks}
+            ingestionError={data.ingestionError}
+            generalCalendar={data.generalCalendar}
+          />
           <WorkingHoursCard
             workingHours={data.workingHours}
             hasPersisted={data.hasPersistedWorkingHours}
@@ -1177,9 +1218,11 @@ function AvailabilityView({ data }: { data: LoaderData }) {
 function CalendarIntegrationsCard({
   links,
   ingestionError,
+  generalCalendar,
 }: {
   links: CalendarLinkDTO[];
   ingestionError: string | null;
+  generalCalendar: GeneralCalendarState;
 }) {
   return (
     <section>
@@ -1205,6 +1248,7 @@ function CalendarIntegrationsCard({
           Couldn't refresh external events: {ingestionError}
         </div>
       )}
+      {generalCalendar === "missing" && <GeneralCalendarPrompt links={links} />}
       <div className="flex flex-col gap-3">
         {links.length === 0 && (
           <div className="bg-card border border-border shadow-brand-1 rounded-md p-3 text-xs text-muted-foreground">
@@ -1216,6 +1260,61 @@ function CalendarIntegrationsCard({
         ))}
       </div>
     </section>
+  );
+}
+
+// Shown while the shared DALI General Calendar isn't on any linked Google
+// account. One account → subscribe straight away; several → let the member pick
+// which one it lands on.
+function GeneralCalendarPrompt({ links }: { links: CalendarLinkDTO[] }) {
+  const fetcher = useFetcher<{ error?: string }>();
+  const [picking, setPicking] = useState(false);
+  const accounts = links.filter((l) => l.provider === "Google");
+  if (accounts.length === 0) return null;
+
+  const subscribe = (linkId: string) =>
+    fetcher.submit({ intent: "subscribe-general-calendar", linkId }, { method: "post" });
+  const busy = fetcher.state !== "idle";
+  const error = fetcher.data?.error;
+
+  return (
+    <div className="bg-accent-coral/10 border border-accent-coral/30 rounded-md px-3 py-2.5 mb-2 flex flex-col gap-2">
+      <p className="text-xs text-foreground">
+        The DALI General Calendar isn&apos;t on any of your linked accounts — add it to see
+        lab-wide events in your own Google Calendar.
+      </p>
+      {picking && accounts.length > 1 ? (
+        <div className="flex flex-col gap-1">
+          {accounts.map((a) => (
+            <button
+              key={a.id}
+              type="button"
+              disabled={busy}
+              onClick={() => subscribe(a.id)}
+              className="flex items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5 text-left text-xs text-foreground hover:bg-muted transition-colors disabled:opacity-60"
+            >
+              <GoogleIcon />
+              <span className="truncate">{a.externalEmail}</span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => (accounts.length === 1 ? subscribe(accounts[0].id) : setPicking(true))}
+          className="self-start inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-md bg-accent-coral text-white hover:bg-accent-coral-light transition-colors disabled:opacity-60"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          {busy
+            ? "Adding…"
+            : accounts.length === 1
+              ? `Add to ${accounts[0].externalEmail}`
+              : "Add DALI calendar"}
+        </button>
+      )}
+      {error && <div className="text-[11px] text-destructive">{error}</div>}
+    </div>
   );
 }
 
