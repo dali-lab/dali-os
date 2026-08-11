@@ -50,11 +50,11 @@ const underlineTabListClass =
 // Actions never scroll with the tabs and keep the row's right edge.
 const tabBarActionsClass = "flex shrink-0 items-center gap-2 self-center pl-2 pr-2";
 
-// Leading slot for the desktop tabless history arrows — bleeds to the same
-// edge as the tab list (-mx-3 sm:-mx-6 lg:-mx-10 on the bar) so it lines up
-// with page content above it instead of floating mid-row.
-const tabBarLeadingClass =
-  "flex shrink-0 items-center self-stretch pl-3 sm:pl-6 lg:pl-10";
+// Leading slot for the desktop tabless history arrows. It sits at the bar's
+// bled edge, level with the first tab's own px-3 — indenting it to the page
+// content edge pushed the whole tab set ~90px right of where it sits on
+// every other page.
+const tabBarLeadingClass = "flex shrink-0 items-center self-stretch pl-0.5";
 
 // A 2px coral rule on a white page was doing all the work of saying "this tab
 // is selected", and losing — at that weight the tint reads as a hairline rather
@@ -110,11 +110,10 @@ export function AreaPillNav({
   const redesign = useFeatureFlag("sidebar-redesign");
   if (redesign) return null;
 
-  // A lone tab is pure noise — the page is already the only destination.
-  // Still render the row if the history arrows need somewhere to live,
-  // otherwise the desktop tabless nav has no row on pages whose pills
-  // collapse to one (see educationPills etc.).
-  if (items.length <= 1 && !showHistoryNav) return null;
+  // A lone tab is pure noise — the page is already the only destination. The
+  // history arrows don't change that: with no row to sit in they fall back to
+  // the standalone bar (see TablessHistoryNav).
+  if (items.length <= 1) return null;
 
   return (
     <nav className={cn(underlineTabBarClass, className)} aria-label="Section">
@@ -124,17 +123,16 @@ export function AreaPillNav({
         </span>
       )}
       <span className={underlineTabListClass}>
-        {items.length > 1 &&
-          items.map((item) => (
-            <Link
-              key={item.to}
-              to={item.to}
-              aria-current={item.active ? "page" : undefined}
-              className={underlineTabItemClass(!!item.active)}
-            >
-              <SubtabLabel label={item.label} icon={item.icon} />
-            </Link>
-          ))}
+        {items.map((item) => (
+          <Link
+            key={item.to}
+            to={item.to}
+            aria-current={item.active ? "page" : undefined}
+            className={underlineTabItemClass(!!item.active)}
+          >
+            <SubtabLabel label={item.label} icon={item.icon} />
+          </Link>
+        ))}
       </span>
       {hasDoc && (
         <span className={tabBarActionsClass}>

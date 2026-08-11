@@ -1,4 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useLocation, useNavigate, useNavigationType } from "react-router";
 import {
@@ -8,6 +18,28 @@ import {
 } from "~/lib/navigation-history";
 import { readTablessPreference } from "~/lib/tabless";
 import { desktopVersion } from "~/lib/desktop";
+
+// Which of the two placements wins is decided at runtime, not from route
+// handles: a route can render a subtab row without flagging one (calendar's
+// `areaSubnav` vs `areaPills` split already caught the bar out once), and a
+// flagged one doesn't always render its row. Inline instances register while
+// mounted; the standalone bar stands down whenever one is.
+const InlineNavPresence = createContext<{
+  inlineCount: number;
+  register: () => () => void;
+} | null>(null);
+
+export function TablessHistoryNavProvider({ children }: { children: ReactNode }) {
+  const [inlineCount, setInlineCount] = useState(0);
+  const register = useCallback(() => {
+    setInlineCount((c) => c + 1);
+    return () => setInlineCount((c) => c - 1);
+  }, []);
+  const value = useMemo(() => ({ inlineCount, register }), [inlineCount, register]);
+  return (
+    <InlineNavPresence.Provider value={value}>{children}</InlineNavPresence.Provider>
+  );
+}
 
 // The arrows are a stand-in for OS/browser chrome tabless mode doesn't have.
 // The desktop shell has no such chrome (a bare WKWebView), so it needs them;
@@ -245,9 +277,12 @@ function HistoryNavButtons() {
 }
 
 // Standalone bar, for tabless desktop pages with no subtab row of their own
-// to sit in. Renders nothing on web (no desktop shell) or in tab mode.
+// to sit in. Renders nothing on web (no desktop shell), in tab mode, or while
+// a subtab row is hosting the arrows inline.
 export function TablessHistoryNav() {
-  if (!useShowTablessHistoryNav()) return null;
+  const show = useShowTablessHistoryNav();
+  const presence = useContext(InlineNavPresence);
+  if (!show || (presence?.inlineCount ?? 0) > 0) return null;
   return (
     <div className="flex items-stretch h-10 bg-section-bg border-b border-border shrink-0">
       <HistoryNavButtons />
@@ -255,9 +290,19 @@ export function TablessHistoryNav() {
   );
 }
 
+// Registration lives in a child mounted only when the arrows actually render,
+// so the server never runs the layout effect. It is a layout effect rather
+// than a passive one so the standalone bar stands down in the same commit the
+// inline arrows appear in, instead of flashing a bar for a frame.
+function InlineHistoryNavButtons() {
+  const register = useContext(InlineNavPresence)?.register;
+  useLayoutEffect(() => register?.(), [register]);
+  return <HistoryNavButtons />;
+}
+
 // Embedded in a page's own AreaPillNav/UnderlineTabButtons row so the arrows
 // share a line with the subtabs instead of stacking a bar above them.
 export function TablessHistoryNavInline() {
   if (!useShowTablessHistoryNav()) return null;
-  return <HistoryNavButtons />;
+  return <InlineHistoryNavButtons />;
 }
