@@ -5358,7 +5358,12 @@ function WeekGrid({
     <div
       ref={scrollRef}
       className={`flex border border-border rounded-md overflow-hidden select-none ${
-        fillAndScroll ? "lg:flex-1 lg:min-h-0 lg:overflow-y-auto lg:overflow-x-hidden" : ""
+        // items-start: size the hour-axis + day columns to their full 24h
+        // content height and scroll, instead of stretching (align-items:stretch)
+        // them to the shorter viewport. Stretch clipped each column's box to the
+        // visible height, so its border-r (and the axis's) faded out below the
+        // fold while the absolutely-positioned grid lines kept going.
+        fillAndScroll ? "lg:flex-1 lg:min-h-0 lg:items-start lg:overflow-y-auto lg:overflow-x-hidden" : ""
       }`}
     >
       {/* Hour axis */}

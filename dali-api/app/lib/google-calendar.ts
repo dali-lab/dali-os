@@ -2,6 +2,7 @@ import DOMPurify from "isomorphic-dompurify";
 import { prisma } from "~/lib/db";
 import { decrypt, encrypt } from "~/lib/calendar-crypto";
 import { GoogleOAuthError, refreshGoogleToken } from "~/lib/google-oauth";
+import { APPLICATION_TZ } from "~/lib/timezone";
 
 interface BusyEvent {
   start: string; // ISO
@@ -307,6 +308,10 @@ export type CreateGoogleEventInput = {
   endIso: string;
   // RFC 5545 RRULE; pass without the "RRULE:" prefix (e.g. "FREQ=WEEKLY;BYDAY=MO").
   recurrenceRule?: string | null;
+  // IANA zone the RRULE expands in. Google rejects a recurring insert that
+  // carries no zone ("Missing time zone definition for start time") even when
+  // startIso already has a UTC offset. Defaults to the lab zone.
+  timeZone?: string;
   attendees: GoogleAttendee[];
   // Sub-calendar id to write into. Defaults to "primary".
   calendarId?: string;
@@ -317,10 +322,11 @@ export async function createGoogleCalendarEvent(
 ): Promise<{ eventId: string; htmlLink: string | null }> {
   const token = await getValidAccessTokenForLink(input.linkId);
   const calendarId = encodeURIComponent(input.calendarId ?? "primary");
+  const timeZone = input.timeZone ?? APPLICATION_TZ;
   const body: Record<string, unknown> = {
     summary: input.summary,
-    start: { dateTime: input.startIso },
-    end: { dateTime: input.endIso },
+    start: { dateTime: input.startIso, timeZone },
+    end: { dateTime: input.endIso, timeZone },
   };
   if (input.description) body.description = input.description;
   if (input.recurrenceRule) {

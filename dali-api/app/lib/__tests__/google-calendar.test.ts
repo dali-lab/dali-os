@@ -21,9 +21,12 @@ vi.mock("~/lib/db", () => ({ prisma: prismaMock }));
 
 // Import after mocking so the lib picks up the mocked prisma.
 const { encrypt } = await import("~/lib/calendar-crypto");
-const { getValidAccessTokenForLink, fetchBusyEvents, buildEncryptedTokens } = await import(
-  "~/lib/google-calendar"
-);
+const {
+  getValidAccessTokenForLink,
+  fetchBusyEvents,
+  buildEncryptedTokens,
+  createGoogleCalendarEvent,
+} = await import("~/lib/google-calendar");
 
 function mockFetchOnce(body: unknown, ok = true, status = 200) {
   const fn = vi.fn().mockResolvedValueOnce({
@@ -303,6 +306,62 @@ describe("fetchBusyEvents", () => {
       new Date("2026-05-13T00:00:00Z"),
     );
     expect(out).toEqual([]);
+  });
+});
+
+describe("createGoogleCalendarEvent", () => {
+  function mockValidToken() {
+    prismaMock.userCalendarLink.findUnique.mockResolvedValueOnce({
+      oauthTokens: encryptedTokens({
+        accessToken: "good",
+        refreshToken: "r1",
+        expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+      }),
+    });
+  }
+
+  function insertedBody(fetchMock: ReturnType<typeof mockFetchOnce>) {
+    return JSON.parse(fetchMock.mock.calls[0][1].body as string);
+  }
+
+  it("sends an explicit timeZone on start/end — Google rejects a recurring insert without one", async () => {
+    mockValidToken();
+    const fetchMock = mockFetchOnce({ id: "evt1", htmlLink: "https://cal/evt1" });
+    const result = await createGoogleCalendarEvent({
+      linkId: "link1",
+      summary: "Weekly sync",
+      startIso: "2026-08-12T18:00:00.000Z",
+      endIso: "2026-08-12T19:00:00.000Z",
+      recurrenceRule: "FREQ=WEEKLY;BYDAY=WE",
+      timeZone: "America/Los_Angeles",
+      attendees: [{ email: "a@dali.dartmouth.edu" }],
+    });
+    const body = insertedBody(fetchMock);
+    expect(body.start).toEqual({
+      dateTime: "2026-08-12T18:00:00.000Z",
+      timeZone: "America/Los_Angeles",
+    });
+    expect(body.end).toEqual({
+      dateTime: "2026-08-12T19:00:00.000Z",
+      timeZone: "America/Los_Angeles",
+    });
+    expect(body.recurrence).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=WE"]);
+    expect(result).toEqual({ eventId: "evt1", htmlLink: "https://cal/evt1" });
+  });
+
+  it("falls back to the lab zone when the caller passes none", async () => {
+    mockValidToken();
+    const fetchMock = mockFetchOnce({ id: "evt2" });
+    await createGoogleCalendarEvent({
+      linkId: "link1",
+      summary: "One-off",
+      startIso: "2026-08-12T18:00:00.000Z",
+      endIso: "2026-08-12T19:00:00.000Z",
+      attendees: [{ email: "a@dali.dartmouth.edu" }],
+    });
+    const body = insertedBody(fetchMock);
+    expect(body.start.timeZone).toBe("America/New_York");
+    expect(body.end.timeZone).toBe("America/New_York");
   });
 });
 

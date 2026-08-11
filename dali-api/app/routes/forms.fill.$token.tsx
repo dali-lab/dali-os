@@ -94,7 +94,7 @@ export default function MemberFormFill() {
   const data = useLoaderData<typeof loader>();
   if (data.accessDenied) {
     return (
-      <MemberFormShell>
+      <MemberFormShell allowExit>
         <div className="text-center py-10">
           <h1 className="font-heading text-xl font-bold text-dark-blue">
             You don't have access to this form
@@ -109,7 +109,7 @@ export default function MemberFormFill() {
   }
   if (data.alreadySubmitted) {
     return (
-      <MemberFormShell>
+      <MemberFormShell allowExit>
         <div className="text-center py-10">
           <h1 className="font-heading text-xl font-bold text-dark-blue">
             You've already filled out this form
@@ -128,7 +128,7 @@ export default function MemberFormFill() {
     );
   }
   return (
-    <MemberFormShell>
+    <MemberFormShell allowExit>
       <MemberFormFillView
         data={data}
         extraBody={

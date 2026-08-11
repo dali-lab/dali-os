@@ -22,7 +22,7 @@ import { TabWorkspace, type TabWorkspaceHandle, type OpenTabRequest } from '~/co
 import { useOpenTasks, TASKS_CHANGED_EVENT } from '~/components/NotificationBell'
 import { DesktopBanner } from '~/components/DesktopBanner'
 import { CommandPalette } from '~/components/CommandPalette'
-import { TablessHistoryNav } from '~/components/TablessHistoryNav'
+import { TablessHistoryNav, useRecordTablessHistory } from '~/components/TablessHistoryNav'
 import { setFocusPreference } from '~/lib/focus-mode'
 import {
   areaForPath,
@@ -69,6 +69,10 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
   const navigate = useNavigate()
   const matches = useMatches()
   const { revalidate } = useRevalidator()
+  // Record every navigation into the shared tabless history store so the
+  // desktop back/forward arrows have a stack that survives their host
+  // component remounting across page transitions.
+  useRecordTablessHistory()
   const tabless = children !== undefined
   // Pages with their own AreaPillNav/UnderlineTabButtons row host the
   // tabless history arrows inline (see TablessHistoryNavInline) — skip the
