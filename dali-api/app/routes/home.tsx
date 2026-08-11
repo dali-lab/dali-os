@@ -353,21 +353,30 @@ export default function Home() {
 
       <AttentionBanner tasks={tasks} notifications={notifications} />
 
-      {/* The compact blocks flow two-up on wide screens. Each hides itself when
-          empty, so the list is built here from what will actually render —
-          otherwise a hidden block leaves a hole in the grid. A lone block takes
-          the full width rather than sitting in a half-empty row. */}
-      <div
-        className={`grid grid-cols-1 gap-6 lg:items-start ${
-          compactBlocks.length > 1 ? "lg:grid-cols-2" : ""
-        }`}
-      >
-        {compactBlocks.map((block, i) => (
-          <div key={i} className="min-w-0">
-            {block}
-          </div>
-        ))}
-      </div>
+      {/* The compact blocks flow two-up on wide screens. Rather than a grid
+          (whose rows align across columns, so a short card gets pinned to the
+          bottom of a taller neighbour and leaves a gap), the blocks are dealt
+          round-robin into two independent columns that each pack their own
+          stack — a short card sits directly under the one above it. Each block
+          hides itself when empty, so the list is built from what will actually
+          render; a lone block takes the full width. */}
+      {compactBlocks.length > 1 ? (
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+          {[0, 1].map((col) => (
+            <div key={col} className="flex min-w-0 flex-1 flex-col gap-6">
+              {compactBlocks
+                .filter((_, i) => i % 2 === col)
+                .map((block, i) => (
+                  <div key={i} className="min-w-0">
+                    {block}
+                  </div>
+                ))}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="min-w-0">{compactBlocks[0]}</div>
+      )}
 
       <div className="flex flex-col gap-6">
         <WeekCalendarPanel
