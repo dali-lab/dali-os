@@ -8,6 +8,7 @@ import type { Route } from "./+types/forms.responses.$formId";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { prisma } from "~/lib/db";
+import { recordRouteVisit } from "~/lib/user-pages.server";
 import { buildResponseGrid } from "~/forms/lib/answer-rows.server";
 import { folderCrumbs, type FolderCrumb } from "~/forms/lib/forms-data";
 import { Modal, ModalHeader } from "~/components/Modal";
@@ -69,6 +70,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
   });
   if (!form) return redirect("/forms");
+  // After the Core gate — the responses view the viewer can open lands in recents.
+  recordRouteVisit(auth.user.sub, `/forms/responses/${form.id}`, `${form.name} responses`);
   const crumbs = await folderCrumbs(form.folderId);
 
   // When this form is the bound partner application form, the applications

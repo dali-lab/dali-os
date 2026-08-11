@@ -12,7 +12,6 @@ import {
   FileText,
   CalendarClock,
   GraduationCap,
-  Compass,
   MapPin,
   Star,
   UserRound,
@@ -27,7 +26,7 @@ import { listFavoritesAndRecents, type FavoritePage } from "~/lib/user-pages.ser
 import { loadShellUser } from "~/lib/shell-user.server";
 import { timed } from "~/lib/server-timing";
 import { ProjectIcon } from "~/components/ProjectIcon";
-import { PageIcon } from "~/components/PageIcon";
+import { FavoriteIcon } from "~/components/FavoriteIcon";
 import { FavoriteStar } from "~/components/FavoriteStar";
 import { FavoriteRouteButton } from "~/components/FavoriteRouteButton";
 import { isNavbarRoute } from "~/lib/navbar-routes";
@@ -506,12 +505,7 @@ function PageRow({ page, onChanged }: { page: FavoritePage; onChanged: () => voi
     // Link + star are siblings: the star must not navigate.
     <div className="group flex items-center gap-1 rounded-md hover:bg-muted/50 transition-colors">
       <a href={page.href} className="flex flex-1 min-w-0 items-center gap-2 px-2 py-1.5 text-sm">
-        {/* Routes aren't documents, so they don't get the page glyph. */}
-        {page.isRoute ? (
-          <Compass className="w-3.5 h-3.5 shrink-0 text-muted-foreground" aria-hidden />
-        ) : (
-          <PageIcon iconEmoji={page.iconEmoji} />
-        )}
+        <FavoriteIcon page={page} />
         <span className="truncate text-foreground">{page.title || "Untitled"}</span>
       </a>
       {/* Recents show a hollow star on hover — a way to keep the page without

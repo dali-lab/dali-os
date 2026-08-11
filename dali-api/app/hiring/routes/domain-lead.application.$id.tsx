@@ -2,6 +2,7 @@ import { useState } from "react";
 import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/domain-lead.application.$id";
 import { prisma } from "~/lib/db";
+import { recordRouteVisit } from "~/lib/user-pages.server";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
@@ -140,6 +141,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     request,
   );
   if (confRedirect) return confRedirect;
+
+  // After the domain + confidentiality gates — this application lands in the
+  // lead's recents, keyed to the applicant's name.
+  recordRouteVisit(
+    auth.user.sub,
+    `/hiring/domain-lead/application/${params.id}`,
+    `${da.application.user.firstName} ${da.application.user.lastName}`.trim(),
+  );
 
   // Resolve criterion-key -> label for score display. Prefers the current
   // domain rubric, but falls back to the version pinned on each review (and

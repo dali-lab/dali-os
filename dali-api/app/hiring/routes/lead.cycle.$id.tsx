@@ -3,6 +3,7 @@ import { Form, Link, useParams, useLoaderData, useSearchParams, redirect } from 
 import { Select, type SelectOption } from "~/components/ui/floating"
 import type { Route } from "./+types/lead.cycle.$id";
 import { prisma } from "~/lib/db";
+import { recordRouteVisit } from "~/lib/user-pages.server";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";
@@ -198,6 +199,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       challengeVersions: { include: { challengeVersion: { include: { domain: true, challenge: true, createdBy: { select: { firstName: true, lastName: true } } } } } },
     },
   });
+
+  // After the Core gate — this cycle lands in the lead's recents.
+  recordRouteVisit(auth.user.sub, `/hiring/lead/cycle/${params.id}`, cycleBase.name);
+
   const applications = confidentialityRequired
     ? []
     : await prisma.application.findMany({

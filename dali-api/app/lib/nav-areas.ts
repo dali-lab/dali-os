@@ -225,6 +225,27 @@ export function isAreaSubtabPath(path: string): boolean {
   );
 }
 
+// Flat href → icon lookup across every area hub and sub-tab. Lets the
+// Favorites/Recent rows show a starred route's real area glyph instead of a
+// generic compass. Built once at module load.
+const HREF_ICONS: Record<string, LucideIcon> = (() => {
+  const map: Record<string, LucideIcon> = {};
+  for (const area of NAV_AREAS) {
+    map[area.hubPath] = area.icon;
+    for (const t of area.subtabs) map[t.href] = t.icon;
+  }
+  return map;
+})();
+
+/** The nav icon for a route href (hub or sub-tab), or null if it isn't one. */
+export function iconForHref(href: string): LucideIcon | null {
+  try {
+    return HREF_ICONS[new URL(href, "http://local").pathname] ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export function visibleAreas(r: RoleFlags): NavArea[] {
   return NAV_AREAS.filter((a) => !a.gate || a.gate(r));
 }

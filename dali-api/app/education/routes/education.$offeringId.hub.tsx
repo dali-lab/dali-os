@@ -6,6 +6,7 @@ import { runDiscussionAction } from "~/education/lib/discussions.server";
 import { CourseHub } from "~/education/components/CourseHub";
 import { buttonClasses } from "~/components/ui/Button";
 import { parseSessionCookie } from "~/lib/cookies";
+import { recordRouteVisit } from "~/lib/user-pages.server";
 
 export const meta: Route.MetaFunction = ({ data }) => [
   { title: `${data?.hub.offering.title ?? "Course"} · DALI OS` },
@@ -29,6 +30,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     isManager,
   });
   if (!hub) throw new Response("Not found", { status: 404 });
+  // After the enrollment gate — the hub the viewer can open lands in recents.
+  recordRouteVisit(auth.user.sub, `/education/${hub.offering.id}/hub`, hub.offering.title);
   return { hub, collabToken: parseSessionCookie(request) };
 }
 

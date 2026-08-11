@@ -243,7 +243,9 @@ export const prisma = {
     findUnique: vi.fn(),
     findFirst: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
-    upsert: vi.fn(),
+    // Resolves by default so the fire-and-forget recordPageVisit/recordRouteVisit
+    // (loaders call `.upsert(...).catch(...)`) don't throw in loader tests.
+    upsert: vi.fn().mockResolvedValue({}),
     create: vi.fn(),
     update: vi.fn(),
   },

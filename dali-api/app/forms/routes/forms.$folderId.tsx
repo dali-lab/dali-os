@@ -5,6 +5,7 @@ import { requireAuth, forbidden, redirectApplicantToPortal } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { loadFormsLevel, runFormsAction } from "~/forms/lib/forms-data";
 import { FormsBrowser } from "~/forms/components/FormsBrowser";
+import { recordRouteVisit } from "~/lib/user-pages.server";
 
 export const meta: Route.MetaFunction = ({ data }) => [
   { title: `${(data as any)?.current?.name ?? "Folder"} · Forms · DALI OS` },
@@ -34,6 +35,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const level = await loadFormsLevel(params.folderId);
   if (!level) return redirect("/forms"); // unknown folder → top level
+  // After the Core gate — the folder the viewer can open lands in recents.
+  if (level.current) {
+    recordRouteVisit(auth.user.sub, `/forms/${level.current.id}`, level.current.name);
+  }
   return level;
 }
 

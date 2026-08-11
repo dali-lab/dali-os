@@ -4022,8 +4022,10 @@ model UserFavorite {
 
   // Null = not favourited. Timestamped so pins order most-recent-first.
   favoritedAt DateTime?
-  // Null = never opened. Only pages record visits — "recently opened" is about
-  // documents, and every route would drown them out.
+  // Null = never opened. Set for both page visits (recordPageVisit) and the
+  // entity detail routes — project / person / partner org (recordRouteVisit) —
+  // that "Recently opened" surfaces. Hubs and sub-tabs are not recorded, so
+  // they don't drown the list out.
   visitedAt DateTime?
 
   user User  @relation(fields: [userId], references: [id], onDelete: Cascade)

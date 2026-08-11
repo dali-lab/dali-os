@@ -14,10 +14,9 @@ import {
   Search,
   ChevronsUpDown,
   Check,
-  Compass,
-  FileText,
 } from 'lucide-react'
 import type { FavoritePage } from '~/lib/user-pages.server'
+import { FavoriteIcon } from '~/components/FavoriteIcon'
 import { userInitials } from '~/lib/display'
 import { TabWorkspace, type TabWorkspaceHandle, type OpenTabRequest } from '~/components/TabWorkspace'
 import { useOpenTasks, TASKS_CHANGED_EVENT } from '~/components/NotificationBell'
@@ -344,13 +343,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
       {...tabClickProps({ url: p.href, label: p.title || 'Untitled' })}
       className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] font-medium text-left text-white/55 hover:text-white hover:bg-white/5 transition-colors"
     >
-      {p.isRoute ? (
-        <Compass className="w-4 h-4 flex-shrink-0 text-white/40" />
-      ) : p.iconEmoji ? (
-        <span className="w-4 h-4 flex-shrink-0 text-center text-sm leading-4" aria-hidden>{p.iconEmoji}</span>
-      ) : (
-        <FileText className="w-4 h-4 flex-shrink-0 text-white/40" />
-      )}
+      <FavoriteIcon page={p} glyphClassName="text-white/40" />
       <span className="truncate">{p.title || 'Untitled'}</span>
     </button>
   )
