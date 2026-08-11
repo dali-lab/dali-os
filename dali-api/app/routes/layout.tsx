@@ -405,7 +405,7 @@ export default function AppLayoutRoute() {
           {tablessChild}
         </Layout>
       ) : (
-        <LayoutClassic user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} hasHiringAccess={hasHiringAccess} isLabMentor={isLabMentorFlag} focusMode={focus}>
+        <LayoutClassic user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} hasHiringAccess={hasHiringAccess} isLabMentor={isLabMentorFlag} isInstructor={isInstructor} focusMode={focus}>
           {tablessChild}
         </LayoutClassic>
       )}

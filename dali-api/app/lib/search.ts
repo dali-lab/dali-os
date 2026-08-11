@@ -5,6 +5,7 @@
 
 export type SearchResultType =
   | "person"
+  | "group"
   | "project"
   | "education"
   | "partner"
@@ -40,6 +41,8 @@ export const PER_CATEGORY_CAP = 5;
 // applications on the DomainApplication id.
 export const buildUrl: Record<SearchResultType, (id: string) => string> = {
   person: (id) => `/members/${id}`,
+  // The groups page has no per-group deep link; land on the list (client filter).
+  group: () => `/members/groups`,
   project: (id) => `/projects/${id}`,
   education: (id) => `/education/${id}`,
   partner: (id) => `/partners/${id}`,

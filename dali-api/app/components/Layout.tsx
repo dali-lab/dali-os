@@ -896,7 +896,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
         onClose={() => setPaletteOpen(false)}
         tabless={tabless}
         focusMode={focusMode}
-        roles={{ isCore, isAdmin, canViewForms, canViewStaffing, hasHiringAccess, isLabMentor }}
+        roles={roleFlags}
         onOpen={openFromPalette}
       />
     </div>

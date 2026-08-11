@@ -40,6 +40,7 @@ interface LayoutProps {
   isInterviewer?: boolean
   hasHiringAccess?: boolean
   isLabMentor?: boolean
+  isInstructor?: boolean
   /** Focus mode: hide the sidebar entirely; navigate via ⌘K + breadcrumbs.
    *  A floating launcher keeps search + "show sidebar" reachable. */
   focusMode?: boolean
@@ -67,7 +68,7 @@ type NavEntry = {
 // sidebar lives in Layout.tsx. Kept as a separate component (rather than a
 // branch inside Layout) so each shell stays readable and the flag switch is a
 // clean server-side pick in routes/layout.tsx.
-export function LayoutClassic({ user, photoUrl, isCore = false, isAdmin = false, isDomainLead = false, canViewForms = false, canViewStaffing = false, isInterviewer = false, hasHiringAccess = false, isLabMentor = false, focusMode = false, children }: LayoutProps) {
+export function LayoutClassic({ user, photoUrl, isCore = false, isAdmin = false, isDomainLead = false, canViewForms = false, canViewStaffing = false, isInterviewer = false, hasHiringAccess = false, isLabMentor = false, isInstructor = false, focusMode = false, children }: LayoutProps) {
   const location = useLocation()
   const navigate = useNavigate()
   const { revalidate } = useRevalidator()
@@ -724,7 +725,7 @@ export function LayoutClassic({ user, photoUrl, isCore = false, isAdmin = false,
         onClose={() => setPaletteOpen(false)}
         tabless={tabless}
         focusMode={focusMode}
-        roles={{ isCore, isAdmin, canViewForms, canViewStaffing, hasHiringAccess, isLabMentor }}
+        roles={{ isCore, isAdmin, isDomainLead, isInterviewer, canViewForms, canViewStaffing, hasHiringAccess, isLabMentor, isInstructor }}
         onOpen={openFromPalette}
       />
     </div>

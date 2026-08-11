@@ -47,7 +47,8 @@ export async function runSearch(opts: {
     searchDocuments(q, like),
     searchProjectFiles(q, like),
     searchApplications(opts.userId, roles, q, like),
-    // Forms & folders — Forms area gate.
+    // Groups, forms & folders — Forms area gate.
+    roles.canViewForms ? searchGroups(q, like) : NONE,
     roles.canViewForms ? searchForms(q, like) : NONE,
     roles.canViewForms ? searchFormFolders(q, like) : NONE,
     // Hiring library (reusable artifacts) — Core or Domain Lead, mirroring the
@@ -251,6 +252,17 @@ async function searchDocuments(q: string, like: Like): Promise<SearchResult[]> {
     rows.map((r) => ({ id: r.id, label: r.title, iconEmoji: r.iconEmoji })),
     q,
   );
+}
+
+async function searchGroups(q: string, like: Like): Promise<SearchResult[]> {
+  // Member groups (People → Groups). Archived groups are out, mirroring the
+  // list's default "active" filter. Gated with the Forms area, like the sub-tab.
+  const rows = await prisma.groupDefinition.findMany({
+    where: { name: like, archivedAt: null },
+    select: { id: true, name: true },
+    take: RAW_TAKE,
+  });
+  return simpleResults("group", "Group", rows.map((r) => ({ id: r.id, label: r.name })), q);
 }
 
 async function searchForms(q: string, like: Like): Promise<SearchResult[]> {
