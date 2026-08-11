@@ -12,7 +12,7 @@ import {
   type Assignment,
   type Preference,
 } from "../lib/staffing-board";
-import { CheckCircle2, UserPlus } from "lucide-react";
+import { CheckCircle2, Plus, UserPlus } from "lucide-react";
 import { Button } from "~/components/ui/Button";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import { MemberCard, MemberCardPreview } from "./MemberCard";
@@ -89,7 +89,9 @@ export function StaffingBoard({
   // the persist+revalidate reconciles. Same lifecycle as `assignments`.
   const [order, setOrder] = useState(cardOrder);
   const [error, setError] = useState<string | null>(null);
-  const [openBidUserId, setOpenBidUserId] = useState<string | null>(null);
+  // Member + column whose bid modal is open (column highlights their current
+  // project among the bids), or null.
+  const [openBid, setOpenBid] = useState<{ userId: string; columnKey: string } | null>(null);
   // Project id whose finalize modal is open, or null.
   const [finalizeProjectId, setFinalizeProjectId] = useState<string | null>(null);
 
@@ -188,10 +190,11 @@ export function StaffingBoard({
   );
 
   const toggleAssignmentDomain = useCallback(
-    async (userId: string, domainId: string) => {
-      const current = assignments.filter((a) => a.userId === userId);
-      const projectId = current[0]?.projectId;
-      if (!projectId) return;
+    async (userId: string, projectId: string, domainId: string) => {
+      const current = assignments.filter(
+        (a) => a.userId === userId && a.projectId === projectId,
+      );
+      if (current.length === 0) return;
 
       const has = current.some((a) => a.domainId === domainId);
       let next: Assignment[];
@@ -212,7 +215,10 @@ export function StaffingBoard({
       }
 
       const prevAssignments = assignments;
-      setAssignments((list) => [...list.filter((a) => a.userId !== userId), ...next]);
+      setAssignments((list) => [
+        ...list.filter((a) => !(a.userId === userId && a.projectId === projectId)),
+        ...next,
+      ]);
       setError(null);
       try {
         await persist({
@@ -317,27 +323,6 @@ export function StaffingBoard({
     [membersForBoard],
   );
 
-  // Flat userId → card lookup so the DragOverlay can render the active card
-  // without knowing which column it came from.
-  const cardByUserId = useMemo(() => {
-    const map = new Map<string, MemberCardModel>();
-    for (const cards of Object.values(board)) {
-      for (const c of cards) map.set(c.userId, c);
-    }
-    return map;
-  }, [board]);
-
-  // userId → its current column key. The card's `data.fromColumn` (which the
-  // drag handler reads to know where a card came from) used to live on each
-  // MemberCard via columnId; now it's derived once from the built board.
-  const columnIdOf = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const [columnKey, cards] of Object.entries(board)) {
-      for (const c of cards) map.set(c.userId, columnKey);
-    }
-    return map;
-  }, [board]);
-
   // Synthetic cards for external mentors, grouped by project column. They render
   // like distinct cards but aren't in `board`/`members`, so the drag handler
   // (keyed off memberById) naturally ignores them.
@@ -347,6 +332,7 @@ export function StaffingBoard({
       const list = map.get(e.projectId) ?? [];
       list.push({
         userId: e.userId,
+        columnKey: e.projectId,
         firstName: e.firstName,
         lastName: e.lastName,
         email: null,
@@ -369,13 +355,18 @@ export function StaffingBoard({
     return map;
   }, [externalMentors, domainNames]);
 
-  // userId → project column for external mentors, so a real card dropped onto an
-  // external card resolves to that external's column (drop-at-end).
-  const externalProjectByUser = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const e of externalMentors) map.set(e.userId, e.projectId);
+  // Flat cardId → card lookup so the DragOverlay can render the active card. The
+  // external-mentor cards live outside `board`, so fold them in too.
+  const cardByCardId = useMemo(() => {
+    const map = new Map<string, MemberCardModel>();
+    for (const cards of Object.values(board)) {
+      for (const c of cards) map.set(cardId(c.userId, c.columnKey), c);
+    }
+    for (const cards of externalCardsByProject.values()) {
+      for (const c of cards) map.set(cardId(c.userId, c.columnKey), c);
+    }
     return map;
-  }, [externalMentors]);
+  }, [board, externalCardsByProject]);
 
   function handleDragEnd(event: DragEndEvent) {
     if (!canManage) return;
@@ -389,41 +380,40 @@ export function StaffingBoard({
     const member = memberById.get(userId);
     if (!member) return;
 
-    // Resolve the target column + insertion index. `over` is either a card
-    // (its userId — drop relative to it) or a column droppable (its id — drop
-    // at the end). Column ids are UNASSIGNED or a project id; everything else
-    // is a card userId.
+    // Resolve the destination column. `over` is either a column droppable (its
+    // id is UNASSIGNED or a projectId) or a card (a composite `userId::columnKey`
+    // — resolve its column). An external-mentor card isn't in `board`, so its
+    // userId won't be found in destUserIds and the drop falls to the end.
     const isColumnId = overId === UNASSIGNED || projectIds.includes(overId);
-    // Dropping onto an external-mentor card targets that mentor's column at the
-    // end (external cards render after the roster and aren't reorderable).
-    const overIsExternal = externalProjectByUser.has(overId);
-    const toColumn = isColumnId
-      ? overId
-      : overIsExternal
-        ? externalProjectByUser.get(overId)!
-        : findColumnOf(board, overId) ?? fromColumn;
-    const targetIds = (board[toColumn] ?? []).map((c) => c.userId);
-    const overIndex = isColumnId || overIsExternal ? targetIds.length : targetIds.indexOf(overId);
+    const over = isColumnId ? null : parseCardId(overId);
+    const toColumn = isColumnId ? overId : over!.columnKey;
+    // Roster userIds in the destination column, in current display order (order
+    // + assignment identity are tracked per userId within a column).
+    const destUserIds = (board[toColumn] ?? []).map((c) => c.userId);
+    const overIndex = (() => {
+      if (isColumnId) return destUserIds.length;
+      const idx = destUserIds.indexOf(over!.userId);
+      return idx === -1 ? destUserIds.length : idx;
+    })();
     const movedWithinColumn = fromColumn === toColumn;
 
-    // No-op: dropped on itself, or back where it already was.
-    if (movedWithinColumn) {
-      const fromIndex = targetIds.indexOf(userId);
-      if (fromIndex === overIndex || (overIndex === -1)) return;
-    }
+    // No-op: dropped back where it already was.
+    if (movedWithinColumn && destUserIds.indexOf(userId) === overIndex) return;
 
     // Build the new ordered userId list for the destination column.
-    const withoutMoved = targetIds.filter((id) => id !== userId);
-    const insertAt = overIndex < 0 ? withoutMoved.length : Math.min(overIndex, withoutMoved.length);
+    const withoutMoved = destUserIds.filter((id) => id !== userId);
+    const insertAt = Math.min(overIndex, withoutMoved.length);
     const nextDestIds = [
       ...withoutMoved.slice(0, insertAt),
       userId,
       ...withoutMoved.slice(insertAt),
     ];
 
-    // A cross-column move also needs the assignment updated. Resolve domain(s)
-    // + level for a project column; UNASSIGNED clears the assignment.
+    // A cross-column move also updates the assignment, scoped to the two columns
+    // involved. Resolve domain(s) + level for a project column; UNASSIGNED just
+    // removes the member from the source project.
     const targetProjectId = toColumn === UNASSIGNED ? null : toColumn;
+    const sourceProjectId = fromColumn === UNASSIGNED ? null : fromColumn;
     let assignmentDomains: { domainId: string; level: "P1" | "P2" | "P3" }[] | null = null;
     if (!movedWithinColumn && targetProjectId !== null) {
       assignmentDomains = resolveAssignmentDomains(member, targetProjectId);
@@ -438,14 +428,19 @@ export function StaffingBoard({
     const prevAssignments = assignments;
     const prevOrder = order;
 
-    // Optimistic assignment update (only when the column changed).
+    // Optimistic assignment update: drop the member's rows on the SOURCE project
+    // only (their other projects stay put), then add the target rows.
     if (!movedWithinColumn) {
-      const withoutOld = assignments.filter((a) => a.userId !== userId);
+      const withoutSource = sourceProjectId
+        ? assignments.filter(
+            (a) => !(a.userId === userId && a.projectId === sourceProjectId),
+          )
+        : assignments;
       setAssignments(
         targetProjectId === null
-          ? withoutOld
+          ? withoutSource
           : [
-              ...withoutOld,
+              ...withoutSource,
               ...assignmentDomains!.map((d) => ({
                 userId,
                 projectId: targetProjectId,
@@ -458,7 +453,7 @@ export function StaffingBoard({
 
     // Optimistic order update for the destination column. Other users' rows are
     // preserved; the moved card and its new neighbours get fresh indices.
-    setOrder((prev) => mergeColumnOrder(prev, toColumn, nextDestIds, userId));
+    setOrder((prev) => mergeColumnOrder(prev, toColumn, nextDestIds, userId, fromColumn));
     setError(null);
 
     pendingSaves.current += 1;
@@ -468,6 +463,7 @@ export function StaffingBoard({
           cycleId,
           userId,
           projectId: targetProjectId,
+          fromProjectId: sourceProjectId ?? undefined,
           domains: assignmentDomains ?? undefined,
         });
       }
@@ -483,6 +479,50 @@ export function StaffingBoard({
       .finally(() => {
         pendingSaves.current = Math.max(0, pendingSaves.current - 1);
       });
+  }
+
+  // Remove a member from ONE project (× on a project-column card). Their rows on
+  // other projects are untouched.
+  async function removeFromProject(userId: string, projectId: string) {
+    const prevAssignments = assignments;
+    setAssignments((list) =>
+      list.filter((a) => !(a.userId === userId && a.projectId === projectId)),
+    );
+    setError(null);
+    try {
+      await persist({ cycleId, userId, projectId: null, fromProjectId: projectId });
+      revalidator.revalidate();
+    } catch (err) {
+      setAssignments(prevAssignments);
+      setError(err instanceof Error ? err.message : "Failed to remove from project");
+    }
+  }
+
+  // Add a member to a project additively (per-column search). Domains are
+  // resolved the same way a drag does; other projects are left intact.
+  async function addMemberToProject(userId: string, projectId: string) {
+    const member = memberById.get(userId);
+    if (!member) return;
+    const domains = resolveAssignmentDomains(member, projectId);
+    if (!domains) {
+      setError(
+        `Can't infer a domain + level for ${member.firstName} ${member.lastName}: they have no bid and no domain eligibility. Add a bid or set their eligibility.`,
+      );
+      return;
+    }
+    const prevAssignments = assignments;
+    setAssignments((list) => [
+      ...list.filter((a) => !(a.userId === userId && a.projectId === projectId)),
+      ...domains.map((d) => ({ userId, projectId, domainId: d.domainId, level: d.level })),
+    ]);
+    setError(null);
+    try {
+      await persist({ cycleId, userId, projectId, domains });
+      revalidator.revalidate();
+    } catch (err) {
+      setAssignments(prevAssignments);
+      setError(err instanceof Error ? err.message : "Failed to add member");
+    }
   }
 
   async function handleRemoveMember(userId: string) {
@@ -505,10 +545,9 @@ export function StaffingBoard({
     }
   }
 
-  const openBidMember = openBidUserId ? memberById.get(openBidUserId) ?? null : null;
-  const openBidColumnId = openBidUserId
-    ? assignments.find((a) => a.userId === openBidUserId)?.projectId ?? null
-    : null;
+  const openBidMember = openBid ? memberById.get(openBid.userId) ?? null : null;
+  const openBidColumnId =
+    openBid && openBid.columnKey !== UNASSIGNED ? openBid.columnKey : null;
 
   const termCode = terms.find((t) => t.id === termId)?.code ?? "";
 
@@ -585,6 +624,12 @@ export function StaffingBoard({
         renderEmpty: emptyDropTarget,
         headerExtra: canManage ? (
           <div className="flex-shrink-0 flex items-center gap-1.5">
+            <AddMemberToProjectControl
+              projectName={p.name}
+              members={membersForBoard}
+              assignedUserIds={new Set((board[p.id] ?? []).map((c) => c.userId))}
+              onAdd={(userId) => void addMemberToProject(userId, p.id)}
+            />
             <button
               type="button"
               onClick={() => setExternalMentorProjectId(p.id)}
@@ -659,8 +704,8 @@ export function StaffingBoard({
       <KanbanBoard<MemberCardModel>
         id="staffing-board"
         columns={columns}
-        getCardId={(c) => c.userId}
-        getCardData={(c) => ({ userId: c.userId, fromColumn: columnIdOf.get(c.userId) ?? UNASSIGNED })}
+        getCardId={(c) => cardId(c.userId, c.columnKey)}
+        getCardData={(c) => ({ userId: c.userId, fromColumn: c.columnKey })}
         draggable={canManage}
         sortable
         onDragEnd={handleDragEnd}
@@ -670,18 +715,20 @@ export function StaffingBoard({
             card={card}
             projectNames={projectNames}
             domainNames={domainNames}
-            onOpenBid={() => setOpenBidUserId(card.userId)}
-            // Remove (×): external-mentor cards remove their placement; roster
-            // cards only on the Unassigned column (the destructive board-member
-            // delete shouldn't surface from project columns).
+            onOpenBid={() => setOpenBid({ userId: card.userId, columnKey: card.columnKey })}
+            // Remove (×): external-mentor cards remove their placement; on the
+            // Unassigned column a roster card's × removes them from the board;
+            // on a project column it removes them from just that project.
             onRemove={
               card.isExternalMentor
                 ? canManage && card.externalMentorId
                   ? () => void removeExternalMentor(card.externalMentorId!)
                   : undefined
-                : canManage && columnIdOf.get(card.userId) === UNASSIGNED
-                  ? () => handleRemoveMember(card.userId)
-                  : undefined
+                : !canManage
+                  ? undefined
+                  : card.columnKey === UNASSIGNED
+                    ? () => handleRemoveMember(card.userId)
+                    : () => void removeFromProject(card.userId, card.columnKey)
             }
             draggable={canManage}
             dragHandleProps={dragHandleProps}
@@ -691,7 +738,7 @@ export function StaffingBoard({
               // Default role follows the assignment level (P3 → mentor); the
               // override flips it. External mentors are inherently mentors.
               if (!canManage || card.isExternalMentor) return undefined;
-              if (columnIdOf.get(card.userId) === UNASSIGNED) return undefined;
+              if (card.columnKey === UNASSIGNED) return undefined;
               const defaultMentor = card.level === "P3";
               const isMentor = mentorRoles[card.userId] ?? defaultMentor;
               return (
@@ -705,8 +752,8 @@ export function StaffingBoard({
             allDomains={domains}
             assignmentDomainIds={card.assignmentDomainIds}
             onToggleAssignmentDomain={
-              canManage && !card.isExternalMentor && columnIdOf.get(card.userId) !== UNASSIGNED
-                ? (domainId) => void toggleAssignmentDomain(card.userId, domainId)
+              canManage && !card.isExternalMentor && card.columnKey !== UNASSIGNED
+                ? (domainId) => void toggleAssignmentDomain(card.userId, card.columnKey, domainId)
                 : undefined
             }
             onChangeDomainLevel={(domainId, level) => {
@@ -726,7 +773,7 @@ export function StaffingBoard({
           />
         )}
         renderOverlay={(activeId) => {
-          const card = activeId ? cardByUserId.get(activeId) ?? null : null;
+          const card = activeId ? cardByCardId.get(activeId) ?? null : null;
           return card ? (
             <MemberCardPreview
               card={card}
@@ -740,7 +787,7 @@ export function StaffingBoard({
       {openBidMember && (
         <BidModal
           open={true}
-          onClose={() => setOpenBidUserId(null)}
+          onClose={() => setOpenBid(null)}
           memberName={`${openBidMember.firstName} ${openBidMember.lastName}`}
           preferences={openBidMember.preferences}
           bidFields={openBidMember.bidFields ?? []}
@@ -862,10 +909,104 @@ function TermChannelBanner({ termId, termCode }: { termId: string; termCode: str
   );
 }
 
+// Per-project "add member" search. Unlike the board-wide AddMemberControl (which
+// adds a non-bidder to the Unassigned pool), this staffs an existing board member
+// onto ONE project additively — the way to put someone on a second project.
+// Search is client-side over the already-loaded members; members already on this
+// project are excluded, but those staffed elsewhere are included.
+function AddMemberToProjectControl({
+  projectName,
+  members,
+  assignedUserIds,
+  onAdd,
+}: {
+  projectName: string;
+  members: MemberInput[];
+  assignedUserIds: Set<string>;
+  onAdd: (userId: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDown(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  const query = q.trim().toLowerCase();
+  const results =
+    query.length < 2
+      ? []
+      : members
+          .filter((m) => !assignedUserIds.has(m.userId))
+          .filter((m) => {
+            const name = `${m.firstName} ${m.lastName}`.toLowerCase();
+            return name.includes(query) || (m.email ?? "").toLowerCase().includes(query);
+          })
+          .slice(0, 20);
+
+  return (
+    <div className="relative" ref={containerRef}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        title={`Add member to ${projectName}`}
+        aria-label={`Add member to ${projectName}`}
+        className="text-muted-foreground hover:text-accent-teal transition-colors"
+      >
+        <Plus className="w-4 h-4" />
+      </button>
+
+      {open && (
+        <div className="absolute right-0 mt-1 w-64 bg-card border border-border rounded-md shadow-lg z-50 p-2">
+          <input
+            autoFocus
+            type="text"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search members…"
+            className="w-full text-sm px-2 py-1.5 border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-teal/30"
+          />
+          <div className="mt-2 max-h-64 overflow-y-auto flex flex-col gap-0.5">
+            {query.length >= 2 && results.length === 0 && (
+              <p className="text-xs text-muted-foreground px-1 py-1">No members found.</p>
+            )}
+            {results.map((m) => (
+              <button
+                key={m.userId}
+                type="button"
+                onClick={() => {
+                  onAdd(m.userId);
+                  setOpen(false);
+                  setQ("");
+                }}
+                className="text-left px-2 py-1.5 rounded hover:bg-muted flex flex-col"
+              >
+                <span className="text-sm text-foreground">
+                  {m.firstName} {m.lastName}
+                </span>
+                {m.email && <span className="text-[11px] text-muted-foreground">{m.email}</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 async function persist(args: {
   cycleId: string;
   userId: string;
   projectId: string | null;
+  fromProjectId?: string;
   domainId?: string;
   level?: Preference["level"];
   domains?: { domainId: string; level: Preference["level"] }[];
@@ -899,28 +1040,34 @@ async function persistOrder(args: {
   }
 }
 
-// The column a userId currently sits in, per the built board, or null.
-function findColumnOf(
-  board: Record<string, MemberCardModel[]>,
-  userId: string,
-): string | null {
-  for (const [columnKey, cards] of Object.entries(board)) {
-    if (cards.some((c) => c.userId === userId)) return columnKey;
-  }
-  return null;
+// Board card identity is (userId, columnKey): a member staffed on multiple
+// projects has one card per column, so userId alone isn't unique. dnd-kit uses
+// this string as both the draggable id and the React key.
+function cardId(userId: string, columnKey: string): string {
+  return `${userId}::${columnKey}`;
+}
+function parseCardId(id: string): { userId: string; columnKey: string } {
+  const i = id.indexOf("::");
+  return i === -1
+    ? { userId: id, columnKey: UNASSIGNED }
+    : { userId: id.slice(0, i), columnKey: id.slice(i + 2) };
 }
 
-// Replace the order rows for one column with `userIds` (in their new order),
-// preserving every other column's rows. The moved user's any prior-column row
-// is dropped so a stale entry can't linger.
+// Replace the order rows for the destination column with `userIds` (in their new
+// order), preserving every other column's rows. The moved user's stale row in the
+// SOURCE column is dropped (a member can legitimately hold order rows in several
+// columns now, so we can't clear all of their rows).
 function mergeColumnOrder(
   prev: { userId: string; columnKey: string; sortKey: number }[],
   columnKey: string,
   userIds: string[],
   movedUserId: string,
+  fromColumn: string,
 ): { userId: string; columnKey: string; sortKey: number }[] {
   const kept = prev.filter(
-    (o) => o.columnKey !== columnKey && o.userId !== movedUserId,
+    (o) =>
+      o.columnKey !== columnKey &&
+      !(o.userId === movedUserId && o.columnKey === fromColumn),
   );
   const fresh = userIds.map((userId, sortKey) => ({ userId, columnKey, sortKey }));
   return [...kept, ...fresh];
