@@ -73,7 +73,7 @@ interface PaletteItem {
 // Each result type maps to an icon and a display section. Multiple types can
 // share a section (forms + folders, or the hiring-library artifacts) so the
 // palette doesn't sprout one section per entity kind.
-const TYPE_META: Record<SearchResultType, { icon: LucideIcon; section: string }> = {
+export const TYPE_META: Record<SearchResultType, { icon: LucideIcon; section: string }> = {
   person: { icon: UsersRound, section: "People" },
   group: { icon: Users2, section: "Groups" },
   project: { icon: FolderKanban, section: "Projects" },

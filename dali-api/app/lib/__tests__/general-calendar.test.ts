@@ -1,7 +1,10 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import {
+  calendarIdFromIcsUrl,
   fetchGeneralCalendarEvents,
   generalCalendarConfigured,
+  generalCalendarId,
+  generalCalendarState,
   warmGeneralCalendarFeed,
 } from "../general-calendar";
 
@@ -193,5 +196,92 @@ describe("fetchGeneralCalendarEvents", () => {
     await vi.waitFor(() => expect(fetchFn).toHaveBeenCalledTimes(2));
     // Stale feed is still served after the failed background refresh.
     await expect(fetchGeneralCalendarEvents(WINDOW_START, WINDOW_END)).resolves.toHaveLength(1);
+  });
+});
+
+describe("calendarIdFromIcsUrl", () => {
+  it("pulls the url-decoded calendar id out of a Google ical feed", () => {
+    expect(
+      calendarIdFromIcsUrl(
+        "https://calendar.google.com/calendar/ical/c_abc123%40group.calendar.google.com/public/basic.ics",
+      ),
+    ).toBe("c_abc123@group.calendar.google.com");
+  });
+
+  it("returns null for a non-Google feed", () => {
+    expect(calendarIdFromIcsUrl("https://example.com/feed.ics")).toBe(null);
+  });
+});
+
+describe("generalCalendarId", () => {
+  afterEach(() => {
+    delete process.env.DALI_GENERAL_CALENDAR_ID;
+  });
+
+  it("is null when nothing is configured", () => {
+    delete process.env.DALI_GENERAL_CALENDAR_ICS;
+    expect(generalCalendarId()).toBe(null);
+  });
+
+  it("derives the id from the configured ics feed", () => {
+    process.env.DALI_GENERAL_CALENDAR_ICS =
+      "https://calendar.google.com/calendar/ical/dali%40dartmouth.edu/public/basic.ics";
+    expect(generalCalendarId()).toBe("dali@dartmouth.edu");
+  });
+
+  it("prefers the explicit id over the feed", () => {
+    process.env.DALI_GENERAL_CALENDAR_ICS =
+      "https://calendar.google.com/calendar/ical/derived%40group.calendar.google.com/public/basic.ics";
+    process.env.DALI_GENERAL_CALENDAR_ID = "explicit@group.calendar.google.com";
+    expect(generalCalendarId()).toBe("explicit@group.calendar.google.com");
+  });
+});
+
+describe("generalCalendarState", () => {
+  const GENERAL = "general@group.calendar.google.com";
+  const google = (subCalendars: { id: string }[] | null) => ({
+    provider: "Google",
+    subCalendars,
+  });
+
+  afterEach(() => {
+    delete process.env.DALI_GENERAL_CALENDAR_ID;
+  });
+
+  it("is not-configured when no calendar is set", () => {
+    delete process.env.DALI_GENERAL_CALENDAR_ICS;
+    expect(generalCalendarState([google([{ id: GENERAL }])])).toBe("not-configured");
+  });
+
+  it("is linked when any account already carries the calendar", () => {
+    process.env.DALI_GENERAL_CALENDAR_ID = GENERAL;
+    expect(
+      generalCalendarState([google([{ id: "primary" }]), google([{ id: GENERAL }])]),
+    ).toBe("linked");
+  });
+
+  it("is missing when no account carries it", () => {
+    process.env.DALI_GENERAL_CALENDAR_ID = GENERAL;
+    expect(generalCalendarState([google([{ id: "primary" }])])).toBe("missing");
+  });
+
+  it("is missing when there is no linked account at all", () => {
+    process.env.DALI_GENERAL_CALENDAR_ID = GENERAL;
+    expect(generalCalendarState([])).toBe("missing");
+  });
+
+  it("stays quiet when an account's calendar list couldn't be read", () => {
+    process.env.DALI_GENERAL_CALENDAR_ID = GENERAL;
+    expect(generalCalendarState([google([{ id: "primary" }]), google(null)])).toBe("unknown");
+  });
+
+  it("ignores non-Google links", () => {
+    process.env.DALI_GENERAL_CALENDAR_ID = GENERAL;
+    expect(
+      generalCalendarState([
+        { provider: "Outlook", subCalendars: null },
+        google([{ id: GENERAL }]),
+      ]),
+    ).toBe("linked");
   });
 });
