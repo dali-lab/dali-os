@@ -10,6 +10,7 @@ import { withCors } from "~/lib/cors";
 import { isCore, isDomainLead, isProjectMember } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { displayEmail } from "~/lib/display";
+import { cachedForRequest } from "~/lib/request-cache";
 
 // Session-backed auth middleware. See SESSION_AUTH_PLAN.md for design.
 // The `user.sub` shape is preserved from the legacy JWT payload so existing
@@ -87,7 +88,14 @@ function buildAuthUser(user: {
   };
 }
 
+// Memoized per request: the shell (layout.tsx) and the matched route loader
+// both call requireAuth for the same navigation, so without this the session
+// lookup (and its throttled roll/heartbeat writes) ran twice per page load.
 export async function requireAuth(request: Request): Promise<AuthResult> {
+  return cachedForRequest(request, "requireAuth", () => computeAuth(request));
+}
+
+async function computeAuth(request: Request): Promise<AuthResult> {
   const credential = parseSessionIdWithSource(request);
   if (!credential) {
     return { ok: false, response: unauthorizedJson(), reason: "no_session" };

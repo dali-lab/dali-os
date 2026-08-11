@@ -1,0 +1,285 @@
+// Admin → System & Insights → Feature Flags. Per-flag targeting: a master
+// Enabled switch, an Everyone toggle, role checkboxes, and a named-user
+// allowlist. The registry (app/lib/feature-flags.ts) declares which flags
+// exist; the FeatureFlag row is authoritative for targeting once saved.
+// Core-visible (Admin + current-cycle Core) — same tier as the rest of the
+// System & Insights cluster.
+
+import { redirect, useFetcher, useLoaderData, useRevalidator } from "react-router";
+import { useEffect, useMemo, useState } from "react";
+import type { Route } from "./+types/admin.feature-flags";
+import { adminHandle } from "~/admin/adminNav";
+import { prisma } from "~/lib/db";
+import { requireAuth } from "~/lib/auth";
+import { redirectToLogin } from "~/lib/login-next";
+import { isCore, isAdmin, currentTermMemberWhere } from "~/lib/roles";
+import { MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
+import { fullName } from "~/lib/display";
+import { ROLE_TARGETS, type RoleTarget } from "~/lib/feature-flags";
+import { listFlagsForAdmin, type AdminFlagView } from "~/lib/feature-flags.server";
+import { buttonClasses } from "~/components/ui/Button";
+
+export const handle = adminHandle("feature-flags");
+
+export const meta: Route.MetaFunction = () => [
+  { title: "Feature Flags · Admin · DALI OS" },
+];
+
+// Human labels for the targetable role keys.
+const ROLE_LABELS: Record<RoleTarget, string> = {
+  isCore: "Core",
+  isAdmin: "Admin",
+  isDomainLead: "Domain Lead",
+  isInstructor: "Instructor",
+  isInterviewer: "Interviewer",
+  isStaff: "Staff",
+  isAlumni: "Alumni",
+};
+
+export async function loader({ request }: Route.LoaderArgs) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return redirectToLogin(request);
+  if (!(await isCore(auth.user.sub))) return redirect("/");
+
+  const memberWhere = await currentTermMemberWhere();
+  const [flags, users, viewerIsAdmin] = await Promise.all([
+    listFlagsForAdmin(),
+    prisma.user.findMany({
+      where: memberWhere,
+      orderBy: MEMBER_LIST_ORDER_BY,
+      select: { id: true, firstName: true, lastName: true, daliEmail: true },
+    }),
+    isAdmin(auth.user.sub),
+  ]);
+
+  return {
+    flags,
+    members: users.map((u) => ({ id: u.id, name: fullName(u), email: u.daliEmail })),
+    viewerIsAdmin,
+  };
+}
+
+type Member = { id: string; name: string; email: string | null };
+
+function FlagCard({ flag, members }: { flag: AdminFlagView; members: Member[] }) {
+  const saveFetcher = useFetcher<{ ok?: boolean; error?: string }>();
+  const revalidator = useRevalidator();
+  const busy = saveFetcher.state !== "idle";
+
+  const [enabled, setEnabled] = useState(flag.enabled);
+  const [everyone, setEveryone] = useState(flag.everyone);
+  const [roles, setRoles] = useState<RoleTarget[]>(flag.roles);
+  const [userIds, setUserIds] = useState<string[]>(flag.userIds);
+  const [search, setSearch] = useState("");
+
+  const memberById = useMemo(
+    () => new Map(members.map((m) => [m.id, m])),
+    [members],
+  );
+  const matches = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return [];
+    return members
+      .filter(
+        (m) =>
+          !userIds.includes(m.id) &&
+          (m.name.toLowerCase().includes(q) ||
+            (m.email ?? "").toLowerCase().includes(q)),
+      )
+      .slice(0, 8);
+  }, [search, members, userIds]);
+
+  const dirty =
+    enabled !== flag.enabled ||
+    everyone !== flag.everyone ||
+    roles.slice().sort().join() !== flag.roles.slice().sort().join() ||
+    userIds.slice().sort().join() !== flag.userIds.slice().sort().join();
+
+  function toggleRole(r: RoleTarget) {
+    setRoles((prev) =>
+      prev.includes(r) ? prev.filter((x) => x !== r) : [...prev, r],
+    );
+  }
+
+  function save() {
+    saveFetcher.submit(
+      { enabled, everyone, roles, userIds, note: flag.note },
+      {
+        method: "PATCH",
+        action: `/api/feature-flags/${flag.key}`,
+        encType: "application/json",
+      },
+    );
+  }
+
+  // Refresh the loader once a save lands so the baseline (which drives the
+  // "dirty" comparison and the Saved indicator) reflects what was persisted.
+  useEffect(() => {
+    if (saveFetcher.state === "idle" && saveFetcher.data?.ok) revalidator.revalidate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saveFetcher.state]);
+  const justSaved = saveFetcher.state === "idle" && saveFetcher.data?.ok === true;
+
+  return (
+    <div className="rounded-lg border border-zinc-200 bg-white p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="font-mono text-sm font-medium text-zinc-900">{flag.key}</p>
+          <p className="mt-0.5 text-sm font-semibold text-foreground">{flag.label}</p>
+          <p className="mt-0.5 text-xs text-zinc-500">{flag.description}</p>
+        </div>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => setEnabled((v) => !v)}
+          className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+            enabled
+              ? "bg-green-100 text-green-800 hover:bg-green-200"
+              : "bg-zinc-200 text-zinc-600 hover:bg-zinc-300"
+          } disabled:opacity-50`}
+        >
+          {enabled ? "Enabled" : "Disabled"}
+        </button>
+      </div>
+
+      <div className={`mt-4 flex flex-col gap-4 ${enabled ? "" : "opacity-50"}`}>
+        <label className="flex items-center gap-2 text-sm text-zinc-700">
+          <input
+            type="checkbox"
+            checked={everyone}
+            disabled={!enabled}
+            onChange={(e) => setEveryone(e.target.checked)}
+          />
+          Everyone
+          <span className="text-xs text-zinc-400">(on for all users)</span>
+        </label>
+
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            Roles
+          </p>
+          <div className="mt-1.5 flex flex-wrap gap-2">
+            {ROLE_TARGETS.map((r) => (
+              <label
+                key={r}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${
+                  roles.includes(r)
+                    ? "border-accent-coral bg-accent-coral/10 text-accent-coral"
+                    : "border-zinc-300 text-zinc-600"
+                } ${everyone || !enabled ? "opacity-50" : "cursor-pointer"}`}
+              >
+                <input
+                  type="checkbox"
+                  className="sr-only"
+                  checked={roles.includes(r)}
+                  disabled={everyone || !enabled}
+                  onChange={() => toggleRole(r)}
+                />
+                {ROLE_LABELS[r]}
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            Specific people
+          </p>
+          {userIds.length > 0 && (
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {userIds.map((id) => {
+                const m = memberById.get(id);
+                return (
+                  <span
+                    key={id}
+                    className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-700"
+                  >
+                    {m ? m.name : id}
+                    <button
+                      type="button"
+                      disabled={!enabled}
+                      onClick={() => setUserIds((prev) => prev.filter((x) => x !== id))}
+                      className="text-zinc-400 hover:text-zinc-700 disabled:opacity-50"
+                      aria-label="Remove"
+                    >
+                      ×
+                    </button>
+                  </span>
+                );
+              })}
+            </div>
+          )}
+          <div className="relative mt-1.5 max-w-sm">
+            <input
+              type="text"
+              value={search}
+              disabled={!enabled}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Add a person by name or email…"
+              className="w-full rounded-md border border-zinc-300 px-2.5 py-1.5 text-sm disabled:opacity-50"
+            />
+            {matches.length > 0 && (
+              <ul className="absolute z-10 mt-1 w-full overflow-hidden rounded-md border border-zinc-200 bg-white shadow-lg">
+                {matches.map((m) => (
+                  <li key={m.id}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUserIds((prev) => [...prev, m.id]);
+                        setSearch("");
+                      }}
+                      className="block w-full px-3 py-1.5 text-left text-sm hover:bg-zinc-50"
+                    >
+                      {m.name}
+                      {m.email && (
+                        <span className="ml-1 text-xs text-zinc-400">{m.email}</span>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4 flex items-center gap-3">
+        <button
+          type="button"
+          disabled={busy || !dirty}
+          onClick={save}
+          className={buttonClasses("primary", "sm")}
+        >
+          {busy ? "Saving…" : "Save"}
+        </button>
+        {saveFetcher.data?.error && (
+          <span className="text-xs text-red-600">{saveFetcher.data.error}</span>
+        )}
+        {justSaved && !dirty && (
+          <span className="text-xs text-green-700">Saved</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function AdminFeatureFlags() {
+  const { flags, members } = useLoaderData<typeof loader>();
+  return (
+    <div className="flex flex-col gap-4">
+      <header>
+        <h1 className="font-heading text-2xl font-bold text-foreground">Feature Flags</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Roll a feature out gradually. A flag is on for a user when it's enabled
+          and any target matches — everyone, a listed role, or a named person.
+          Disable the master switch to turn it off for everyone at once.
+        </p>
+      </header>
+      <div className="flex flex-col gap-3">
+        {flags.map((flag) => (
+          <FlagCard key={flag.key} flag={flag} members={members} />
+        ))}
+      </div>
+    </div>
+  );
+}

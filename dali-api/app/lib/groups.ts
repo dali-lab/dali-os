@@ -30,6 +30,8 @@ export async function resolveDynamicQuery(query: string): Promise<string[]> {
       return id ? resolveDomainMembers(id) : [];
     case "core":
       return resolveCoreMembers();
+    case "alumni":
+      return resolveAlumni();
     default:
       return [];
   }
@@ -88,6 +90,17 @@ async function resolveDomainMembers(domainId: string): Promise<string[]> {
   return rows.map((r) => r.userId);
 }
 
+// Lab alumni — a DALIMember whose stored membershipStatus is Alumni. The
+// symmetric counterpart to the "whole lab" (Active) audience: pick both to
+// reach everyone. No existing audience targeted alumni before this.
+async function resolveAlumni(): Promise<string[]> {
+  const rows = await prisma.user.findMany({
+    where: { daliMember: { isNot: null }, membershipStatus: "Alumni" },
+    select: { id: true },
+  });
+  return rows.map((r) => r.id);
+}
+
 async function resolveCoreMembers(): Promise<string[]> {
   const cycleTermIds = await getActiveCoreCycleTermIds();
   if (cycleTermIds.length === 0) return [];
@@ -125,15 +138,18 @@ export async function isUserInAnyGroup(
   return false;
 }
 
-// Every current lab member's userId. "Lab member" = a User with a DALIMember
-// marker row who is also placed in at least one domain (has a DomainEligibility
-// row). Members not yet assigned to any domain are excluded from the "whole
-// lab" announcement audience.
+// Every current lab member's userId — the "whole lab" announcement audience.
+// "Current lab member" = a DALIMember whose membershipStatus is Active (i.e. not
+// an alumnus). Deliberately term-independent so it reaches members with no
+// assignments this term yet (e.g. a next-term hire), and deliberately NOT gated
+// on domain placement: DomainEligibility survives graduation, so a domain filter
+// both let alumni through and dropped freshly-accepted members. Alumni are a
+// separate audience — the `alumni` system group.
 export async function resolveAllLabMembers(): Promise<string[]> {
   const users = await prisma.user.findMany({
     where: {
       daliMember: { isNot: null },
-      domainEligibilities: { some: {} },
+      membershipStatus: "Active",
     },
     select: { id: true },
   });
@@ -297,6 +313,19 @@ export async function ensureCoreGroup() {
   });
 }
 
+export async function ensureAlumniGroup() {
+  await prisma.groupDefinition.upsert({
+    where: { systemKey: "alumni" },
+    update: {},
+    create: {
+      name: "Alumni",
+      type: "Dynamic",
+      dynamicQuery: "alumni",
+      systemKey: "alumni",
+    },
+  });
+}
+
 // Idempotent backfill: ensures every existing Term/Project/Domain has its
 // default group, plus the Core singleton. Called after seed runs so a fresh
 // `prisma migrate reset && prisma db seed` ends with all default groups
@@ -309,6 +338,7 @@ export async function syncDefaultGroups() {
   ]);
   await Promise.all([
     ensureCoreGroup(),
+    ensureAlumniGroup(),
     ...terms.map((t) => ensureTermGroup(t.id, t.code)),
     ...projects.map((p) => ensureProjectGroup(p.id, p.name)),
     ...domains.map((d) => ensureDomainGroup(d.id, d.displayName)),

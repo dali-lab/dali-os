@@ -1,20 +1,19 @@
 import { useState, useEffect, useRef } from "react";
 import { Download, X } from "lucide-react";
 import { buttonClasses } from "~/components/ui/Button";
-
-// Remove this flag (set to true) when signed releases are live.
-const ENABLED = false;
+import { useFeatureFlag } from "~/components/FeatureFlags";
 
 const DISMISS_KEY = "dali:desktop-banner:dismissed";
 
 type State = "hidden" | "visible" | "trying" | "fallback";
 
 export function DesktopBanner() {
+  const enabled = useFeatureFlag("desktop-app");
   const [state, setState] = useState<State>("hidden");
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (!ENABLED) return;
+    if (!enabled) return;
     if ("__TAURI__" in window) return;
     try {
       if (window.localStorage.getItem(DISMISS_KEY)) return;
@@ -25,7 +24,7 @@ export function DesktopBanner() {
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, []);
+  }, [enabled]);
 
   function openInApp() {
     setState("trying");

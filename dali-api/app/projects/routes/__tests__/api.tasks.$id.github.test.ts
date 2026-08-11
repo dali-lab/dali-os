@@ -148,6 +148,7 @@ describe("POST /api/tasks/:id/github", () => {
         githubRepo: "dali/app",
         githubIssueNumber: 42,
         githubIssueUrl: "https://github.com/dali/app/issues/42",
+        activityAt: expect.any(Date),
       },
     });
     expect(await res.json()).toEqual({
@@ -209,7 +210,12 @@ describe("DELETE /api/tasks/:id/github", () => {
     expect(res.status).toBe(200);
     expect(mockPrisma.task.update).toHaveBeenCalledWith({
       where: { id: TASK_ID },
-      data: { githubRepo: null, githubIssueNumber: null, githubIssueUrl: null },
+      data: {
+        githubRepo: null,
+        githubIssueNumber: null,
+        githubIssueUrl: null,
+        activityAt: expect.any(Date),
+      },
     });
   });
 

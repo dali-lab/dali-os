@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, ExternalLink } from "lucide-react";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { Radio } from "~/components/ui/Radio";
 import type { Question } from "~/types";
@@ -14,6 +14,7 @@ import { SKILLS_RATING_UNRATED, parseSkillsRating } from "~/lib/skills-rating";
 import type { ReferenceOption } from "~/forms/lib/reference-sources.shared";
 import { Select } from "~/components/ui/floating";
 import { ProjectCoverImage } from "~/projects/components/ProjectCoverImage";
+import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 
 export type UrlCheckState = {
   status: "idle" | "checking" | "done";
@@ -103,6 +104,11 @@ function CheckboxField({
 // to scan the list; per-domain challenges and the SOW link are lower-signal
 // (long, term-specific text) so they're tucked behind "View details" rather
 // than forcing every card open to a wall of text.
+//
+// Only the summary is wrapped in the radio's <label>. The disclosure and the
+// details it reveals sit outside it, because a click anywhere inside a label
+// picks the option — which made reading a project's challenges or opening its
+// SOW impossible without also bidding on it.
 function ReferenceProjectCard({
   groupName,
   option,
@@ -119,102 +125,125 @@ function ReferenceProjectCard({
   const [expanded, setExpanded] = useState(false);
   const card = option.card;
   const hasDetails = !!card && (card.challenges.length > 0 || !!card.sowPageId);
+  const detailsId = `${groupName}-${option.value}-details`;
 
   return (
-    <Radio
-      name={groupName}
-      value={option.value}
-      checked={selected}
-      onChange={onChange}
-      disabled={disabled}
-      className={`items-start rounded-lg border p-3 transition-colors ${
+    <div
+      className={`rounded-lg border transition-colors ${
         selected
           ? "border-accent-coral bg-accent-coral/5"
           : "border-border bg-card hover:border-accent-coral/40"
       }`}
-      label={
-        <div className="flex gap-3 min-w-0 flex-1">
-          <ProjectCoverImage
-            name={option.label}
-            imageUrl={card?.imageUrl}
-            className="w-16 h-16 rounded-md object-cover flex-shrink-0"
-            placeholderClassName="w-16 h-16 rounded-md flex-shrink-0"
-          />
-          <div className="min-w-0 flex-1 flex flex-col gap-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-semibold text-dark-blue">{option.label}</span>
-              {card?.partners.map((p) => (
-                <span
-                  key={p}
-                  className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground"
-                >
-                  {p}
+    >
+      <Radio
+        name={groupName}
+        value={option.value}
+        checked={selected}
+        onChange={onChange}
+        disabled={disabled}
+        className="w-full items-start p-5"
+        label={
+          <div className="min-w-0 flex-1 flex flex-col gap-3">
+            <div className="flex gap-3 min-w-0 items-center">
+              <ProjectCoverImage
+                name={option.label}
+                imageUrl={card?.imageUrl}
+                className="w-16 h-16 rounded-lg object-cover flex-shrink-0"
+                placeholderClassName="w-16 h-16 rounded-lg flex-shrink-0"
+              />
+              <div className="min-w-0 flex flex-col gap-1.5">
+                <span className="font-heading text-base font-bold text-dark-blue leading-snug">
+                  {option.label}
                 </span>
-              ))}
+                {card && card.partners.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {card.partners.map((p) => (
+                      <span
+                        key={p}
+                        className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground"
+                      >
+                        {p}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
+            {/* Full card width, below the header row rather than squeezed
+                beside the thumbnail — unclamped, since picking a project to
+                work on for a term is a real decision worth the vertical space. */}
             {card?.description && (
-              <p className="text-sm text-muted-foreground line-clamp-2">
+              <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line">
                 {card.description}
               </p>
             )}
-
-            {hasDetails && (
-              // Inside a <label>, so a bare click would also toggle the
-              // radio — stop it so this only expands the details.
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setExpanded((x) => !x);
-                }}
-                className="self-start inline-flex items-center gap-1 text-xs font-medium text-accent-coral hover:text-accent-coral/80 mt-0.5"
-              >
-                <ChevronDown
-                  className={`w-3 h-3 transition-transform ${expanded ? "rotate-180" : ""}`}
-                />
-                {expanded ? "Hide details" : "View details"}
-              </button>
-            )}
-
-            {expanded && card && (
-              <div
-                onClick={(e) => e.stopPropagation()}
-                className="mt-1 pt-2 border-t border-border/60 flex flex-col gap-1.5"
-              >
-                {card.challenges.length > 0 && (
-                  <dl className="flex flex-col gap-1">
-                    {card.challenges.map((c) => (
-                      <div key={c.domain} className="text-sm">
-                        <dt className="inline font-medium text-dark-blue">
-                          {c.domain}:{" "}
-                        </dt>
-                        {/* Challenge text is authored as multi-line plain text. */}
-                        <dd className="inline whitespace-pre-line text-muted-foreground">
-                          {c.scope}
-                        </dd>
-                      </div>
-                    ))}
-                  </dl>
-                )}
-
-                {card.sowPageId && (
-                  <a
-                    href={`/documents/${card.sowPageId}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="self-start text-xs px-2 py-0.5 rounded-full border border-accent-coral/40 text-accent-coral hover:bg-accent-coral/10"
-                  >
-                    SOW
-                  </a>
-                )}
-              </div>
-            )}
           </div>
+        }
+      />
+
+      {hasDetails && card && (
+        // Indented to line up with the summary text: p-5 + the 4-unit radio + gap-2.
+        <div className="px-5 pb-5 pl-11">
+          <button
+            type="button"
+            aria-expanded={expanded}
+            aria-controls={detailsId}
+            onClick={() => setExpanded((x) => !x)}
+            className="inline-flex items-center gap-1 text-xs font-medium text-accent-coral hover:text-accent-coral/80"
+          >
+            <ChevronDown
+              className={`w-3 h-3 transition-transform ${expanded ? "rotate-180" : ""}`}
+            />
+            {expanded ? "Hide details" : "View details"}
+          </button>
+
+          {expanded && (
+            <div
+              id={detailsId}
+              className="mt-2 pt-2 border-t border-border/60 flex flex-col gap-1.5"
+            >
+              {card.challenges.length > 0 && (
+                <dl className="flex flex-col gap-3">
+                  {card.challenges.map((c) => (
+                    <div key={c.domain} className="text-sm">
+                      <dt className="inline font-medium text-dark-blue">
+                        {c.domain}:{" "}
+                      </dt>
+                      {/* Challenge text is authored as multi-line plain text. */}
+                      <dd className="inline whitespace-pre-line text-muted-foreground">
+                        {c.scope}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
+
+              {card.sowPageId && (
+                // Not a real <a>: inside the desktop app's single webview a
+                // target="_blank" click has no window to open into and silently
+                // does nothing. requestOpenTabIfEmbedded opens it as a workspace
+                // tab when embedded in one (web); otherwise this just navigates,
+                // same as every other internal link in the app (see workspace-link.ts).
+                <button
+                  type="button"
+                  onClick={() => {
+                    const url = `/documents/${card.sowPageId}`;
+                    if (!requestOpenTabIfEmbedded(url, `${option.label} — SOW`)) {
+                      window.location.href = url;
+                    }
+                  }}
+                  className="self-start inline-flex items-center gap-1.5 mt-0.5 text-xs font-medium px-2.5 py-1 rounded-full border border-accent-coral/40 text-accent-coral hover:bg-accent-coral/10"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                  Statement of Work
+                </button>
+              )}
+            </div>
+          )}
         </div>
-      }
-    />
+      )}
+    </div>
   );
 }
 

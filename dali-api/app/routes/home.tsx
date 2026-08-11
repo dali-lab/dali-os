@@ -12,7 +12,6 @@ import {
   FileText,
   CalendarClock,
   GraduationCap,
-  Compass,
   MapPin,
   Star,
   UserRound,
@@ -24,8 +23,10 @@ import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
 import { listOpenTasks, type Task } from "~/lib/tasks";
 import { listFavoritesAndRecents, type FavoritePage } from "~/lib/user-pages.server";
+import { loadShellUser } from "~/lib/shell-user.server";
+import { timed } from "~/lib/server-timing";
 import { ProjectIcon } from "~/components/ProjectIcon";
-import { PageIcon } from "~/components/PageIcon";
+import { FavoriteIcon } from "~/components/FavoriteIcon";
 import { FavoriteStar } from "~/components/FavoriteStar";
 import { FavoriteRouteButton } from "~/components/FavoriteRouteButton";
 import { isNavbarRoute } from "~/lib/navbar-routes";
@@ -55,6 +56,7 @@ type HomeNotification = {
 };
 
 export async function loader({ request }: Route.LoaderArgs) {
+  const __loaderStart = performance.now();
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
   if (auth.user.type === "applicant") return redirect("/portal");
@@ -73,11 +75,10 @@ export async function loader({ request }: Route.LoaderArgs) {
   })();
 
   // The chosen week (Sunday→following Sunday) in the viewer's timezone, used
-  // both to build the day columns and to window the calendar fetch.
-  const me = await prisma.user.findUnique({
-    where: { id: auth.user.sub },
-    select: { timeZone: true },
-  });
+  // both to build the day columns and to window the calendar fetch. The shell
+  // loads this same user row concurrently, so the memoized read shares it
+  // rather than issuing a second lookup.
+  const me = await loadShellUser(auth.user.sub, request);
   const tz = resolveUserTimeZone(me);
   const now = new Date();
   const ymd = getZonedYMD(now, tz);
@@ -102,7 +103,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const [items, tasks, rawEvents, formsForYou, assignedTasks, catalog, upcomingSessions, pages] =
     await Promise.all([
-    prisma.notification.findMany({
+    timed(request, 'home.notifications', () => prisma.notification.findMany({
       // Hide invites whose meeting was Cancelled — they shouldn't appear in the
       // banner, just as they're dropped from tasks and the bell. Also hide
       // already-answered invites (Accepted/Declined/Tentative): once the user has
@@ -134,16 +135,16 @@ export async function loader({ request }: Route.LoaderArgs) {
         scheduledMeetingId: true,
         rsvp: true,
       },
-    }),
-    listOpenTasks(auth.user.sub),
+    })),
+    timed(request, 'home.openTasks', () => listOpenTasks(auth.user.sub)),
     // Real events from the public DALI General Calendar (empty when unconfigured
     // or on fetch failure — the panel then shows an empty grid + hint).
-    fetchGeneralCalendarEvents(weekStart, weekEnd),
-    listedFormsFor(auth.user.sub),
+    timed(request, 'home.ics', () => fetchGeneralCalendarEvents(weekStart, weekEnd)),
+    timed(request, 'home.forms', () => listedFormsFor(auth.user.sub)),
     // Open board tasks assigned to the viewer, across all their projects
     // (Archived projects are retired — their tasks are noise here). One
     // bounded query: soonest deadline first (undated last), then priority.
-    prisma.task.findMany({
+    timed(request, 'home.assignedTasks', () => prisma.task.findMany({
       where: {
         status: { in: ["Todo", "InProgress", "InReview"] },
         assignees: { some: { userId: auth.user.sub } },
@@ -159,12 +160,14 @@ export async function loader({ request }: Route.LoaderArgs) {
         projectId: true,
         project: { select: { name: true, iconEmoji: true } },
       },
-    }),
+    })),
     // Education for the home card: catalog (enrolled + open-registration +
     // open-assignment counts) and the viewer's next few sessions.
-    listCatalog(auth.user.sub),
-    listUpcomingSessionsForUser(auth.user.sub, { limit: 3 }),
-    listFavoritesAndRecents(auth.user.sub),
+    timed(request, 'home.catalog', () => listCatalog(auth.user.sub)),
+    timed(request, 'home.sessions', () => listUpcomingSessionsForUser(auth.user.sub, { limit: 3 })),
+    // `request` reuses the read the shell's sidebar already kicked off for the
+    // same navigation instead of re-running the per-row access checks.
+    timed(request, 'home.favorites', () => listFavoritesAndRecents(auth.user.sub, request)),
   ]);
 
   const enrolledOfferings = catalog.filter((o) => o.myStatus === "Approved");
@@ -254,6 +257,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Label for the range being shown, formatted server-side in the viewer's zone
   // so the client doesn't re-derive it in the browser's.
   const weekLabel = formatWeekRange(weekStart, tz);
+
+  const __loaderTotal = performance.now() - __loaderStart;
+  if (__loaderTotal >= 400) console.log(`[perf-total] home loader ${__loaderTotal.toFixed(0)}ms`);
 
   return {
     user: auth.user,
@@ -347,21 +353,30 @@ export default function Home() {
 
       <AttentionBanner tasks={tasks} notifications={notifications} />
 
-      {/* The compact blocks flow two-up on wide screens. Each hides itself when
-          empty, so the list is built here from what will actually render —
-          otherwise a hidden block leaves a hole in the grid. A lone block takes
-          the full width rather than sitting in a half-empty row. */}
-      <div
-        className={`grid grid-cols-1 gap-6 lg:items-start ${
-          compactBlocks.length > 1 ? "lg:grid-cols-2" : ""
-        }`}
-      >
-        {compactBlocks.map((block, i) => (
-          <div key={i} className="min-w-0">
-            {block}
-          </div>
-        ))}
-      </div>
+      {/* The compact blocks flow two-up on wide screens. Rather than a grid
+          (whose rows align across columns, so a short card gets pinned to the
+          bottom of a taller neighbour and leaves a gap), the blocks are dealt
+          round-robin into two independent columns that each pack their own
+          stack — a short card sits directly under the one above it. Each block
+          hides itself when empty, so the list is built from what will actually
+          render; a lone block takes the full width. */}
+      {compactBlocks.length > 1 ? (
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+          {[0, 1].map((col) => (
+            <div key={col} className="flex min-w-0 flex-1 flex-col gap-6">
+              {compactBlocks
+                .filter((_, i) => i % 2 === col)
+                .map((block, i) => (
+                  <div key={i} className="min-w-0">
+                    {block}
+                  </div>
+                ))}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="min-w-0">{compactBlocks[0]}</div>
+      )}
 
       <div className="flex flex-col gap-6">
         <WeekCalendarPanel
@@ -491,7 +506,7 @@ function FormsForYouPanel({ forms }: { forms: ListedForm[] }) {
 /* ------------------------------------------------------------------ */
 
 /* ------------------------------------------------------------------ */
-/* Favourites — pages you starred, then the ones you opened most recently. */
+/* Favorites — pages you starred, then the ones you opened most recently. */
 /* ------------------------------------------------------------------ */
 
 function PageRow({ page, onChanged }: { page: FavoritePage; onChanged: () => void }) {
@@ -499,16 +514,11 @@ function PageRow({ page, onChanged }: { page: FavoritePage; onChanged: () => voi
     // Link + star are siblings: the star must not navigate.
     <div className="group flex items-center gap-1 rounded-md hover:bg-muted/50 transition-colors">
       <a href={page.href} className="flex flex-1 min-w-0 items-center gap-2 px-2 py-1.5 text-sm">
-        {/* Routes aren't documents, so they don't get the page glyph. */}
-        {page.isRoute ? (
-          <Compass className="w-3.5 h-3.5 shrink-0 text-muted-foreground" aria-hidden />
-        ) : (
-          <PageIcon iconEmoji={page.iconEmoji} />
-        )}
+        <FavoriteIcon page={page} />
         <span className="truncate text-foreground">{page.title || "Untitled"}</span>
       </a>
       {/* Recents show a hollow star on hover — a way to keep the page without
-          hunting for it — while a favourite always shows its filled one. */}
+          hunting for it — while a favorite always shows its filled one. */}
       {(page.favorited || !page.isRoute || !isNavbarRoute(page.href)) && (
         <span className={`pr-2 ${page.favorited ? "" : "opacity-0 group-hover:opacity-100 focus-within:opacity-100"}`}>
           {page.isRoute ? (
@@ -546,7 +556,7 @@ function FavoritesPanel({
     <div className="bg-card border border-border shadow-brand-1 rounded-lg p-4">
       <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground mb-2">
         <Star className="w-4 h-4 text-accent-coral" />
-        Favourites
+        Favorites
       </h2>
 
       {empty ? (

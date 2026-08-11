@@ -28,6 +28,7 @@ const QUESTION_TYPES: Question["type"][] = [
   "skills_rating",
   "checkbox",
   "reference",
+  "pageBreak",
 ];
 
 export function isQuestionArray(x: unknown): x is Question[] {

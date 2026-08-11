@@ -2,6 +2,7 @@ import { Link, useMatches } from "react-router";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { PageDocButton } from "~/components/page-docs/PageDocButton";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import {
   TablessHistoryNavInline,
   useShowTablessHistoryNav,
@@ -102,6 +103,12 @@ export function AreaPillNav({
     (m) => (m as { handle?: { docKey?: string } }).handle?.docKey,
   );
   const showHistoryNav = useShowTablessHistoryNav();
+
+  // Under the new left-nav, an area's sub-surfaces live in the sidebar dropdown,
+  // so the in-page pill row is suppressed for flagged users. Off (default) it
+  // renders exactly as today. Hook runs before the early return below.
+  const redesign = useFeatureFlag("sidebar-redesign");
+  if (redesign) return null;
 
   // A lone tab is pure noise — the page is already the only destination.
   // Still render the row if the history arrows need somewhere to live,

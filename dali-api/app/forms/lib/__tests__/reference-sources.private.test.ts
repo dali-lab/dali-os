@@ -6,6 +6,7 @@ import { prisma } from "~/lib/db";
 import { resolveReferenceOptions } from "~/forms/lib/reference-sources";
 
 const findMany = prisma.project.findMany as ReturnType<typeof vi.fn>;
+const pageFindMany = prisma.page.findMany as ReturnType<typeof vi.fn>;
 
 function projectRow(over: Record<string, unknown> = {}) {
   return {
@@ -14,7 +15,6 @@ function projectRow(over: Record<string, unknown> = {}) {
     description: "A blurb.",
     partners: [],
     domainScopes: [],
-    termStatuses: [],
     projectTerms: [{ termId: "t1", term: { sortKey: 20254 } }],
     ...over,
   };
@@ -23,6 +23,7 @@ function projectRow(over: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   findMany.mockResolvedValue([projectRow()]);
+  pageFindMany.mockResolvedValue([]);
   (prisma.term.findFirst as ReturnType<typeof vi.fn>).mockResolvedValue({
     id: "t1",
     code: "25F",
@@ -54,7 +55,7 @@ describe("projects:* reference sources exclude private projects", () => {
 });
 
 // Project options carry a card so the fill UI can show what's being picked.
-// The per-term bits (challenges, SOW) are narrowed to the source's term.
+// Challenges are narrowed to the source's term; the SOW is not term-scoped.
 describe("projects:* option cards", () => {
   const richRow = {
     id: "p1",
@@ -67,10 +68,6 @@ describe("projects:* option cards", () => {
       { termId: "t-other", scope: "Old work", domain: { name: "Dev" } },
       { termId: "t1", scope: "   ", domain: { name: "PM" } },
     ],
-    termStatuses: [
-      { termId: "t1", sowPageId: "page-1" },
-      { termId: "t-other", sowPageId: "page-old" },
-    ],
     projectTerms: [
       { termId: "t1", term: { sortKey: 20254 } },
       { termId: "t-other", term: { sortKey: 20251 } },
@@ -79,6 +76,7 @@ describe("projects:* option cards", () => {
 
   it("builds the card from the scoped term, alphabetical by domain", async () => {
     findMany.mockResolvedValue([richRow]);
+    pageFindMany.mockResolvedValue([{ id: "page-1", workspaceId: "p1" }]);
     const [option] = await resolveReferenceOptions("projects:active-in-term", {
       termId: "t1",
     });
@@ -106,7 +104,6 @@ describe("projects:* option cards", () => {
     findMany.mockResolvedValue([richRow]);
     const [option] = await resolveReferenceOptions("projects:active");
 
-    expect(option.card?.sowPageId).toBe("page-1");
     expect(option.card?.challenges).toHaveLength(2);
   });
 
@@ -121,6 +118,53 @@ describe("projects:* option cards", () => {
       challenges: [],
       sowPageId: null,
     });
+  });
+
+  it("resolves the SOW from the project document tagged 'sow'", async () => {
+    findMany.mockResolvedValue([projectRow(), projectRow({ id: "p2", name: "Beta" })]);
+    pageFindMany.mockResolvedValue([
+      { id: "sow-a", workspaceId: "p1" },
+      { id: "sow-b", workspaceId: "p2" },
+    ]);
+
+    const options = await resolveReferenceOptions("projects:active");
+
+    // One query for the whole list, not one per card.
+    expect(pageFindMany).toHaveBeenCalledTimes(1);
+    const where = pageFindMany.mock.calls[0][0].where;
+    expect(where).toMatchObject({
+      workspaceType: "Project",
+      workspaceId: { in: ["p1", "p2"] },
+      archivedAt: null,
+      isTemplate: false,
+    });
+    expect(where.tags.some.tag).toMatchObject({ slug: "sow" });
+    expect(options.map((o) => o.card?.sowPageId)).toEqual(["sow-a", "sow-b"]);
+  });
+
+  it("takes the first tagged document in page order when a project has several", async () => {
+    findMany.mockResolvedValue([projectRow()]);
+    pageFindMany.mockResolvedValue([
+      { id: "sow-first", workspaceId: "p1" },
+      { id: "sow-second", workspaceId: "p1" },
+    ]);
+
+    const [option] = await resolveReferenceOptions("projects:active");
+
+    expect(pageFindMany.mock.calls[0][0].orderBy).toEqual([
+      { position: "asc" },
+      { createdAt: "asc" },
+    ]);
+    expect(option.card?.sowPageId).toBe("sow-first");
+  });
+
+  it("leaves sowPageId null when no document carries the tag", async () => {
+    findMany.mockResolvedValue([projectRow()]);
+    pageFindMany.mockResolvedValue([]);
+
+    const [option] = await resolveReferenceOptions("projects:active");
+
+    expect(option.card?.sowPageId).toBeNull();
   });
 
   it("leaves domain sources plain — no card", async () => {

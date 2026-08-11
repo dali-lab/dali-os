@@ -70,6 +70,7 @@ export default [
     route("admin/analytics", "admin/routes/admin.analytics.tsx"),
     route("admin/ai-usage", "admin/routes/admin.ai-usage.tsx"),
     route("admin/jobs", "admin/routes/admin.jobs.tsx"),
+    route("admin/feature-flags", "admin/routes/admin.feature-flags.tsx"),
     route("admin/email-senders", "admin/routes/admin.email-senders.tsx"),
     route("admin/email-templates", "admin/routes/admin.email-templates.tsx"),
     route("admin/email-templates/:id", "admin/routes/admin.email-templates.$id.tsx"),
@@ -325,6 +326,7 @@ export default [
   // Background jobs: admin controls + the manual tick trigger (secret header
   // or admin session; the in-process 60s interval is the primary driver).
   route("api/jobs/:name", "admin/routes/api.jobs.$name.ts"),
+  route("api/feature-flags/:key", "admin/routes/api.feature-flags.$key.ts"),
   route("internal/jobs/tick", "jobs/routes/internal.jobs.tick.ts"),
 
   // Public showcase API — the read surface dali.website renders from. No
@@ -388,6 +390,7 @@ export default [
     "projects/routes/api.projects.$id.tasks.archive.ts",
   ),
   route("api/tasks/:id/move", "projects/routes/api.tasks.$id.move.ts"),
+  route("api/tasks/:id/view", "projects/routes/api.tasks.$id.view.ts"),
   route("api/tasks/:id/comments", "projects/routes/api.tasks.$id.comments.ts"),
   route("api/tasks/:id/github", "projects/routes/api.tasks.$id.github.ts"),
   route("api/tasks/:id/files", "projects/routes/api.tasks.$id.files.ts"),

@@ -3,6 +3,7 @@ import { redirect, useLoaderData, useNavigate, useRevalidator } from "react-rout
 import type { Route } from "./+types/domain-lead.delibs.$id";
 import type { DragEndEvent } from "@dnd-kit/core";
 import { prisma } from "~/lib/db";
+import { recordRouteVisit } from "~/lib/user-pages.server";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { parseSessionCookie } from "~/lib/cookies";
@@ -65,6 +66,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     request,
   );
   if (confRedirect) return confRedirect;
+
+  // After the domain-lead + confidentiality gates — this delibs session lands
+  // in the lead's recents, keyed to the domain.
+  recordRouteVisit(
+    auth.user.sub,
+    `/hiring/domain-lead/delibs/${params.id}`,
+    `${session.domain?.name ?? "Domain"} delibs`,
+  );
 
   // Load domain applications that qualify for this delibs type.
   // Initial: all reviews submitted, at least one review, no Final/Released decision.

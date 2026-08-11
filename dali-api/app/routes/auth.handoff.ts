@@ -12,6 +12,7 @@ import { setSessionCookie } from "~/lib/cookies";
 import { getClientIp } from "~/lib/rate-limit";
 import { logAuditEvent } from "~/lib/audit";
 import { hashCode, desktopWebviewUserAgent } from "~/lib/pairing";
+import { hasExplicitTablessPreference, tablessCookieHeader } from "~/lib/tabless";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url);
@@ -39,6 +40,14 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const headers = new Headers();
   setSessionCookie(headers, webview.rawId);
+  // The desktop app's own window benefits from the tabbed workspace (its
+  // back/forward history arrows in particular) the way a plain embedded page
+  // wouldn't, so default a fresh desktop pairing into tab mode. Skipped if
+  // this device already made an explicit choice, so re-pairing after a
+  // sign-out doesn't clobber it.
+  if (!hasExplicitTablessPreference(request)) {
+    headers.append("Set-Cookie", tablessCookieHeader(false));
+  }
   await logAuditEvent({ action: "pairing.handoff", userId: row.userId, request });
   return redirect("/", { headers });
 }

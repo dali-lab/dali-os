@@ -13,10 +13,9 @@ import {
   UsersRound,
   Handshake,
   GraduationCap,
-  Workflow,
   Settings,
   HelpCircle,
-  Heart,
+  UserCircle,
   FileText,
   FileQuestion,
   ClipboardCheck,
@@ -37,15 +36,9 @@ import { setTablessPreference } from "~/lib/tabless";
 import { setFocusPreference } from "~/lib/focus-mode";
 import type { SearchResult, SearchResultType } from "~/lib/search";
 import { ADMIN_CLUSTERS } from "~/admin/adminNav";
+import { visibleAreas, visibleSubtabs, type RoleFlags } from "~/lib/nav-areas";
 
-export interface CommandPaletteRoles {
-  isCore?: boolean;
-  isAdmin?: boolean;
-  canViewForms?: boolean;
-  canViewStaffing?: boolean;
-  hasHiringAccess?: boolean;
-  isLabMentor?: boolean;
-}
+export type CommandPaletteRoles = RoleFlags;
 
 interface CommandPaletteProps {
   open: boolean;
@@ -82,6 +75,7 @@ interface PaletteItem {
 // palette doesn't sprout one section per entity kind.
 const TYPE_META: Record<SearchResultType, { icon: LucideIcon; section: string }> = {
   person: { icon: UsersRound, section: "People" },
+  group: { icon: Users2, section: "Groups" },
   project: { icon: FolderKanban, section: "Projects" },
   education: { icon: GraduationCap, section: "Education" },
   partner: { icon: Handshake, section: "Partners" },
@@ -99,6 +93,7 @@ const TYPE_META: Record<SearchResultType, { icon: LucideIcon; section: string }>
 
 const SECTION_ORDER = [
   "People",
+  "Groups",
   "Projects",
   "Education",
   "Partners",
@@ -156,23 +151,26 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles, onOpe
   // Static "Go to" + "Commands" entries, built from role flags (no round-trip)
   // and filtered client-side by the current query.
   const staticSections = useMemo(() => {
+    // "Go to" derives from the sidebar registry (NAV_AREAS) so the palette can't
+    // drift from it: each visible area yields its hub plus every visible sub-tab.
+    // Admin is the exception — its finer cluster entries live in the dedicated
+    // "Admin" section below, so here we emit only its hub.
     const nav: PaletteItem[] = [
       navItem("Home", "/", Home),
       navItem("My Tasks", "/notifications", ListTodo),
       navItem("Calendar", "/calendar", Calendar),
-      roles.canViewForms ? navItem("Forms", "/forms", ClipboardList) : null,
-      roles.hasHiringAccess ? navItem("Hiring", "/hiring", Briefcase) : null,
-      navItem("Projects", "/projects", FolderKanban),
-      roles.canViewStaffing ? navItem("Staffing", "/projects/staffing", Users2) : null,
-      roles.isLabMentor || roles.isCore ? navItem("Mentorship", "/mentorship", Heart) : null,
-      navItem("People", "/members", UsersRound),
-      navItem("Partners", "/partners", Handshake),
-      navItem("Education", "/education", GraduationCap),
-      navItem("Lab Processes", "/internal-processes", Workflow),
-      roles.isCore ? navItem("Admin", "/admin", Settings) : null,
+      ...visibleAreas(roles).flatMap((area) => {
+        const hub = navItem(area.label, area.hubPath, area.icon);
+        if (area.key === "admin") return [hub];
+        const subs = visibleSubtabs(area, roles)
+          .filter((t) => t.href !== area.hubPath)
+          .map((t) => navItem(`${area.label} › ${t.label}`, t.href, t.icon));
+        return [hub, ...subs];
+      }),
+      navItem("Profile", "/profile", UserCircle),
       navItem("Settings", "/settings", Settings),
       navItem("Help", "/help", HelpCircle),
-    ].filter((x): x is PaletteItem => x !== null);
+    ];
 
     const commands: PaletteItem[] = [
       {

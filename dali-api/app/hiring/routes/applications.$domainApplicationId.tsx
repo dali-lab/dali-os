@@ -1,6 +1,7 @@
 import { redirect, useLoaderData, useSearchParams } from "react-router";
 import type { Route } from "./+types/applications.$domainApplicationId";
 import { prisma } from "~/lib/db";
+import { recordRouteVisit } from "~/lib/user-pages.server";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
@@ -112,6 +113,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // Confidentiality gate — redirects to the signing page when unsigned.
   const confRedirect = await requirePageSignedOrRedirect(auth.user.sub, cycleId, request);
   if (confRedirect) return confRedirect;
+
+  // After the access + confidentiality gates — this submission lands in the
+  // viewer's recents, keyed to the applicant's name.
+  recordRouteVisit(
+    auth.user.sub,
+    `/hiring/applications/${params.domainApplicationId}`,
+    `${da.application.user.firstName} ${da.application.user.lastName}`.trim(),
+  );
 
   const isInternToFull = da.application.applicationCycle.cycleType === "InternToFull";
 

@@ -1,9 +1,15 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Eye, X } from "lucide-react";
 import type { Question } from "~/types";
 import { Modal } from "~/components/Modal";
 import { FormQuestionField } from "~/components/form-builder/QuestionField";
 import { FormFieldList } from "~/forms/components/FormField";
+import {
+  useFormPager,
+  FormPagerNav,
+  FormPageHeading,
+} from "~/forms/components/FormPager";
+import { paginateQuestions } from "~/lib/form-pages";
 import { DocEditor } from "~/components/doc";
 import { isEmptyBlocks } from "~/lib/blocks";
 import { Button } from "~/components/ui/Button";
@@ -29,6 +35,8 @@ export function FormPreviewModal({
   const headingId = "form-preview-heading";
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [submitted, setSubmitted] = useState(false);
+  const pages = useMemo(() => paginateQuestions(questions), [questions]);
+  const pager = useFormPager(pages, { excludeFileType: true });
 
   function set(key: string, v: string) {
     setAnswers((a) => ({ ...a, [key]: v }));
@@ -95,8 +103,9 @@ export function FormPreviewModal({
               }}
               className="mt-6 flex flex-col gap-5"
             >
+              <FormPageHeading page={pager.page} />
               <FormFieldList
-                questions={questions}
+                questions={pager.page.questions}
                 values={answers}
                 onChange={set}
                 renderField={(q) =>
@@ -114,16 +123,22 @@ export function FormPreviewModal({
                 }
               />
 
-              <div className="flex items-center gap-3">
-                <Button type="submit" variant="primary" size="sm" className="self-start">
-                  Submit
-                </Button>
-                {submitted && (
-                  <span className="text-xs text-muted-foreground">
-                    Preview only — nothing was submitted.
-                  </span>
-                )}
-              </div>
+              <FormPagerNav
+                pager={pager}
+                getValue={(q) => answers[q.key]}
+                submitSlot={
+                  <div className="flex items-center gap-3">
+                    <Button type="submit" variant="primary" size="sm" className="self-start">
+                      Submit
+                    </Button>
+                    {submitted && (
+                      <span className="text-xs text-muted-foreground">
+                        Preview only — nothing was submitted.
+                      </span>
+                    )}
+                  </div>
+                }
+              />
             </form>
           )}
         </div>

@@ -5,6 +5,8 @@ import {
   loadProfilePage,
   runProfileAction,
 } from "~/members/lib/profile-page.server";
+import { requireAuth } from "~/lib/auth";
+import { recordRouteVisit } from "~/lib/user-pages.server";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const m = (data as { member?: { firstName: string; lastName: string } } | undefined)?.member;
@@ -27,7 +29,19 @@ export const handle = {
 };
 
 export async function loader({ request, params }: Route.LoaderArgs) {
-  return loadProfilePage({ request, targetId: params.id });
+  const data = await loadProfilePage({ request, targetId: params.id });
+  // After loadProfilePage's gate (it throws on redirect/not-found), so only a
+  // viewable profile lands in the viewer's recents. Scoped to this route, not
+  // the shared loader — Settings reuses loadProfilePage for the self profile.
+  const auth = await requireAuth(request);
+  if (auth.ok) {
+    recordRouteVisit(
+      auth.user.sub,
+      `/members/${params.id}`,
+      `${data.member.firstName} ${data.member.lastName}`.trim(),
+    );
+  }
+  return data;
 }
 
 export async function action({ request, params }: Route.ActionArgs) {

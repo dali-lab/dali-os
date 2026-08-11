@@ -11,6 +11,9 @@ import {
   canViewStaffing,
   getActiveCoreCycleTermIds,
   isLabMentor,
+  isCore,
+  isLabMember,
+  isProjectMember,
 } from "~/lib/roles";
 
 // Phase 2: roles helpers now query AdminMembership / CoreAssignment /
@@ -311,5 +314,46 @@ describe("canViewStaffing (Core or Admin only)", () => {
   it("false for a plain member", async () => {
     setRoleFlags({ member: true });
     expect(await canViewStaffing("u")).toBe(false);
+  });
+});
+
+// getPageAccess fans these per-user checks out over dozens of favorite/recent
+// pages in one navigation. Passing the shared Request must collapse each to a
+// single query — otherwise the sidebar read re-runs identical queries per page,
+// which was the dominant navigation-TTFB cost (perf review Aug 2026).
+describe("request-scoped memoization", () => {
+  const req = () => new Request("http://localhost/x");
+
+  it("isCore runs its queries once across many calls sharing a request", async () => {
+    setRoleFlags({ member: true, core: true });
+    const r = req();
+    await Promise.all(Array.from({ length: 20 }, () => isCore("u", r)));
+    expect(mockPrisma.adminMembership.findUnique).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.coreAssignment.findFirst).toHaveBeenCalledTimes(1);
+  });
+
+  it("isLabMember runs its query once across many calls sharing a request", async () => {
+    setRoleFlags({ member: true });
+    const r = req();
+    await Promise.all(Array.from({ length: 20 }, () => isLabMember("u", r)));
+    expect(mockPrisma.dALIMember.findUnique).toHaveBeenCalledTimes(1);
+  });
+
+  it("isProjectMember memoizes per (user, project)", async () => {
+    setRoleFlags({ member: true });
+    const r = req();
+    await Promise.all([
+      isProjectMember("u", "p1", r),
+      isProjectMember("u", "p1", r),
+      isProjectMember("u", "p2", r),
+    ]);
+    expect(mockPrisma.projectAssignment.findFirst).toHaveBeenCalledTimes(2);
+  });
+
+  it("without a request each call queries independently", async () => {
+    setRoleFlags({ member: true });
+    await isLabMember("u");
+    await isLabMember("u");
+    expect(mockPrisma.dALIMember.findUnique).toHaveBeenCalledTimes(2);
   });
 });

@@ -22,7 +22,7 @@ import { Checkbox } from "~/components/ui/Checkbox";
 import { EditableSection } from "~/components/EditableSection";
 import { PageIcon } from "~/components/PageIcon";
 import { FavoriteStar } from "~/components/FavoriteStar";
-import { favoritePageIds } from "~/lib/user-pages.server";
+import { favoritePageIds, recordRouteVisit } from "~/lib/user-pages.server";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { PresenceBar } from "~/components/collab/PresenceBar";
 import { uploadFileToS3, formatBytes } from "~/lib/upload-client";
@@ -329,6 +329,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           githubIssueNumber: true,
           githubIssueUrl: true,
           createdAt: true,
+          activityAt: true,
           createdBy: { select: USER_NAME_SELECT },
           domain: { select: { id: true, displayName: true } },
           assignees: {
@@ -359,6 +360,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
   });
   if (!project) throw new Response("Not found", { status: 404 });
+
+  // After the gate, so a 404 never lands in someone's recents. Detached —
+  // a failed bookkeeping write must not cost the reader their project.
+  recordRouteVisit(auth.user.sub, `/projects/${project.id}`, project.name);
 
   // Backfill the two default, undeletable meeting-note folders (idempotent —
   // no-ops once they exist) so every project's Documents block always shows
@@ -558,6 +563,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     })),
   );
 
+  // Viewer's "last opened" stamp per task, to derive the board's unread dot
+  // (a task the viewer has never opened isn't flagged — see TaskCardModel.hasUnread).
+  const taskViews = project.tasks.length
+    ? await prisma.taskView.findMany({
+        where: { userId: auth.user.sub, taskId: { in: project.tasks.map((t) => t.id) } },
+        select: { taskId: true, viewedAt: true },
+      })
+    : [];
+  const viewedAtByTaskId = new Map(taskViews.map((v) => [v.taskId, v.viewedAt]));
+
   const tasks: TaskCardModel[] = project.tasks.map((t) => ({
     id: t.id,
     title: t.title,
@@ -585,6 +600,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     })),
     createdBy: { id: t.createdBy.id, name: fullName(t.createdBy) },
     createdAt: t.createdAt.toISOString(),
+    hasUnread: (() => {
+      const viewedAt = viewedAtByTaskId.get(t.id);
+      return !!viewedAt && t.activityAt > viewedAt;
+    })(),
   }));
 
   // Per-epic task progress for the epic list rows + timeline tooltips.

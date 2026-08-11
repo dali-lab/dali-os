@@ -14,6 +14,7 @@ import { resolveGroupMembers } from "~/lib/groups";
 import {
   permissionAtLeast,
   sharePermissionFor,
+  groupIdsForUser,
   addPageShare,
   SharePrincipalError,
 } from "../page-sharing.server";
@@ -58,6 +59,41 @@ describe("sharePermissionFor", () => {
     expect(await sharePermissionFor("p1", "u1")).toBe("Comment");
     const where = m.pageShare.findMany.mock.calls[0][0].where;
     expect(JSON.stringify(where)).toContain("g1");
+  });
+});
+
+describe("groupIdsForUser request memoization", () => {
+  // The expensive part — walking every active group's membership — is per-user,
+  // but getPageAccess re-derives it once per page. A shared request must collapse
+  // it to a single walk, or the sidebar Favorites/Recents read pays it per page
+  // (the dominant navigation-TTFB cost; perf review Aug 2026).
+  beforeEach(() => {
+    m.groupDefinition.findMany.mockResolvedValue([{ id: "g1" }]);
+    vi.mocked(resolveGroupMembers).mockResolvedValue(["u1"]);
+    m.pageShare.findMany.mockResolvedValue([]);
+  });
+
+  it("walks group membership once across many calls sharing a request", async () => {
+    const req = new Request("http://localhost/x");
+    await Promise.all(Array.from({ length: 20 }, () => groupIdsForUser("u1", req)));
+    expect(m.groupDefinition.findMany).toHaveBeenCalledTimes(1);
+    expect(resolveGroupMembers).toHaveBeenCalledTimes(1);
+  });
+
+  it("sharePermissionFor over many pages resolves groups once with a shared request", async () => {
+    const req = new Request("http://localhost/x");
+    await Promise.all(
+      Array.from({ length: 14 }, (_, i) => sharePermissionFor(`page-${i}`, "u1", req)),
+    );
+    expect(m.groupDefinition.findMany).toHaveBeenCalledTimes(1);
+    // still one pageShare lookup per (distinct) page
+    expect(m.pageShare.findMany).toHaveBeenCalledTimes(14);
+  });
+
+  it("without a request each call re-walks", async () => {
+    await groupIdsForUser("u1");
+    await groupIdsForUser("u1");
+    expect(m.groupDefinition.findMany).toHaveBeenCalledTimes(2);
   });
 });
 

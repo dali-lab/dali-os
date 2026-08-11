@@ -64,7 +64,7 @@ type DocOut = {
   isSystem: boolean;
   pinned: boolean;
   pinnedAt: number | null;
-  /** This viewer's own star (home Favourites), not the shared pin above. */
+  /** This viewer's own star (home Favorites), not the shared pin above. */
   favorited: boolean;
   iconEmoji: string | null;
   tags: DocTagOut[];

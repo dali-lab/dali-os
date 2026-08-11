@@ -18,12 +18,27 @@ function page(id: string) {
   return { page: { id, title: id, iconEmoji: null, workspaceType: "Lab" } };
 }
 
-/** Queue the three findMany calls: route favourites, then pages, then recents. */
-function rows(favorites: string[], recents: string[], routes: { href: string; label: string }[] = []) {
+/**
+ * Queue the four findMany calls in loader order: route favorites, page
+ * favorites, page recents, then route recents. Recents carry a visitedAt so the
+ * merge can order them; page recents get later timestamps than route recents so
+ * the existing "keeps the query's order" expectations hold.
+ */
+function rows(
+  favorites: string[],
+  recents: string[],
+  routes: { href: string; label: string }[] = [],
+  routeRecents: { href: string; label: string }[] = [],
+) {
   mockPrisma.userFavorite.findMany
     .mockResolvedValueOnce(routes)
     .mockResolvedValueOnce(favorites.map(page))
-    .mockResolvedValueOnce(recents.map(page));
+    .mockResolvedValueOnce(
+      recents.map((id, i) => ({ ...page(id), visitedAt: new Date(2_000_000_000_000 - i) })),
+    )
+    .mockResolvedValueOnce(
+      routeRecents.map((r, i) => ({ ...r, visitedAt: new Date(1_000_000_000_000 - i) })),
+    );
 }
 
 const allowAll = () =>
@@ -35,21 +50,21 @@ beforeEach(() => {
 });
 
 describe("listFavoritesAndRecents", () => {
-  it("keeps the query's order — favourites and recents are already sorted", async () => {
+  it("keeps the query's order — favorites and recents are already sorted", async () => {
     rows(["fav-1", "fav-2"], ["recent-1", "recent-2"]);
     const { favorites, recents } = await listFavoritesAndRecents(USER);
     expect(favorites.map((p) => p.id)).toEqual(["fav-1", "fav-2"]);
     expect(recents.map((p) => p.id)).toEqual(["recent-1", "recent-2"]);
   });
 
-  it("marks favourites so the caller can tell the two lists apart", async () => {
+  it("marks favorites so the caller can tell the two lists apart", async () => {
     rows(["fav-1"], ["recent-1"]);
     const { favorites, recents } = await listFavoritesAndRecents(USER);
     expect(favorites[0].favorited).toBe(true);
     expect(recents[0].favorited).toBe(false);
   });
 
-  it("asks the database to exclude favourites from recents, so no page is listed twice", async () => {
+  it("asks the database to exclude favorites from recents, so no page is listed twice", async () => {
     rows(["fav-1"], []);
     await listFavoritesAndRecents(USER);
     const recentsQuery = mockPrisma.userFavorite.findMany.mock.calls[2][0];
@@ -60,8 +75,9 @@ describe("listFavoritesAndRecents", () => {
   it("skips archived pages in both lists", async () => {
     rows([], []);
     await listFavoritesAndRecents(USER);
-    // calls[0] is the route query, which has no page relation to filter.
-    for (const call of mockPrisma.userFavorite.findMany.mock.calls.slice(1)) {
+    // calls[0] (route favorites) and calls[3] (route recents) have no page
+    // relation to filter — only the two page queries do.
+    for (const call of mockPrisma.userFavorite.findMany.mock.calls.slice(1, 3)) {
       expect(call[0].where.page).toEqual({ is: { archivedAt: null } });
     }
   });
@@ -98,11 +114,22 @@ describe("listFavoritesAndRecents", () => {
   });
 });
 
-describe("route favourites", () => {
+describe("route favorites", () => {
   it("lists starred URLs alongside starred pages", async () => {
     rows(["fav-page"], [], [{ href: "/projects/p1", label: "Hood Museum AR" }]);
     const { favorites } = await listFavoritesAndRecents(USER);
     expect(favorites.map((f) => f.href)).toEqual(["/projects/p1", "/documents/fav-page"]);
+  });
+
+  it("resolves a favorited project route to its real icon and live name", async () => {
+    rows([], [], [{ href: "/projects/p1", label: "stale label" }]);
+    mockPrisma.project.findMany.mockResolvedValueOnce([
+      { id: "p1", name: "Hood Museum AR", iconEmoji: "🏛️" },
+    ]);
+    const { favorites } = await listFavoritesAndRecents(USER);
+    expect(favorites[0].iconKind).toBe("project");
+    expect(favorites[0].iconEmoji).toBe("🏛️");
+    expect(favorites[0].title).toBe("Hood Museum AR");
   });
 
   it("uses the stored label, since a route has no row to read a title from", async () => {
@@ -118,13 +145,53 @@ describe("route favourites", () => {
     expect(favorites[0].title).toBe("/projects/p1");
   });
 
-  it("never puts a route in recents — those are documents you opened", async () => {
-    rows([], ["r1"], [{ href: "/projects/p1", label: "P" }]);
+  it("merges recently opened routes into recents alongside pages", async () => {
+    // Page recents carry later timestamps (see rows helper), so they sort first.
+    rows([], ["r1"], [], [{ href: "/projects/p1", label: "Hood Museum AR" }]);
+    mockPrisma.project.findMany.mockResolvedValueOnce([
+      { id: "p1", name: "Hood Museum AR", iconEmoji: null },
+    ]);
     const { recents } = await listFavoritesAndRecents(USER);
-    expect(recents.every((r) => !r.isRoute)).toBe(true);
+    expect(recents.map((r) => r.href)).toEqual(["/documents/r1", "/projects/p1"]);
+    expect(recents.find((r) => r.isRoute)?.title).toBe("Hood Museum AR");
   });
 
-  it("drops navbar route favourites (home, settings, hub pages)", async () => {
+  it("drops a route recent whose entity no longer exists", async () => {
+    rows([], [], [], [{ href: "/projects/gone", label: "Deleted" }]);
+    // project.findMany defaults to [] — the entity resolves to not-found.
+    const { recents } = await listFavoritesAndRecents(USER);
+    expect(recents).toHaveLength(0);
+  });
+
+  it("gives offering/form/hiring/note recents a kind glyph and keeps the label", async () => {
+    rows([], [], [], [
+      { href: "/education/o1", label: "Intro to Design" },
+      { href: "/education/o2/hub", label: "Studio" },
+      { href: "/forms/f1", label: "Applications" },
+      { href: "/forms/responses/f2", label: "Feedback responses" },
+      { href: "/hiring/lead/cycle/c1", label: "26F Hiring" },
+    ]);
+    const { recents } = await listFavoritesAndRecents(USER);
+    const kind = Object.fromEntries(recents.map((r) => [r.href, r.iconKind]));
+    expect(kind["/education/o1"]).toBe("offering");
+    expect(kind["/education/o2/hub"]).toBe("offering");
+    expect(kind["/forms/f1"]).toBe("form");
+    expect(kind["/forms/responses/f2"]).toBe("form");
+    expect(kind["/hiring/lead/cycle/c1"]).toBe("hiring");
+    expect(recents.find((r) => r.href === "/education/o1")?.title).toBe("Intro to Design");
+  });
+
+  it("queries unpinned route recents (favoritedAt null, href set)", async () => {
+    rows([], [], [], [{ href: "/members/m1", label: "Ada" }]);
+    mockPrisma.user.findMany.mockResolvedValueOnce([]);
+    await listFavoritesAndRecents(USER);
+    const routeRecentsQuery = mockPrisma.userFavorite.findMany.mock.calls[3][0];
+    expect(routeRecentsQuery.where.favoritedAt).toBeNull();
+    expect(routeRecentsQuery.where.visitedAt).toEqual({ not: null });
+    expect(routeRecentsQuery.where.href).toEqual({ not: null });
+  });
+
+  it("drops navbar route favorites (home, settings, hub pages)", async () => {
     rows(
       [],
       [],

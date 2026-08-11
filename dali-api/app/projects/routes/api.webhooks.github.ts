@@ -97,7 +97,10 @@ async function handleIssues(payload: Record<string, unknown>): Promise<void> {
       const stateReason = stringField(issue, "state_reason");
       const newStatus: TaskStatus = stateReason === "not_planned" ? "Cancelled" : "Done";
       if (task.status !== "Done" && task.status !== "Cancelled") {
-        await prisma.task.update({ where: { id: task.id }, data: { status: newStatus } });
+        await prisma.task.update({
+          where: { id: task.id },
+          data: { status: newStatus, activityAt: new Date() },
+        });
         await notifyTaskGithubUpdate({
           taskId: task.id,
           action: "closed",
@@ -108,7 +111,10 @@ async function handleIssues(payload: Record<string, unknown>): Promise<void> {
     }
     case "reopened": {
       if (task.status === "Done" || task.status === "Cancelled") {
-        await prisma.task.update({ where: { id: task.id }, data: { status: "InProgress" } });
+        await prisma.task.update({
+          where: { id: task.id },
+          data: { status: "InProgress", activityAt: new Date() },
+        });
         await notifyTaskGithubUpdate({
           taskId: task.id,
           action: "reopened",

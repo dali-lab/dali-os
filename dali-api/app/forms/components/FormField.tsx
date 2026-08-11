@@ -42,6 +42,13 @@ export function FormField({
   belowField,
   renderField,
 }: FormFieldProps) {
+  // Layout-only divider — paginated surfaces strip these before rendering, but
+  // a flat FormFieldList render should just skip it rather than emit an empty
+  // labelled field.
+  if (question.type === "pageBreak") {
+    return null;
+  }
+
   if (question.type === "info") {
     return (
       <div

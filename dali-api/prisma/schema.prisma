@@ -176,6 +176,7 @@ model User {
   createdTasks               Task[]               @relation("TaskCreatedBy")
   taskAssignees              TaskAssignee[]
   taskComments               TaskComment[]
+  taskViews                  TaskView[]
   projectDomainScopesUpdated ProjectDomainScope[] @relation("ProjectDomainScopeUpdatedBy")
 
   // ─── Phase 1: staffing back-relations ─────────────────────────────────────
@@ -2867,6 +2868,14 @@ model Task {
   // deleted, so it stays reportable/restorable.
   archivedAt DateTime?
 
+  // Last *meaningful* change (status/field edit, assignee change, comment,
+  // GitHub link) — deliberately separate from `updatedAt`, which also gets
+  // bumped by drag-and-drop reordering of column-mates that didn't actually
+  // change. Compared against TaskView.viewedAt to drive the "new updates"
+  // dot on the board. Mutation routes set this explicitly; it is not
+  // `@updatedAt`.
+  activityAt DateTime @default(now())
+
   // Optional mirror to a GitHub issue. All three populated together when the
   // task was created with the "Create GitHub issue" toggle on; null when not
   // mirrored. The (githubRepo, githubIssueNumber) pair is the lookup key for
@@ -2883,6 +2892,7 @@ model Task {
   comments  TaskComment[]
   reminders TaskReminder[]
   files     TaskFileLink[]
+  views     TaskView[]
 
   createdById String
   createdBy   User     @relation("TaskCreatedBy", fields: [createdById], references: [id])
@@ -2958,6 +2968,22 @@ model TaskComment {
   author User @relation(fields: [authorId], references: [id])
 
   @@index([taskId, createdAt])
+}
+
+// Per-user "last opened this task" stamp. Compared against Task.activityAt
+// to render the board's "new updates" indicator — a row only exists once a
+// user has opened the task at least once, so a task nobody on the viewer's
+// side has ever opened isn't flagged "new" (that would just be every task).
+model TaskView {
+  id       String   @id @default(cuid())
+  taskId   String
+  userId   String
+  viewedAt DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([taskId, userId])
 }
 
 // ─── Education ───────────────────────────────────────────────────────────────
@@ -3996,8 +4022,10 @@ model UserFavorite {
 
   // Null = not favourited. Timestamped so pins order most-recent-first.
   favoritedAt DateTime?
-  // Null = never opened. Only pages record visits — "recently opened" is about
-  // documents, and every route would drown them out.
+  // Null = never opened. Set for both page visits (recordPageVisit) and the
+  // entity detail routes — project / person / partner org (recordRouteVisit) —
+  // that "Recently opened" surfaces. Hubs and sub-tabs are not recorded, so
+  // they don't drown the list out.
   visitedAt DateTime?
 
   user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -4198,6 +4226,32 @@ model ScheduledJob {
 enum JobRunStatus {
   Success
   Error
+}
+
+// A UI-configurable feature flag. The registry (app/lib/feature-flags.ts) is
+// the source of truth for which flags exist and their seed defaults; this row
+// is authoritative for the operator-edited targeting once it exists (edited in
+// Admin → Feature Flags). Rows self-heal — a wiped/rebuilt DB just falls back
+// to registry defaults (a missing row is evaluated as off). See ScheduledJob
+// for the same registry-seeds/row-wins contract.
+model FeatureFlag {
+  key      String  @id // registry key, e.g. "desktop-app"
+  // Master kill switch. When false the flag is off for everyone regardless of
+  // the targeting below.
+  enabled  Boolean @default(false)
+  // When enabled: on for all users.
+  everyone Boolean @default(false)
+  // Role keys from getUserRoles() (app/lib/roles.ts), e.g. "isCore","isAdmin".
+  // A user matches if they hold any listed role. Constrained to ROLE_TARGETS
+  // at write time by the admin action.
+  roles    String[] @default([])
+  // Explicit User.id allowlist. Not an FK: a deleted user simply stops
+  // matching; the flag config should not cascade-delete.
+  userIds  String[] @default([])
+  note     String?
+
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
 }
 
 // A composed announcement waiting for its send time. Payload + audience

@@ -21,6 +21,7 @@ import {
 import { buttonClasses } from "~/components/ui/Button";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { prisma } from "~/lib/db";
+import { recordRouteVisit } from "~/lib/user-pages.server";
 import { formatDateTime, formatDateShort } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 
@@ -47,6 +48,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (offering.status !== "Published" && !isManager) {
     throw new Response("Not found", { status: 404 });
   }
+
+  // After the gate — a course the viewer can open lands in their recents.
+  recordRouteVisit(auth.user.sub, `/education/${offering.id}`, offering.title);
 
   const [descriptionHtml, myApplication] = await Promise.all([
     offering.descriptionDocId

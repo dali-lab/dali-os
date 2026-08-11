@@ -51,8 +51,11 @@ import { DateField } from "~/components/ui/DateField";
 import { Select } from "~/components/ui/floating";
 
 // Underline subnav sits flush under the workspace tab bar (see layout embed padding).
+// `areaSubnav` (not `areaPills`) because calendar renders its own day/week/month
+// UnderlineTabButtons row unconditionally — it isn't the flag-gated AreaPillNav,
+// so it reserves the flush top spacing regardless of the sidebar-redesign flag.
 export const handle = {
-  areaPills: true,
+  areaSubnav: true,
   docKey: "calendar",
   docTitle: "Calendar",
 };
@@ -5361,10 +5364,10 @@ function WeekGrid({
       {/* Hour axis */}
       <div className="flex flex-col w-14 border-r border-border bg-card text-[11px] text-muted-foreground">
         <div
-          className={`bg-card border-b border-border ${showProviderRow ? "h-16" : "h-9"} ${headerStickyCls}`}
+          className={`shrink-0 bg-card border-b border-border ${showProviderRow ? "h-16" : "h-9"} ${headerStickyCls}`}
         />
         {HOURS.map((h) => (
-          <div key={h} style={{ height: HOUR_PX }} className="px-2 pt-1 text-right">
+          <div key={h} style={{ height: HOUR_PX }} className="shrink-0 px-2 pt-1 text-right">
             {formatHour(h)}
           </div>
         ))}
@@ -5383,7 +5386,7 @@ function WeekGrid({
             periodEnd ? "border-r-2 border-r-accent-teal" : "border-border"
           }`}
         >
-          <div className={`flex flex-col items-center justify-center border-b border-border ${showProviderRow ? "h-16" : "h-9"} ${headerStickyCls} ${
+          <div className={`shrink-0 flex flex-col items-center justify-center border-b border-border ${showProviderRow ? "h-16" : "h-9"} ${headerStickyCls} ${
             // Sticky headers need an opaque fill so scrolled rows don't bleed
             // through the faint today/period tint; today stays marked by its
             // coral date circle + now-line.
@@ -5416,7 +5419,7 @@ function WeekGrid({
             ref={(el) => {
               columnRefs.current[idx] = el;
             }}
-            className={`relative ${onDayPointerSelect ? "cursor-crosshair" : ""}`}
+            className={`relative shrink-0 ${onDayPointerSelect ? "cursor-crosshair" : ""}`}
             style={{ height: HOURS.length * HOUR_PX }}
             onMouseDown={onDayPointerSelect ? onDayMouseDown(idx) : undefined}
           >

@@ -73,29 +73,51 @@ async function fetchAndParseFeed(url: string): Promise<RawEvent[] | null> {
   }
 }
 
-// Cached feed lookup: fresh cache wins; otherwise refetch (joining any fetch
-// already in flight), falling back to the stale cache — any age — on failure.
-// Null only when the fetch fails and there's nothing cached.
-async function getFeed(url: string): Promise<RawEvent[] | null> {
-  if (feedCache?.url === url && Date.now() - feedCache.fetchedAt < CACHE_TTL_MS) {
-    return feedCache.events;
+// Kick off a refresh (dedup any in-flight one) and return its promise. Updates
+// the cache on success. Callers on the request path must NOT await this — see
+// getFeed. Safe to await off the request path (startup warm).
+function refreshFeed(url: string): Promise<RawEvent[] | null> {
+  if (feedInflight && feedInflight.url === url) return feedInflight.promise;
+  const promise = fetchAndParseFeed(url)
+    .then((events) => {
+      if (events) feedCache = { url, events, fetchedAt: Date.now() };
+      return events;
+    })
+    .finally(() => {
+      if (feedInflight?.promise === promise) feedInflight = null;
+    });
+  feedInflight = { url, promise };
+  return promise;
+}
+
+// Non-blocking cached feed lookup. The external HTTP fetch must NEVER be on the
+// critical path of a home load — a slow/large .ics (seconds) blocked the whole
+// home loader via its Promise.all, showing up as multi-second navigation TTFB on
+// /_root.data. Crucially this includes the COLD case: the cache is empty right
+// after a deploy/restart, which is exactly when the app is being used, so a
+// cold-path block would still gate the first home loads. Behavior:
+//   - fresh cache → serve it
+//   - stale cache → serve stale NOW, refresh in the background
+//   - cold cache  → serve null (→ empty grid) NOW, refresh in the background;
+//                   the calendar fills in on a later load
+// warmGeneralCalendarFeed() runs at server startup to populate the cache off the
+// request path, so the empty state is brief.
+function getFeed(url: string): RawEvent[] | null {
+  const cached = feedCache?.url === url ? feedCache : null;
+  if (!cached || Date.now() - cached.fetchedAt >= CACHE_TTL_MS) {
+    // Cold or stale: refresh in the background, never blocking the caller.
+    void refreshFeed(url);
   }
-  let inflight = feedInflight;
-  if (!inflight || inflight.url !== url) {
-    const promise = fetchAndParseFeed(url)
-      .then((events) => {
-        if (events) feedCache = { url, events, fetchedAt: Date.now() };
-        return events;
-      })
-      .finally(() => {
-        if (feedInflight?.promise === promise) feedInflight = null;
-      });
-    inflight = { url, promise };
-    feedInflight = inflight;
-  }
-  const fresh = await inflight.promise;
-  if (fresh) return fresh;
-  return feedCache?.url === url ? feedCache.events : null;
+  return cached?.events ?? null;
+}
+
+// Populate the feed cache off the request path (called at server startup and
+// safe to call from a background job). Awaits the fetch — that's fine here
+// because no user request is waiting on it.
+export async function warmGeneralCalendarFeed(): Promise<void> {
+  const url = process.env.DALI_GENERAL_CALENDAR_ICS;
+  if (!url) return;
+  await refreshFeed(url);
 }
 
 // Fetch + parse the feed, returning events that overlap [windowStart, windowEnd].
@@ -108,7 +130,7 @@ export async function fetchGeneralCalendarEvents(
   const url = process.env.DALI_GENERAL_CALENDAR_ICS;
   if (!url) return [];
 
-  const raw = await getFeed(url);
+  const raw = getFeed(url);
   if (!raw) return [];
 
   const out: GeneralCalendarEvent[] = [];
