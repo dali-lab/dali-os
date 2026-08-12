@@ -48,7 +48,8 @@ export async function loadDriveScopes({
     projectWorkspaces.map((w) => [w.key, w.projectIconEmoji ?? null]),
   );
 
-  const [labItems, ...projectItemArrays] = await Promise.all([
+  const [memberItems, labItems, ...projectItemArrays] = await Promise.all([
+    loadDriveScope({ userSub, scope: { kind: "Member" }, request }),
     loadDriveScope({
       userSub,
       scope: { kind: "Lab" },
@@ -94,6 +95,9 @@ export async function loadDriveScopes({
   );
 
   return [
+    // The viewer's private drive leads — personal notes have no forms to
+    // de-dup, so they pass through untouched.
+    { id: "mine", label: "My Drive", iconEmoji: null, items: memberItems },
     { id: "lab", label: "Lab-wide", iconEmoji: null, items: filteredLab },
     ...projectIds.map((id, i) => ({
       id,

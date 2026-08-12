@@ -17,8 +17,9 @@ import { pageDepth, MAX_PAGE_DEPTH, isAncestorOf } from "~/lib/pages";
 //     IS adding it to that project (membership is just these two columns).
 //
 // Same-workspace reorder is unchanged when the workspace fields are omitted.
-// Folders stay top-level; docs nest one level under a top-level folder (the
-// 2-level cap). Cross-workspace: the actor must be able to manage the doc where
+// Docs and folders alike nest under any Folder up to MAX_PAGE_DEPTH, guarded by
+// a depth check and an ancestor cycle check below. Cross-workspace: the actor
+// must be able to manage the doc where
 // it lives AND edit in the destination; system folders and a project's
 // Overview/PRD can't leave; partner/public sharing and the pin reset on the way
 // out. The collab room (doc:{pageId}:body) is workspace-independent, so content
@@ -116,9 +117,6 @@ export async function action({ request, params }: Route.ActionArgs) {
   // Guardrails.
   if (body.parentPageId === pageId) {
     return withCors(request, Response.json({ error: "A document can't be moved into itself" }, { status: 400 }));
-  }
-  if (page.kind === "Folder" && body.parentPageId !== null) {
-    return withCors(request, Response.json({ error: "Folders can't be nested inside another folder" }, { status: 400 }));
   }
   if (!sameWorkspace) {
     if (page.systemKey) {

@@ -32,10 +32,82 @@ import {
   ClipboardList,
   FileSignature,
   Folder,
+  MoreHorizontal,
   Paperclip,
+  Pencil,
+  Trash2,
+  FolderInput,
 } from "lucide-react";
 import type { DriveItem } from "~/lib/drive.server";
 import { PageIcon } from "~/components/PageIcon";
+import { Menu } from "~/components/ui/floating";
+
+// Callbacks for the per-row "⋯" actions menu — the non-drag way to manage
+// items (rename / move / delete). Supplied by the hub, which owns the API calls.
+export type RowActions = {
+  onRename: (item: DriveItem) => void;
+  onRequestMove: (item: DriveItem) => void;
+  onDelete: (item: DriveItem) => void;
+};
+
+// Which actions a given item type supports. Docs, folders, and files are fully
+// managed here; forms can be re-placed but are renamed/deleted in their own
+// editor; agreements have no in-tree actions.
+function actionsFor(item: DriveItem): { rename: boolean; move: boolean; remove: boolean } {
+  switch (item.type) {
+    case "folder":
+    case "doc":
+    case "file":
+      return { rename: true, move: true, remove: true };
+    case "form":
+      return { rename: false, move: true, remove: false };
+    default:
+      return { rename: false, move: false, remove: false };
+  }
+}
+
+// The "⋯" button + dropdown shown on hover at the right edge of a row. Stops
+// pointer/click events from reaching the drag listeners on the row.
+function RowActionsMenu({ item, actions }: { item: DriveItem; actions: RowActions }) {
+  const a = actionsFor(item);
+  if (!a.rename && !a.move && !a.remove) return null;
+  return (
+    <Menu
+      align="right"
+      ariaLabel="Item actions"
+      trigger={
+        <button
+          type="button"
+          data-testid={`drive-item-actions-${item.id}`}
+          onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+          className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted/60 hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
+        >
+          <MoreHorizontal className="h-3.5 w-3.5" />
+        </button>
+      }
+    >
+      {a.rename && (
+        <Menu.Item icon={<Pencil className="h-3.5 w-3.5" />} onSelect={() => actions.onRename(item)}>
+          Rename
+        </Menu.Item>
+      )}
+      {a.move && (
+        <Menu.Item icon={<FolderInput className="h-3.5 w-3.5" />} onSelect={() => actions.onRequestMove(item)}>
+          Move to…
+        </Menu.Item>
+      )}
+      {a.remove && (
+        <>
+          <Menu.Separator />
+          <Menu.Item icon={<Trash2 className="h-3.5 w-3.5" />} onSelect={() => actions.onDelete(item)}>
+            Delete
+          </Menu.Item>
+        </>
+      )}
+    </Menu>
+  );
+}
 
 // The unique id used as dnd-kit droppable/draggable ids. We prefix with the
 // scopeId so ids stay globally unique when two DriveTree instances share the
@@ -118,11 +190,13 @@ function LeafRow({
   scopeId,
   depth,
   suppressClickRef,
+  actions,
 }: {
   item: DriveItem;
   scopeId: string;
   depth: number;
   suppressClickRef: React.MutableRefObject<boolean>;
+  actions: RowActions;
 }) {
   const { attributes, listeners, setNodeRef, isDragging, transform } = useDraggable({
     id: dndId(scopeId, item.id),
@@ -173,6 +247,7 @@ function LeafRow({
           {item.title || "Untitled"}
         </Link>
       </span>
+      <RowActionsMenu item={item} actions={actions} />
     </div>
   );
 }
@@ -186,6 +261,7 @@ function FolderRow({
   children,
   allItems,
   suppressClickRef,
+  actions,
 }: {
   item: DriveItem & { type: "folder" };
   scopeId: string;
@@ -193,6 +269,7 @@ function FolderRow({
   children: DriveItem[];
   allItems: DriveItem[];
   suppressClickRef: React.MutableRefObject<boolean>;
+  actions: RowActions;
 }) {
   const [expanded, setExpanded] = useState(true);
 
@@ -239,7 +316,7 @@ function FolderRow({
         ref={setRefs}
         {...drag.attributes}
         style={{ paddingLeft: 8 + depth * 16 }}
-        className={`py-2 flex items-center gap-1.5 text-sm rounded-md cursor-grab active:cursor-grabbing ${
+        className={`group py-2 flex items-center gap-1.5 text-sm rounded-md cursor-grab active:cursor-grabbing ${
           drop.isOver ? "bg-accent-coral/10 ring-1 ring-accent-coral/40" : ""
         }`}
       >
@@ -269,6 +346,7 @@ function FolderRow({
             </span>
           )}
         </button>
+        <RowActionsMenu item={item} actions={actions} />
       </div>
 
       {expanded && (
@@ -288,6 +366,7 @@ function FolderRow({
               depth={depth + 1}
               allItems={allItems}
               suppressClickRef={suppressClickRef}
+              actions={actions}
             />
           )}
         </div>
@@ -305,6 +384,7 @@ function TreeLevel({
   depth,
   allItems,
   suppressClickRef,
+  actions,
 }: {
   items: DriveItem[];
   parentFolderId: string | null;
@@ -312,6 +392,7 @@ function TreeLevel({
   depth: number;
   allItems: DriveItem[];
   suppressClickRef: React.MutableRefObject<boolean>;
+  actions: RowActions;
 }) {
   const level = items.filter((it) => it.parentFolderId === parentFolderId);
   // Folders before non-folders, then alphabetical within each group.
@@ -334,6 +415,7 @@ function TreeLevel({
             allItems={allItems}
             children={allItems.filter((c) => c.parentFolderId === it.id)}
             suppressClickRef={suppressClickRef}
+            actions={actions}
           />
         ) : (
           <LeafRow
@@ -342,6 +424,7 @@ function TreeLevel({
             scopeId={scopeId}
             depth={depth}
             suppressClickRef={suppressClickRef}
+            actions={actions}
           />
         ),
       )}
@@ -362,6 +445,7 @@ export function DriveTree({
   scopeId,
   items,
   onMove,
+  actions,
 }: {
   /** Stable identifier for this scope, e.g. "lab" or the projectId. */
   scopeId: string;
@@ -372,6 +456,8 @@ export function DriveTree({
    * cross-scope (show confirm first).
    */
   onMove: (args: DriveTreeMoveArgs) => void;
+  /** Row "⋯" menu handlers (rename / move / delete). */
+  actions: RowActions;
 }) {
   const [dragging, setDragging] = useState<DragPayload | null>(null);
 
@@ -443,6 +529,7 @@ export function DriveTree({
               depth={0}
               allItems={items}
               suppressClickRef={suppressClickRef}
+              actions={actions}
             />
           </div>
         </div>

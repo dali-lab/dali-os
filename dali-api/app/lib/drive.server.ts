@@ -25,10 +25,12 @@ import { getPageAccess } from "~/lib/pageAccess.server";
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 /** Scope definition: `{ kind: "Lab" }` for the lab-wide tree;
- *  `{ kind: "Project", projectId: string }` for a single project. */
+ *  `{ kind: "Project", projectId: string }` for a single project;
+ *  `{ kind: "Member" }` for the viewer's own private drive (personal notes). */
 export type DriveScope =
   | { kind: "Lab" }
-  | { kind: "Project"; projectId: string };
+  | { kind: "Project"; projectId: string }
+  | { kind: "Member" };
 
 /** Normalised item shape used by the unified tree UI. */
 export type DriveItem =
@@ -157,6 +159,51 @@ async function loadProjectPages(projectId: string): Promise<DriveItem[]> {
     where: {
       workspaceType: "Project",
       workspaceId: projectId,
+      archivedAt: null,
+      kind: { in: ["Folder", "FreeForm", "Structured"] },
+    },
+    orderBy: { position: "asc" },
+    select: {
+      id: true,
+      title: true,
+      kind: true,
+      parentPageId: true,
+      iconEmoji: true,
+      updatedAt: true,
+    },
+  });
+
+  return rows.map((row) =>
+    row.kind === "Folder"
+      ? {
+          type: "folder",
+          id: row.id,
+          title: row.title,
+          parentFolderId: row.parentPageId,
+          iconEmoji: row.iconEmoji,
+          updatedAt: row.updatedAt,
+          href: `/documents/${row.id}`,
+        }
+      : {
+          type: "doc",
+          id: row.id,
+          title: row.title,
+          parentFolderId: row.parentPageId,
+          iconEmoji: row.iconEmoji,
+          updatedAt: row.updatedAt,
+          href: `/documents/${row.id}`,
+        },
+  );
+}
+
+/** Load pages (folders + docs) for the viewer's own Member drive — their
+ *  personal notes. Owner-only by construction: every row is workspaceId=userSub,
+ *  and getPageAccess grants the owner FULL, so no per-page filtering is needed. */
+async function loadMemberPages(userSub: string): Promise<DriveItem[]> {
+  const rows = await prisma.page.findMany({
+    where: {
+      workspaceType: "Member",
+      workspaceId: userSub,
       archivedAt: null,
       kind: { in: ["Folder", "FreeForm", "Structured"] },
     },
@@ -353,6 +400,12 @@ export async function loadDriveScope({
   canManageAgreements = false,
   request,
 }: LoadDriveScopeOptions): Promise<DriveItem[]> {
+  if (scope.kind === "Member") {
+    // Private drive: the viewer's own personal notes only. No files, forms, or
+    // agreements live here — it is pages-only, owner-scoped.
+    return loadMemberPages(userSub);
+  }
+
   if (scope.kind === "Lab") {
     // Lab scope: pages go through getPageAccess; lab-scoped files are visible
     // to all lab members (access already gated by the route loader before
