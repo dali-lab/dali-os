@@ -477,6 +477,12 @@ export default [
   route("admin/payroll/budget", "admin/routes/admin.payroll.budget.ts"),
   route("admin/payroll.csv", "admin/routes/admin.payroll.csv.ts"),
 
+  // Generalized CSV export — one resource route serves every table
+  // registered in app/lib/csv-exports.server.ts (see app/lib/csv-export.server.ts
+  // for the registry). Resource route, registered OUTSIDE the app layout for
+  // the same bare-body reason as the payroll/forms exports above.
+  route("api/export/:exportId/export.csv", "routes/api.export.$exportId.export.csv.ts"),
+
   // Partner application status (board drag-and-drop) + domain scope
   route("api/partner-applications/:id/status", "partners/routes/api.partner-applications.$id.status.ts"),
   route("api/partner-applications/:id/domains", "partners/routes/api.partner-applications.$id.domains.ts"),

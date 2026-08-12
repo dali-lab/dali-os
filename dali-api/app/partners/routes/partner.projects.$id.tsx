@@ -29,6 +29,8 @@ export default function PartnerProjectView() {
       data={data}
       backLink={{ to: "/partner", label: "Back to portal" }}
       pageHref={(pageId) => `/partner/projects/${data.project.id}/pages/${pageId}`}
+      exportId="partner-requirements"
+      exportProjectId={data.project.id}
     />
   );
 }

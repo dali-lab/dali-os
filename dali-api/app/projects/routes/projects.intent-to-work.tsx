@@ -31,6 +31,7 @@ import { SlotStatusStrip } from "../components/SlotStatusStrip";
 import { projectsPills } from "../components/projectsPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import type { Question } from "~/types";
+import { ExportCsvButton } from "~/components/ui/ExportCsvButton";
 
 const SLOT = "intent-to-work" as const;
 
@@ -337,6 +338,7 @@ function Loaded({
           onChange={setDomainId}
         />
         <TermFilter terms={data.termOptions} selected={data.selectedTerm} />
+        <ExportCsvButton exportId="intent-to-work" params={{ term: data.selectedTerm }} />
       </div>
 
       <div className="bg-card border border-border rounded-lg overflow-hidden">

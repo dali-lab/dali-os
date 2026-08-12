@@ -9,6 +9,7 @@ import { prisma } from "~/lib/db";
 import { hiringPills } from "~/hiring/components/hiringPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import { Select, type SelectOption } from "~/components/ui/floating";
+import { ExportCsvButton } from "~/components/ui/ExportCsvButton";
 
 export const handle = { areaPills: true };
 
@@ -318,6 +319,7 @@ export default function ApplicationsDatabase() {
             className="w-full pl-8 pr-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
           />
         </div>
+        <ExportCsvButton exportId="hiring-applications" params={{ cycle: data.selectedCycleId }} />
       </div>
 
       <div className="bg-card border border-border rounded-lg overflow-hidden">

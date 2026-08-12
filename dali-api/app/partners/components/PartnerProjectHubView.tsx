@@ -9,6 +9,7 @@ import { Modal } from "~/components/Modal";
 import { PartnerBackLink } from "~/partners/components/PartnerBackLink";
 import { ProjectCoverImage } from "~/projects/components/ProjectCoverImage";
 import { ProjectIcon } from "~/components/ProjectIcon";
+import { ExportCsvButton } from "~/components/ui/ExportCsvButton";
 import type {
   PartnerProjectEpic,
   PartnerProjectSprint,
@@ -353,10 +354,15 @@ export function PartnerProjectHubView({
   data,
   backLink,
   pageHref,
+  exportId,
+  exportProjectId,
 }: {
   data: PartnerProjectViewData;
   backLink?: { to: string; label: string };
   pageHref: (pageId: string) => string;
+  /** "partner-requirements" (external portal) or "projects-requirements-internal" (in-app preview) — the two have different authorization models, see app/projects/lib/csv-exports.server.ts. Omit to hide the export button. */
+  exportId?: "partner-requirements" | "projects-requirements-internal";
+  exportProjectId?: string;
 }) {
   const {
     project,
@@ -463,6 +469,10 @@ export function PartnerProjectHubView({
           <h2 className="font-heading text-lg font-semibold text-dark-blue">
             Roadmap
           </h2>
+          <div className="flex items-center gap-2">
+          {exportId && exportProjectId && (
+            <ExportCsvButton exportId={exportId} params={{ projectId: exportProjectId }} label="Export requirements CSV" />
+          )}
           {hiddenEpicCount > 0 && (
             <button
               type="button"
@@ -474,6 +484,7 @@ export function PartnerProjectHubView({
                 : `Show all epics (${epics.length})`}
             </button>
           )}
+          </div>
         </div>
         {!hasWork ? (
           <div className="bg-card border border-border rounded-2xl p-6 text-sm text-muted-foreground">

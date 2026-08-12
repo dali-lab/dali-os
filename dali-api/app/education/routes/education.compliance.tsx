@@ -17,6 +17,7 @@ import { TermFilter } from "~/components/TermFilter";
 import { Button } from "~/components/ui/Button";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { cn } from "~/lib/cn";
+import { ExportCsvButton } from "~/components/ui/ExportCsvButton";
 
 export const handle = { areaPills: true };
 
@@ -102,7 +103,10 @@ export default function CECompliance() {
             nothing is blocked automatically.
           </p>
         </div>
-        <TermFilter terms={terms} selected={selected} />
+        <div className="flex items-center gap-2">
+          <TermFilter terms={terms} selected={selected} />
+          <ExportCsvButton exportId="education-compliance" params={{ term: selected }} />
+        </div>
       </header>
 
       {actionData?.error && (

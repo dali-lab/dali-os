@@ -54,6 +54,8 @@ export default function ProjectPartnerViewPreview() {
     <PartnerProjectHubView
       data={data}
       pageHref={(pageId) => `/documents/${pageId}`}
+      exportId="projects-requirements-internal"
+      exportProjectId={data.project.id}
     />
   );
 }

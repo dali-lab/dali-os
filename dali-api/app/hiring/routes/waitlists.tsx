@@ -13,6 +13,7 @@ import {
   listActiveWaitlistEntries,
   type WaitlistEntry,
 } from "~/hiring/lib/waitlist.server";
+import { ExportCsvButton } from "~/components/ui/ExportCsvButton";
 
 export const handle = { areaPills: true };
 
@@ -98,9 +99,12 @@ export default function WaitlistsPage() {
       <AreaPillNav items={hiringPills({ ...pillRoles, active: "waitlists" })} />
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-foreground">Waitlists</h1>
-        <span className="text-sm text-muted-foreground">
-          {entries.length} active waitlister{entries.length === 1 ? "" : "s"}
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-muted-foreground">
+            {entries.length} active waitlister{entries.length === 1 ? "" : "s"}
+          </span>
+          <ExportCsvButton exportId="hiring-waitlists" />
+        </div>
       </div>
 
       <p className="text-sm text-muted-foreground max-w-2xl">

@@ -21,6 +21,7 @@ import { buttonClasses } from "~/components/ui/Button";
 import { OPEN_APPLICATION_STATUSES } from "../lib/partner-application";
 import { FileText, LayoutGrid } from "lucide-react";
 import { Checkbox } from "~/components/ui/Checkbox";
+import { ExportCsvButton } from "~/components/ui/ExportCsvButton";
 
 export const handle = { areaPills: true };
 
@@ -226,6 +227,7 @@ export default function PartnersOrganizations() {
           className="flex-1 min-w-[200px] max-w-sm px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
         />
         <ViewToggle value={view} onChange={setView} />
+        <ExportCsvButton exportId="partners-organizations" />
         <span className="text-xs text-muted-foreground ml-auto">
           {filtered.length}{" "}
           {filtered.length === 1 ? "organization" : "organizations"}

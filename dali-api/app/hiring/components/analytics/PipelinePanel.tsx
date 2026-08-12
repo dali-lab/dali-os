@@ -82,6 +82,11 @@ export function PipelinePanel({ data }: { data: PipelineData }) {
             rows={data.rows}
             selectedStatusLabel={selectedSlice?.label ?? null}
             selectedDomainName={selectedDomainName}
+            exportParams={{
+              cycleId: data.selectedCycleId,
+              domain: data.selectedDomainId ?? undefined,
+              status: data.selectedStatus ?? undefined,
+            }}
           />
         </>
       )}
