@@ -212,10 +212,17 @@ function TemplatePicker({
 // ── File upload helper ─────────────────────────────────────────────────────────
 
 // Hidden <input type="file"> that drives the upload flow: presign → PUT S3 →
-// POST /api/drive/files. Reuses the same presign pattern as AssignmentWorkArea
-// and ProjectImageBanner. Returns the file input ref so the Menu item can
-// trigger a click on it.
-function useLabFileUpload(onComplete: () => void) {
+// POST /api/drive/files, registering the file in the given drive target (a scope
+// plus optional folder). Reuses the same presign pattern as AssignmentWorkArea
+// and ProjectImageBanner. Returns the file input ref so a Menu item can click it.
+type UploadScope =
+  | { kind: "Lab" }
+  | { kind: "Member" }
+  | { kind: "Project"; projectId: string };
+
+type UploadTarget = { scope: UploadScope; folderPageId?: string | null };
+
+function useDriveFileUpload(target: UploadTarget, onComplete: () => void) {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -229,7 +236,7 @@ function useLabFileUpload(onComplete: () => void) {
     setUploading(true);
     setUploadError(null);
     try {
-      const key = `lab-files/${crypto.randomUUID()}-${file.name}`;
+      const key = `drive-files/${crypto.randomUUID()}-${file.name}`;
       const presignRes = await fetch("/api/upload/presign", {
         method: "POST",
         credentials: "include",
@@ -257,7 +264,7 @@ function useLabFileUpload(onComplete: () => void) {
       const uploadRes = await fetch(url, { method: "POST", body: formData });
       if (!uploadRes.ok) throw new Error("Upload to storage failed");
 
-      // Register the file in the lab drive.
+      // Register the file in the target drive.
       const registerRes = await fetch("/api/drive/files", {
         method: "POST",
         credentials: "include",
@@ -268,7 +275,8 @@ function useLabFileUpload(onComplete: () => void) {
           fileName: file.name,
           contentType: file.type || "application/octet-stream",
           sizeBytes: file.size,
-          scope: { kind: "Lab" },
+          scope: target.scope,
+          ...(target.folderPageId ? { folderPageId: target.folderPageId } : {}),
         }),
       });
       if (!registerRes.ok) {
@@ -594,6 +602,19 @@ function ScopeSection({
     [actions],
   );
 
+  // Per-scope upload. Every drive holds files: My Drive (private/Member), Lab,
+  // Core (uploaded into the Core folder so it inherits Core-only access), and
+  // each project. rootFolderId is null except for Core (its folder id).
+  const uploadTarget: UploadTarget = isMine
+    ? { scope: { kind: "Member" } }
+    : isProject
+      ? { scope: { kind: "Project", projectId: scope.id } }
+      : { scope: { kind: "Lab" }, folderPageId: scope.rootFolderId ?? null };
+  const { inputRef, uploading, uploadError, handleFileChange } = useDriveFileUpload(
+    uploadTarget,
+    () => revalidator.revalidate(),
+  );
+
   // When type filter is active, count the matching items for the badge.
   const filteredCount =
     typeFilter !== "all"
@@ -674,8 +695,28 @@ function ScopeSection({
             <span data-testid={`drive-new-folder-${scope.id}`}>New folder</span>
           </Menu.Item>
           {extraNewItems}
+          <Menu.Item
+            icon={<Upload className="w-3.5 h-3.5" />}
+            disabled={uploading}
+            onSelect={() => inputRef.current?.click()}
+          >
+            <span data-testid={`drive-new-upload-${scope.id}`}>
+              {uploading ? "Uploading…" : "Upload file"}
+            </span>
+          </Menu.Item>
         </Menu>
       </div>
+
+      {/* Hidden file input for this drive's Upload item + inline upload error */}
+      <input
+        ref={inputRef}
+        type="file"
+        className="sr-only"
+        aria-hidden="true"
+        tabIndex={-1}
+        onChange={handleFileChange}
+      />
+      {uploadError && <p className="text-sm text-red-600 px-3 pb-2">{uploadError}</p>}
 
       {open && (
         <div className="border-t border-border px-2 pb-2">
@@ -701,12 +742,7 @@ function BrowseView({
   typeFilter: DriveTypeFilter;
   onTypeFilterChange: (f: DriveTypeFilter) => void;
 }) {
-  const revalidator = useRevalidator();
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
-
-  const { inputRef, uploading, uploadError, handleFileChange } = useLabFileUpload(() => {
-    revalidator.revalidate();
-  });
 
   // Visible filter chips: always show All/Documents/Files; role-gate Forms and
   // Agreements (Core-only).
@@ -740,9 +776,9 @@ function BrowseView({
     }
   }
 
-  // Lab-only New-menu extras, rendered inside the Lab scope's New ▾. The hidden
-  // file input + template picker live at this level (portaled menu items can't
-  // host them), and these menu items trigger them.
+  // Lab-only New-menu extras (form, agreement, template), rendered inside the Lab
+  // scope's New ▾. Upload is handled per-scope by ScopeSection (every drive), so
+  // it's not here. The template picker modal lives in BrowseView (below).
   const labExtraNewItems = (
     <>
       {canViewForms && (
@@ -767,15 +803,6 @@ function BrowseView({
         onSelect={() => setTemplatePickerOpen(true)}
       >
         <span data-testid="drive-new-template">From template…</span>
-      </Menu.Item>
-      <Menu.Item
-        icon={<Upload className="w-3.5 h-3.5" />}
-        disabled={uploading}
-        onSelect={() => inputRef.current?.click()}
-      >
-        <span data-testid="drive-new-upload">
-          {uploading ? "Uploading…" : "Upload file"}
-        </span>
       </Menu.Item>
     </>
   );
@@ -810,20 +837,7 @@ function BrowseView({
         ))}
       </div>
 
-      {/* Hidden file input for the Lab Upload menu item */}
-      <input
-        ref={inputRef}
-        type="file"
-        className="sr-only"
-        aria-hidden="true"
-        tabIndex={-1}
-        onChange={handleFileChange}
-      />
-
-      {/* Upload error (inline, dismisses on next upload) */}
-      {uploadError && <p className="text-sm text-red-600 px-1">{uploadError}</p>}
-
-      {/* Template picker modal */}
+      {/* Template picker modal (Lab New → From template…) */}
       <TemplatePicker
         open={templatePickerOpen}
         onClose={() => setTemplatePickerOpen(false)}

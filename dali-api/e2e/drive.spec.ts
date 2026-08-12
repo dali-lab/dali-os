@@ -10,7 +10,7 @@ import { enableDriveFlagForUser, clearDriveFlag } from './helpers';
 //   - Per-scope New ▾ menu: data-testid="drive-new-menu-<scopeId>" (e.g. -lab,
 //     -mine). Base items: drive-new-doc-<scopeId>, drive-new-folder-<scopeId>.
 //     The Lab menu also carries drive-new-form (Core), drive-new-agreement
-//     (Core), drive-new-template, drive-new-upload. Create opens a naming
+//     (Core), drive-new-template, drive-new-upload-<scope>. Every drive has upload. Create opens a naming
 //     prompt (dialog) before the item is made.
 //   - Scope sections: drive-scope-<id> — "mine" (My Drive) + "lab" + "core"
 //     (Core drive, Core members only, auto-provisioned) + projects.
@@ -52,7 +52,7 @@ test.describe('Drive hub (drive-consolidation flag)', () => {
   //   - drive-browse container is visible
   //   - All / Documents / Files / Forms filter chips are present
   //   - drive-new-menu button is visible; opening it shows all New items
-  //   - drive-new-template and drive-new-upload are present
+  //   - drive-new-template and drive-new-upload-lab are present
   //   - The created doc appears in the tree (All view)
   //   - Switching to the Documents filter still shows the doc
   //   - Switching to the Forms filter hides the doc
@@ -96,7 +96,7 @@ test.describe('Drive hub (drive-consolidation flag)', () => {
     await expect(page.getByTestId('drive-new-folder-lab')).toBeVisible();
     await expect(page.getByTestId('drive-new-form')).toBeVisible();
     await expect(page.getByTestId('drive-new-template')).toBeVisible();
-    await expect(page.getByTestId('drive-new-upload')).toBeVisible();
+    await expect(page.getByTestId('drive-new-upload-lab')).toBeVisible();
     // Close the menu by pressing Escape.
     await page.keyboard.press('Escape');
 
@@ -372,8 +372,10 @@ test.describe('Drive hub (drive-consolidation flag)', () => {
     // My Drive scope renders and opens by default.
     await expect(page.getByTestId('drive-scope-mine')).toBeVisible();
 
-    // Open the My Drive New menu and pick New document.
+    // Open the My Drive New menu; it offers doc/folder AND upload (files live
+    // in My Drive too, privately), then pick New document.
     await page.getByTestId('drive-new-menu-mine').click();
+    await expect(page.getByTestId('drive-new-upload-mine')).toBeVisible();
     await page.getByTestId('drive-new-doc-mine').click();
 
     // A naming prompt (dialog) appears; fill it and confirm.
@@ -436,8 +438,10 @@ test.describe('Drive hub (drive-consolidation flag)', () => {
     // The Core drive section renders for the Core admin.
     await expect(page.getByTestId('drive-scope-core')).toBeVisible();
 
-    // Create a document into the Core drive via its own New menu.
+    // Create a document into the Core drive via its own New menu (which also
+    // offers upload — Core files land inside the Core folder, Core-only).
     await page.getByTestId('drive-new-menu-core').click();
+    await expect(page.getByTestId('drive-new-upload-core')).toBeVisible();
     await page.getByTestId('drive-new-doc-core').click();
 
     const input = page.locator('[role="dialog"] input[type="text"]');

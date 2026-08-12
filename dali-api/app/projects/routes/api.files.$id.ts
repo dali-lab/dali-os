@@ -1,7 +1,8 @@
 import type { Route } from "./+types/api.files.$id";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireAuth, requireProjectEditAccess, requireMemberSession } from "~/lib/auth";
+import { requireAuth, requireMemberSession } from "~/lib/auth";
+import { canViewFile, canEditFile } from "~/lib/fileAccess.server";
 import { UNKNOWN_LABEL } from "~/lib/display";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent } from "~/lib/audit";
@@ -47,6 +48,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       title: true,
       currentVersionId: true,
       archivedAt: true,
+      projectId: true,
+      workspaceType: true,
+      workspaceId: true,
+      folderPageId: true,
       versions: {
         orderBy: { createdAt: "desc" },
         select: {
@@ -62,6 +67,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
   });
   if (!file || file.archivedAt !== null) {
+    return withCors(request, Response.json({ error: "File not found" }, { status: 404 }));
+  }
+  // View gate: owner-only for My Drive files, folder access for scoped (Core)
+  // files, open otherwise. 404 (not 403) so a private file's existence is hidden.
+  if (!(await canViewFile(auth.user.sub, file, request))) {
     return withCors(request, Response.json({ error: "File not found" }, { status: 404 }));
   }
 
@@ -95,24 +105,26 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
   const file = await prisma.projectFile.findUnique({
     where: { id: params.id },
-    select: { id: true, archivedAt: true, projectId: true, workspaceType: true },
+    select: {
+      id: true,
+      archivedAt: true,
+      projectId: true,
+      workspaceType: true,
+      workspaceId: true,
+      folderPageId: true,
+    },
   });
   if (!file || file.archivedAt !== null) {
     return withCors(request, Response.json({ error: "File not found" }, { status: 404 }));
   }
-  // Project files gate on project edit; Lab-scoped files (projectId null,
-  // workspaceType Lab) gate on lab membership — same split as /api/drive/files.
-  let auth;
-  if (file.projectId) {
-    const gate = await requireProjectEditAccess(request, file.projectId);
-    if (!gate.ok) return gate.response;
-    auth = gate.auth;
-  } else if (file.workspaceType === "Lab") {
-    const gate = await requireMemberSession(request);
-    if (!gate.ok) return withCors(request, gate.response);
-    auth = gate.auth;
-  } else {
-    return withCors(request, Response.json({ error: "File not found" }, { status: 404 }));
+  // Any authenticated member session; edit rights then follow the file's scope:
+  // My Drive = owner, Core/scoped = folder edit, project = members/Core, lab =
+  // any lab member (canEditFile).
+  const gate = await requireMemberSession(request);
+  if (!gate.ok) return withCors(request, gate.response);
+  const auth = gate.auth;
+  if (!(await canEditFile(auth.user.sub, file, request))) {
+    return withCors(request, Response.json({ error: "You can't edit this file" }, { status: 403 }));
   }
 
   if (request.method === "DELETE") {
