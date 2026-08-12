@@ -21,7 +21,6 @@ import { canViewForms as checkCanViewForms, getUserRoles } from "~/lib/roles";
 import { loader as docsLoader } from "~/routes/documents.hub";
 import { loadDriveScopes } from "~/lib/drive-scopes.server";
 import type { DriveItem } from "~/lib/drive.server";
-import { Link } from "react-router";
 import { DriveTree } from "~/components/drive/DriveTree";
 import type { DriveTreeMoveArgs } from "~/components/drive/DriveTree";
 import { useDialog } from "~/components/ui/dialog";
@@ -286,84 +285,6 @@ function useLabFileUpload(onComplete: () => void) {
 
 // ── Browse scope section ───────────────────────────────────────────────────────
 
-// A flat list of items matching the active type filter. Shown instead of the
-// nested tree when type !== "all". Folders are excluded — what matters when
-// searching by type is the matching items, with scope/folder as context.
-function FlatItemList({
-  items,
-  typeFilter,
-  scopeLabel,
-}: {
-  items: DriveItem[];
-  typeFilter: Exclude<DriveTypeFilter, "all">;
-  scopeLabel: string;
-}) {
-  const matched = items.filter((it) => it.type === typeFilter);
-
-  const typeLabel =
-    typeFilter === "doc" ? "documents" :
-    typeFilter === "file" ? "files" :
-    typeFilter === "form" ? "forms" : "agreements";
-
-  if (matched.length === 0) {
-    return (
-      <p className="py-3 px-2 text-sm text-muted-foreground italic">
-        No {typeLabel} in {scopeLabel}.
-      </p>
-    );
-  }
-
-  // Build a lookup from folder id → folder title for the subtitle context line.
-  const folderTitles = new Map<string, string>(
-    items
-      .filter((it) => it.type === "folder")
-      .map((it) => [it.id, it.title || "Untitled folder"]),
-  );
-
-  return (
-    <ul className="flex flex-col divide-y divide-border/60">
-      {matched.map((item) => {
-        const icon =
-          item.type === "file" ? (
-            <Paperclip className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-          ) : item.type === "form" ? (
-            <ClipboardList className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-          ) : item.type === "agreement" ? (
-            <FileSignature className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-          ) : (
-            <FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-          );
-
-        const parentTitle =
-          item.parentFolderId ? folderTitles.get(item.parentFolderId) : null;
-
-        return (
-          <li
-            key={item.id}
-            data-testid={`drive-item-${item.type}-${item.id}`}
-            className="flex items-center gap-2 py-2 px-2 hover:bg-muted/20 rounded transition-colors"
-          >
-            {icon}
-            <span className="min-w-0 flex-1">
-              <Link
-                to={item.href}
-                className="block truncate font-medium text-foreground text-sm hover:text-accent-coral transition-colors"
-              >
-                {item.title || "Untitled"}
-              </Link>
-              {parentTitle && (
-                <span className="block text-xs text-muted-foreground truncate">
-                  in {parentTitle}
-                </span>
-              )}
-            </span>
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
 // One collapsible scope section in the Browse view.
 function ScopeSection({
   scope,
@@ -384,6 +305,14 @@ function ScopeSection({
     typeFilter !== "all"
       ? scope.items.filter((it) => it.type === typeFilter).length
       : scope.items.length;
+
+  // Items shown in the tree. A type filter narrows the *leaves* to that type but
+  // always keeps folders — the folder tree is the navigation skeleton, so you
+  // can still browse into where the matching items live.
+  const treeItems =
+    typeFilter === "all"
+      ? scope.items
+      : scope.items.filter((it) => it.type === "folder" || it.type === typeFilter);
 
   return (
     <section
@@ -428,15 +357,7 @@ function ScopeSection({
 
       {open && (
         <div className="border-t border-border px-2 pb-2">
-          {typeFilter === "all" ? (
-            <DriveTree scopeId={scope.id} items={scope.items} onMove={onMove} />
-          ) : (
-            <FlatItemList
-              items={scope.items}
-              typeFilter={typeFilter}
-              scopeLabel={isLab ? "Lab" : scope.label}
-            />
-          )}
+          <DriveTree scopeId={scope.id} items={treeItems} onMove={onMove} />
         </div>
       )}
     </section>
