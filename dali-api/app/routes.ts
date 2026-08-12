@@ -433,6 +433,8 @@ export default [
   route("api/pages/:id/favorite", "routes/api.pages.$id.favorite.ts"),
   route("api/favorites/route", "routes/api.favorites.route.ts"),
   route("api/move-destinations", "routes/api.move-destinations.ts"),
+  // Drive unified tree: placement move for files and forms (Wave 3).
+  route("api/drive/move", "routes/api.drive.move.ts"),
   route("api/pages/:id/template", "routes/api.pages.$id.template.ts"),
   route("api/pages/:id/typography", "routes/api.pages.$id.typography.ts"),
   route("api/page-templates", "routes/api.page-templates.ts"),
