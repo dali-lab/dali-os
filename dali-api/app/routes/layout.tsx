@@ -20,6 +20,7 @@ import { isFocusRequest } from '~/lib/focus-mode'
 import { isValidTimezone, resolveUserTimeZone } from '~/lib/timezone'
 import { readDismissedTimeZone } from '~/lib/tz-prompt'
 import { isNavbarHubPage } from '~/lib/navbar-routes'
+import { hasSubnavRow } from '~/lib/nav-areas'
 import { listFavoritesAndRecents } from '~/lib/user-pages.server'
 import { loadShellUser } from '~/lib/shell-user.server'
 import { resolveFeatureFlags } from '~/lib/feature-flags.server'
@@ -212,12 +213,7 @@ export default function AppLayoutRoute() {
   // `areaPills` (the flag-gated in-page pill row). The pill row only exists when
   // the sidebar redesign is OFF, so its flush top spacing is only reserved then.
   const redesign = flags['sidebar-redesign'] ?? false
-  const hasAreaSubnav = matches.some(
-    (m) => {
-      const h = (m as { handle?: { areaSubnav?: boolean; areaPills?: boolean } }).handle
-      return h?.areaSubnav || (!redesign && h?.areaPills)
-    },
-  )
+  const hasAreaSubnav = hasSubnavRow(matches, redesign)
   // Pages that land directly on their own title, with no subnav in between,
   // ask for a wider gap under the trail (see adminHandle).
   const roomyBreadcrumb = matches.some(

@@ -29,6 +29,7 @@ import { cn } from '~/lib/cn'
 import {
   areaForPath,
   activeSubtabHref,
+  hasSubnavRow,
   visibleAreas,
   visibleSubtabs,
   type NavArea,
@@ -144,9 +145,10 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
   // Pages with their own AreaPillNav/UnderlineTabButtons row host the
   // tabless history arrows inline (see TablessHistoryNavInline) — skip the
   // standalone bar there so the arrows don't stack a second row on top.
-  const hasAreaSubnav = matches.some(
-    (m) => (m as { handle?: { areaPills?: boolean } }).handle?.areaPills,
-  )
+  // This used to read `areaPills` alone, which got both signals backwards —
+  // see hasSubnavRow for why calendar was doubling the row.
+  const redesign = useFeatureFlag('sidebar-redesign')
+  const ownsSubnavRow = hasSubnavRow(matches, redesign)
   // Held in refs so the message listener (mounted once) always calls the
   // latest values without needing to re-subscribe.
   const revalidateRef = useRef(revalidate)
@@ -928,7 +930,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
             of the section root. */}
         {tabless ? (
           <div className="flex flex-1 min-h-0 flex-col">
-            {!hasAreaSubnav && <TablessHistoryNav />}
+            {!ownsSubnavRow && <TablessHistoryNav />}
             {children}
           </div>
         ) : (
