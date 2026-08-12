@@ -149,6 +149,7 @@ function LeafRow({
     <div
       ref={setNodeRef}
       {...attributes}
+      data-testid={`drive-item-${item.type}-${item.id}`}
       style={{
         paddingLeft: 8 + depth * 16,
         ...(transform
@@ -220,6 +221,7 @@ function FolderRow({
 
   return (
     <div
+      data-testid={`drive-folder-${item.id}`}
       style={{
         ...(drag.transform
           ? {
@@ -428,7 +430,7 @@ export function DriveTree({
       {isEmpty ? (
         <p className="py-4 text-sm text-muted-foreground italic">Nothing here yet.</p>
       ) : (
-        <div className="flex flex-col">
+        <div data-testid="drive-tree" className="flex flex-col">
           <RootDropZone scopeId={scopeId} isActive={!!dragging} />
           <div className="flex flex-col divide-y divide-border/60">
             <TreeLevel

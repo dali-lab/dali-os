@@ -349,7 +349,7 @@ function BrowseLens({
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div data-testid="drive-browse-lens" className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">
           Everything in one place — drag items into folders or between scopes.
@@ -458,6 +458,7 @@ export default function DriveHub() {
             type="button"
             aria-pressed={lens === "browse"}
             onClick={() => switchLens("browse")}
+            data-testid="drive-lens-pill-browse"
             className={`${pillBase} ${lens === "browse" ? pillActive : pillInactive}`}
           >
             <FolderOpen className="w-4 h-4" />
@@ -468,6 +469,7 @@ export default function DriveHub() {
               type="button"
               aria-pressed={lens === "forms"}
               onClick={() => switchLens("forms")}
+              data-testid="drive-lens-pill-forms"
               className={`${pillBase} ${lens === "forms" ? pillActive : pillInactive}`}
             >
               <ClipboardList className="w-4 h-4" />
