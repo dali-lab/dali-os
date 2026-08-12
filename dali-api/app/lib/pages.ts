@@ -135,6 +135,10 @@ export async function createLabPage(input: {
   createdById: string;
   parentPageId?: string | null;
   kind?: PageKind;
+  /** Override the default communal general access. Pass "Restricted" for pages
+   *  created inside a scoped drive (e.g. Core), so the scope governs access and
+   *  the "everyone in the lab" link grant doesn't silently widen them. */
+  restricted?: boolean;
 }): Promise<{ id: string }> {
   const parentPageId = input.parentPageId ?? null;
   const last = await prisma.page.findFirst({
@@ -153,12 +157,62 @@ export async function createLabPage(input: {
       position,
       parentPageId,
       createdById: input.createdById,
-      // Lab docs default to the communal shelf: everyone in the lab can edit.
-      linkAccess: "LabMembers",
-      linkPermission: "Edit",
+      // Lab docs default to the communal shelf (everyone in the lab can edit);
+      // pages inside a scoped drive start Restricted so the scope is authoritative.
+      linkAccess: input.restricted ? "Restricted" : "LabMembers",
+      linkPermission: input.restricted ? "View" : "Edit",
     },
     select: { id: true },
   });
+}
+
+// Idempotently ensures the lab-wide "Core" drive root exists: a top-level Lab
+// Folder scoped to the Core group. scopeKind=Group cascades Core-only access to
+// everything inside it (getPageAccess ancestry walk), and linkAccess=Restricted
+// keeps it hidden from non-Core members on every list surface (same protection
+// existing Restricted lab docs already rely on). Its systemKey both dedupes and
+// stops api.documents.$id deleting it. Returns the folder id, or null if the
+// Core GroupDefinition hasn't been provisioned yet (syncDefaultGroups seeds it).
+export async function ensureCoreDriveRoot(createdById: string): Promise<{ id: string } | null> {
+  const systemKey = "drive:core-root";
+  const existing = await prisma.page.findUnique({ where: { systemKey }, select: { id: true } });
+  if (existing) return existing;
+
+  const coreGroup = await prisma.groupDefinition.findUnique({
+    where: { systemKey: "core" },
+    select: { id: true },
+  });
+  if (!coreGroup) return null;
+
+  try {
+    const last = await prisma.page.findFirst({
+      where: { workspaceType: "Lab", workspaceId: null, parentPageId: null },
+      orderBy: { position: "desc" },
+      select: { position: true },
+    });
+    return await prisma.page.create({
+      data: {
+        workspaceType: "Lab",
+        workspaceId: null,
+        title: "Core",
+        kind: "Folder",
+        position: last ? last.position + 1 : 0,
+        createdById,
+        systemKey,
+        scopeKind: "Group",
+        scopeGroupId: coreGroup.id,
+        scopePermission: "Edit",
+        // Restricted: the scope grants Core; nobody reaches it via the lab link.
+        linkAccess: "Restricted",
+        linkPermission: "View",
+      },
+      select: { id: true },
+    });
+  } catch {
+    const retry = await prisma.page.findUnique({ where: { systemKey }, select: { id: true } });
+    if (retry) return retry;
+    throw new Error("Failed to ensure Core drive root");
+  }
 }
 
 export type MeetingNotesFolderKind = "Team" | "Partner";
