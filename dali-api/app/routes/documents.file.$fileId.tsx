@@ -6,7 +6,8 @@ import type { Route } from "./+types/documents.file.$fileId";
 import { prisma } from "~/lib/db";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { isCore, isProjectMember, isLabMember } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
+import { canViewFile, canEditFile } from "~/lib/fileAccess.server";
 import { getDownloadUrl } from "~/lib/s3";
 import { hydrateAuthors } from "~/lib/collabAuth";
 import { formatBytes, uploadFileToS3 } from "~/lib/upload-client";
@@ -60,6 +61,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       projectId: true,
       project: { select: { name: true, iconEmoji: true } },
       workspaceType: true,
+      workspaceId: true,
+      folderPageId: true,
       currentVersionId: true,
       archivedAt: true,
       tags: { select: { tag: { select: { id: true, label: true, slug: true, color: true } } } },
@@ -81,19 +84,18 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     throw new Response("Not found", { status: 404 });
   }
 
-  // Upload + comment are open to Core and:
-  //   - project files: members of the owning project
-  //   - lab files: any lab member
-  // The curated tag list stays Core-managed, matching /api/doctags.
-  const core = await isCore(auth.user.sub);
-  const canEdit =
-    core ||
-    (file.projectId != null
-      ? await isProjectMember(auth.user.sub, file.projectId)
-      : file.workspaceType === "Lab"
-        ? await isLabMember(auth.user.sub, request)
-        : false);
-  const canManageTags = core;
+  // View gate: My Drive files are owner-only and scoped-folder (e.g. Core) files
+  // follow their folder's access. Communal files stay open (404, not 403, so we
+  // don't reveal that a private/Core file exists).
+  if (!(await canViewFile(auth.user.sub, file, request))) {
+    throw new Response("Not found", { status: 404 });
+  }
+
+  // Edit (upload new version + comment) follows the file's scope: My Drive =
+  // owner, Core/scoped = folder edit access, project = members/Core, lab = any
+  // lab member. The curated tag list stays Core-managed, matching /api/doctags.
+  const canEdit = await canEditFile(auth.user.sub, file, request);
+  const canManageTags = await isCore(auth.user.sub);
 
   const uploaderNames = await hydrateAuthors(file.versions.map((v) => v.uploadedById));
   const nameById = new Map(uploaderNames.map((u) => [u.id, u.name]));

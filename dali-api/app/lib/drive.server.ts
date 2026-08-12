@@ -21,6 +21,7 @@
 
 import { prisma } from "~/lib/db";
 import { getPageAccess } from "~/lib/pageAccess.server";
+import { canViewFile } from "~/lib/fileAccess.server";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -241,24 +242,12 @@ async function loadMemberPages(userSub: string): Promise<DriveItem[]> {
   );
 }
 
-/** Load lab-scoped files. Visible to all lab members — the caller is
- *  responsible for confirming the viewer is a lab member before calling this.
- *
- *  NO-WIDENING GUARANTEE: lab files → lab members only; project files →
- *  project-member set only. These two sets never cross: a lab file has a null
- *  projectId and workspaceType='Lab'; a project file has a non-null projectId
- *  and null workspaceType. The loader never returns project files in the Lab
- *  scope (loadLabFiles) nor lab files in the project scope (loadFiles). */
-async function loadLabFiles(): Promise<DriveItem[]> {
+/** Load the viewer's own My Drive files (Member workspace, owner-scoped). */
+async function loadMemberFiles(userSub: string): Promise<DriveItem[]> {
   const rows = await prisma.projectFile.findMany({
-    where: { workspaceType: "Lab", archivedAt: null },
+    where: { workspaceType: "Member", workspaceId: userSub, archivedAt: null },
     orderBy: { updatedAt: "desc" },
-    select: {
-      id: true,
-      title: true,
-      folderPageId: true,
-      updatedAt: true,
-    },
+    select: { id: true, title: true, folderPageId: true, updatedAt: true },
   });
   return rows.map((f) => ({
     type: "file" as const,
@@ -269,6 +258,52 @@ async function loadLabFiles(): Promise<DriveItem[]> {
     updatedAt: f.updatedAt,
     href: `/documents/file/${f.id}`,
   }));
+}
+
+/** Load lab-scoped files. Visible to all lab members, EXCEPT files placed inside
+ *  a scoped folder (e.g. Core), which are filtered to viewers with access to
+ *  that folder via canViewFile — so a Core file doesn't leak to every lab member.
+ *
+ *  NO-WIDENING GUARANTEE: lab files → lab members only; project files →
+ *  project-member set only. These two sets never cross: a lab file has a null
+ *  projectId and workspaceType='Lab'; a project file has a non-null projectId
+ *  and null workspaceType. The loader never returns project files in the Lab
+ *  scope (loadLabFiles) nor lab files in the project scope (loadFiles). */
+async function loadLabFiles(userSub: string, request?: Request): Promise<DriveItem[]> {
+  const rows = await prisma.projectFile.findMany({
+    where: { workspaceType: "Lab", archivedAt: null },
+    orderBy: { updatedAt: "desc" },
+    select: {
+      id: true,
+      title: true,
+      folderPageId: true,
+      updatedAt: true,
+    },
+  });
+  const out: DriveItem[] = [];
+  for (const f of rows) {
+    // Fast path: files at the lab root (no folder) skip the access check.
+    if (
+      f.folderPageId &&
+      !(await canViewFile(
+        userSub,
+        { workspaceType: "Lab", workspaceId: null, folderPageId: f.folderPageId },
+        request,
+      ))
+    ) {
+      continue;
+    }
+    out.push({
+      type: "file",
+      id: f.id,
+      title: f.title,
+      parentFolderId: f.folderPageId,
+      iconEmoji: null,
+      updatedAt: f.updatedAt,
+      href: `/documents/file/${f.id}`,
+    });
+  }
+  return out;
 }
 
 /** Load files for the given project IDs. Access is inherited from the project:
@@ -401,19 +436,23 @@ export async function loadDriveScope({
   request,
 }: LoadDriveScopeOptions): Promise<DriveItem[]> {
   if (scope.kind === "Member") {
-    // Private drive: the viewer's own personal notes only. No files, forms, or
-    // agreements live here — it is pages-only, owner-scoped.
-    return loadMemberPages(userSub);
+    // Private drive: the viewer's own personal notes + files, owner-scoped. No
+    // forms or agreements live here.
+    const [pages, files] = await Promise.all([
+      loadMemberPages(userSub),
+      loadMemberFiles(userSub),
+    ]);
+    return [...pages, ...files];
   }
 
   if (scope.kind === "Lab") {
     // Lab scope: pages go through getPageAccess; lab-scoped files are visible
-    // to all lab members (access already gated by the route loader before
-    // calling loadDriveScope). Project-owned files are NOT included here —
-    // they appear only in their respective project scope.
+    // to all lab members (except scoped-folder files, filtered in loadLabFiles).
+    // Project-owned files are NOT included here — they appear only in their
+    // respective project scope.
     const [pages, files, forms, agreements] = await Promise.all([
       loadLabPages(userSub, request),
-      loadLabFiles(),
+      loadLabFiles(userSub, request),
       canViewForms ? loadForms() : Promise.resolve([] as DriveItem[]),
       // Agreements → Core only. canManageAgreements must be derived upstream.
       canManageAgreements ? loadAgreements() : Promise.resolve([] as DriveItem[]),
