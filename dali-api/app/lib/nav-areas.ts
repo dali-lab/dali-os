@@ -93,7 +93,7 @@ export const NAV_AREAS: NavArea[] = [
     hubPath: "/projects",
     subtabs: [
       { label: "Hub", href: "/projects", icon: LayoutGrid },
-      { label: "Board", href: "/projects/staffing", icon: Kanban, gate: (r) => r.canViewStaffing },
+      { label: "Staffing", href: "/projects/staffing", icon: Kanban, gate: (r) => r.canViewStaffing },
       { label: "Intent to Work", href: "/projects/intent-to-work", icon: ClipboardPen, gate: (r) => r.canViewStaffing },
       { label: "Project Bids", href: "/projects/project-bids", icon: Gavel, gate: (r) => r.canViewStaffing },
       { label: "Level Up", href: "/projects/level-up", icon: ArrowUpCircle, gate: (r) => r.canViewStaffing },

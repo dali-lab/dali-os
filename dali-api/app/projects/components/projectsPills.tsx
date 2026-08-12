@@ -15,16 +15,16 @@ import type { AreaPill } from "~/components/AreaPillNav";
 // the nav appear to vanish.
 export function projectsPills(args: {
   canViewStaffing: boolean;
-  active: "hub" | "board" | "intent" | "bids" | "level-up" | "my-staffing";
+  active: "hub" | "staffing" | "intent" | "bids" | "level-up" | "my-staffing";
 }): AreaPill[] {
   return [
     { label: "Hub", to: "/projects", active: args.active === "hub", icon: LayoutGrid },
     ...(args.canViewStaffing
       ? [
           {
-            label: "Board",
+            label: "Staffing",
             to: "/projects/staffing",
-            active: args.active === "board",
+            active: args.active === "staffing",
             icon: Kanban,
           },
           {
