@@ -2,7 +2,6 @@ import type { AuthUser } from "~/lib/auth";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { rowsToCsv, csvResponse } from "~/lib/csv";
-import "~/lib/csv-exports.server";
 
 // Generalized CSV export mechanism. Each table registers one definition
 // (columns/rows + its own authorize check) instead of a bespoke resource
@@ -48,6 +47,14 @@ export async function runCsvExport(
   request: Request,
   params: Readonly<Record<string, string | undefined>>,
 ): Promise<Response> {
+  // Dynamic, not a top-level import: the registration barrel's leaves import
+  // defineCsvExport from this module, so a static import here would be a cycle
+  // and `registry` below would still be in its TDZ when they register. Loading
+  // it on first call means this module is fully evaluated by then. Must also
+  // stay inside this function (not the route module) so React Router's
+  // dot-server plugin strips it from the client bundle along with the loader.
+  await import("~/lib/csv-exports.server");
+
   const def = registry.get(id);
   if (!def) return new Response("Unknown export", { status: 404 });
 
