@@ -28,6 +28,8 @@ export async function resolveDynamicQuery(query: string): Promise<string[]> {
       return id ? resolveProjectMembers(id) : [];
     case "domain":
       return id ? resolveDomainMembers(id) : [];
+    case "offering":
+      return id ? resolveOfferingMembers(id) : [];
     case "core":
       return resolveCoreMembers();
     case "alumni":
@@ -80,6 +82,18 @@ async function resolveProjectMembers(projectId: string): Promise<string[]> {
     distinct: ["userId"],
   });
   return rows.map((r) => r.userId);
+}
+
+// Members of an EducationOffering: users with an Approved application to that
+// offering. "Approved" = the Education team accepted the application; it is the
+// enrollment gate for both member-portal and Dartmouth-portal applicants.
+async function resolveOfferingMembers(offeringId: string): Promise<string[]> {
+  const rows = await prisma.educationApplication.findMany({
+    where: { offeringId, status: "Approved" },
+    select: { applicantUserId: true },
+    distinct: ["applicantUserId"],
+  });
+  return rows.map((r) => r.applicantUserId);
 }
 
 async function resolveDomainMembers(domainId: string): Promise<string[]> {
@@ -293,6 +307,20 @@ export async function ensureDomainGroup(domainId: string, displayName: string) {
     update: { name: `Domain ${displayName}` },
     create: {
       name: `Domain ${displayName}`,
+      type: "Dynamic",
+      dynamicQuery: systemKey,
+      systemKey,
+    },
+  });
+}
+
+export async function ensureOfferingGroup(offeringId: string, title: string) {
+  const systemKey = `offering:${offeringId}`;
+  await prisma.groupDefinition.upsert({
+    where: { systemKey },
+    update: { name: `Offering ${title}` },
+    create: {
+      name: `Offering ${title}`,
       type: "Dynamic",
       dynamicQuery: systemKey,
       systemKey,

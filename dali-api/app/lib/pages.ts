@@ -71,6 +71,60 @@ export async function createLabMeetingPage(input: {
   });
 }
 
+// ─── Nesting guards ──────────────────────────────────────────────────────────
+
+// Maximum allowed depth in the page tree. Depth 0 = top-level; depth 6 = six
+// levels of nesting. Capped here rather than the DB so the walk stays bounded.
+export const MAX_PAGE_DEPTH = 6;
+
+/**
+ * Walk the parentPageId chain from `startId` (exclusive) toward the root,
+ * returning the depth of `startId` itself (0 = root).  Returns -1 if any
+ * ancestor is not found (broken chain) or if the chain would exceed
+ * MAX_PAGE_DEPTH + 1 (avoids infinite loops on cyclic data).
+ */
+export async function pageDepth(startId: string): Promise<number> {
+  let id: string | null = startId;
+  let depth = 0;
+  while (id !== null) {
+    if (depth > MAX_PAGE_DEPTH + 1) return -1; // runaway guard
+    const row: { parentPageId: string | null } | null = await prisma.page.findUnique({
+      where: { id },
+      select: { parentPageId: true },
+    });
+    if (!row) return -1;
+    id = row.parentPageId;
+    if (id !== null) depth++;
+  }
+  return depth;
+}
+
+/**
+ * Returns true if `ancestorId` appears anywhere in the ancestor chain of
+ * `pageId`. Used to prevent cyclic moves: before setting page.parentPageId =
+ * newParentId, check `isAncestor(newParentId, pageId)` and reject if true.
+ * Bounded by MAX_PAGE_DEPTH + 2 to handle broken/cyclic chains gracefully.
+ */
+export async function isAncestorOf(
+  ancestorId: string,
+  pageId: string,
+): Promise<boolean> {
+  let id: string | null = pageId;
+  let steps = 0;
+  while (id !== null) {
+    if (steps > MAX_PAGE_DEPTH + 2) return false; // broken/cyclic chain
+    const row: { parentPageId: string | null } | null = await prisma.page.findUnique({
+      where: { id },
+      select: { parentPageId: true },
+    });
+    if (!row) return false;
+    id = row.parentPageId;
+    if (id === ancestorId) return true;
+    steps++;
+  }
+  return false;
+}
+
 // Creates a Page in the Lab workspace (workspaceType=Lab, workspaceId=null —
 // see Page.workspaceType comment in schema.prisma). Same shape as
 // createProjectPage but for the lab-wide Documents area: supports Folder-kind

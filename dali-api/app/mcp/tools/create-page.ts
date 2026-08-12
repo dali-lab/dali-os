@@ -1,14 +1,15 @@
 // MCP `create_page` — creates a Page in a project workspace: a FreeForm
 // document (optionally seeded with Markdown content via the collab write
 // pipeline) or a Folder container. Mirrors api.projects.$id.documents — same
-// nesting rules (documents nest only inside top-level Folders; folders never
-// nest) and same gate (Core, or staffed on the project).
+// nesting rules (documents nest only inside Folders up to MAX_PAGE_DEPTH;
+// folders never nest) and same gate (Core, or staffed on the project).
 
 import { prisma } from "~/lib/db";
 import { canEditProject } from "./access";
 import { markdownToBlocks } from "~/collab/blocknote-server";
 import { replaceCollabDocContent } from "~/collab/write";
 import { pageDocName } from "~/collab/roomName";
+import { pageDepth, MAX_PAGE_DEPTH } from "~/lib/pages";
 
 const MAX_MARKDOWN_LENGTH = 300_000;
 
@@ -107,8 +108,9 @@ export async function runCreatePage(callerId: string, input: Input) {
     if (parent.kind !== "Folder") {
       throw new CreatePageError("Documents can only nest inside a folder", 400);
     }
-    if (parent.parentPageId !== null) {
-      throw new CreatePageError("Parent page must itself be top-level (2-level cap)", 400);
+    const depth = await pageDepth(parent.id);
+    if (depth < 0 || depth >= MAX_PAGE_DEPTH) {
+      throw new CreatePageError("Folder is too deeply nested", 400);
     }
     parentPageId = parent.id;
   }

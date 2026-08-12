@@ -10,6 +10,7 @@ import { duplicatePage } from "~/lib/page-copy.server";
 import { setFavorite } from "~/lib/user-pages.server";
 import { canManageSharing } from "~/lib/page-share-access.server";
 import { logAuditEvent } from "~/lib/audit";
+import { pageDepth, MAX_PAGE_DEPTH, isAncestorOf } from "~/lib/pages";
 import type { McpCtx, McpTool } from "~/mcp/registry";
 import type { Prisma } from "~/generated/prisma/client";
 
@@ -227,8 +228,16 @@ export async function runManagePage(callerId: string, input: ManagePageInput) {
     ) {
       throw new ManagePageError("Folder not found", 404);
     }
-    if (parent.kind !== "Folder" || parent.parentPageId !== null) {
-      throw new ManagePageError("Documents can only nest inside a top-level folder", 400);
+    if (parent.kind !== "Folder") {
+      throw new ManagePageError("Documents can only nest inside a folder", 400);
+    }
+    const depth = await pageDepth(parentPageId);
+    if (depth < 0 || depth >= MAX_PAGE_DEPTH) {
+      throw new ManagePageError("Folder is too deeply nested", 400);
+    }
+    // Cycle guard: the destination can't be a descendant of the page being moved.
+    if (await isAncestorOf(input.pageId, parentPageId)) {
+      throw new ManagePageError("A document can't be moved into its own descendant", 400);
     }
   }
 

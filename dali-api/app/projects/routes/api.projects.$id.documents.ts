@@ -4,7 +4,7 @@ import { prisma } from "~/lib/db";
 import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
-import { createProjectPage } from "~/lib/pages";
+import { createProjectPage, pageDepth, MAX_PAGE_DEPTH } from "~/lib/pages";
 
 // POST /api/projects/:id/documents
 //
@@ -12,8 +12,8 @@ import { createProjectPage } from "~/lib/pages";
 // workspace (workspaceType=Project, workspaceId=projectId) — the same Page
 // model the project Overview/PRD use. Body: { title, kind?, parentPageId? }.
 // kind defaults to "FreeForm" (a document); "Folder" creates a container
-// page. parentPageId nests a document under an existing top-level Folder
-// (the 2-level cap means folders themselves can never be nested).
+// page. parentPageId nests a document under any existing Folder (up to depth
+// MAX_PAGE_DEPTH); folders themselves still can't nest inside other folders.
 //
 // The rich-text body of a FreeForm page lives in the collab editor
 // (contentDocId), which is a separate system; this route only creates the
@@ -74,8 +74,9 @@ export async function action({ request, params }: Route.ActionArgs) {
         Response.json({ error: "Documents can only nest inside a folder" }, { status: 400 }),
       );
     }
-    if (parent.parentPageId !== null) {
-      return withCors(request, Response.json({ error: "Pages only nest one level deep" }, { status: 400 }));
+    const depth = await pageDepth(body.parentPageId);
+    if (depth < 0 || depth >= MAX_PAGE_DEPTH) {
+      return withCors(request, Response.json({ error: "Folder is too deeply nested" }, { status: 400 }));
     }
   }
 
