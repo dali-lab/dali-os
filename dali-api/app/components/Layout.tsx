@@ -23,6 +23,7 @@ import { useOpenTasks, TASKS_CHANGED_EVENT } from '~/components/NotificationBell
 import { DesktopBanner } from '~/components/DesktopBanner'
 import { CommandPalette } from '~/components/CommandPalette'
 import { TablessHistoryNav } from '~/components/TablessHistoryNav'
+import { useFeatureFlag } from '~/components/FeatureFlags'
 import { setFocusPreference } from '~/lib/focus-mode'
 import {
   areaForPath,
@@ -73,9 +74,14 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
   // Pages with their own AreaPillNav/UnderlineTabButtons row host the
   // tabless history arrows inline (see TablessHistoryNavInline) — skip the
   // standalone bar there so the arrows don't stack a second row on top.
-  const hasAreaSubnav = matches.some(
-    (m) => (m as { handle?: { areaPills?: boolean } }).handle?.areaPills,
-  )
+  // `areaSubnav` rows (calendar) always render; the `areaPills` row only exists
+  // when the sidebar redesign is off, so under the flag the standalone bar is
+  // still the arrows' only host.
+  const redesign = useFeatureFlag('sidebar-redesign')
+  const hasAreaSubnav = matches.some((m) => {
+    const h = (m as { handle?: { areaSubnav?: boolean; areaPills?: boolean } }).handle
+    return h?.areaSubnav || (!redesign && h?.areaPills)
+  })
   // Held in refs so the message listener (mounted once) always calls the
   // latest values without needing to re-subscribe.
   const revalidateRef = useRef(revalidate)

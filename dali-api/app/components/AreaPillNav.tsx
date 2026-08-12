@@ -50,11 +50,10 @@ const underlineTabListClass =
 // Actions never scroll with the tabs and keep the row's right edge.
 const tabBarActionsClass = "flex shrink-0 items-center gap-2 self-center pl-2 pr-2";
 
-// Leading slot for the desktop tabless history arrows — bleeds to the same
-// edge as the tab list (-mx-3 sm:-mx-6 lg:-mx-10 on the bar) so it lines up
-// with page content above it instead of floating mid-row.
-const tabBarLeadingClass =
-  "flex shrink-0 items-center self-stretch pl-3 sm:pl-6 lg:pl-10";
+// Leading slot for the desktop tabless history arrows. No left padding: the
+// bar already bleeds to the window edge (-mx-3 sm:-mx-6 lg:-mx-10), and the
+// arrows sit flush against it the way browser/OS back-forward chrome does.
+const tabBarLeadingClass = "flex shrink-0 items-center self-stretch";
 
 // A 2px coral rule on a white page was doing all the work of saying "this tab
 // is selected", and losing — at that weight the tint reads as a hairline rather
