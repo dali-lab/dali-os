@@ -1,10 +1,12 @@
 // Registry of typed notification events. Every Notification row carries an
 // `eventType` from this table; notify() (app/lib/notify.server.ts) resolves
 // each recipient's channels from their NotificationPreference row, falling
-// back to the `defaults` here when no row exists. Defaults are chosen so a
-// user with zero preference rows behaves exactly as the app did before the
-// preference layer existed — the only Instant email defaults are flows that
-// already emailed members.
+// back to the `defaults` here when no row exists. Defaults mostly preserve the
+// pre-preference-layer behavior for a user with zero preference rows; the
+// exceptions are a short list of high-signal, low-frequency events that default
+// to Instant email (lab announcements, onboarding, staffing assignments,
+// fellowship invites, sign requests, plus the education announcement/certificate
+// flows that always emailed).
 //
 // Client-safe on purpose (no process.env, no server imports): the settings
 // page renders its matrix from this table.
@@ -162,14 +164,14 @@ export const EVENT_TYPES = {
     // a hard-gate requirement, so it can't be muted.
     lockedInApp: true,
     timeSensitive: true,
-    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
   },
   "staffing.assigned": {
     kind: "General",
     area: "Staffing",
     label: "Staffing assignments",
     description: "When your project assignment for a term is confirmed.",
-    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
   },
   "hiring.interview_assigned": {
     kind: "General",
@@ -184,7 +186,7 @@ export const EVENT_TYPES = {
     area: "Hiring",
     label: "Fellowship invitations",
     description: "When an intern-to-full application window opens for you.",
-    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
   },
   announcement: {
     kind: "SystemAnnouncement",
@@ -192,7 +194,7 @@ export const EVENT_TYPES = {
     label: "Lab announcements",
     description: "Announcements and action items sent by Core.",
     lockedInApp: true,
-    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
   },
   "member.onboarding": {
     kind: "SystemAnnouncement",
@@ -200,7 +202,7 @@ export const EVENT_TYPES = {
     label: "Onboarding steps",
     description: "Your onboarding checklist when you join the lab.",
     lockedInApp: true,
-    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
   },
   "member.onboarding.reminder": {
     kind: "SystemAnnouncement",

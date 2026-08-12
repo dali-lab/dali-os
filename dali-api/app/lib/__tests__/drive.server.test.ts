@@ -3,6 +3,8 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db");
 vi.mock("~/lib/pageAccess.server", () => ({
   getPageAccess: vi.fn(),
+  // Files use this via canViewFile; default false → unscoped files stay visible.
+  isUnderGoverningScope: vi.fn().mockResolvedValue(false),
 }));
 
 import { prisma } from "~/lib/db";

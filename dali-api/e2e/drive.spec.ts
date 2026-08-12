@@ -6,13 +6,18 @@ import { enableDriveFlagForUser, clearDriveFlag } from './helpers';
 //
 // IA after the reshape:
 //   - Browse is the only main view (data-testid="drive-browse").
-//   - Type filter chips: drive-filter-all|doc|file|form
-//   - New ▾ menu: data-testid="drive-new-menu"
-//     Items: drive-new-doc, drive-new-folder, drive-new-form (Core only),
-//            drive-new-template, drive-new-upload
-//   - Scope sections: drive-scope-<id>; trees inside: data-testid="drive-tree"
+//   - Type filter chips: drive-filter-all|doc|file|form (folders always show).
+//   - Per-scope New ▾ menu: data-testid="drive-new-menu-<scopeId>" (e.g. -lab,
+//     -mine). Base items: drive-new-doc-<scopeId>, drive-new-folder-<scopeId>.
+//     The Lab menu also carries drive-new-form (Core), drive-new-agreement
+//     (Core), drive-new-template, drive-new-upload-<scope>. Every drive has upload. Create opens a naming
+//     prompt (dialog) before the item is made.
+//   - Scope sections: drive-scope-<id> — "mine" (My Drive) + "lab" + "core"
+//     (Core drive, Core members only, auto-provisioned) + projects.
+//   - Trees inside: data-testid="drive-tree"
 //   - Item rows in tree: drive-item-<type>-<id>   (doc / file / form / folder)
 //   - Folder rows:       drive-folder-<id>
+//   - Row actions menu:  drive-item-actions-<id> (Rename / Move to… / Delete)
 //
 // Agreements and Templates secondary shelves have been removed from the hub:
 //   - Signed agreements are in Settings → Agreements.
@@ -47,7 +52,7 @@ test.describe('Drive hub (drive-consolidation flag)', () => {
   //   - drive-browse container is visible
   //   - All / Documents / Files / Forms filter chips are present
   //   - drive-new-menu button is visible; opening it shows all New items
-  //   - drive-new-template and drive-new-upload are present
+  //   - drive-new-template and drive-new-upload-lab are present
   //   - The created doc appears in the tree (All view)
   //   - Switching to the Documents filter still shows the doc
   //   - Switching to the Forms filter hides the doc
@@ -78,20 +83,20 @@ test.describe('Drive hub (drive-consolidation flag)', () => {
     await expect(page.getByTestId('drive-filter-form')).toBeVisible();
 
     // New ▾ menu trigger must be visible.
-    await expect(page.getByTestId('drive-new-menu')).toBeVisible();
+    await expect(page.getByTestId('drive-new-menu-lab')).toBeVisible();
 
     // Agreements + Templates secondary shelf triggers must NOT be present.
     await expect(page.getByTestId('drive-shelf-agreements')).not.toBeVisible();
     await expect(page.getByTestId('drive-shelf-templates')).not.toBeVisible();
 
     // ── New ▾ menu: open and verify items ────────────────────────────────────
-    await page.getByTestId('drive-new-menu').click();
+    await page.getByTestId('drive-new-menu-lab').click();
     // Menu items are rendered in a FloatingPortal; they should appear in DOM.
-    await expect(page.getByTestId('drive-new-doc')).toBeVisible();
-    await expect(page.getByTestId('drive-new-folder')).toBeVisible();
+    await expect(page.getByTestId('drive-new-doc-lab')).toBeVisible();
+    await expect(page.getByTestId('drive-new-folder-lab')).toBeVisible();
     await expect(page.getByTestId('drive-new-form')).toBeVisible();
     await expect(page.getByTestId('drive-new-template')).toBeVisible();
-    await expect(page.getByTestId('drive-new-upload')).toBeVisible();
+    await expect(page.getByTestId('drive-new-upload-lab')).toBeVisible();
     // Close the menu by pressing Escape.
     await page.keyboard.press('Escape');
 
@@ -284,7 +289,7 @@ test.describe('Drive hub (drive-consolidation flag)', () => {
     await page.waitForLoadState('networkidle');
 
     // Open the New menu.
-    await page.getByTestId('drive-new-menu').click();
+    await page.getByTestId('drive-new-menu-lab').click();
     await expect(page.getByTestId('drive-new-template')).toBeVisible();
 
     // Click "From template…" — closes the menu and opens the modal.
@@ -322,7 +327,7 @@ test.describe('Drive hub (drive-consolidation flag)', () => {
     await expect(page.getByTestId('drive-filter-agreement')).toBeVisible();
 
     // Opening the New menu shows the New agreement item.
-    await page.getByTestId('drive-new-menu').click();
+    await page.getByTestId('drive-new-menu-lab').click();
     await expect(page.getByTestId('drive-new-agreement')).toBeVisible();
 
     // Close menu.
@@ -341,7 +346,7 @@ test.describe('Drive hub (drive-consolidation flag)', () => {
     await page.goto('/drive?embed=1');
     await page.waitForLoadState('networkidle');
 
-    await page.getByTestId('drive-new-menu').click();
+    await page.getByTestId('drive-new-menu-lab').click();
     await expect(page.getByTestId('drive-new-agreement')).toBeVisible();
 
     // Click the menu item and wait for navigation.
@@ -351,6 +356,103 @@ test.describe('Drive hub (drive-consolidation flag)', () => {
     ]);
 
     expect(page.url()).toMatch(/\/documents\/agreement\//);
+  });
+
+  // ── Test H: My Drive scope + naming prompt on create ────────────────────────
+  //
+  // The private "My Drive" scope (drive-scope-mine) has its own New ▾ menu.
+  // Creating a document opens a naming prompt (dialog), and confirming navigates
+  // to the new personal note. Exercises the My Drive scope + the create prompt.
+
+  test('(H) My Drive scope creates a document via the naming prompt', async ({ page }) => {
+    const stamp = Date.now();
+    await page.goto('/drive?embed=1');
+    await page.waitForLoadState('networkidle');
+
+    // My Drive scope renders and opens by default.
+    await expect(page.getByTestId('drive-scope-mine')).toBeVisible();
+
+    // Open the My Drive New menu; it offers doc/folder AND upload (files live
+    // in My Drive too, privately), then pick New document.
+    await page.getByTestId('drive-new-menu-mine').click();
+    await expect(page.getByTestId('drive-new-upload-mine')).toBeVisible();
+    await page.getByTestId('drive-new-doc-mine').click();
+
+    // A naming prompt (dialog) appears; fill it and confirm.
+    const input = page.locator('[role="dialog"] input[type="text"]');
+    await expect(input).toBeVisible();
+    await input.fill(`My note ${stamp}`);
+
+    await Promise.all([
+      page.waitForURL(/\/documents\//, { timeout: 10_000 }),
+      page.getByRole('button', { name: 'Create' }).click(),
+    ]);
+    expect(page.url()).toMatch(/\/documents\//);
+  });
+
+  // ── Test I: row "⋯" menu renames a doc (non-DnD management) ──────────────────
+  //
+  // Creates a Lab doc, opens its row actions menu, renames it via the prompt,
+  // and asserts the tree shows the new title after revalidation.
+
+  test('(I) Row actions menu renames a document', async ({ page }) => {
+    const stamp = Date.now();
+    const createRes = await page.request.post('/api/lab-documents', {
+      data: { title: `E2E rename src ${stamp}`, kind: 'FreeForm' },
+    });
+    expect(createRes.ok(), `Create doc failed: ${await createRes.text()}`).toBe(true);
+    const { id: docId } = await createRes.json() as { id: string };
+
+    await page.goto('/drive?embed=1');
+    await page.waitForLoadState('networkidle');
+
+    // The row and its actions trigger are present (button reveals on hover but
+    // is in the DOM; click it directly).
+    await expect(page.getByTestId(`drive-item-doc-${docId}`)).toBeVisible();
+    await page.getByTestId(`drive-item-actions-${docId}`).click();
+
+    // Rename opens the prompt pre-filled with the current title.
+    await page.getByRole('menuitem', { name: 'Rename' }).click();
+    const input = page.locator('[role="dialog"] input[type="text"]');
+    await expect(input).toBeVisible();
+    const newTitle = `E2E renamed ${stamp}`;
+    await input.fill(newTitle);
+    await page.getByRole('button', { name: 'Save' }).click();
+
+    // Tree revalidates and the row shows the new title.
+    await expect(page.getByTestId(`drive-item-doc-${docId}`).getByText(newTitle)).toBeVisible();
+  });
+
+  // ── Test J: Core drive is auto-provisioned for Core members ──────────────────
+  //
+  // admin@dali.dartmouth.edu is Core, so the Core drive (drive-scope-core) is
+  // ensured on first visit and creating a doc in it lands a Core-scoped page.
+  // (Non-Core exclusion + the no-leak cascade are covered by the pageAccess unit
+  // tests; the seed provisions the core GroupDefinition via syncDefaultGroups.)
+
+  test('(J) Core drive auto-provisions for a Core member and accepts a new doc', async ({ page }) => {
+    const stamp = Date.now();
+    await page.goto('/drive?embed=1');
+    await page.waitForLoadState('networkidle');
+
+    // The Core drive section renders for the Core admin.
+    await expect(page.getByTestId('drive-scope-core')).toBeVisible();
+
+    // Create a document into the Core drive via its own New menu (which also
+    // offers upload — Core files land inside the Core folder, Core-only).
+    await page.getByTestId('drive-new-menu-core').click();
+    await expect(page.getByTestId('drive-new-upload-core')).toBeVisible();
+    await page.getByTestId('drive-new-doc-core').click();
+
+    const input = page.locator('[role="dialog"] input[type="text"]');
+    await expect(input).toBeVisible();
+    await input.fill(`Core doc ${stamp}`);
+
+    await Promise.all([
+      page.waitForURL(/\/documents\//, { timeout: 10_000 }),
+      page.getByRole('button', { name: 'Create' }).click(),
+    ]);
+    expect(page.url()).toMatch(/\/documents\//);
   });
 });
 

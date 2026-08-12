@@ -142,6 +142,17 @@ type AncestorRow = {
  * With no scoped folders in the DB every call terminates at the root and
  * returns null — the early-exit that makes this a no-op today.
  */
+// Whether a page nested under `parentPageId` would fall inside a scoped folder
+// (i.e. some ancestor — including the parent itself — carries a scopeKind).
+// Used by the create/move endpoints to decide whether a new/moved page should
+// default to Restricted general access (scoped drives govern access; the
+// "everyone in the lab" link grant is off inside them, so the scope isn't
+// silently widened). Returns false for a top-level (null-parent) placement.
+export async function isUnderGoverningScope(parentPageId: string | null): Promise<boolean> {
+  if (!parentPageId) return false;
+  return (await findGoverningScope(parentPageId)) !== null;
+}
+
 async function findGoverningScope(
   startParentId: string | null,
 ): Promise<AncestorRow | null> {

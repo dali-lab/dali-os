@@ -35,6 +35,7 @@ import { getPageAccess } from "~/lib/pageAccess.server";
 
 const ScopeSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("Lab") }),
+  z.object({ kind: z.literal("Member") }),
   z.object({ kind: z.literal("Project"), projectId: z.string().trim().min(1) }),
 ]);
 
@@ -70,6 +71,57 @@ export async function action({ request }: { request: Request }) {
   }
 
   const { scope, folderPageId } = body;
+
+  if (scope.kind === "Member") {
+    // My Drive: the file belongs to the uploader. If a folder is given it must be
+    // one of the owner's My Drive folders they can edit.
+    if (folderPageId) {
+      const folderAccess = await getPageAccess(userId, folderPageId, request);
+      if (!folderAccess.canEdit) {
+        return withCors(
+          request,
+          Response.json({ error: "No edit access to the target folder" }, { status: 403 }),
+        );
+      }
+    }
+    const file = await prisma.$transaction(async (tx) => {
+      const created = await tx.projectFile.create({
+        data: {
+          title: body.title,
+          workspaceType: "Member",
+          workspaceId: userId,
+          folderPageId: folderPageId ?? null,
+        },
+        select: { id: true },
+      });
+      const version = await tx.projectFileVersion.create({
+        data: {
+          fileId: created.id,
+          s3Key: body.s3Key,
+          fileName: body.fileName,
+          contentType: body.contentType,
+          sizeBytes: body.sizeBytes,
+          uploadedById: userId,
+        },
+        select: { id: true },
+      });
+      await tx.projectFile.update({
+        where: { id: created.id },
+        data: { currentVersionId: version.id },
+      });
+      return created;
+    });
+
+    await logAuditEvent({
+      action: "projectFile.create",
+      userId,
+      targetId: file.id,
+      metadata: { scope: "Member", title: body.title, folderPageId: folderPageId ?? null },
+      request,
+    });
+
+    return withCors(request, Response.json({ id: file.id }, { status: 201 }));
+  }
 
   if (scope.kind === "Lab") {
     // Lab scope: caller must be a lab member.

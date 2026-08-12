@@ -4,13 +4,43 @@
 
 import { loadDriveScope } from "~/lib/drive.server";
 import type { DriveItem } from "~/lib/drive.server";
+import { ensureCoreDriveRoot } from "~/lib/pages";
 
 export type DriveTreeScope = {
   id: string;
   label: string;
   iconEmoji: string | null;
   items: DriveItem[];
+  /** DB parent that this scope's top level maps to. null for My Drive/Lab/
+   *  projects (top level = parentPageId null); set to the Core root folder id
+   *  for the Core drive, so creates/moves land inside the scoped folder. */
+  rootFolderId?: string | null;
 };
+
+// Given a flat item list and a root folder id, return the ids of the root plus
+// every descendant (folder or leaf) reachable through parentFolderId.
+function subtreeIds(items: DriveItem[], rootId: string): Set<string> {
+  const childrenOf = new Map<string, string[]>();
+  for (const it of items) {
+    const p = it.parentFolderId;
+    if (p === null) continue;
+    const list = childrenOf.get(p);
+    if (list) list.push(it.id);
+    else childrenOf.set(p, [it.id]);
+  }
+  const out = new Set<string>([rootId]);
+  const queue = [rootId];
+  while (queue.length > 0) {
+    const cur = queue.pop()!;
+    for (const child of childrenOf.get(cur) ?? []) {
+      if (!out.has(child)) {
+        out.add(child);
+        queue.push(child);
+      }
+    }
+  }
+  return out;
+}
 
 type WorkspaceOut = {
   key: string;
@@ -33,6 +63,7 @@ export async function loadDriveScopes({
   projectWorkspaces,
   canViewForms,
   canManageAgreements,
+  isCore,
   request,
 }: {
   userSub: string;
@@ -40,15 +71,21 @@ export async function loadDriveScopes({
   canViewForms: boolean;
   /** Whether to include agreement templates in the Lab scope (= isCore). */
   canManageAgreements: boolean;
+  /** Whether the viewer is Core — gates the auto-provisioned Core drive. */
+  isCore: boolean;
   request: Request;
 }): Promise<DriveTreeScope[]> {
+  // Provision the Core drive root on first Core visit (idempotent). Only Core
+  // members trigger creation; the folder is Core-scoped so non-Core never see it.
+  const coreRoot = isCore ? await ensureCoreDriveRoot(userSub) : null;
   const projectIds = projectWorkspaces.map((w) => w.key);
   const projectNames = new Map(projectWorkspaces.map((w) => [w.key, w.label]));
   const projectEmojis = new Map(
     projectWorkspaces.map((w) => [w.key, w.projectIconEmoji ?? null]),
   );
 
-  const [labItems, ...projectItemArrays] = await Promise.all([
+  const [memberItems, labItems, ...projectItemArrays] = await Promise.all([
+    loadDriveScope({ userSub, scope: { kind: "Member" }, request }),
     loadDriveScope({
       userSub,
       scope: { kind: "Lab" },
@@ -66,9 +103,26 @@ export async function loadDriveScopes({
     ),
   ]);
 
+  // Split the Core subtree out of the Lab items (Core members only). The Core
+  // root + its descendants become their own drive; everything else stays in Lab.
+  // getPageAccess already excluded the Core subtree from labItems for non-Core
+  // viewers, so this is a no-op for them.
+  let coreItems: DriveItem[] = [];
+  let labVisibleItems = labItems;
+  if (coreRoot) {
+    const inCore = subtreeIds(labItems, coreRoot.id);
+    labVisibleItems = labItems.filter((it) => !inCore.has(it.id));
+    coreItems = labItems
+      .filter((it) => it.id !== coreRoot.id && inCore.has(it.id))
+      // Re-root: the Core folder's direct children become the drive's top level.
+      .map((it) =>
+        it.parentFolderId === coreRoot.id ? { ...it, parentFolderId: null } : it,
+      );
+  }
+
   // Build a folder-id set per scope for the de-dup pass below.
   const labFolderIds = new Set(
-    labItems.filter((i) => i.type === "folder").map((i) => i.id),
+    labVisibleItems.filter((i) => i.type === "folder").map((i) => i.id),
   );
   const projectFolderIdSets = projectItemArrays.map(
     (arr) => new Set(arr.filter((i) => i.type === "folder").map((i) => i.id)),
@@ -88,13 +142,22 @@ export async function loadDriveScopes({
     });
   }
 
-  const filteredLab = filterScopeForms(labItems, labFolderIds, true);
+  const filteredLab = filterScopeForms(labVisibleItems, labFolderIds, true);
   const filteredProjects = projectItemArrays.map((arr, i) =>
     filterScopeForms(arr, projectFolderIdSets[i], false),
   );
 
   return [
+    // The viewer's private drive leads — personal notes have no forms to
+    // de-dup, so they pass through untouched.
+    { id: "mine", label: "My Drive", iconEmoji: null, items: memberItems },
     { id: "lab", label: "Lab-wide", iconEmoji: null, items: filteredLab },
+    // Core drive: auto-provisioned, Core-only. Shown whenever the root exists
+    // (which implies the viewer is Core), even when empty — it's a place to
+    // create Core-scoped docs. Creates/moves land inside the Core root folder.
+    ...(coreRoot
+      ? [{ id: "core", label: "Core", iconEmoji: null, items: coreItems, rootFolderId: coreRoot.id }]
+      : []),
     ...projectIds.map((id, i) => ({
       id,
       label: projectNames.get(id) ?? "Project",

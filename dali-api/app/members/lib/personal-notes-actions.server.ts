@@ -19,7 +19,30 @@ import {
   NoteNotFoundError,
   requireNoteOwner,
 } from "./personal-notes.server";
+import { pageDepth, MAX_PAGE_DEPTH, isAncestorOf } from "~/lib/pages";
 import type { SharePrincipalType } from "~/generated/prisma/client";
+
+// Validate that `parentPageId` is a Folder the owner controls, deep enough to
+// still accept a child. Shared by createNote and the move path in updateNote.
+async function requireOwnedParentFolder(
+  ownerId: string,
+  parentPageId: string,
+): Promise<void> {
+  const parent = await prisma.page.findUnique({
+    where: { id: parentPageId },
+    select: { workspaceType: true, workspaceId: true, kind: true },
+  });
+  if (!parent || parent.workspaceType !== "Member" || parent.workspaceId !== ownerId) {
+    throw new NoteNotFoundError();
+  }
+  if (parent.kind !== "Folder") {
+    throw new NoteForbiddenError("Notes can only nest inside a folder");
+  }
+  const depth = await pageDepth(parentPageId);
+  if (depth < 0 || depth >= MAX_PAGE_DEPTH) {
+    throw new NoteForbiddenError("That folder is too deeply nested");
+  }
+}
 
 export async function createNote(
   ownerId: string,
@@ -27,18 +50,7 @@ export async function createNote(
 ): Promise<{ id: string }> {
   const parentPageId = input.parentPageId ?? null;
   if (parentPageId) {
-    // Two-level cap, same as every other workspace: a folder holds notes, and
-    // nothing nests deeper.
-    const parent = await prisma.page.findUnique({
-      where: { id: parentPageId },
-      select: { workspaceType: true, workspaceId: true, parentPageId: true, kind: true },
-    });
-    if (!parent || parent.workspaceType !== "Member" || parent.workspaceId !== ownerId) {
-      throw new NoteNotFoundError();
-    }
-    if (parent.parentPageId !== null || parent.kind !== "Folder") {
-      throw new NoteForbiddenError("Notes can only be nested one level, inside a folder");
-    }
+    await requireOwnedParentFolder(ownerId, parentPageId);
   }
 
   const last = await prisma.page.findFirst({
@@ -74,7 +86,20 @@ export async function updateNote(
     data.title = title;
   }
   if (input.iconEmoji !== undefined) data.iconEmoji = input.iconEmoji || null;
-  if (input.parentPageId !== undefined) data.parentPageId = input.parentPageId || null;
+  if (input.parentPageId !== undefined) {
+    const parentPageId = input.parentPageId || null;
+    if (parentPageId) {
+      if (parentPageId === pageId) {
+        throw new NoteForbiddenError("A note can't be moved into itself");
+      }
+      await requireOwnedParentFolder(ownerId, parentPageId);
+      // Cycle guard: don't drop a folder inside its own subtree.
+      if (await isAncestorOf(pageId, parentPageId)) {
+        throw new NoteForbiddenError("A folder can't be moved into its own contents");
+      }
+    }
+    data.parentPageId = parentPageId;
+  }
   if (Object.keys(data).length === 0) return;
   data.lastEditedById = ownerId;
   await prisma.page.update({ where: { id: pageId }, data });

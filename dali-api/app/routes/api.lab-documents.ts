@@ -4,17 +4,18 @@ import { prisma } from "~/lib/db";
 import { requireMemberSession } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
-import { createLabPage } from "~/lib/pages";
+import { createLabPage, pageDepth, MAX_PAGE_DEPTH } from "~/lib/pages";
+import { isUnderGoverningScope } from "~/lib/pageAccess.server";
 
 // POST /api/lab-documents
 //
 // Add a lab-wide document or folder — Pages scoped to the Lab workspace
 // (workspaceType=Lab, workspaceId=null), the same Page model the project
 // Documents block uses, just lab-scoped. Body: { title, kind?, parentPageId? }.
-// kind defaults to "FreeForm"; "Folder" creates a container. parentPageId
-// nests a document under an existing top-level Folder (the 2-level cap means
-// folders never nest). Any lab member may create — the lab's members are the
-// Lab workspace's members (mirrors the project-member gate on project docs).
+// kind defaults to "FreeForm"; "Folder" creates a container. parentPageId nests
+// a document OR a folder under an existing Folder, up to MAX_PAGE_DEPTH levels
+// deep. Any lab member may create — the lab's members are the Lab workspace's
+// members (mirrors the project-member gate on project docs).
 
 const BodySchema = z.object({
   title: z.string().trim().min(1).max(200),
@@ -36,17 +37,10 @@ export async function action({ request }: Route.ActionArgs) {
   const body = await parseJson(request, BodySchema);
   if (body instanceof Response) return withCors(request, body);
 
-  if (body.kind === "Folder" && body.parentPageId) {
-    return withCors(
-      request,
-      Response.json({ error: "Folders can't be nested inside another folder" }, { status: 400 }),
-    );
-  }
-
   if (body.parentPageId) {
     const parent = await prisma.page.findUnique({
       where: { id: body.parentPageId },
-      select: { workspaceType: true, workspaceId: true, parentPageId: true, kind: true, archivedAt: true },
+      select: { workspaceType: true, workspaceId: true, kind: true, archivedAt: true },
     });
     if (
       !parent ||
@@ -59,19 +53,25 @@ export async function action({ request }: Route.ActionArgs) {
     if (parent.kind !== "Folder") {
       return withCors(
         request,
-        Response.json({ error: "Documents can only nest inside a folder" }, { status: 400 }),
+        Response.json({ error: "Pages can only nest inside a folder" }, { status: 400 }),
       );
     }
-    if (parent.parentPageId !== null) {
-      return withCors(request, Response.json({ error: "Pages only nest one level deep" }, { status: 400 }));
+    const depth = await pageDepth(body.parentPageId);
+    if (depth < 0 || depth >= MAX_PAGE_DEPTH) {
+      return withCors(request, Response.json({ error: "Folder is too deeply nested" }, { status: 400 }));
     }
   }
+
+  // Pages created inside a scoped drive (e.g. Core) start Restricted so the
+  // scope governs access rather than the lab-wide link grant.
+  const restricted = await isUnderGoverningScope(body.parentPageId ?? null);
 
   const page = await createLabPage({
     title: body.title,
     createdById: auth.user.sub,
     kind: body.kind,
     parentPageId: body.parentPageId ?? null,
+    restricted,
   });
 
   return withCors(request, Response.json({ id: page.id }));

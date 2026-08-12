@@ -13,18 +13,20 @@ import {
   Folder as FolderIcon,
   LayoutTemplate,
   Upload,
+  User,
+  Shield,
 } from "lucide-react";
-import { useState, useCallback, useEffect, useRef, useId } from "react";
+import { useState, useCallback, useEffect, useRef, useId, useMemo } from "react";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { canViewForms as checkCanViewForms, getUserRoles } from "~/lib/roles";
 import { loader as docsLoader } from "~/routes/documents.hub";
 import { loadDriveScopes } from "~/lib/drive-scopes.server";
 import type { DriveItem } from "~/lib/drive.server";
-import { Link } from "react-router";
 import { DriveTree } from "~/components/drive/DriveTree";
-import type { DriveTreeMoveArgs } from "~/components/drive/DriveTree";
+import type { DriveTreeMoveArgs, RowActions } from "~/components/drive/DriveTree";
 import { useDialog } from "~/components/ui/dialog";
+import { useToast } from "~/components/ui/toast";
 import { Menu } from "~/components/ui/floating";
 import { Modal } from "~/components/Modal";
 
@@ -59,6 +61,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     projectWorkspaces,
     canViewForms: userCanViewForms,
     canManageAgreements: userCanManageAgreements,
+    isCore: roles.isCore,
     request,
   });
 
@@ -209,10 +212,17 @@ function TemplatePicker({
 // ── File upload helper ─────────────────────────────────────────────────────────
 
 // Hidden <input type="file"> that drives the upload flow: presign → PUT S3 →
-// POST /api/drive/files. Reuses the same presign pattern as AssignmentWorkArea
-// and ProjectImageBanner. Returns the file input ref so the Menu item can
-// trigger a click on it.
-function useLabFileUpload(onComplete: () => void) {
+// POST /api/drive/files, registering the file in the given drive target (a scope
+// plus optional folder). Reuses the same presign pattern as AssignmentWorkArea
+// and ProjectImageBanner. Returns the file input ref so a Menu item can click it.
+type UploadScope =
+  | { kind: "Lab" }
+  | { kind: "Member" }
+  | { kind: "Project"; projectId: string };
+
+type UploadTarget = { scope: UploadScope; folderPageId?: string | null };
+
+function useDriveFileUpload(target: UploadTarget, onComplete: () => void) {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -226,7 +236,7 @@ function useLabFileUpload(onComplete: () => void) {
     setUploading(true);
     setUploadError(null);
     try {
-      const key = `lab-files/${crypto.randomUUID()}-${file.name}`;
+      const key = `drive-files/${crypto.randomUUID()}-${file.name}`;
       const presignRes = await fetch("/api/upload/presign", {
         method: "POST",
         credentials: "include",
@@ -254,7 +264,7 @@ function useLabFileUpload(onComplete: () => void) {
       const uploadRes = await fetch(url, { method: "POST", body: formData });
       if (!uploadRes.ok) throw new Error("Upload to storage failed");
 
-      // Register the file in the lab drive.
+      // Register the file in the target drive.
       const registerRes = await fetch("/api/drive/files", {
         method: "POST",
         credentials: "include",
@@ -265,7 +275,8 @@ function useLabFileUpload(onComplete: () => void) {
           fileName: file.name,
           contentType: file.type || "application/octet-stream",
           sizeBytes: file.size,
-          scope: { kind: "Lab" },
+          scope: target.scope,
+          ...(target.folderPageId ? { folderPageId: target.folderPageId } : {}),
         }),
       });
       if (!registerRes.ok) {
@@ -286,98 +297,323 @@ function useLabFileUpload(onComplete: () => void) {
 
 // ── Browse scope section ───────────────────────────────────────────────────────
 
-// A flat list of items matching the active type filter. Shown instead of the
-// nested tree when type !== "all". Folders are excluded — what matters when
-// searching by type is the matching items, with scope/folder as context.
-function FlatItemList({
-  items,
-  typeFilter,
-  scopeLabel,
-}: {
-  items: DriveItem[];
-  typeFilter: Exclude<DriveTypeFilter, "all">;
-  scopeLabel: string;
-}) {
-  const matched = items.filter((it) => it.type === typeFilter);
+// ── Per-scope actions (create / rename / move / delete) ──────────────────────
+//
+// Each scope routes its writes to the right endpoint: My Drive → /api/notes
+// (personal notes), Lab → /api/lab-documents, Project → /api/projects/:id/
+// documents. Files use /api/files/:id; files & forms move via /api/drive/move.
+// One factory keeps the branching in a single place, shared by the New menu and
+// the row "⋯" menu.
 
-  const typeLabel =
-    typeFilter === "doc" ? "documents" :
-    typeFilter === "file" ? "files" :
-    typeFilter === "form" ? "forms" : "agreements";
-
-  if (matched.length === 0) {
-    return (
-      <p className="py-3 px-2 text-sm text-muted-foreground italic">
-        No {typeLabel} in {scopeLabel}.
-      </p>
-    );
-  }
-
-  // Build a lookup from folder id → folder title for the subtitle context line.
-  const folderTitles = new Map<string, string>(
-    items
-      .filter((it) => it.type === "folder")
-      .map((it) => [it.id, it.title || "Untitled folder"]),
-  );
-
-  return (
-    <ul className="flex flex-col divide-y divide-border/60">
-      {matched.map((item) => {
-        const icon =
-          item.type === "file" ? (
-            <Paperclip className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-          ) : item.type === "form" ? (
-            <ClipboardList className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-          ) : item.type === "agreement" ? (
-            <FileSignature className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-          ) : (
-            <FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-          );
-
-        const parentTitle =
-          item.parentFolderId ? folderTitles.get(item.parentFolderId) : null;
-
-        return (
-          <li
-            key={item.id}
-            data-testid={`drive-item-${item.type}-${item.id}`}
-            className="flex items-center gap-2 py-2 px-2 hover:bg-muted/20 rounded transition-colors"
-          >
-            {icon}
-            <span className="min-w-0 flex-1">
-              <Link
-                to={item.href}
-                className="block truncate font-medium text-foreground text-sm hover:text-accent-coral transition-colors"
-              >
-                {item.title || "Untitled"}
-              </Link>
-              {parentTitle && (
-                <span className="block text-xs text-muted-foreground truncate">
-                  in {parentTitle}
-                </span>
-              )}
-            </span>
-          </li>
-        );
-      })}
-    </ul>
-  );
+type ScopeKind = "mine" | "lab" | "project";
+// The Core drive is Lab-workspace pages nested under the Core root folder, so it
+// uses the same endpoints as Lab — its rootFolderId (below) handles the nesting.
+function scopeKindOf(id: string): ScopeKind {
+  return id === "mine" ? "mine" : id === "lab" || id === "core" ? "lab" : "project";
 }
 
-// One collapsible scope section in the Browse view.
+// A folder's own id plus every descendant folder id — so "Move to…" never
+// offers a folder as a destination for itself or its own subtree.
+function folderAndDescendants(items: DriveItem[], folderId: string): Set<string> {
+  const childMap = new Map<string, string[]>();
+  for (const it of items) {
+    if (it.type !== "folder") continue;
+    const p = it.parentFolderId ?? "_root_";
+    const list = childMap.get(p);
+    if (list) list.push(it.id);
+    else childMap.set(p, [it.id]);
+  }
+  const out = new Set([folderId]);
+  const queue = [folderId];
+  while (queue.length > 0) {
+    const cur = queue.pop()!;
+    for (const c of childMap.get(cur) ?? []) {
+      if (!out.has(c)) {
+        out.add(c);
+        queue.push(c);
+      }
+    }
+  }
+  return out;
+}
+
+async function errorFrom(res: Response): Promise<string | undefined> {
+  return (await res.json().catch(() => ({})) as { error?: string }).error;
+}
+
+type ScopeActions = {
+  createDoc: () => Promise<void>;
+  createFolder: () => Promise<void>;
+  rename: (item: DriveItem) => Promise<void>;
+  remove: (item: DriveItem) => Promise<void>;
+  requestMove: (item: DriveItem) => Promise<void>;
+  performMove: (item: DriveItem, destFolderId: string | null) => Promise<void>;
+};
+
+function makeScopeActions({
+  scope,
+  dialog,
+  toast,
+  revalidate,
+}: {
+  scope: DriveScope;
+  dialog: ReturnType<typeof useDialog>;
+  toast: ReturnType<typeof useToast>;
+  revalidate: () => void;
+}): ScopeActions {
+  const kind = scopeKindOf(scope.id);
+  // The DB parent that this scope's "top level" maps to — null for most drives,
+  // the Core root folder for the Core drive (so items land inside the scope).
+  const rootParent = scope.rootFolderId ?? null;
+
+  async function createPage(
+    pageKind: "FreeForm" | "Folder",
+    title: string,
+    parentPageId: string | null,
+  ): Promise<string | null> {
+    if (kind === "mine") {
+      const fd = new FormData();
+      fd.set("intent", "create");
+      fd.set("title", title);
+      fd.set("isFolder", pageKind === "Folder" ? "true" : "false");
+      if (parentPageId) fd.set("parentPageId", parentPageId);
+      const res = await fetch("/api/notes", { method: "POST", body: fd, credentials: "include" });
+      if (!res.ok) return null;
+      return ((await res.json()) as { id: string }).id;
+    }
+    const url = kind === "lab" ? "/api/lab-documents" : `/api/projects/${scope.id}/documents`;
+    const res = await fetch(url, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, kind: pageKind, ...(parentPageId ? { parentPageId } : {}) }),
+    });
+    if (!res.ok) return null;
+    return ((await res.json()) as { id: string }).id;
+  }
+
+  async function createDoc() {
+    const name = await dialog.prompt({
+      title: "New document",
+      label: "Name",
+      defaultValue: "Untitled",
+      confirmLabel: "Create",
+      validate: (v) => (v.trim() ? null : "Enter a name"),
+    });
+    if (name === null) return;
+    const id = await createPage("FreeForm", name.trim(), rootParent);
+    if (id) window.location.assign(`/documents/${id}`);
+    else toast.error("Couldn't create the document");
+  }
+
+  async function createFolder() {
+    const name = await dialog.prompt({
+      title: "New folder",
+      label: "Folder name",
+      defaultValue: "New folder",
+      confirmLabel: "Create",
+      validate: (v) => (v.trim() ? null : "Enter a name"),
+    });
+    if (name === null) return;
+    const id = await createPage("Folder", name.trim(), rootParent);
+    if (id) {
+      toast.success("Folder created");
+      revalidate();
+    } else {
+      toast.error("Couldn't create the folder");
+    }
+  }
+
+  async function rename(item: DriveItem) {
+    const name = await dialog.prompt({
+      title: "Rename",
+      label: "Name",
+      defaultValue: item.title,
+      confirmLabel: "Save",
+      validate: (v) => (v.trim() ? null : "Enter a name"),
+    });
+    if (name === null) return;
+    const next = name.trim();
+    if (next === item.title) return;
+
+    let res: Response;
+    if (item.type === "file") {
+      res = await fetch(`/api/files/${item.id}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ intent: "rename", title: next }),
+      });
+    } else if (kind === "mine") {
+      const fd = new FormData();
+      fd.set("intent", "update");
+      fd.set("pageId", item.id);
+      fd.set("title", next);
+      res = await fetch("/api/notes", { method: "POST", body: fd, credentials: "include" });
+    } else {
+      res = await fetch(`/api/documents/${item.id}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: next }),
+      });
+    }
+    if (res.ok) {
+      toast.success("Renamed");
+      revalidate();
+    } else {
+      toast.error((await errorFrom(res)) ?? "Couldn't rename");
+    }
+  }
+
+  async function remove(item: DriveItem) {
+    const confirmed = await dialog.confirm({
+      title: `Delete "${item.title || "Untitled"}"?`,
+      description:
+        item.type === "folder"
+          ? "The folder must be empty first."
+          : "It will be archived and removed from your Drive.",
+      tone: "destructive",
+      confirmLabel: "Delete",
+    });
+    if (!confirmed) return;
+
+    let res: Response;
+    if (item.type === "file") {
+      res = await fetch(`/api/files/${item.id}`, { method: "DELETE", credentials: "include" });
+    } else if (kind === "mine") {
+      const fd = new FormData();
+      fd.set("intent", "archive");
+      fd.set("pageId", item.id);
+      res = await fetch("/api/notes", { method: "POST", body: fd, credentials: "include" });
+    } else {
+      res = await fetch(`/api/documents/${item.id}`, { method: "DELETE", credentials: "include" });
+    }
+    if (res.ok) {
+      toast.success("Deleted");
+      revalidate();
+    } else {
+      toast.error((await errorFrom(res)) ?? "Couldn't delete");
+    }
+  }
+
+  async function performMove(item: DriveItem, destFolderId: string | null) {
+    // The scope's top level maps to rootParent (the Core folder for the Core
+    // drive; null elsewhere), so "move to top" keeps items inside the scope.
+    const target = destFolderId ?? rootParent;
+    let res: Response;
+    if (item.type === "doc" || item.type === "folder") {
+      if (kind === "mine") {
+        const fd = new FormData();
+        fd.set("intent", "update");
+        fd.set("pageId", item.id);
+        fd.set("parentPageId", target ?? "");
+        res = await fetch("/api/notes", { method: "POST", body: fd, credentials: "include" });
+      } else {
+        res = await fetch(`/api/pages/${item.id}/move`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ parentPageId: target }),
+        });
+      }
+    } else {
+      res = await fetch("/api/drive/move", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemType: item.type, itemId: item.id, destFolderPageId: target }),
+      });
+    }
+    if (res.ok) toast.success("Moved");
+    else toast.error((await errorFrom(res)) ?? "Couldn't move");
+    revalidate();
+  }
+
+  async function requestMove(item: DriveItem) {
+    const banned =
+      item.type === "folder"
+        ? folderAndDescendants(scope.items, item.id)
+        : new Set([item.id]);
+    const currentParent = item.parentFolderId ?? null;
+    const options = [
+      ...(currentParent !== null ? [{ value: "__root__", label: "Top level" }] : []),
+      ...scope.items
+        .filter((it) => it.type === "folder" && !banned.has(it.id) && it.id !== currentParent)
+        .map((f) => ({ value: f.id, label: f.title || "Untitled folder" })),
+    ];
+    if (options.length === 0) {
+      toast.error("There's nowhere else to move this");
+      return;
+    }
+    const dest = await dialog.choice({
+      title: `Move "${item.title || "Untitled"}"`,
+      options,
+    });
+    if (dest === null) return;
+    await performMove(item, dest === "__root__" ? null : dest);
+  }
+
+  return { createDoc, createFolder, rename, remove, requestMove, performMove };
+}
+
+// One collapsible scope section in the Browse view — a "drive". Each carries its
+// own New ▾ menu (creating into that scope) and its tree; row "⋯" menus and
+// drag-drop both route through the scope's action factory.
 function ScopeSection({
   scope,
   typeFilter,
-  onMove,
   defaultOpen,
+  extraNewItems,
 }: {
   scope: DriveScope;
   typeFilter: DriveTypeFilter;
-  onMove: (args: DriveTreeMoveArgs) => void;
   defaultOpen: boolean;
+  /** Lab-only extra New-menu items (form, agreement, template, upload). */
+  extraNewItems?: React.ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen);
+  const dialog = useDialog();
+  const toast = useToast();
+  const revalidator = useRevalidator();
+  const isMine = scope.id === "mine";
   const isLab = scope.id === "lab";
+  const isCore = scope.id === "core";
+  const isProject = !isMine && !isLab && !isCore;
+
+  const actions = useMemo(
+    () => makeScopeActions({ scope, dialog, toast, revalidate: () => revalidator.revalidate() }),
+    [scope, dialog, toast, revalidator],
+  );
+
+  const rowActions: RowActions = useMemo(
+    () => ({
+      onRename: actions.rename,
+      onRequestMove: actions.requestMove,
+      onDelete: actions.remove,
+    }),
+    [actions],
+  );
+
+  const onMove = useCallback(
+    (args: DriveTreeMoveArgs) => {
+      void actions.performMove(args.item, args.destFolderId);
+    },
+    [actions],
+  );
+
+  // Per-scope upload. Every drive holds files: My Drive (private/Member), Lab,
+  // Core (uploaded into the Core folder so it inherits Core-only access), and
+  // each project. rootFolderId is null except for Core (its folder id).
+  const uploadTarget: UploadTarget = isMine
+    ? { scope: { kind: "Member" } }
+    : isProject
+      ? { scope: { kind: "Project", projectId: scope.id } }
+      : { scope: { kind: "Lab" }, folderPageId: scope.rootFolderId ?? null };
+  const { inputRef, uploading, uploadError, handleFileChange } = useDriveFileUpload(
+    uploadTarget,
+    () => revalidator.revalidate(),
+  );
 
   // When type filter is active, count the matching items for the badge.
   const filteredCount =
@@ -385,58 +621,106 @@ function ScopeSection({
       ? scope.items.filter((it) => it.type === typeFilter).length
       : scope.items.length;
 
+  // Items shown in the tree. A type filter narrows the *leaves* to that type but
+  // always keeps folders — the folder tree is the navigation skeleton, so you
+  // can still browse into where the matching items live.
+  const treeItems =
+    typeFilter === "all"
+      ? scope.items
+      : scope.items.filter((it) => it.type === "folder" || it.type === typeFilter);
+
+  const label = isMine ? "My Drive" : isLab ? "Lab" : scope.label;
+
   return (
     <section
       className="bg-card border border-border rounded-lg overflow-hidden"
       data-testid={`drive-scope-${scope.id}`}
     >
-      {/* Scope header — lab gets a group icon, projects get a folder icon + badge */}
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-muted/40 transition-colors"
-      >
-        <span className="flex items-center gap-2 min-w-0">
-          {open ? (
-            <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-          ) : (
-            <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0 -rotate-90" />
-          )}
-          {isLab ? (
+      {/* Scope header: collapse toggle on the left, scope-scoped New ▾ on the right */}
+      <div className="flex items-center gap-2 px-3 py-2.5">
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
+          className="flex items-center gap-2 min-w-0 flex-1 text-left rounded-md px-1 py-0.5 hover:bg-muted/40 transition-colors"
+        >
+          <ChevronDown
+            className={`w-3.5 h-3.5 text-muted-foreground shrink-0 transition-transform ${open ? "" : "-rotate-90"}`}
+          />
+          {isMine ? (
+            <User className="w-4 h-4 text-muted-foreground shrink-0" />
+          ) : isCore ? (
+            <Shield className="w-4 h-4 text-accent-coral/80 shrink-0" />
+          ) : isLab ? (
             <Users className="w-4 h-4 text-muted-foreground shrink-0" />
           ) : scope.iconEmoji ? (
             <span className="text-sm leading-none">{scope.iconEmoji}</span>
           ) : (
             <FolderIcon className="w-4 h-4 text-muted-foreground shrink-0" />
           )}
-          <span className="font-semibold text-foreground text-sm truncate">
-            {isLab ? "Lab" : scope.label}
-          </span>
-          {!isLab && (
+          <span className="font-semibold text-foreground text-sm truncate">{label}</span>
+          {isCore && (
+            <span className="text-[10px] uppercase tracking-wide text-accent-coral/70 shrink-0">
+              Core only
+            </span>
+          )}
+          {isProject && (
             <span className="text-[10px] uppercase tracking-wide text-accent-coral/70 shrink-0">
               Project
             </span>
           )}
           {!open && filteredCount > 0 && (
-            <span className="text-[11px] text-muted-foreground shrink-0">
-              ({filteredCount})
-            </span>
+            <span className="text-[11px] text-muted-foreground shrink-0">({filteredCount})</span>
           )}
-        </span>
-      </button>
+        </button>
+
+        <Menu
+          align="right"
+          ariaLabel={`New in ${label}`}
+          trigger={
+            <button
+              type="button"
+              data-testid={`drive-new-menu-${scope.id}`}
+              className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground hover:bg-muted/60 transition-colors shrink-0"
+            >
+              <Plus className="w-3.5 h-3.5" /> New
+              <ChevronDown className="w-3 h-3 opacity-70" />
+            </button>
+          }
+        >
+          <Menu.Item icon={<FileText className="w-3.5 h-3.5" />} onSelect={() => void actions.createDoc()}>
+            <span data-testid={`drive-new-doc-${scope.id}`}>New document</span>
+          </Menu.Item>
+          <Menu.Item icon={<FolderOpen className="w-3.5 h-3.5" />} onSelect={() => void actions.createFolder()}>
+            <span data-testid={`drive-new-folder-${scope.id}`}>New folder</span>
+          </Menu.Item>
+          {extraNewItems}
+          <Menu.Item
+            icon={<Upload className="w-3.5 h-3.5" />}
+            disabled={uploading}
+            onSelect={() => inputRef.current?.click()}
+          >
+            <span data-testid={`drive-new-upload-${scope.id}`}>
+              {uploading ? "Uploading…" : "Upload file"}
+            </span>
+          </Menu.Item>
+        </Menu>
+      </div>
+
+      {/* Hidden file input for this drive's Upload item + inline upload error */}
+      <input
+        ref={inputRef}
+        type="file"
+        className="sr-only"
+        aria-hidden="true"
+        tabIndex={-1}
+        onChange={handleFileChange}
+      />
+      {uploadError && <p className="text-sm text-red-600 px-3 pb-2">{uploadError}</p>}
 
       {open && (
         <div className="border-t border-border px-2 pb-2">
-          {typeFilter === "all" ? (
-            <DriveTree scopeId={scope.id} items={scope.items} onMove={onMove} />
-          ) : (
-            <FlatItemList
-              items={scope.items}
-              typeFilter={typeFilter}
-              scopeLabel={isLab ? "Lab" : scope.label}
-            />
-          )}
+          <DriveTree scopeId={scope.id} items={treeItems} onMove={onMove} actions={rowActions} />
         </div>
       )}
     </section>
@@ -458,69 +742,7 @@ function BrowseView({
   typeFilter: DriveTypeFilter;
   onTypeFilterChange: (f: DriveTypeFilter) => void;
 }) {
-  const revalidator = useRevalidator();
-  const dialog = useDialog();
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
-
-  const { inputRef, uploading, uploadError, handleFileChange } = useLabFileUpload(() => {
-    revalidator.revalidate();
-  });
-
-  const handleMove = useCallback(async (args: DriveTreeMoveArgs) => {
-    const { item, srcScopeId, destFolderId, destScopeId } = args;
-
-    if (srcScopeId !== destScopeId) {
-      const destScope = driveScopes.find((s) => s.id === destScopeId);
-      const leavingProject = srcScopeId !== "lab";
-      const confirmed = await dialog.confirm({
-        title: `Move "${item.title}" to ${destScope?.label ?? destScopeId}?`,
-        description:
-          `People with access where it is now will lose it; people in the destination will gain access.` +
-          (leavingProject ? " Partner and public sharing will be turned off." : ""),
-        confirmLabel: "Move",
-      });
-      if (!confirmed) return;
-    }
-
-    try {
-      if (item.type === "doc" || item.type === "folder") {
-        const sameScope = srcScopeId === destScopeId;
-        const destPayload = sameScope
-          ? {}
-          : destScopeId === "lab"
-          ? { workspaceType: "Lab", workspaceId: null }
-          : { workspaceType: "Project", workspaceId: destScopeId };
-
-        const res = await fetch(`/api/pages/${item.id}/move`, {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ parentPageId: destFolderId, ...destPayload }),
-        });
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({})) as { error?: string };
-          console.error("Drive move failed:", body.error ?? res.statusText);
-        }
-      } else {
-        const res = await fetch("/api/drive/move", {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            itemType: item.type,
-            itemId: item.id,
-            destFolderPageId: destFolderId,
-          }),
-        });
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({})) as { error?: string };
-          console.error("Drive move failed:", body.error ?? res.statusText);
-        }
-      }
-    } finally {
-      revalidator.revalidate();
-    }
-  }, [driveScopes, dialog, revalidator]);
 
   // Visible filter chips: always show All/Documents/Files; role-gate Forms and
   // Agreements (Core-only).
@@ -529,15 +751,9 @@ function BrowseView({
     (f) => !f.requiresCap || caps[f.requiresCap],
   );
 
-  // Navigate to the new agreement detail page once the fetcher resolves.
-  // The admin create action returns a redirect (302) which the fetcher follows,
-  // but useFetcher catches the final non-redirect response — the action returns
-  // redirect(`/admin/agreements/${doc.id}`) which the fetcher resolves to the
-  // loader data of that page. We instead navigate imperatively from the fetcher
-  // data if it contains an id, or rely on the window.location.assign below.
-  // Actually: the action POSTs to /admin/agreements and redirects — the fetcher
-  // will NOT follow the redirect; we need to extract the Location header.
-  // Simpler: use fetch() directly so we control the redirect behaviour.
+  // Create an agreement from the Lab New menu. The admin create action redirects
+  // to the agreement detail route; we follow it and rewrite the admin path to
+  // the Drive-namespaced one.
   async function createAgreement() {
     const formData = new FormData();
     formData.set("intent", "create");
@@ -550,25 +766,46 @@ function BrowseView({
       method: "POST",
       body: formData,
       credentials: "include",
-      // Don't follow the redirect — grab the Location header instead.
-      redirect: "manual",
     });
-    // fetch in "manual" mode gives a type:"opaqueredirect" response with no
-    // Location header accessible in JS (CORS). Use redirect:"follow" but
-    // detect the final URL from res.url.
     if (res.ok || res.redirected) {
-      // The admin action redirects to /admin/agreements/<id>; if drive-
-      // consolidation is on, the admin loader itself redirects to
-      // /documents/agreement/<id>. Either way res.url is the final URL.
-      const finalUrl = res.url;
-      // Rewrite admin path to drive path when we landed on the admin route.
-      const driveUrl = finalUrl.replace(
+      const driveUrl = res.url.replace(
         /\/admin\/agreements\/([^/]+)$/,
         "/documents/agreement/$1",
       );
       window.location.assign(driveUrl);
     }
   }
+
+  // Lab-only New-menu extras (form, agreement, template), rendered inside the Lab
+  // scope's New ▾. Upload is handled per-scope by ScopeSection (every drive), so
+  // it's not here. The template picker modal lives in BrowseView (below).
+  const labExtraNewItems = (
+    <>
+      {canViewForms && (
+        <Menu.Item
+          icon={<ClipboardList className="w-3.5 h-3.5" />}
+          onSelect={() => window.location.assign("/forms")}
+        >
+          <span data-testid="drive-new-form">New form</span>
+        </Menu.Item>
+      )}
+      {canManageAgreements && (
+        <Menu.Item
+          icon={<FileSignature className="w-3.5 h-3.5" />}
+          onSelect={() => void createAgreement()}
+        >
+          <span data-testid="drive-new-agreement">New agreement</span>
+        </Menu.Item>
+      )}
+      <Menu.Separator />
+      <Menu.Item
+        icon={<LayoutTemplate className="w-3.5 h-3.5" />}
+        onSelect={() => setTemplatePickerOpen(true)}
+      >
+        <span data-testid="drive-new-template">From template…</span>
+      </Menu.Item>
+    </>
+  );
 
   // Empty state: when a type filter is on and no scope has matching items.
   const hasAnyMatch =
@@ -583,131 +820,24 @@ function BrowseView({
 
   return (
     <div className="flex flex-col gap-4" data-testid="drive-browse">
-      {/* Type filter chip row + New menu, kept together on one line */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-1.5 flex-wrap" role="group" aria-label="Filter by type">
-          {visibleFilters.map((f) => (
-            <button
-              key={f.value}
-              type="button"
-              aria-pressed={typeFilter === f.value}
-              onClick={() => onTypeFilterChange(f.value)}
-              data-testid={`drive-filter-${f.value}`}
-              className={`${chipBase} ${typeFilter === f.value ? chipActive : chipInactive}`}
-            >
-              {f.icon}
-              {f.label}
-            </button>
-          ))}
-        </div>
-
-        {/* New ▾ menu: create doc/folder/form, from template, or upload file */}
-        {/* Hidden file input — triggered by the Upload file menu item click */}
-        <input
-          ref={inputRef}
-          type="file"
-          className="sr-only"
-          aria-hidden="true"
-          tabIndex={-1}
-          onChange={handleFileChange}
-        />
-
-        <Menu
-          align="right"
-          ariaLabel="New item"
-          trigger={
-            <button
-              type="button"
-              data-testid="drive-new-menu"
-              className="inline-flex items-center gap-1.5 bg-accent-coral px-3 py-1.5 text-sm font-medium text-white rounded-md hover:bg-accent-coral/90"
-            >
-              <Plus className="w-4 h-4" /> New
-              <ChevronDown className="w-3.5 h-3.5 opacity-70" />
-            </button>
-          }
-        >
-          {/* New document: POST /api/lab-documents then navigate to the new doc */}
-          <Menu.Item
-            icon={<FileText className="w-3.5 h-3.5" />}
-            onSelect={async () => {
-              const res = await fetch("/api/lab-documents", {
-                method: "POST",
-                credentials: "include",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ title: "Untitled", kind: "FreeForm" }),
-              });
-              if (res.ok) {
-                const { id } = await res.json() as { id: string };
-                window.location.assign(`/documents/${id}`);
-              }
-            }}
+      {/* Type filter chip row */}
+      <div className="flex items-center gap-1.5 flex-wrap" role="group" aria-label="Filter by type">
+        {visibleFilters.map((f) => (
+          <button
+            key={f.value}
+            type="button"
+            aria-pressed={typeFilter === f.value}
+            onClick={() => onTypeFilterChange(f.value)}
+            data-testid={`drive-filter-${f.value}`}
+            className={`${chipBase} ${typeFilter === f.value ? chipActive : chipInactive}`}
           >
-            <span data-testid="drive-new-doc">New document</span>
-          </Menu.Item>
-          {/* New folder: POST /api/lab-documents with kind=Folder (stays on Drive) */}
-          <Menu.Item
-            icon={<FolderOpen className="w-3.5 h-3.5" />}
-            onSelect={async () => {
-              const res = await fetch("/api/lab-documents", {
-                method: "POST",
-                credentials: "include",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ title: "New folder", kind: "Folder" }),
-              });
-              if (res.ok) revalidator.revalidate();
-            }}
-          >
-            <span data-testid="drive-new-folder">New folder</span>
-          </Menu.Item>
-          {/* New form: navigate to the existing /forms create flow */}
-          {canViewForms && (
-            <Menu.Item
-              icon={<ClipboardList className="w-3.5 h-3.5" />}
-              onSelect={() => window.location.assign("/forms")}
-            >
-              <span data-testid="drive-new-form">New form</span>
-            </Menu.Item>
-          )}
-          {/* New agreement: Core-only. POSTs to the existing admin create action
-              and navigates to the Drive-namespaced detail route. */}
-          {canManageAgreements && (
-            <Menu.Item
-              icon={<FileSignature className="w-3.5 h-3.5" />}
-              onSelect={() => void createAgreement()}
-            >
-              <span data-testid="drive-new-agreement">New agreement</span>
-            </Menu.Item>
-          )}
-          <Menu.Separator />
-          {/* From template: opens a picker that lists Lab page templates.
-              Templates are a creation aid, not a browse destination — this is
-              the only templates surface in the Drive. */}
-          <Menu.Item
-            icon={<LayoutTemplate className="w-3.5 h-3.5" />}
-            onSelect={() => setTemplatePickerOpen(true)}
-          >
-            <span data-testid="drive-new-template">From template…</span>
-          </Menu.Item>
-          {/* Upload file: presign → PUT S3 → POST /api/drive/files (Lab scope).
-              Reuses the same presign flow as AssignmentWorkArea + ProjectImageBanner. */}
-          <Menu.Item
-            icon={<Upload className="w-3.5 h-3.5" />}
-            disabled={uploading}
-            onSelect={() => inputRef.current?.click()}
-          >
-            <span data-testid="drive-new-upload">
-              {uploading ? "Uploading…" : "Upload file"}
-            </span>
-          </Menu.Item>
-        </Menu>
+            {f.icon}
+            {f.label}
+          </button>
+        ))}
       </div>
 
-      {/* Upload error toast (inline, dismisses automatically on next upload) */}
-      {uploadError && (
-        <p className="text-sm text-red-600 px-1">{uploadError}</p>
-      )}
-
-      {/* Template picker modal */}
+      {/* Template picker modal (Lab New → From template…) */}
       <TemplatePicker
         open={templatePickerOpen}
         onClose={() => setTemplatePickerOpen(false)}
@@ -729,8 +859,8 @@ function BrowseView({
               key={scope.id}
               scope={scope}
               typeFilter={typeFilter}
-              onMove={handleMove}
-              defaultOpen={scope.id === "lab"}
+              defaultOpen={scope.id === "mine" || scope.id === "lab" || scope.id === "core"}
+              extraNewItems={scope.id === "lab" ? labExtraNewItems : undefined}
             />
           ))}
           {!hasAnyMatch && (

@@ -138,11 +138,43 @@ describe("update_page", () => {
     ).rejects.toThrow(/inside a folder/);
   });
 
-  it("rejects moving a Folder", async () => {
-    mockPrisma.page.findUnique.mockResolvedValue({ ...basePage, kind: "Folder" });
+  it("moves a Folder under another folder (nesting allowed)", async () => {
+    mockPrisma.page.findUnique
+      .mockResolvedValueOnce({ ...basePage, kind: "Folder" }) // the page (a folder)
+      .mockResolvedValueOnce({
+        // the parent folder
+        workspaceType: "Project",
+        workspaceId: "p1",
+        parentPageId: null,
+        kind: "Folder",
+        archivedAt: null,
+      })
+      .mockResolvedValueOnce({ parentPageId: null }) // pageDepth walk
+      .mockResolvedValueOnce({ parentPageId: null }); // isAncestorOf walk (no cycle)
+    mockPrisma.page.findFirst.mockResolvedValue({ position: 2 });
+    await runUpdatePage("u1", { pageId: "pg1", parentPageId: "folder1" });
+    expect(mockPrisma.page.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { parentPageId: "folder1", position: 3 } }),
+    );
+  });
+
+  it("rejects moving a folder into its own descendant", async () => {
+    mockPrisma.page.findUnique
+      .mockResolvedValueOnce({ ...basePage, kind: "Folder" }) // page pg1
+      .mockResolvedValueOnce({
+        // parent folder1 is itself a child of pg1
+        workspaceType: "Project",
+        workspaceId: "p1",
+        parentPageId: "pg1",
+        kind: "Folder",
+        archivedAt: null,
+      })
+      .mockResolvedValueOnce({ parentPageId: "pg1" }) // pageDepth: folder1 → pg1
+      .mockResolvedValueOnce({ parentPageId: null }) // pageDepth: pg1 → root
+      .mockResolvedValueOnce({ parentPageId: "pg1" }); // isAncestorOf: folder1's parent is pg1 → cycle
     await expect(
       runUpdatePage("u1", { pageId: "pg1", parentPageId: "folder1" }),
-    ).rejects.toThrow(/Folders can't be nested/);
+    ).rejects.toThrow(/its own contents/);
   });
 
   it("400s when nothing would change", async () => {
