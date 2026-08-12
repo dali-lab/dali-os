@@ -2,6 +2,7 @@ import type { AuthUser } from "~/lib/auth";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { rowsToCsv, csvResponse } from "~/lib/csv";
+import "~/lib/csv-exports.server";
 
 // Generalized CSV export mechanism. Each table registers one definition
 // (columns/rows + its own authorize check) instead of a bespoke resource

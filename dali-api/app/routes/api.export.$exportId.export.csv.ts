@@ -1,5 +1,4 @@
 import type { Route } from "./+types/api.export.$exportId.export.csv";
-import "~/lib/csv-exports.server";
 import { runCsvExport } from "~/lib/csv-export.server";
 
 // Resource route (GET) — registered OUTSIDE the app layout so the Response
