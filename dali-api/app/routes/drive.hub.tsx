@@ -1,4 +1,4 @@
-import { redirect, useLoaderData, useSearchParams } from "react-router";
+import { redirect, useLoaderData, useSearchParams, useRevalidator } from "react-router";
 import type { Route } from "./+types/drive.hub";
 import {
   HardDrive,
@@ -10,8 +10,11 @@ import {
   Download,
   ExternalLink,
   Paperclip,
+  FolderOpen,
+  Plus,
+  ChevronDown,
 } from "lucide-react";
-import { prisma } from "~/lib/db";
+import { useState } from "react";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { canViewForms as checkCanViewForms } from "~/lib/roles";
@@ -20,21 +23,24 @@ import { FormsBrowser } from "~/forms/components/FormsBrowser";
 import { loader as docsLoader, DocumentsHubBody } from "~/routes/documents.hub";
 import { listMySignedDocuments } from "~/signing/lib/state.server";
 import { loadTemplates } from "~/lib/drive-templates.server";
+import { loadDriveScopes } from "~/lib/drive-scopes.server";
+import type { DriveTreeScope } from "~/lib/drive-scopes.server";
 import { formatDateTime } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import type { TemplateKind, TemplateItem } from "~/lib/drive-templates.server";
 import { Link } from "react-router";
+import { DriveTree } from "~/components/drive/DriveTree";
+import type { DriveTreeMoveArgs } from "~/components/drive/DriveTree";
+import { useDialog } from "~/components/ui/dialog";
+import { Menu } from "~/components/ui/floating";
 
 export const meta: Route.MetaFunction = () => [{ title: "Drive · DALI OS" }];
 
 // The unified Drive hub, surfaced when the drive-consolidation feature flag is
-// on. Presents the existing Documents hub and Forms browser as two lenses
-// (selected via ?lens=) inside a single route, without altering the underlying
-// /documents and /forms routes. Additional read-only lenses: Files (uploaded
-// project files scoped to the viewer's projects), Agreements (the viewer's own
-// signed lab documents), and Templates (aggregated view over all five template
-// systems). When the flag is off, /drive is not linked from the nav and
-// navigating here redirects to /documents.
+// on. Presents a unified Browse tree (folders + docs + files + forms per scope)
+// plus existing read-only lenses: Agreements and Templates. The Forms lens is
+// kept for creation/management; the old Documents and Files lenses are folded
+// into Browse. When the flag is off, /drive redirects to /documents.
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
@@ -51,59 +57,41 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Surface any redirect the docs loader produces (e.g., re-auth).
   if (docsResult instanceof Response) return docsResult;
 
-  // Load top-level forms data only when the user can see forms.
+  // Identify the project workspaces the viewer can see — already access-scoped
+  // by the docs loader, so loadDriveScopes can safely call loadDriveScope for each.
+  const projectWorkspaces = docsResult.workspaces.filter((w) => w.kind === "project");
+
+  // Load all per-scope DriveItems. The helper is in drive-scopes.server.ts so
+  // this file's client bundle never includes the prisma import.
+  const driveScopes = await loadDriveScopes({
+    userSub: auth.user.sub,
+    projectWorkspaces,
+    canViewForms: userCanViewForms,
+    request,
+  });
+
+  // Load top-level forms data only when the user can see forms (for the Forms
+  // management lens — tree browses/moves forms, but creation stays in FormsBrowser).
   const formsData = userCanViewForms ? await loadFormsLevel(null) : null;
 
   // Agreements — always loaded (the viewer only ever sees their own).
   const signedDocs = await listMySignedDocuments(auth.user.sub);
 
-  // Templates — load for all viewers; loadTemplates gates each category
-  // internally and returns only what the viewer is allowed to see.
+  // Templates — load for all viewers; loadTemplates gates each category internally.
   const templatesData = await loadTemplates(auth.user.sub);
-
-  // Files — uploaded project files, scoped to exactly the projects whose docs
-  // the viewer can already see (reuses the docs loader's per-viewer project
-  // list, so no separate access check is needed). Read-only surfacing; the
-  // file viewer + upload flow stay in the project workspace.
-  const projectWorkspaces = docsResult.workspaces.filter((w) => w.kind === "project");
-  const projectIds = projectWorkspaces.map((w) => w.key);
-  const projectNames = new Map(projectWorkspaces.map((w) => [w.key, w.label]));
-  const fileRows = projectIds.length
-    ? await prisma.projectFile.findMany({
-        where: { projectId: { in: projectIds }, archivedAt: null },
-        orderBy: { updatedAt: "desc" },
-        select: {
-          id: true,
-          title: true,
-          projectId: true,
-          updatedAt: true,
-          currentVersion: { select: { fileName: true, sizeBytes: true } },
-        },
-      })
-    : [];
-  const filesData = {
-    files: fileRows.map((f) => ({
-      id: f.id,
-      title: f.title,
-      projectId: f.projectId,
-      projectName: projectNames.get(f.projectId) ?? "Project",
-      fileName: f.currentVersion?.fileName ?? null,
-      sizeBytes: f.currentVersion?.sizeBytes ?? null,
-      updatedAt: f.updatedAt,
-    })),
-  };
 
   return {
     docsData: docsResult,
+    driveScopes,
     formsData,
     canViewForms: userCanViewForms,
     signedDocs,
     templatesData,
-    filesData,
   };
 }
 
 type LoaderData = Exclude<Awaited<ReturnType<typeof loader>>, Response>;
+type DriveScope = LoaderData["driveScopes"][number];
 
 const KIND_LABELS: Record<TemplateKind, string> = {
   page: "Document templates",
@@ -227,95 +215,218 @@ function AgreementsLens({ signedDocs }: { signedDocs: LoaderData["signedDocs"] }
   );
 }
 
-function formatBytes(n: number | null): string | null {
-  if (n == null) return null;
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+// ── Browse lens (unified DriveTree per scope) ──────────────────────────────────
+
+// One collapsible scope section in the Browse view.
+function ScopeSection({
+  scope,
+  onMove,
+  defaultOpen,
+}: {
+  scope: DriveScope;
+  onMove: (args: DriveTreeMoveArgs) => void;
+  defaultOpen: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  const isLab = scope.id === "lab";
+
+  return (
+    <section className="bg-card border border-border rounded-lg overflow-hidden">
+      {/* Scope header row */}
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-muted/40 transition-colors"
+      >
+        <span className="flex items-center gap-2 min-w-0">
+          {open ? (
+            <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+          ) : (
+            <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0 -rotate-90" />
+          )}
+          {scope.iconEmoji ? (
+            <span className="text-sm leading-none">{scope.iconEmoji}</span>
+          ) : (
+            <FolderOpen className="w-4 h-4 text-muted-foreground shrink-0" />
+          )}
+          <span className="font-medium text-foreground text-sm truncate">{scope.label}</span>
+          {!isLab && (
+            <span className="text-[10px] uppercase tracking-wide text-accent-coral/70 shrink-0">
+              Project
+            </span>
+          )}
+          {!open && scope.items.length > 0 && (
+            <span className="text-[11px] text-muted-foreground shrink-0">
+              ({scope.items.length})
+            </span>
+          )}
+        </span>
+      </button>
+
+      {open && (
+        <div className="border-t border-border px-2 pb-2">
+          <DriveTree scopeId={scope.id} items={scope.items} onMove={onMove} />
+        </div>
+      )}
+    </section>
+  );
 }
 
-function FilesLens({ filesData }: { filesData: LoaderData["filesData"] }) {
-  const tz = useUserTimeZone();
-  const { files } = filesData;
+function BrowseLens({
+  driveScopes,
+  canViewForms,
+}: {
+  driveScopes: DriveScope[];
+  canViewForms: boolean;
+}) {
+  const revalidator = useRevalidator();
+  const dialog = useDialog();
 
-  // Group by project so files read as "belonging" to their workspace.
-  const byProject = new Map<string, typeof files>();
-  for (const f of files) {
-    const arr = byProject.get(f.projectId) ?? [];
-    arr.push(f);
-    byProject.set(f.projectId, arr);
-  }
+  // Submit a move to the right endpoint, after cross-scope confirm if needed.
+  async function handleMove(args: DriveTreeMoveArgs) {
+    const { item, srcScopeId, destFolderId, destScopeId } = args;
 
-  if (files.length === 0) {
-    return (
-      <p className="text-sm text-muted-foreground italic">
-        No uploaded files in your projects yet. Upload files from a project's
-        Files section.
-      </p>
-    );
+    // Cross-scope: confirm before posting. Mirrors the confirm pattern in
+    // documents.hub.tsx moveDocument (same copy, same tone).
+    if (srcScopeId !== destScopeId) {
+      const srcScope = driveScopes.find((s) => s.id === srcScopeId);
+      const destScope = driveScopes.find((s) => s.id === destScopeId);
+      const leavingProject = srcScopeId !== "lab";
+      const confirmed = await dialog.confirm({
+        title: `Move "${item.title}" to ${destScope?.label ?? destScopeId}?`,
+        description:
+          `People with access where it is now will lose it; people in the destination will gain access.` +
+          (leavingProject ? " Partner and public sharing will be turned off." : ""),
+        confirmLabel: "Move",
+      });
+      if (!confirmed) return;
+    }
+
+    // Route the move to the correct endpoint based on item type.
+    // Docs and folders go through POST /api/pages/:id/move (workspace-aware).
+    // Files and forms go through POST /api/drive/move (folderPageId only).
+    try {
+      if (item.type === "doc" || item.type === "folder") {
+        // Build the workspace payload when crossing scopes.
+        const sameScope = srcScopeId === destScopeId;
+        const destPayload = sameScope
+          ? {}
+          : destScopeId === "lab"
+          ? { workspaceType: "Lab", workspaceId: null }
+          : { workspaceType: "Project", workspaceId: destScopeId };
+
+        const res = await fetch(`/api/pages/${item.id}/move`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ parentPageId: destFolderId, ...destPayload }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({})) as { error?: string };
+          console.error("Drive move failed:", body.error ?? res.statusText);
+        }
+      } else {
+        // file or form — folderPageId placement only (no workspace move).
+        const res = await fetch("/api/drive/move", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            itemType: item.type,
+            itemId: item.id,
+            destFolderPageId: destFolderId,
+          }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({})) as { error?: string };
+          console.error("Drive move failed:", body.error ?? res.statusText);
+        }
+      }
+    } finally {
+      revalidator.revalidate();
+    }
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <p className="text-sm text-muted-foreground">
-        Uploaded files across your projects. Open a file to view, comment, or
-        download; uploads and versions are managed in each project.
-      </p>
-      {[...byProject.entries()].map(([projectId, projectFiles]) => (
-        <section key={projectId}>
-          <h2 className="text-sm font-semibold text-foreground/70 mb-3">
-            {projectFiles[0].projectName}
-          </h2>
-          <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {projectFiles.map((f) => {
-              const size = formatBytes(f.sizeBytes);
-              return (
-                <li
-                  key={f.id}
-                  className="rounded-lg border border-border bg-card p-3"
-                >
-                  <Link to={`/documents/file/${f.id}`} className="flex items-start gap-2 min-w-0 group">
-                    <Paperclip className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
-                    <span className="min-w-0">
-                      <span className="block font-medium text-foreground text-sm truncate group-hover:underline">
-                        {f.title || f.fileName || "Untitled"}
-                      </span>
-                      <span className="block text-xs text-muted-foreground">
-                        {[size, `updated ${formatDateTime(f.updatedAt, tz)}`]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </span>
-                    </span>
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm text-muted-foreground">
+          Everything in one place — drag items into folders or between scopes.
+          {canViewForms && " Forms can also be managed in the Forms tab."}
+        </p>
+        {/* Create shortcuts so new-doc/form/upload flows stay reachable from
+            the Browse lens without the user switching away. */}
+        <Menu
+          align="right"
+          ariaLabel="New item"
+          trigger={
+            <button
+              type="button"
+              className="inline-flex items-center gap-1.5 bg-accent-coral px-3 py-1.5 text-sm font-medium text-white rounded-md hover:bg-accent-coral/90"
+            >
+              <Plus className="w-4 h-4" /> New
+            </button>
+          }
+        >
+          <Menu.Item
+            icon={<FileText className="w-3.5 h-3.5" />}
+            onSelect={() => window.location.assign("/documents")}
+          >
+            New document
+          </Menu.Item>
+          {canViewForms && (
+            <Menu.Item
+              icon={<ClipboardList className="w-3.5 h-3.5" />}
+              onSelect={() => window.location.assign("/forms")}
+            >
+              New form
+            </Menu.Item>
+          )}
+          <Menu.Item
+            icon={<Paperclip className="w-3.5 h-3.5" />}
+            onSelect={() => window.location.assign("/projects")}
+          >
+            Upload file (in a project)
+          </Menu.Item>
+        </Menu>
+      </div>
+
+      {driveScopes.map((scope, i) => (
+        <ScopeSection
+          key={scope.id}
+          scope={scope}
+          onMove={handleMove}
+          // Lab scope defaults open; projects default closed (same convention as
+          // the ProjectFolderRow in documents.hub.tsx).
+          defaultOpen={scope.id === "lab"}
+        />
       ))}
     </div>
   );
 }
 
-type Lens = "docs" | "forms" | "files" | "agreements" | "templates";
+// ── Hub shell ─────────────────────────────────────────────────────────────────
+
+type Lens = "browse" | "forms" | "agreements" | "templates" | "docs";
 
 export default function DriveHub() {
-  const { docsData, formsData, canViewForms, signedDocs, templatesData, filesData } =
+  const { docsData, driveScopes, formsData, canViewForms, signedDocs, templatesData } =
     useLoaderData() as LoaderData;
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // Default lens: "docs". Guard against invalid or gated lens values.
+  // Default lens: "browse". Guard against invalid or gated lens values.
   const rawLens = searchParams.get("lens") as Lens | null;
   const lens: Lens =
     rawLens === "forms" && canViewForms
       ? "forms"
-      : rawLens === "files"
-        ? "files"
-        : rawLens === "agreements"
-          ? "agreements"
-          : rawLens === "templates"
-            ? "templates"
-            : "docs";
+      : rawLens === "agreements"
+        ? "agreements"
+        : rawLens === "templates"
+          ? "templates"
+          : rawLens === "docs"
+            ? "docs"
+            : "browse";
 
   function switchLens(next: Lens) {
     setSearchParams(
@@ -342,14 +453,15 @@ export default function DriveHub() {
           <h1 className="text-lg font-semibold text-foreground">Drive</h1>
         </div>
         <div className="inline-flex rounded-md border border-border bg-card p-0.5">
+          {/* Browse is the primary lens — unified tree of all types. */}
           <button
             type="button"
-            aria-pressed={lens === "docs"}
-            onClick={() => switchLens("docs")}
-            className={`${pillBase} ${lens === "docs" ? pillActive : pillInactive}`}
+            aria-pressed={lens === "browse"}
+            onClick={() => switchLens("browse")}
+            className={`${pillBase} ${lens === "browse" ? pillActive : pillInactive}`}
           >
-            <FileText className="w-4 h-4" />
-            Documents
+            <FolderOpen className="w-4 h-4" />
+            Browse
           </button>
           {canViewForms && (
             <button
@@ -362,15 +474,6 @@ export default function DriveHub() {
               Forms
             </button>
           )}
-          <button
-            type="button"
-            aria-pressed={lens === "files"}
-            onClick={() => switchLens("files")}
-            className={`${pillBase} ${lens === "files" ? pillActive : pillInactive}`}
-          >
-            <Paperclip className="w-4 h-4" />
-            Files
-          </button>
           <button
             type="button"
             aria-pressed={lens === "agreements"}
@@ -389,12 +492,15 @@ export default function DriveHub() {
             <LayoutTemplate className="w-4 h-4" />
             Templates
           </button>
+          {/* Docs lens kept for power users who prefer the filtered/search view
+              from documents.hub. Not shown in the pill row by default — it's
+              reachable via ?lens=docs or from /documents directly. */}
         </div>
       </div>
 
       {/* Lens content */}
-      {lens === "docs" ? (
-        <DocumentsHubBody {...docsData} />
+      {lens === "browse" ? (
+        <BrowseLens driveScopes={driveScopes} canViewForms={canViewForms} />
       ) : lens === "forms" ? (
         formsData && (
           <div className="flex flex-col gap-4">
@@ -413,12 +519,13 @@ export default function DriveHub() {
             />
           </div>
         )
-      ) : lens === "files" ? (
-        <FilesLens filesData={filesData} />
       ) : lens === "agreements" ? (
         <AgreementsLens signedDocs={signedDocs} />
-      ) : (
+      ) : lens === "templates" ? (
         <TemplatesLens templatesData={templatesData} />
+      ) : (
+        // lens === "docs": full documents hub body for power users / deep links
+        <DocumentsHubBody {...docsData} />
       )}
     </div>
   );

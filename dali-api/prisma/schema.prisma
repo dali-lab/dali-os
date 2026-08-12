@@ -1087,6 +1087,14 @@ model ProjectFile {
   // partner portal (mirrors Page.partnerVisible for shared documents).
   partnerVisible Boolean @default(false)
 
+  // Drive unified tree placement. Null = unplaced (rendered at a default
+  // project-files location outside the folder tree). When set, must point at a
+  // Page of kind=Folder. Loose FK — no DB-level constraint — matching the
+  // existing Page.workspaceId / Page.scopeGroupId convention. Placement is
+  // ORGANISATION only and never widens who can see the file: a viewer must
+  // already have access to this file's project to see it in the tree.
+  folderPageId String?
+
   archivedAt DateTime?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
@@ -1101,6 +1109,7 @@ model ProjectFile {
   taskLinks TaskFileLink[]
 
   @@index([projectId, archivedAt])
+  @@index([folderPageId])
 }
 
 // m2m: Task ↔ ProjectFile. Links work artifacts (graphics, animation, design
@@ -3528,6 +3537,16 @@ model Form {
   folderId String?
   folder   FormFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
 
+  // Drive unified tree placement. Null = unplaced (rendered inside FormsBrowser
+  // under the legacy FormFolder tree). When set, must point at a Page of
+  // kind=Folder. Loose FK — no DB-level constraint — matching the existing
+  // Page.workspaceId / ProjectFile.folderPageId convention. Placement is
+  // ORGANISATION only and NEVER changes who can see or fill this form: the
+  // existing canViewForms gate and form audience rules remain the sole access
+  // controls. This field is consumed only for display ordering in the unified
+  // drive tree; it does not affect fill/visibility semantics in any way.
+  folderPageId String?
+
   createdById String
   createdBy   User   @relation(fields: [createdById], references: [id])
 
@@ -3581,6 +3600,7 @@ model Form {
   educationBindings                   EducationFormBinding[]          @relation("EducationFormBindings")
 
   @@index([folderId])
+  @@index([folderPageId])
   @@index([createdById])
 }
 

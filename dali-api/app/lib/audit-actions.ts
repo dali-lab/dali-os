@@ -123,6 +123,8 @@ export const AUDIT_ACTIONS = [
   "education.cecredit.revoke",
   "education.decision-email.bind",
   "education.form-binding.set",
+  // Drive unified tree (Wave 3): placement move for files and forms.
+  "drive.item.move",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
