@@ -117,6 +117,12 @@ export default [
       "projects/routes/projects.$id.public-view.tsx",
     ),
 
+    // Drive — unified Documents + Forms hub, shown when the drive-consolidation
+    // feature flag is on. Presents both lenses at /drive?lens=docs|forms without
+    // replacing the underlying /documents and /forms routes (flag-off users are
+    // unaffected).
+    route("drive", "routes/drive.hub.tsx"),
+
     // Documents & files — full-page reusable editor + file viewer. Literal
     // "file" segment precedes the :pageId param so it isn't captured.
     // The bare /documents route is the lab-wide Documents hub (aggregates

@@ -22,6 +22,7 @@ import { TabWorkspace, type TabWorkspaceHandle, type OpenTabRequest } from '~/co
 import { useOpenTasks, TASKS_CHANGED_EVENT } from '~/components/NotificationBell'
 import { DesktopBanner } from '~/components/DesktopBanner'
 import { CommandPalette } from '~/components/CommandPalette'
+import { useFeatureFlag } from '~/components/FeatureFlags'
 import { TablessHistoryNav, useRecordTablessHistory } from '~/components/TablessHistoryNav'
 import { setFocusPreference } from '~/lib/focus-mode'
 import { cn } from '~/lib/cn'
@@ -356,6 +357,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
   // pinned surfaces (Home / My Tasks / Calendar) it falls back to the last
   // area worked in. Role gating for both the area list and its sub-tabs lives
   // in the nav-areas registry, evaluated against these flags.
+  const driveConsolidation = useFeatureFlag("drive-consolidation")
   const roleFlags: RoleFlags = {
     isCore,
     isAdmin,
@@ -367,7 +369,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
     isLabMentor,
     isInstructor,
   }
-  const areas = visibleAreas(roleFlags)
+  const areas = visibleAreas(roleFlags, { "drive-consolidation": driveConsolidation })
   const routeArea = areaForPath(path)
   const activeArea = routeArea ?? areas.find((a) => a.key === lastAreaKey) ?? areas[0]
   const activeSubtabs = activeArea ? visibleSubtabs(activeArea, roleFlags) : []
@@ -980,6 +982,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
         tabless={tabless}
         focusMode={focusMode}
         roles={roleFlags}
+        flags={{ "drive-consolidation": driveConsolidation }}
         onOpen={openFromPalette}
       />
     </div>

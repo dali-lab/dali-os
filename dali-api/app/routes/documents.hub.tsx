@@ -246,11 +246,9 @@ function TagChip({ tag }: { tag: DocTagOut }) {
   );
 }
 
-export default function DocumentsHub() {
-  const { docs, workspaces, allTags, terms, selectedTerm } = useLoaderData() as Exclude<
-    Awaited<ReturnType<typeof loader>>,
-    Response
-  >;
+type DocsHubData = Exclude<Awaited<ReturnType<typeof loader>>, Response>;
+
+export function DocumentsHubBody({ docs, workspaces, allTags, terms, selectedTerm }: DocsHubData) {
   const revalidator = useRevalidator();
   const navigate = useNavigate();
   const dialog = useDialog();
@@ -1160,4 +1158,9 @@ export default function DocumentsHub() {
       />
     </div>
   );
+}
+
+export default function DocumentsHub() {
+  const data = useLoaderData() as DocsHubData;
+  return <DocumentsHubBody {...data} />;
 }
