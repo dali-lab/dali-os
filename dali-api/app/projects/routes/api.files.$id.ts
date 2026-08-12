@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.files.$id";
 import { z } from "zod";
 import { prisma } from "~/lib/db";
-import { requireAuth, requireProjectEditAccess } from "~/lib/auth";
+import { requireAuth, requireProjectEditAccess, requireMemberSession } from "~/lib/auth";
 import { UNKNOWN_LABEL } from "~/lib/display";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent } from "~/lib/audit";
@@ -14,9 +14,9 @@ import { notifyFileNewVersion } from "../lib/file-notifications.server";
 //                                    new version: { intent: "version", s3Key, fileName, contentType, sizeBytes }
 // DELETE /api/files/:id           — soft delete (archivedAt)
 //
-// Project files. Same permission model as project edit (isCore === Admin ||
-// Core). Re-uploading appends a ProjectFileVersion and advances
-// currentVersionId; old versions stay downloadable.
+// Project files gate on project edit (isCore === Admin || Core); Lab-scoped
+// drive files gate on lab membership. Re-uploading appends a ProjectFileVersion
+// and advances currentVersionId; old versions stay downloadable.
 
 const RenameSchema = z.object({
   intent: z.literal("rename"),
@@ -95,18 +95,25 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
   const file = await prisma.projectFile.findUnique({
     where: { id: params.id },
-    select: { id: true, archivedAt: true, projectId: true },
+    select: { id: true, archivedAt: true, projectId: true, workspaceType: true },
   });
   if (!file || file.archivedAt !== null) {
     return withCors(request, Response.json({ error: "File not found" }, { status: 404 }));
   }
-  if (!file.projectId) {
-    // Lab-scoped files use the generic /api/drive/files route instead.
+  // Project files gate on project edit; Lab-scoped files (projectId null,
+  // workspaceType Lab) gate on lab membership — same split as /api/drive/files.
+  let auth;
+  if (file.projectId) {
+    const gate = await requireProjectEditAccess(request, file.projectId);
+    if (!gate.ok) return gate.response;
+    auth = gate.auth;
+  } else if (file.workspaceType === "Lab") {
+    const gate = await requireMemberSession(request);
+    if (!gate.ok) return withCors(request, gate.response);
+    auth = gate.auth;
+  } else {
     return withCors(request, Response.json({ error: "File not found" }, { status: 404 }));
   }
-  const gate = await requireProjectEditAccess(request, file.projectId);
-  if (!gate.ok) return gate.response;
-  const auth = gate.auth;
 
   if (request.method === "DELETE") {
     await prisma.projectFile.update({

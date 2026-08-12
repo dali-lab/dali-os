@@ -12,8 +12,8 @@ import { createProjectPage, pageDepth, MAX_PAGE_DEPTH } from "~/lib/pages";
 // workspace (workspaceType=Project, workspaceId=projectId) — the same Page
 // model the project Overview/PRD use. Body: { title, kind?, parentPageId? }.
 // kind defaults to "FreeForm" (a document); "Folder" creates a container
-// page. parentPageId nests a document under any existing Folder (up to depth
-// MAX_PAGE_DEPTH); folders themselves still can't nest inside other folders.
+// page. parentPageId nests a document OR a folder under any existing Folder,
+// up to depth MAX_PAGE_DEPTH.
 //
 // The rich-text body of a FreeForm page lives in the collab editor
 // (contentDocId), which is a separate system; this route only creates the
@@ -46,13 +46,6 @@ export async function action({ request, params }: Route.ActionArgs) {
   });
   if (!project) {
     return withCors(request, Response.json({ error: "Project not found" }, { status: 404 }));
-  }
-
-  if (body.kind === "Folder" && body.parentPageId) {
-    return withCors(
-      request,
-      Response.json({ error: "Folders can't be nested inside another folder" }, { status: 400 }),
-    );
   }
 
   if (body.parentPageId) {
