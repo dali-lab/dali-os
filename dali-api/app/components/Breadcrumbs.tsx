@@ -316,7 +316,7 @@ export function Breadcrumbs() {
     }
     if (m.handle?.favoriteRoute) favoriteRoute = true
   }
-  // Area sub-tab landing pages (Board, Intent to Work, Manage, …) are directly
+  // Area sub-tab landing pages (Staffing, Intent to Work, Manage, …) are directly
   // pinnable too, without each route opting in via handle.
   if (!favoriteRoute && isAreaSubtabPath(pathname)) favoriteRoute = true
   if (favoriteRoute && isNavbarRoute(`${pathname}${search}`)) favoriteRoute = false
