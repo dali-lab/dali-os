@@ -42,6 +42,10 @@ export async function runSetFilePartnerVisibility(
     throw new McpNotFoundError("File not found or is archived.");
   }
 
+  if (!file.projectId) {
+    throw new McpForbiddenError("Lab files don't have partner visibility.");
+  }
+
   if (!(await canEditProject(callerId, file.projectId))) {
     throw new McpForbiddenError("You don't have permission to edit this project.");
   }

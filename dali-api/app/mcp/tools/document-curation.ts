@@ -352,6 +352,7 @@ export async function runSetFileSharing(
   if (file.archivedAt !== null) {
     throw new CurationInvalidError("Archived files can't be shared");
   }
+  if (!file.projectId) throw new CurationInvalidError("Lab files don't have partner visibility");
   await requireProjectEdit(callerId, file.projectId);
 
   await prisma.projectFile.update({
@@ -391,6 +392,7 @@ export async function runDeleteProjectFile(
     select: { id: true, projectId: true, archivedAt: true, title: true },
   });
   if (!file) throw new CurationNotFoundError("File");
+  if (!file.projectId) throw new CurationInvalidError("Lab files can't be deleted via this tool");
   await requireProjectEdit(callerId, file.projectId);
 
   if (file.archivedAt !== null) return { ok: true, alreadyArchived: true };
