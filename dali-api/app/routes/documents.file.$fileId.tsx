@@ -6,7 +6,7 @@ import type { Route } from "./+types/documents.file.$fileId";
 import { prisma } from "~/lib/db";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { isCore, isProjectMember } from "~/lib/roles";
+import { isCore, isProjectMember, isLabMember } from "~/lib/roles";
 import { getDownloadUrl } from "~/lib/s3";
 import { hydrateAuthors } from "~/lib/collabAuth";
 import { formatBytes, uploadFileToS3 } from "~/lib/upload-client";
@@ -59,6 +59,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       title: true,
       projectId: true,
       project: { select: { name: true, iconEmoji: true } },
+      workspaceType: true,
       currentVersionId: true,
       archivedAt: true,
       tags: { select: { tag: { select: { id: true, label: true, slug: true, color: true } } } },
@@ -80,11 +81,18 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     throw new Response("Not found", { status: 404 });
   }
 
-  // Upload + comment are open to Core and members of the owning project (the
-  // artifact feedback loop runs on project members); the curated tag list
-  // stays Core-managed, matching /api/doctags.
+  // Upload + comment are open to Core and:
+  //   - project files: members of the owning project
+  //   - lab files: any lab member
+  // The curated tag list stays Core-managed, matching /api/doctags.
   const core = await isCore(auth.user.sub);
-  const canEdit = core || (await isProjectMember(auth.user.sub, file.projectId));
+  const canEdit =
+    core ||
+    (file.projectId != null
+      ? await isProjectMember(auth.user.sub, file.projectId)
+      : file.workspaceType === "Lab"
+        ? await isLabMember(auth.user.sub, request)
+        : false);
   const canManageTags = core;
 
   const uploaderNames = await hydrateAuthors(file.versions.map((v) => v.uploadedById));
@@ -120,9 +128,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   return {
     fileId: file.id,
-    projectId: file.projectId,
-    projectName: file.project.name,
-    projectIconEmoji: file.project.iconEmoji,
+    projectId: file.projectId ?? null,
+    projectName: file.project?.name ?? null,
+    projectIconEmoji: file.project?.iconEmoji ?? null,
     title: file.title,
     tags: file.tags.map((t) => t.tag).sort((a, b) => a.label.localeCompare(b.label)),
     allTags,
@@ -168,7 +176,8 @@ export default function FilePage() {
     setUploading(true);
     setError(null);
     try {
-      const meta = await uploadFileToS3(picked, `project-files/${projectId}`);
+      const prefix = projectId ? `project-files/${projectId}` : "lab-files";
+      const meta = await uploadFileToS3(picked, prefix);
       const res = await fetch(`/api/files/${fileId}`, {
         method: "POST",
         credentials: "include",

@@ -53,7 +53,8 @@ async function canRead(
     where: { id: targetId },
     select: { projectId: true },
   });
-  return file ? isProjectMember(callerId, file.projectId) : false;
+  if (!file || !file.projectId) return false;
+  return isProjectMember(callerId, file.projectId);
 }
 
 export async function runListComments(callerId: string, input: Input) {
