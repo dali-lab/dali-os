@@ -58,7 +58,13 @@ if (import.meta.hot) {
 
 async function syncJobRegistry(): Promise<void> {
   await prisma.scheduledJob.createMany({
-    data: JOBS.map((j) => ({ name: j.name, intervalMinutes: j.intervalMinutes })),
+    data: JOBS.map((j) => ({
+      name: j.name,
+      intervalMinutes: j.intervalMinutes,
+      // Only seed enabled=false when the registry explicitly opts out; all
+      // existing jobs omit enabledByDefault and get the DB default (true).
+      ...(j.enabledByDefault === false ? { enabled: false } : {}),
+    })),
     skipDuplicates: true,
   });
   await prisma.scheduledJob.deleteMany({
@@ -70,7 +76,11 @@ export async function tick(now: Date = new Date()): Promise<string[]> {
   // Self-heal against a mid-run dev DB wipe: existence only; full sync
   // (interval refresh + prune) happens at boot.
   await prisma.scheduledJob.createMany({
-    data: JOBS.map((j) => ({ name: j.name, intervalMinutes: j.intervalMinutes })),
+    data: JOBS.map((j) => ({
+      name: j.name,
+      intervalMinutes: j.intervalMinutes,
+      ...(j.enabledByDefault === false ? { enabled: false } : {}),
+    })),
     skipDuplicates: true,
   });
 
