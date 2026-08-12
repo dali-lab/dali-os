@@ -21,9 +21,14 @@ vi.mock("~/partners/lib/partner-access", () => ({
   partnerHasProjectAccess: vi.fn().mockResolvedValue(false),
 }));
 
+vi.mock("~/lib/groups", () => ({
+  resolveGroupMembers: vi.fn().mockResolvedValue([]),
+}));
+
 import { prisma } from "~/lib/db";
 import { isCore, isProjectMember, isLabMember } from "~/lib/roles";
 import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
+import { resolveGroupMembers } from "~/lib/groups";
 import { getPageAccess } from "../pageAccess.server";
 
 const mockPrisma = prisma as any;
@@ -34,6 +39,7 @@ beforeEach(() => {
   vi.mocked(isProjectMember).mockResolvedValue(false);
   vi.mocked(isLabMember).mockResolvedValue(false);
   vi.mocked(partnerHasProjectAccess).mockResolvedValue(false);
+  vi.mocked(resolveGroupMembers).mockResolvedValue([]);
   mockPrisma.groupDefinition.findMany.mockResolvedValue([]);
   mockPrisma.pageShare.findMany.mockResolvedValue([]);
   mockPrisma.pageShare.findFirst.mockResolvedValue(null);
@@ -291,5 +297,94 @@ describe("pageId string overload", () => {
     );
     const result = await getPageAccess("lab-member", "p1");
     expect(result).toEqual(full);
+  });
+});
+
+// ── Core drive (Group-scoped folder, cascades to contents) ───────────────────
+//
+// The Core drive is a Lab folder with scopeKind=Group(core) + linkAccess=
+// Restricted. Membership grants Core; Restricted keeps everyone else out. The
+// key no-leak property: a lab member who is NOT in the Core group must not see
+// the folder OR its Restricted contents, even though they are a lab member.
+describe("Core drive (Group scope)", () => {
+  const CORE_GROUP = "g-core";
+  const coreFolder = (over: Record<string, unknown> = {}) =>
+    page({
+      id: "core-root",
+      workspaceType: "Lab",
+      workspaceId: null,
+      parentPageId: null,
+      scopeKind: "Group",
+      scopeGroupId: CORE_GROUP,
+      scopePermission: "Edit",
+      linkAccess: "Restricted",
+      linkPermission: "View",
+      createdById: "someone-else",
+      ...over,
+    });
+
+  it("grants a Core-group member full access to the Core folder", async () => {
+    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(resolveGroupMembers).mockResolvedValue(["core-user"]);
+    const result = await getPageAccess("core-user", coreFolder());
+    expect(result).toEqual(full);
+    expect(resolveGroupMembers).toHaveBeenCalledWith(CORE_GROUP);
+  });
+
+  it("denies a non-Core lab member the Core folder (no lab-wide leak)", async () => {
+    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(resolveGroupMembers).mockResolvedValue(["core-user"]);
+    const result = await getPageAccess("lab-user", coreFolder());
+    expect(result).toEqual(denied());
+  });
+
+  it("cascades: a Restricted child under the Core folder is denied to non-Core lab members", async () => {
+    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(resolveGroupMembers).mockResolvedValue(["core-user"]);
+    // Ancestry walk fetches the governing Core folder by its id.
+    mockPrisma.page.findUnique.mockResolvedValue({
+      id: "core-root",
+      parentPageId: null,
+      scopeKind: "Group",
+      scopeGroupId: CORE_GROUP,
+      scopePermission: "Edit",
+      createdById: "someone-else",
+    });
+    const child = page({
+      id: "child-doc",
+      workspaceType: "Lab",
+      parentPageId: "core-root",
+      scopeKind: null,
+      linkAccess: "Restricted",
+      linkPermission: "View",
+      createdById: "someone-else",
+    });
+    const result = await getPageAccess("lab-user", child);
+    expect(result).toEqual(denied());
+  });
+
+  it("cascades: a Core-group member reaches the Restricted child via the folder scope", async () => {
+    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(resolveGroupMembers).mockResolvedValue(["core-user"]);
+    mockPrisma.page.findUnique.mockResolvedValue({
+      id: "core-root",
+      parentPageId: null,
+      scopeKind: "Group",
+      scopeGroupId: CORE_GROUP,
+      scopePermission: "Edit",
+      createdById: "someone-else",
+    });
+    const child = page({
+      id: "child-doc",
+      workspaceType: "Lab",
+      parentPageId: "core-root",
+      scopeKind: null,
+      linkAccess: "Restricted",
+      linkPermission: "View",
+      createdById: "someone-else",
+    });
+    const result = await getPageAccess("core-user", child);
+    expect(result.canView).toBe(true);
+    expect(result.canEdit).toBe(true);
   });
 });

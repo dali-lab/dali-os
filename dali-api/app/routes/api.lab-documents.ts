@@ -5,6 +5,7 @@ import { requireMemberSession } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import { createLabPage, pageDepth, MAX_PAGE_DEPTH } from "~/lib/pages";
+import { isUnderGoverningScope } from "~/lib/pageAccess.server";
 
 // POST /api/lab-documents
 //
@@ -61,11 +62,16 @@ export async function action({ request }: Route.ActionArgs) {
     }
   }
 
+  // Pages created inside a scoped drive (e.g. Core) start Restricted so the
+  // scope governs access rather than the lab-wide link grant.
+  const restricted = await isUnderGoverningScope(body.parentPageId ?? null);
+
   const page = await createLabPage({
     title: body.title,
     createdById: auth.user.sub,
     kind: body.kind,
     parentPageId: body.parentPageId ?? null,
+    restricted,
   });
 
   return withCors(request, Response.json({ id: page.id }));

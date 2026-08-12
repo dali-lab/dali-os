@@ -14,6 +14,7 @@ import {
   LayoutTemplate,
   Upload,
   User,
+  Shield,
 } from "lucide-react";
 import { useState, useCallback, useEffect, useRef, useId, useMemo } from "react";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
@@ -60,6 +61,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     projectWorkspaces,
     canViewForms: userCanViewForms,
     canManageAgreements: userCanManageAgreements,
+    isCore: roles.isCore,
     request,
   });
 
@@ -296,8 +298,10 @@ function useLabFileUpload(onComplete: () => void) {
 // the row "⋯" menu.
 
 type ScopeKind = "mine" | "lab" | "project";
+// The Core drive is Lab-workspace pages nested under the Core root folder, so it
+// uses the same endpoints as Lab — its rootFolderId (below) handles the nesting.
 function scopeKindOf(id: string): ScopeKind {
-  return id === "mine" ? "mine" : id === "lab" ? "lab" : "project";
+  return id === "mine" ? "mine" : id === "lab" || id === "core" ? "lab" : "project";
 }
 
 // A folder's own id plus every descendant folder id — so "Move to…" never
@@ -350,6 +354,9 @@ function makeScopeActions({
   revalidate: () => void;
 }): ScopeActions {
   const kind = scopeKindOf(scope.id);
+  // The DB parent that this scope's "top level" maps to — null for most drives,
+  // the Core root folder for the Core drive (so items land inside the scope).
+  const rootParent = scope.rootFolderId ?? null;
 
   async function createPage(
     pageKind: "FreeForm" | "Folder",
@@ -386,7 +393,7 @@ function makeScopeActions({
       validate: (v) => (v.trim() ? null : "Enter a name"),
     });
     if (name === null) return;
-    const id = await createPage("FreeForm", name.trim(), null);
+    const id = await createPage("FreeForm", name.trim(), rootParent);
     if (id) window.location.assign(`/documents/${id}`);
     else toast.error("Couldn't create the document");
   }
@@ -400,7 +407,7 @@ function makeScopeActions({
       validate: (v) => (v.trim() ? null : "Enter a name"),
     });
     if (name === null) return;
-    const id = await createPage("Folder", name.trim(), null);
+    const id = await createPage("Folder", name.trim(), rootParent);
     if (id) {
       toast.success("Folder created");
       revalidate();
@@ -483,20 +490,23 @@ function makeScopeActions({
   }
 
   async function performMove(item: DriveItem, destFolderId: string | null) {
+    // The scope's top level maps to rootParent (the Core folder for the Core
+    // drive; null elsewhere), so "move to top" keeps items inside the scope.
+    const target = destFolderId ?? rootParent;
     let res: Response;
     if (item.type === "doc" || item.type === "folder") {
       if (kind === "mine") {
         const fd = new FormData();
         fd.set("intent", "update");
         fd.set("pageId", item.id);
-        fd.set("parentPageId", destFolderId ?? "");
+        fd.set("parentPageId", target ?? "");
         res = await fetch("/api/notes", { method: "POST", body: fd, credentials: "include" });
       } else {
         res = await fetch(`/api/pages/${item.id}/move`, {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ parentPageId: destFolderId }),
+          body: JSON.stringify({ parentPageId: target }),
         });
       }
     } else {
@@ -504,7 +514,7 @@ function makeScopeActions({
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ itemType: item.type, itemId: item.id, destFolderPageId: destFolderId }),
+        body: JSON.stringify({ itemType: item.type, itemId: item.id, destFolderPageId: target }),
       });
     }
     if (res.ok) toast.success("Moved");
@@ -560,7 +570,8 @@ function ScopeSection({
   const revalidator = useRevalidator();
   const isMine = scope.id === "mine";
   const isLab = scope.id === "lab";
-  const isProject = !isMine && !isLab;
+  const isCore = scope.id === "core";
+  const isProject = !isMine && !isLab && !isCore;
 
   const actions = useMemo(
     () => makeScopeActions({ scope, dialog, toast, revalidate: () => revalidator.revalidate() }),
@@ -617,6 +628,8 @@ function ScopeSection({
           />
           {isMine ? (
             <User className="w-4 h-4 text-muted-foreground shrink-0" />
+          ) : isCore ? (
+            <Shield className="w-4 h-4 text-accent-coral/80 shrink-0" />
           ) : isLab ? (
             <Users className="w-4 h-4 text-muted-foreground shrink-0" />
           ) : scope.iconEmoji ? (
@@ -625,6 +638,11 @@ function ScopeSection({
             <FolderIcon className="w-4 h-4 text-muted-foreground shrink-0" />
           )}
           <span className="font-semibold text-foreground text-sm truncate">{label}</span>
+          {isCore && (
+            <span className="text-[10px] uppercase tracking-wide text-accent-coral/70 shrink-0">
+              Core only
+            </span>
+          )}
           {isProject && (
             <span className="text-[10px] uppercase tracking-wide text-accent-coral/70 shrink-0">
               Project
@@ -827,7 +845,7 @@ function BrowseView({
               key={scope.id}
               scope={scope}
               typeFilter={typeFilter}
-              defaultOpen={scope.id === "mine" || scope.id === "lab"}
+              defaultOpen={scope.id === "mine" || scope.id === "lab" || scope.id === "core"}
               extraNewItems={scope.id === "lab" ? labExtraNewItems : undefined}
             />
           ))}
