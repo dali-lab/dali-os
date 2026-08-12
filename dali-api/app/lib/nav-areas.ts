@@ -239,6 +239,30 @@ export function activeSubtabHref(area: NavArea, path: string): string | undefine
   return best;
 }
 
+/**
+ * Does this page render its own horizontal nav row?
+ *
+ * Two independent signals, and the difference between them is where this kept
+ * going wrong:
+ *  - `areaSubnav` (e.g. calendar) renders its row unconditionally.
+ *  - `areaPills` renders one only when the sidebar redesign is OFF; with the
+ *    redesign on AreaPillNav returns null and there is no row at all.
+ *
+ * Anything that stands down "because the page has its own row" — the tabless
+ * history arrows, the layout's flush top padding — has to ask this, or it
+ * either doubles the row (areaSubnav read as no-row) or hides itself for a row
+ * that isn't there (areaPills under the redesign).
+ */
+export function hasSubnavRow(
+  matches: readonly { handle?: unknown }[],
+  redesign: boolean,
+): boolean {
+  return matches.some((m) => {
+    const h = m.handle as { areaSubnav?: boolean; areaPills?: boolean } | undefined;
+    return Boolean(h?.areaSubnav || (!redesign && h?.areaPills));
+  });
+}
+
 // True when the path is exactly a non-hub area sub-tab (e.g. /projects/staffing).
 // Drives the breadcrumb favorite star: every sub-tab landing page is directly
 // pinnable, using the same affordance as project/person/partner detail pages.

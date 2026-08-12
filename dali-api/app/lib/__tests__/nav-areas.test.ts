@@ -3,6 +3,7 @@ import {
   NAV_AREAS,
   areaForPath,
   activeSubtabHref,
+  hasSubnavRow,
   isAreaSubtabPath,
 } from "~/lib/nav-areas";
 
@@ -60,5 +61,34 @@ describe("isAreaSubtabPath", () => {
   it("excludes hubs and record pages", () => {
     expect(isAreaSubtabPath("/projects")).toBe(false);
     expect(isAreaSubtabPath("/projects/abc123")).toBe(false);
+  });
+});
+
+// Regression: the tabless history arrows and the layout's flush top padding
+// both stand down when a page renders its own nav row. Layout used to decide
+// that from `handle.areaPills` alone, which broke both ways — calendar
+// (areaSubnav) got a standalone arrow bar stacked on top of its own subnav
+// row, and under the sidebar redesign areaPills pages hid the bar for a pill
+// row AreaPillNav no longer renders.
+describe("hasSubnavRow", () => {
+  const m = (handle: unknown) => [{ handle }];
+
+  it("is true for areaSubnav routes whether or not the redesign is on", () => {
+    expect(hasSubnavRow(m({ areaSubnav: true }), false)).toBe(true);
+    expect(hasSubnavRow(m({ areaSubnav: true }), true)).toBe(true);
+  });
+
+  it("is true for areaPills routes only while the redesign is off", () => {
+    expect(hasSubnavRow(m({ areaPills: true }), false)).toBe(true);
+    expect(hasSubnavRow(m({ areaPills: true }), true)).toBe(false);
+  });
+
+  it("is false for a plain route, and tolerates handle-less matches", () => {
+    expect(hasSubnavRow(m({}), false)).toBe(false);
+    expect(hasSubnavRow([{}, { handle: undefined }], false)).toBe(false);
+  });
+
+  it("takes the signal from any match in the chain, not just the leaf", () => {
+    expect(hasSubnavRow([{ handle: {} }, { handle: { areaSubnav: true } }], true)).toBe(true);
   });
 });
