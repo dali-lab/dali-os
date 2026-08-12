@@ -9,8 +9,8 @@ ALTER TABLE "ProjectFile" ALTER COLUMN "projectId" DROP NOT NULL;
 -- 2. Add workspace-scope columns, mirroring the Page.workspaceType /
 --    Page.workspaceId polymorphic pattern. Both nullable so existing
 --    project-owned rows need no change.
-ALTER TABLE "ProjectFile" ADD COLUMN "workspaceType" TEXT NULL;
-ALTER TABLE "ProjectFile" ADD COLUMN "workspaceId"   TEXT NULL;
+ALTER TABLE "ProjectFile" ADD COLUMN "workspaceType" "WorkspaceType";
+ALTER TABLE "ProjectFile" ADD COLUMN "workspaceId"   TEXT;
 
 -- 3. Index for Lab-scope file queries (workspaceType = 'Lab', archivedAt IS NULL)
 --    and for any future group-scoped file queries.
