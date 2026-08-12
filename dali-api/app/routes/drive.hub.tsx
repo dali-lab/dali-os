@@ -9,7 +9,9 @@ import {
   CheckCircle2,
   Download,
   ExternalLink,
+  Paperclip,
 } from "lucide-react";
+import { prisma } from "~/lib/db";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { canViewForms as checkCanViewForms } from "~/lib/roles";
@@ -28,10 +30,11 @@ export const meta: Route.MetaFunction = () => [{ title: "Drive · DALI OS" }];
 // The unified Drive hub, surfaced when the drive-consolidation feature flag is
 // on. Presents the existing Documents hub and Forms browser as two lenses
 // (selected via ?lens=) inside a single route, without altering the underlying
-// /documents and /forms routes. Wave 4 adds two read-only lenses: Agreements
-// (the viewer's own signed lab documents) and Templates (aggregated view over
-// all five template systems). When the flag is off, /drive is not linked from
-// the nav and navigating here redirects to /documents.
+// /documents and /forms routes. Additional read-only lenses: Files (uploaded
+// project files scoped to the viewer's projects), Agreements (the viewer's own
+// signed lab documents), and Templates (aggregated view over all five template
+// systems). When the flag is off, /drive is not linked from the nav and
+// navigating here redirects to /documents.
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
@@ -58,12 +61,45 @@ export async function loader({ request }: Route.LoaderArgs) {
   // internally and returns only what the viewer is allowed to see.
   const templatesData = await loadTemplates(auth.user.sub);
 
+  // Files — uploaded project files, scoped to exactly the projects whose docs
+  // the viewer can already see (reuses the docs loader's per-viewer project
+  // list, so no separate access check is needed). Read-only surfacing; the
+  // file viewer + upload flow stay in the project workspace.
+  const projectWorkspaces = docsResult.workspaces.filter((w) => w.kind === "project");
+  const projectIds = projectWorkspaces.map((w) => w.key);
+  const projectNames = new Map(projectWorkspaces.map((w) => [w.key, w.label]));
+  const fileRows = projectIds.length
+    ? await prisma.projectFile.findMany({
+        where: { projectId: { in: projectIds }, archivedAt: null },
+        orderBy: { updatedAt: "desc" },
+        select: {
+          id: true,
+          title: true,
+          projectId: true,
+          updatedAt: true,
+          currentVersion: { select: { fileName: true, sizeBytes: true } },
+        },
+      })
+    : [];
+  const filesData = {
+    files: fileRows.map((f) => ({
+      id: f.id,
+      title: f.title,
+      projectId: f.projectId,
+      projectName: projectNames.get(f.projectId) ?? "Project",
+      fileName: f.currentVersion?.fileName ?? null,
+      sizeBytes: f.currentVersion?.sizeBytes ?? null,
+      updatedAt: f.updatedAt,
+    })),
+  };
+
   return {
     docsData: docsResult,
     formsData,
     canViewForms: userCanViewForms,
     signedDocs,
     templatesData,
+    filesData,
   };
 }
 
@@ -191,10 +227,80 @@ function AgreementsLens({ signedDocs }: { signedDocs: LoaderData["signedDocs"] }
   );
 }
 
-type Lens = "docs" | "forms" | "agreements" | "templates";
+function formatBytes(n: number | null): string | null {
+  if (n == null) return null;
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function FilesLens({ filesData }: { filesData: LoaderData["filesData"] }) {
+  const tz = useUserTimeZone();
+  const { files } = filesData;
+
+  // Group by project so files read as "belonging" to their workspace.
+  const byProject = new Map<string, typeof files>();
+  for (const f of files) {
+    const arr = byProject.get(f.projectId) ?? [];
+    arr.push(f);
+    byProject.set(f.projectId, arr);
+  }
+
+  if (files.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground italic">
+        No uploaded files in your projects yet. Upload files from a project's
+        Files section.
+      </p>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      <p className="text-sm text-muted-foreground">
+        Uploaded files across your projects. Open a file to view, comment, or
+        download; uploads and versions are managed in each project.
+      </p>
+      {[...byProject.entries()].map(([projectId, projectFiles]) => (
+        <section key={projectId}>
+          <h2 className="text-sm font-semibold text-foreground/70 mb-3">
+            {projectFiles[0].projectName}
+          </h2>
+          <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {projectFiles.map((f) => {
+              const size = formatBytes(f.sizeBytes);
+              return (
+                <li
+                  key={f.id}
+                  className="rounded-lg border border-border bg-card p-3"
+                >
+                  <Link to={`/documents/file/${f.id}`} className="flex items-start gap-2 min-w-0 group">
+                    <Paperclip className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
+                    <span className="min-w-0">
+                      <span className="block font-medium text-foreground text-sm truncate group-hover:underline">
+                        {f.title || f.fileName || "Untitled"}
+                      </span>
+                      <span className="block text-xs text-muted-foreground">
+                        {[size, `updated ${formatDateTime(f.updatedAt, tz)}`]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </span>
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+type Lens = "docs" | "forms" | "files" | "agreements" | "templates";
 
 export default function DriveHub() {
-  const { docsData, formsData, canViewForms, signedDocs, templatesData } =
+  const { docsData, formsData, canViewForms, signedDocs, templatesData, filesData } =
     useLoaderData() as LoaderData;
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -203,11 +309,13 @@ export default function DriveHub() {
   const lens: Lens =
     rawLens === "forms" && canViewForms
       ? "forms"
-      : rawLens === "agreements"
-        ? "agreements"
-        : rawLens === "templates"
-          ? "templates"
-          : "docs";
+      : rawLens === "files"
+        ? "files"
+        : rawLens === "agreements"
+          ? "agreements"
+          : rawLens === "templates"
+            ? "templates"
+            : "docs";
 
   function switchLens(next: Lens) {
     setSearchParams(
@@ -256,6 +364,15 @@ export default function DriveHub() {
           )}
           <button
             type="button"
+            aria-pressed={lens === "files"}
+            onClick={() => switchLens("files")}
+            className={`${pillBase} ${lens === "files" ? pillActive : pillInactive}`}
+          >
+            <Paperclip className="w-4 h-4" />
+            Files
+          </button>
+          <button
+            type="button"
             aria-pressed={lens === "agreements"}
             onClick={() => switchLens("agreements")}
             className={`${pillBase} ${lens === "agreements" ? pillActive : pillInactive}`}
@@ -296,6 +413,8 @@ export default function DriveHub() {
             />
           </div>
         )
+      ) : lens === "files" ? (
+        <FilesLens filesData={filesData} />
       ) : lens === "agreements" ? (
         <AgreementsLens signedDocs={signedDocs} />
       ) : (
