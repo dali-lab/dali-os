@@ -1,8 +1,25 @@
 # Drive Consolidation — Design & Plan
 
-**Status:** Approved model, implementation started · **Author:** planning pass
-with Kiran · **Date:** 2026-08-11 · **Branch:** `feat/drive-consolidation` ·
-**Flag:** `drive_consolidation`
+**Status:** PR open — Waves 1, 2, 4 + Files lens landed behind the flag ·
+**Author:** planning pass with Kiran · **Date:** 2026-08-11 · **Branch:**
+`feat/drive-consolidation` · **Flag:** `drive-consolidation`
+
+> **Landed in the first PR:** Wave 1 (unified `/drive` surface, sidebar + ⌘K
+> merge, Docs/Forms lenses), Wave 2 (scope=group cascade access model —
+> additive columns + resolver ancestry-walk, provably behavior-neutral until a
+> scope is set; nesting cap lifted; `offering:<id>` group), Wave 4 (Agreements
+> shelf + Templates gallery), and the read-only **Files lens** (Wave 3 partial).
+> All behind `drive-consolidation` (default off). 3426 tests green, typecheck 0
+> new errors, build passes.
+>
+> **Deferred to follow-up PRs (same flag):** the Wave 3 tail —
+> file/form `folderPageId` placement, generalizing `PageShare` to files,
+> `FormFolder`→`Folder`-Page migration + retirement, and the unified dnd-kit
+> `DriveTree` replacing `UnifiedTree` + `FormsBrowser`; then Wave 5 embeds and
+> Wave 6 databases/whiteboards. **Migration `20260811220000_drive_scope_columns`
+> is hand-authored (additive/nullable) and needs `prisma migrate` validation
+> against a real DB — flagged for review.** `ensureOfferingGroup` is exported
+> but not yet wired into offering creation.
 
 Consolidate every user-created item in DALI OS into one Google-*Shared-Drives*-
 style filesystem — **Docs · Files · Forms · Agreements** — organized **by
