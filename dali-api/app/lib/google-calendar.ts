@@ -15,7 +15,30 @@ interface BusyEvent {
   color?: string; // that calendar's backgroundColor (hex), for per-calendar tint
   description?: string;
   location?: string;
+  // Detail-popover extras, straight from events.list. Availability renders
+  // these when a block is clicked; availability math never reads them.
+  attendees?: EventAttendee[];
+  /** The event's own page on Google Calendar. */
+  htmlLink?: string;
+  /** Google Meet (or other conferencing) join URL, when the event has one. */
+  meetingUrl?: string;
+  organizerName?: string;
 }
+
+/** One invitee on an external event, as shown in the detail popover. */
+export interface EventAttendee {
+  /** displayName when Google has one, else the email. */
+  name: string;
+  email?: string;
+  responseStatus: "accepted" | "declined" | "tentative" | "needsAction";
+  organizer?: boolean;
+  self?: boolean;
+  optional?: boolean;
+}
+
+// Bound the payload: a 300-person all-hands shouldn't ship 300 rows to the
+// client for a popover that lists the first handful.
+const MAX_ATTENDEES = 50;
 
 interface StoredTokens {
   accessToken: string;
@@ -161,7 +184,34 @@ interface GoogleEvent {
   transparency?: string; // "opaque" (busy) | "transparent" (free)
   start?: { dateTime?: string; date?: string };
   end?: { dateTime?: string; date?: string };
-  attendees?: { self?: boolean; responseStatus?: string }[];
+  htmlLink?: string;
+  hangoutLink?: string;
+  conferenceData?: { entryPoints?: { entryPointType?: string; uri?: string }[] };
+  organizer?: { email?: string; displayName?: string; self?: boolean };
+  attendees?: {
+    email?: string;
+    displayName?: string;
+    self?: boolean;
+    organizer?: boolean;
+    optional?: boolean;
+    responseStatus?: string;
+  }[];
+}
+
+const RESPONSE_STATUSES = ["accepted", "declined", "tentative", "needsAction"] as const;
+
+function attendeeResponse(raw: string | undefined): EventAttendee["responseStatus"] {
+  return (RESPONSE_STATUSES as readonly string[]).includes(raw ?? "")
+    ? (raw as EventAttendee["responseStatus"])
+    : "needsAction";
+}
+
+// Google only fills hangoutLink for Meet; conferenceData covers Zoom/Teams
+// add-ons too, so fall through to the first video entry point.
+function conferenceUrl(ev: GoogleEvent): string | undefined {
+  if (ev.hangoutLink) return ev.hangoutLink;
+  const video = ev.conferenceData?.entryPoints?.find((p) => p.entryPointType === "video");
+  return video?.uri;
 }
 
 /**
@@ -215,7 +265,11 @@ async function fetchEventsForCalendar(
     singleEvents: "true", // expand recurring events into instances
     orderBy: "startTime",
     maxResults: "250",
-    fields: "items(id,summary,description,location,status,transparency,start,end,attendees(self,responseStatus))",
+    fields:
+      "items(id,summary,description,location,status,transparency,start,end," +
+      "htmlLink,hangoutLink,conferenceData(entryPoints(entryPointType,uri))," +
+      "organizer(email,displayName,self)," +
+      "attendees(email,displayName,self,organizer,optional,responseStatus))",
   });
   const res = await fetch(
     `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?${params}`,
@@ -245,6 +299,17 @@ async function fetchEventsForCalendar(
       color,
       description: ev.description ? plainTextFromGoogleHtml(ev.description) : undefined,
       location: ev.location?.trim() || undefined,
+      attendees: ev.attendees?.slice(0, MAX_ATTENDEES).map((a) => ({
+        name: a.displayName?.trim() || a.email || "Guest",
+        email: a.email,
+        responseStatus: attendeeResponse(a.responseStatus),
+        organizer: a.organizer,
+        self: a.self,
+        optional: a.optional,
+      })),
+      htmlLink: ev.htmlLink,
+      meetingUrl: conferenceUrl(ev),
+      organizerName: ev.organizer?.displayName?.trim() || ev.organizer?.email || undefined,
     });
   }
   return out;
