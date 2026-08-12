@@ -8,6 +8,7 @@ import { logAuditEvent } from "~/lib/audit";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import type { Prisma } from "~/generated/prisma/client";
+import { pageDepth, MAX_PAGE_DEPTH, isAncestorOf } from "~/lib/pages";
 
 // POST /api/pages/:id/move — move and/or reorder a document.
 //   { parentPageId, beforeId? }                  → reorder within its workspace
@@ -128,7 +129,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
   }
 
-  // Parent folder (if nesting) must live in the DESTINATION and be top-level.
+  // Parent folder (if nesting) must live in the DESTINATION; depth ≤ MAX_PAGE_DEPTH.
   let parentPageId: string | null = null;
   if (body.parentPageId) {
     const parent = await prisma.page.findUnique({
@@ -143,8 +144,16 @@ export async function action({ request, params }: Route.ActionArgs) {
     ) {
       return withCors(request, Response.json({ error: "Folder not found" }, { status: 404 }));
     }
-    if (parent.kind !== "Folder" || parent.parentPageId !== null) {
-      return withCors(request, Response.json({ error: "Documents can only nest inside a top-level folder" }, { status: 400 }));
+    if (parent.kind !== "Folder") {
+      return withCors(request, Response.json({ error: "Documents can only nest inside a folder" }, { status: 400 }));
+    }
+    const depth = await pageDepth(body.parentPageId);
+    if (depth < 0 || depth >= MAX_PAGE_DEPTH) {
+      return withCors(request, Response.json({ error: "Folder is too deeply nested" }, { status: 400 }));
+    }
+    // Cycle guard: the destination can't be a descendant of the page being moved.
+    if (await isAncestorOf(pageId, body.parentPageId)) {
+      return withCors(request, Response.json({ error: "A document can't be moved into its own descendant" }, { status: 400 }));
     }
     parentPageId = body.parentPageId;
   }

@@ -14,6 +14,7 @@ import {
   Globe,
   GraduationCap,
   Handshake,
+  HardDrive,
   Heart,
   Kanban,
   LayoutGrid,
@@ -28,6 +29,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { ADMIN_CLUSTERS } from "~/admin/adminNav";
+import type { FeatureFlagMap } from "~/lib/feature-flags";
 
 // Single source of truth for the sidebar's "active area" dropdown and its
 // vertical sub-tab children. Consolidates what used to be per-area *Pills.tsx
@@ -128,6 +130,15 @@ export const NAV_AREAS: NavArea[] = [
     subtabs: [
       { label: "Hub", href: "/mentorship", icon: Heart },
       { label: "Mentorship notes", href: "/mentorship/browse", icon: FileText },
+    ],
+  },
+  {
+    key: "drive",
+    label: "Drive",
+    icon: HardDrive,
+    hubPath: "/drive",
+    subtabs: [
+      { label: "Hub", href: "/drive", icon: LayoutGrid },
     ],
   },
   {
@@ -259,8 +270,18 @@ export function iconForHref(href: string): LucideIcon | null {
   }
 }
 
-export function visibleAreas(r: RoleFlags): NavArea[] {
-  return NAV_AREAS.filter((a) => !a.gate || a.gate(r));
+export function visibleAreas(r: RoleFlags, flags: Partial<FeatureFlagMap> = {}): NavArea[] {
+  const driveOn = flags["drive-consolidation"] ?? false;
+  return NAV_AREAS.filter((a) => {
+    if (driveOn) {
+      // When Drive is on: hide documents + forms; show drive (always visible to all members)
+      if (a.key === "documents" || a.key === "forms") return false;
+    } else {
+      // When Drive is off: hide drive entry
+      if (a.key === "drive") return false;
+    }
+    return !a.gate || a.gate(r);
+  });
 }
 
 export function visibleSubtabs(area: NavArea, r: RoleFlags): SubTab[] {

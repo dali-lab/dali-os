@@ -27,6 +27,7 @@ import { TabWorkspace, type TabWorkspaceHandle, type OpenTabRequest } from '~/co
 import { useOpenTasks, TASKS_CHANGED_EVENT } from '~/components/NotificationBell'
 import { DesktopBanner } from '~/components/DesktopBanner'
 import { CommandPalette } from '~/components/CommandPalette'
+import { useFeatureFlag } from '~/components/FeatureFlags'
 import { setFocusPreference } from '~/lib/focus-mode'
 
 interface LayoutProps {
@@ -89,6 +90,7 @@ export function LayoutClassic({ user, photoUrl, isCore = false, isAdmin = false,
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const workspaceRef = useRef<TabWorkspaceHandle | null>(null)
 
+  const driveConsolidation = useFeatureFlag("drive-consolidation")
   const [paletteOpen, setPaletteOpen] = useState(false)
   const togglePalette = useCallback(() => setPaletteOpen((v) => !v), [])
   // ⌘/Ctrl+K opens the command palette. In tab mode TabWorkspace owns the
@@ -726,6 +728,7 @@ export function LayoutClassic({ user, photoUrl, isCore = false, isAdmin = false,
         tabless={tabless}
         focusMode={focusMode}
         roles={{ isCore, isAdmin, isDomainLead, isInterviewer, canViewForms, canViewStaffing, hasHiringAccess, isLabMentor, isInstructor }}
+        flags={{ "drive-consolidation": driveConsolidation }}
         onOpen={openFromPalette}
       />
     </div>

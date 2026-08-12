@@ -1972,10 +1972,11 @@ model GroupDefinition {
   type            GroupType
   // For dynamic groups: structured query identifier dispatched in app code.
   // Recognized forms:
-  //   - "term:<termId>"     – members with any assignment/mentorship in that term
-  //   - "project:<projectId>" – members assigned to that project (any term)
-  //   - "domain:<domainId>" – members holding eligibility in that domain
-  //   - "core"              – Core members for the current term
+  //   - "term:<termId>"         – members with any assignment/mentorship in that term
+  //   - "project:<projectId>"   – members assigned to that project (any term)
+  //   - "domain:<domainId>"     – members holding eligibility in that domain
+  //   - "core"                  – Core members for the current term
+  //   - "offering:<offeringId>" – members with an Approved application to that EducationOffering
   dynamicQuery    String?
   // For static groups: explicit member list.
   staticMemberIds String[]
@@ -3801,8 +3802,7 @@ model Page {
   // polymorphic scope id); the explicit project / offering back-relations
   // below cover the cases we look up by.
   workspaceId   String?
-  // Null for top-level pages. App-level constraint: parentPageId's parent
-  // must itself be null (enforces the 2-level cap from the plan).
+  // Null for top-level pages. Arbitrary depth; app enforces a max of 6.
   parentPageId  String?
   title         String
   kind          PageKind      @default(FreeForm)
@@ -3810,6 +3810,24 @@ model Page {
   // (which render from their underlying schema entities).
   contentDocId  String?
   position      Int           @default(0)
+
+  // ─── Drive scope (Wave 2) — meaningful only when kind = Folder ───────────
+  //
+  // Governs who can access this folder and all items it contains. Null on any
+  // non-Folder page and on ordinary folders that inherit from their ancestor.
+  // Only the *nearest* ancestor folder with a non-null scopeKind is governing;
+  // further ancestors are shadowed (nesting only narrows, never widens).
+  //
+  // Private = owner only; Lab = any lab member; Group = resolveGroupMembers(scopeGroupId).
+  // scopePermission is the base grant level members of that scope receive.
+  // With no explicitly-scoped folders in the DB this has NO effect on getPageAccess —
+  // the resolver falls back to the existing workspaceType-derived logic.
+  scopeKind       ScopeKind?
+  // Loose FK → GroupDefinition.id; only meaningful when scopeKind = Group.
+  scopeGroupId    String?
+  // Base permission members of this scope receive. Null = resolver picks a
+  // sensible default (View for Lab, Edit for Group/Private roots).
+  scopePermission SharePermission?
 
   // Notion-style page metadata.
   iconEmoji     String?
@@ -4084,9 +4102,16 @@ enum WorkspaceType {
 enum PageKind {
   FreeForm
   Structured
-  // A container page with no content of its own — only children. Always
-  // top-level (a folder never has a parentPageId, matching the 2-level cap).
+  // A container page with no content of its own — only children. May nest
+  // up to depth 6; a Folder may carry a scopeKind to govern access for
+  // everything inside it.
   Folder
+}
+
+enum ScopeKind {
+  Private
+  Lab
+  Group
 }
 
 model PageTemplate {

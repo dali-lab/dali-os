@@ -83,6 +83,12 @@ export const FEATURE_FLAGS = [
     description:
       "Pinned Home / Tasks / Calendar plus a single active-area dropdown. When on, the in-page horizontal pill rows are hidden. When off, users see the current flat sidebar with in-page pills.",
   },
+  {
+    key: "drive-consolidation",
+    label: "Unified Drive",
+    description:
+      "Merge Documents + Forms (and files, agreements, templates) into one Google-Shared-Drives-style section organized by access scope. When on, the sidebar shows a single Drive area instead of separate Documents and Forms entries.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];

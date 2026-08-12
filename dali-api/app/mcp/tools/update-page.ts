@@ -9,6 +9,7 @@
 
 import { prisma } from "~/lib/db";
 import { canEditProject } from "./access";
+import { pageDepth, MAX_PAGE_DEPTH } from "~/lib/pages";
 
 export const UPDATE_PAGE_TOOL = {
   name: "update_page",
@@ -125,8 +126,9 @@ export async function runUpdatePage(callerId: string, input: Input) {
       if (parent.kind !== "Folder") {
         throw new UpdatePageError("Documents can only nest inside a folder", 400);
       }
-      if (parent.parentPageId !== null) {
-        throw new UpdatePageError("Pages only nest one level deep", 400);
+      const depth = await pageDepth(newParentId);
+      if (depth < 0 || depth >= MAX_PAGE_DEPTH) {
+        throw new UpdatePageError("Folder is too deeply nested", 400);
       }
     }
     const last = await prisma.page.findFirst({

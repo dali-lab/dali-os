@@ -37,6 +37,7 @@ import { setFocusPreference } from "~/lib/focus-mode";
 import type { SearchResult, SearchResultType } from "~/lib/search";
 import { ADMIN_CLUSTERS } from "~/admin/adminNav";
 import { visibleAreas, visibleSubtabs, type RoleFlags } from "~/lib/nav-areas";
+import type { FeatureFlagMap } from "~/lib/feature-flags";
 
 export type CommandPaletteRoles = RoleFlags;
 
@@ -48,6 +49,8 @@ interface CommandPaletteProps {
   /** Whether the sidebar is hidden — drives the focus-mode command. */
   focusMode: boolean;
   roles: CommandPaletteRoles;
+  /** Feature flags to gate search sections and nav entries. */
+  flags?: Partial<FeatureFlagMap>;
   /** Open a result. `toSide` = ⌘/Ctrl+Enter (split pane in tab mode, new browser tab in tabless). */
   onOpen: (url: string, label: string, toSide: boolean) => void;
 }
@@ -105,7 +108,7 @@ const SECTION_ORDER = [
   "Partner applications",
 ];
 
-export function CommandPalette({ open, onClose, tabless, focusMode, roles, onOpen }: CommandPaletteProps) {
+export function CommandPalette({ open, onClose, tabless, focusMode, roles, flags = {}, onOpen }: CommandPaletteProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -148,6 +151,30 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles, onOpe
     };
   }, [open, query]);
 
+  const driveOn = flags["drive-consolidation"] ?? false;
+
+  // When the drive-consolidation flag is on, remap document/form search results
+  // to a unified "Drive" section, and collapse the "Documents" + "Forms" entries
+  // in the section order into a single "Drive" entry.
+  const effectiveMeta = useMemo((): typeof TYPE_META => {
+    if (!driveOn) return TYPE_META;
+    const patched = { ...TYPE_META };
+    patched.document = { ...patched.document, section: "Drive" };
+    patched.form = { ...patched.form, section: "Drive" };
+    patched.formFolder = { ...patched.formFolder, section: "Drive" };
+    return patched;
+  }, [driveOn]);
+
+  const effectiveSectionOrder = useMemo(
+    () =>
+      driveOn
+        ? SECTION_ORDER.map((s) => (s === "Documents" || s === "Forms" ? "Drive" : s)).filter(
+            (s, i, arr) => arr.indexOf(s) === i,
+          )
+        : SECTION_ORDER,
+    [driveOn],
+  );
+
   // Static "Go to" + "Commands" entries, built from role flags (no round-trip)
   // and filtered client-side by the current query.
   const staticSections = useMemo(() => {
@@ -159,7 +186,7 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles, onOpe
       navItem("Home", "/", Home),
       navItem("My Tasks", "/notifications", ListTodo),
       navItem("Calendar", "/calendar", Calendar),
-      ...visibleAreas(roles).flatMap((area) => {
+      ...visibleAreas(roles, flags).flatMap((area) => {
         const hub = navItem(area.label, area.hubPath, area.icon);
         if (area.key === "admin") return [hub];
         const subs = visibleSubtabs(area, roles)
@@ -237,7 +264,7 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles, onOpe
       admin: admin.filter(match),
       commands: commands.filter(match),
     };
-  }, [roles, tabless, focusMode, query]);
+  }, [roles, flags, tabless, focusMode, query]);
 
   const sections = useMemo(() => {
     const out: { key: string; label: string; items: PaletteItem[] }[] = [];
@@ -246,14 +273,14 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles, onOpe
       out.push({ key: "admin", label: "Admin", items: staticSections.admin });
     if (staticSections.commands.length)
       out.push({ key: "cmd", label: "Commands", items: staticSections.commands });
-    for (const section of SECTION_ORDER) {
+    for (const section of effectiveSectionOrder) {
       const items = results
-        .filter((r) => TYPE_META[r.type].section === section)
-        .map((r) => resultItem(r));
+        .filter((r) => effectiveMeta[r.type].section === section)
+        .map((r) => resultItem(r, effectiveMeta));
       if (items.length) out.push({ key: section, label: section, items });
     }
     return out;
-  }, [staticSections, results]);
+  }, [staticSections, results, effectiveMeta, effectiveSectionOrder]);
 
   const flatItems = useMemo(() => sections.flatMap((s) => s.items), [sections]);
 
@@ -390,12 +417,12 @@ function navItem(title: string, url: string, icon: LucideIcon): PaletteItem {
   return { id: `nav-${url}`, title, subtitle: "Go to", icon, action: { kind: "navigate", url, label: title } };
 }
 
-function resultItem(r: SearchResult): PaletteItem {
+function resultItem(r: SearchResult, meta: typeof TYPE_META = TYPE_META): PaletteItem {
   return {
     id: `${r.type}-${r.id}`,
     title: r.title,
     subtitle: r.subtitle,
-    icon: TYPE_META[r.type].icon,
+    icon: meta[r.type].icon,
     type: r.type,
     photoUrl: r.photoUrl,
     iconEmoji: r.iconEmoji,
