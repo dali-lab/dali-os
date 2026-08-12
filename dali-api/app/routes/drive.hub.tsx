@@ -5,44 +5,37 @@ import {
   FileText,
   ClipboardList,
   FileSignature,
-  LayoutTemplate,
-  CheckCircle2,
-  Download,
-  ExternalLink,
   Paperclip,
   FolderOpen,
   Plus,
   Users,
   ChevronDown,
   Folder as FolderIcon,
+  LayoutTemplate,
+  Upload,
 } from "lucide-react";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef, useId } from "react";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { canViewForms as checkCanViewForms } from "~/lib/roles";
+import { canViewForms as checkCanViewForms, getUserRoles } from "~/lib/roles";
 import { loader as docsLoader } from "~/routes/documents.hub";
-import { listMySignedDocuments } from "~/signing/lib/state.server";
-import { loadTemplates } from "~/lib/drive-templates.server";
 import { loadDriveScopes } from "~/lib/drive-scopes.server";
-import type { DriveTreeScope } from "~/lib/drive-scopes.server";
-import { formatDateTime } from "~/lib/display";
-import { useUserTimeZone } from "~/hooks/useUserTimeZone";
-import type { TemplateKind, TemplateItem } from "~/lib/drive-templates.server";
 import type { DriveItem } from "~/lib/drive.server";
 import { Link } from "react-router";
 import { DriveTree } from "~/components/drive/DriveTree";
 import type { DriveTreeMoveArgs } from "~/components/drive/DriveTree";
 import { useDialog } from "~/components/ui/dialog";
 import { Menu } from "~/components/ui/floating";
+import { Modal } from "~/components/Modal";
 
 export const meta: Route.MetaFunction = () => [{ title: "Drive · DALI OS" }];
 
 // The unified Drive hub, surfaced when the drive-consolidation feature flag is
-// on. Browse is the only main view — Agreements and Templates are demoted to a
-// secondary, visually subordinate row rather than first-class pills. A type
-// filter chip row (All · Documents · Files · Forms) filters the tree without
-// creating a separate lens. The legacy Forms lens (FormsBrowser grid) is
-// removed; forms appear in the unified tree.
+// on. Browse is the only main view. Type filter chips (All · Documents · Files ·
+// Forms) filter the tree. The New ▾ menu includes real upload and from-template
+// flows. Agreements and Templates shelves have been removed: signed agreements
+// stay in Settings → Agreements; templates are now a creation aid in the New
+// menu only.
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
@@ -50,7 +43,11 @@ export async function loader({ request }: Route.LoaderArgs) {
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) return partnerRedirect;
 
+  const roles = await getUserRoles(auth.user.sub);
   const userCanViewForms = await checkCanViewForms(auth.user.sub);
+  // isCore is the gate for agreement authoring. Passed down as canManageAgreements
+  // so drive.server.ts doesn't re-derive it (matches the canViewForms pattern).
+  const userCanManageAgreements = roles.isCore;
 
   const docsResult = await docsLoader({ request } as Parameters<typeof docsLoader>[0]);
   if (docsResult instanceof Response) return docsResult;
@@ -61,17 +58,14 @@ export async function loader({ request }: Route.LoaderArgs) {
     userSub: auth.user.sub,
     projectWorkspaces,
     canViewForms: userCanViewForms,
+    canManageAgreements: userCanManageAgreements,
     request,
   });
-
-  const signedDocs = await listMySignedDocuments(auth.user.sub);
-  const templatesData = await loadTemplates(auth.user.sub);
 
   return {
     driveScopes,
     canViewForms: userCanViewForms,
-    signedDocs,
-    templatesData,
+    canManageAgreements: userCanManageAgreements,
   };
 }
 
@@ -80,179 +74,214 @@ type DriveScope = LoaderData["driveScopes"][number];
 
 // ── Type filter ────────────────────────────────────────────────────────────────
 
-export type DriveTypeFilter = "all" | "doc" | "file" | "form";
+export type DriveTypeFilter = "all" | "doc" | "file" | "form" | "agreement";
 
-const TYPE_FILTERS: { value: DriveTypeFilter; label: string; icon: React.ReactNode }[] = [
+const TYPE_FILTERS: {
+  value: DriveTypeFilter;
+  label: string;
+  icon: React.ReactNode;
+  /** When set, chip is only visible if the viewer holds this capability. */
+  requiresCap?: "canViewForms" | "canManageAgreements";
+}[] = [
   { value: "all", label: "All", icon: null },
   { value: "doc", label: "Documents", icon: <FileText className="w-3.5 h-3.5" /> },
   { value: "file", label: "Files", icon: <Paperclip className="w-3.5 h-3.5" /> },
-  { value: "form", label: "Forms", icon: <ClipboardList className="w-3.5 h-3.5" /> },
+  { value: "form", label: "Forms", icon: <ClipboardList className="w-3.5 h-3.5" />, requiresCap: "canViewForms" },
+  { value: "agreement", label: "Agreements", icon: <FileSignature className="w-3.5 h-3.5" />, requiresCap: "canManageAgreements" },
 ];
 
-// ── Secondary shelves (Agreements + Templates) ─────────────────────────────────
+// ── Template picker ────────────────────────────────────────────────────────────
 
-const KIND_LABELS: Record<TemplateKind, string> = {
-  page: "Document templates",
-  form: "Form drafts",
-  mentorNote: "Mentor note templates",
-  email: "Email templates",
-  signing: "Agreement templates",
-};
+// Page templates only — email/signing/mentor template systems stay in their
+// admin homes. Opens as a modal so it doesn't require a submenu.
+function TemplatePicker({
+  open,
+  onClose,
+}: {
+  open: boolean;
+  onClose: () => void;
+}) {
+  const titleId = useId();
+  const [templates, setTemplates] = useState<{ id: string; title: string; iconEmoji: string | null }[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [creating, setCreating] = useState<string | null>(null);
+  const fetched = useRef(false);
 
-function TemplatesLens({ templatesData }: { templatesData: LoaderData["templatesData"] }) {
-  const { items } = templatesData;
+  // Fetch once on first open.
+  const onModalOpen = useCallback(async () => {
+    if (fetched.current) return;
+    fetched.current = true;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/page-templates?workspaceType=Lab", {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to load templates");
+      const data = await res.json() as { templates: { id: string; title: string; iconEmoji: string | null }[] };
+      setTemplates(data.templates);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load templates");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-  const ORDER: TemplateKind[] = ["page", "form", "mentorNote", "email", "signing"];
-  const byKind: Partial<Record<TemplateKind, TemplateItem[]>> = {};
-  for (const item of items) {
-    (byKind[item.kind] ??= []).push(item);
-  }
+  // Fetch on first open; `fetched` ref inside onModalOpen deduplicates across
+  // StrictMode double-invocations.
+  useEffect(() => {
+    if (open) void onModalOpen();
+  }, [open, onModalOpen]);
 
-  const populated = ORDER.filter((k) => (byKind[k]?.length ?? 0) > 0);
-
-  if (populated.length === 0) {
-    return (
-      <p className="text-sm text-muted-foreground italic">
-        No templates are available to you yet.
-      </p>
-    );
+  async function selectTemplate(templateId: string) {
+    setCreating(templateId);
+    try {
+      const res = await fetch("/api/page-templates", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ templatePageId: templateId, targetWorkspaceType: "Lab" }),
+      });
+      if (!res.ok) throw new Error("Failed to create from template");
+      const { id } = await res.json() as { id: string };
+      window.location.assign(`/documents/${id}`);
+    } catch {
+      setCreating(null);
+    }
   }
 
   return (
-    <div className="flex flex-col gap-8">
-      {populated.map((kind) => (
-        <section key={kind}>
-          <h2 className="text-sm font-semibold text-foreground/70 mb-3">
-            {KIND_LABELS[kind]}
-          </h2>
-          <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {byKind[kind]!.map((item) => (
-              <li
-                key={item.id}
-                className="flex flex-col gap-2 rounded-lg border border-border bg-card p-3"
-              >
-                <div className="flex items-start gap-2 min-w-0">
-                  <LayoutTemplate className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
-                  <div className="min-w-0">
-                    <p className="font-medium text-foreground text-sm truncate">{item.name}</p>
-                    {item.description && (
-                      <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
-                        {item.description}
-                      </p>
-                    )}
-                  </div>
-                </div>
-                <Link
-                  to={item.useHref}
-                  className="self-start inline-flex items-center gap-1 text-xs font-medium text-accent-coral hover:underline"
-                >
-                  <ExternalLink className="w-3 h-3" />
-                  {kind === "page" ? "Browse" : kind === "form" ? "Open" : "View"}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ))}
-    </div>
-  );
-}
-
-function AgreementsLens({ signedDocs }: { signedDocs: LoaderData["signedDocs"] }) {
-  const tz = useUserTimeZone();
-
-  return (
-    <div className="flex flex-col gap-4">
-      <p className="text-sm text-muted-foreground">
-        Your signed lab agreements — read-only archive. To sign a pending
-        agreement, visit Settings → Agreements.
-      </p>
-      {signedDocs.length === 0 ? (
-        <p className="text-sm text-muted-foreground italic">
-          You haven't signed any agreements yet.
+    <Modal open={open} onClose={onClose} labelledBy={titleId}>
+      <h2 id={titleId} className="text-base font-semibold text-foreground mb-4">
+        From template
+      </h2>
+      {loading && (
+        <p className="text-sm text-muted-foreground py-6 text-center">Loading templates…</p>
+      )}
+      {error && (
+        <p className="text-sm text-red-600 py-2">{error}</p>
+      )}
+      {!loading && !error && templates.length === 0 && (
+        <p className="text-sm text-muted-foreground italic py-4 text-center">
+          No page templates are available in the Lab drive yet.
         </p>
-      ) : (
-        <ul className="space-y-2">
-          {signedDocs.map((s) => (
-            <li
-              key={s.signatureId}
-              className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card p-3"
-            >
-              <span className="flex items-center gap-2 min-w-0">
-                <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />
-                <span className="min-w-0">
-                  <span className="block font-medium text-foreground text-sm truncate">
-                    {s.documentName}
-                  </span>
-                  <span className="block text-xs text-muted-foreground">
-                    {s.context} · signed {formatDateTime(s.signedAt, tz)}
-                  </span>
+      )}
+      {!loading && templates.length > 0 && (
+        <ul className="flex flex-col gap-1.5 max-h-72 overflow-y-auto -mx-1 px-1">
+          {templates.map((t) => (
+            <li key={t.id}>
+              <button
+                type="button"
+                disabled={creating !== null}
+                onClick={() => void selectTemplate(t.id)}
+                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left hover:bg-muted/60 transition-colors disabled:opacity-50"
+              >
+                {t.iconEmoji ? (
+                  <span className="text-base leading-none shrink-0">{t.iconEmoji}</span>
+                ) : (
+                  <LayoutTemplate className="w-4 h-4 text-muted-foreground shrink-0" />
+                )}
+                <span className="text-sm font-medium text-foreground truncate">
+                  {t.title || "Untitled template"}
                 </span>
-              </span>
-              <span className="flex items-center gap-3 shrink-0">
-                <Link
-                  to={`/sign/${s.bindingId}`}
-                  className="text-sm font-medium text-accent-coral hover:underline"
-                >
-                  View
-                </Link>
-                <a
-                  href={`/sign/${s.bindingId}?format=pdf`}
-                  className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-                  title="Download PDF"
-                >
-                  <Download className="w-4 h-4" /> PDF
-                </a>
-              </span>
+                {creating === t.id && (
+                  <span className="ml-auto text-xs text-muted-foreground shrink-0">Creating…</span>
+                )}
+              </button>
             </li>
           ))}
         </ul>
       )}
-    </div>
+      <div className="mt-4 flex justify-end">
+        <button
+          type="button"
+          onClick={onClose}
+          className="text-sm text-muted-foreground hover:text-foreground px-3 py-1.5 rounded-md hover:bg-muted/40 transition-colors"
+        >
+          Cancel
+        </button>
+      </div>
+    </Modal>
   );
 }
 
-// ── Secondary-shelf popover (Agreements / Templates) ──────────────────────────
+// ── File upload helper ─────────────────────────────────────────────────────────
 
-// A lightweight expandable panel for the demoted shelves. We use the same
-// inline toggle pattern as ScopeSection rather than a modal — these are
-// secondary collections, not primary navigation.
-function SecondaryShelf({
-  label,
-  icon,
-  testId,
-  children,
-}: {
-  label: string;
-  icon: React.ReactNode;
-  testId: string;
-  children: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(false);
+// Hidden <input type="file"> that drives the upload flow: presign → PUT S3 →
+// POST /api/drive/files. Reuses the same presign pattern as AssignmentWorkArea
+// and ProjectImageBanner. Returns the file input ref so the Menu item can
+// trigger a click on it.
+function useLabFileUpload(onComplete: () => void) {
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
-  return (
-    <div className="rounded-lg border border-border bg-card/50 overflow-hidden" data-testid={testId}>
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-muted/30 transition-colors"
-      >
-        <span className="flex items-center gap-2 flex-1 min-w-0">
-          {icon}
-          <span className="text-sm font-medium text-muted-foreground">{label}</span>
-        </span>
-        <ChevronDown
-          className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${open ? "" : "-rotate-90"}`}
-        />
-      </button>
-      {open && (
-        <div className="border-t border-border px-4 py-4">
-          {children}
-        </div>
-      )}
-    </div>
-  );
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    // Reset the input so the same file can be re-selected after an error.
+    e.target.value = "";
+
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const key = `lab-files/${crypto.randomUUID()}-${file.name}`;
+      const presignRes = await fetch("/api/upload/presign", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          key,
+          contentType: file.type || "application/octet-stream",
+          contentLength: file.size,
+        }),
+      });
+      if (!presignRes.ok) {
+        const body = await presignRes.json().catch(() => ({})) as { error?: string };
+        throw new Error(body.error ?? "Failed to get upload URL");
+      }
+      const { url, fields, key: s3Key } = await presignRes.json() as {
+        url: string;
+        fields: Record<string, string>;
+        key: string;
+      };
+
+      // POST to S3 multipart (presigned-post pattern used everywhere in the app).
+      const formData = new FormData();
+      for (const [name, value] of Object.entries(fields)) formData.append(name, value);
+      formData.append("file", file);
+      const uploadRes = await fetch(url, { method: "POST", body: formData });
+      if (!uploadRes.ok) throw new Error("Upload to storage failed");
+
+      // Register the file in the lab drive.
+      const registerRes = await fetch("/api/drive/files", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          s3Key,
+          title: file.name,
+          fileName: file.name,
+          contentType: file.type || "application/octet-stream",
+          sizeBytes: file.size,
+          scope: { kind: "Lab" },
+        }),
+      });
+      if (!registerRes.ok) {
+        const body = await registerRes.json().catch(() => ({})) as { error?: string };
+        throw new Error(body.error ?? "Failed to register file");
+      }
+
+      onComplete();
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return { inputRef, uploading, uploadError, handleFileChange };
 }
 
 // ── Browse scope section ───────────────────────────────────────────────────────
@@ -271,10 +300,15 @@ function FlatItemList({
 }) {
   const matched = items.filter((it) => it.type === typeFilter);
 
+  const typeLabel =
+    typeFilter === "doc" ? "documents" :
+    typeFilter === "file" ? "files" :
+    typeFilter === "form" ? "forms" : "agreements";
+
   if (matched.length === 0) {
     return (
       <p className="py-3 px-2 text-sm text-muted-foreground italic">
-        No {typeFilter === "doc" ? "documents" : typeFilter === "file" ? "files" : "forms"} in {scopeLabel}.
+        No {typeLabel} in {scopeLabel}.
       </p>
     );
   }
@@ -294,6 +328,8 @@ function FlatItemList({
             <Paperclip className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
           ) : item.type === "form" ? (
             <ClipboardList className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+          ) : item.type === "agreement" ? (
+            <FileSignature className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
           ) : (
             <FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
           );
@@ -412,22 +448,28 @@ function ScopeSection({
 function BrowseView({
   driveScopes,
   canViewForms,
+  canManageAgreements,
   typeFilter,
   onTypeFilterChange,
 }: {
   driveScopes: DriveScope[];
   canViewForms: boolean;
+  canManageAgreements: boolean;
   typeFilter: DriveTypeFilter;
   onTypeFilterChange: (f: DriveTypeFilter) => void;
 }) {
   const revalidator = useRevalidator();
   const dialog = useDialog();
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
+
+  const { inputRef, uploading, uploadError, handleFileChange } = useLabFileUpload(() => {
+    revalidator.revalidate();
+  });
 
   const handleMove = useCallback(async (args: DriveTreeMoveArgs) => {
     const { item, srcScopeId, destFolderId, destScopeId } = args;
 
     if (srcScopeId !== destScopeId) {
-      const srcScope = driveScopes.find((s) => s.id === srcScopeId);
       const destScope = driveScopes.find((s) => s.id === destScopeId);
       const leavingProject = srcScopeId !== "lab";
       const confirmed = await dialog.confirm({
@@ -480,11 +522,53 @@ function BrowseView({
     }
   }, [driveScopes, dialog, revalidator]);
 
-  // Visible filter chips: always show All/Documents/Files; only show Forms when
-  // the viewer has manage-forms access.
+  // Visible filter chips: always show All/Documents/Files; role-gate Forms and
+  // Agreements (Core-only).
+  const caps = { canViewForms, canManageAgreements };
   const visibleFilters = TYPE_FILTERS.filter(
-    (f) => f.value !== "form" || canViewForms,
+    (f) => !f.requiresCap || caps[f.requiresCap],
   );
+
+  // Navigate to the new agreement detail page once the fetcher resolves.
+  // The admin create action returns a redirect (302) which the fetcher follows,
+  // but useFetcher catches the final non-redirect response — the action returns
+  // redirect(`/admin/agreements/${doc.id}`) which the fetcher resolves to the
+  // loader data of that page. We instead navigate imperatively from the fetcher
+  // data if it contains an id, or rely on the window.location.assign below.
+  // Actually: the action POSTs to /admin/agreements and redirects — the fetcher
+  // will NOT follow the redirect; we need to extract the Location header.
+  // Simpler: use fetch() directly so we control the redirect behaviour.
+  async function createAgreement() {
+    const formData = new FormData();
+    formData.set("intent", "create");
+    formData.set("name", "New Agreement");
+    formData.set("kind", "General");
+    formData.set("gateScope", "None");
+    formData.set("audience", "Manual");
+    formData.set("cadence", "Once");
+    const res = await fetch("/admin/agreements", {
+      method: "POST",
+      body: formData,
+      credentials: "include",
+      // Don't follow the redirect — grab the Location header instead.
+      redirect: "manual",
+    });
+    // fetch in "manual" mode gives a type:"opaqueredirect" response with no
+    // Location header accessible in JS (CORS). Use redirect:"follow" but
+    // detect the final URL from res.url.
+    if (res.ok || res.redirected) {
+      // The admin action redirects to /admin/agreements/<id>; if drive-
+      // consolidation is on, the admin loader itself redirects to
+      // /documents/agreement/<id>. Either way res.url is the final URL.
+      const finalUrl = res.url;
+      // Rewrite admin path to drive path when we landed on the admin route.
+      const driveUrl = finalUrl.replace(
+        /\/admin\/agreements\/([^/]+)$/,
+        "/documents/agreement/$1",
+      );
+      window.location.assign(driveUrl);
+    }
+  }
 
   // Empty state: when a type filter is on and no scope has matching items.
   const hasAnyMatch =
@@ -517,7 +601,17 @@ function BrowseView({
           ))}
         </div>
 
-        {/* New ▾ menu: create doc/folder/form or navigate to file upload */}
+        {/* New ▾ menu: create doc/folder/form, from template, or upload file */}
+        {/* Hidden file input — triggered by the Upload file menu item click */}
+        <input
+          ref={inputRef}
+          type="file"
+          className="sr-only"
+          aria-hidden="true"
+          tabIndex={-1}
+          onChange={handleFileChange}
+        />
+
         <Menu
           align="right"
           ariaLabel="New item"
@@ -548,7 +642,7 @@ function BrowseView({
               }
             }}
           >
-            New document
+            <span data-testid="drive-new-doc">New document</span>
           </Menu.Item>
           {/* New folder: POST /api/lab-documents with kind=Folder (stays on Drive) */}
           <Menu.Item
@@ -563,7 +657,7 @@ function BrowseView({
               if (res.ok) revalidator.revalidate();
             }}
           >
-            New folder
+            <span data-testid="drive-new-folder">New folder</span>
           </Menu.Item>
           {/* New form: navigate to the existing /forms create flow */}
           {canViewForms && (
@@ -571,18 +665,53 @@ function BrowseView({
               icon={<ClipboardList className="w-3.5 h-3.5" />}
               onSelect={() => window.location.assign("/forms")}
             >
-              New form
+              <span data-testid="drive-new-form">New form</span>
             </Menu.Item>
           )}
-          {/* Upload file: project files live in project workspaces */}
+          {/* New agreement: Core-only. POSTs to the existing admin create action
+              and navigates to the Drive-namespaced detail route. */}
+          {canManageAgreements && (
+            <Menu.Item
+              icon={<FileSignature className="w-3.5 h-3.5" />}
+              onSelect={() => void createAgreement()}
+            >
+              <span data-testid="drive-new-agreement">New agreement</span>
+            </Menu.Item>
+          )}
+          <Menu.Separator />
+          {/* From template: opens a picker that lists Lab page templates.
+              Templates are a creation aid, not a browse destination — this is
+              the only templates surface in the Drive. */}
           <Menu.Item
-            icon={<Paperclip className="w-3.5 h-3.5" />}
-            onSelect={() => window.location.assign("/projects")}
+            icon={<LayoutTemplate className="w-3.5 h-3.5" />}
+            onSelect={() => setTemplatePickerOpen(true)}
           >
-            Upload file (in a project)
+            <span data-testid="drive-new-template">From template…</span>
+          </Menu.Item>
+          {/* Upload file: presign → PUT S3 → POST /api/drive/files (Lab scope).
+              Reuses the same presign flow as AssignmentWorkArea + ProjectImageBanner. */}
+          <Menu.Item
+            icon={<Upload className="w-3.5 h-3.5" />}
+            disabled={uploading}
+            onSelect={() => inputRef.current?.click()}
+          >
+            <span data-testid="drive-new-upload">
+              {uploading ? "Uploading…" : "Upload file"}
+            </span>
           </Menu.Item>
         </Menu>
       </div>
+
+      {/* Upload error toast (inline, dismisses automatically on next upload) */}
+      {uploadError && (
+        <p className="text-sm text-red-600 px-1">{uploadError}</p>
+      )}
+
+      {/* Template picker modal */}
+      <TemplatePicker
+        open={templatePickerOpen}
+        onClose={() => setTemplatePickerOpen(false)}
+      />
 
       {/* Scope sections (named drives) */}
       {driveScopes.length === 0 ? (
@@ -611,7 +740,9 @@ function BrowseView({
                 ? "documents"
                 : typeFilter === "file"
                 ? "files"
-                : "forms"}{" "}
+                : typeFilter === "form"
+                ? "forms"
+                : "agreements"}{" "}
               in any of your drives.
             </p>
           )}
@@ -623,18 +754,16 @@ function BrowseView({
 
 // ── Hub shell ─────────────────────────────────────────────────────────────────
 
-// The secondary shelf that's currently expanded in the header area.
-type SecondaryPane = "agreements" | "templates" | null;
-
 export default function DriveHub() {
-  const { driveScopes, canViewForms, signedDocs, templatesData } =
-    useLoaderData() as LoaderData;
+  const { driveScopes, canViewForms, canManageAgreements } = useLoaderData() as LoaderData;
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Type filter comes from ?type= (default "all").
   const rawType = searchParams.get("type") as DriveTypeFilter | null;
   const typeFilter: DriveTypeFilter =
-    rawType === "doc" || rawType === "file" || rawType === "form" ? rawType : "all";
+    rawType === "doc" || rawType === "file" || rawType === "form" || rawType === "agreement"
+      ? rawType
+      : "all";
 
   function setTypeFilter(f: DriveTypeFilter) {
     setSearchParams(
@@ -648,75 +777,21 @@ export default function DriveHub() {
     );
   }
 
-  const [secondaryPane, setSecondaryPane] = useState<SecondaryPane>(null);
-  function togglePane(pane: SecondaryPane) {
-    setSecondaryPane((cur) => (cur === pane ? null : pane));
-  }
-
-  // Shared link style for the secondary actions.
-  const secondaryLink =
-    "inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors";
-
   return (
     <div className="w-full flex flex-col gap-4 p-4">
-      {/* Header row: Drive title + secondary shelf links */}
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex items-center gap-2 min-w-0">
-          <HardDrive className="w-5 h-5 text-accent-coral" />
-          <h1 className="text-lg font-semibold text-foreground">Drive</h1>
-        </div>
-
-        {/* Agreements + Templates: demoted to right-aligned secondary links.
-            They're distinct collections (read-only archive + cross-system gallery),
-            not peers of the filesystem, so they live outside the main filter row. */}
-        <div className="flex items-center gap-4">
-          <button
-            type="button"
-            aria-pressed={secondaryPane === "agreements"}
-            onClick={() => togglePane("agreements")}
-            className={secondaryLink}
-            data-testid="drive-shelf-agreements"
-          >
-            <FileSignature className="w-3.5 h-3.5" />
-            Agreements
-          </button>
-          <button
-            type="button"
-            aria-pressed={secondaryPane === "templates"}
-            onClick={() => togglePane("templates")}
-            className={secondaryLink}
-            data-testid="drive-shelf-templates"
-          >
-            <LayoutTemplate className="w-3.5 h-3.5" />
-            Templates
-          </button>
-        </div>
+      {/* Header row: Drive title only — Agreements and Templates shelves removed.
+          Signed agreements are in Settings → Agreements.
+          Page templates are accessible via the New ▾ menu. */}
+      <div className="flex items-center gap-2 min-w-0">
+        <HardDrive className="w-5 h-5 text-accent-coral" />
+        <h1 className="text-lg font-semibold text-foreground">Drive</h1>
       </div>
-
-      {/* Secondary shelves — expand inline beneath the header when activated */}
-      {secondaryPane === "agreements" && (
-        <SecondaryShelf
-          label="My Agreements"
-          icon={<FileSignature className="w-4 h-4 text-muted-foreground" />}
-          testId="drive-shelf-agreements-panel"
-        >
-          <AgreementsLens signedDocs={signedDocs} />
-        </SecondaryShelf>
-      )}
-      {secondaryPane === "templates" && (
-        <SecondaryShelf
-          label="Templates"
-          icon={<LayoutTemplate className="w-4 h-4 text-muted-foreground" />}
-          testId="drive-shelf-templates-panel"
-        >
-          <TemplatesLens templatesData={templatesData} />
-        </SecondaryShelf>
-      )}
 
       {/* Browse is the sole main view */}
       <BrowseView
         driveScopes={driveScopes}
         canViewForms={canViewForms}
+        canManageAgreements={canManageAgreements}
         typeFilter={typeFilter}
         onTypeFilterChange={setTypeFilter}
       />

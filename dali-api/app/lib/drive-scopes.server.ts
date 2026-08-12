@@ -32,11 +32,14 @@ export async function loadDriveScopes({
   userSub,
   projectWorkspaces,
   canViewForms,
+  canManageAgreements,
   request,
 }: {
   userSub: string;
   projectWorkspaces: WorkspaceOut[];
   canViewForms: boolean;
+  /** Whether to include agreement templates in the Lab scope (= isCore). */
+  canManageAgreements: boolean;
   request: Request;
 }): Promise<DriveTreeScope[]> {
   const projectIds = projectWorkspaces.map((w) => w.key);
@@ -50,6 +53,7 @@ export async function loadDriveScopes({
       userSub,
       scope: { kind: "Lab" },
       canViewForms,
+      canManageAgreements,
       request,
     }),
     ...projectIds.map((projectId) =>

@@ -129,6 +129,14 @@ export default [
     // lab-wide docs + the viewer's project-hub docs).
     route("documents", "routes/documents.hub.tsx"),
     route("documents/file/:fileId", "routes/documents.file.$fileId.tsx"),
+    // Agreement authoring in the Drive (drive-consolidation flag). Literal
+    // "agreement" segment must precede :pageId so it isn't captured by that param.
+    // Re-exports the admin implementation — one authoring surface, two URLs.
+    route("documents/agreement/:id", "signing/routes/documents.agreement.$id.tsx"),
+    route(
+      "documents/agreement/:id/signature/:sigId",
+      "signing/routes/documents.agreement.$id.signature.$sigId.tsx",
+    ),
     route("documents/:pageId", "routes/documents.$pageId.tsx"),
 
     // Members directory (separate from admin/members)

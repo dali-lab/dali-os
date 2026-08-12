@@ -70,6 +70,17 @@ export type DriveItem =
       iconEmoji: null; // forms have no emoji; callers use a fixed icon
       updatedAt: Date;
       href: string;
+    }
+  | {
+      type: "agreement";
+      id: string;
+      title: string;
+      /** Signing documents have no folderPageId — they always sit at the Lab
+       *  top level, so parentFolderId is always null here. */
+      parentFolderId: null;
+      iconEmoji: null;
+      updatedAt: Date;
+      href: string;
     };
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
@@ -239,6 +250,31 @@ async function loadFiles(projectIds: string[]): Promise<DriveItem[]> {
   }));
 }
 
+/** Load non-archived agreement templates (SigningDocuments). Only called when
+ *  the caller passes `canManageAgreements: true` (= isCore). Agreements sit at
+ *  the Lab top level — they have no folderPageId equivalent.
+ *
+ *  NO-WIDENING GUARANTEE: agreements → Core members only. The caller is
+ *  responsible for passing `canManageAgreements` only when the viewer isCore;
+ *  this function does not re-derive it, so the gate cannot be bypassed by
+ *  omission. */
+async function loadAgreements(): Promise<DriveItem[]> {
+  const rows = await prisma.signingDocument.findMany({
+    where: { archivedAt: null },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, name: true, updatedAt: true },
+  });
+  return rows.map((d) => ({
+    type: "agreement" as const,
+    id: d.id,
+    title: d.name,
+    parentFolderId: null,
+    iconEmoji: null,
+    updatedAt: d.updatedAt,
+    href: `/documents/agreement/${d.id}`,
+  }));
+}
+
 /** Load forms. Only called when the viewer passes the `canViewForms` gate.
  *  `folderPageId` sets the tree position; it does not change form visibility. */
 async function loadForms(): Promise<DriveItem[]> {
@@ -282,6 +318,15 @@ export interface LoadDriveScopeOptions {
    */
   canViewForms?: boolean;
   /**
+   * Whether this viewer may manage (author/view) agreements (= isCore).
+   * Must be computed by the caller — this function does NOT re-derive it, so
+   * the Core-only gate cannot be bypassed by omission. Only meaningful for
+   * Lab-scope loads; agreements never appear in project scopes.
+   *
+   * NO-WIDENING: agreements → Core only.
+   */
+  canManageAgreements?: boolean;
+  /**
    * Optional request for per-request role-check caching (isCore/isLabMember).
    * Callers from route loaders should pass their `request` object.
    */
@@ -305,6 +350,7 @@ export async function loadDriveScope({
   userSub,
   scope,
   canViewForms = false,
+  canManageAgreements = false,
   request,
 }: LoadDriveScopeOptions): Promise<DriveItem[]> {
   if (scope.kind === "Lab") {
@@ -312,12 +358,14 @@ export async function loadDriveScope({
     // to all lab members (access already gated by the route loader before
     // calling loadDriveScope). Project-owned files are NOT included here —
     // they appear only in their respective project scope.
-    const [pages, files, forms] = await Promise.all([
+    const [pages, files, forms, agreements] = await Promise.all([
       loadLabPages(userSub, request),
       loadLabFiles(),
       canViewForms ? loadForms() : Promise.resolve([] as DriveItem[]),
+      // Agreements → Core only. canManageAgreements must be derived upstream.
+      canManageAgreements ? loadAgreements() : Promise.resolve([] as DriveItem[]),
     ]);
-    return [...pages, ...files, ...forms];
+    return [...pages, ...files, ...forms, ...agreements];
   }
 
   // Project scope

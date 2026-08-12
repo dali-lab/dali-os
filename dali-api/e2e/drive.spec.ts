@@ -8,11 +8,15 @@ import { enableDriveFlagForUser, clearDriveFlag } from './helpers';
 //   - Browse is the only main view (data-testid="drive-browse").
 //   - Type filter chips: drive-filter-all|doc|file|form
 //   - New ▾ menu: data-testid="drive-new-menu"
+//     Items: drive-new-doc, drive-new-folder, drive-new-form (Core only),
+//            drive-new-template, drive-new-upload
 //   - Scope sections: drive-scope-<id>; trees inside: data-testid="drive-tree"
 //   - Item rows in tree: drive-item-<type>-<id>   (doc / file / form / folder)
 //   - Folder rows:       drive-folder-<id>
-//   - Demoted shelves:   drive-shelf-agreements / drive-shelf-templates (trigger
-//     buttons); drive-shelf-agreements-panel / drive-shelf-templates-panel (panels)
+//
+// Agreements and Templates secondary shelves have been removed from the hub:
+//   - Signed agreements are in Settings → Agreements.
+//   - Page templates are accessed via New ▾ → From template…
 //
 // The flag is scoped to admin@dali.dartmouth.edu only (everyone=false) so other
 // parallel workers that use a different user are unaffected.
@@ -37,22 +41,20 @@ test.describe('Drive hub (drive-consolidation flag)', () => {
     await loginAs({ daliEmail: DRIVE_USER });
   });
 
-  // ── Test A: unified render + filter chips ────────────────────────────────────
+  // ── Test A: unified render + filter chips + New menu items ──────────────────
   //
-  // Creates a Lab doc and a form (admin is Core so canViewForms = true).
-  // Navigates to /drive?embed=1 and asserts:
+  // Creates a Lab doc and navigates to /drive?embed=1. Asserts:
   //   - drive-browse container is visible
   //   - All / Documents / Files / Forms filter chips are present
-  //   - drive-new-menu button is visible
+  //   - drive-new-menu button is visible; opening it shows all New items
+  //   - drive-new-template and drive-new-upload are present
   //   - The created doc appears in the tree (All view)
   //   - Switching to the Documents filter still shows the doc
   //   - Switching to the Forms filter hides the doc
-  //   - Agreements + Templates shelf triggers are visible (but subordinate)
-  //
-  // Also verifies that a non-targeted user (reviewer1) does not see a Drive
-  // area in the sidebar navigation.
+  //   - Agreements + Templates secondary shelves are NOT present (removed)
+  //   - Non-targeted user (reviewer1) has no Drive area in sidebar nav
 
-  test('(A) Browse renders with filter chips + New menu; doc visible in All + Documents; hidden under Forms filter; non-targeted user has no Drive nav', async ({
+  test('(A) Browse renders with filter chips + New menu (incl. template + upload); doc visible in All + Documents; hidden under Forms filter; shelves gone; non-targeted user has no Drive nav', async ({
     page,
   }) => {
     // Create a Lab doc so the tree has at least one item.
@@ -75,12 +77,23 @@ test.describe('Drive hub (drive-consolidation flag)', () => {
     await expect(page.getByTestId('drive-filter-file')).toBeVisible();
     await expect(page.getByTestId('drive-filter-form')).toBeVisible();
 
-    // New ▾ menu trigger.
+    // New ▾ menu trigger must be visible.
     await expect(page.getByTestId('drive-new-menu')).toBeVisible();
 
-    // Agreements + Templates shelf triggers (demoted, but present).
-    await expect(page.getByTestId('drive-shelf-agreements')).toBeVisible();
-    await expect(page.getByTestId('drive-shelf-templates')).toBeVisible();
+    // Agreements + Templates secondary shelf triggers must NOT be present.
+    await expect(page.getByTestId('drive-shelf-agreements')).not.toBeVisible();
+    await expect(page.getByTestId('drive-shelf-templates')).not.toBeVisible();
+
+    // ── New ▾ menu: open and verify items ────────────────────────────────────
+    await page.getByTestId('drive-new-menu').click();
+    // Menu items are rendered in a FloatingPortal; they should appear in DOM.
+    await expect(page.getByTestId('drive-new-doc')).toBeVisible();
+    await expect(page.getByTestId('drive-new-folder')).toBeVisible();
+    await expect(page.getByTestId('drive-new-form')).toBeVisible();
+    await expect(page.getByTestId('drive-new-template')).toBeVisible();
+    await expect(page.getByTestId('drive-new-upload')).toBeVisible();
+    // Close the menu by pressing Escape.
+    await page.keyboard.press('Escape');
 
     // ── All filter: tree renders + doc is visible ────────────────────────────
     // "All" is the default; the Lab scope opens by default.
@@ -256,6 +269,88 @@ test.describe('Drive hub (drive-consolidation flag)', () => {
     // URL updates via searchParams; wait for the page to settle.
     await page.waitForLoadState('networkidle');
     await expect(page.getByTestId(`drive-item-doc-${docId}`)).toBeVisible();
+  });
+
+  // ── Test E: New → From template opens the picker ────────────────────────────
+  //
+  // Opens New ▾ and clicks "From template…". Asserts the TemplatePicker modal
+  // renders. If there are seeded page templates they appear; otherwise the
+  // "No page templates" empty state is shown. Either way the picker itself must
+  // be visible — this test never asserts a specific template row (would be
+  // flaky depending on seed state).
+
+  test('(E) New → From template… opens the template picker modal', async ({ page }) => {
+    await page.goto('/drive?embed=1');
+    await page.waitForLoadState('networkidle');
+
+    // Open the New menu.
+    await page.getByTestId('drive-new-menu').click();
+    await expect(page.getByTestId('drive-new-template')).toBeVisible();
+
+    // Click "From template…" — closes the menu and opens the modal.
+    await page.getByTestId('drive-new-template').click();
+
+    // The modal contains an <h2> with "From template" text.
+    await expect(page.getByRole('heading', { name: /from template/i })).toBeVisible();
+
+    // Either a template list, an empty-state message, or a loading indicator
+    // must appear — the picker itself is open.
+    const pickerRendered = await Promise.race([
+      page.waitForSelector('text=No page templates', { timeout: 5000 }).then(() => true),
+      page.waitForSelector('text=Loading templates', { timeout: 5000 }).then(() => true),
+      page.waitForSelector('[role="dialog"] ul', { timeout: 5000 }).then(() => true),
+    ]).catch(() => false);
+    expect(pickerRendered).toBe(true);
+
+    // Cancel closes the modal.
+    await page.getByRole('button', { name: 'Cancel' }).click();
+    await expect(page.getByRole('heading', { name: /from template/i })).not.toBeVisible();
+  });
+
+  // ── Test F: Agreements filter chip is visible for Core users ─────────────────
+  //
+  // Asserts the drive-filter-agreement chip is visible (Core = canManageAgreements)
+  // and the drive-new-agreement item appears in the New ▾ menu.
+
+  test('(F) Agreements filter chip and New→Agreement menu item visible for Core user', async ({
+    page,
+  }) => {
+    await page.goto('/drive?embed=1');
+    await page.waitForLoadState('networkidle');
+
+    // Agreements filter chip is visible for Core (admin@dali.dartmouth.edu is Core).
+    await expect(page.getByTestId('drive-filter-agreement')).toBeVisible();
+
+    // Opening the New menu shows the New agreement item.
+    await page.getByTestId('drive-new-menu').click();
+    await expect(page.getByTestId('drive-new-agreement')).toBeVisible();
+
+    // Close menu.
+    await page.keyboard.press('Escape');
+  });
+
+  // ── Test G: New→Agreement navigates to /documents/agreement/ ─────────────────
+  //
+  // Clicks New → Agreement, waits for navigation, and asserts the final URL
+  // is under /documents/agreement/. Non-flaky because the create action always
+  // succeeds for a Core user.
+
+  test('(G) New→Agreement creates an agreement and navigates to /documents/agreement/', async ({
+    page,
+  }) => {
+    await page.goto('/drive?embed=1');
+    await page.waitForLoadState('networkidle');
+
+    await page.getByTestId('drive-new-menu').click();
+    await expect(page.getByTestId('drive-new-agreement')).toBeVisible();
+
+    // Click the menu item and wait for navigation.
+    await Promise.all([
+      page.waitForURL(/\/documents\/agreement\//, { timeout: 10_000 }),
+      page.getByTestId('drive-new-agreement').click(),
+    ]);
+
+    expect(page.url()).toMatch(/\/documents\/agreement\//);
   });
 });
 
