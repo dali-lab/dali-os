@@ -244,9 +244,15 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles, flags
 
     // Admin tools, generated from the same cluster registry the /admin hub and
     // pill rows use. Gated exactly like the pages: any Core member sees every
-    // cluster except Finance, which is Admin-only.
+    // cluster except Finance, which is Admin-only. When drive-consolidation is
+    // on, the "documents" cluster is hidden from the palette (agreements are
+    // now authored in the Drive).
     const admin: PaletteItem[] = roles.isCore
-      ? ADMIN_CLUSTERS.filter((c) => roles.isAdmin || !c.adminOnly).flatMap((c) =>
+      ? ADMIN_CLUSTERS.filter(
+          (c) =>
+            (roles.isAdmin || !c.adminOnly) &&
+            !(flags?.["drive-consolidation"] && c.key === "documents"),
+        ).flatMap((c) =>
           c.sections.map((s) => ({
             id: `admin-${s.key}`,
             title: s.label,

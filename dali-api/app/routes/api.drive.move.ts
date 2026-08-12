@@ -58,10 +58,11 @@ export async function action({ request }: Route.ActionArgs) {
     if (!file || file.archivedAt !== null) {
       return withCors(request, Response.json({ error: "File not found" }, { status: 404 }));
     }
-    // File manage: Core or a member of the owning project.
+    // File manage: Core or, for project-scoped files, a member of the owning
+    // project. Lab-scoped files (no projectId) require Core for now.
     const canManage =
       (await isCore(userId, request)) ||
-      (await isProjectMember(userId, file.projectId, request));
+      (file.projectId != null && (await isProjectMember(userId, file.projectId, request)));
     if (!canManage) {
       return withCors(
         request,

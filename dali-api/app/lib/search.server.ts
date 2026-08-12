@@ -210,7 +210,7 @@ async function searchProjectFiles(q: string, like: Like): Promise<SearchResult[]
         type: "document" as const,
         id: f.id,
         title: f.title || "Untitled",
-        subtitle: f.project.name,
+        subtitle: f.project?.name ?? "",
         url: `/documents/file/${f.id}`,
       },
       text: [f.title, f.currentVersion?.fileName ?? ""],

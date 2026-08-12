@@ -1075,7 +1075,8 @@ model ProjectFileTag {
 // versions stay downloadable/restorable (mirrors CollabDocumentVersion).
 model ProjectFile {
   id               String  @id @default(cuid())
-  projectId        String
+  // Nullable — null for Lab-scoped files that are not tied to any project.
+  projectId        String?
   // Human-facing name, independent of any single version's stored filename so
   // a rename survives re-upload.
   title            String
@@ -1095,11 +1096,18 @@ model ProjectFile {
   // already have access to this file's project to see it in the tree.
   folderPageId String?
 
+  // Drive scope for non-project files. Null for project-owned files (use
+  // projectId instead). When workspaceType = Lab, workspaceId is null and
+  // the file is visible to all lab members. Mirrors the Page.workspaceType /
+  // Page.workspaceId polymorphic pattern.
+  workspaceType WorkspaceType?
+  workspaceId   String?
+
   archivedAt DateTime?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   versions       ProjectFileVersion[] @relation("FileVersions")
   currentVersion ProjectFileVersion?  @relation("FileCurrentVersion", fields: [currentVersionId], references: [id])
@@ -1110,6 +1118,7 @@ model ProjectFile {
 
   @@index([projectId, archivedAt])
   @@index([folderPageId])
+  @@index([workspaceType, workspaceId, archivedAt])
 }
 
 // m2m: Task ↔ ProjectFile. Links work artifacts (graphics, animation, design

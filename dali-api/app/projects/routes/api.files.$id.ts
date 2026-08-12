@@ -100,6 +100,10 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!file || file.archivedAt !== null) {
     return withCors(request, Response.json({ error: "File not found" }, { status: 404 }));
   }
+  if (!file.projectId) {
+    // Lab-scoped files use the generic /api/drive/files route instead.
+    return withCors(request, Response.json({ error: "File not found" }, { status: 404 }));
+  }
   const gate = await requireProjectEditAccess(request, file.projectId);
   if (!gate.ok) return gate.response;
   const auth = gate.auth;

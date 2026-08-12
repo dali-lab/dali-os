@@ -84,7 +84,8 @@ async function canCommentOnTarget(callerId: string, targetType: CommentTarget, t
   // file: Core or project member
   if (await isCore(callerId)) return true;
   const file = await prisma.projectFile.findUnique({ where: { id: targetId }, select: { projectId: true } });
-  return file ? isProjectMember(callerId, file.projectId) : false;
+  if (!file || !file.projectId) return false;
+  return isProjectMember(callerId, file.projectId);
 }
 
 async function requireComment(commentId: string) {

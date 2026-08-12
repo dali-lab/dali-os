@@ -30,6 +30,7 @@ import {
   ChevronDown,
   ChevronRight,
   ClipboardList,
+  FileSignature,
   Folder,
   Paperclip,
 } from "lucide-react";
@@ -141,6 +142,8 @@ function LeafRow({
       <Paperclip className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
     ) : item.type === "form" ? (
       <ClipboardList className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+    ) : item.type === "agreement" ? (
+      <FileSignature className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
     ) : (
       <PageIcon iconEmoji={item.iconEmoji} />
     );

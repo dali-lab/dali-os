@@ -9,6 +9,7 @@ import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles, isCore } from "~/lib/roles";
 import { adminHandle } from "~/admin/adminNav";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import type {
   SigningDocumentKind,
   SigningGateScope,
@@ -66,6 +67,19 @@ export async function loader({ request }: Route.LoaderArgs) {
   const roles = await getUserRoles(auth.user.sub);
   if (!roles.isCore) return redirect("/");
 
+  // When drive-consolidation is on, the Drive is the only agreement authoring
+  // surface. Redirect the /admin/agreements list to the Drive hub (filter=agreement)
+  // so the URL changes but content is preserved. Path-keyed: only redirect when
+  // the request is at the admin path — the documents/agreement re-export also
+  // calls this loader, and we must not redirect in that case.
+  const url = new URL(request.url);
+  if (
+    url.pathname.startsWith("/admin/agreements") &&
+    (await isFeatureEnabled("drive-consolidation", auth.user.sub, roles))
+  ) {
+    return redirect("/drive?type=agreement");
+  }
+
   const documents = await prisma.signingDocument.findMany({
     where: { archivedAt: null },
     include: {
@@ -103,6 +117,12 @@ export async function action({ request }: Route.ActionArgs) {
         cadence: CADENCES.includes(cadence) ? cadence : "Once",
       },
     });
+    // When the flag is on, redirect straight to the Drive-namespaced route so
+    // the browser lands on /documents/agreement/:id rather than the admin URL.
+    // The flag check in the action is safe because actions run server-side.
+    if (await isFeatureEnabled("drive-consolidation", auth.user.sub, await getUserRoles(auth.user.sub))) {
+      return redirect(`/documents/agreement/${doc.id}`);
+    }
     return redirect(`/admin/agreements/${doc.id}`);
   }
 

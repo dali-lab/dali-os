@@ -94,7 +94,8 @@ async function canReadTarget(
     where: { id: targetId },
     select: { projectId: true },
   });
-  return file ? isProjectMember(auth.user.sub, file.projectId) : false;
+  if (!file || !file.projectId) return false;
+  return isProjectMember(auth.user.sub, file.projectId);
 }
 
 export async function loader({ request }: Route.LoaderArgs) {

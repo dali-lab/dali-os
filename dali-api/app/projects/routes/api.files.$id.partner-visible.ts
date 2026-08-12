@@ -34,6 +34,9 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!file || file.archivedAt !== null) {
     return withCors(request, Response.json({ error: "File not found" }, { status: 404 }));
   }
+  if (!file.projectId) {
+    return withCors(request, Response.json({ error: "Lab files have no partner visibility" }, { status: 400 }));
+  }
   const gate = await requireProjectEditAccess(request, file.projectId);
   if (!gate.ok) return gate.response;
 
