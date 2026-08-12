@@ -452,7 +452,7 @@ export default function StaffingPage() {
 
   const page = (
     <div className="flex flex-col gap-4">
-      <AreaPillNav items={projectsPills({ canViewStaffing: true, active: "board" })} />
+      <AreaPillNav items={projectsPills({ canViewStaffing: true, active: "staffing" })} />
       <header className="flex items-start justify-between gap-3">
         <div>
           <h1 className="font-heading text-2xl font-bold text-foreground">Staffing</h1>
