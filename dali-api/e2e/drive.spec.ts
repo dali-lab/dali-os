@@ -12,7 +12,8 @@ import { enableDriveFlagForUser, clearDriveFlag } from './helpers';
 //     The Lab menu also carries drive-new-form (Core), drive-new-agreement
 //     (Core), drive-new-template, drive-new-upload. Create opens a naming
 //     prompt (dialog) before the item is made.
-//   - Scope sections: drive-scope-<id> — "mine" (My Drive) + "lab" + projects.
+//   - Scope sections: drive-scope-<id> — "mine" (My Drive) + "lab" + "core"
+//     (Core drive, Core members only, auto-provisioned) + projects.
 //   - Trees inside: data-testid="drive-tree"
 //   - Item rows in tree: drive-item-<type>-<id>   (doc / file / form / folder)
 //   - Folder rows:       drive-folder-<id>
@@ -418,6 +419,36 @@ test.describe('Drive hub (drive-consolidation flag)', () => {
 
     // Tree revalidates and the row shows the new title.
     await expect(page.getByTestId(`drive-item-doc-${docId}`).getByText(newTitle)).toBeVisible();
+  });
+
+  // ── Test J: Core drive is auto-provisioned for Core members ──────────────────
+  //
+  // admin@dali.dartmouth.edu is Core, so the Core drive (drive-scope-core) is
+  // ensured on first visit and creating a doc in it lands a Core-scoped page.
+  // (Non-Core exclusion + the no-leak cascade are covered by the pageAccess unit
+  // tests; the seed provisions the core GroupDefinition via syncDefaultGroups.)
+
+  test('(J) Core drive auto-provisions for a Core member and accepts a new doc', async ({ page }) => {
+    const stamp = Date.now();
+    await page.goto('/drive?embed=1');
+    await page.waitForLoadState('networkidle');
+
+    // The Core drive section renders for the Core admin.
+    await expect(page.getByTestId('drive-scope-core')).toBeVisible();
+
+    // Create a document into the Core drive via its own New menu.
+    await page.getByTestId('drive-new-menu-core').click();
+    await page.getByTestId('drive-new-doc-core').click();
+
+    const input = page.locator('[role="dialog"] input[type="text"]');
+    await expect(input).toBeVisible();
+    await input.fill(`Core doc ${stamp}`);
+
+    await Promise.all([
+      page.waitForURL(/\/documents\//, { timeout: 10_000 }),
+      page.getByRole('button', { name: 'Create' }).click(),
+    ]);
+    expect(page.url()).toMatch(/\/documents\//);
   });
 });
 

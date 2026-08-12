@@ -9,6 +9,7 @@ import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import type { Prisma } from "~/generated/prisma/client";
 import { pageDepth, MAX_PAGE_DEPTH, isAncestorOf } from "~/lib/pages";
+import { isUnderGoverningScope } from "~/lib/pageAccess.server";
 
 // POST /api/pages/:id/move — move and/or reorder a document.
 //   { parentPageId, beforeId? }                  → reorder within its workspace
@@ -180,16 +181,25 @@ export async function action({ request, params }: Route.ActionArgs) {
   else order.push(pageId);
 
   const leavesProject = page.workspaceType === "Project" && dest.type !== "Project";
+  // Does the destination sit inside a scoped drive (e.g. Core)? Then the page —
+  // and any descendants coming with it — must go Restricted so the scope, not
+  // the lab-wide link grant, governs access (otherwise "Everyone in the lab"
+  // would keep it visible inside a Core folder).
+  const destScoped = await isUnderGoverningScope(parentPageId);
   // General access is workspace-specific, so reset it on every cross-workspace
   // move: a doc landing on the Lab shelf becomes lab-wide editable (the shelf's
-  // default), and one leaving the shelf drops back to its workspace's own rules
-  // — otherwise "Everyone in the lab" edit would follow it into a project doc.
+  // default), and one leaving the shelf drops back to its workspace's own rules.
+  // A scoped destination overrides that to Restricted.
   const destGeneralAccess: Prisma.PageUncheckedUpdateInput =
-    dest.type === "Lab"
-      ? { linkAccess: "LabMembers", linkPermission: "Edit" }
-      : { linkAccess: "Restricted", linkPermission: "View" };
+    destScoped || dest.type !== "Lab"
+      ? { linkAccess: "Restricted", linkPermission: "View" }
+      : { linkAccess: "LabMembers", linkPermission: "Edit" };
   const crossData: Prisma.PageUncheckedUpdateInput = sameWorkspace
-    ? {}
+    ? // Same-workspace: only touch general access when moving INTO a scope (fail
+      // safe — leave the user's setting alone otherwise).
+      destScoped
+      ? { linkAccess: "Restricted", linkPermission: "View" }
+      : {}
     : {
         workspaceType: dest.type,
         workspaceId: dest.id,
@@ -206,9 +216,24 @@ export async function action({ request, params }: Route.ActionArgs) {
     ...destGeneralAccess,
   };
 
+  // Moving a folder INTO a scope: every descendant must go Restricted too, or a
+  // lab-visible child would keep leaking through the scoped folder. (Cross-
+  // workspace folder moves already carry direct children via childIds/childData;
+  // this covers the same-workspace-into-scope case and deep descendants.)
+  const descendantRestrictIds: string[] =
+    destScoped && page.kind === "Folder" ? await collectDescendantIds(pageId) : [];
+
   await prisma.$transaction([
     prisma.page.update({ where: { id: pageId }, data: { parentPageId, ...crossData } }),
     ...childIds.map((id) => prisma.page.update({ where: { id }, data: childData })),
+    ...descendantRestrictIds
+      .filter((id) => !childIds.includes(id))
+      .map((id) =>
+        prisma.page.update({
+          where: { id },
+          data: { linkAccess: "Restricted", linkPermission: "View" },
+        }),
+      ),
     ...order.map((id, index) => prisma.page.update({ where: { id }, data: { position: index } })),
   ]);
 
@@ -228,4 +253,23 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   return withCors(request, Response.json({ ok: true }));
+}
+
+// Every descendant page id of `rootId` (exclusive). Iterative BFS, bounded by
+// MAX_PAGE_DEPTH so cyclic/broken data can't loop. Used to push Restricted
+// general access down a folder subtree when it moves into a scoped drive.
+async function collectDescendantIds(rootId: string): Promise<string[]> {
+  const out: string[] = [];
+  let frontier = [rootId];
+  for (let depth = 0; depth < MAX_PAGE_DEPTH && frontier.length > 0; depth++) {
+    const children = await prisma.page.findMany({
+      where: { parentPageId: { in: frontier }, archivedAt: null },
+      select: { id: true },
+    });
+    const ids = children.map((c) => c.id).filter((id) => !out.includes(id) && id !== rootId);
+    if (ids.length === 0) break;
+    out.push(...ids);
+    frontier = ids;
+  }
+  return out;
 }
