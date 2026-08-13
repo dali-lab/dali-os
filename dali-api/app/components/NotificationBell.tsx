@@ -17,6 +17,10 @@ export type OpenTask = {
   title: string;
   link: string | null;
   source?: "meeting" | "reminder" | "announcement" | "general";
+  // Self-clearing task (form to submit, onboarding) — opening its link must
+  // not mark it read. Optional so a stale payload falls back to the old
+  // behavior; the server refuses the read either way.
+  hasAction?: boolean;
 };
 
 type Polled = {

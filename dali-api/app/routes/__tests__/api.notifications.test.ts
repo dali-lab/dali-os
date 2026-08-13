@@ -4,7 +4,12 @@ vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
 }));
 vi.mock("~/lib/db");
-vi.mock("~/lib/tasks", () => ({
+vi.mock("~/lib/tasks", async (importOriginal) => ({
+  // SELF_CLEARING_FORM_TODO stays real — the mark-all-read test asserts the
+  // exact predicate the endpoint excludes.
+  SELF_CLEARING_FORM_TODO: (
+    await importOriginal<typeof import("~/lib/tasks")>()
+  ).SELF_CLEARING_FORM_TODO,
   listOpenTasks: vi.fn(),
   listNotificationHistory: vi.fn(),
 }));
@@ -16,9 +21,14 @@ vi.mock("~/lib/notifications", async (importOriginal) => ({
 }));
 
 import { requireAuth } from "~/lib/auth";
-import { listOpenTasks, listNotificationHistory } from "~/lib/tasks";
+import { prisma } from "~/lib/db";
+import {
+  listOpenTasks,
+  listNotificationHistory,
+  SELF_CLEARING_FORM_TODO,
+} from "~/lib/tasks";
 import { listMyNotifications } from "~/lib/notifications";
-import { loader } from "~/routes/api.notifications";
+import { loader, action } from "~/routes/api.notifications";
 
 const USER_ID = "user-1";
 
@@ -101,5 +111,30 @@ describe("GET /api/notifications", () => {
       USER_ID,
       expect.objectContaining({ cursor: null }),
     );
+  });
+});
+
+describe("POST /api/notifications (mark all read)", () => {
+  it("leaves self-clearing rows — invites, onboarding, form todos — unread", async () => {
+    const updateMany = vi.fn().mockResolvedValue({ count: 3 });
+    (prisma as any).notification = { updateMany };
+    const res = await action({
+      request: new Request("http://localhost/api/notifications", {
+        method: "POST",
+      }),
+    } as any);
+    expect(res.status).toBe(200);
+    expect(updateMany).toHaveBeenCalledWith({
+      where: {
+        recipientUserId: USER_ID,
+        readAt: null,
+        NOT: [
+          { kind: "MeetingInvite", scheduledMeetingId: { not: null } },
+          { eventType: expect.any(String) },
+          SELF_CLEARING_FORM_TODO,
+        ],
+      },
+      data: { readAt: expect.any(Date) },
+    });
   });
 });

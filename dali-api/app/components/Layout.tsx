@@ -600,13 +600,19 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
                           onClick={() => {
                             // Tasks are notification rows — POST /read clears
                             // the tile + drops the count once the user acts.
-                            fetch(`/api/notifications/${t.id}/read`, {
-                              method: 'POST',
-                              credentials: 'include',
-                              keepalive: true,
-                            }).then(() =>
-                              window.dispatchEvent(new Event(TASKS_CHANGED_EVENT)),
-                            )
+                            // Self-clearing tasks (a form to submit, the
+                            // onboarding checklist) are the exception: opening
+                            // the link isn't acting on them, so they clear only
+                            // when their own action completes.
+                            if (!t.hasAction) {
+                              fetch(`/api/notifications/${t.id}/read`, {
+                                method: 'POST',
+                                credentials: 'include',
+                                keepalive: true,
+                              }).then(() =>
+                                window.dispatchEvent(new Event(TASKS_CHANGED_EVENT)),
+                              )
+                            }
                             openInWorkspace({ url: t.link!, label: t.title })
                           }}
                           className={`${cls} text-white/55 hover:text-white hover:bg-white/5`}

@@ -100,6 +100,36 @@ export function resolveNotificationState(
   return "Open";
 }
 
+// A form-backed todo is self-clearing: submitting the form marks it read
+// (closeFormTodos / closeEducationFormTodos), exactly like a meeting invite
+// clears only on RSVP. Opening its link — from the sidebar tile, a desktop
+// banner, or "mark all read" — must NOT clear it, or an unfilled form silently
+// leaves Tasks and shows up in History as "Submitted".
+//
+// The shape mirrors the `formLink` rule in listOpenTasks: only a published form
+// with a public token has a fill page, so a notification whose form can't be
+// filled stays plainly dismissible rather than stranded. `SystemAnnouncement`
+// matches what the closers actually reopen — anything else would never clear.
+export const SELF_CLEARING_FORM_TODO = {
+  kind: "SystemAnnouncement",
+  isTodo: true,
+  form: { is: { published: true, publicToken: { not: null } } },
+} satisfies Prisma.NotificationWhereInput;
+
+/** Row-level twin of SELF_CLEARING_FORM_TODO, for single-notification checks. */
+export function isSelfClearingFormTodo(n: {
+  kind: string;
+  isTodo: boolean;
+  form: { published: boolean; publicToken: string | null } | null;
+}): boolean {
+  return (
+    n.kind === "SystemAnnouncement" &&
+    n.isTodo &&
+    !!n.form?.published &&
+    !!n.form.publicToken
+  );
+}
+
 const TASK_WHERE = (
   userId: string,
   now = new Date(),
