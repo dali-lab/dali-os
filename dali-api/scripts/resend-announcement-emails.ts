@@ -16,20 +16,22 @@
  * sendEmail honors DALI_APP_ENV: dev skips, staging redirects to systems@, prod
  * sends for real — so set DALI_APP_ENV=prod to actually deliver.
  *
- * Usage:
+ * Usage (needs only DATABASE_URL for dry-run/preview; Gmail creds only for --commit):
+ *   tsx scripts/resend-announcement-emails.ts --since=2026-08-12T00:00:00Z            # dry run (list)
+ *   tsx scripts/resend-announcement-emails.ts --since=2026-08-12T00:00:00Z --preview  # render exact emails to /tmp/notif-preview/
  *   DALI_APP_ENV=prod tsx --env-file .env scripts/resend-announcement-emails.ts \
- *     --since=2026-08-12T21:00:00Z --until=2026-08-12T21:30:00Z            # dry run
- *   DALI_APP_ENV=prod tsx --env-file .env scripts/resend-announcement-emails.ts \
- *     --since=2026-08-12T21:00:00Z --until=2026-08-12T21:30:00Z --commit   # send
+ *     --since=2026-08-12T00:00:00Z --commit                                           # send
  */
 import { prisma } from "../app/lib/db";
 import { sendEmail } from "../app/lib/gmail";
 import { getSender, noteSenderHealth } from "../app/lib/gmail-integration";
 import { renderNotificationEmail } from "../app/lib/notify.server";
-import { getAppEnv, getFrontendUrl } from "../app/lib/app-env";
+import { getAppEnv, getFrontendUrl, APPLICATIONS_FROM_NAME } from "../app/lib/app-env";
 import { notificationRecipientEmails } from "../app/lib/email";
+import { writeFileSync, mkdirSync } from "node:fs";
 
 const COMMIT = process.argv.includes("--commit");
+const PREVIEW = process.argv.includes("--preview");
 const arg = (name: string) =>
   process.argv.find((a) => a.startsWith(`--${name}=`))?.split("=").slice(1).join("=");
 
@@ -90,6 +92,48 @@ async function main() {
     const u = userById.get(r.recipientUserId);
     const to = u ? recipientEmail(u) : null;
     console.log(`  ${r.createdAt.toISOString()}  ${to ?? "<no email>"}  «${r.title}»`);
+  }
+
+  if (PREVIEW) {
+    // Render the exact email body for each row and write to files. No Gmail
+    // call — this is byte-identical to what sendEmail() would put in the
+    // message body (prod has no staging banner). From/To/Subject are shown so
+    // you can confirm the envelope too.
+    const sender = await getSender("General");
+    const fromHeader = sender ? `${APPLICATIONS_FROM_NAME} <${sender.sendAsEmail}>` : "(no sender resolved)";
+    const dir = "/tmp/notif-preview";
+    mkdirSync(dir, { recursive: true });
+    let n = 0;
+    for (const r of rows) {
+      const u = userById.get(r.recipientUserId);
+      if (!u) continue;
+      const to = recipientEmail(u);
+      const body = renderNotificationEmail({
+        firstName: u.firstName,
+        title: r.title,
+        body: r.body,
+        link: absoluteLink(r.link),
+      });
+      // charset meta mirrors the email's `Content-Type: text/html; charset=utf-8`
+      // so accents render the same in the browser; the <body> below IS the sent body.
+      const file = `${dir}/${String(++n).padStart(3, "0")}-${u.firstName}.html`;
+      writeFileSync(
+        file,
+        `<!doctype html><meta charset="utf-8"><body style="font-family:sans-serif;max-width:600px;margin:24px auto;padding:0 16px;">${body}</body>`,
+      );
+      if (n <= 3 || n === rows.length) {
+        console.log(`\n──────── email ${n}/${rows.length} ────────`);
+        console.log(`From:    ${fromHeader}`);
+        console.log(`To:      ${to}`);
+        console.log(`Subject: ${r.title}`);
+        console.log(`File:    ${file}`);
+      } else if (n === 4) {
+        console.log(`\n… rendering ${rows.length - 3} more to ${dir}/ …`);
+      }
+    }
+    console.log(`\nWrote ${n} preview file(s) to ${dir}/. Bodies are identical except firstName + To.`);
+    console.log("No email sent. Re-run with --commit (and --env-file for Gmail creds) to send.");
+    return;
   }
 
   if (!COMMIT) {
