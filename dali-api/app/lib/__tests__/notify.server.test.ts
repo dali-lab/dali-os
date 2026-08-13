@@ -3,7 +3,8 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db");
 vi.mock("~/lib/gmail", () => ({ sendEmail: vi.fn() }));
 vi.mock("~/lib/gmail-integration", () => ({
-  getSenderRefreshToken: vi.fn(),
+  getSender: vi.fn(),
+  noteSenderHealth: vi.fn(),
 }));
 vi.mock("~/slack/lib/slack-client", () => ({
   slackConfigured: vi.fn(),
@@ -16,7 +17,7 @@ vi.mock("~/lib/app-env", () => ({
 
 import { prisma } from "~/lib/db";
 import { sendEmail } from "~/lib/gmail";
-import { getSenderRefreshToken } from "~/lib/gmail-integration";
+import { getSender } from "~/lib/gmail-integration";
 import { slackConfigured, sendDm } from "~/slack/lib/slack-client";
 import { getAppEnv } from "~/lib/app-env";
 import { notify } from "~/lib/notify.server";
@@ -26,7 +27,7 @@ const mockPrisma = prisma as unknown as Record<
   Record<string, ReturnType<typeof vi.fn>>
 >;
 const mockSendEmail = sendEmail as unknown as ReturnType<typeof vi.fn>;
-const mockToken = getSenderRefreshToken as unknown as ReturnType<typeof vi.fn>;
+const mockGetSender = getSender as unknown as ReturnType<typeof vi.fn>;
 const mockSlackConfigured = slackConfigured as unknown as ReturnType<typeof vi.fn>;
 const mockSendDm = sendDm as unknown as ReturnType<typeof vi.fn>;
 const mockGetAppEnv = getAppEnv as unknown as ReturnType<typeof vi.fn>;
@@ -57,7 +58,11 @@ beforeEach(() => {
       ),
   );
   mockPrisma.notification.updateMany.mockResolvedValue({ count: 0 });
-  mockToken.mockResolvedValue("token-1");
+  mockGetSender.mockResolvedValue({
+    id: "g-1",
+    refreshToken: "token-1",
+    sendAsEmail: "dalios@dali.dartmouth.edu",
+  });
   mockSendEmail.mockResolvedValue({});
   mockSlackConfigured.mockReturnValue(true);
   mockSendDm.mockResolvedValue({ ts: "1" });
@@ -96,7 +101,13 @@ describe("notify", () => {
     });
     expect(res.emailed).toBe(1);
     expect(mockSendEmail).toHaveBeenCalledWith(
-      expect.objectContaining({ to: "u1@dali.dartmouth.edu", subject: "Announcement" }),
+      expect.objectContaining({
+        to: "u1@dali.dartmouth.edu",
+        subject: "Announcement",
+        // From must match the resolved sender's mailbox, not the hardcoded
+        // applications@ address — that mismatch is what broke General email.
+        from: "dalios@dali.dartmouth.edu",
+      }),
     );
     // Every instant email carries its own off-switch path.
     expect(mockSendEmail.mock.calls[0][0].html).toContain(

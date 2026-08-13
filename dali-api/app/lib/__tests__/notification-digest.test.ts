@@ -3,7 +3,8 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db");
 vi.mock("~/lib/gmail", () => ({ sendEmail: vi.fn() }));
 vi.mock("~/lib/gmail-integration", () => ({
-  getSenderRefreshToken: vi.fn(),
+  getSender: vi.fn(),
+  noteSenderHealth: vi.fn(),
 }));
 vi.mock("~/lib/app-env", () => ({
   getFrontendUrl: vi.fn(() => "https://os.dali.dartmouth.edu"),
@@ -11,7 +12,7 @@ vi.mock("~/lib/app-env", () => ({
 
 import { prisma } from "~/lib/db";
 import { sendEmail } from "~/lib/gmail";
-import { getSenderRefreshToken } from "~/lib/gmail-integration";
+import { getSender } from "~/lib/gmail-integration";
 import {
   shouldRunDigest,
   runDigest,
@@ -23,7 +24,7 @@ const mockPrisma = prisma as unknown as Record<
   Record<string, ReturnType<typeof vi.fn>>
 >;
 const mockSendEmail = sendEmail as unknown as ReturnType<typeof vi.fn>;
-const mockToken = getSenderRefreshToken as unknown as ReturnType<typeof vi.fn>;
+const mockGetSender = getSender as unknown as ReturnType<typeof vi.fn>;
 
 // July 2026 is EDT (UTC-4): 9am ET = 13:00 UTC. 2026-07-15 is a Wednesday;
 // 2026-07-13 is a Monday.
@@ -98,7 +99,11 @@ describe("runDigest", () => {
         personalEmail: null,
       },
     ]);
-    mockToken.mockResolvedValue("token");
+    mockGetSender.mockResolvedValue({
+      id: "g-1",
+      refreshToken: "token",
+      sendAsEmail: "dalios@dali.dartmouth.edu",
+    });
     mockSendEmail.mockResolvedValue({});
   });
 

@@ -12,7 +12,7 @@
 
 import { prisma } from "~/lib/db";
 import { sendEmail } from "~/lib/gmail";
-import { getSenderRefreshToken } from "~/lib/gmail-integration";
+import { getSender, noteSenderHealth } from "~/lib/gmail-integration";
 import { getFrontendUrl } from "~/lib/app-env";
 import { getZonedParts, zonedWallTimeUtc, APPLICATION_TZ } from "~/lib/timezone";
 import { NOT_CANCELLED_MEETING } from "~/lib/notifications";
@@ -176,8 +176,8 @@ export async function runDigest(freq: DigestFrequency, now: Date): Promise<JobRe
   const matched = rows.filter((r) => wantedByUser.get(r.recipientUserId)?.has(r.eventType));
   if (matched.length === 0) return { items: 0, note: "nothing unread" };
 
-  const refreshToken = await getSenderRefreshToken("General");
-  if (!refreshToken) return { items: 0, note: "gmail not configured" };
+  const sender = await getSender("General");
+  if (!sender) return { items: 0, note: "gmail not configured" };
 
   const users = await prisma.user.findMany({
     where: { id: { in: [...new Set(matched.map((r) => r.recipientUserId))] } },
@@ -192,6 +192,7 @@ export async function runDigest(freq: DigestFrequency, now: Date): Promise<JobRe
   const userById = new Map(users.map((u) => [u.id, u]));
 
   let sent = 0;
+  let lastError: string | null = null;
   for (const [userId, wanted] of wantedByUser) {
     const user = userById.get(userId);
     if (!user) continue;
@@ -208,7 +209,7 @@ export async function runDigest(freq: DigestFrequency, now: Date): Promise<JobRe
         now,
         rows: userRows,
       });
-      await sendEmail({ refreshToken, to, subject, html });
+      await sendEmail({ refreshToken: sender.refreshToken, from: sender.sendAsEmail, to, subject, html });
       await prisma.notification.updateMany({
         where: { id: { in: userRows.map((r) => r.id) } },
         data: { emailedAt: now },
@@ -216,10 +217,12 @@ export async function runDigest(freq: DigestFrequency, now: Date): Promise<JobRe
       sent += 1;
     } catch (err) {
       // Rows stay emailedAt-null and fall into the next run's window.
+      lastError = err instanceof Error ? err.message : String(err);
       console.error(`[jobs] digest email to ${userId} failed:`, err);
     }
   }
 
+  await noteSenderHealth(sender.id, sent === 0 ? lastError : null);
   return { items: sent };
 }
 

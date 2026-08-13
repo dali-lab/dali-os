@@ -1,7 +1,7 @@
 import { prisma } from "~/lib/db";
 import { notify, renderNotificationEmail } from "~/lib/notify.server";
 import { sendEmail } from "~/lib/gmail";
-import { getSenderRefreshToken } from "~/lib/gmail-integration";
+import { getSender } from "~/lib/gmail-integration";
 import { getAppEnv, getFrontendUrl } from "~/lib/app-env";
 import { slackConfigured, sendDm } from "~/slack/lib/slack-client";
 
@@ -212,8 +212,8 @@ export async function sendOnboardingReminders(args: {
     },
   });
 
-  const refreshToken = await getSenderRefreshToken("General").catch(() => null);
-  if (!refreshToken) {
+  const sender = await getSender("General").catch(() => null);
+  if (!sender) {
     throw new Error("Email sender is not configured");
   }
 
@@ -226,7 +226,8 @@ export async function sendOnboardingReminders(args: {
       continue;
     }
     await sendEmail({
-      refreshToken,
+      refreshToken: sender.refreshToken,
+      from: sender.sendAsEmail,
       to,
       subject: copy.title,
       html: renderNotificationEmail({

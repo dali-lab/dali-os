@@ -2,7 +2,7 @@ import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
 import { renderEmail } from "~/lib/email";
 import { sendEmail } from "~/lib/gmail";
-import { getSenderRefreshToken } from "~/lib/gmail-integration";
+import { getSender } from "~/lib/gmail-integration";
 import {
   resolveCandidateEmail,
   redirectBannerHtml,
@@ -189,12 +189,13 @@ export async function notifyNewAssignment(args: {
   for (const { applicant } of portalStudents) {
     const link = `${educationLink(applicant, offering.id)}/assignments/${args.assignmentId}`;
     try {
-      const refreshToken = await getSenderRefreshToken("Education");
-      if (!refreshToken) continue;
+      const sender = await getSender("Education");
+      if (!sender) continue;
       const { to, redirectedFrom } = resolveCandidateEmail(recipientEmail(applicant));
       if (!to) continue;
       await sendEmail({
-        refreshToken,
+        refreshToken: sender.refreshToken,
+        from: sender.sendAsEmail,
         to,
         subject: title,
         html:
@@ -241,12 +242,13 @@ export async function notifyGraded(args: {
         recipients: [{ userId: student.id, link }],
       });
     } else {
-      const refreshToken = await getSenderRefreshToken("Education");
-      if (!refreshToken) return;
+      const sender = await getSender("Education");
+      if (!sender) return;
       const { to, redirectedFrom } = resolveCandidateEmail(recipientEmail(student));
       if (!to) return;
       await sendEmail({
-        refreshToken,
+        refreshToken: sender.refreshToken,
+        from: sender.sendAsEmail,
         to,
         subject: title,
         html:
@@ -329,12 +331,13 @@ export async function notifySessionReminder(args: {
   for (const { applicant } of portalStudents) {
     const link = `${educationLink(applicant, args.offeringId)}/hub`;
     try {
-      const refreshToken = await getSenderRefreshToken("Education");
-      if (!refreshToken) continue;
+      const sender = await getSender("Education");
+      if (!sender) continue;
       const { to, redirectedFrom } = resolveCandidateEmail(recipientEmail(applicant));
       if (!to) continue;
       await sendEmail({
-        refreshToken,
+        refreshToken: sender.refreshToken,
+        from: sender.sendAsEmail,
         to,
         subject: title,
         html:
@@ -364,8 +367,8 @@ async function sendDecisionEmail(args: {
   fallback: { subject: string; body: string };
 }): Promise<void> {
   try {
-    const refreshToken = await getSenderRefreshToken("Education");
-    if (!refreshToken) return;
+    const sender = await getSender("Education");
+    if (!sender) return;
 
     const intended = recipientEmail(args.applicant);
     const { to, redirectedFrom } = resolveCandidateEmail(intended);
@@ -390,7 +393,8 @@ async function sendDecisionEmail(args: {
     );
 
     await sendEmail({
-      refreshToken,
+      refreshToken: sender.refreshToken,
+      from: sender.sendAsEmail,
       to,
       subject,
       html: redirectBannerHtml(redirectedFrom) + html,

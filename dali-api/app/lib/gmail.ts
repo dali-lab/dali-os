@@ -1,5 +1,8 @@
-// Gmail sending via OAuth refresh token stored on the applications@ user row.
-// All outbound email comes from applications@dali.dartmouth.edu.
+// Gmail sending via a purpose-keyed OAuth refresh token. The token authenticates
+// as one Gmail account (the purpose's send-as identity), so every request targets
+// the `me` mailbox and stamps `From:` with that identity — a token for account A
+// sending against account B's mailbox is rejected by Gmail. Callers that don't
+// pass `from` default to the applications@ identity (the historical sender).
 
 import { getAppEnv, APPLICATIONS_FROM_EMAIL as GMAIL_USER, APPLICATIONS_FROM_NAME } from './app-env'
 import { refreshGoogleToken } from '~/lib/google-oauth'
@@ -59,9 +62,9 @@ function htmlToPlainText(html: string): string {
   return text.replace(/\n{3,}/g, '\n\n').trim()
 }
 
-function makeRawEmail(to: string, subject: string, htmlBody: string, ics?: string): string {
+function makeRawEmail(to: string, subject: string, htmlBody: string, from: string, ics?: string): string {
   const headers = [
-    `From: ${APPLICATIONS_FROM_NAME} <${GMAIL_USER}>`,
+    `From: ${APPLICATIONS_FROM_NAME} <${sanitizeHeader(from)}>`,
     `To: ${sanitizeHeader(to)}`,
     `Subject: ${sanitizeHeader(subject)}`,
     'MIME-Version: 1.0',
@@ -177,12 +180,17 @@ export async function sendEmail({
   subject,
   html,
   ics,
+  from = GMAIL_USER,
 }: {
   refreshToken: string
   to: string
   subject: string
   html: string
   ics?: string
+  // Send-as identity for the From: header. Must match the account the
+  // refreshToken authenticates as, or Gmail rejects the send. Defaults to the
+  // applications@ identity for callers that pass its token.
+  from?: string
 }) {
   const env = getAppEnv()
 
@@ -206,10 +214,13 @@ export async function sendEmail({
   }
 
   const accessToken = await getAccessToken(refreshToken)
-  const raw = makeRawEmail(actualTo, actualSubject, actualHtml, actualIcs)
+  const raw = makeRawEmail(actualTo, actualSubject, actualHtml, from, actualIcs)
 
+  // `me` = the account the token authenticates as. Using the sender's own
+  // mailbox (not a hardcoded address) is what lets non-applications@ senders
+  // — General, Education, Partners — actually send.
   const res = await fetch(
-    `https://gmail.googleapis.com/gmail/v1/users/${GMAIL_USER}/messages/send`,
+    `https://gmail.googleapis.com/gmail/v1/users/me/messages/send`,
     {
       method: 'POST',
       headers: {
