@@ -58,10 +58,14 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Drives the sidebar footer avatar. The loader runs on every shell
   // load/revalidation, so this stays in sync after a profile edit. Also tells
   // the launch tour whether to offer the "connect your calendar" step.
-  const [partnerRedirect, roles, activeCycle, sidebarPages, me] = await Promise.all([
+  const [partnerRedirect, roles, activeCycle, activeInternCycle, sidebarPages, me] = await Promise.all([
     timed(request, 'partnerCheck', () => redirectPartnerToPortal(auth)),
     timed(request, 'roles', () => getUserRoles(auth.user.sub)),
     timed(request, 'activeCycle', () => getActiveCycle()),
+    // getActiveCycle() only looks at Standard cycles, so an intern on a live
+    // conversion cycle would otherwise read as "on no active cycle" and lose
+    // the Hiring tab under nav-regroup.
+    timed(request, 'activeInternCycle', () => getActiveCycle('InternToFull')),
     // Powers the sidebar Favorites + Recent lists (same source as the Home
     // panel). Access re-checked per read, so a restricted/moved page drops out.
     // `request` shares one read with the Home panel on the same navigation.
@@ -110,7 +114,15 @@ export async function loader({ request }: Route.LoaderArgs) {
   let hasHiringAccess =
     core || admin || domainLead || (isLabMember && isInterviewerAnyCycle)
 
-  const [activeInterviewer, anyCycleReviewer, labMentor, photoUrl, flags] = await Promise.all([
+  // The nav-regroup gate is the same authority list, but the member half is
+  // scoped to cycles that are live RIGHT NOW (either type) rather than any
+  // cycle ever — so a member's Hiring tab appears when their cycle opens and
+  // goes away when it closes, instead of sticking around forever.
+  const liveCycleIds = [activeCycle?.id, activeInternCycle?.id].filter(
+    (id): id is string => typeof id === 'string',
+  )
+
+  const [activeInterviewer, anyCycleReviewer, liveCycleRole, labMentor, photoUrl, flags] = await Promise.all([
     timed(request, 'hiringGate', () =>
       isLabMember && activeCycle
         ? prisma.cycleInterviewer.findFirst({
@@ -120,6 +132,19 @@ export async function loader({ request }: Route.LoaderArgs) {
     !hasHiringAccess && isLabMember
       ? prisma.cycleReviewer.findFirst({ where: { userId: auth.user.sub }, select: { id: true } })
       : null,
+    timed(request, 'liveCycleGate', () =>
+      isLabMember && !core && !admin && !domainLead && liveCycleIds.length > 0
+        ? Promise.all([
+            prisma.cycleReviewer.findFirst({
+              where: { userId: auth.user.sub, applicationCycleId: { in: liveCycleIds } },
+              select: { id: true },
+            }),
+            prisma.cycleInterviewer.findFirst({
+              where: { userId: auth.user.sub, applicationCycleId: { in: liveCycleIds } },
+              select: { id: true },
+            }),
+          ]).then(([reviewer, interviewer]) => reviewer !== null || interviewer !== null)
+        : Promise.resolve(false)),
     // Mentorship area gate: Core (with admin) + any active lab mentor. Hidden
     // from mentees and non-mentor members entirely.
     timed(request, 'mentorGate', () =>
@@ -131,6 +156,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const isInterviewer = !!activeInterviewer
   if (!hasHiringAccess && isLabMember) hasHiringAccess = anyCycleReviewer !== null
+  const hasActiveHiringAccess = core || admin || domainLead || liveCycleRole
   const isLabMentorFlag = isLabMember ? core || labMentor : false
   const hasCalendarLink = (me?.calendarLinks.length ?? 0) > 0
 
@@ -174,7 +200,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const __loaderTotal = performance.now() - __loaderStart
   if (__loaderTotal >= 400) console.log(`[perf-total] layout loader ${__loaderTotal.toFixed(0)}ms`)
 
-  return { user: auth.user, photoUrl, hasCalendarLink, shouldShowTour, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, favorites: sidebarPages.favorites, recents: sidebarPages.recents, flags, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone }
+  return { user: auth.user, photoUrl, hasCalendarLink, shouldShowTour, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, favorites: sidebarPages.favorites, recents: sidebarPages.recents, flags, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone }
 }
 
 // Layout data (roles, avatar, hiring access) changes rarely, but default
@@ -203,7 +229,7 @@ export function shouldRevalidate({ formAction, currentUrl, nextUrl, defaultShoul
 }
 
 export default function AppLayoutRoute() {
-  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, favorites, recents, flags, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone } = useLoaderData<typeof loader>()
+  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, favorites, recents, flags, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone } = useLoaderData<typeof loader>()
   const [searchParams] = useSearchParams()
   const location = useLocation()
   const navigationType = useNavigationType()
@@ -403,7 +429,7 @@ export default function AppLayoutRoute() {
   return (
     <FeatureFlagsProvider flags={flags}>
       {redesign ? (
-        <Layout user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} hasHiringAccess={hasHiringAccess} isInstructor={isInstructor} isLabMentor={isLabMentorFlag} favorites={favorites} recents={recents} focusMode={focus}>
+        <Layout user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} hasHiringAccess={hasHiringAccess} hasActiveHiringAccess={hasActiveHiringAccess} isInstructor={isInstructor} isLabMentor={isLabMentorFlag} favorites={favorites} recents={recents} focusMode={focus}>
           {tablessChild}
         </Layout>
       ) : (

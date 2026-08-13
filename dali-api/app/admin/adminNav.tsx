@@ -12,33 +12,37 @@ import {
   Shield,
   Sparkles,
   Users,
-  type LucideIcon,
 } from "lucide-react";
-import { Link } from "react-router";
-import type { Crumb } from "~/components/Breadcrumbs";
+import { ClusterHub } from "~/components/ClusterHub";
+import type { FeatureFlagMap } from "~/lib/feature-flags";
+import {
+  clusterTrail,
+  findCluster,
+  type NavCluster,
+  type NavSection,
+  type NavSubtab,
+} from "~/lib/cluster-nav";
 
-// The Admin area is a nested hub: /admin groups its tools into five clusters,
-// each cluster carries its own short pill row, and consolidated tools (Email,
+// The Admin area is a nested hub: /admin groups its tools into clusters, each
+// cluster carries its own short pill row, and consolidated tools (Email,
 // Payroll) expose their views through an in-page sub-tab strip. This module is
 // the single source of truth for that structure — the hub cards, the cluster
-// hubs, the pill rows, and the sub-tabs all derive from ADMIN_CLUSTERS.
+// hubs, the pill rows, and the sub-tabs all derive from ADMIN_CLUSTERS. The
+// cluster/section/trail types and the card grid itself are shared with Core
+// (app/lib/cluster-nav.ts, app/components/ClusterHub.tsx).
 //
 // Every cluster is uniformly Core-visible except Finance (Admin-only), so pill
 // rows never need per-item role filtering — only the hub hides the Finance
 // group from non-admins.
+//
+// Under the nav-regroup flag, People & Access and Communications leave Admin
+// for the Core area (they are lab *process*, not system administration) — see
+// adminClustersFor() and app/core/coreNav.tsx. They stay listed here so the
+// flag-off nav is unchanged.
 
-export type AdminSubtab = { key: string; label: string; to: string };
-
-export type AdminSection = {
-  key: string;
-  label: string;
-  to: string;
-  icon: LucideIcon;
-  description: string;
-  // Consolidated tools split one section into sibling views reached by an
-  // in-page sub-tab strip. `to` points at the first (default) sub-tab.
-  subtabs?: AdminSubtab[];
-};
+export type AdminSubtab = NavSubtab;
+export type AdminSection = NavSection;
+export type AdminCluster = NavCluster;
 
 export type AdminClusterKey =
   | "people"
@@ -47,17 +51,8 @@ export type AdminClusterKey =
   | "finance"
   | "system";
 
-export type AdminCluster = {
-  key: AdminClusterKey;
-  label: string;
-  description: string;
-  icon: LucideIcon;
-  // A cluster hub page exists only where it groups more than one section;
-  // single-section clusters link straight to their section from the hub.
-  hubPath: string | null;
-  adminOnly?: boolean;
-  sections: AdminSection[];
-};
+// The clusters that move to Core when nav-regroup is on.
+const CORE_OWNED_CLUSTERS: readonly AdminClusterKey[] = ["people", "communications"];
 
 export const ADMIN_CLUSTERS: AdminCluster[] = [
   {
@@ -204,59 +199,30 @@ export const ADMIN_CLUSTERS: AdminCluster[] = [
   },
 ];
 
-export function clusterByKey(key: string): AdminCluster | undefined {
-  return ADMIN_CLUSTERS.find((c) => c.key === key);
+/**
+ * The clusters Admin owns for one viewer. With nav-regroup on, the lab-process
+ * clusters have moved to Core and Admin is strictly system-level; with it off,
+ * Admin keeps everything it has today.
+ */
+export function adminClustersFor(
+  flags: Partial<FeatureFlagMap> = {},
+): AdminCluster[] {
+  if (!flags["nav-regroup"]) return ADMIN_CLUSTERS;
+  return ADMIN_CLUSTERS.filter((c) => !CORE_OWNED_CLUSTERS.includes(c.key as AdminClusterKey));
 }
 
-// Admin's breadcrumb trail: Admin › Cluster ▾ › Section ▾ › [View ▾]. The
-// cluster/section/view crumbs carry `siblings` so the shared Breadcrumbs renders
-// them as dropdown switchers. Fed to the shared Breadcrumbs via each admin
-// route's `handle.breadcrumbTrail` (see adminHandle). `active` is a section,
-// sub-tab, or cluster key.
-export function adminTrail(active: string, isAdmin: boolean): Crumb[] {
-  const direct = clusterByKey(active);
-  const found = direct ? null : resolve(active);
-  const cluster = direct ?? found?.cluster;
-  // /admin hub (or an unknown key): a lone "Admin" crumb — Breadcrumbs hides a
-  // single-crumb trail, which is what we want on the hub itself.
-  if (!cluster) return [{ label: "Admin", to: "/admin" }];
+export function clusterByKey(key: string): AdminCluster | undefined {
+  return findCluster(ADMIN_CLUSTERS, key);
+}
 
-  const section = found?.section ?? null;
-  const subtab = section?.subtabs?.find((s) => s.key === active) ?? null;
-
-  const crumbs: Crumb[] = [
-    { label: "Admin", to: "/admin" },
-    {
-      label: cluster.label,
-      // Cluster switcher is access-filtered (Finance is Admin-only).
-      siblings: ADMIN_CLUSTERS.filter((c) => isAdmin || !c.adminOnly).map((c) => ({
-        label: c.label,
-        to: c.hubPath ?? c.sections[0]!.to,
-        current: c.key === cluster.key,
-      })),
-    },
-  ];
-  if (section) {
-    crumbs.push({
-      label: section.label,
-      siblings: cluster.sections.map((s) => ({
-        label: s.label,
-        to: s.to,
-        current: s.key === section.key,
-      })),
-    });
-  }
-  if (subtab && section?.subtabs) {
-    crumbs.push({
-      label: subtab.label,
-      siblings: section.subtabs.map((s) => ({
-        label: s.label,
-        to: s.to,
-        current: s.key === active,
-      })),
-    });
-  }
-  return crumbs;
+export function adminTrail(active: string, isAdmin: boolean) {
+  return clusterTrail({
+    rootLabel: "Admin",
+    rootPath: "/admin",
+    clusters: ADMIN_CLUSTERS,
+    active,
+    isAdmin,
+  });
 }
 
 // A route's `handle` opts into the admin trail: `export const handle =
@@ -276,48 +242,6 @@ export function adminHandle(active: string) {
   };
 }
 
-// Resolve an `active` key (a section key, a sub-tab key, or a cluster key) to
-// the cluster + section it belongs to.
-function resolve(active: string): { cluster: AdminCluster; section: AdminSection } | null {
-  for (const cluster of ADMIN_CLUSTERS) {
-    for (const section of cluster.sections) {
-      if (section.key === active || section.subtabs?.some((s) => s.key === active)) {
-        return { cluster, section };
-      }
-    }
-  }
-  return null;
-}
-
-// Shared cluster-hub body: a heading + a card per
-// section. Used by the /admin/people, /admin/communications, /admin/system
-// landing routes.
 export function AdminClusterHub({ clusterKey }: { clusterKey: AdminClusterKey }) {
-  const cluster = clusterByKey(clusterKey);
-  if (!cluster) return null;
-  return (
-    <div className="flex flex-col gap-4">
-      <header>
-        <h1 className="font-heading text-2xl font-bold text-foreground">
-          {cluster.label}
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">{cluster.description}</p>
-      </header>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {cluster.sections.map((s) => (
-          <Link
-            key={s.key}
-            to={s.to}
-            className="bg-card border border-border shadow-brand-1 rounded-lg p-4 hover:border-accent-coral/60 hover:shadow-brand-2 transition-all"
-          >
-            <div className="flex items-center gap-2">
-              <s.icon className="h-4 w-4 text-accent-coral shrink-0" aria-hidden />
-              <h2 className="font-heading font-semibold text-foreground">{s.label}</h2>
-            </div>
-            <p className="text-sm text-muted-foreground mt-1">{s.description}</p>
-          </Link>
-        ))}
-      </div>
-    </div>
-  );
+  return <ClusterHub cluster={clusterByKey(clusterKey)} />;
 }

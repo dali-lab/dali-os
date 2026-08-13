@@ -89,6 +89,12 @@ export const FEATURE_FLAGS = [
     description:
       "Merge Documents + Forms (and files, agreements, templates) into one Google-Shared-Drives-style section organized by access scope. When on, the sidebar shows a single Drive area instead of separate Documents and Forms entries.",
   },
+  {
+    key: "nav-regroup",
+    label: "Role-grouped navigation",
+    description:
+      "Collapses the sidebar to Projects / Education / Core / Admin / Hiring, with Drive pinned under Calendar. Core process tooling (staffing, intent to work, bids, level up, access, attendance, communications) moves out of Projects and Admin into a Core area at /core/*, leaving Admin strictly system-level. Needs the new left navigation to take effect.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];

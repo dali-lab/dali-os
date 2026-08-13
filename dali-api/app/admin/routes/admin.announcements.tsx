@@ -27,6 +27,7 @@ import {
 import { SearchInput } from "~/components/ui/SearchInput";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
+import { regroupRedirect } from "~/core/lib/regroup-redirect.server";
 
 export const handle = adminHandle("announcements");
 
@@ -42,6 +43,13 @@ export const meta: Route.MetaFunction = () => [
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
+  const regrouped = await regroupRedirect(
+    request,
+    auth.user.sub,
+    "/admin/announcements",
+    "/core/communications/announcements",
+  );
+  if (regrouped) return regrouped;
   if (!(await isCore(auth.user.sub))) return redirect("/");
 
   // Recipient picker + the "Whole lab" count are the current-members audience:

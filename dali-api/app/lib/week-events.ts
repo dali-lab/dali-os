@@ -1,0 +1,129 @@
+import type { GeneralCalendarEvent } from "~/lib/general-calendar";
+import type {
+  WeekDayDTO,
+  WeekEvent,
+  WeekEventKind,
+} from "~/components/WeekCalendarPanel";
+import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
+
+/**
+ * The Sunday→Sunday window a week grid shows, in the viewer's timezone, plus
+ * its day-column headers. `?week=<n>` shifts it (0 = this week, -1 = last),
+ * bounded so a hand-edited URL can't ask an expander for an absurd range.
+ */
+export function resolveWeekWindow(
+  request: Request,
+  timeZone: string,
+  now = new Date(),
+): { weekOffset: number; weekStart: Date; weekEnd: Date; weekDays: WeekDayDTO[] } {
+  const raw = Number(new URL(request.url).searchParams.get("week"));
+  const weekOffset = Number.isFinite(raw)
+    ? Math.trunc(Math.min(52, Math.max(-52, raw)))
+    : 0;
+
+  const ymd = getZonedYMD(now, timeZone);
+  const todayMidnightUtc = new Date(Date.UTC(ymd.year, ymd.month - 1, ymd.day));
+  const dow = todayMidnightUtc.getUTCDay();
+  const sundayUtc = new Date(
+    todayMidnightUtc.getTime() + (weekOffset * 7 - dow) * 86_400_000,
+  );
+  const weekStart = zonedDayStartUtc(
+    sundayUtc.getUTCFullYear(),
+    sundayUtc.getUTCMonth() + 1,
+    sundayUtc.getUTCDate(),
+    timeZone,
+  );
+  const nextSundayUtc = new Date(sundayUtc.getTime() + 7 * 86_400_000);
+  const weekEnd = zonedDayStartUtc(
+    nextSundayUtc.getUTCFullYear(),
+    nextSundayUtc.getUTCMonth() + 1,
+    nextSundayUtc.getUTCDate(),
+    timeZone,
+  );
+
+  const weekDays: WeekDayDTO[] = Array.from({ length: 7 }).map((_, i) => {
+    const dy = getZonedYMD(new Date(weekStart.getTime() + i * 86_400_000), timeZone);
+    return {
+      num: dy.day,
+      isToday: dy.year === ymd.year && dy.month === ymd.month && dy.day === ymd.day,
+    };
+  });
+
+  return { weekOffset, weekStart, weekEnd, weekDays };
+}
+
+// Place a start/end span onto the shared week grid, or null when it falls
+// outside the seven columns. One owner for the column/offset arithmetic, which
+// both the Home week and the Core Hub week feed.
+export function toWeekEvent(
+  input: {
+    id: string;
+    kind: WeekEventKind;
+    label: string;
+    start: Date;
+    end: Date;
+    location?: string | null;
+    description?: string | null;
+    organizer?: string | null;
+    url?: string | null;
+    href?: string | null;
+  },
+  weekStart: Date,
+  timeZone: string,
+): WeekEvent | null {
+  const ymd = getZonedYMD(input.start, timeZone);
+  const dayMidnight = zonedDayStartUtc(ymd.year, ymd.month, ymd.day, timeZone);
+  const colIdx = Math.round(
+    (dayMidnight.getTime() - weekStart.getTime()) / 86_400_000,
+  );
+  if (colIdx < 0 || colIdx > 6) return null;
+  return {
+    id: input.id,
+    kind: input.kind,
+    colIdx,
+    startHour: (input.start.getTime() - dayMidnight.getTime()) / 3_600_000,
+    // Sub-30-minute events would render as an unreadable sliver.
+    duration: Math.max(0.5, (input.end.getTime() - input.start.getTime()) / 3_600_000),
+    label: input.label,
+    startAt: input.start.toISOString(),
+    endAt: input.end.toISOString(),
+    location: input.location ?? null,
+    description: input.description ?? null,
+    organizer: input.organizer ?? null,
+    url: input.url ?? null,
+    href: input.href ?? null,
+  };
+}
+
+/**
+ * The DALI General Calendar feed as week-grid events. All-day entries are
+ * dropped — they have no place on an hour grid — and the ICS feed carries no
+ * stable per-occurrence id, so one is derived from the start instant.
+ */
+export function generalCalendarWeekEvents(
+  events: readonly GeneralCalendarEvent[],
+  weekStart: Date,
+  timeZone: string,
+): WeekEvent[] {
+  const out: WeekEvent[] = [];
+  for (const ev of events) {
+    if (ev.allDay) continue;
+    const mapped = toWeekEvent(
+      {
+        id: `ics:${ev.start.toISOString()}:${ev.summary}`,
+        kind: "general",
+        label: ev.summary,
+        start: ev.start,
+        end: ev.end,
+        location: ev.location,
+        description: ev.description,
+        organizer: ev.organizer,
+        url: ev.url,
+      },
+      weekStart,
+      timeZone,
+    );
+    if (mapped) out.push(mapped);
+  }
+  return out;
+}

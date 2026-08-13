@@ -12,7 +12,6 @@ import {
   FolderKanban,
   UsersRound,
   GraduationCap,
-  Workflow,
 } from "lucide-react";
 import { Modal } from "./Modal";
 
@@ -201,23 +200,6 @@ function buildSteps(opts: { hasCalendarLink: boolean }): TourStep[] {
       ),
       matches: (p) => p.startsWith("/education"),
       findTarget: () => findByLabel("Education"),
-    },
-    {
-      icon: <Workflow className="w-4 h-4" />,
-      eyebrow: "Lab Processes",
-      cta: (
-        <>
-          Open <strong>Lab Processes</strong>.
-        </>
-      ),
-      arrived: (
-        <>
-          The term at a glance — week-by-week milestones for how the lab runs,
-          from kickoff to handoff.
-        </>
-      ),
-      matches: (p) => p.startsWith("/internal-processes"),
-      findTarget: () => findByLabel("Lab Processes"),
     },
     {
       icon: <UserCircle2 className="w-4 h-4" />,

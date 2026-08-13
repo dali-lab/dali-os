@@ -31,6 +31,7 @@ import { SlotStatusStrip } from "../components/SlotStatusStrip";
 import { projectsPills } from "../components/projectsPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import type { Question } from "~/types";
+import { regroupRedirect } from "~/core/lib/regroup-redirect.server";
 
 const SLOT = "project-bids" as const;
 
@@ -48,6 +49,13 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!auth.ok) return redirectToLogin(request);
   const portalRedirect = redirectApplicantToPortal(auth);
   if (portalRedirect) return portalRedirect;
+  const regrouped = await regroupRedirect(
+    request,
+    auth.user.sub,
+    "/projects/project-bids",
+    "/core/project-bids",
+  );
+  if (regrouped) return regrouped;
   if (!(await canViewStaffing(auth.user.sub))) return redirect("/");
 
   const {

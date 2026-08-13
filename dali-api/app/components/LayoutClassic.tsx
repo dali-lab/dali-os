@@ -14,7 +14,6 @@ import {
   Handshake,
   Heart,
   Home,
-  Workflow,
   ClipboardList,
   FileText,
   GraduationCap,
@@ -259,7 +258,6 @@ export function LayoutClassic({ user, photoUrl, isCore = false, isAdmin = false,
     { key: 'calendar', label: 'Calendar', to: '/calendar', icon: Calendar, show: true },
     { key: 'projects', label: 'Projects', to: '/projects', icon: FolderKanban, show: true },
     { key: 'members', label: 'People', to: '/members', icon: UsersRound, show: true },
-    { key: 'internal-processes', label: 'Lab Processes', to: '/internal-processes', icon: Workflow, show: true },
     // Hidden from mentees entirely; the routes are gated server-side by
     // canViewMentorship. Mentors only see own-domain notes; Core/Admin see all.
     { key: 'mentorship', label: 'Mentorship', to: '/mentorship', icon: Heart, show: isLabMentor || isCore },
@@ -727,7 +725,10 @@ export function LayoutClassic({ user, photoUrl, isCore = false, isAdmin = false,
         onClose={() => setPaletteOpen(false)}
         tabless={tabless}
         focusMode={focusMode}
-        roles={{ isCore, isAdmin, isDomainLead, isInterviewer, canViewForms, canViewStaffing, hasHiringAccess, isLabMentor, isInstructor }}
+        roles={{ isCore, isAdmin, isDomainLead, isInterviewer, canViewForms, canViewStaffing, hasHiringAccess,
+          // The classic sidebar predates the regrouped nav and never renders
+          // its areas, so the live-cycle gate has no separate value here.
+          hasActiveHiringAccess: hasHiringAccess, isLabMentor, isInstructor }}
         flags={{ "drive-consolidation": driveConsolidation }}
         onOpen={openFromPalette}
       />

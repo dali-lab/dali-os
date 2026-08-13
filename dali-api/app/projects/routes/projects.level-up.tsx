@@ -33,6 +33,7 @@ import { projectsPills } from "../components/projectsPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import type { Question } from "~/types";
 import { isLevel, type Level } from "~/lib/level";
+import { regroupRedirect } from "~/core/lib/regroup-redirect.server";
 
 const SLOT = "level-up" as const;
 
@@ -57,6 +58,13 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!auth.ok) return redirectToLogin(request);
   const portalRedirect = redirectApplicantToPortal(auth);
   if (portalRedirect) return portalRedirect;
+  const regrouped = await regroupRedirect(
+    request,
+    auth.user.sub,
+    "/projects/level-up",
+    "/core/level-up",
+  );
+  if (regrouped) return regrouped;
   if (!(await canViewStaffing(auth.user.sub))) return redirect("/");
 
   const {

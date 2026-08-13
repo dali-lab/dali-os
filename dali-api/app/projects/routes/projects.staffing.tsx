@@ -1,3 +1,4 @@
+import { regroupRedirect } from "~/core/lib/regroup-redirect.server";
 import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/projects.staffing";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
@@ -39,6 +40,13 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!auth.ok) return redirectToLogin(request);
   const portalRedirect = redirectApplicantToPortal(auth);
   if (portalRedirect) return portalRedirect;
+  const regrouped = await regroupRedirect(
+    request,
+    auth.user.sub,
+    "/projects/staffing",
+    "/core/staffing",
+  );
+  if (regrouped) return regrouped;
   // Viewing and managing the board are both Core/Admin (canViewStaffing and
   // canManageStaffing are the same membership set); the UI still hides drag
   // affordances when canManage is false (e.g. a future read-only tier).

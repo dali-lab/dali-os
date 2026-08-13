@@ -1,3 +1,4 @@
+import { regroupRedirect } from "~/core/lib/regroup-redirect.server";
 import { useMemo, useState } from "react";
 import {
   Link,
@@ -39,6 +40,13 @@ export const meta: Route.MetaFunction = () => [
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
+  const regrouped = await regroupRedirect(
+    request,
+    auth.user.sub,
+    "/admin/attendance",
+    "/core/attendance",
+  );
+  if (regrouped) return regrouped;
   if (!(await isCore(auth.user.sub))) return redirect("/");
 
   const { terms, selected, termId, isAll } = await resolveTermFilter(request);

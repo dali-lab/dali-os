@@ -48,6 +48,14 @@ import {
 } from "~/lib/timezone";
 import { RsvpButtons, notifyTasksChanged } from "~/components/RsvpButtons";
 import type { Route } from "./+types/home";
+import {
+  WeekCalendarPanel,
+  formatWeekRange,
+} from "~/components/WeekCalendarPanel";
+import {
+  generalCalendarWeekEvents,
+  resolveWeekWindow,
+} from "~/lib/week-events";
 
 type HomeNotification = {
   id: string;
@@ -78,17 +86,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (surface === "calendar") return redirect("/calendar");
   const redesign = surface === "search";
 
-  // Which week to show. ?week=<n> is an offset from the current one (0 = this
-  // week, -1 = last, 1 = next) so the panel can page without a client-side
-  // calendar: the loader already computes the window, it just needed a shift.
-  const weekOffset = (() => {
-    const raw = Number(new URL(request.url).searchParams.get("week"));
-    if (!Number.isFinite(raw)) return 0;
-    // Bounded so a hand-edited URL can't ask the ICS expander for an absurd
-    // window.
-    return Math.trunc(Math.min(52, Math.max(-52, raw)));
-  })();
-
   // The chosen week (Sunday→following Sunday) in the viewer's timezone, used
   // both to build the day columns and to window the calendar fetch. The shell
   // loads this same user row concurrently, so the memoized read shares it
@@ -96,24 +93,10 @@ export async function loader({ request }: Route.LoaderArgs) {
   const me = await loadShellUser(auth.user.sub, request);
   const tz = resolveUserTimeZone(me);
   const now = new Date();
-  const ymd = getZonedYMD(now, tz);
-  const todayMidnightUtc = new Date(Date.UTC(ymd.year, ymd.month - 1, ymd.day));
-  const dow = todayMidnightUtc.getUTCDay();
-  const sundayUtc = new Date(
-    todayMidnightUtc.getTime() + (weekOffset * 7 - dow) * 86_400_000,
-  );
-  const weekStart = zonedDayStartUtc(
-    sundayUtc.getUTCFullYear(),
-    sundayUtc.getUTCMonth() + 1,
-    sundayUtc.getUTCDate(),
+  const { weekOffset, weekStart, weekEnd, weekDays } = resolveWeekWindow(
+    request,
     tz,
-  );
-  const nextSundayUtc = new Date(sundayUtc.getTime() + 7 * 86_400_000);
-  const weekEnd = zonedDayStartUtc(
-    nextSundayUtc.getUTCFullYear(),
-    nextSundayUtc.getUTCMonth() + 1,
-    nextSundayUtc.getUTCDate(),
-    tz,
+    now,
   );
 
   const [items, tasks, rawEvents, formsForYou, assignedTasks, catalog, upcomingSessions, pages] =
@@ -236,41 +219,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     rsvp: n.rsvp,
   }));
 
-  // Day columns (Sun..Sat): the date number in each header, plus whether the
-  // column is today so the grid can mark it.
-  const todayYmd = getZonedYMD(now, tz);
-  const weekDays: WeekDayDTO[] = Array.from({ length: 7 }).map((_, i) => {
-    const dayUtc = new Date(weekStart.getTime() + i * 86_400_000);
-    const dy = getZonedYMD(dayUtc, tz);
-    return {
-      num: dy.day,
-      isToday:
-        dy.year === todayYmd.year && dy.month === todayYmd.month && dy.day === todayYmd.day,
-    };
-  });
-
-  const weekEvents: HomeWeekEvent[] = [];
-  for (const ev of rawEvents) {
-    if (ev.allDay) continue; // all-day events don't map onto the hour grid
-    const e = getZonedYMD(ev.start, tz);
-    const dayMidnight = zonedDayStartUtc(e.year, e.month, e.day, tz);
-    const colIdx = Math.round((dayMidnight.getTime() - weekStart.getTime()) / 86_400_000);
-    if (colIdx < 0 || colIdx > 6) continue;
-    const startHour = (ev.start.getTime() - dayMidnight.getTime()) / 3_600_000;
-    const duration = Math.max(0.5, (ev.end.getTime() - ev.start.getTime()) / 3_600_000);
-    weekEvents.push({
-      colIdx,
-      startHour,
-      duration,
-      label: ev.summary,
-      startAt: ev.start.toISOString(),
-      endAt: ev.end.toISOString(),
-      location: ev.location,
-      description: ev.description,
-      organizer: ev.organizer,
-      url: ev.url,
-    });
-  }
+  const weekEvents = generalCalendarWeekEvents(rawEvents, weekStart, tz);
 
   // Label for the range being shown, formatted server-side in the viewer's zone
   // so the client doesn't re-derive it in the browser's.
@@ -318,20 +267,6 @@ type MyProjectTask = {
   projectIconEmoji: string | null;
   dueAt: string | null;
   priority: "Low" | "Normal" | "High" | "Urgent";
-};
-
-type WeekDayDTO = { num: number; isToday: boolean };
-type HomeWeekEvent = {
-  colIdx: number;
-  startHour: number;
-  duration: number;
-  label: string;
-  startAt: string;
-  endAt: string;
-  location: string | null;
-  description: string | null;
-  organizer: string | null;
-  url: string | null;
 };
 
 export default function Home() {
@@ -1330,357 +1265,3 @@ function NotificationCard({ notification }: { notification: HomeNotification }) 
   );
 }
 
-/* ------------------------------------------------------------------ */
-/* This-week calendar                                                  */
-/* ------------------------------------------------------------------ */
-
-const HOURS = [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21];
-const HOUR_PX = 44;
-const DAY_KEYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
-
-// Ticking "current time" for the now-line. Returns null on the first render so
-// SSR and the initial client paint agree (no hydration mismatch), then fills in
-// after mount and re-ticks every minute.
-function useNow(intervalMs = 60_000): Date | null {
-  const [now, setNow] = useState<Date | null>(null);
-  useEffect(() => {
-    setNow(new Date());
-    const id = setInterval(() => setNow(new Date()), intervalMs);
-    return () => clearInterval(id);
-  }, [intervalMs]);
-  return now;
-}
-
-// Fixed dark text that doesn't flip in dark mode — paired only with the light
-// accent tints below so it stays high-contrast in both themes. (The saturated
-// `accent-teal` made dark text hard to read in light mode; use its light twin.)
-const EVENT_TEXT = "text-[hsl(203_38%_18%)]";
-// Cycle a few light accent fills so adjacent events are visually distinguishable.
-const EVENT_FILLS = [
-  `bg-accent-teal-light ${EVENT_TEXT}`,
-  `bg-accent-coral-light ${EVENT_TEXT}`,
-  `bg-accent-green ${EVENT_TEXT}`,
-];
-
-function WeekCalendarPanel({
-  days,
-  events,
-  weekOffset,
-  weekLabel,
-  timeZone,
-}: {
-  days: WeekDayDTO[];
-  events: HomeWeekEvent[];
-  weekOffset: number;
-  weekLabel: string;
-  timeZone: string;
-}) {
-  const hasEvents = events.length > 0;
-  const [selected, setSelected] = useState<{
-    event: HomeWeekEvent;
-    anchor: { colIdx: number; top: number; height: number };
-  } | null>(null);
-  // Pixel offset of the current-time line within a column body, or null when
-  // "now" falls outside the visible 9am–9pm window (line is hidden, not pinned).
-  const now = useNow();
-  const nowLineTop = (() => {
-    if (!now) return null;
-    const frac = getZonedHourFraction(now, timeZone);
-    if (frac < HOURS[0] || frac >= HOURS[HOURS.length - 1] + 1) return null;
-    return (frac - HOURS[0]) * HOUR_PX;
-  })();
-  // Paging is a plain link, so the loader re-windows the ICS fetch server-side
-  // and the week survives a refresh or a shared URL.
-  const weekHref = (offset: number) => (offset === 0 ? "/" : `/?week=${offset}`);
-
-  useEffect(() => {
-    if (!selected) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setSelected(null);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [selected]);
-
-  return (
-    <section className="bg-card border border-border shadow-brand-1 rounded-lg p-4 flex flex-col overflow-visible">
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-        <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground">
-          <CalendarDays className="w-4 h-4 text-accent-coral" />
-          {weekOffset === 0 ? "This Week" : weekLabel}
-          <span className="text-xs font-normal text-muted-foreground">
-            · DALI General Calendar
-          </span>
-        </h2>
-        <div className="flex items-center gap-1">
-          {weekOffset !== 0 && (
-            <Link
-              to={weekHref(0)}
-              prefetch="intent"
-              className="rounded-md border border-border px-2 py-1 text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground"
-            >
-              Today
-            </Link>
-          )}
-          <span className="px-1 text-xs text-muted-foreground tabular-nums">
-            {weekOffset === 0 ? weekLabel : ""}
-          </span>
-          <Link
-            to={weekHref(weekOffset - 1)}
-            prefetch="intent"
-            aria-label="Previous week"
-            className="inline-flex items-center rounded-md border border-border p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </Link>
-          <Link
-            to={weekHref(weekOffset + 1)}
-            prefetch="intent"
-            aria-label="Next week"
-            className="inline-flex items-center rounded-md border border-border p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </Link>
-        </div>
-      </div>
-      {!hasEvents && (
-        <p className="mb-2 text-xs text-muted-foreground">
-          No events this week, or the DALI General Calendar isn't connected yet.
-        </p>
-      )}
-      <div className="relative flex border border-border rounded-md overflow-visible">
-        <div className="flex flex-col w-12 border-r border-border bg-card text-[10px] text-muted-foreground shrink-0">
-          <div className="h-9 border-b border-border" />
-          {HOURS.map((h) => (
-            <div key={h} style={{ height: HOUR_PX }} className="px-1.5 pt-0.5 text-right">
-              {formatHour(h)}
-            </div>
-          ))}
-        </div>
-        {DAY_KEYS.map((key, idx) => (
-          <div key={key} className="flex-1 min-w-0 border-r last:border-r-0 border-border flex flex-col">
-            <div
-              className={`flex flex-col items-center justify-center border-b border-border h-9 ${
-                days[idx]?.isToday ? "bg-accent-coral/10" : ""
-              }`}
-            >
-              <div
-                className={`text-[9px] font-semibold tracking-wide ${
-                  days[idx]?.isToday ? "text-accent-coral" : "text-muted-foreground"
-                }`}
-              >
-                {key}
-              </div>
-              <div
-                className={`text-xs font-bold ${
-                  days[idx]?.isToday ? "text-accent-coral" : "text-foreground"
-                }`}
-              >
-                {days[idx]?.num ?? ""}
-              </div>
-            </div>
-            <div className="relative overflow-visible" style={{ height: HOURS.length * HOUR_PX }}>
-              {HOURS.map((_, i) => (
-                <div
-                  key={i}
-                  className="absolute left-0 right-0 border-t border-border/60"
-                  style={{ top: i * HOUR_PX }}
-                />
-              ))}
-              {days[idx]?.isToday && nowLineTop != null && (
-                <div
-                  className="absolute left-0 right-0 h-0.5 bg-accent-coral pointer-events-none z-30"
-                  style={{ top: nowLineTop }}
-                  aria-label="Current time"
-                >
-                  <div className="absolute left-0 -top-[3px] w-2 h-2 rounded-full bg-accent-coral" />
-                </div>
-              )}
-              {events
-                .filter((e) => e.colIdx === idx)
-                .map((e, i) => {
-                  // Clamp to the visible 9am–10pm window so off-hours events
-                  // still show a sliver at the grid edge rather than overflow.
-                  const top = Math.max(0, (e.startHour - HOURS[0]) * HOUR_PX);
-                  const rawHeight = e.duration * HOUR_PX;
-                  const maxHeight = HOURS.length * HOUR_PX - top;
-                  const height = Math.min(rawHeight, maxHeight);
-                  const start = formatBlockTime(e.startHour);
-                  const end = formatBlockTime(e.startHour + e.duration);
-                  return (
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={() =>
-                        setSelected({ event: e, anchor: { colIdx: idx, top, height } })
-                      }
-                      // Inset left edge gives the flat tint some depth and mirrors
-                      // the /calendar blocks, so home reads as the same system.
-                      className={`absolute left-0 right-0 mx-0.5 px-1.5 py-0.5 rounded-sm overflow-hidden text-left shadow-[inset_3px_0_0_0_rgba(0,0,0,0.16)] transition-shadow hover:shadow-[inset_3px_0_0_0_rgba(0,0,0,0.32)] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-coral ${
-                        selected?.event.startAt === e.startAt ? "ring-2 ring-accent-coral ring-offset-1" : ""
-                      } ${
-                        EVENT_FILLS[i % EVENT_FILLS.length]
-                      }`}
-                      style={{ top, height }}
-                      title={`${e.label} · ${start} – ${end}`}
-                    >
-                      <span className="block text-[10px] font-semibold leading-tight break-words">
-                        {e.label}
-                      </span>
-                      {/* Start time only once the block is tall enough for a
-                          second line — short events stay name-only. */}
-                      {height >= 26 && (
-                        <span className="block text-[9px] font-medium leading-tight opacity-70">
-                          {start}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              {selected?.anchor.colIdx === idx && (
-                <EventDetailPanel
-                  event={selected.event}
-                  anchor={selected.anchor}
-                  timeZone={timeZone}
-                  onClose={() => setSelected(null)}
-                />
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-// Google-Calendar-style detail popover for one event. Anchored beside the
-// clicked block inside its day column so the week grid stays in view.
-function EventDetailPanel({
-  event,
-  anchor,
-  timeZone,
-  onClose,
-}: {
-  event: HomeWeekEvent;
-  anchor: { colIdx: number; top: number; height: number };
-  timeZone: string;
-  onClose: () => void;
-}) {
-  const start = new Date(event.startAt);
-  const end = new Date(event.endAt);
-  const dayLabel = new Intl.DateTimeFormat("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    timeZone,
-  }).format(start);
-  const time = (d: Date) =>
-    new Intl.DateTimeFormat("en-US", {
-      hour: "numeric",
-      minute: "2-digit",
-      timeZone,
-    }).format(d);
-
-  // Flip to the left on the last two columns so the card doesn't clip off-screen.
-  const flipLeft = anchor.colIdx >= 5;
-  const panelTop = Math.max(
-    0,
-    Math.min(anchor.top, HOURS.length * HOUR_PX - 120),
-  );
-
-  return (
-    <div
-      role="dialog"
-      aria-label={event.label}
-      className={`absolute z-30 w-64 rounded-lg border border-border bg-card p-3 shadow-brand-2 ${
-        flipLeft ? "right-full mr-1.5" : "left-full ml-1.5"
-      }`}
-      style={{ top: panelTop }}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="font-heading text-base font-semibold text-foreground break-words">
-            {event.label}
-          </h3>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            {dayLabel} · {time(start)} – {time(end)}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close event details"
-          className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-
-      <dl className="mt-3 flex flex-col gap-2 text-sm">
-        {event.location && (
-          <div className="flex items-start gap-2">
-            <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            <dd className="min-w-0 break-words text-foreground">{event.location}</dd>
-          </div>
-        )}
-        {event.organizer && (
-          <div className="flex items-start gap-2">
-            <UserRound className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            <dd className="min-w-0 break-words text-foreground">{event.organizer}</dd>
-          </div>
-        )}
-        {event.description && (
-          <div className="flex items-start gap-2">
-            <AlignLeft className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            <dd className="min-w-0 whitespace-pre-wrap break-words text-muted-foreground">
-              {event.description}
-            </dd>
-          </div>
-        )}
-      </dl>
-
-      {event.url && (
-        <a
-          href={event.url}
-          target="_blank"
-          rel="noreferrer"
-          className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-accent-coral hover:underline"
-        >
-          <ExternalLink className="h-3.5 w-3.5" />
-          Open in Google Calendar
-        </a>
-      )}
-    </div>
-  );
-}
-
-// Format a fractional hour-of-day (e.g. 14.5) as "2:30 PM" for event blocks.
-function formatBlockTime(hour: number) {
-  const h24 = Math.floor(hour);
-  const mins = Math.round((hour - h24) * 60);
-  const period = h24 >= 12 ? "PM" : "AM";
-  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
-  return mins === 0
-    ? `${h12} ${period}`
-    : `${h12}:${String(mins).padStart(2, "0")} ${period}`;
-}
-
-// "May 24 – 30" / "Jun 28 – Jul 4" — the month repeats only when the week
-// straddles two of them.
-function formatWeekRange(weekStartUtc: Date, tz: string): string {
-  const endUtc = new Date(weekStartUtc.getTime() + 6 * 86_400_000);
-  const month = (d: Date) =>
-    new Intl.DateTimeFormat("en-US", { month: "short", timeZone: tz }).format(d);
-  const day = (d: Date) =>
-    new Intl.DateTimeFormat("en-US", { day: "numeric", timeZone: tz }).format(d);
-  const sameMonth = month(weekStartUtc) === month(endUtc);
-  return sameMonth
-    ? `${month(weekStartUtc)} ${day(weekStartUtc)} – ${day(endUtc)}`
-    : `${month(weekStartUtc)} ${day(weekStartUtc)} – ${month(endUtc)} ${day(endUtc)}`;
-}
-
-function formatHour(h: number) {
-  if (h === 12) return "12 PM";
-  if (h === 0) return "12 AM";
-  return h > 12 ? `${h - 12} PM` : `${h} AM`;
-}

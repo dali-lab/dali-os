@@ -11,6 +11,7 @@ import { requireAuth } from '~/lib/auth'
 import { redirectToLogin } from '~/lib/login-next'
 import { isCore, getUserRoles } from '~/lib/roles'
 import { EmailTemplatesPage } from '~/admin/components/EmailTemplatesPage'
+import { regroupRedirect } from "~/core/lib/regroup-redirect.server"
 
 export const handle = adminHandle("email-templates")
 
@@ -21,6 +22,13 @@ export const meta: Route.MetaFunction = () => [
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request)
   if (!auth.ok) return redirectToLogin(request)
+  const regrouped = await regroupRedirect(
+    request,
+    auth.user.sub,
+    "/admin/email-templates",
+    "/core/communications/email",
+  )
+  if (regrouped) return regrouped
   const roles = await getUserRoles(auth.user.sub)
   if (!roles.isCore) return redirect('/')
 
