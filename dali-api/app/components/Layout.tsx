@@ -28,6 +28,7 @@ import { setFocusPreference } from '~/lib/focus-mode'
 import { cn } from '~/lib/cn'
 import {
   areaForPath,
+  pinnedNavItems,
   activeSubtabHref,
   hasSubnavRow,
   visibleAreas,
@@ -46,6 +47,7 @@ interface LayoutProps {
   canViewStaffing?: boolean
   isInterviewer?: boolean
   hasHiringAccess?: boolean
+  hasActiveHiringAccess?: boolean
   isLabMentor?: boolean
   isInstructor?: boolean
   /** Starred pages/routes, most-recently pinned first (sidebar Favorites). */
@@ -132,7 +134,7 @@ function SubtabRail({ collapsed }: { collapsed: boolean }) {
   )
 }
 
-export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDomainLead = false, canViewForms = false, canViewStaffing = false, isInterviewer = false, hasHiringAccess = false, isLabMentor = false, isInstructor = false, favorites = [], recents = [], focusMode = false, children }: LayoutProps) {
+export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDomainLead = false, canViewForms = false, canViewStaffing = false, isInterviewer = false, hasHiringAccess = false, hasActiveHiringAccess = false, isLabMentor = false, isInstructor = false, favorites = [], recents = [], focusMode = false, children }: LayoutProps) {
   const location = useLocation()
   const navigate = useNavigate()
   const matches = useMatches()
@@ -360,6 +362,11 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
   // area worked in. Role gating for both the area list and its sub-tabs lives
   // in the nav-areas registry, evaluated against these flags.
   const driveConsolidation = useFeatureFlag("drive-consolidation")
+  const navRegroup = useFeatureFlag("nav-regroup")
+  const navFlags = {
+    "drive-consolidation": driveConsolidation,
+    "nav-regroup": navRegroup,
+  }
   const roleFlags: RoleFlags = {
     isCore,
     isAdmin,
@@ -368,11 +375,15 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
     canViewForms,
     canViewStaffing,
     hasHiringAccess,
+    hasActiveHiringAccess,
     isLabMentor,
     isInstructor,
   }
-  const areas = visibleAreas(roleFlags, { "drive-consolidation": driveConsolidation })
-  const routeArea = areaForPath(path)
+  const areas = visibleAreas(roleFlags, navFlags)
+  const routeArea = areaForPath(path, navFlags)
+  // Drive is pinned under Calendar once the nav is regrouped, so it stops
+  // competing with the five role-grouped areas for dropdown space.
+  const pinned = pinnedNavItems(navFlags)
   const activeArea = routeArea ?? areas.find((a) => a.key === lastAreaKey) ?? areas[0]
   const activeSubtabs = activeArea ? visibleSubtabs(activeArea, roleFlags) : []
   const activeHref = activeArea ? activeSubtabHref(activeArea, path) : undefined
@@ -397,6 +408,9 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
 
   // Label for a workspace tab seeded by direct navigation (deep link) — the
   // active area, or the pinned/footer surfaces that aren't areas.
+  const pinnedLabel = pinned.find(
+    (i) => path === i.href || path.startsWith(i.href + '/'),
+  )?.label
   const initialTabLabel = path.startsWith('/notifications')
     ? 'My Tasks'
     : path.startsWith('/calendar')
@@ -405,7 +419,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
         ? 'Settings'
         : path.startsWith('/help')
           ? 'Help'
-          : routeArea?.label
+          : (pinnedLabel ?? routeArea?.label)
 
   // A Favorites/Recent row: a launcher (open-only) that respects tab/tabless
   // mode. Route favorites get a compass; pages show their emoji or a doc icon.
@@ -656,6 +670,25 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
           <Calendar className="w-4 h-4 flex-shrink-0" />
           {!collapsed && <span className="truncate">Calendar</span>}
         </button>
+        {pinned.map((item) => {
+          const Icon = item.icon
+          return (
+            <button
+              key={item.href}
+              type="button"
+              title={collapsed ? item.label : undefined}
+              {...tabClickProps({ url: item.href, label: item.label })}
+              className={`flex items-center gap-3 rounded-md ${collapsed ? 'px-3 py-2 justify-center' : 'px-3 py-2'} text-sm font-heading font-semibold text-left transition-colors hover:bg-white/5 ${
+                path === item.href || path.startsWith(item.href + '/')
+                  ? 'text-white'
+                  : 'text-white/65 hover:text-white'
+              }`}
+            >
+              <Icon className="w-4 h-4 flex-shrink-0" />
+              {!collapsed && <span className="truncate">{item.label}</span>}
+            </button>
+          )
+        })}
 
         {/* Active-area section: one dropdown that swaps which area's sub-tabs
             show as vertical children. Auto-follows the current route; falls

@@ -1,3 +1,4 @@
+import { regroupRedirect } from "~/core/lib/regroup-redirect.server";
 import { useState } from "react";
 import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/admin.members";
@@ -36,6 +37,13 @@ export const handle = adminHandle("members");
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
+  const regrouped = await regroupRedirect(
+    request,
+    auth.user.sub,
+    "/admin/members",
+    "/core/access/roles",
+  );
+  if (regrouped) return regrouped;
   if (!(await isCore(auth.user.sub))) return redirect("/");
   const viewerIsAdmin = await isAdmin(auth.user.sub);
 

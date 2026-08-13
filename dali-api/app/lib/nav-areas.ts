@@ -4,6 +4,7 @@ import {
   Award,
   BookOpen,
   Briefcase,
+  ClipboardCheck,
   ClipboardList,
   ClipboardPen,
   Clock,
@@ -20,15 +21,19 @@ import {
   LayoutGrid,
   Mic,
   RotateCw,
+  Megaphone,
   Settings,
+  Shield,
   SlidersHorizontal,
   UserCheck,
+  Users,
   UserPlus,
   UsersRound,
-  Workflow,
   type LucideIcon,
 } from "lucide-react";
-import { ADMIN_CLUSTERS } from "~/admin/adminNav";
+import { ADMIN_CLUSTERS, adminClustersFor } from "~/admin/adminNav";
+import { CORE_CLUSTERS } from "~/core/coreNav";
+import { clusterEntryPath } from "~/lib/cluster-nav";
 import type { FeatureFlagMap } from "~/lib/feature-flags";
 
 // Single source of truth for the sidebar's "active area" dropdown and its
@@ -49,6 +54,11 @@ export type RoleFlags = {
   canViewForms: boolean;
   canViewStaffing: boolean;
   hasHiringAccess: boolean;
+  // Hiring visibility under nav-regroup: Core/Admin/DomainLead always, plus a
+  // regular member who reviews or interviews on a cycle that is live RIGHT NOW.
+  // hasHiringAccess deliberately admits any-cycle reviewers forever; this does
+  // not, so the tab disappears once a member's cycle closes.
+  hasActiveHiringAccess: boolean;
   isLabMentor: boolean;
   isInstructor: boolean;
 };
@@ -98,6 +108,7 @@ export const NAV_AREAS: NavArea[] = [
       { label: "Project Bids", href: "/projects/project-bids", icon: Gavel, gate: (r) => r.canViewStaffing },
       { label: "Level Up", href: "/projects/level-up", icon: ArrowUpCircle, gate: (r) => r.canViewStaffing },
       { label: "My Staffing", href: "/projects/my-staffing", icon: UserCheck },
+      { label: "Transfer", href: "/projects/transfer", icon: ArrowLeftRight },
     ],
   },
   {
@@ -108,17 +119,6 @@ export const NAV_AREAS: NavArea[] = [
     subtabs: [
       { label: "Hub", href: "/members", icon: LayoutGrid },
       { label: "Groups", href: "/members/groups", icon: UsersRound, gate: (r) => r.canViewForms },
-    ],
-  },
-  {
-    key: "internal-processes",
-    label: "Lab Processes",
-    icon: Workflow,
-    hubPath: "/internal-processes",
-    subtabs: [
-      { label: "Hub", href: "/internal-processes", icon: LayoutGrid },
-      { label: "Transfer", href: "/internal-processes/transfer", icon: ArrowLeftRight },
-      { label: "JobX", href: "/internal-processes/jobx", icon: Briefcase },
     ],
   },
   {
@@ -205,6 +205,157 @@ export const NAV_AREAS: NavArea[] = [
   },
 ];
 
+// ---------------------------------------------------------------------------
+// The nav-regroup area set.
+//
+// Five areas grouped by WHO a surface is for, not by what it is: regular
+// members get Projects + Education (+ Hiring while they're on a live cycle),
+// Core gets everything. Drive is not an area here at all — it is pinned under
+// Calendar (see pinnedNavItems). Every Core process page keeps a working
+// pre-regroup URL; the /core/* path is canonical only for flag-on viewers,
+// which the source loaders enforce via regroupRedirect.
+// ---------------------------------------------------------------------------
+
+// Core's clustered tools as sub-tabs, derived (not duplicated) from
+// CORE_CLUSTERS, exactly as Admin derives its own from ADMIN_CLUSTERS.
+const coreClusterSubtabs: SubTab[] = CORE_CLUSTERS.map((c) => ({
+  label: c.label,
+  href: clusterEntryPath(c),
+  icon: c.icon,
+}));
+
+const REGROUPED_AREAS: NavArea[] = [
+  {
+    key: "projects",
+    label: "Projects",
+    icon: FolderKanban,
+    hubPath: "/projects",
+    subtabs: [
+      { label: "Hub", href: "/projects", icon: LayoutGrid },
+      { label: "People", href: "/members", icon: UsersRound },
+      // Groups' own pill row is hidden under the sidebar redesign, so without a
+      // sub-tab here the page would be reachable only from ⌘K.
+      { label: "Groups", href: "/members/groups", icon: Users, gate: (r) => r.canViewForms },
+      { label: "Partners", href: "/partners", icon: Handshake },
+      { label: "Mentorship", href: "/mentorship", icon: Heart, gate: (r) => r.isLabMentor || r.isCore },
+      { label: "Transfer", href: "/projects/transfer", icon: ArrowLeftRight },
+      { label: "My Staffing", href: "/projects/my-staffing", icon: UserCheck },
+    ],
+  },
+  {
+    key: "education",
+    label: "Education",
+    icon: GraduationCap,
+    hubPath: "/education",
+    subtabs: [
+      { label: "Hub", href: "/education", icon: LayoutGrid },
+      { label: "Manage", href: "/education/manage", icon: SlidersHorizontal, gate: (r) => r.isCore || r.isInstructor },
+      { label: "CE Compliance", href: "/education/compliance", icon: Award, gate: (r) => r.isCore },
+    ],
+  },
+  {
+    key: "core",
+    label: "Core",
+    icon: Shield,
+    hubPath: "/core",
+    gate: (r) => r.isCore,
+    subtabs: [
+      { label: "Core Hub", href: "/core", icon: LayoutGrid },
+      { label: "Staffing", href: "/core/staffing", icon: Kanban },
+      { label: "Intent to Work", href: "/core/intent-to-work", icon: ClipboardPen },
+      { label: "Project Bids", href: "/core/project-bids", icon: Gavel },
+      { label: "Level Up", href: "/core/level-up", icon: ArrowUpCircle },
+      ...coreClusterSubtabs,
+      { label: "Attendance", href: "/core/attendance", icon: ClipboardCheck },
+    ],
+  },
+  {
+    key: "hiring",
+    label: "Hiring",
+    icon: Briefcase,
+    hubPath: "/hiring",
+    // Regular members see Hiring only while they are on a LIVE cycle, unlike
+    // the flag-off gate which admits any-cycle reviewers forever.
+    gate: (r) => r.hasActiveHiringAccess,
+    subtabs: [
+      { label: "Hub", href: "/hiring", icon: LayoutGrid },
+      { label: "Reviews", href: "/hiring/reviewer", icon: ClipboardList },
+      { label: "Interviews", href: "/hiring/interviews", icon: Mic, gate: (r) => r.isInterviewer },
+      { label: "Applications", href: "/hiring/applications", icon: Files },
+      { label: "Domain", href: "/hiring/domain-lead", icon: Globe, gate: (r) => r.isDomainLead },
+      { label: "Cycles", href: "/hiring/lead", icon: RotateCw, gate: (r) => r.isCore },
+      { label: "Waitlists", href: "/hiring/waitlists", icon: Clock, gate: (r) => r.isCore },
+      { label: "Onboarding", href: "/hiring/onboarding", icon: UserPlus, gate: (r) => r.isCore },
+      { label: "Library", href: "/hiring/library", icon: BookOpen, gate: (r) => r.isCore || r.isDomainLead || r.isAdmin },
+    ],
+  },
+  {
+    key: "admin",
+    label: "Admin",
+    icon: Settings,
+    hubPath: "/admin",
+    gate: (r) => r.isCore,
+    subtabs: [],
+  },
+];
+
+// Forms lives inside Drive once drive-consolidation is on, so it only earns a
+// Core sub-tab in the window where nav-regroup ships ahead of Drive. Sub-tab
+// gates see roles, not flags, which is why this is resolved here.
+function coreSubtabsFor(base: SubTab[], flags: Partial<FeatureFlagMap>): SubTab[] {
+  if (flags["drive-consolidation"]) return base;
+  return [
+    ...base,
+    { label: "Forms", href: "/forms", icon: ClipboardList, gate: (r) => r.canViewForms },
+  ];
+}
+
+// Admin's sub-tabs depend on the flag (People & Access + Communications move to
+// Core), so they are resolved per viewer rather than baked into the array.
+function adminSubtabsFor(flags: Partial<FeatureFlagMap>): SubTab[] {
+  return [
+    { label: "Hub", href: "/admin", icon: LayoutGrid },
+    ...adminClustersFor(flags).map((c) => ({
+      label: c.label,
+      href: clusterEntryPath(c),
+      icon: c.icon,
+      gate: c.adminOnly ? (r: RoleFlags) => r.isAdmin : undefined,
+    })),
+  ];
+}
+
+/** The area set for one viewer: regrouped when nav-regroup is on, else today's. */
+export function areasFor(flags: Partial<FeatureFlagMap> = {}): NavArea[] {
+  if (!flags["nav-regroup"]) return NAV_AREAS;
+  return REGROUPED_AREAS.map((a) => {
+    if (a.key === "admin") return { ...a, subtabs: adminSubtabsFor(flags) };
+    if (a.key === "core") return { ...a, subtabs: coreSubtabsFor(a.subtabs, flags) };
+    return a;
+  });
+}
+
+/**
+ * The nav items pinned above the area dropdown. Home / My Tasks / Calendar are
+ * rendered inline by Layout; this is the tail the flags decide. Drive is only
+ * pinned under nav-regroup — with the flag off it stays an area, exactly as it
+ * is today. When Drive itself is off, the pinned slot falls back to Documents
+ * so the regrouped nav never loses its file surface (Forms is then a Core
+ * sub-tab). The two flags are meant to be rolled out together.
+ */
+export function pinnedNavItems(flags: Partial<FeatureFlagMap> = {}): SubTab[] {
+  if (!flags["nav-regroup"]) return [];
+  return flags["drive-consolidation"]
+    ? [{ label: "Drive", href: "/drive", icon: HardDrive }]
+    : [{ label: "Documents", href: "/documents", icon: FileText }];
+}
+
+// Both area sets at once. isAreaSubtabPath and the icon map are read from
+// places with no flag context — the favorites star (FavoriteRouteButton), the
+// favorites/recents glyphs (FavoriteIcon), and parseRouteHref server-side — so
+// they must recognise a path that is a sub-tab on EITHER side of the flag.
+// Favorites saved before the flag flips have to keep working after it.
+const ALL_AREAS: NavArea[] = [...NAV_AREAS, ...REGROUPED_AREAS];
+
 // These matchers are handed a live URL, not a bare pathname: in tab mode the
 // sidebar tracks the focused tab, whose url keeps its query string (layout.tsx
 // cleanUrl), and favorites are stored as `pathname + search`
@@ -217,11 +368,38 @@ function pathnameOf(path: string): string {
   return cut === -1 ? path : path.slice(0, cut);
 }
 
-// The area that owns a path: its hubPath equals the path or is a path-segment
-// prefix of it. hubPaths never nest, so at most one matches.
-export function areaForPath(path: string): NavArea | undefined {
+// The area that owns a path. Two rules, in order:
+//  1. an exact sub-tab href — the regrouped Projects area owns /members,
+//     /partners and /mentorship, which are not under its hubPath at all, so
+//     prefix matching alone would hand them to no area (or the wrong one);
+//  2. otherwise the area whose hubPath is the path or a path-segment prefix.
+// Longest match wins in both passes. Sub-tab subtrees (e.g. /members/:id) fall
+// through to rule 2 via the borrowed area's own hubPath when it still exists,
+// so ownedPrefixes covers those explicitly.
+export function areaForPath(
+  path: string,
+  flags: Partial<FeatureFlagMap> = {},
+): NavArea | undefined {
   const p = pathnameOf(path);
-  return NAV_AREAS.find((a) => p === a.hubPath || p.startsWith(a.hubPath + "/"));
+  const areas = areasFor(flags);
+
+  let best: NavArea | undefined;
+  let bestLen = -1;
+  for (const a of areas) {
+    for (const t of a.subtabs) {
+      const matches = p === t.href || p.startsWith(t.href + "/");
+      if (matches && t.href.length > bestLen) {
+        best = a;
+        bestLen = t.href.length;
+      }
+    }
+    const hubMatches = p === a.hubPath || p.startsWith(a.hubPath + "/");
+    if (hubMatches && a.hubPath.length > bestLen) {
+      best = a;
+      bestLen = a.hubPath.length;
+    }
+  }
+  return best;
 }
 
 // The sub-tab to highlight for a path within its area. The Hub tab (href ===
@@ -268,7 +446,7 @@ export function hasSubnavRow(
 // pinnable, using the same affordance as project/person/partner detail pages.
 export function isAreaSubtabPath(path: string): boolean {
   const p = pathnameOf(path);
-  return NAV_AREAS.some((a) =>
+  return ALL_AREAS.some((a) =>
     a.subtabs.some((t) => t.href !== a.hubPath && t.href === p),
   );
 }
@@ -278,7 +456,7 @@ export function isAreaSubtabPath(path: string): boolean {
 // generic compass. Built once at module load.
 const HREF_ICONS: Record<string, LucideIcon> = (() => {
   const map: Record<string, LucideIcon> = {};
-  for (const area of NAV_AREAS) {
+  for (const area of ALL_AREAS) {
     map[area.hubPath] = area.icon;
     for (const t of area.subtabs) map[t.href] = t.icon;
   }
@@ -296,7 +474,7 @@ export function iconForHref(href: string): LucideIcon | null {
 
 export function visibleAreas(r: RoleFlags, flags: Partial<FeatureFlagMap> = {}): NavArea[] {
   const driveOn = flags["drive-consolidation"] ?? false;
-  return NAV_AREAS.filter((a) => {
+  return areasFor(flags).filter((a) => {
     if (driveOn) {
       // When Drive is on: hide documents + forms; show drive (always visible to all members)
       if (a.key === "documents" || a.key === "forms") return false;

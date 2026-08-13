@@ -86,6 +86,28 @@ export default [
     route("admin/payroll-export", "admin/routes/admin.payroll-export.tsx"),
     route("admin/payroll", "admin/routes/admin.payroll.tsx"),
 
+    // Core — the lab-process area introduced by the nav-regroup flag. Every
+    // page here except the hub is a pure re-export of its pre-regroup route
+    // (app/core/routes/), so there is one implementation per surface and the
+    // old URL keeps working; the source loaders redirect flag-on viewers here.
+    route("core", "core/routes/core.hub.tsx"),
+    route("core/staffing", "core/routes/core.staffing.tsx"),
+    route("core/intent-to-work", "core/routes/core.intent-to-work.tsx"),
+    route("core/intent-to-work/:userId", "core/routes/core.intent-to-work.$userId.tsx"),
+    route("core/project-bids", "core/routes/core.project-bids.tsx"),
+    route("core/project-bids/:userId", "core/routes/core.project-bids.$userId.tsx"),
+    route("core/level-up", "core/routes/core.level-up.tsx"),
+    route("core/level-up/:userId", "core/routes/core.level-up.$userId.tsx"),
+    route("core/access", "core/routes/core.access.tsx"),
+    route("core/access/roles", "core/routes/core.access.roles.tsx"),
+    route("core/access/domains", "core/routes/core.access.domains.tsx"),
+    route("core/attendance", "core/routes/core.attendance.tsx"),
+    route("core/communications", "core/routes/core.communications.tsx"),
+    route("core/communications/announcements", "core/routes/core.communications.announcements.tsx"),
+    route("core/communications/email", "core/routes/core.communications.email.tsx"),
+    route("core/communications/email/:id", "core/routes/core.communications.email.$id.tsx"),
+    route("core/communications/email-senders", "core/routes/core.communications.email-senders.tsx"),
+
     // Projects. The bare /projects route is the area hub (the project list).
     route("projects", "projects/routes/projects.hub.tsx"),
     route("projects/staffing", "projects/routes/projects.staffing.tsx"),
@@ -110,6 +132,9 @@ export default [
       "projects/level-up/:userId",
       "projects/routes/projects.level-up.$userId.tsx",
     ),
+    // Transfer moved here when the Lab Processes area was retired. Literal
+    // segment, so it must precede projects/:id like the ones above.
+    route("projects/transfer", "projects/routes/projects.transfer.tsx"),
     route("projects/:id", "projects/routes/projects.$id.tsx"),
     route(
       "projects/:id/partner-view",
@@ -174,11 +199,11 @@ export default [
     route("mentorship/browse", "mentorship/routes/mentorship.browse.tsx"),
     route("mentorship/notes/:id", "mentorship/routes/mentorship.notes.$id.tsx"),
 
-    // Internal processes. The bare route is the area hub.
-    route("internal-processes", "internal-processes/routes/internal-processes.hub.tsx"),
+    // Internal processes. The area hub and JobX are retired; Transfer lives
+    // under Projects now (/projects/transfer) and these two paths are kept so
+    // existing links, favorites, and bookmarks still resolve.
     route("internal-processes/transfer", "internal-processes/routes/internal-processes.transfer.tsx"),
     route("internal-processes/level-up", "internal-processes/routes/internal-processes.level-up.tsx"),
-    route("internal-processes/jobx", "internal-processes/routes/internal-processes.jobx.tsx"),
 
     // Forms. The :folderId form lets a folder card open its own page with
     // nested folders + forms; the bare /forms route is the top level.

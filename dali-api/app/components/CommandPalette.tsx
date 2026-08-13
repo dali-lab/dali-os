@@ -35,7 +35,9 @@ import { Avatar } from "~/components/ui/Avatar";
 import { setTablessPreference } from "~/lib/tabless";
 import { setFocusPreference } from "~/lib/focus-mode";
 import type { SearchResult, SearchResultType } from "~/lib/search";
-import { ADMIN_CLUSTERS } from "~/admin/adminNav";
+import { adminClustersFor } from "~/admin/adminNav";
+import { CORE_CLUSTERS } from "~/core/coreNav";
+import type { NavCluster } from "~/lib/cluster-nav";
 import { visibleAreas, visibleSubtabs, type RoleFlags } from "~/lib/nav-areas";
 import type { FeatureFlagMap } from "~/lib/feature-flags";
 
@@ -242,31 +244,42 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles, flags
       },
     ];
 
-    // Admin tools, generated from the same cluster registry the /admin hub and
-    // pill rows use. Gated exactly like the pages: any Core member sees every
-    // cluster except Finance, which is Admin-only. When drive-consolidation is
-    // on, the "documents" cluster is hidden from the palette (agreements are
-    // now authored in the Drive).
-    const admin: PaletteItem[] = roles.isCore
-      ? ADMIN_CLUSTERS.filter(
+    // Admin + Core tools, generated from the same cluster registries their hubs
+    // and pill rows use. Gated exactly like the pages: any Core member sees
+    // every cluster except Finance, which is Admin-only. When
+    // drive-consolidation is on, the "documents" cluster is hidden from the
+    // palette (agreements are now authored in the Drive). Under nav-regroup,
+    // adminClustersFor has already handed People & Access and Communications
+    // over to CORE_CLUSTERS, so the two lists never overlap.
+    const sectionItems = (prefix: string, clusters: readonly NavCluster[]) =>
+      clusters
+        .filter(
           (c) =>
             (roles.isAdmin || !c.adminOnly) &&
             !(flags?.["drive-consolidation"] && c.key === "documents"),
-        ).flatMap((c) =>
+        )
+        .flatMap((c) =>
           c.sections.map((s) => ({
-            id: `admin-${s.key}`,
+            id: `${prefix}-${s.key}`,
             title: s.label,
             subtitle: c.label,
             icon: s.icon,
             action: { kind: "navigate", url: s.to, label: s.label } as const,
           })),
-        )
+        );
+
+    const admin: PaletteItem[] = roles.isCore
+      ? sectionItems("admin", adminClustersFor(flags))
+      : [];
+    const core: PaletteItem[] = roles.isCore && flags?.["nav-regroup"]
+      ? sectionItems("core", CORE_CLUSTERS)
       : [];
 
     const q = query.trim().toLowerCase();
     const match = (i: PaletteItem) => !q || i.title.toLowerCase().includes(q);
     return {
       nav: nav.filter(match),
+      core: core.filter(match),
       admin: admin.filter(match),
       commands: commands.filter(match),
     };
@@ -275,6 +288,8 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles, flags
   const sections = useMemo(() => {
     const out: { key: string; label: string; items: PaletteItem[] }[] = [];
     if (staticSections.nav.length) out.push({ key: "nav", label: "Go to", items: staticSections.nav });
+    if (staticSections.core.length)
+      out.push({ key: "core", label: "Core", items: staticSections.core });
     if (staticSections.admin.length)
       out.push({ key: "admin", label: "Admin", items: staticSections.admin });
     if (staticSections.commands.length)

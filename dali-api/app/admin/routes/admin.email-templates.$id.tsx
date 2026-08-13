@@ -9,6 +9,7 @@ import { requireAuth } from '~/lib/auth'
 import { redirectToLogin } from '~/lib/login-next'
 import { isCore } from '~/lib/roles'
 import { EmailTemplateDetail } from '~/admin/components/EmailTemplateDetail'
+import { regroupRedirect } from "~/core/lib/regroup-redirect.server"
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const name = (data as any)?.template?.name
@@ -23,6 +24,13 @@ export const handle = {
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request)
   if (!auth.ok) return redirectToLogin(request)
+  const regrouped = await regroupRedirect(
+    request,
+    auth.user.sub,
+    "/admin/email-templates",
+    "/core/communications/email",
+  )
+  if (regrouped) return regrouped
   if (!(await isCore(auth.user.sub))) return redirect('/')
 
   const template = await prisma.emailTemplate.findUniqueOrThrow({

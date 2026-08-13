@@ -9,6 +9,7 @@ import { getSlotBinding } from "../lib/form-slots";
 import { resolveTermFilter } from "~/lib/terms";
 import { buildSubmissionView } from "../lib/submission-view.server";
 import { UserSubmissionShell } from "../components/UserSubmissionShell";
+import { regroupRedirect } from "~/core/lib/regroup-redirect.server";
 
 const SLOT = "project-bids" as const;
 
@@ -34,6 +35,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!auth.ok) return redirectToLogin(request);
   const portalRedirect = redirectApplicantToPortal(auth);
   if (portalRedirect) return portalRedirect;
+  const regrouped = await regroupRedirect(
+    request,
+    auth.user.sub,
+    "/projects/project-bids",
+    "/core/project-bids",
+  );
+  if (regrouped) return regrouped;
   if (!(await canViewStaffing(auth.user.sub))) return redirect("/");
 
   const { termId: filterTermId, isAll } = await resolveTermFilter(request);

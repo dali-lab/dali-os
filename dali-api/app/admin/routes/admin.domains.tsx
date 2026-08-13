@@ -1,3 +1,4 @@
+import { regroupRedirect } from "~/core/lib/regroup-redirect.server";
 import { useEffect, useRef, useState } from "react";
 import { redirect, useLoaderData, useFetcher } from "react-router";
 import type { Route } from "./+types/admin.domains";
@@ -34,6 +35,13 @@ export const meta: Route.MetaFunction = () => [{ title: "Domains · Admin · DAL
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
+  const regrouped = await regroupRedirect(
+    request,
+    auth.user.sub,
+    "/admin/domains",
+    "/core/access/domains",
+  );
+  if (regrouped) return regrouped;
   if (!(await isCore(auth.user.sub))) return redirect("/admin/members");
   const viewerIsAdmin = await isAdmin(auth.user.sub);
 

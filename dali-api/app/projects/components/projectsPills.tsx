@@ -1,4 +1,5 @@
 import {
+  ArrowLeftRight,
   ArrowUpCircle,
   ClipboardPen,
   Gavel,
@@ -15,7 +16,7 @@ import type { AreaPill } from "~/components/AreaPillNav";
 // the nav appear to vanish.
 export function projectsPills(args: {
   canViewStaffing: boolean;
-  active: "hub" | "staffing" | "intent" | "bids" | "level-up" | "my-staffing";
+  active: "hub" | "staffing" | "intent" | "bids" | "level-up" | "my-staffing" | "transfer";
 }): AreaPill[] {
   return [
     { label: "Hub", to: "/projects", active: args.active === "hub", icon: LayoutGrid },
@@ -52,6 +53,12 @@ export function projectsPills(args: {
       to: "/projects/my-staffing",
       active: args.active === "my-staffing",
       icon: UserCheck,
+    },
+    {
+      label: "Transfer",
+      to: "/projects/transfer",
+      active: args.active === "transfer",
+      icon: ArrowLeftRight,
     },
   ];
 }
