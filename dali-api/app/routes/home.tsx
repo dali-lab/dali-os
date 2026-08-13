@@ -14,6 +14,7 @@ import {
   CalendarClock,
   GraduationCap,
   MapPin,
+  Milestone,
   Star,
   UserRound,
   X,
@@ -375,6 +376,8 @@ function HomeRedesign() {
       </div>
 
       <div className="flex flex-col gap-6">
+        <MilestonesBanner />
+
         <AttentionBanner tasks={tasks} notifications={notifications} />
 
         {compactBlocks.length > 1 ? (
@@ -396,6 +399,32 @@ function HomeRedesign() {
         )}
       </div>
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Milestones — a pointer to the term timeline. Sits at the top of the   */
+/* attention column so the shape of the term is one click from the front */
+/* door.                                                                 */
+/* ------------------------------------------------------------------ */
+
+function MilestonesBanner() {
+  return (
+    <Link
+      to="/milestones"
+      className="group flex items-center gap-3 rounded-lg border border-accent-coral/30 bg-accent-coral/10 p-3 transition-colors hover:bg-accent-coral/15"
+    >
+      <Milestone className="h-4 w-4 flex-shrink-0 text-accent-coral" aria-hidden />
+      <span className="min-w-0 flex-1">
+        <span className="block font-heading text-sm font-semibold text-foreground">
+          Check out our new milestones
+        </span>
+        <span className="block text-xs text-muted-foreground">
+          The term week by week — lab-wide events, team milestones, and what each domain owns.
+        </span>
+      </span>
+      <ChevronRight className="h-4 w-4 flex-shrink-0 text-accent-coral transition-transform group-hover:translate-x-0.5" />
+    </Link>
   );
 }
 
