@@ -3,7 +3,7 @@ import type { Prisma } from "~/generated/prisma/client";
 import { notify } from "~/lib/notify.server";
 import { logAuditEvent } from "~/lib/audit";
 import { sendEmail } from "~/lib/gmail";
-import { getSenderRefreshToken } from "~/lib/gmail-integration";
+import { getSender } from "~/lib/gmail-integration";
 import {
   resolveCandidateEmail,
   redirectBannerHtml,
@@ -223,12 +223,13 @@ export async function requestSessionFeedback(args: {
       } else {
         // Portal students don't see the member notification bell — email the
         // fill link directly.
-        const refreshToken = await getSenderRefreshToken("Education");
-        if (refreshToken) {
+        const sender = await getSender("Education");
+        if (sender) {
           const { to, redirectedFrom } = resolveCandidateEmail(recipientEmail(user));
           if (to) {
             await sendEmail({
-              refreshToken,
+              refreshToken: sender.refreshToken,
+              from: sender.sendAsEmail,
               to,
               subject: title,
               html:
