@@ -25,6 +25,7 @@ import { DateField } from "~/components/ui/DateField";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { Modal, ModalHeader, ModalFooter } from "~/components/Modal";
 import { Select, type SelectOption } from "~/components/ui/floating";
+import { ExportCsvButton } from "~/components/ui/ExportCsvButton";
 
 import {
   zonedDayEndUtc,
@@ -498,7 +499,10 @@ export default function InternToFullCycleSetup() {
             Fellowship cycle · {cycle.status}
           </p>
         </div>
-        <StatusButton cycleId={cycle.id} currentStatus={cycle.status} />
+        <div className="flex items-center gap-2">
+          <ExportCsvButton exportId="hiring-intern-to-full-decisions" params={{ cycleId: cycle.id }} label="Export decisions CSV" />
+          <StatusButton cycleId={cycle.id} currentStatus={cycle.status} />
+        </div>
       </header>
 
       <CloseDateSection

@@ -30,6 +30,7 @@ import { deriveCoreTitles } from "~/lib/core-titles";
 import { LayoutGrid, UsersRound } from "lucide-react";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import { Select, type SelectOption } from "~/components/ui/floating";
+import { ExportCsvButton } from "~/components/ui/ExportCsvButton";
 
 export const handle = { areaPills: true };
 
@@ -389,6 +390,10 @@ export default function MembersList() {
         />
         {status === "active" && <TermFilter terms={terms} selected={selectedTerm} />}
         <DomainFilter domains={domains} selected={selectedDomain} />
+        <ExportCsvButton
+          exportId="members-directory"
+          params={{ status, domain: selectedDomain, term: selectedTerm }}
+        />
         <span className="text-xs text-muted-foreground ml-auto">
           {filtered.length}{" "}
           {status === "alumni"

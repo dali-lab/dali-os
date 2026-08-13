@@ -36,6 +36,7 @@ import { formatVersionLabel, buildVersionNumberMap } from "~/lib/formatVersion";
 import { selectActiveCycleForDomainLead } from "~/hiring/lib/cycle-picker";
 import { STATUS_LABELS, DECISION_LABELS, STATUS_COLORS, DECISION_COLORS } from "~/hiring/lib/labels";
 import { Select, type SelectOption } from "~/components/ui/floating";
+import { ExportCsvButton } from "~/components/ui/ExportCsvButton";
 
 const STATUS_MESSAGES: Record<string, string> = {
   Draft: "This cycle is still being set up.",
@@ -689,7 +690,13 @@ export default function DomainLeadDashboard() {
   return (
     <div className="space-y-8">
       {areaPills}
-      <h1 className="font-heading text-2xl font-bold text-foreground">Domain Lead Dashboard</h1>
+      <div className="flex items-center justify-between gap-4">
+        <h1 className="font-heading text-2xl font-bold text-foreground">Domain Lead Dashboard</h1>
+        <div className="flex items-center gap-2">
+          <ExportCsvButton exportId="hiring-domain-lead-applications" label="Export applications CSV" />
+          <ExportCsvButton exportId="hiring-domain-lead-interviews" label="Export interviews CSV" />
+        </div>
+      </div>
 
       {domainData.map(({ assignment, cycle, availableCycles, apps, challengeVersionOptions, linkedChallengeVersions, isChallengeReady, interviews, reviewers: cycleReviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, initialDelibsCount, finalDelibsCount, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews, confidentialityRequired }: any, idx: number) => {
         const isInternToFull = cycle?.cycleType === "InternToFull";

@@ -35,6 +35,7 @@ import type { Question } from "~/types";
 import { listSelectableForms } from "~/projects/lib/form-slots";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import { ChevronRight, FileText, LayoutGrid } from "lucide-react";
+import { ExportCsvButton } from "~/components/ui/ExportCsvButton";
 
 export const handle = { areaPills: true };
 
@@ -469,6 +470,12 @@ export default function PartnersApplications() {
           ]}
           buttonClassName="px-2 py-2 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
         />
+        {view === "list" && (
+          <ExportCsvButton
+            exportId="partners-applications"
+            params={{ status: statusFilter, domain: domainFilter }}
+          />
+        )}
         <div className="flex rounded-md border border-border overflow-hidden">
           {(["list", "board"] as const).map((v) => (
             <button

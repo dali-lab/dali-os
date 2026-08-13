@@ -33,6 +33,7 @@ import { projectsPills } from "../components/projectsPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import type { Question } from "~/types";
 import { isLevel, type Level } from "~/lib/level";
+import { ExportCsvButton } from "~/components/ui/ExportCsvButton";
 
 const SLOT = "level-up" as const;
 
@@ -474,6 +475,7 @@ function Loaded({ data }: { data: LoadedData }) {
         </div>
         <DomainFilter domains={domains} value={domainId} onChange={setDomainId} />
         <TermFilter terms={data.termOptions} selected={data.selectedTerm} />
+        <ExportCsvButton exportId="level-up" params={{ term: data.selectedTerm }} />
       </div>
 
       <div className="bg-card border border-border rounded-lg overflow-hidden">

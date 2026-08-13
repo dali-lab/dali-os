@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
+import { ExportCsvButton } from "~/components/ui/ExportCsvButton";
 
 export interface ApplicationRow {
   id: string;
@@ -15,14 +16,16 @@ interface Props {
   rows: ApplicationRow[];
   selectedStatusLabel: string | null;
   selectedDomainName: string | null;
+  exportParams: { cycleId: string; domain?: string; status?: string };
 }
 
-export function ApplicationList({ rows, selectedStatusLabel }: Props) {
+export function ApplicationList({ rows, selectedStatusLabel, exportParams }: Props) {
   const navigate = useNavigate();
 
   return (
     <div className="bg-card border border-border rounded-lg">
-      <div className="flex items-center justify-end px-4 py-3 border-b border-border">
+      <div className="flex items-center justify-end gap-3 px-4 py-3 border-b border-border">
+        <ExportCsvButton exportId="hiring-pipeline" params={exportParams} />
         <span className="text-xs text-muted-foreground">
           {rows.length} {rows.length === 1 ? "application" : "applications"}
         </span>

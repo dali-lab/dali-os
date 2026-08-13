@@ -42,6 +42,7 @@ import {
   APPLICATION_TZ,
   APPLICATION_TZ_LABEL,
 } from "~/lib/timezone";
+import { ExportCsvButton } from "~/components/ui/ExportCsvButton";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -1539,7 +1540,13 @@ export default function HiringLeadCycleDetails() {
         <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-bold ${STATUS_COLORS[cycleStatus] ?? ''}`}>
           {STATUS_LABELS[cycleStatus] ?? cycleStatus}
         </span>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-1.5">
+          <ExportCsvButton exportId="hiring-cycle-reviewers" params={{ cycleId }} label="Export reviewers CSV" />
+          <ExportCsvButton exportId="hiring-cycle-interviews" params={{ cycleId }} label="Export interviews CSV" />
+          <ExportCsvButton exportId="hiring-cycle-interviewers" params={{ cycleId }} label="Export interviewers CSV" />
+          <ExportCsvButton exportId="hiring-cycle-decisions" params={{ cycleId }} label="Export decisions CSV" />
+        </div>
+        <div className="ml-2">
           <PresenceBar />
         </div>
         <p className="w-full text-xs text-muted-foreground">

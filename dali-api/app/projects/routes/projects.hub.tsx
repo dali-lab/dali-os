@@ -36,6 +36,7 @@ import {
   SHOWCASE_FILTER_NONE,
   type ShowcaseStatusValue,
 } from "../lib/showcase-filter";
+import { ExportCsvButton } from "~/components/ui/ExportCsvButton";
 
 export const handle = {
   areaPills: true,
@@ -443,6 +444,7 @@ export default function ProjectsListPage() {
           />
         </label>
         <ViewToggle value={view} onChange={setView} />
+        <ExportCsvButton exportId="projects-hub" params={{ term: selectedTerm }} />
         <span className="text-xs text-muted-foreground ml-auto">
           {filtered.length} {filtered.length === 1 ? "project" : "projects"}
           {(query || mineOnly || showcaseFilter !== SHOWCASE_FILTER_ALL) &&
