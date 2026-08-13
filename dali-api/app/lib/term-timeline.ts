@@ -1,7 +1,10 @@
-// Content for the Lab Term Timeline (/milestones): what each of the ten weeks
-// of a term is for, the milestones the whole lab (or each team) hits, and what
-// each domain owns that week. Static by design — the timeline is the same for
-// every member, so it lives here rather than in the database.
+// Vocabulary and seed content for the Lab Term Timeline (/milestones).
+//
+// The live timeline lives in the database (TimelineWeek and friends), one set
+// of weeks per Term. These defaults are what a term's timeline is seeded from
+// the first time the page is opened, and what the page falls back to when
+// there is no Term row at all (a fresh database) — so the page always renders
+// something, even before anyone has edited it.
 
 export type Domain = {
   key: string;
@@ -34,7 +37,32 @@ export type Week = {
   resources: string[];
 };
 
-export const TERM_LABEL = "Fall 2026 · Weeks 0–9";
+/** Shown when there is no Term row to name the timeline after. */
+export const DEFAULT_TERM_LABEL = "Fall 2026 · Weeks 0–9";
+
+/** Term.season is a one-letter enum; the page spells it out. */
+export const SEASON_LABELS: Record<string, string> = {
+  W: "Winter",
+  S: "Spring",
+  X: "Summer",
+  F: "Fall",
+};
+
+// Per-field typography overrides set from the edit toolbar and stored on the
+// week (TimelineWeek.format). Keys are field paths — "title", "blurb",
+// "milestone:<id>.name", "lane:<id>.role", "lane:<id>.deliverable.2",
+// "resource.0" — so a field keeps its formatting as rows around it change.
+export type FieldFormat = { size?: number; bold?: boolean; color?: string };
+export type FormatMap = Record<string, FieldFormat>;
+
+/** The toolbar's colour choices — the brand palette, plus a neutral. */
+export const SWATCHES: { name: string; color: string }[] = [
+  { name: "Navy", color: "#1E5779" },
+  { name: "Teal", color: "#00ADAB" },
+  { name: "Coral", color: "#FF8B81" },
+  { name: "Yellow", color: "#FFD461" },
+  { name: "Grey", color: "#7D8B93" },
+];
 
 export const DOMAINS: Domain[] = [
   { key: "pm", name: "Product Mgmt", color: "#1E5779" },
@@ -43,7 +71,7 @@ export const DOMAINS: Domain[] = [
   { key: "data", name: "Data / ML", color: "#509C81" },
 ];
 
-export const WEEKS: Week[] = [
+export const DEFAULT_WEEKS: Week[] = [
   {
     title: "Kickoff",
     dates: "Sep 15 – 19",
