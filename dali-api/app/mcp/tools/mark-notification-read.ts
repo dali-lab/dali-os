@@ -1,15 +1,16 @@
 // MCP `mark_notification_read` — clear a notification from the caller's
 // inbox/tasks. Mirrors `api.notifications.$id.read.ts`: a meeting-invite
 // notification stays a todo until the recipient RSVPs (so plain "read" is a
-// no-op for those), matching the in-app behavior. Requires the `mcp:write`
-// scope.
+// no-op for those), and a form todo stays open until its form is submitted.
+// Requires the `mcp:write` scope.
 
 import { prisma } from "~/lib/db";
+import { isSelfClearingFormTodo } from "~/lib/tasks";
 
 export const MARK_NOTIFICATION_READ_TOOL = {
   name: "mark_notification_read",
   description:
-    "Mark one of the authenticated member's notifications as read. Meeting invites are not cleared by this — use `rsvp_to_notification` for those.",
+    "Mark one of the authenticated member's notifications as read. Meeting invites are not cleared by this — use `rsvp_to_notification` for those — and neither are form todos, which clear only when their form is submitted.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -43,7 +44,7 @@ export class NotificationForbiddenError extends Error {
 
 export type MarkNotificationReadResult =
   | { ok: true; alreadyRead: boolean; skipped?: undefined }
-  | { ok: true; alreadyRead?: undefined; skipped: "meeting-invite" };
+  | { ok: true; alreadyRead?: undefined; skipped: "meeting-invite" | "form-todo" };
 
 export async function runMarkNotificationRead(
   callerId: string,
@@ -56,6 +57,8 @@ export async function runMarkNotificationRead(
       readAt: true,
       kind: true,
       scheduledMeetingId: true,
+      isTodo: true,
+      form: { select: { published: true, publicToken: true } },
     },
   });
   if (!existing) throw new NotificationNotFoundError(input.notificationId);
@@ -65,6 +68,11 @@ export async function runMarkNotificationRead(
   // Meeting reminders also have scheduledMeetingId but are dismissible.
   if (existing.kind === "MeetingInvite" && existing.scheduledMeetingId) {
     return { ok: true, skipped: "meeting-invite" };
+  }
+
+  // Likewise a form todo: only submitting the form clears it.
+  if (isSelfClearingFormTodo(existing)) {
+    return { ok: true, skipped: "form-todo" };
   }
 
   if (existing.readAt) return { ok: true, alreadyRead: true };
