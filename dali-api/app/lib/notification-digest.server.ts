@@ -14,6 +14,7 @@ import { prisma } from "~/lib/db";
 import { sendEmail } from "~/lib/gmail";
 import { getSender, noteSenderHealth } from "~/lib/gmail-integration";
 import { getFrontendUrl } from "~/lib/app-env";
+import { notificationRecipientEmails } from "~/lib/email";
 import { getZonedParts, zonedWallTimeUtc, APPLICATION_TZ } from "~/lib/timezone";
 import { NOT_CANCELLED_MEETING } from "~/lib/notifications";
 import { EVENT_TYPES, type EventDef } from "~/lib/notification-events";
@@ -196,8 +197,8 @@ export async function runDigest(freq: DigestFrequency, now: Date): Promise<JobRe
   for (const [userId, wanted] of wantedByUser) {
     const user = userById.get(userId);
     if (!user) continue;
-    const to = user.daliEmail ?? user.dartmouthEmail ?? user.personalEmail;
-    if (!to) continue;
+    const emails = notificationRecipientEmails(user);
+    if (emails.length === 0) continue;
     const userRows = matched.filter(
       (r) => r.recipientUserId === userId && wanted.has(r.eventType),
     );
@@ -209,7 +210,13 @@ export async function runDigest(freq: DigestFrequency, now: Date): Promise<JobRe
         now,
         rows: userRows,
       });
-      await sendEmail({ refreshToken: sender.refreshToken, from: sender.sendAsEmail, to, subject, html });
+      await sendEmail({
+        refreshToken: sender.refreshToken,
+        from: sender.sendAsEmail,
+        to: emails.join(", "),
+        subject,
+        html,
+      });
       await prisma.notification.updateMany({
         where: { id: { in: userRows.map((r) => r.id) } },
         data: { emailedAt: now },

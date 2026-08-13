@@ -121,6 +121,20 @@ describe("notify", () => {
     );
   });
 
+  it("emails both the dali and dartmouth address when a member has both", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([
+      user("u1", { dartmouthEmail: "u1@dartmouth.edu" }),
+    ]);
+    await notify({
+      eventType: "education.announcement",
+      message: { title: "T" },
+      recipients: [{ userId: "u1" }],
+    });
+    expect(mockSendEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ to: "u1@dali.dartmouth.edu, u1@dartmouth.edu" }),
+    );
+  });
+
   it("honors explicit preference rows over defaults in a mixed fan-out", async () => {
     mockPrisma.user.findMany.mockResolvedValue([user("u1"), user("u2")]);
     // u1 opted out of email for an Instant-default event; u2 keeps the default.

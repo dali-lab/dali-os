@@ -51,3 +51,24 @@ export function renderEmail(
     html: bodyToHtml(interpolate(template.body, vars)),
   };
 }
+
+// Which address(es) a member-facing notification email is delivered to. Lab
+// members get BOTH their dali and dartmouth addresses so it lands in whichever
+// inbox they actually read; recipients with neither (e.g. portal students) fall
+// back to a personal address, then netId@dartmouth. De-duplicated. Callers join
+// with ", " for a single multi-recipient send. Feature-owned transactional
+// pipelines (hiring/education/partner) keep their own single-address logic.
+export function notificationRecipientEmails(user: {
+  daliEmail?: string | null;
+  dartmouthEmail?: string | null;
+  personalEmail?: string | null;
+  netId?: string | null;
+}): string[] {
+  const primary = [user.daliEmail, user.dartmouthEmail].filter(
+    (e): e is string => !!e,
+  );
+  if (primary.length > 0) return [...new Set(primary)];
+  const fallback =
+    user.personalEmail ?? (user.netId ? `${user.netId}@dartmouth.edu` : null);
+  return fallback ? [fallback] : [];
+}

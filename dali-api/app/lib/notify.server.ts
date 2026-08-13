@@ -13,7 +13,7 @@
 import { prisma } from "~/lib/db";
 import { sendEmail } from "~/lib/gmail";
 import { getSender, noteSenderHealth } from "~/lib/gmail-integration";
-import { bodyToHtml } from "~/lib/email";
+import { bodyToHtml, notificationRecipientEmails } from "~/lib/email";
 import { getAppEnv, getFrontendUrl } from "~/lib/app-env";
 import { slackConfigured, sendDm } from "~/slack/lib/slack-client";
 import { publishNotificationChange } from "~/lib/notify-stream.server";
@@ -196,20 +196,16 @@ export async function notify(args: {
       const emailedRowIds: string[] = [];
       let lastError: string | null = null;
       for (const r of emailTargets) {
-        // Same chain as education's recipientEmail(): the netId fallback only
-        // ever fires for portal students (members always have daliEmail).
-        const to =
-          r.user.daliEmail ??
-          r.user.dartmouthEmail ??
-          r.user.personalEmail ??
-          (r.user.netId ? `${r.user.netId}@dartmouth.edu` : null);
-        if (!to) continue;
+        // Members get both dali + dartmouth; the netId fallback only ever fires
+        // for portal students (members always have daliEmail).
+        const emails = notificationRecipientEmails(r.user);
+        if (emails.length === 0) continue;
         const m = merged(r.recipient);
         try {
           await sendEmail({
             refreshToken: sender.refreshToken,
             from: sender.sendAsEmail,
-            to,
+            to: emails.join(", "),
             subject: m.title,
             html: renderNotificationEmail({
               firstName: r.user.firstName,

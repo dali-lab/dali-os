@@ -27,6 +27,7 @@ import { sendEmail } from "../app/lib/gmail";
 import { getSender, noteSenderHealth } from "../app/lib/gmail-integration";
 import { renderNotificationEmail } from "../app/lib/notify.server";
 import { getAppEnv, getFrontendUrl } from "../app/lib/app-env";
+import { notificationRecipientEmails } from "../app/lib/email";
 
 const COMMIT = process.argv.includes("--commit");
 const arg = (name: string) =>
@@ -82,8 +83,7 @@ async function main() {
   });
   const userById = new Map(users.map((u) => [u.id, u]));
 
-  const recipientEmail = (u: (typeof users)[number]) =>
-    u.daliEmail ?? u.dartmouthEmail ?? u.personalEmail ?? (u.netId ? `${u.netId}@dartmouth.edu` : null);
+  const recipientEmail = (u: (typeof users)[number]) => notificationRecipientEmails(u).join(", ") || null;
 
   console.log(`\n${rows.length} un-emailed row(s):`);
   for (const r of rows) {

@@ -1,5 +1,46 @@
 import { describe, it, expect } from "vitest";
-import { interpolate, bodyToHtml, renderEmail } from "~/lib/email";
+import {
+  interpolate,
+  bodyToHtml,
+  renderEmail,
+  notificationRecipientEmails,
+} from "~/lib/email";
+
+describe("notificationRecipientEmails", () => {
+  it("returns both dali and dartmouth addresses for a member with both", () => {
+    expect(
+      notificationRecipientEmails({
+        daliEmail: "ada@dali.dartmouth.edu",
+        dartmouthEmail: "ada@dartmouth.edu",
+      }),
+    ).toEqual(["ada@dali.dartmouth.edu", "ada@dartmouth.edu"]);
+  });
+
+  it("returns just the address a member actually has", () => {
+    expect(
+      notificationRecipientEmails({ daliEmail: "ada@dali.dartmouth.edu", dartmouthEmail: null }),
+    ).toEqual(["ada@dali.dartmouth.edu"]);
+  });
+
+  it("de-duplicates when both fields hold the same address", () => {
+    expect(
+      notificationRecipientEmails({ daliEmail: "a@x.edu", dartmouthEmail: "a@x.edu" }),
+    ).toEqual(["a@x.edu"]);
+  });
+
+  it("falls back to personal, then netId@dartmouth, only when neither primary exists", () => {
+    expect(
+      notificationRecipientEmails({ daliEmail: null, dartmouthEmail: null, personalEmail: "p@gmail.com" }),
+    ).toEqual(["p@gmail.com"]);
+    expect(
+      notificationRecipientEmails({ daliEmail: null, dartmouthEmail: null, netId: "f00xyz" }),
+    ).toEqual(["f00xyz@dartmouth.edu"]);
+  });
+
+  it("returns empty when there is no address at all", () => {
+    expect(notificationRecipientEmails({})).toEqual([]);
+  });
+});
 
 describe("interpolate", () => {
   it("replaces every {{firstName}} occurrence", () => {
