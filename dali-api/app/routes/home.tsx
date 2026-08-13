@@ -9,11 +9,11 @@ import {
   ChevronLeft,
   ChevronRight,
   ExternalLink,
-  FileText,
   Search,
   CalendarClock,
   GraduationCap,
   MapPin,
+  Milestone,
   Star,
   UserRound,
   X,
@@ -31,7 +31,6 @@ import { FavoriteIcon } from "~/components/FavoriteIcon";
 import { FavoriteStar } from "~/components/FavoriteStar";
 import { FavoriteRouteButton } from "~/components/FavoriteRouteButton";
 import { isNavbarRoute } from "~/lib/navbar-routes";
-import { listedFormsFor, type ListedForm } from "~/forms/lib/public-form";
 import { listCatalog, registrationOpen } from "~/education/lib/offerings.server";
 import { listUpcomingSessionsForUser } from "~/education/lib/schedule.server";
 import { fetchGeneralCalendarEvents } from "~/lib/general-calendar";
@@ -99,7 +98,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     now,
   );
 
-  const [items, tasks, rawEvents, formsForYou, assignedTasks, catalog, upcomingSessions, pages] =
+  const [items, tasks, rawEvents, assignedTasks, catalog, upcomingSessions, pages] =
     await Promise.all([
     timed(request, 'home.notifications', () => prisma.notification.findMany({
       // Hide invites whose meeting was Cancelled — they shouldn't appear in the
@@ -141,7 +140,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     redesign
       ? []
       : timed(request, 'home.ics', () => fetchGeneralCalendarEvents(weekStart, weekEnd)),
-    timed(request, 'home.forms', () => listedFormsFor(auth.user.sub)),
     // Open board tasks assigned to the viewer, across all their projects
     // (Archived projects are retired — their tasks are noise here). One
     // bounded query: soonest deadline first (undated last), then priority.
@@ -239,7 +237,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     weekOffset,
     weekLabel,
     timeZone: tz,
-    formsForYou,
     education,
     pages,
   };
@@ -282,13 +279,12 @@ export default function Home() {
 /* ------------------------------------------------------------------ */
 
 function HomeRedesign() {
-  const { user, notifications, tasks, myProjectTasks, formsForYou, education, pages } =
+  const { user, notifications, tasks, myProjectTasks, education, pages } =
     useLoaderData<typeof loader>();
   const firstName = user.firstName || user.email.split("@")[0];
 
   const compactBlocks = [
     myProjectTasks.length > 0 && <MyTasksPanel tasks={myProjectTasks} />,
-    formsForYou.length > 0 && <FormsForYouPanel forms={formsForYou} />,
     hasEducationContent(education) && <EducationPanel education={education} />,
   ].filter(Boolean);
 
@@ -310,6 +306,8 @@ function HomeRedesign() {
       </div>
 
       <div className="flex flex-col gap-6">
+        <MilestonesBanner />
+
         <AttentionBanner tasks={tasks} notifications={notifications} />
 
         {compactBlocks.length > 1 ? (
@@ -331,6 +329,32 @@ function HomeRedesign() {
         )}
       </div>
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Milestones — a pointer to the term timeline. Sits at the top of the   */
+/* attention column so the shape of the term is one click from the front */
+/* door.                                                                 */
+/* ------------------------------------------------------------------ */
+
+function MilestonesBanner() {
+  return (
+    <Link
+      to="/milestones"
+      className="group flex items-center gap-3 rounded-lg border border-accent-coral/30 bg-accent-coral/10 p-3 transition-colors hover:bg-accent-coral/15"
+    >
+      <Milestone className="h-4 w-4 flex-shrink-0 text-accent-coral" aria-hidden />
+      <span className="min-w-0 flex-1">
+        <span className="block font-heading text-sm font-semibold text-foreground">
+          Check out our new milestones
+        </span>
+        <span className="block text-xs text-muted-foreground">
+          The term week by week — lab-wide events, team milestones, and what each domain owns.
+        </span>
+      </span>
+      <ChevronRight className="h-4 w-4 flex-shrink-0 text-accent-coral transition-transform group-hover:translate-x-0.5" />
+    </Link>
   );
 }
 
@@ -588,7 +612,6 @@ function HomeClassic() {
     weekOffset,
     weekLabel,
     timeZone,
-    formsForYou,
     education,
     pages,
   } = useLoaderData<typeof loader>();
@@ -598,7 +621,6 @@ function HomeClassic() {
   const compactBlocks = [
     myProjectTasks.length > 0 && <MyTasksPanel tasks={myProjectTasks} />,
     <FavoritesPanel pages={pages} />,
-    formsForYou.length > 0 && <FormsForYouPanel forms={formsForYou} />,
     hasEducationContent(education) && <EducationPanel education={education} />,
   ].filter(Boolean);
 
@@ -728,36 +750,6 @@ function EducationPanel({ education }: { education: EducationSummary }) {
         </ul>
       )}
     </section>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Forms for you — published forms that opted into listing (Form.listed) */
-/* and whose audience admits this member. Collapses to nothing when      */
-/* there's nothing to show, like the attention banner.                   */
-/* ------------------------------------------------------------------ */
-
-function FormsForYouPanel({ forms }: { forms: ListedForm[] }) {
-  if (forms.length === 0) return null;
-  return (
-    <div className="bg-card border border-border shadow-brand-1 rounded-lg p-4">
-      <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground mb-2">
-        <FileText className="w-4 h-4 text-accent-coral" />
-        Forms for you
-      </h2>
-      <div className="flex flex-col gap-1">
-        {forms.map((f) => (
-          <a
-            key={f.id}
-            href={f.fillUrl}
-            className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-md text-sm text-foreground hover:bg-muted/50 transition-colors"
-          >
-            <span className="truncate">{f.name}</span>
-            <ExternalLink className="w-3.5 h-3.5 text-muted-foreground/70 shrink-0" />
-          </a>
-        ))}
-      </div>
-    </div>
   );
 }
 

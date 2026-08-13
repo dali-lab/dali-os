@@ -11,6 +11,9 @@ export default [
     route("calendar/check-in/:id", "calendar/routes/calendar.check-in.$id.tsx"),
     // My Tasks surface: Open tasks + browsable notification history.
     route("notifications", "routes/notifications.tsx"),
+    // Lab term timeline: the ten weeks of a term, the milestones every team
+    // owes, and what each domain owns alongside them.
+    route("milestones", "routes/milestones.tsx"),
 
     // Document signing: the member "documents to sign" inbox + per-agreement
     // fill/sign page. The app gate (layout loader) redirects here when a

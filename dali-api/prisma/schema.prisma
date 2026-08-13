@@ -2193,8 +2193,71 @@ model Term {
   budgetEntries         BudgetEntry[]
   budgetNotes           BudgetNote[]
   signingBindings       SigningBinding[]
+  timelineWeeks         TimelineWeek[]
 
   @@index([sortKey])
+}
+
+// ─── Lab term timeline (/milestones) ─────────────────────────────────────────
+
+// The ten weeks of a term: what each week is for, the milestones every team
+// (or the whole lab) hits, and what each domain owns alongside them. Seeded
+// per term from the defaults in app/lib/term-timeline.ts the first time the
+// page is opened, then edited in place by Core.
+model TimelineWeek {
+  id     String @id @default(cuid())
+  termId String
+  term   Term   @relation(fields: [termId], references: [id], onDelete: Cascade)
+  // 0-based, matching the W0…W9 labels on the page.
+  weekIndex Int
+  title     String
+  dates     String
+  blurb     String
+  // S3 object key (uploads/…) or a pasted URL — resolved through
+  // resolvePhotoUrl like User.photoUrl, so both shapes render.
+  imageKey  String?
+  imageAlt  String?
+  resources String[]
+  // Typography overrides from the edit toolbar, keyed by field path
+  // ("title", "milestone:<id>.name", …) → { size?, bold?, color? }. Absent
+  // keys render at the design's defaults.
+  format    Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  milestones TimelineMilestone[]
+  lanes      TimelineLane[]
+
+  @@unique([termId, weekIndex])
+}
+
+model TimelineMilestone {
+  id     String       @id @default(cuid())
+  weekId String
+  week   TimelineWeek @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  name   String
+  detail String
+  // Lab-wide events (Prod Tales, Bug Hunt, Technigala) render as the coral
+  // banner; the rest are milestones each team hits on its own.
+  labWide  Boolean @default(false)
+  position Int
+
+  @@index([weekId])
+}
+
+model TimelineLane {
+  id     String       @id @default(cuid())
+  weekId String
+  week   TimelineWeek @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  // One of the DOMAINS keys in app/lib/term-timeline.ts ("pm", "design",
+  // "dev", "data") — the domain vocabulary of this page, not the Domain table
+  // (which is staffing's, and is finer-grained).
+  domainKey    String
+  role         String
+  deliverables String[]
+  challenge    String
+
+  @@unique([weekId, domainKey])
 }
 
 enum Season {

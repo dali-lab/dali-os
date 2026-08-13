@@ -5,6 +5,7 @@ import { Layout } from '~/components/Layout'
 import { LayoutClassic } from '~/components/LayoutClassic'
 import { Breadcrumbs } from '~/components/Breadcrumbs'
 import { PageDocProvider, PageDocButton, PageDocOutlet } from '~/components/page-docs/PageDocButton'
+import { useShowTablessHistoryNav } from '~/components/TablessHistoryNav'
 import { LaunchWelcome } from '~/components/LaunchWelcome'
 import { TimeZonePrompt } from '~/components/TimeZonePrompt'
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth"
@@ -253,6 +254,13 @@ export default function AppLayoutRoute() {
   )
   const hideBreadcrumbRow =
     !hasAreaSubnav && !hasDoc && isNavbarHubPage(`${location.pathname}${location.search}`)
+  // On tabless desktop a page with no subnav row gets the standalone
+  // history-arrow bar, and that bar carries the Guide CTA so both sit on one
+  // row — so the breadcrumb-row copy stands down, or the page shows two.
+  // Mirrors Layout's `!ownsSubnavRow && <TablessHistoryNav />`; the redesign
+  // check matters because LayoutClassic renders no such bar to move it into.
+  const showTablessHistoryNav = useShowTablessHistoryNav()
+  const guideOnHistoryRow = redesign && showTablessHistoryNav && !hasAreaSubnav
 
   // After a client-side navigation inside the workspace iframe, the loader
   // re-runs via fetch — which carries `Sec-Fetch-Dest: empty`, not `iframe` —
@@ -389,29 +397,27 @@ export default function AppLayoutRoute() {
   // breadcrumb trail lives here either way: it picks up each detail route's
   // `handle.breadcrumb` for the dynamic leaf crumb.
   const pageContent = (
-    <PageDocProvider>
-      <div
-        className={cn(
-          'w-full px-3 sm:px-6 lg:px-10 pb-6 sm:pb-8',
-          hasAreaSubnav ? 'pt-0' : 'pt-4 sm:pt-8 md:pt-12',
-        )}
-      >
-        {!hideBreadcrumbRow && (
-          <div
-            className={cn(
-              'flex items-start justify-between gap-3',
-              roomyBreadcrumb ? 'mb-5 sm:mb-6 empty:mb-0' : 'mb-2 empty:mb-0',
-            )}
-          >
-            <Breadcrumbs />
-            <PageDocButton suppressWhenPills />
-          </div>
-        )}
-        <PageDocOutlet>
-          <Outlet />
-        </PageDocOutlet>
-      </div>
-    </PageDocProvider>
+    <div
+      className={cn(
+        'w-full px-3 sm:px-6 lg:px-10 pb-6 sm:pb-8',
+        hasAreaSubnav ? 'pt-0' : 'pt-4 sm:pt-8 md:pt-12',
+      )}
+    >
+      {!hideBreadcrumbRow && (
+        <div
+          className={cn(
+            'flex items-start justify-between gap-3',
+            roomyBreadcrumb ? 'mb-5 sm:mb-6 empty:mb-0' : 'mb-2 empty:mb-0',
+          )}
+        >
+          <Breadcrumbs />
+          {!guideOnHistoryRow && <PageDocButton suppressWhenPills />}
+        </div>
+      )}
+      <PageDocOutlet>
+        <Outlet />
+      </PageDocOutlet>
+    </div>
   )
 
   // Skip the sidebar shell when rendered inside a TabWorkspace iframe. Each
@@ -419,7 +425,9 @@ export default function AppLayoutRoute() {
   if (embedded) {
     return (
       <FeatureFlagsProvider flags={flags}>
-        <div className="min-h-dvh bg-page overflow-x-hidden">{pageContent}</div>
+        <PageDocProvider>
+          <div className="min-h-dvh bg-page overflow-x-hidden">{pageContent}</div>
+        </PageDocProvider>
       </FeatureFlagsProvider>
     )
   }
@@ -428,15 +436,19 @@ export default function AppLayoutRoute() {
 
   return (
     <FeatureFlagsProvider flags={flags}>
-      {redesign ? (
-        <Layout user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} hasHiringAccess={hasHiringAccess} hasActiveHiringAccess={hasActiveHiringAccess} isInstructor={isInstructor} isLabMentor={isLabMentorFlag} favorites={favorites} recents={recents} focusMode={focus}>
-          {tablessChild}
-        </Layout>
-      ) : (
-        <LayoutClassic user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} hasHiringAccess={hasHiringAccess} isLabMentor={isLabMentorFlag} isInstructor={isInstructor} focusMode={focus}>
-          {tablessChild}
-        </LayoutClassic>
-      )}
+      {/* Above Layout, not inside pageContent: the tabless desktop nav row
+          renders the Guide CTA from the shell, outside the routed page. */}
+      <PageDocProvider>
+        {redesign ? (
+          <Layout user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} hasHiringAccess={hasHiringAccess} hasActiveHiringAccess={hasActiveHiringAccess} isInstructor={isInstructor} isLabMentor={isLabMentorFlag} favorites={favorites} recents={recents} focusMode={focus}>
+            {tablessChild}
+          </Layout>
+        ) : (
+          <LayoutClassic user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} hasHiringAccess={hasHiringAccess} isLabMentor={isLabMentorFlag} isInstructor={isInstructor} focusMode={focus}>
+            {tablessChild}
+          </LayoutClassic>
+        )}
+      </PageDocProvider>
       <LaunchWelcome firstName={user.firstName || user.email.split('@')[0]} hasCalendarLink={hasCalendarLink} shouldShowTour={shouldShowTour} tabless={tabless} />
       <TimeZonePrompt userTimeZone={userTimeZone} userTimeZoneIsExplicit={userTimeZoneIsExplicit} dismissedZone={tzDismissedZone} />
     </FeatureFlagsProvider>

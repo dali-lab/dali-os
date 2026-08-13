@@ -112,7 +112,9 @@ function OpenTab({ tasks }: { tasks: Task[] }) {
   // Re-sync when the loader hands down a fresh list (revalidation, tab switch).
   useEffect(() => setItems(tasks), [tasks]);
 
-  // Meeting invites clear only by RSVPing, so they carry no manual dismiss.
+  // Self-clearing tasks carry no manual dismiss: meeting invites clear by
+  // RSVPing, form todos by submitting the form, onboarding by finishing it
+  // (all `hasAction`) — and the server refuses a plain read on them anyway.
   // Everything else — reminders, announcements, general to-dos — can be marked
   // read here: POST /read clears the notification and drops the sidebar count.
   async function markRead(id: string) {
@@ -178,13 +180,15 @@ function OpenTab({ tasks }: { tasks: Task[] }) {
                   Open <ExternalLink className="w-3 h-3" />
                 </button>
               )}
-              <button
-                type="button"
-                onClick={() => void markRead(t.id)}
-                className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
-              >
-                <Check className="w-3 h-3" /> Mark as read
-              </button>
+              {!t.hasAction && (
+                <button
+                  type="button"
+                  onClick={() => void markRead(t.id)}
+                  className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+                >
+                  <Check className="w-3 h-3" /> Mark as read
+                </button>
+              )}
             </div>
           )}
         </li>
@@ -270,6 +274,11 @@ function HistoryTab({
       body: JSON.stringify({ intent: "unread" }),
     });
     if (!r.ok) return;
+    // Self-clearing rows (meeting invites, form todos, onboarding) own their
+    // read state — the endpoint reports `skipped` instead of re-opening them,
+    // so don't paint a flip the server didn't make.
+    const body = (await r.json().catch(() => null)) as { skipped?: string } | null;
+    if (body?.skipped) return;
     // Reflect the flip locally: move the row's state to Open and bump counts.
     setItems((prev) =>
       prev

@@ -2,7 +2,11 @@ import type { Route } from "./+types/api.notifications";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { listOpenTasks, listNotificationHistory } from "~/lib/tasks";
+import {
+  listOpenTasks,
+  listNotificationHistory,
+  SELF_CLEARING_FORM_TODO,
+} from "~/lib/tasks";
 import { listMyNotifications, annotateDesktopFeed } from "~/lib/notifications";
 import { publishNotificationChange } from "~/lib/notify-stream.server";
 import { ONBOARDING_EVENT_TYPE } from "~/members/lib/welcome.server";
@@ -95,9 +99,10 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   // POST with no id = "mark all read". Excluded: meeting invites (clear only on
-  // RSVP) and the onboarding task (clears only when onboarding is finished), so
-  // neither is dismissed by a blanket read. Meeting reminders share
-  // scheduledMeetingId with invites but are dismissible — leave them in.
+  // RSVP), the onboarding task (clears only when onboarding is finished), and
+  // form todos (clear only on submit), so none is dismissed by a blanket read.
+  // Meeting reminders share scheduledMeetingId with invites but are dismissible
+  // — leave them in.
   await prisma.notification.updateMany({
     where: {
       recipientUserId: auth.user.sub,
@@ -105,6 +110,7 @@ export async function action({ request }: Route.ActionArgs) {
       NOT: [
         { kind: "MeetingInvite", scheduledMeetingId: { not: null } },
         { eventType: ONBOARDING_EVENT_TYPE },
+        SELF_CLEARING_FORM_TODO,
       ],
     },
     data: { readAt: new Date() },
