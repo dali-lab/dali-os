@@ -14,6 +14,7 @@ import {
   Globe,
   GraduationCap,
   Handshake,
+  HardDrive,
   Heart,
   Kanban,
   LayoutGrid,
@@ -28,6 +29,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { ADMIN_CLUSTERS } from "~/admin/adminNav";
+import type { FeatureFlagMap } from "~/lib/feature-flags";
 
 // Single source of truth for the sidebar's "active area" dropdown and its
 // vertical sub-tab children. Consolidates what used to be per-area *Pills.tsx
@@ -91,7 +93,7 @@ export const NAV_AREAS: NavArea[] = [
     hubPath: "/projects",
     subtabs: [
       { label: "Hub", href: "/projects", icon: LayoutGrid },
-      { label: "Board", href: "/projects/staffing", icon: Kanban, gate: (r) => r.canViewStaffing },
+      { label: "Staffing", href: "/projects/staffing", icon: Kanban, gate: (r) => r.canViewStaffing },
       { label: "Intent to Work", href: "/projects/intent-to-work", icon: ClipboardPen, gate: (r) => r.canViewStaffing },
       { label: "Project Bids", href: "/projects/project-bids", icon: Gavel, gate: (r) => r.canViewStaffing },
       { label: "Level Up", href: "/projects/level-up", icon: ArrowUpCircle, gate: (r) => r.canViewStaffing },
@@ -128,6 +130,15 @@ export const NAV_AREAS: NavArea[] = [
     subtabs: [
       { label: "Hub", href: "/mentorship", icon: Heart },
       { label: "Mentorship notes", href: "/mentorship/browse", icon: FileText },
+    ],
+  },
+  {
+    key: "drive",
+    label: "Drive",
+    icon: HardDrive,
+    hubPath: "/drive",
+    subtabs: [
+      { label: "Hub", href: "/drive", icon: LayoutGrid },
     ],
   },
   {
@@ -228,6 +239,30 @@ export function activeSubtabHref(area: NavArea, path: string): string | undefine
   return best;
 }
 
+/**
+ * Does this page render its own horizontal nav row?
+ *
+ * Two independent signals, and the difference between them is where this kept
+ * going wrong:
+ *  - `areaSubnav` (e.g. calendar) renders its row unconditionally.
+ *  - `areaPills` renders one only when the sidebar redesign is OFF; with the
+ *    redesign on AreaPillNav returns null and there is no row at all.
+ *
+ * Anything that stands down "because the page has its own row" — the tabless
+ * history arrows, the layout's flush top padding — has to ask this, or it
+ * either doubles the row (areaSubnav read as no-row) or hides itself for a row
+ * that isn't there (areaPills under the redesign).
+ */
+export function hasSubnavRow(
+  matches: readonly { handle?: unknown }[],
+  redesign: boolean,
+): boolean {
+  return matches.some((m) => {
+    const h = m.handle as { areaSubnav?: boolean; areaPills?: boolean } | undefined;
+    return Boolean(h?.areaSubnav || (!redesign && h?.areaPills));
+  });
+}
+
 // True when the path is exactly a non-hub area sub-tab (e.g. /projects/staffing).
 // Drives the breadcrumb favorite star: every sub-tab landing page is directly
 // pinnable, using the same affordance as project/person/partner detail pages.
@@ -259,8 +294,18 @@ export function iconForHref(href: string): LucideIcon | null {
   }
 }
 
-export function visibleAreas(r: RoleFlags): NavArea[] {
-  return NAV_AREAS.filter((a) => !a.gate || a.gate(r));
+export function visibleAreas(r: RoleFlags, flags: Partial<FeatureFlagMap> = {}): NavArea[] {
+  const driveOn = flags["drive-consolidation"] ?? false;
+  return NAV_AREAS.filter((a) => {
+    if (driveOn) {
+      // When Drive is on: hide documents + forms; show drive (always visible to all members)
+      if (a.key === "documents" || a.key === "forms") return false;
+    } else {
+      // When Drive is off: hide drive entry
+      if (a.key === "drive") return false;
+    }
+    return !a.gate || a.gate(r);
+  });
 }
 
 export function visibleSubtabs(area: NavArea, r: RoleFlags): SubTab[] {

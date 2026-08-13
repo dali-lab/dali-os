@@ -26,6 +26,8 @@ export const ROLE_TARGETS = [
 
 export type RoleTarget = (typeof ROLE_TARGETS)[number];
 
+export type FlagVariant = { value: string; label: string; description: string };
+
 export type FeatureFlagDef = {
   key: string;
   label: string;
@@ -34,6 +36,14 @@ export type FeatureFlagDef = {
   // resolved value while no row exists). Omitted => off.
   defaultEnabled?: boolean;
   defaultEveryone?: boolean;
+  // Multi-value flags: the options an operator picks between, instead of the
+  // flag meaning a bare on/off. Targeting is unchanged — the flag still has to
+  // be enabled and match the user — it just resolves to the chosen option
+  // rather than `true`. Untargeted users fall through to the caller's own
+  // default (see resolveFlagVariant), NOT to defaultVariant.
+  variants?: readonly FlagVariant[];
+  // Which option a targeted user gets when the row hasn't named one.
+  defaultVariant?: string;
 };
 
 export const FEATURE_FLAGS = [
@@ -44,14 +54,51 @@ export const FEATURE_FLAGS = [
       "Show the desktop-app download banner, /download surfaces, and welcome CTA.",
   },
   {
+    key: "home-surface",
+    label: "Home page",
+    description:
+      "Which page / renders for the people this flag targets. Everyone it doesn't target keeps the current home — except members on the new left navigation, who get the search-first home with it.",
+    variants: [
+      {
+        value: "classic",
+        label: "Current home",
+        description: "Welcome header, favorites, forms, and the DALI General Calendar week.",
+      },
+      {
+        value: "search",
+        label: "Search-first",
+        description: "DALI mark, search box, shortcut tiles, then tasks and notifications.",
+      },
+      {
+        value: "calendar",
+        label: "Calendar",
+        description: "Opens the calendar (availability, scheduling, timesheet) as the landing page.",
+      },
+    ],
+    defaultVariant: "search",
+  },
+  {
     key: "sidebar-redesign",
     label: "New left navigation",
     description:
       "Pinned Home / Tasks / Calendar plus a single active-area dropdown. When on, the in-page horizontal pill rows are hidden. When off, users see the current flat sidebar with in-page pills.",
   },
+  {
+    key: "drive-consolidation",
+    label: "Unified Drive",
+    description:
+      "Merge Documents + Forms (and files, agreements, templates) into one Google-Shared-Drives-style section organized by access scope. When on, the sidebar shows a single Drive area instead of separate Documents and Forms entries.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];
+
+/** The three home pages a member can land on. See the "home-surface" flag. */
+export type HomeSurface = "classic" | "search" | "calendar";
+
+export function isHomeSurface(value: string | null | undefined): value is HomeSurface {
+  return value === "classic" || value === "search" || value === "calendar";
+}
 
 export type FeatureFlagMap = Record<FeatureFlagKey, boolean>;
 
@@ -66,6 +113,8 @@ export type FlagConfig = {
   everyone: boolean;
   roles: string[];
   userIds: string[];
+  /** Multi-value flags only; null = the registry's defaultVariant. */
+  variant?: string | null;
 };
 
 // A flag is on for a user iff the master switch is set AND any targeting rule
@@ -80,4 +129,21 @@ export function evaluateFlag(
   if (config.everyone) return true;
   if (config.userIds.includes(userId)) return true;
   return config.roles.some((k) => k in roles && roles[k as keyof UserRoles]);
+}
+
+// The option a multi-value flag resolves to for one user, or null when the
+// flag doesn't target them — callers decide what "not targeted" means, since
+// the sensible fallback differs per feature.
+export function evaluateVariant(
+  def: FeatureFlagDef,
+  config: FlagConfig,
+  userId: string,
+  roles: UserRoles,
+): string | null {
+  if (!evaluateFlag(config, userId, roles)) return null;
+  const chosen = config.variant ?? def.defaultVariant ?? null;
+  // A row naming an option that has since left the registry shouldn't strand
+  // the user on a surface that no longer exists.
+  if (chosen && def.variants?.some((v) => v.value === chosen)) return chosen;
+  return def.defaultVariant ?? null;
 }

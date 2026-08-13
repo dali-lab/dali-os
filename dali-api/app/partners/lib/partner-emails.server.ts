@@ -1,5 +1,5 @@
 import { sendEmail } from "~/lib/gmail";
-import { getSenderRefreshToken } from "~/lib/gmail-integration";
+import { getSender } from "~/lib/gmail-integration";
 import { getAppEnv, getFrontendUrl } from "~/lib/app-env";
 
 // All partner-facing mail goes through the lab's applications Gmail
@@ -7,14 +7,14 @@ import { getAppEnv, getFrontendUrl } from "~/lib/app-env";
 // on any provider; nothing here requires the partner to have a Google
 // account.
 async function send(to: string, subject: string, html: string): Promise<void> {
-  const refreshToken = await getSenderRefreshToken("Partners");
-  if (!refreshToken) {
+  const sender = await getSender("Partners");
+  if (!sender) {
     if (getAppEnv() !== "dev") {
       console.error("partner email skipped: applications Gmail not connected");
     }
     return;
   }
-  await sendEmail({ refreshToken, to, subject, html });
+  await sendEmail({ refreshToken: sender.refreshToken, from: sender.sendAsEmail, to, subject, html });
 }
 
 const wrap = (body: string) => `

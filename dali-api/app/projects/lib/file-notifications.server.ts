@@ -36,6 +36,9 @@ async function loadFileAudience(fileId: string): Promise<{
     },
   });
   if (!file) return null;
+  // Lab-scoped files (no projectId) don't have a project participant set to
+  // gate against; skip notifications for them for now.
+  if (!file.projectId) return null;
   const stakeholders = new Set<string>();
   for (const v of file.versions) stakeholders.add(v.uploadedById);
   for (const c of file.comments) stakeholders.add(c.authorId);

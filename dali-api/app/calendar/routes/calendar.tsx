@@ -35,7 +35,16 @@ import {
 } from "~/lib/roles";
 import { CalendarActionSchema, validateTimeEntryRange } from "~/lib/calendar-schemas";
 import { syncManualBlockTimeEntry } from "~/lib/time-entry-sync";
-import { fetchBusyEvents, listCalendarsForLink } from "~/lib/google-calendar";
+import {
+  fetchBusyEvents,
+  listCalendarsForLink,
+  subscribeCalendarForLink,
+} from "~/lib/google-calendar";
+import {
+  generalCalendarId,
+  generalCalendarState,
+  type GeneralCalendarState,
+} from "~/lib/general-calendar";
 import { getZonedHourFraction, getZonedYMD, resolveUserTimeZone, zonedDayStartUtc } from "~/lib/timezone";
 import { formatPayPeriod, isPayPeriodEnd, payPeriodFor } from "~/lib/pay-period";
 import { timeEntryDayUtc } from "~/calendar/lib/timesheet-day";
@@ -158,6 +167,7 @@ type LoaderData = {
   hasPersistedWorkingHours: boolean;
   manualBlocks: ManualBlockDTO[];
   calendarLinks: CalendarLinkDTO[];
+  generalCalendar: GeneralCalendarState;
   weekStartIso: string;
   weekEndIso: string;
   // External (Google) events for display: real titles + per-calendar colour,
@@ -170,6 +180,10 @@ type LoaderData = {
     color: string | null;
     description?: string;
     location?: string;
+    organizerName?: string;
+    attendees?: EventAttendeeDTO[];
+    /** { label, href } pairs for the detail popover (Meet link, Google page). */
+    links?: EventLinkDTO[];
   }[];
   ingestionError: string | null;
   groups: GroupOption[];
@@ -196,7 +210,39 @@ type MeetingInviteDTO = {
   endIso: string;
   rsvp: "Accepted" | "Declined" | "Tentative" | null;
   notePageId: string | null;
+  organizerName: string | null;
+  attendees: EventAttendeeDTO[];
 };
+
+/** One invitee row in an event's detail popover, from either source. */
+type EventAttendeeDTO = {
+  name: string;
+  status: "Accepted" | "Declined" | "Tentative" | "Pending";
+  organizer?: boolean;
+  optional?: boolean;
+};
+
+type EventLinkDTO = { label: string; href: string };
+
+// Google's responseStatus vocabulary → the labels the detail popover shows,
+// shared with the DALI-native RSVP wording so one guest list reads the same
+// whichever calendar the event came from.
+const GOOGLE_RSVP_LABEL: Record<
+  "accepted" | "declined" | "tentative" | "needsAction",
+  EventAttendeeDTO["status"]
+> = {
+  accepted: "Accepted",
+  declined: "Declined",
+  tentative: "Tentative",
+  needsAction: "Pending",
+};
+
+function userDisplayName(
+  u: { firstName: string | null; lastName: string | null; daliEmail: string | null } | undefined,
+): string | null {
+  if (!u) return null;
+  return fullName(u) || u.daliEmail || null;
+}
 
 function defaultWorkingHours(): WhDay[] {
   // Mon–Fri 9–5 InPerson, weekends disabled. The "default" segment lives only in
@@ -445,18 +491,51 @@ export async function loader({ request }: Route.LoaderArgs) {
             title: true,
             selectedAt: true,
             durationMinutes: true,
+            organizerId: true,
+            participantUserIds: true,
             notePage: { select: { id: true } },
+            // Every invitee's RSVP lives on their own MeetingInvite row, so the
+            // popover's guest list reads them all, not just the viewer's.
+            notifications: {
+              where: { kind: "MeetingInvite" },
+              select: { recipientUserId: true, rsvp: true },
+            },
           },
         },
       },
     }),
   ]);
 
+  // Names for every organizer/participant on this week's invites, in one hit —
+  // the picker's `users` list is current-term members only, so it can't be
+  // relied on to resolve an organizer who has since gone alumni.
+  const inviteeIds = new Set<string>();
+  for (const n of inviteRows) {
+    const m = n.scheduledMeeting;
+    if (!m) continue;
+    inviteeIds.add(m.organizerId);
+    for (const id of m.participantUserIds) inviteeIds.add(id);
+  }
+  const inviteeRows =
+    inviteeIds.size > 0
+      ? await prisma.user.findMany({
+          where: { id: { in: [...inviteeIds] } },
+          select: { id: true, firstName: true, lastName: true, daliEmail: true },
+        })
+      : [];
+  const inviteeById = new Map(inviteeRows.map((u) => [u.id, u]));
+
   const meetingInvites: MeetingInviteDTO[] = inviteRows.flatMap((n) => {
     const m = n.scheduledMeeting;
     if (!m?.selectedAt) return [];
     const start = m.selectedAt;
     const end = new Date(start.getTime() + m.durationMinutes * 60_000);
+    const rsvpByUser = new Map(
+      m.notifications.map((row) => [row.recipientUserId, row.rsvp] as const),
+    );
+    // Organizer first, then participants — the organizer isn't always in
+    // participantUserIds, so dedupe rather than assume.
+    const rosterIds = [m.organizerId, ...m.participantUserIds.filter((id) => id !== m.organizerId)];
     return [
       {
         notificationId: n.id,
@@ -466,9 +545,24 @@ export async function loader({ request }: Route.LoaderArgs) {
         endIso: end.toISOString(),
         rsvp: n.rsvp,
         notePageId: m.notePage?.id ?? null,
+        organizerName: userDisplayName(inviteeById.get(m.organizerId)),
+        attendees: rosterIds.map((id) => {
+          const u = inviteeById.get(id);
+          return {
+            name: userDisplayName(u) ?? "Unknown member",
+            // The organizer scheduled it, so treat them as attending rather
+            // than showing them permanently "Pending" on their own meeting.
+            status: id === m.organizerId ? "Accepted" : rsvpByUser.get(id) || "Pending",
+            organizer: id === m.organizerId,
+          };
+        }),
       },
     ];
   });
+
+  // Derived from the calendar lists already fetched above — no extra Google
+  // round-trip.
+  const generalCalendar = generalCalendarState(calendarLinks);
 
   const data: LoaderData = {
     timezone,
@@ -486,6 +580,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       roleRefId: b.roleRefId,
     })),
     calendarLinks,
+    generalCalendar,
     weekStartIso: weekStart.toISOString(),
     weekEndIso: weekEnd.toISOString(),
     externalEvents: externalBusyRaw.map((e) => ({
@@ -495,6 +590,17 @@ export async function loader({ request }: Route.LoaderArgs) {
       color: e.color ?? null,
       description: e.description,
       location: e.location,
+      organizerName: e.organizerName,
+      attendees: e.attendees?.map((a) => ({
+        name: a.name,
+        status: GOOGLE_RSVP_LABEL[a.responseStatus],
+        organizer: a.organizer,
+        optional: a.optional,
+      })),
+      links: [
+        ...(e.meetingUrl ? [{ label: "Join video call", href: e.meetingUrl }] : []),
+        ...(e.htmlLink ? [{ label: "Open in Google Calendar", href: e.htmlLink }] : []),
+      ],
     })),
     ingestionError,
     groups,
@@ -794,6 +900,26 @@ export async function action({ request }: Route.ActionArgs) {
       return null;
     }
 
+    case "subscribe-general-calendar": {
+      const generalId = generalCalendarId();
+      if (!generalId) {
+        return Response.json({ error: "No DALI calendar is configured" }, { status: 400 });
+      }
+      const link = await prisma.userCalendarLink.findUnique({ where: { id: input.linkId } });
+      if (!link || link.userId !== userId || link.provider !== "Google") {
+        return Response.json({ error: "Not found" }, { status: 404 });
+      }
+      try {
+        await subscribeCalendarForLink(link.id, generalId);
+      } catch (err) {
+        return Response.json(
+          { error: err instanceof Error ? err.message : "Couldn't add the DALI calendar" },
+          { status: 502 },
+        );
+      }
+      return null;
+    }
+
     case "add-time-entry": {
       const rangeError = validateTimeEntryRange(input);
       if (rangeError) return Response.json({ error: rangeError }, { status: 400 });
@@ -1004,6 +1130,8 @@ function coerceFormToAction(raw: Record<string, FormDataEntryValue>): unknown {
         calendarId: get("calendarId"),
         enabled: asBool(get("enabled")),
       };
+    case "subscribe-general-calendar":
+      return { intent, linkId: get("linkId") };
     case "add-time-entry":
       return {
         intent,
@@ -1158,7 +1286,11 @@ function AvailabilityView({ data }: { data: LoaderData }) {
               <PanelLeftClose className="h-4 w-4" />
             </button>
           </header>
-          <CalendarIntegrationsCard links={data.calendarLinks} ingestionError={data.ingestionError} />
+          <CalendarIntegrationsCard
+            links={data.calendarLinks}
+            ingestionError={data.ingestionError}
+            generalCalendar={data.generalCalendar}
+          />
           <WorkingHoursCard
             workingHours={data.workingHours}
             hasPersisted={data.hasPersistedWorkingHours}
@@ -1177,9 +1309,11 @@ function AvailabilityView({ data }: { data: LoaderData }) {
 function CalendarIntegrationsCard({
   links,
   ingestionError,
+  generalCalendar,
 }: {
   links: CalendarLinkDTO[];
   ingestionError: string | null;
+  generalCalendar: GeneralCalendarState;
 }) {
   return (
     <section>
@@ -1205,6 +1339,7 @@ function CalendarIntegrationsCard({
           Couldn't refresh external events: {ingestionError}
         </div>
       )}
+      {generalCalendar === "missing" && <GeneralCalendarPrompt links={links} />}
       <div className="flex flex-col gap-3">
         {links.length === 0 && (
           <div className="bg-card border border-border shadow-brand-1 rounded-md p-3 text-xs text-muted-foreground">
@@ -1216,6 +1351,61 @@ function CalendarIntegrationsCard({
         ))}
       </div>
     </section>
+  );
+}
+
+// Shown while the shared DALI General Calendar isn't on any linked Google
+// account. One account → subscribe straight away; several → let the member pick
+// which one it lands on.
+function GeneralCalendarPrompt({ links }: { links: CalendarLinkDTO[] }) {
+  const fetcher = useFetcher<{ error?: string }>();
+  const [picking, setPicking] = useState(false);
+  const accounts = links.filter((l) => l.provider === "Google");
+  if (accounts.length === 0) return null;
+
+  const subscribe = (linkId: string) =>
+    fetcher.submit({ intent: "subscribe-general-calendar", linkId }, { method: "post" });
+  const busy = fetcher.state !== "idle";
+  const error = fetcher.data?.error;
+
+  return (
+    <div className="bg-accent-coral/10 border border-accent-coral/30 rounded-md px-3 py-2.5 mb-2 flex flex-col gap-2">
+      <p className="text-xs text-foreground">
+        The DALI General Calendar isn&apos;t on any of your linked accounts — add it to see
+        lab-wide events in your own Google Calendar.
+      </p>
+      {picking && accounts.length > 1 ? (
+        <div className="flex flex-col gap-1">
+          {accounts.map((a) => (
+            <button
+              key={a.id}
+              type="button"
+              disabled={busy}
+              onClick={() => subscribe(a.id)}
+              className="flex items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5 text-left text-xs text-foreground hover:bg-muted transition-colors disabled:opacity-60"
+            >
+              <GoogleIcon />
+              <span className="truncate">{a.externalEmail}</span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => (accounts.length === 1 ? subscribe(accounts[0].id) : setPicking(true))}
+          className="self-start inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-md bg-accent-coral text-white hover:bg-accent-coral-light transition-colors disabled:opacity-60"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          {busy
+            ? "Adding…"
+            : accounts.length === 1
+              ? `Add to ${accounts[0].externalEmail}`
+              : "Add DALI calendar"}
+        </button>
+      )}
+      {error && <div className="text-[11px] text-destructive">{error}</div>}
+    </div>
   );
 }
 
@@ -2056,6 +2246,9 @@ function AvailabilityWeekGrid({
       borderClassName: e.color ? undefined : "border-accent-coral-light",
       location: e.location,
       description: e.description,
+      organizerName: e.organizerName,
+      attendees: e.attendees,
+      links: e.links,
     }, eventsByDay);
   }
   for (const b of data.manualBlocks) {
@@ -2072,6 +2265,8 @@ function AvailabilityWeekGrid({
       label: inv.title,
       className: style.className,
       borderClassName: style.borderClassName,
+      organizerName: inv.organizerName ?? undefined,
+      attendees: inv.attendees,
       meeting: {
         notificationId: inv.notificationId,
         rsvp: inv.rsvp,
@@ -4812,6 +5007,11 @@ type EventBlock = {
   bufferAfter?: number;
   location?: string;
   description?: string;
+  organizerName?: string;
+  /** Invitees + their response, shown in the click-opened detail popover. */
+  attendees?: EventAttendeeDTO[];
+  /** Outbound links for the popover (video call, source calendar, notes). */
+  links?: EventLinkDTO[];
   /** When set, the block is clickable (e.g. Timesheet entries opening an edit
    *  popover). Stops the mousedown from bubbling to the column's drag-select
    *  handler so a click doesn't also start a new drag selection. */
@@ -4859,6 +5059,9 @@ function CalendarEventDetailPopover({
   timeRange,
   location,
   description,
+  organizerName,
+  attendees,
+  links,
   onClose,
   footer,
 }: {
@@ -4867,6 +5070,9 @@ function CalendarEventDetailPopover({
   timeRange: string;
   location?: string;
   description?: string;
+  organizerName?: string;
+  attendees?: EventAttendeeDTO[];
+  links?: EventLinkDTO[];
   // When set, the popover is interactive (click-opened): a backdrop dismisses
   // it and Escape closes it. Hover popovers leave this undefined.
   onClose?: () => void;
@@ -4915,7 +5121,7 @@ function CalendarEventDetailPopover({
       window.removeEventListener("resize", place);
       window.removeEventListener("scroll", place, true);
     };
-  }, [anchorEl, title, timeRange, location, description]);
+  }, [anchorEl, title, timeRange, location, description, attendees, links]);
 
   if (typeof document === "undefined") return null;
 
@@ -4940,11 +5146,22 @@ function CalendarEventDetailPopover({
   return createPortal(
     <>
       {onClose && (
-        <div className="fixed inset-0 z-40" onMouseDown={onClose} />
+        <div
+          className="fixed inset-0 z-40"
+          onMouseDown={onClose}
+          onClick={(ev) => ev.stopPropagation()}
+        />
       )}
       <div
         ref={cardRef}
-        className="fixed z-50 w-72 max-h-80 overflow-y-auto rounded-md shadow-lg p-2.5 text-xs"
+        role={onClose ? "dialog" : undefined}
+        aria-label={onClose ? title : undefined}
+        // Rendered through a portal, but React events still bubble to the
+        // calendar block that opened it — which would toggle the card shut on
+        // every click inside it.
+        onClick={(ev) => ev.stopPropagation()}
+        onMouseDown={(ev) => ev.stopPropagation()}
+        className="fixed z-50 w-80 max-h-[26rem] overflow-y-auto rounded-md shadow-lg p-3 text-xs"
         style={{
           left,
           top,
@@ -4954,8 +5171,27 @@ function CalendarEventDetailPopover({
           border: "1px solid var(--color-border)",
         }}
       >
-        <div className="font-semibold text-foreground">{title}</div>
-        <div className="text-muted-foreground mt-0.5">{timeRange}</div>
+        <div className="flex items-start gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="font-semibold text-sm text-foreground break-words">{title}</div>
+            <div className="text-muted-foreground mt-0.5">{timeRange}</div>
+          </div>
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close event details"
+              className="-mt-0.5 -mr-1 shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.75">
+                <path d="M4 4l8 8M12 4l-8 8" strokeLinecap="round" />
+              </svg>
+            </button>
+          )}
+        </div>
+        {organizerName && (
+          <div className="mt-1.5 text-muted-foreground">Organized by {organizerName}</div>
+        )}
         {location && (
           <div className="mt-2">
             <div className="uppercase tracking-wide text-[10px] text-muted-foreground mb-0.5">
@@ -4963,6 +5199,25 @@ function CalendarEventDetailPopover({
             </div>
             <div className="text-foreground whitespace-pre-wrap break-words">{location}</div>
           </div>
+        )}
+        {links && links.length > 0 && (
+          <div className="mt-2 flex flex-col items-start gap-1">
+            {links.map((l) => (
+              <a
+                key={l.href}
+                href={l.href}
+                target="_blank"
+                rel="noreferrer noopener"
+                onMouseDown={(ev) => ev.stopPropagation()}
+                className="font-medium text-accent-coral hover:underline break-all"
+              >
+                {l.label} →
+              </a>
+            ))}
+          </div>
+        )}
+        {attendees && attendees.length > 0 && (
+          <EventGuestList attendees={attendees} />
         )}
         {description && (
           <div className="mt-2">
@@ -4976,6 +5231,72 @@ function CalendarEventDetailPopover({
       </div>
     </>,
     document.body,
+  );
+}
+
+// Dot colour per response, so the guest list scans by status without needing a
+// badge on every row. Pending is a hollow ring — nothing to report yet.
+const ATTENDEE_DOT: Record<EventAttendeeDTO["status"], string> = {
+  Accepted: "bg-green-600",
+  Declined: "bg-red-500",
+  Tentative: "bg-yellow-500",
+  Pending: "border border-muted-foreground/60",
+};
+
+// Long invite lists (a whole-lab event) would push the rest of the card out of
+// reach, so collapse past this many and let the user expand.
+const GUESTS_COLLAPSED = 6;
+
+function EventGuestList({ attendees }: { attendees: EventAttendeeDTO[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const accepted = attendees.filter((a) => a.status === "Accepted").length;
+  const declined = attendees.filter((a) => a.status === "Declined").length;
+  const pending = attendees.filter((a) => a.status === "Pending").length;
+  const shown = expanded ? attendees : attendees.slice(0, GUESTS_COLLAPSED);
+  const summary = [
+    `${accepted} accepted`,
+    declined > 0 ? `${declined} declined` : null,
+    pending > 0 ? `${pending} awaiting` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  return (
+    <div className="mt-2">
+      <div className="uppercase tracking-wide text-[10px] text-muted-foreground mb-0.5">
+        {attendees.length} {attendees.length === 1 ? "guest" : "guests"}
+      </div>
+      <div className="text-[10px] text-muted-foreground mb-1">{summary}</div>
+      <ul className="space-y-0.5">
+        {shown.map((a, i) => (
+          <li key={`${a.name}-${i}`} className="flex items-center gap-1.5">
+            <span className={`h-2 w-2 shrink-0 rounded-full ${ATTENDEE_DOT[a.status]}`} />
+            <span
+              className={`truncate ${a.status === "Declined" ? "text-muted-foreground line-through" : "text-foreground"}`}
+              title={a.name}
+            >
+              {a.name}
+            </span>
+            {a.organizer && (
+              <span className="shrink-0 text-[10px] text-muted-foreground">organizer</span>
+            )}
+            {a.optional && (
+              <span className="shrink-0 text-[10px] text-muted-foreground">optional</span>
+            )}
+          </li>
+        ))}
+      </ul>
+      {attendees.length > GUESTS_COLLAPSED && (
+        <button
+          type="button"
+          onMouseDown={(ev) => ev.stopPropagation()}
+          onClick={() => setExpanded((v) => !v)}
+          className="mt-1 text-[11px] font-medium text-accent-coral hover:underline"
+        >
+          {expanded ? "Show fewer" : `Show all ${attendees.length}`}
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -5006,10 +5327,15 @@ function WeekGridEvent({ e }: { e: EventBlock }) {
   const bodyHeight = e.duration * HOUR_PX;
   const timeRange = `${formatHourMinute(e.startHour)} – ${formatHourMinute(e.startHour + e.duration)}`;
   const isMeeting = Boolean(e.meeting);
-  // Meeting invites open a persistent (click) popover with RSVP controls;
-  // other detail-bearing blocks keep the hover popover.
-  const hasDetails = Boolean(e.location || e.description);
-  const clickable = Boolean(e.onClick || isMeeting);
+  // Every block that carries anything worth reading opens the same persistent
+  // popover on click, Google-Calendar style — hover was no good once the card
+  // grew links and a guest list you have to be able to reach with the pointer.
+  // Blocks with their own onClick (Timesheet entries → edit popover) keep it.
+  const hasDetails = Boolean(
+    e.location || e.description || e.organizerName || e.attendees?.length || e.links?.length,
+  );
+  const opensDetail = !e.onClick && (isMeeting || hasDetails);
+  const clickable = Boolean(e.onClick) || opensDetail;
 
   return (
     <div
@@ -5027,7 +5353,21 @@ function WeekGridEvent({ e }: { e: EventBlock }) {
       // Previously this was gated on `e.onClick`, which is why only the
       // clickable (Manual) blocks were protected.
       onMouseDown={(ev) => ev.stopPropagation()}
-      onClick={isMeeting ? () => setDetailOpen((v) => !v) : e.onClick}
+      onClick={opensDetail ? () => setDetailOpen((v) => !v) : e.onClick}
+      role={clickable ? "button" : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onKeyDown={
+        clickable
+          ? (ev) => {
+              if (ev.target !== ev.currentTarget) return;
+              if (ev.key !== "Enter" && ev.key !== " ") return;
+              ev.preventDefault();
+              if (opensDetail) setDetailOpen((v) => !v);
+              else e.onClick?.();
+            }
+          : undefined
+      }
+      aria-label={clickable ? `${e.label}, ${timeRange}` : undefined}
     >
       <div
         ref={setAnchorEl}
@@ -5045,8 +5385,6 @@ function WeekGridEvent({ e }: { e: EventBlock }) {
             ? { backgroundColor: e.bgColor, color: readableTextColor(e.bgColor) }
             : {}),
         }}
-        onMouseEnter={hasDetails && !isMeeting ? () => setDetailOpen(true) : undefined}
-        onMouseLeave={hasDetails && !isMeeting ? () => setDetailOpen(false) : undefined}
       >
         {e.label && <span className="truncate block">{e.label}</span>}
         {bodyHeight >= 34 && (
@@ -5065,51 +5403,49 @@ function WeekGridEvent({ e }: { e: EventBlock }) {
           </span>
         )}
       </div>
-      {detailOpen && isMeeting && e.meeting && (
-        <CalendarEventDetailPopover
-          anchorEl={anchorEl}
-          title={e.label}
-          timeRange={timeRange}
-          onClose={() => setDetailOpen(false)}
-          footer={
-            <div className="mt-2 border-t border-border pt-2" onMouseDown={(ev) => ev.stopPropagation()}>
-              <div className="flex items-center gap-2">
-                <span className="uppercase tracking-wide text-[10px] text-muted-foreground">
-                  Your RSVP
-                </span>
-                {e.meeting.rsvp ? (
-                  <span
-                    className={`inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded ${RSVP_BADGE[e.meeting.rsvp]}`}
-                  >
-                    {e.meeting.rsvp}
-                  </span>
-                ) : (
-                  <span className="text-[10px] text-muted-foreground">No response yet</span>
-                )}
-              </div>
-              <RsvpButtons
-                notificationId={e.meeting.notificationId}
-                onResponded={() => setDetailOpen(false)}
-              />
-              {e.meeting.notePageId && (
-                <Link
-                  to={`/documents/${e.meeting.notePageId}`}
-                  className="mt-2 inline-block text-[11px] font-medium text-accent-coral hover:underline"
-                >
-                  Open meeting note →
-                </Link>
-              )}
-            </div>
-          }
-        />
-      )}
-      {detailOpen && hasDetails && !isMeeting && (
+      {detailOpen && opensDetail && (
         <CalendarEventDetailPopover
           anchorEl={anchorEl}
           title={e.label}
           timeRange={timeRange}
           location={e.location}
           description={e.description}
+          organizerName={e.organizerName}
+          attendees={e.attendees}
+          links={e.links}
+          onClose={() => setDetailOpen(false)}
+          footer={
+            e.meeting ? (
+              <div className="mt-2 border-t border-border pt-2" onMouseDown={(ev) => ev.stopPropagation()}>
+                <div className="flex items-center gap-2">
+                  <span className="uppercase tracking-wide text-[10px] text-muted-foreground">
+                    Your RSVP
+                  </span>
+                  {e.meeting.rsvp ? (
+                    <span
+                      className={`inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded ${RSVP_BADGE[e.meeting.rsvp]}`}
+                    >
+                      {e.meeting.rsvp}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-muted-foreground">No response yet</span>
+                  )}
+                </div>
+                <RsvpButtons
+                  notificationId={e.meeting.notificationId}
+                  onResponded={() => setDetailOpen(false)}
+                />
+                {e.meeting.notePageId && (
+                  <Link
+                    to={`/documents/${e.meeting.notePageId}`}
+                    className="mt-2 inline-block text-[11px] font-medium text-accent-coral hover:underline"
+                  >
+                    Open meeting note →
+                  </Link>
+                )}
+              </div>
+            ) : null
+          }
         />
       )}
     </div>

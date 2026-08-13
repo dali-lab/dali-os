@@ -22,11 +22,14 @@ import { TabWorkspace, type TabWorkspaceHandle, type OpenTabRequest } from '~/co
 import { useOpenTasks, TASKS_CHANGED_EVENT } from '~/components/NotificationBell'
 import { DesktopBanner } from '~/components/DesktopBanner'
 import { CommandPalette } from '~/components/CommandPalette'
+import { useFeatureFlag } from '~/components/FeatureFlags'
 import { TablessHistoryNav, useRecordTablessHistory } from '~/components/TablessHistoryNav'
 import { setFocusPreference } from '~/lib/focus-mode'
+import { cn } from '~/lib/cn'
 import {
   areaForPath,
   activeSubtabHref,
+  hasSubnavRow,
   visibleAreas,
   visibleSubtabs,
   type NavArea,
@@ -64,6 +67,71 @@ const SIDEBAR_COLLAPSED_KEY = 'dali:sidebar:collapsed'
 // sidebar reopens on the section you were last working in.
 const LAST_AREA_KEY = 'dali:sidebar:area'
 
+// The active-area switcher is the sidebar's primary navigation control now, so
+// it has to read as a control. Closed it sits in a faint well with a hairline
+// ring — the vocabulary of a select field, not of another nav row; open it
+// brightens and its ring tightens so the trigger and its menu read as one
+// object.
+function areaTriggerClass(open: boolean) {
+  return cn(
+    'w-full flex items-center gap-3 px-3 py-2 rounded-md',
+    'text-sm font-heading font-semibold text-white ring-1 transition-colors',
+    open
+      ? 'bg-white/[0.14] ring-white/25'
+      : 'bg-white/[0.06] ring-white/10 hover:bg-white/[0.11] hover:ring-white/20',
+  )
+}
+
+// A row inside the area menu. The selected row is marked by a coral icon, a
+// coral check and weight — not by a well, which would echo the trigger sitting
+// directly above it and read as the same bar drawn twice. Before this it
+// differed from the rest by text opacity alone (white vs white/70), which on
+// navy is not a state you can see.
+function areaOptionClass(selected: boolean) {
+  return cn(
+    'w-full flex items-center gap-3 px-3 py-2 text-sm text-left transition-colors',
+    selected
+      ? 'font-semibold text-white'
+      : 'text-white/70 hover:bg-white/[0.07] hover:text-white',
+  )
+}
+
+// A sub-tab under the open area. Same problem, same fix — plus the coral rail
+// below, which lights up the guide line at your position.
+function subtabClass(active: boolean, collapsed: boolean) {
+  return cn(
+    'relative flex items-center gap-2.5 rounded-md text-[13px] font-medium text-left transition-colors',
+    collapsed ? 'px-3 py-2 justify-center' : 'px-2.5 py-1.5',
+    active
+      ? 'bg-white/[0.13] font-semibold text-white'
+      : 'text-white/60 hover:bg-white/[0.06] hover:text-white',
+  )
+}
+
+// Icons take their own contrast ramp rather than inheriting the label's, so a
+// glyph reads as a marker instead of dissolving into the word beside it.
+function subtabIconClass(active: boolean) {
+  return cn(
+    'w-4 h-4 flex-shrink-0 transition-colors',
+    active ? 'text-accent-coral' : 'text-white/45 group-hover:text-white/90',
+  )
+}
+
+// The active-sub-tab marker, drawn over the list's guide line so the rule
+// itself lights up coral at your position rather than gaining a second stripe.
+function SubtabRail({ collapsed }: { collapsed: boolean }) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        'absolute top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-full bg-accent-coral',
+        'motion-safe:animate-nav-rail',
+        collapsed ? 'left-0' : '-left-[9px]',
+      )}
+    />
+  )
+}
+
 export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDomainLead = false, canViewForms = false, canViewStaffing = false, isInterviewer = false, hasHiringAccess = false, isLabMentor = false, isInstructor = false, favorites = [], recents = [], focusMode = false, children }: LayoutProps) {
   const location = useLocation()
   const navigate = useNavigate()
@@ -77,9 +145,10 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
   // Pages with their own AreaPillNav/UnderlineTabButtons row host the
   // tabless history arrows inline (see TablessHistoryNavInline) — skip the
   // standalone bar there so the arrows don't stack a second row on top.
-  const hasAreaSubnav = matches.some(
-    (m) => (m as { handle?: { areaPills?: boolean } }).handle?.areaPills,
-  )
+  // This used to read `areaPills` alone, which got both signals backwards —
+  // see hasSubnavRow for why calendar was doubling the row.
+  const redesign = useFeatureFlag('sidebar-redesign')
+  const ownsSubnavRow = hasSubnavRow(matches, redesign)
   // Held in refs so the message listener (mounted once) always calls the
   // latest values without needing to re-subscribe.
   const revalidateRef = useRef(revalidate)
@@ -290,6 +359,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
   // pinned surfaces (Home / My Tasks / Calendar) it falls back to the last
   // area worked in. Role gating for both the area list and its sub-tabs lives
   // in the nav-areas registry, evaluated against these flags.
+  const driveConsolidation = useFeatureFlag("drive-consolidation")
   const roleFlags: RoleFlags = {
     isCore,
     isAdmin,
@@ -301,7 +371,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
     isLabMentor,
     isInstructor,
   }
-  const areas = visibleAreas(roleFlags)
+  const areas = visibleAreas(roleFlags, { "drive-consolidation": driveConsolidation })
   const routeArea = areaForPath(path)
   const activeArea = routeArea ?? areas.find((a) => a.key === lastAreaKey) ?? areas[0]
   const activeSubtabs = activeArea ? visibleSubtabs(activeArea, roleFlags) : []
@@ -530,13 +600,19 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
                           onClick={() => {
                             // Tasks are notification rows — POST /read clears
                             // the tile + drops the count once the user acts.
-                            fetch(`/api/notifications/${t.id}/read`, {
-                              method: 'POST',
-                              credentials: 'include',
-                              keepalive: true,
-                            }).then(() =>
-                              window.dispatchEvent(new Event(TASKS_CHANGED_EVENT)),
-                            )
+                            // Self-clearing tasks (a form to submit, the
+                            // onboarding checklist) are the exception: opening
+                            // the link isn't acting on them, so they clear only
+                            // when their own action completes.
+                            if (!t.hasAction) {
+                              fetch(`/api/notifications/${t.id}/read`, {
+                                method: 'POST',
+                                credentials: 'include',
+                                keepalive: true,
+                              }).then(() =>
+                                window.dispatchEvent(new Event(TASKS_CHANGED_EVENT)),
+                              )
+                            }
                             openInWorkspace({ url: t.link!, label: t.title })
                           }}
                           className={`${cls} text-white/55 hover:text-white hover:bg-white/5`}
@@ -607,16 +683,25 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
                   onClick={() => setAreaMenuOpen((v) => !v)}
                   aria-haspopup="listbox"
                   aria-expanded={areaMenuOpen}
-                  className="w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-heading font-semibold text-white/90 hover:bg-white/5 transition-colors"
+                  className={areaTriggerClass(areaMenuOpen)}
                 >
-                  <activeArea.icon className="w-4 h-4 flex-shrink-0" />
+                  <activeArea.icon className="w-4 h-4 flex-shrink-0 text-white/70" />
                   <span className="truncate">{activeArea.label}</span>
-                  <ChevronsUpDown className="w-3.5 h-3.5 ml-auto text-white/40 flex-shrink-0" />
+                  <ChevronsUpDown
+                    className={cn(
+                      'w-3.5 h-3.5 ml-auto flex-shrink-0 transition-colors',
+                      areaMenuOpen ? 'text-white/80' : 'text-white/45',
+                    )}
+                  />
                 </button>
                 {areaMenuOpen && (
+                  // white/5 over the navy rail lands within a few percent of
+                  // the rail itself, so the old panel barely separated from the
+                  // nav behind it. A brighter well, a tighter ring and a cast
+                  // shadow make it read as a surface sitting above the sidebar.
                   <div
                     role="listbox"
-                    className="mt-1 max-h-80 overflow-y-auto rounded-md bg-white/5 ring-1 ring-white/10 py-1"
+                    className="mt-1 max-h-80 overflow-y-auto rounded-md bg-white/10 ring-1 ring-white/20 shadow-lg shadow-black/40 py-1 motion-safe:animate-area-menu"
                   >
                     {areas.map((a) => {
                         const selected = a.key === activeArea.key
@@ -627,13 +712,18 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
                             role="option"
                             aria-selected={selected}
                             onClick={(e) => selectArea(a, e)}
-                            className={`w-full flex items-center gap-3 px-3 py-2 text-sm text-left transition-colors hover:bg-white/10 ${
-                              selected ? 'text-white' : 'text-white/70'
-                            }`}
+                            className={areaOptionClass(selected)}
                           >
-                            <a.icon className="w-4 h-4 flex-shrink-0" />
+                            <a.icon
+                              className={cn(
+                                'w-4 h-4 flex-shrink-0',
+                                selected ? 'text-accent-coral' : 'text-white/45',
+                              )}
+                            />
                             <span className="truncate">{a.label}</span>
-                            {selected && <Check className="w-3.5 h-3.5 ml-auto flex-shrink-0" />}
+                            {selected && (
+                              <Check className="w-3.5 h-3.5 ml-auto flex-shrink-0 text-accent-coral" />
+                            )}
                           </button>
                         )
                       })}
@@ -652,11 +742,10 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
                       type="button"
                       title={collapsed ? t.label : undefined}
                       {...tabClickProps({ url: t.href, label: t.label })}
-                      className={`flex items-center gap-2.5 rounded-md ${collapsed ? 'px-3 py-2 justify-center' : 'px-2.5 py-1.5'} text-[13px] font-medium text-left transition-colors hover:bg-white/5 ${
-                        active ? 'text-white' : 'text-white/55 hover:text-white'
-                      }`}
+                      className={cn('group', subtabClass(active, collapsed))}
                     >
-                      <t.icon className="w-4 h-4 flex-shrink-0" />
+                      {active && <SubtabRail collapsed={collapsed} />}
+                      <t.icon className={subtabIconClass(active)} />
                       {!collapsed && <span className="truncate">{t.label}</span>}
                     </button>
                   )
@@ -847,7 +936,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
             of the section root. */}
         {tabless ? (
           <div className="flex flex-1 min-h-0 flex-col">
-            {!hasAreaSubnav && <TablessHistoryNav />}
+            {!ownsSubnavRow && <TablessHistoryNav />}
             {children}
           </div>
         ) : (
@@ -901,6 +990,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
         tabless={tabless}
         focusMode={focusMode}
         roles={roleFlags}
+        flags={{ "drive-consolidation": driveConsolidation }}
         onOpen={openFromPalette}
       />
     </div>

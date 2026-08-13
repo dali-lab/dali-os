@@ -21,7 +21,12 @@ vi.mock("~/lib/notify.server", () => ({
 }));
 vi.mock("~/lib/gmail", () => ({ sendEmail: vi.fn() }));
 vi.mock("~/lib/gmail-integration", () => ({
-  getSenderRefreshToken: vi.fn().mockResolvedValue("rt"),
+  getSender: vi.fn().mockResolvedValue({
+    id: "g-1",
+    refreshToken: "rt",
+    sendAsEmail: "applications@dali.dartmouth.edu",
+  }),
+  noteSenderHealth: vi.fn(),
 }));
 vi.mock("~/lib/app-env", () => ({
   getFrontendUrl: vi.fn(() => "http://localhost"),

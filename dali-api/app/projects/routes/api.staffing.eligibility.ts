@@ -109,35 +109,42 @@ export async function action({ request }: Route.ActionArgs) {
     },
   });
   const liveRows = dedupeLiveAssignments(cycleRows);
-  const match = liveRows.find((r) => r.domainId === body.domainId) ?? null;
-  if (match && match.level !== body.level && match.projectId) {
-    const siblings = liveRows.filter((r) => r.projectId === match.projectId);
-    const nextDomains = siblings.map((r) =>
-      r.domainId === body.domainId
-        ? { domainId: r.domainId, level: body.level }
-        : { domainId: r.domainId, level: r.level },
-    );
+  // The member may be staffed in this domain on multiple projects at once; sync
+  // each affected project independently and never touch their rows on projects
+  // that don't include this domain.
+  const affectedProjectIds = [
+    ...new Set(
+      liveRows
+        .filter((r) => r.domainId === body.domainId && r.level !== body.level)
+        .map((r) => r.projectId),
+    ),
+  ];
+  if (affectedProjectIds.length > 0) {
     await prisma.$transaction(async (tx) => {
-      await tx.staffingAssignment.deleteMany({
-        where: {
-          userId: body.userId,
-          staffingCycleId: cycle.id,
-          status: "Proposed",
-        },
-      });
-      for (const d of nextDomains) {
-        await tx.staffingAssignment.create({
-          data: {
+      for (const projectId of affectedProjectIds) {
+        const siblings = liveRows.filter((r) => r.projectId === projectId);
+        await tx.staffingAssignment.deleteMany({
+          where: {
             userId: body.userId,
             staffingCycleId: cycle.id,
-            projectId: match.projectId,
-            termId: cycle.termId,
-            domainId: d.domainId,
-            level: d.level,
+            projectId,
             status: "Proposed",
-            assignedById: auth.user.sub,
           },
         });
+        for (const r of siblings) {
+          await tx.staffingAssignment.create({
+            data: {
+              userId: body.userId,
+              staffingCycleId: cycle.id,
+              projectId,
+              termId: cycle.termId,
+              domainId: r.domainId,
+              level: r.domainId === body.domainId ? body.level : r.level,
+              status: "Proposed",
+              assignedById: auth.user.sub,
+            },
+          });
+        }
       }
     });
   }

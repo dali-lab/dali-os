@@ -11,12 +11,18 @@
 // Meeting-note pages: the loader admits archived meeting-note pages so
 // attendees can still reach the check-in/attendance surface. We do NOT
 // open collab or comment for archived pages — those gates stay strict.
+//
+// Wave 2 (drive scope): scopeKind on Folder pages cascades access downward.
+// With no explicitly-scoped folders in the DB, getPageAccess returns exactly
+// the same result as before — the ancestry walk falls through to the existing
+// workspaceType-derived logic.
 
 import { prisma } from "~/lib/db";
 import { isCore, isProjectMember, isLabMember } from "~/lib/roles";
 import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
 import { sharePermissionFor, permissionAtLeast } from "~/lib/page-sharing.server";
-import type { SharePermission, LinkAccess } from "~/generated/prisma/client";
+import { resolveGroupMembers } from "~/lib/groups";
+import type { SharePermission, LinkAccess, ScopeKind } from "~/generated/prisma/client";
 
 export interface PageAccessResult {
   canView: boolean;
@@ -112,6 +118,101 @@ async function shareAndLinkGrant(
   return level ? permToAccess(level) : DENIED;
 }
 
+// ── Drive scope ancestry walk (Wave 2) ─────────────────────────────────────
+//
+// Rows fetched while walking the parent chain. We batch-fetch up to
+// MAX_ANCESTOR_WALK levels to avoid N+1 loops.
+const MAX_ANCESTOR_WALK = 8; // generous ceiling above MAX_PAGE_DEPTH
+
+type AncestorRow = {
+  id: string;
+  parentPageId: string | null;
+  scopeKind: ScopeKind | null;
+  scopeGroupId: string | null;
+  scopePermission: SharePermission | null;
+  createdById: string | null;
+};
+
+/**
+ * Walk the parentPageId chain from `startParentId` toward the root and return
+ * the nearest ancestor folder that has a non-null scopeKind, or null if none
+ * exists. Stops at MAX_ANCESTOR_WALK to keep query cost bounded.
+ *
+ * This is called only when the item or its parent chain might carry a scope.
+ * With no scoped folders in the DB every call terminates at the root and
+ * returns null — the early-exit that makes this a no-op today.
+ */
+// Whether a page nested under `parentPageId` would fall inside a scoped folder
+// (i.e. some ancestor — including the parent itself — carries a scopeKind).
+// Used by the create/move endpoints to decide whether a new/moved page should
+// default to Restricted general access (scoped drives govern access; the
+// "everyone in the lab" link grant is off inside them, so the scope isn't
+// silently widened). Returns false for a top-level (null-parent) placement.
+export async function isUnderGoverningScope(parentPageId: string | null): Promise<boolean> {
+  if (!parentPageId) return false;
+  return (await findGoverningScope(parentPageId)) !== null;
+}
+
+async function findGoverningScope(
+  startParentId: string | null,
+): Promise<AncestorRow | null> {
+  let id: string | null = startParentId;
+  let steps = 0;
+  while (id !== null && steps < MAX_ANCESTOR_WALK) {
+    const row = await prisma.page.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        parentPageId: true,
+        scopeKind: true,
+        scopeGroupId: true,
+        scopePermission: true,
+        createdById: true,
+      },
+    });
+    if (!row) break;
+    if (row.scopeKind !== null) return row; // governing folder found
+    id = row.parentPageId;
+    steps++;
+  }
+  return null;
+}
+
+/**
+ * Whether `userSub` is a member of the scope defined by `governing`.
+ * Returns the base access level the scope grants, or DENIED if not a member.
+ * `ownerId` is used only for the Private scope.
+ */
+async function scopeBase(
+  governing: AncestorRow,
+  userSub: string,
+  ownerId: string | null,
+  request?: Request,
+): Promise<PageAccessResult> {
+  const basePerm: SharePermission =
+    governing.scopePermission ??
+    (governing.scopeKind === "Lab" ? "View" : "Edit");
+
+  switch (governing.scopeKind as ScopeKind) {
+    case "Private": {
+      // Only the owner gets the base grant; others reach the doc via named share only.
+      return governing.createdById === userSub || ownerId === userSub
+        ? permToAccess(basePerm)
+        : DENIED;
+    }
+    case "Lab": {
+      return (await isLabMember(userSub, request)) ? permToAccess(basePerm) : DENIED;
+    }
+    case "Group": {
+      if (!governing.scopeGroupId) return DENIED;
+      const members = await resolveGroupMembers(governing.scopeGroupId);
+      return members.includes(userSub) ? permToAccess(basePerm) : DENIED;
+    }
+    default:
+      return DENIED;
+  }
+}
+
 /**
  * Compute access for a user on a page whose fields are already loaded.
  * Pass the page object directly when you already have the row.
@@ -157,6 +258,10 @@ export async function getPageAccess(
         labListing: true,
         linkAccess: true,
         linkPermission: true,
+        parentPageId: true,
+        scopeKind: true,
+        scopeGroupId: true,
+        scopePermission: true,
       },
     });
     if (!row) return DENIED;
@@ -180,6 +285,7 @@ export async function getPageAccess(
   // Privacy is the whole point. Core gets NO bypass here — only the owner (full)
   // and public/lab-listed viewers (read + comment) get role-based access; anyone
   // else reaches the doc solely through `extra` (a share or General access).
+  // This branch runs BEFORE the core shortcut below — that order is load-bearing.
   if (page.workspaceType === "Member") {
     let base = DENIED;
     if (page.workspaceId === userSub) {
@@ -189,6 +295,52 @@ export async function getPageAccess(
     }
     return merge(base, extra);
   }
+
+  // ── Drive scope (Wave 2) ─────────────────────────────────────────────────
+  //
+  // Check whether this page is governed by an explicitly-scoped folder. The
+  // governing folder is the nearest ancestor (including the page itself, if it
+  // is a Folder) whose scopeKind is non-null.
+  //
+  // If the page carries a scopeKind directly (it IS the governing folder), use
+  // it. Otherwise walk up the parentPageId chain. If no governing folder is
+  // found — the common case today, where no scope columns are set — skip this
+  // block entirely and fall through to the existing workspaceType logic below.
+  //
+  // Nesting only narrows: if multiple scoped folders exist on the path, the
+  // most restrictive base wins. We take only the *nearest* ancestor's scope
+  // (the spec says the nearest governing folder shadows further ancestors), so
+  // one walk is sufficient.
+  const pageScopeKind = page.scopeKind as ScopeKind | null | undefined;
+  const pageParentPageId = page.parentPageId as string | null | undefined;
+
+  let governing: AncestorRow | null = null;
+  if (pageScopeKind) {
+    // The page itself is (or acts as) the governing folder.
+    governing = {
+      id: page.id,
+      parentPageId: pageParentPageId ?? null,
+      scopeKind: pageScopeKind,
+      scopeGroupId: (page.scopeGroupId as string | null | undefined) ?? null,
+      scopePermission: (page.scopePermission as SharePermission | null | undefined) ?? null,
+      createdById: (page.createdById as string | null | undefined) ?? null,
+    };
+  } else if (pageParentPageId) {
+    // Walk up; terminates fast (returns null) when no ancestor has a scope set.
+    governing = await findGoverningScope(pageParentPageId);
+  }
+
+  if (governing !== null) {
+    // A scope is in effect. Creator always keeps a base grant (softener); the
+    // scope's member set is the authoritative base otherwise.
+    const creatorBase =
+      page.createdById === userSub ? permToAccess(governing.scopePermission ?? "Edit") : DENIED;
+    const memberBase = await scopeBase(governing, userSub, page.workspaceId, request);
+    const base = merge(creatorBase, memberBase);
+    return merge(base, extra);
+  }
+
+  // ── No explicit scope set — existing workspaceType-derived logic (UNCHANGED) ──
 
   // ── Core shortcut (Admin ⊆ Core) — applies to Lab/Project/Education ─────
   const core = await isCore(userSub, request);

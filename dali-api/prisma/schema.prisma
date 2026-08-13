@@ -1075,7 +1075,8 @@ model ProjectFileTag {
 // versions stay downloadable/restorable (mirrors CollabDocumentVersion).
 model ProjectFile {
   id               String  @id @default(cuid())
-  projectId        String
+  // Nullable — null for Lab-scoped files that are not tied to any project.
+  projectId        String?
   // Human-facing name, independent of any single version's stored filename so
   // a rename survives re-upload.
   title            String
@@ -1087,11 +1088,26 @@ model ProjectFile {
   // partner portal (mirrors Page.partnerVisible for shared documents).
   partnerVisible Boolean @default(false)
 
+  // Drive unified tree placement. Null = unplaced (rendered at a default
+  // project-files location outside the folder tree). When set, must point at a
+  // Page of kind=Folder. Loose FK — no DB-level constraint — matching the
+  // existing Page.workspaceId / Page.scopeGroupId convention. Placement is
+  // ORGANISATION only and never widens who can see the file: a viewer must
+  // already have access to this file's project to see it in the tree.
+  folderPageId String?
+
+  // Drive scope for non-project files. Null for project-owned files (use
+  // projectId instead). When workspaceType = Lab, workspaceId is null and
+  // the file is visible to all lab members. Mirrors the Page.workspaceType /
+  // Page.workspaceId polymorphic pattern.
+  workspaceType WorkspaceType?
+  workspaceId   String?
+
   archivedAt DateTime?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   versions       ProjectFileVersion[] @relation("FileVersions")
   currentVersion ProjectFileVersion?  @relation("FileCurrentVersion", fields: [currentVersionId], references: [id])
@@ -1101,6 +1117,8 @@ model ProjectFile {
   taskLinks TaskFileLink[]
 
   @@index([projectId, archivedAt])
+  @@index([folderPageId])
+  @@index([workspaceType, workspaceId, archivedAt])
 }
 
 // m2m: Task ↔ ProjectFile. Links work artifacts (graphics, animation, design
@@ -1972,10 +1990,11 @@ model GroupDefinition {
   type            GroupType
   // For dynamic groups: structured query identifier dispatched in app code.
   // Recognized forms:
-  //   - "term:<termId>"     – members with any assignment/mentorship in that term
-  //   - "project:<projectId>" – members assigned to that project (any term)
-  //   - "domain:<domainId>" – members holding eligibility in that domain
-  //   - "core"              – Core members for the current term
+  //   - "term:<termId>"         – members with any assignment/mentorship in that term
+  //   - "project:<projectId>"   – members assigned to that project (any term)
+  //   - "domain:<domainId>"     – members holding eligibility in that domain
+  //   - "core"                  – Core members for the current term
+  //   - "offering:<offeringId>" – members with an Approved application to that EducationOffering
   dynamicQuery    String?
   // For static groups: explicit member list.
   staticMemberIds String[]
@@ -2174,8 +2193,71 @@ model Term {
   budgetEntries         BudgetEntry[]
   budgetNotes           BudgetNote[]
   signingBindings       SigningBinding[]
+  timelineWeeks         TimelineWeek[]
 
   @@index([sortKey])
+}
+
+// ─── Lab term timeline (/milestones) ─────────────────────────────────────────
+
+// The ten weeks of a term: what each week is for, the milestones every team
+// (or the whole lab) hits, and what each domain owns alongside them. Seeded
+// per term from the defaults in app/lib/term-timeline.ts the first time the
+// page is opened, then edited in place by Core.
+model TimelineWeek {
+  id     String @id @default(cuid())
+  termId String
+  term   Term   @relation(fields: [termId], references: [id], onDelete: Cascade)
+  // 0-based, matching the W0…W9 labels on the page.
+  weekIndex Int
+  title     String
+  dates     String
+  blurb     String
+  // S3 object key (uploads/…) or a pasted URL — resolved through
+  // resolvePhotoUrl like User.photoUrl, so both shapes render.
+  imageKey  String?
+  imageAlt  String?
+  resources String[]
+  // Typography overrides from the edit toolbar, keyed by field path
+  // ("title", "milestone:<id>.name", …) → { size?, bold?, color? }. Absent
+  // keys render at the design's defaults.
+  format    Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  milestones TimelineMilestone[]
+  lanes      TimelineLane[]
+
+  @@unique([termId, weekIndex])
+}
+
+model TimelineMilestone {
+  id     String       @id @default(cuid())
+  weekId String
+  week   TimelineWeek @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  name   String
+  detail String
+  // Lab-wide events (Prod Tales, Bug Hunt, Technigala) render as the coral
+  // banner; the rest are milestones each team hits on its own.
+  labWide  Boolean @default(false)
+  position Int
+
+  @@index([weekId])
+}
+
+model TimelineLane {
+  id     String       @id @default(cuid())
+  weekId String
+  week   TimelineWeek @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  // One of the DOMAINS keys in app/lib/term-timeline.ts ("pm", "design",
+  // "dev", "data") — the domain vocabulary of this page, not the Domain table
+  // (which is staffing's, and is finer-grained).
+  domainKey    String
+  role         String
+  deliverables String[]
+  challenge    String
+
+  @@unique([weekId, domainKey])
 }
 
 enum Season {
@@ -3527,6 +3609,16 @@ model Form {
   folderId String?
   folder   FormFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
 
+  // Drive unified tree placement. Null = unplaced (rendered inside FormsBrowser
+  // under the legacy FormFolder tree). When set, must point at a Page of
+  // kind=Folder. Loose FK — no DB-level constraint — matching the existing
+  // Page.workspaceId / ProjectFile.folderPageId convention. Placement is
+  // ORGANISATION only and NEVER changes who can see or fill this form: the
+  // existing canViewForms gate and form audience rules remain the sole access
+  // controls. This field is consumed only for display ordering in the unified
+  // drive tree; it does not affect fill/visibility semantics in any way.
+  folderPageId String?
+
   createdById String
   createdBy   User   @relation(fields: [createdById], references: [id])
 
@@ -3580,6 +3672,7 @@ model Form {
   educationBindings                   EducationFormBinding[]          @relation("EducationFormBindings")
 
   @@index([folderId])
+  @@index([folderPageId])
   @@index([createdById])
 }
 
@@ -3801,8 +3894,7 @@ model Page {
   // polymorphic scope id); the explicit project / offering back-relations
   // below cover the cases we look up by.
   workspaceId   String?
-  // Null for top-level pages. App-level constraint: parentPageId's parent
-  // must itself be null (enforces the 2-level cap from the plan).
+  // Null for top-level pages. Arbitrary depth; app enforces a max of 6.
   parentPageId  String?
   title         String
   kind          PageKind      @default(FreeForm)
@@ -3810,6 +3902,24 @@ model Page {
   // (which render from their underlying schema entities).
   contentDocId  String?
   position      Int           @default(0)
+
+  // ─── Drive scope (Wave 2) — meaningful only when kind = Folder ───────────
+  //
+  // Governs who can access this folder and all items it contains. Null on any
+  // non-Folder page and on ordinary folders that inherit from their ancestor.
+  // Only the *nearest* ancestor folder with a non-null scopeKind is governing;
+  // further ancestors are shadowed (nesting only narrows, never widens).
+  //
+  // Private = owner only; Lab = any lab member; Group = resolveGroupMembers(scopeGroupId).
+  // scopePermission is the base grant level members of that scope receive.
+  // With no explicitly-scoped folders in the DB this has NO effect on getPageAccess —
+  // the resolver falls back to the existing workspaceType-derived logic.
+  scopeKind       ScopeKind?
+  // Loose FK → GroupDefinition.id; only meaningful when scopeKind = Group.
+  scopeGroupId    String?
+  // Base permission members of this scope receive. Null = resolver picks a
+  // sensible default (View for Lab, Edit for Group/Private roots).
+  scopePermission SharePermission?
 
   // Notion-style page metadata.
   iconEmoji     String?
@@ -4084,9 +4194,16 @@ enum WorkspaceType {
 enum PageKind {
   FreeForm
   Structured
-  // A container page with no content of its own — only children. Always
-  // top-level (a folder never has a parentPageId, matching the 2-level cap).
+  // A container page with no content of its own — only children. May nest
+  // up to depth 6; a Folder may carry a scopeKind to govern access for
+  // everything inside it.
   Folder
+}
+
+enum ScopeKind {
+  Private
+  Lab
+  Group
 }
 
 model PageTemplate {
@@ -4248,6 +4365,10 @@ model FeatureFlag {
   // Explicit User.id allowlist. Not an FK: a deleted user simply stops
   // matching; the flag config should not cascade-delete.
   userIds  String[] @default([])
+  // Multi-value flags only (FeatureFlagDef.variants): which option targeted
+  // users get. Null falls back to the registry's defaultVariant. Ignored by
+  // plain on/off flags.
+  variant  String?
   note     String?
 
   updatedAt DateTime @updatedAt

@@ -92,6 +92,40 @@ describe("sendEmail — prod environment", () => {
     expect(decoded).not.toContain("[STAGING]");
     expect(decoded).toContain("<p>Body</p>");
   });
+
+  it("sends against the me mailbox and defaults From to applications@", async () => {
+    process.env.DALI_APP_ENV = "prod";
+    mockTokenAndSendOk();
+
+    await sendEmail({
+      refreshToken: "rt",
+      to: "applicant@example.com",
+      subject: "Hello",
+      html: "<p>Body</p>",
+    });
+
+    // `me` = the token's own account, so any sender's token can send.
+    expect(fetchMock.mock.calls[1][0]).toContain("/users/me/messages/send");
+    const decoded = decodeRaw(JSON.parse(fetchMock.mock.calls[1][1].body as string).raw);
+    expect(decoded).toContain("From: DALI Lab <applications@dali.dartmouth.edu>");
+  });
+
+  it("stamps From with an explicit sender identity so a non-applications token can send", async () => {
+    process.env.DALI_APP_ENV = "prod";
+    mockTokenAndSendOk();
+
+    await sendEmail({
+      refreshToken: "rt",
+      from: "dalios@dali.dartmouth.edu",
+      to: "member@dali.dartmouth.edu",
+      subject: "Announcement",
+      html: "<p>Body</p>",
+    });
+
+    const decoded = decodeRaw(JSON.parse(fetchMock.mock.calls[1][1].body as string).raw);
+    expect(decoded).toContain("From: DALI Lab <dalios@dali.dartmouth.edu>");
+    expect(decoded).not.toContain("applications@dali.dartmouth.edu");
+  });
 });
 
 describe("sendEmail — ICS calendar attachment", () => {

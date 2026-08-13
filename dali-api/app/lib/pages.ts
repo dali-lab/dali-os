@@ -71,6 +71,60 @@ export async function createLabMeetingPage(input: {
   });
 }
 
+// ─── Nesting guards ──────────────────────────────────────────────────────────
+
+// Maximum allowed depth in the page tree. Depth 0 = top-level; depth 6 = six
+// levels of nesting. Capped here rather than the DB so the walk stays bounded.
+export const MAX_PAGE_DEPTH = 6;
+
+/**
+ * Walk the parentPageId chain from `startId` (exclusive) toward the root,
+ * returning the depth of `startId` itself (0 = root).  Returns -1 if any
+ * ancestor is not found (broken chain) or if the chain would exceed
+ * MAX_PAGE_DEPTH + 1 (avoids infinite loops on cyclic data).
+ */
+export async function pageDepth(startId: string): Promise<number> {
+  let id: string | null = startId;
+  let depth = 0;
+  while (id !== null) {
+    if (depth > MAX_PAGE_DEPTH + 1) return -1; // runaway guard
+    const row: { parentPageId: string | null } | null = await prisma.page.findUnique({
+      where: { id },
+      select: { parentPageId: true },
+    });
+    if (!row) return -1;
+    id = row.parentPageId;
+    if (id !== null) depth++;
+  }
+  return depth;
+}
+
+/**
+ * Returns true if `ancestorId` appears anywhere in the ancestor chain of
+ * `pageId`. Used to prevent cyclic moves: before setting page.parentPageId =
+ * newParentId, check `isAncestor(newParentId, pageId)` and reject if true.
+ * Bounded by MAX_PAGE_DEPTH + 2 to handle broken/cyclic chains gracefully.
+ */
+export async function isAncestorOf(
+  ancestorId: string,
+  pageId: string,
+): Promise<boolean> {
+  let id: string | null = pageId;
+  let steps = 0;
+  while (id !== null) {
+    if (steps > MAX_PAGE_DEPTH + 2) return false; // broken/cyclic chain
+    const row: { parentPageId: string | null } | null = await prisma.page.findUnique({
+      where: { id },
+      select: { parentPageId: true },
+    });
+    if (!row) return false;
+    id = row.parentPageId;
+    if (id === ancestorId) return true;
+    steps++;
+  }
+  return false;
+}
+
 // Creates a Page in the Lab workspace (workspaceType=Lab, workspaceId=null —
 // see Page.workspaceType comment in schema.prisma). Same shape as
 // createProjectPage but for the lab-wide Documents area: supports Folder-kind
@@ -81,6 +135,10 @@ export async function createLabPage(input: {
   createdById: string;
   parentPageId?: string | null;
   kind?: PageKind;
+  /** Override the default communal general access. Pass "Restricted" for pages
+   *  created inside a scoped drive (e.g. Core), so the scope governs access and
+   *  the "everyone in the lab" link grant doesn't silently widen them. */
+  restricted?: boolean;
 }): Promise<{ id: string }> {
   const parentPageId = input.parentPageId ?? null;
   const last = await prisma.page.findFirst({
@@ -99,12 +157,62 @@ export async function createLabPage(input: {
       position,
       parentPageId,
       createdById: input.createdById,
-      // Lab docs default to the communal shelf: everyone in the lab can edit.
-      linkAccess: "LabMembers",
-      linkPermission: "Edit",
+      // Lab docs default to the communal shelf (everyone in the lab can edit);
+      // pages inside a scoped drive start Restricted so the scope is authoritative.
+      linkAccess: input.restricted ? "Restricted" : "LabMembers",
+      linkPermission: input.restricted ? "View" : "Edit",
     },
     select: { id: true },
   });
+}
+
+// Idempotently ensures the lab-wide "Core" drive root exists: a top-level Lab
+// Folder scoped to the Core group. scopeKind=Group cascades Core-only access to
+// everything inside it (getPageAccess ancestry walk), and linkAccess=Restricted
+// keeps it hidden from non-Core members on every list surface (same protection
+// existing Restricted lab docs already rely on). Its systemKey both dedupes and
+// stops api.documents.$id deleting it. Returns the folder id, or null if the
+// Core GroupDefinition hasn't been provisioned yet (syncDefaultGroups seeds it).
+export async function ensureCoreDriveRoot(createdById: string): Promise<{ id: string } | null> {
+  const systemKey = "drive:core-root";
+  const existing = await prisma.page.findUnique({ where: { systemKey }, select: { id: true } });
+  if (existing) return existing;
+
+  const coreGroup = await prisma.groupDefinition.findUnique({
+    where: { systemKey: "core" },
+    select: { id: true },
+  });
+  if (!coreGroup) return null;
+
+  try {
+    const last = await prisma.page.findFirst({
+      where: { workspaceType: "Lab", workspaceId: null, parentPageId: null },
+      orderBy: { position: "desc" },
+      select: { position: true },
+    });
+    return await prisma.page.create({
+      data: {
+        workspaceType: "Lab",
+        workspaceId: null,
+        title: "Core",
+        kind: "Folder",
+        position: last ? last.position + 1 : 0,
+        createdById,
+        systemKey,
+        scopeKind: "Group",
+        scopeGroupId: coreGroup.id,
+        scopePermission: "Edit",
+        // Restricted: the scope grants Core; nobody reaches it via the lab link.
+        linkAccess: "Restricted",
+        linkPermission: "View",
+      },
+      select: { id: true },
+    });
+  } catch {
+    const retry = await prisma.page.findUnique({ where: { systemKey }, select: { id: true } });
+    if (retry) return retry;
+    throw new Error("Failed to ensure Core drive root");
+  }
 }
 
 export type MeetingNotesFolderKind = "Team" | "Partner";

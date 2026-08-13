@@ -1,4 +1,4 @@
-import { useEffect, useState, type MouseEvent } from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { Link, redirect, useLoaderData, useRevalidator } from "react-router";
 import {
   AlignLeft,
@@ -9,10 +9,11 @@ import {
   ChevronLeft,
   ChevronRight,
   ExternalLink,
-  FileText,
+  Search,
   CalendarClock,
   GraduationCap,
   MapPin,
+  Milestone,
   Star,
   UserRound,
   X,
@@ -30,10 +31,14 @@ import { FavoriteIcon } from "~/components/FavoriteIcon";
 import { FavoriteStar } from "~/components/FavoriteStar";
 import { FavoriteRouteButton } from "~/components/FavoriteRouteButton";
 import { isNavbarRoute } from "~/lib/navbar-routes";
-import { listedFormsFor, type ListedForm } from "~/forms/lib/public-form";
 import { listCatalog, registrationOpen } from "~/education/lib/offerings.server";
 import { listUpcomingSessionsForUser } from "~/education/lib/schedule.server";
 import { fetchGeneralCalendarEvents } from "~/lib/general-calendar";
+import { getUserRoles } from "~/lib/roles";
+import { resolveHomeSurface } from "~/lib/feature-flags.server";
+import { TYPE_META } from "~/components/CommandPalette";
+import { MIN_QUERY_LENGTH, type SearchResult } from "~/lib/search";
+import { Avatar } from "~/components/ui/Avatar";
 import {
   getZonedHourFraction,
   getZonedYMD,
@@ -62,6 +67,15 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (auth.user.type === "applicant") return redirect("/portal");
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) return partnerRedirect;
+
+  // Which home this member gets — see the "home-surface" flag. The calendar
+  // surface is the real /calendar route rather than a copy of it here: it owns
+  // its own loader, action, and sub-tab chrome, so home hands the member over
+  // instead of trying to re-host all three.
+  const roles = await getUserRoles(auth.user.sub);
+  const surface = await resolveHomeSurface(auth.user.sub, roles);
+  if (surface === "calendar") return redirect("/calendar");
+  const redesign = surface === "search";
 
   // Which week to show. ?week=<n> is an offset from the current one (0 = this
   // week, -1 = last, 1 = next) so the panel can page without a client-side
@@ -101,7 +115,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     tz,
   );
 
-  const [items, tasks, rawEvents, formsForYou, assignedTasks, catalog, upcomingSessions, pages] =
+  const [items, tasks, rawEvents, assignedTasks, catalog, upcomingSessions, pages] =
     await Promise.all([
     timed(request, 'home.notifications', () => prisma.notification.findMany({
       // Hide invites whose meeting was Cancelled — they shouldn't appear in the
@@ -138,9 +152,11 @@ export async function loader({ request }: Route.LoaderArgs) {
     })),
     timed(request, 'home.openTasks', () => listOpenTasks(auth.user.sub)),
     // Real events from the public DALI General Calendar (empty when unconfigured
-    // or on fetch failure — the panel then shows an empty grid + hint).
-    timed(request, 'home.ics', () => fetchGeneralCalendarEvents(weekStart, weekEnd)),
-    timed(request, 'home.forms', () => listedFormsFor(auth.user.sub)),
+    // or on fetch failure — the panel then shows an empty grid + hint). The
+    // redesigned home drops the week panel, so its external fetch goes too.
+    redesign
+      ? []
+      : timed(request, 'home.ics', () => fetchGeneralCalendarEvents(weekStart, weekEnd)),
     // Open board tasks assigned to the viewer, across all their projects
     // (Archived projects are retired — their tasks are noise here). One
     // bounded query: soonest deadline first (undated last), then priority.
@@ -262,6 +278,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (__loaderTotal >= 400) console.log(`[perf-total] home loader ${__loaderTotal.toFixed(0)}ms`);
 
   return {
+    redesign,
     user: auth.user,
     notifications,
     tasks,
@@ -271,7 +288,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     weekOffset,
     weekLabel,
     timeZone: tz,
-    formsForYou,
     education,
     pages,
   };
@@ -316,6 +332,341 @@ type HomeWeekEvent = {
 };
 
 export default function Home() {
+  const data = useLoaderData<typeof loader>();
+  return data.redesign ? <HomeRedesign /> : <HomeClassic />;
+}
+
+/* ------------------------------------------------------------------ */
+/* Redesigned home (behind `sidebar-redesign`, alongside the new left   */
+/* navigation): a search-first landing page — logo, the same indexed    */
+/* search the navbar runs, shortcuts to starred/recent pages, and the   */
+/* attention surfaces below. No general-calendar week panel.            */
+/* ------------------------------------------------------------------ */
+
+function HomeRedesign() {
+  const { user, notifications, tasks, myProjectTasks, education, pages } =
+    useLoaderData<typeof loader>();
+  const firstName = user.firstName || user.email.split("@")[0];
+
+  const compactBlocks = [
+    myProjectTasks.length > 0 && <MyTasksPanel tasks={myProjectTasks} />,
+    hasEducationContent(education) && <EducationPanel education={education} />,
+  ].filter(Boolean);
+
+  return (
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-10">
+      <div className="flex flex-col items-center gap-5 pt-12 sm:pt-20">
+        {/* The blue mark disappears against the dark page, so each theme gets
+            its own file rather than a filter. */}
+        <img src="/logo-blue.svg" alt="DALI Lab" className="h-20 w-auto sm:h-24 dark:hidden" />
+        <img
+          src="/logo-white.svg"
+          alt=""
+          aria-hidden
+          className="hidden h-20 w-auto sm:h-24 dark:block"
+        />
+        <p className="text-sm text-muted-foreground">Welcome back, {firstName}</p>
+        <HomeSearch />
+        <ShortcutTiles pages={pages} />
+      </div>
+
+      <div className="flex flex-col gap-6">
+        <MilestonesBanner />
+
+        <AttentionBanner tasks={tasks} notifications={notifications} />
+
+        {compactBlocks.length > 1 ? (
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+            {[0, 1].map((col) => (
+              <div key={col} className="flex min-w-0 flex-1 flex-col gap-6">
+                {compactBlocks
+                  .filter((_, i) => i % 2 === col)
+                  .map((block, i) => (
+                    <div key={i} className="min-w-0">
+                      {block}
+                    </div>
+                  ))}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="min-w-0">{compactBlocks[0]}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Milestones — a pointer to the term timeline. Sits at the top of the   */
+/* attention column so the shape of the term is one click from the front */
+/* door.                                                                 */
+/* ------------------------------------------------------------------ */
+
+function MilestonesBanner() {
+  return (
+    <Link
+      to="/milestones"
+      className="group flex items-center gap-3 rounded-lg border border-accent-coral/30 bg-accent-coral/10 p-3 transition-colors hover:bg-accent-coral/15"
+    >
+      <Milestone className="h-4 w-4 flex-shrink-0 text-accent-coral" aria-hidden />
+      <span className="min-w-0 flex-1">
+        <span className="block font-heading text-sm font-semibold text-foreground">
+          Check out our new milestones
+        </span>
+        <span className="block text-xs text-muted-foreground">
+          The term week by week — lab-wide events, team milestones, and what each domain owns.
+        </span>
+      </span>
+      <ChevronRight className="h-4 w-4 flex-shrink-0 text-accent-coral transition-transform group-hover:translate-x-0.5" />
+    </Link>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Search — a real input, answered in place. It queries the same         */
+/* /api/search endpoint the command palette uses (so permissions and     */
+/* ranking stay in one place), but the home page is the search surface:  */
+/* typing here does not open the palette modal.                          */
+/* ------------------------------------------------------------------ */
+
+function HomeSearch() {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<SearchResult[]>([]);
+  const [active, setActive] = useState(0);
+  const [open, setOpen] = useState(false);
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  // Debounced + abortable, mirroring the palette: aborting per keystroke also
+  // drops stale in-flight responses so a slow one can't overwrite a newer query.
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < MIN_QUERY_LENGTH) {
+      setResults([]);
+      return;
+    }
+    const ctrl = new AbortController();
+    const t = setTimeout(() => {
+      fetch(`/api/search?q=${encodeURIComponent(q)}`, {
+        credentials: "include",
+        signal: ctrl.signal,
+      })
+        .then((r) => (r.ok ? r.json() : { results: [] }))
+        .then((d) => {
+          setResults(d.results ?? []);
+          setActive(0);
+        })
+        .catch(() => {
+          /* aborted or network error — leave prior results */
+        });
+    }, 150);
+    return () => {
+      clearTimeout(t);
+      ctrl.abort();
+    };
+  }, [query]);
+
+  // Close the result list on an outside click, leaving the query in the field.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: globalThis.MouseEvent) => {
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  const show = open && query.trim().length >= MIN_QUERY_LENGTH;
+
+  // Home renders inside the workspace iframe, so a result opens as a workspace
+  // tab rather than navigating this view away — same rule as every other link
+  // on this page.
+  const openResult = (r: SearchResult) => {
+    if (window.self !== window.top) {
+      window.parent.postMessage(
+        { type: "dali:openTab", url: r.url, label: r.title },
+        window.location.origin,
+      );
+    } else {
+      window.location.assign(r.url);
+    }
+    setOpen(false);
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Escape") {
+      setOpen(false);
+      return;
+    }
+    if (!show || results.length === 0) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActive((i) => (i + 1) % results.length);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActive((i) => (i - 1 + results.length) % results.length);
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const hit = results[active];
+      if (hit) openResult(hit);
+    }
+  };
+
+  return (
+    <div ref={boxRef} className="relative w-full max-w-2xl">
+      <div className="flex items-center gap-3 rounded-full border border-border bg-card px-6 py-4 shadow-brand-1 focus-within:ring-2 focus-within:ring-accent-teal">
+        <Search className="h-5 w-5 flex-shrink-0 text-muted-foreground" aria-hidden />
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          onKeyDown={onKeyDown}
+          placeholder="Search people, projects, documents…"
+          aria-label="Search"
+          role="combobox"
+          aria-expanded={show}
+          aria-controls="home-search-results"
+          autoComplete="off"
+          className="min-w-0 flex-1 bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground"
+        />
+      </div>
+
+      {show && (
+        // Absolute so a long result list never pushes the shortcut tiles down.
+        <div
+          id="home-search-results"
+          role="listbox"
+          className="absolute inset-x-0 top-full z-20 mt-2 max-h-96 overflow-y-auto rounded-2xl border border-border bg-card py-2 text-left shadow-brand-2"
+        >
+          {results.length === 0 ? (
+            <p className="px-5 py-3 text-sm text-muted-foreground">
+              No matches for “{query.trim()}”
+            </p>
+          ) : (
+            results.map((r, i) => {
+              const Icon = TYPE_META[r.type].icon;
+              return (
+                <button
+                  key={`${r.type}-${r.id}`}
+                  type="button"
+                  role="option"
+                  aria-selected={i === active}
+                  onMouseEnter={() => setActive(i)}
+                  onClick={() => openResult(r)}
+                  className={`flex w-full items-center gap-3 px-5 py-2.5 text-left transition-colors ${
+                    i === active ? "bg-muted/60" : "hover:bg-muted/40"
+                  }`}
+                >
+                  {r.type === "person" ? (
+                    <Avatar photoUrl={r.photoUrl} name={r.title} size="xs" />
+                  ) : r.iconEmoji ? (
+                    <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center leading-none">
+                      {r.iconEmoji}
+                    </span>
+                  ) : (
+                    <Icon className="h-4 w-4 flex-shrink-0 text-muted-foreground" aria-hidden />
+                  )}
+                  <span className="min-w-0 flex-1 truncate text-sm text-foreground">{r.title}</span>
+                  {r.subtitle && (
+                    <span className="max-w-[40%] flex-shrink-0 truncate text-xs text-muted-foreground">
+                      {r.subtitle}
+                    </span>
+                  )}
+                </button>
+              );
+            })
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Shortcuts — starred pages first, then the ones you opened recently,  */
+/* as a tile row under the search box. Replaces the Favorites list      */
+/* panel on the redesigned home.                                        */
+/* ------------------------------------------------------------------ */
+
+/** Tiles fill at most two rows on a wide screen. */
+const SHORTCUT_LIMIT = 10;
+
+function ShortcutTiles({
+  pages,
+}: {
+  pages: { favorites: FavoritePage[]; recents: FavoritePage[] };
+}) {
+  const revalidator = useRevalidator();
+  // Starring here re-sorts the row: an un-starred page drops back among the
+  // recents, and a starred one rises out of them.
+  const onChanged = () => revalidator.revalidate();
+  const shortcuts = [...pages.favorites, ...pages.recents].slice(0, SHORTCUT_LIMIT);
+
+  // Nothing starred and nothing opened yet — a brand-new account. Render
+  // nothing: the search box above is the only thing to do here, and a line of
+  // instructions under it just crowds that.
+  if (shortcuts.length === 0) return null;
+
+  return (
+    // Wrapping row rather than a grid so a partial last row stays centered
+    // under the search box.
+    <div className="flex w-full max-w-xl flex-wrap justify-center gap-1">
+      {shortcuts.map((p) => (
+        <ShortcutTile key={p.id} page={p} onChanged={onChanged} />
+      ))}
+    </div>
+  );
+}
+
+function ShortcutTile({ page, onChanged }: { page: FavoritePage; onChanged: () => void }) {
+  return (
+    // Link + star are siblings: the star must not navigate.
+    <div className="group relative w-20">
+      <a
+        href={page.href}
+        className="flex flex-col items-center gap-1.5 rounded-lg px-1 py-3 transition-colors hover:bg-muted/50"
+      >
+        <span className="flex h-11 w-11 items-center justify-center rounded-full border border-border bg-card shadow-brand-1">
+          <FavoriteIcon page={page} />
+        </span>
+        <span className="w-full truncate text-center text-[11px] text-foreground">
+          {page.title || "Untitled"}
+        </span>
+      </a>
+      {/* Recents show a hollow star on hover — a way to keep the page without
+          hunting for it — while a favorite always shows its filled one. */}
+      {(page.favorited || !page.isRoute || !isNavbarRoute(page.href)) && (
+        <span
+          className={`absolute right-0 top-1 ${
+            page.favorited ? "" : "opacity-0 focus-within:opacity-100 group-hover:opacity-100"
+          }`}
+        >
+          {page.isRoute ? (
+            <FavoriteRouteButton
+              href={page.href}
+              label={page.title}
+              favorited={page.favorited}
+              onToggled={onChanged}
+              compact
+            />
+          ) : (
+            <FavoriteStar pageId={page.id} favorited={page.favorited} onToggled={onChanged} />
+          )}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Today's home, unchanged — what everyone sees with the flag off.      */
+/* ------------------------------------------------------------------ */
+
+function HomeClassic() {
   const {
     user,
     notifications,
@@ -326,7 +677,6 @@ export default function Home() {
     weekOffset,
     weekLabel,
     timeZone,
-    formsForYou,
     education,
     pages,
   } = useLoaderData<typeof loader>();
@@ -336,7 +686,6 @@ export default function Home() {
   const compactBlocks = [
     myProjectTasks.length > 0 && <MyTasksPanel tasks={myProjectTasks} />,
     <FavoritesPanel pages={pages} />,
-    formsForYou.length > 0 && <FormsForYouPanel forms={formsForYou} />,
     hasEducationContent(education) && <EducationPanel education={education} />,
   ].filter(Boolean);
 
@@ -466,36 +815,6 @@ function EducationPanel({ education }: { education: EducationSummary }) {
         </ul>
       )}
     </section>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Forms for you — published forms that opted into listing (Form.listed) */
-/* and whose audience admits this member. Collapses to nothing when      */
-/* there's nothing to show, like the attention banner.                   */
-/* ------------------------------------------------------------------ */
-
-function FormsForYouPanel({ forms }: { forms: ListedForm[] }) {
-  if (forms.length === 0) return null;
-  return (
-    <div className="bg-card border border-border shadow-brand-1 rounded-lg p-4">
-      <h2 className="inline-flex items-center gap-2 font-heading font-semibold text-foreground mb-2">
-        <FileText className="w-4 h-4 text-accent-coral" />
-        Forms for you
-      </h2>
-      <div className="flex flex-col gap-1">
-        {forms.map((f) => (
-          <a
-            key={f.id}
-            href={f.fillUrl}
-            className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-md text-sm text-foreground hover:bg-muted/50 transition-colors"
-          >
-            <span className="truncate">{f.name}</span>
-            <ExternalLink className="w-3.5 h-3.5 text-muted-foreground/70 shrink-0" />
-          </a>
-        ))}
-      </div>
-    </div>
   );
 }
 

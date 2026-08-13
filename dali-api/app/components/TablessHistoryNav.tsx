@@ -8,6 +8,7 @@ import {
   subscribe,
 } from "~/lib/navigation-history-store";
 import { readTablessPreference } from "~/lib/tabless";
+import { PageDocButton } from "~/components/page-docs/PageDocButton";
 import { desktopVersion } from "~/lib/desktop";
 
 // The arrows are a stand-in for OS/browser chrome tabless mode doesn't have.
@@ -226,11 +227,19 @@ function HistoryNavButtons() {
 
 // Standalone bar, for tabless desktop pages with no subtab row of their own
 // to sit in. Renders nothing on web (no desktop shell) or in tab mode.
+//
+// This bar is the page's one nav row, so it owns the Guide CTA the same way a
+// subtab row does (AreaPillNav) — arrows left, Guide right. The layout's
+// breadcrumb-row copy stands down while this bar is up (see routes/layout.tsx)
+// so the page never shows two.
 export function TablessHistoryNav() {
   if (!useShowTablessHistoryNav()) return null;
   return (
     <div className="flex items-stretch h-10 bg-section-bg border-b border-border shrink-0">
       <HistoryNavButtons />
+      <span className="ml-auto flex shrink-0 items-center self-center pl-2 pr-2">
+        <PageDocButton />
+      </span>
     </div>
   );
 }

@@ -137,7 +137,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     }),
     // Both in-progress (Proposed) and finalized (Confirmed) assignments — a
     // confirmed roster must stay on the board after finalize, not vanish.
-    // Declined rows are audit only. Deduped to one card per (user, cycle) below.
+    // Declined rows are audit only. Deduped to live rows per (user, project) below.
     prisma.staffingAssignment.findMany({
       where: { staffingCycleId: cycle.id, status: { in: ["Proposed", "Confirmed"] } },
       select: { userId: true, projectId: true, domainId: true, level: true, status: true },
@@ -173,8 +173,9 @@ export async function loader({ request }: Route.LoaderArgs) {
     }),
   ]);
 
-  // Collapse a member's Proposed + Confirmed rows to one live card (see
-  // dedupeLiveAssignments) so a finalized roster stays on the board.
+  // Collapse a member's Proposed + Confirmed rows to their live rows per project
+  // (see dedupeLiveAssignments) so a finalized roster stays on the board; a
+  // member staffed on several projects keeps a live row on each.
   const assignmentRows = dedupeLiveAssignments(rawAssignmentRows);
 
   // Union in any non-archived project that's actually being staffed this cycle
@@ -451,7 +452,7 @@ export default function StaffingPage() {
 
   const page = (
     <div className="flex flex-col gap-4">
-      <AreaPillNav items={projectsPills({ canViewStaffing: true, active: "board" })} />
+      <AreaPillNav items={projectsPills({ canViewStaffing: true, active: "staffing" })} />
       <header className="flex items-start justify-between gap-3">
         <div>
           <h1 className="font-heading text-2xl font-bold text-foreground">Staffing</h1>

@@ -168,6 +168,85 @@ describe("fetchBusyEvents", () => {
     });
   });
 
+  it("carries guests, organizer, and join links onto the busy event", async () => {
+    prismaMock.userCalendarLink.findMany.mockResolvedValueOnce([
+      { id: "L1", subCalendarIds: [] },
+    ]);
+    prismaMock.userCalendarLink.findUnique.mockResolvedValue({
+      oauthTokens: encryptedTokens({
+        accessToken: "tok",
+        refreshToken: "r",
+        expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+      }),
+    });
+    mockFetchSequence([
+      { items: [{ id: "primary", summary: "Me", primary: true }] },
+      {
+        items: [
+          {
+            id: "e1",
+            summary: "Design review",
+            status: "confirmed",
+            start: { dateTime: "2026-05-12T13:00:00Z" },
+            end: { dateTime: "2026-05-12T14:00:00Z" },
+            htmlLink: "https://calendar.google.com/event?eid=abc",
+            // No hangoutLink — conferenceData is the Zoom/Teams-style fallback.
+            conferenceData: {
+              entryPoints: [
+                { entryPointType: "phone", uri: "tel:+15551234" },
+                { entryPointType: "video", uri: "https://zoom.us/j/123" },
+              ],
+            },
+            organizer: { email: "lead@dali.dartmouth.edu", displayName: "Lead Dev" },
+            attendees: [
+              { email: "lead@dali.dartmouth.edu", displayName: "Lead Dev", organizer: true, responseStatus: "accepted" },
+              { email: "me@dali.dartmouth.edu", self: true, responseStatus: "tentative" },
+              { email: "maybe@dali.dartmouth.edu", optional: true },
+            ],
+          },
+        ],
+      },
+    ]);
+    prismaMock.userCalendarLink.update.mockResolvedValue({});
+
+    const out = await fetchBusyEvents(
+      "userX",
+      new Date("2026-05-12T00:00:00Z"),
+      new Date("2026-05-13T00:00:00Z"),
+    );
+    expect(out).toHaveLength(1);
+    expect(out[0].htmlLink).toBe("https://calendar.google.com/event?eid=abc");
+    expect(out[0].meetingUrl).toBe("https://zoom.us/j/123");
+    expect(out[0].organizerName).toBe("Lead Dev");
+    expect(out[0].attendees).toEqual([
+      {
+        name: "Lead Dev",
+        email: "lead@dali.dartmouth.edu",
+        responseStatus: "accepted",
+        organizer: true,
+        self: undefined,
+        optional: undefined,
+      },
+      {
+        name: "me@dali.dartmouth.edu",
+        email: "me@dali.dartmouth.edu",
+        responseStatus: "tentative",
+        organizer: undefined,
+        self: true,
+        optional: undefined,
+      },
+      // No responseStatus from Google → treated as still awaiting a reply.
+      {
+        name: "maybe@dali.dartmouth.edu",
+        email: "maybe@dali.dartmouth.edu",
+        responseStatus: "needsAction",
+        organizer: undefined,
+        self: undefined,
+        optional: true,
+      },
+    ]);
+  });
+
   // Regression: plainTextFromGoogleHtml used to hand-roll tag-stripping +
   // entity-unescaping via regex. However the two steps were ordered, a
   // literal `<script>` tag OR an entity-encoded one (`&lt;script&gt;`) could

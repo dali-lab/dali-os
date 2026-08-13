@@ -11,6 +11,9 @@ export default [
     route("calendar/check-in/:id", "calendar/routes/calendar.check-in.$id.tsx"),
     // My Tasks surface: Open tasks + browsable notification history.
     route("notifications", "routes/notifications.tsx"),
+    // Lab term timeline: the ten weeks of a term, the milestones every team
+    // owes, and what each domain owns alongside them.
+    route("milestones", "routes/milestones.tsx"),
 
     // Document signing: the member "documents to sign" inbox + per-agreement
     // fill/sign page. The app gate (layout loader) redirects here when a
@@ -117,12 +120,26 @@ export default [
       "projects/routes/projects.$id.public-view.tsx",
     ),
 
+    // Drive — unified Documents + Forms hub, shown when the drive-consolidation
+    // feature flag is on. Presents both lenses at /drive?lens=docs|forms without
+    // replacing the underlying /documents and /forms routes (flag-off users are
+    // unaffected).
+    route("drive", "routes/drive.hub.tsx"),
+
     // Documents & files — full-page reusable editor + file viewer. Literal
     // "file" segment precedes the :pageId param so it isn't captured.
     // The bare /documents route is the lab-wide Documents hub (aggregates
     // lab-wide docs + the viewer's project-hub docs).
     route("documents", "routes/documents.hub.tsx"),
     route("documents/file/:fileId", "routes/documents.file.$fileId.tsx"),
+    // Agreement authoring in the Drive (drive-consolidation flag). Literal
+    // "agreement" segment must precede :pageId so it isn't captured by that param.
+    // Re-exports the admin implementation — one authoring surface, two URLs.
+    route("documents/agreement/:id", "signing/routes/documents.agreement.$id.tsx"),
+    route(
+      "documents/agreement/:id/signature/:sigId",
+      "signing/routes/documents.agreement.$id.signature.$sigId.tsx",
+    ),
     route("documents/:pageId", "routes/documents.$pageId.tsx"),
 
     // Members directory (separate from admin/members)
@@ -427,6 +444,10 @@ export default [
   route("api/pages/:id/favorite", "routes/api.pages.$id.favorite.ts"),
   route("api/favorites/route", "routes/api.favorites.route.ts"),
   route("api/move-destinations", "routes/api.move-destinations.ts"),
+  // Drive unified tree: placement move for files and forms (Wave 3).
+  route("api/drive/move", "routes/api.drive.move.ts"),
+  // Drive unified file upload: scope-agnostic file registration (Lab or Project).
+  route("api/drive/files", "routes/api.drive.files.ts"),
   route("api/pages/:id/template", "routes/api.pages.$id.template.ts"),
   route("api/pages/:id/typography", "routes/api.pages.$id.typography.ts"),
   route("api/page-templates", "routes/api.page-templates.ts"),

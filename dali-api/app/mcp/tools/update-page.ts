@@ -1,14 +1,15 @@
 // MCP `update_page` — rename / re-icon / move / archive a project workspace
 // page. Mirrors the app's rules (api.documents.$id.ts + api.projects.$id
-// .documents.ts): documents nest only inside top-level Folders, system-managed
-// pages (systemKey) can't be archived or moved, and archiving a Folder
-// requires it to be empty. Archive is the Page model's soft delete, so this
+// .documents.ts): pages (documents and folders alike) nest inside any Folder up
+// to MAX_PAGE_DEPTH, system-managed pages (systemKey) can't be archived or
+// moved, and archiving a Folder requires it to be empty. Archive is the Page model's soft delete, so this
 // doubles as the delete tool — idempotent re-syncs unarchive/rename instead of
 // duplicating. Gate mirrors web project-edit access: Core, or staffed on the
 // page's project.
 
 import { prisma } from "~/lib/db";
 import { canEditProject } from "./access";
+import { pageDepth, MAX_PAGE_DEPTH, isAncestorOf } from "~/lib/pages";
 
 export const UPDATE_PAGE_TOOL = {
   name: "update_page",
@@ -27,7 +28,7 @@ export const UPDATE_PAGE_TOOL = {
       parentPageId: {
         type: "string",
         description:
-          "Move under this top-level Folder page. Empty string moves to top level. Folders themselves can't be moved into folders.",
+          "Move under this Folder page (documents or folders alike, up to the nesting cap). Empty string moves to top level.",
       },
       archived: {
         type: "boolean",
@@ -96,14 +97,14 @@ export async function runUpdatePage(callerId: string, input: Input) {
   }
 
   if (input.parentPageId !== undefined && input.parentPageId !== (page.parentPageId ?? "")) {
-    if (page.kind === "Folder") {
-      throw new UpdatePageError("Folders can't be nested inside another folder", 400);
-    }
     if (page.systemKey) {
       throw new UpdatePageError("System-managed pages can't be moved", 400);
     }
     const newParentId = input.parentPageId === "" ? null : input.parentPageId;
     if (newParentId) {
+      if (newParentId === page.id) {
+        throw new UpdatePageError("A page can't be moved into itself", 400);
+      }
       const parent = await prisma.page.findUnique({
         where: { id: newParentId },
         select: {
@@ -123,10 +124,15 @@ export async function runUpdatePage(callerId: string, input: Input) {
         throw new UpdatePageError("Parent folder not found", 404);
       }
       if (parent.kind !== "Folder") {
-        throw new UpdatePageError("Documents can only nest inside a folder", 400);
+        throw new UpdatePageError("Pages can only nest inside a folder", 400);
       }
-      if (parent.parentPageId !== null) {
-        throw new UpdatePageError("Pages only nest one level deep", 400);
+      const depth = await pageDepth(newParentId);
+      if (depth < 0 || depth >= MAX_PAGE_DEPTH) {
+        throw new UpdatePageError("Folder is too deeply nested", 400);
+      }
+      // Cycle guard: a folder can't be moved into its own subtree.
+      if (page.kind === "Folder" && (await isAncestorOf(page.id, newParentId))) {
+        throw new UpdatePageError("A folder can't be moved into its own contents", 400);
       }
     }
     const last = await prisma.page.findFirst({

@@ -152,6 +152,25 @@ describe("POST /api/notifications/:id/read intent=unread", () => {
     });
   });
 
+  it("is a no-op echo for a form todo (it clears on submit)", async () => {
+    mockPrisma.notification.findUnique.mockResolvedValue({
+      recipientUserId: USER_ID,
+      readAt: new Date(),
+      scheduledMeetingId: null,
+      kind: "SystemAnnouncement",
+      isTodo: true,
+      form: { published: true, publicToken: "tok" },
+      link: "/forms/fill/tok",
+    });
+    const res = await action({
+      request: unreadReq("n1"),
+      params: { id: "n1" },
+    } as any);
+    const json = await res.json();
+    expect(json).toMatchObject({ ok: true, skipped: "form-todo" });
+    expect(mockPrisma.notification.update).not.toHaveBeenCalled();
+  });
+
   it("is a no-op when the row is already unread", async () => {
     mockPrisma.notification.findUnique.mockResolvedValue({
       recipientUserId: USER_ID,
@@ -210,5 +229,47 @@ describe("POST /api/notifications/:id/read", () => {
     const json = await res.json();
     expect(json).toMatchObject({ ok: true, skipped: "meeting-invite" });
     expect(mockPrisma.notification.update).not.toHaveBeenCalled();
+  });
+
+  it("skips a form todo on plain read — only submitting clears it", async () => {
+    mockPrisma.notification.findUnique.mockResolvedValue({
+      recipientUserId: USER_ID,
+      readAt: null,
+      scheduledMeetingId: null,
+      kind: "SystemAnnouncement",
+      isTodo: true,
+      form: { published: true, publicToken: "tok" },
+      link: "/forms/fill/tok",
+    });
+    const res = await action({
+      request: readReq("n1"),
+      params: { id: "n1" },
+    } as any);
+    const json = await res.json();
+    expect(json).toMatchObject({ ok: true, skipped: "form-todo" });
+    expect(mockPrisma.notification.update).not.toHaveBeenCalled();
+  });
+
+  it("marks a form todo read when its form has no fill page", async () => {
+    // Unpublished form = no link to submit through, so the row would be
+    // stranded if we refused the read.
+    mockPrisma.notification.findUnique.mockResolvedValue({
+      recipientUserId: USER_ID,
+      readAt: null,
+      scheduledMeetingId: null,
+      kind: "SystemAnnouncement",
+      isTodo: true,
+      form: { published: false, publicToken: "tok" },
+      link: null,
+    });
+    const res = await action({
+      request: readReq("n1"),
+      params: { id: "n1" },
+    } as any);
+    expect(res.status).toBe(200);
+    expect(mockPrisma.notification.update).toHaveBeenCalledWith({
+      where: { id: "n1" },
+      data: { readAt: expect.any(Date) },
+    });
   });
 });

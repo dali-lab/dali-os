@@ -4,6 +4,7 @@ import { requireAuth, forbidden } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { publishNotificationChange } from "~/lib/notify-stream.server";
 import { ONBOARDING_EVENT_TYPE } from "~/members/lib/welcome.server";
+import { isSelfClearingFormTodo } from "~/lib/tasks";
 
 export async function action({ request, params }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
@@ -46,6 +47,8 @@ export async function action({ request, params }: Route.ActionArgs) {
       scheduledMeetingId: true,
       kind: true,
       eventType: true,
+      isTodo: true,
+      form: { select: { published: true, publicToken: true } },
     },
   });
   if (!existing) {
@@ -62,17 +65,22 @@ export async function action({ request, params }: Route.ActionArgs) {
   // Welcome onboarding todo only — Core reminders share the /onboarding link
   // but use a different eventType and stay dismissible.
   const isOnboardingTodo = existing.eventType === ONBOARDING_EVENT_TYPE;
+  // Form todo: clears when the form is submitted, never by opening its link.
+  const isFormTodo = isSelfClearingFormTodo(existing);
 
   // Re-open path: flip readAt back to null so the row returns to Open in
-  // History + the Tasks list. Self-clearing rows (meeting invites / onboarding)
-  // own their own read state, so re-opening them is a no-op echo — mirrors the
-  // skips below for the read path.
+  // History + the Tasks list. Self-clearing rows (meeting invites, onboarding,
+  // form todos) own their own read state, so re-opening them is a no-op echo —
+  // mirrors the skips below for the read path.
   if (intent === "unread") {
     if (isMeetingInvite) {
       return withCors(request, Response.json({ ok: true, skipped: "meeting-invite" }));
     }
     if (isOnboardingTodo) {
       return withCors(request, Response.json({ ok: true, skipped: "onboarding" }));
+    }
+    if (isFormTodo) {
+      return withCors(request, Response.json({ ok: true, skipped: "form-todo" }));
     }
     if (!existing.readAt) {
       return withCors(request, Response.json({ ok: true }));
@@ -97,6 +105,13 @@ export async function action({ request, params }: Route.ActionArgs) {
   // from the /onboarding "Finish" action), so it persists across visits.
   if (isOnboardingTodo) {
     return withCors(request, Response.json({ ok: true, skipped: "onboarding" }));
+  }
+
+  // Same rule for a form todo: clicking through to the form — from the sidebar
+  // tile, a desktop banner, or the History row — isn't the same as filling it
+  // in. Only the authed submit (closeFormTodos) marks it read.
+  if (isFormTodo) {
+    return withCors(request, Response.json({ ok: true, skipped: "form-todo" }));
   }
 
   if (existing.readAt) {

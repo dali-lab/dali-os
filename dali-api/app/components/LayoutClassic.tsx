@@ -27,6 +27,7 @@ import { TabWorkspace, type TabWorkspaceHandle, type OpenTabRequest } from '~/co
 import { useOpenTasks, TASKS_CHANGED_EVENT } from '~/components/NotificationBell'
 import { DesktopBanner } from '~/components/DesktopBanner'
 import { CommandPalette } from '~/components/CommandPalette'
+import { useFeatureFlag } from '~/components/FeatureFlags'
 import { setFocusPreference } from '~/lib/focus-mode'
 
 interface LayoutProps {
@@ -89,6 +90,7 @@ export function LayoutClassic({ user, photoUrl, isCore = false, isAdmin = false,
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const workspaceRef = useRef<TabWorkspaceHandle | null>(null)
 
+  const driveConsolidation = useFeatureFlag("drive-consolidation")
   const [paletteOpen, setPaletteOpen] = useState(false)
   const togglePalette = useCallback(() => setPaletteOpen((v) => !v), [])
   // ⌘/Ctrl+K opens the command palette. In tab mode TabWorkspace owns the
@@ -459,13 +461,19 @@ export function LayoutClassic({ user, photoUrl, isCore = false, isAdmin = false,
                           onClick={() => {
                             // Tasks are notification rows — POST /read clears
                             // the tile + drops the count once the user acts.
-                            fetch(`/api/notifications/${t.id}/read`, {
-                              method: 'POST',
-                              credentials: 'include',
-                              keepalive: true,
-                            }).then(() =>
-                              window.dispatchEvent(new Event(TASKS_CHANGED_EVENT)),
-                            )
+                            // Self-clearing tasks (a form to submit, the
+                            // onboarding checklist) are the exception: opening
+                            // the link isn't acting on them, so they clear only
+                            // when their own action completes.
+                            if (!t.hasAction) {
+                              fetch(`/api/notifications/${t.id}/read`, {
+                                method: 'POST',
+                                credentials: 'include',
+                                keepalive: true,
+                              }).then(() =>
+                                window.dispatchEvent(new Event(TASKS_CHANGED_EVENT)),
+                              )
+                            }
                             openInWorkspace({ url: t.link!, label: t.title })
                           }}
                           className={`${cls} text-white/55 hover:text-white hover:bg-white/5`}
@@ -726,6 +734,7 @@ export function LayoutClassic({ user, photoUrl, isCore = false, isAdmin = false,
         tabless={tabless}
         focusMode={focusMode}
         roles={{ isCore, isAdmin, isDomainLead, isInterviewer, canViewForms, canViewStaffing, hasHiringAccess, isLabMentor, isInstructor }}
+        flags={{ "drive-consolidation": driveConsolidation }}
         onOpen={openFromPalette}
       />
     </div>

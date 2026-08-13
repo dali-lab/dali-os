@@ -105,7 +105,9 @@ export async function runGetStaffingBoard(
     // projectId and domainId carry no FK relation, so their names are looked
     // up separately below rather than joined.
     prisma.staffingAssignment.findMany({
-      where: { staffingCycleId: cycle.id },
+      // Declined rows are audit trail only (a member removed from a project) —
+      // exclude them so a dropped placement doesn't linger as a ghost column.
+      where: { staffingCycleId: cycle.id, status: { not: "Declined" } },
       select: {
         userId: true,
         projectId: true,
@@ -185,7 +187,7 @@ export async function runGetStaffingBoard(
 export const SET_STAFFING_ASSIGNMENT_TOOL = {
   name: "set_staffing_assignment",
   description:
-    "Propose a member's staffing for a cycle, or move them back to Unassigned by passing projectId: null. Replaces that member's existing Proposed rows for the cycle; Confirmed and Declined rows are left alone as the audit trail. Staffing managers only.",
+    "Propose a member's staffing on a project for a cycle. A member can be staffed on multiple projects at once, so this only replaces their Proposed rows ON THAT project — other projects are untouched. Pass projectId: null with fromProjectId to remove them from just that project, or projectId: null with no fromProjectId to clear all their Proposed rows (full unassign). Confirmed/Declined rows are left as the audit trail (removing from a finalized project Declines its Confirmed rows). Staffing managers only.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -193,7 +195,13 @@ export const SET_STAFFING_ASSIGNMENT_TOOL = {
       userId: { type: "string", minLength: 1, description: "The member being staffed." },
       projectId: {
         type: ["string", "null"],
-        description: "Project to staff them on, or null to move them to Unassigned.",
+        description:
+          "Project to staff them on (additive — keeps their other projects), or null to remove/unassign.",
+      },
+      fromProjectId: {
+        type: "string",
+        description:
+          "When moving between projects, the source project to also clear. With projectId: null, the single project to remove them from.",
       },
       domains: {
         type: "array",
@@ -220,6 +228,7 @@ type AssignInput = {
   cycleId: string;
   userId: string;
   projectId: string | null;
+  fromProjectId?: string;
   domains?: { domainId: string; level: Level }[];
 };
 
@@ -255,11 +264,40 @@ export async function runSetStaffingAssignment(
     }
   }
 
-  // Same transaction shape as api.staffing.assign.ts.
+  // Same project-scoped transaction shape as api.staffing.assign.ts.
   return prisma.$transaction(async (tx) => {
+    if (input.projectId === null && !input.fromProjectId) {
+      const cleared = await tx.staffingAssignment.deleteMany({
+        where: { userId: input.userId, staffingCycleId: input.cycleId, status: "Proposed" },
+      });
+      return { ok: true as const, proposed: 0, clearedProposed: cleared.count };
+    }
+
+    const projectsToClear = new Set<string>();
+    if (input.projectId !== null) projectsToClear.add(input.projectId);
+    if (input.fromProjectId) projectsToClear.add(input.fromProjectId);
+
     const cleared = await tx.staffingAssignment.deleteMany({
-      where: { userId: input.userId, staffingCycleId: input.cycleId, status: "Proposed" },
+      where: {
+        userId: input.userId,
+        staffingCycleId: input.cycleId,
+        projectId: { in: [...projectsToClear] },
+        status: "Proposed",
+      },
     });
+
+    if (input.projectId === null && input.fromProjectId) {
+      await tx.staffingAssignment.updateMany({
+        where: {
+          userId: input.userId,
+          staffingCycleId: input.cycleId,
+          projectId: input.fromProjectId,
+          status: "Confirmed",
+        },
+        data: { status: "Declined" },
+      });
+    }
+
     let proposed = 0;
     if (input.projectId !== null) {
       for (const d of domains) {

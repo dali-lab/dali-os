@@ -6,28 +6,78 @@ import type { EmailSendPurpose } from "~/generated/prisma/client";
 // resolves its sender here by purpose — Hiring, Education, Partners, or
 // General (notify()/digests).
 
+export type ResolvedSender = {
+  /** GmailIntegration row id of the identity actually used (own or fallback). */
+  id: string;
+  /** OAuth refresh token — passed to sendEmail as `refreshToken`. */
+  refreshToken: string;
+  /** The account the token authenticates as — passed to sendEmail as `from`. */
+  sendAsEmail: string;
+};
+
 /**
- * Returns the refresh token for the purpose's connected integration. A
+ * Resolves the connected integration that should send a purpose's mail. A
  * purpose with no row of its own falls back to Hiring — the applications@
  * integration predates purposes and is the only one guaranteed connected —
  * so an area's mail keeps flowing until ops links its dedicated account.
+ *
+ * Returns the sender's own `sendAsEmail` so callers can stamp `from` correctly:
+ * sendEmail targets the `me` mailbox, so `from` MUST match the token's account
+ * or Gmail rejects the send.
+ */
+export async function getSender(
+  purpose: EmailSendPurpose,
+): Promise<ResolvedSender | null> {
+  const select = { id: true, oauthTokens: true, sendAsEmail: true } as const;
+  const row = await prisma.gmailIntegration.findFirst({
+    where: { purpose, enabled: true },
+    orderBy: { linkedAt: "desc" },
+    select,
+  });
+  const resolved =
+    row ??
+    (purpose === "Hiring"
+      ? null
+      : await prisma.gmailIntegration.findFirst({
+          where: { purpose: "Hiring", enabled: true },
+          orderBy: { linkedAt: "desc" },
+          select,
+        }));
+  if (!resolved) return null;
+  return {
+    id: resolved.id,
+    refreshToken: resolved.oauthTokens,
+    sendAsEmail: resolved.sendAsEmail,
+  };
+}
+
+/**
+ * Refresh token only, for callers that always send as applications@ (the
+ * default `from`) and don't need the identity. Thin wrapper over getSender().
  */
 export async function getSenderRefreshToken(
   purpose: EmailSendPurpose,
 ): Promise<string | null> {
-  const row = await prisma.gmailIntegration.findFirst({
-    where: { purpose, enabled: true },
-    orderBy: { linkedAt: "desc" },
-    select: { oauthTokens: true },
-  });
-  if (row) return row.oauthTokens;
-  if (purpose === "Hiring") return null;
-  const fallback = await prisma.gmailIntegration.findFirst({
-    where: { purpose: "Hiring", enabled: true },
-    orderBy: { linkedAt: "desc" },
-    select: { oauthTokens: true },
-  });
-  return fallback?.oauthTokens ?? null;
+  return (await getSender(purpose))?.refreshToken ?? null;
+}
+
+/**
+ * Best-effort record of whether a sender's last send worked, surfaced on the
+ * Admin → Email Senders page. Never throws — a health-write failure must not
+ * break (or mask) the actual send.
+ */
+export async function noteSenderHealth(
+  id: string,
+  error: string | null,
+): Promise<void> {
+  await prisma.gmailIntegration
+    .update({
+      where: { id },
+      data: error
+        ? { syncError: error.slice(0, 500) }
+        : { syncError: null, lastUsedAt: new Date() },
+    })
+    .catch(() => {});
 }
 
 /**

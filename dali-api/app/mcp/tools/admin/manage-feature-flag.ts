@@ -55,6 +55,11 @@ export const MANAGE_FEATURE_FLAG_TOOL = {
         items: { type: "string" },
         description: "set_config: explicit User.id allowlist.",
       },
+      variant: {
+        type: "string",
+        description:
+          "set_config: for multi-value flags (e.g. \"home-surface\"), which option targeted users get. Use list to see each flag's options.",
+      },
       note: {
         type: "string",
         description: "set_config: optional operator note (empty string clears it).",
@@ -73,6 +78,7 @@ type Args = {
   everyone?: boolean;
   roles?: string[];
   userIds?: string[];
+  variant?: string;
   note?: string;
 };
 
@@ -109,6 +115,7 @@ export async function runManageFeatureFlag(ctx: McpCtx, args: Args) {
     args.everyone === undefined &&
     args.roles === undefined &&
     args.userIds === undefined &&
+    args.variant === undefined &&
     args.note === undefined
   ) {
     throw new McpInvalidError("Nothing to update");
@@ -123,7 +130,21 @@ export async function runManageFeatureFlag(ctx: McpCtx, args: Args) {
     roles: (args.roles ?? current.roles) as RoleTarget[],
     userIds: args.userIds ?? current.userIds,
     note: args.note !== undefined ? args.note || null : current.note,
+    variant: args.variant ?? current.variant,
   };
+  if (args.variant !== undefined && current.variants.length === 0) {
+    throw new McpInvalidError(`${key} is an on/off flag and takes no variant.`);
+  }
+  if (
+    args.variant !== undefined &&
+    !current.variants.some((v) => v.value === args.variant)
+  ) {
+    throw new McpInvalidError(
+      `Unknown variant "${args.variant}" for ${key}. Expected any of: ${current.variants
+        .map((v) => v.value)
+        .join(", ")}`,
+    );
+  }
   await updateFlag(key, patch);
 
   await logAuditEvent({
@@ -135,6 +156,7 @@ export async function runManageFeatureFlag(ctx: McpCtx, args: Args) {
       everyone: patch.everyone,
       roles: patch.roles,
       userCount: patch.userIds.length,
+      variant: patch.variant,
     },
     request: ctx.request,
   });

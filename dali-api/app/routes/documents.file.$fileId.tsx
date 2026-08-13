@@ -6,7 +6,8 @@ import type { Route } from "./+types/documents.file.$fileId";
 import { prisma } from "~/lib/db";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { isCore, isProjectMember } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
+import { canViewFile, canEditFile } from "~/lib/fileAccess.server";
 import { getDownloadUrl } from "~/lib/s3";
 import { hydrateAuthors } from "~/lib/collabAuth";
 import { formatBytes, uploadFileToS3 } from "~/lib/upload-client";
@@ -59,6 +60,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       title: true,
       projectId: true,
       project: { select: { name: true, iconEmoji: true } },
+      workspaceType: true,
+      workspaceId: true,
+      folderPageId: true,
       currentVersionId: true,
       archivedAt: true,
       tags: { select: { tag: { select: { id: true, label: true, slug: true, color: true } } } },
@@ -80,12 +84,18 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     throw new Response("Not found", { status: 404 });
   }
 
-  // Upload + comment are open to Core and members of the owning project (the
-  // artifact feedback loop runs on project members); the curated tag list
-  // stays Core-managed, matching /api/doctags.
-  const core = await isCore(auth.user.sub);
-  const canEdit = core || (await isProjectMember(auth.user.sub, file.projectId));
-  const canManageTags = core;
+  // View gate: My Drive files are owner-only and scoped-folder (e.g. Core) files
+  // follow their folder's access. Communal files stay open (404, not 403, so we
+  // don't reveal that a private/Core file exists).
+  if (!(await canViewFile(auth.user.sub, file, request))) {
+    throw new Response("Not found", { status: 404 });
+  }
+
+  // Edit (upload new version + comment) follows the file's scope: My Drive =
+  // owner, Core/scoped = folder edit access, project = members/Core, lab = any
+  // lab member. The curated tag list stays Core-managed, matching /api/doctags.
+  const canEdit = await canEditFile(auth.user.sub, file, request);
+  const canManageTags = await isCore(auth.user.sub);
 
   const uploaderNames = await hydrateAuthors(file.versions.map((v) => v.uploadedById));
   const nameById = new Map(uploaderNames.map((u) => [u.id, u.name]));
@@ -120,9 +130,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   return {
     fileId: file.id,
-    projectId: file.projectId,
-    projectName: file.project.name,
-    projectIconEmoji: file.project.iconEmoji,
+    projectId: file.projectId ?? null,
+    projectName: file.project?.name ?? null,
+    projectIconEmoji: file.project?.iconEmoji ?? null,
     title: file.title,
     tags: file.tags.map((t) => t.tag).sort((a, b) => a.label.localeCompare(b.label)),
     allTags,
@@ -168,7 +178,8 @@ export default function FilePage() {
     setUploading(true);
     setError(null);
     try {
-      const meta = await uploadFileToS3(picked, `project-files/${projectId}`);
+      const prefix = projectId ? `project-files/${projectId}` : "lab-files";
+      const meta = await uploadFileToS3(picked, prefix);
       const res = await fetch(`/api/files/${fileId}`, {
         method: "POST",
         credentials: "include",

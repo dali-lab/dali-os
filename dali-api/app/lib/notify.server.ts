@@ -12,7 +12,7 @@
 
 import { prisma } from "~/lib/db";
 import { sendEmail } from "~/lib/gmail";
-import { getSenderRefreshToken } from "~/lib/gmail-integration";
+import { getSender, noteSenderHealth } from "~/lib/gmail-integration";
 import { bodyToHtml } from "~/lib/email";
 import { getAppEnv, getFrontendUrl } from "~/lib/app-env";
 import { slackConfigured, sendDm } from "~/slack/lib/slack-client";
@@ -191,9 +191,10 @@ export async function notify(args: {
   let emailed = 0;
   const emailTargets = resolved.filter((r) => r.instantEmail);
   if (emailTargets.length > 0) {
-    const refreshToken = await getSenderRefreshToken("General").catch(() => null);
-    if (refreshToken) {
+    const sender = await getSender("General").catch(() => null);
+    if (sender) {
       const emailedRowIds: string[] = [];
+      let lastError: string | null = null;
       for (const r of emailTargets) {
         // Same chain as education's recipientEmail(): the netId fallback only
         // ever fires for portal students (members always have daliEmail).
@@ -206,7 +207,8 @@ export async function notify(args: {
         const m = merged(r.recipient);
         try {
           await sendEmail({
-            refreshToken,
+            refreshToken: sender.refreshToken,
+            from: sender.sendAsEmail,
             to,
             subject: m.title,
             html: renderNotificationEmail({
@@ -221,9 +223,13 @@ export async function notify(args: {
           const rowId = rowIdByUser.get(r.user.id);
           if (rowId) emailedRowIds.push(rowId);
         } catch (err) {
+          lastError = err instanceof Error ? err.message : String(err);
           console.error(`[notify] email to ${r.user.id} failed:`, err);
         }
       }
+      // Surface sender health so a broken grant shows in Admin → Email Senders
+      // instead of silently dropping every notification email.
+      await noteSenderHealth(sender.id, emailed === 0 ? lastError : null);
       if (emailedRowIds.length > 0) {
         await prisma.notification
           .updateMany({ where: { id: { in: emailedRowIds } }, data: { emailedAt: new Date() } })
