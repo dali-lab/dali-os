@@ -1,7 +1,7 @@
 import type { Prisma } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db";
 import { getActiveCycle } from "~/hiring/lib/cycles";
-import { isInternToFullEligible } from "~/hiring/lib/intern-eligibility";
+import { isFellowshipEligible } from "~/hiring/lib/intern-eligibility";
 import { ONBOARDING_EVENT_TYPE } from "~/members/lib/welcome.server";
 import { fullName } from "~/lib/display";
 
@@ -196,13 +196,13 @@ export async function countOpenTasks(userId: string): Promise<number> {
 
 /**
  * Synthetic "apply to the fellowship" task for current interns when an
- * InternToFull cycle is Open and they haven't finished their application. This
+ * Fellowship cycle is Open and they haven't finished their application. This
  * is not a Notification row — it's derived state, so it persists in the
  * attention banner across reloads until the user submits or withdraws.
  */
 export async function getFellowshipTask(userId: string): Promise<Task | null> {
-  if (!(await isInternToFullEligible(userId))) return null;
-  const cycle = await getActiveCycle("InternToFull");
+  if (!(await isFellowshipEligible(userId))) return null;
+  const cycle = await getActiveCycle("Fellowship");
   if (!cycle || cycle.currentStatus !== "Open") return null;
 
   const app = await prisma.application.findFirst({
@@ -220,11 +220,11 @@ export async function getFellowshipTask(userId: string): Promise<Task | null> {
     id: `fellowship-${cycle.id}`,
     title: isDraft ? "Continue your fellowship application" : "Apply to the fellowship",
     body: cycle.name,
-    link: "/intern-to-full",
+    link: "/fellowship",
     createdAt: (app?.statusUpdates[0]?.createdAt ?? new Date()).toISOString(),
     source: "general",
     dueAt: cycle.closeDate ? cycle.closeDate.toISOString() : null,
-    // Clears by self-action (submit / withdraw in /intern-to-full) — no Confirm button.
+    // Clears by self-action (submit / withdraw in /fellowship) — no Confirm button.
     hasAction: true,
   };
 }

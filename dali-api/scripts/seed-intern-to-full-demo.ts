@@ -8,7 +8,7 @@
 //      eligible for the InternToFull flow.
 //   4. Ensures a reviewer User + DALIMember + AdminMembership (so they can also
 //      release decisions during testing).
-//   5. Creates a tiny InternToFullFormVersion (2 questions) and a Rubric.
+//   5. Creates a tiny ShortformVersion (2 questions) and a Rubric.
 //   6. Creates an InternToFull ApplicationCycle, binds the form + target
 //      domains + rubric + reviewers, and transitions it to Open.
 //   7. Prints next-step URLs.
@@ -173,11 +173,11 @@ async function main() {
   console.log(`✓ Reviewers: admin + ${reviewer2.daliEmail}`);
 
   // 5. Shortform + Rubric ------------------------------------------------------
-  const latestForm = await prisma.internToFullFormVersion.findFirst({
+  const latestForm = await prisma.shortformVersion.findFirst({
     orderBy: { version: "desc" },
     select: { version: true },
   });
-  const formVersion = await prisma.internToFullFormVersion.create({
+  const formVersion = await prisma.shortformVersion.create({
     data: {
       version: (latestForm?.version ?? 0) + 1,
       questions: [
@@ -225,9 +225,9 @@ async function main() {
   const cycle = await prisma.applicationCycle.create({
     data: {
       name: `Intern → Full ${termCode} demo`,
-      cycleType: "InternToFull",
+      cycleType: "Fellowship",
       closeDate,
-      internToFullFormVersionId: formVersion.id,
+      shortformVersionId: formVersion.id,
       statusUpdates: { create: { newStatus: "Draft", userId: admin.id } },
       domains: {
         create: [
@@ -291,7 +291,7 @@ async function main() {
   }
   await prisma.applicationCycle.update({
     where: { id: cycle.id },
-    data: { internsNotifiedAt: new Date() },
+    data: { applicantsNotifiedAt: new Date() },
   });
   console.log(`✓ Notified ${eligibleAssignments.length} eligible intern(s)`);
 

@@ -224,12 +224,12 @@ describe("POST /api/hiring/domain-applications/:id/reviews", () => {
     expect(mockPrisma.applicationReview.create).not.toHaveBeenCalled();
   });
 
-  it("skips the per-domain rubric check on InternToFull cycles (201)", async () => {
+  it("skips the per-domain rubric check on Fellowship cycles (201)", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
     mockPrisma.applicationCycle.findUniqueOrThrow.mockResolvedValueOnce({
       id: CYCLE_ID,
       generalRubricVersionId: "grv-1",
-      cycleType: "InternToFull",
+      cycleType: "Fellowship",
     });
     // No per-domain rubric — would be a 400 on Standard, but allowed here.
     mockPrisma.domainApplicationCycle.findUnique.mockResolvedValueOnce(null);
@@ -247,12 +247,12 @@ describe("POST /api/hiring/domain-applications/:id/reviews", () => {
     });
   });
 
-  it("still requires the general rubric on InternToFull cycles (400)", async () => {
+  it("still requires the general rubric on Fellowship cycles (400)", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
     mockPrisma.applicationCycle.findUniqueOrThrow.mockResolvedValueOnce({
       id: CYCLE_ID,
       generalRubricVersionId: null,
-      cycleType: "InternToFull",
+      cycleType: "Fellowship",
     });
 
     const res = await action({
@@ -265,9 +265,9 @@ describe("POST /api/hiring/domain-applications/:id/reviews", () => {
     expect(mockPrisma.applicationReview.create).not.toHaveBeenCalled();
   });
 
-  it("resolves the domain via DomainApplication.domainId on InternToFull (no challengeVersion)", async () => {
+  it("resolves the domain via DomainApplication.domainId on Fellowship (no challengeVersion)", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
-    // InternToFull DAs link Domain directly — challengeVersion is null.
+    // Fellowship DAs link Domain directly — challengeVersion is null.
     mockPrisma.domainApplication.findUniqueOrThrow.mockResolvedValueOnce({
       id: DA_ID,
       selected: true,
@@ -278,7 +278,7 @@ describe("POST /api/hiring/domain-applications/:id/reviews", () => {
     mockPrisma.applicationCycle.findUniqueOrThrow.mockResolvedValueOnce({
       id: CYCLE_ID,
       generalRubricVersionId: "grv-1",
-      cycleType: "InternToFull",
+      cycleType: "Fellowship",
     });
 
     const res = await action({

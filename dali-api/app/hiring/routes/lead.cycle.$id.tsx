@@ -163,15 +163,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!auth.ok) return redirectToLogin(request);
   if (!(await isCore(auth.user.sub))) return redirect("/");
 
-  // InternToFull cycles use a separate, simpler setup page (no challenges,
+  // Fellowship cycles use a separate, simpler setup page (no challenges,
   // no interview config). Forward there before any of the Standard-cycle
   // payload is loaded.
   const cycleTypeRow = await prisma.applicationCycle.findUnique({
     where: { id: params.id },
     select: { cycleType: true },
   });
-  if (cycleTypeRow?.cycleType === "InternToFull") {
-    return redirect(`/hiring/lead/intern-to-full-cycle/${params.id}`);
+  if (cycleTypeRow?.cycleType === "Fellowship") {
+    return redirect(`/hiring/lead/internal-cycle/${params.id}`);
   }
 
   // Hiring leads must be able to reach this page to bind a confidentiality

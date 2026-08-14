@@ -36,7 +36,7 @@ export default [
     route("hiring/domain-lead/delibs/:id", "hiring/routes/domain-lead.delibs.$id.tsx"),
     route("hiring/lead", "hiring/routes/lead.tsx"),
     route("hiring/lead/cycle/:id", "hiring/routes/lead.cycle.$id.tsx"),
-    route("hiring/lead/intern-to-full-cycle/:id", "hiring/routes/lead.intern-to-full-cycle.$id.tsx"),
+    route("hiring/lead/internal-cycle/:id", "hiring/routes/lead.internal-cycle.$id.tsx"),
     // Cross-cycle by design (accepting off a waitlist may land in a later
     // cycle), so it lives beside the other hiring tools, not under /lead.
     route("hiring/waitlists", "hiring/routes/waitlists.tsx"),
@@ -211,10 +211,13 @@ export default [
     route("forms/responses/:formId", "forms/routes/forms.responses.$formId.tsx"),
     route("forms/:folderId", "forms/routes/forms.$folderId.tsx"),
 
-    // Internal applicant portal — intern → full-time conversion. Authenticated
-    // member route (not under /portal) so interns use their existing session
-    // rather than the CAS flow built for external applicants.
-    route("intern-to-full", "routes/intern-to-full.tsx"),
+    // Internal applicant portal — Fellowship (intern → full-time) and Core
+    // (member → Core). Authenticated member routes (not under /portal) so
+    // members use their existing session rather than the CAS flow built for
+    // external applicants. Both render the shared internal-cycle portal.
+    route("fellowship", "routes/fellowship.tsx"),
+    // Legacy path — old notification/task links pointed at /intern-to-full.
+    route("intern-to-full", "routes/intern-to-full.legacy.tsx"),
 
     // Settings — opened from the sidebar footer icon. Lives under the layout
     // so in-iframe navigation posts `dali:tabNavigated` and the workspace's

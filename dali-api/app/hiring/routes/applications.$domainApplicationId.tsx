@@ -74,7 +74,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           answers: true,
           applicationCycleId: true,
           generalChallengeVersion: { select: { questions: true, description: true } },
-          internToFullFormVersion: { select: { questions: true } },
+          shortformVersion: { select: { questions: true } },
           applicationCycle: {
             select: {
               name: true,
@@ -123,11 +123,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     request,
   );
 
-  const isInternToFull = da.application.applicationCycle.cycleType === "InternToFull";
+  const isFellowship = da.application.applicationCycle.cycleType === "Fellowship";
 
   // Presign file answers so the viewer renders download links, not S3 keys.
-  const generalQuestions = isInternToFull
-    ? ((da.application.internToFullFormVersion?.questions as unknown as Question[]) ?? [])
+  const generalQuestions = isFellowship
+    ? ((da.application.shortformVersion?.questions as unknown as Question[]) ?? [])
     : ((da.application.generalChallengeVersion?.questions as unknown as Question[]) ?? []);
   const [generalAnswers, domainAnswers] = await Promise.all([
     presignAnswers(generalQuestions, da.application.answers as Record<string, string>),

@@ -122,9 +122,9 @@ export async function action({ request, params }: Route.ActionArgs) {
   });
 
   // ── Acceptance side-effect: promote to member + grant eligibility ─────────
-  // When ANY applicant is accepted (Standard or InternToFull), make them a lab
+  // When ANY applicant is accepted (Standard or Fellowship), make them a lab
   // member and grant DomainEligibility in the target domain at P1 so staffing
-  // flows pick them up. Previously only InternToFull granted eligibility and
+  // flows pick them up. Previously only Fellowship granted eligibility and
   // nobody was auto-promoted to a member. Idempotent: promoteToMember upserts
   // the DALIMember row and eligibility, so a re-release changes nothing. A
   // brand-new member's onboardedAt stays null → the layout gate routes them

@@ -141,7 +141,7 @@ const UNROUTED_SEGMENTS = new Set([
   'confidentiality-agreements',
   'cycle', // /hiring/lead/cycle/:id
   'cycles', // /hiring/cycles/:cycleId/confidentiality
-  'intern-to-full-cycle',
+  'internal-cycle',
   'delibs',
   'assignments', // /education/manage/assignments/:assignmentId
   'page',

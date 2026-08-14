@@ -46,7 +46,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     include: {
       user: true,
       generalChallengeVersion: true,
-      internToFullFormVersion: true,
+      shortformVersion: true,
       applicationCycle: {
         include: {
           statusUpdates: { orderBy: { createdAt: 'desc' }, take: 1 },
@@ -62,7 +62,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
   })
 
-  const isInternToFull = applicationBase.applicationCycle.cycleType === 'InternToFull'
+  const isFellowship = applicationBase.applicationCycle.cycleType === 'Fellowship'
 
   if (!(await hasCycleAccess(auth.user.sub, applicationBase.applicationCycleId)))
     throw redirectToLogin(request)
@@ -101,7 +101,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       where: {
         applicationId: params.id,
         selected: true,
-        // Standard cycles link Domain via challengeVersion; InternToFull cycles
+        // Standard cycles link Domain via challengeVersion; Fellowship cycles
         // link Domain directly. Match whichever path is set.
         OR: [
           { challengeVersion: { domainId: { in: reviewerDomainIds } } },
@@ -132,11 +132,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
 
   // Presign file-type answers so the viewer can render real download links
-  // instead of raw S3 keys. For InternToFull cycles, the application's
-  // "general" questions live on internToFullFormVersion, and per-domain
+  // instead of raw S3 keys. For Fellowship cycles, the application's
+  // "general" questions live on shortformVersion, and per-domain
   // entries carry no challenge content.
-  const generalQuestionsForPresign = isInternToFull
-    ? ((applicationBase.internToFullFormVersion?.questions as unknown as Question[]) ?? [])
+  const generalQuestionsForPresign = isFellowship
+    ? ((applicationBase.shortformVersion?.questions as unknown as Question[]) ?? [])
     : ((applicationBase.generalChallengeVersion?.questions as unknown as Question[]) ?? [])
   const presignedGeneralAnswers = await presignAnswers(
     generalQuestionsForPresign,
@@ -255,7 +255,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       // Pin the rubric version these score keys belong to, so a later rubric
       // edit (which mints new crit-<ts> keys) doesn't orphan them at render
       // time. Prefer the per-domain rubric (Standard cycles); fall back to the
-      // cycle-level general rubric (InternToFull, which has no per-domain).
+      // cycle-level general rubric (Fellowship, which has no per-domain).
       const da = existing.domainApplication
       const domainId = da.domainId ?? da.challengeVersion?.domainId ?? null
       let rubricVersionId: string | null = existing.rubricVersionId ?? null
@@ -306,10 +306,10 @@ export default function ReviewerApplicationReview() {
   const submit = useSubmit()
 
   const cycle = application.applicationCycle
-  const isInternToFull = cycle.cycleType === 'InternToFull'
+  const isFellowship = cycle.cycleType === 'Fellowship'
   const generalCv = application.generalChallengeVersion
-  const formQuestions = isInternToFull
-    ? ((application.internToFullFormVersion?.questions as unknown as Question[]) ?? [])
+  const formQuestions = isFellowship
+    ? ((application.shortformVersion?.questions as unknown as Question[]) ?? [])
     : ((generalCv?.questions as unknown as Question[]) ?? [])
 
   // Collect all rubric criteria: general form rubric + per-domain-application rubrics

@@ -3,7 +3,7 @@
 // Question.data.body for `type: "info"` rows is (a) a plain string on legacy
 // rows, (b) legacy ProseMirror JSON on rows written by the old Tiptap editor,
 // or (c) a BlockNote block array going forward. Published version rows
-// (FormVersion / InternToFullFormVersion / ChallengeVersion questions) are
+// (FormVersion / ShortformVersion / ChallengeVersion questions) are
 // immutable, so the PM→BlockNote conversion happens on read — every loader
 // that serves a question array to a fill/preview surface runs it through this
 // before returning. The client (InfoBody) then only ever sees string | blocks.

@@ -23,7 +23,7 @@ import { loader } from "~/hiring/routes/reviewer";
 
 const USER = "user-1";
 const STANDARD = { id: "cycle-std", name: "Standard cycle", cycleType: "Standard", currentStatus: "Open" };
-const INTERN = { id: "cycle-itf", name: "Intern → Full conversion", cycleType: "InternToFull", currentStatus: "Open" };
+const INTERN = { id: "cycle-itf", name: "Intern → Full conversion", cycleType: "Fellowship", currentStatus: "Open" };
 
 const mockPrisma = prisma as unknown as Record<string, any>;
 
@@ -75,7 +75,7 @@ describe("/hiring/reviewer loader — cycle picker", () => {
     const res: any = await loader({ request: reqWith(""), params: {}, context: {} } as any);
     expect(res.activeCycle.id).toBe(INTERN.id);
     expect(res.availableCycles).toEqual([
-      { id: INTERN.id, name: INTERN.name, cycleType: "InternToFull" },
+      { id: INTERN.id, name: INTERN.name, cycleType: "Fellowship" },
     ]);
   });
 

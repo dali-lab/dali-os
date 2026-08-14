@@ -109,7 +109,7 @@ describe("reviewer.application.$id loader — domain scoping", () => {
     // by returning DAs that match the reviewer's domain ids.
     mockPrisma.domainApplication.findMany.mockImplementation(({ where }: any) => {
       // Loader now uses `OR: [{ challengeVersion: { domainId: { in } } }, { domainId: { in } }]`
-      // to support InternToFull cycles. Pull the in-list from the OR branch.
+      // to support Fellowship cycles. Pull the in-list from the OR branch.
       const allowed: string[] = where.OR?.[0]?.challengeVersion?.domainId?.in
         ?? where.challengeVersion?.domainId?.in
         ?? [];
@@ -141,7 +141,7 @@ describe("reviewer.application.$id loader — domain scoping", () => {
     ]);
     mockPrisma.domainApplication.findMany.mockImplementation(({ where }: any) => {
       // Loader now uses `OR: [{ challengeVersion: { domainId: { in } } }, { domainId: { in } }]`
-      // to support InternToFull cycles. Pull the in-list from the OR branch.
+      // to support Fellowship cycles. Pull the in-list from the OR branch.
       const allowed: string[] = where.OR?.[0]?.challengeVersion?.domainId?.in
         ?? where.challengeVersion?.domainId?.in
         ?? [];
@@ -186,7 +186,7 @@ describe("reviewer.application.$id loader — domain scoping", () => {
     mockPrisma.cycleReviewer.findMany.mockResolvedValue([]);
     mockPrisma.domainApplication.findMany.mockImplementation(({ where }: any) => {
       // Loader now uses `OR: [{ challengeVersion: { domainId: { in } } }, { domainId: { in } }]`
-      // to support InternToFull cycles. Pull the in-list from the OR branch.
+      // to support Fellowship cycles. Pull the in-list from the OR branch.
       const allowed: string[] = where.OR?.[0]?.challengeVersion?.domainId?.in
         ?? where.challengeVersion?.domainId?.in
         ?? [];

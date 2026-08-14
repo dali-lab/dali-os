@@ -59,11 +59,11 @@ export async function loader({ request }: Route.LoaderArgs) {
   Object.assign(empty, { pillRoles })
 
   // Mirrors the reviewer dashboard's dual-cycle probing: a Standard and an
-  // InternToFull cycle can be active simultaneously; collect the ones this
+  // Fellowship cycle can be active simultaneously; collect the ones this
   // user interviews on and let ?cycle=<id> switch between them.
   const [standardActive, internToFullActive] = await Promise.all([
     getActiveCycle("Standard"),
-    getActiveCycle("InternToFull"),
+    getActiveCycle("Fellowship"),
   ])
   const candidates = [standardActive, internToFullActive].filter(
     (c): c is NonNullable<typeof standardActive> => c !== null,

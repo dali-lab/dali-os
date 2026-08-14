@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useLoaderData, useFetcher, Link } from "react-router";
-import type { Route } from "./+types/intern-to-full";
+import type { Route } from "./+types/fellowship";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -8,7 +8,7 @@ import { requireMember } from "~/lib/roles";
 import { getActiveCycle } from "~/hiring/lib/cycles";
 import { reconcileDomainApplications } from "~/hiring/lib/domain-application";
 import {
-  isInternToFullEligible,
+  isFellowshipEligible,
   currentInternDomains,
 } from "~/hiring/lib/intern-eligibility";
 import type { Question } from "~/types";
@@ -24,7 +24,7 @@ export const meta: Route.MetaFunction = () => [
   { title: "Fellowship · DALI OS" },
 ];
 
-// This route is the *internal* applicant portal for InternToFull cycles. It
+// This route is the *internal* applicant portal for Fellowship cycles. It
 // lives under the authenticated app layout (Google OAuth member session) and
 // is intentionally not reachable from the CAS-authed /portal flow — that
 // flow exists for external applicants and conflates user identities we
@@ -39,14 +39,14 @@ export async function loader({ request }: Route.LoaderArgs) {
     return { reason: "not-member" as const };
   }
 
-  const eligible = await isInternToFullEligible(auth.user.sub);
+  const eligible = await isFellowshipEligible(auth.user.sub);
   if (!eligible) {
     return { reason: "not-eligible" as const };
   }
 
   const internDomains = await currentInternDomains(auth.user.sub);
 
-  const active = await getActiveCycle("InternToFull");
+  const active = await getActiveCycle("Fellowship");
   if (!active) {
     return { reason: "no-active-cycle" as const, internDomains };
   }
@@ -54,11 +54,11 @@ export async function loader({ request }: Route.LoaderArgs) {
   const cycle = await prisma.applicationCycle.findUnique({
     where: { id: active.id },
     include: {
-      internToFullFormVersion: true,
+      shortformVersion: true,
       domains: { include: { domain: true } },
     },
   });
-  if (!cycle || !cycle.internToFullFormVersion) {
+  if (!cycle || !cycle.shortformVersion) {
     return { reason: "no-active-cycle" as const, internDomains };
   }
 
@@ -85,11 +85,11 @@ export async function loader({ request }: Route.LoaderArgs) {
       name: cycle.name,
       currentStatus: active.currentStatus,
       closeDate: cycle.closeDate ? cycle.closeDate.toISOString() : null,
-      formVersionId: cycle.internToFullFormVersionId!,
+      formVersionId: cycle.shortformVersionId!,
       // Frozen versions may hold legacy ProseMirror info bodies — convert on
       // read so the fill UI only ever sees string | blocks.
       questions: normalizeQuestionBodies(
-        (cycle.internToFullFormVersion.questions as unknown as Question[]) ?? [],
+        (cycle.shortformVersion.questions as unknown as Question[]) ?? [],
       ),
       targetDomains: cycle.domains.map((d) => ({
         id: d.domainId,
@@ -118,14 +118,14 @@ export async function action({ request }: Route.ActionArgs) {
   const member = await requireMember(auth.user.sub);
   if (!member) return Response.json({ error: "Not a lab member" }, { status: 403 });
 
-  if (!(await isInternToFullEligible(auth.user.sub))) {
+  if (!(await isFellowshipEligible(auth.user.sub))) {
     return Response.json({ error: "Not eligible" }, { status: 403 });
   }
 
   const formData = await request.formData();
   const intent = formData.get("intent") as string;
 
-  const active = await getActiveCycle("InternToFull");
+  const active = await getActiveCycle("Fellowship");
   if (!active) return Response.json({ error: "No active cycle" }, { status: 404 });
   if (active.currentStatus !== "Open" && intent !== "withdraw") {
     return Response.json({ error: "Cycle is not open" }, { status: 409 });
@@ -135,15 +135,15 @@ export async function action({ request }: Route.ActionArgs) {
     const cycle = await prisma.applicationCycle.findUniqueOrThrow({
       where: { id: active.id },
       include: {
-        internToFullFormVersion: true,
+        shortformVersion: true,
         domains: { select: { domainId: true } },
       },
     });
-    if (!cycle.internToFullFormVersionId || !cycle.internToFullFormVersion) {
+    if (!cycle.shortformVersionId || !cycle.shortformVersion) {
       return Response.json({ error: "Cycle is not configured" }, { status: 409 });
     }
-    const formVersionId = cycle.internToFullFormVersionId;
-    const questions = (cycle.internToFullFormVersion.questions as unknown as Question[]) ?? [];
+    const formVersionId = cycle.shortformVersionId;
+    const questions = (cycle.shortformVersion.questions as unknown as Question[]) ?? [];
     const allowedDomainIds = new Set(cycle.domains.map((d) => d.domainId));
 
     const answers = JSON.parse((formData.get("answers") as string) || "{}") as Record<string, string>;
@@ -168,7 +168,7 @@ export async function action({ request }: Route.ActionArgs) {
       }
     }
 
-    // Upsert the Application (one per user+cycle). For InternToFull we pin the
+    // Upsert the Application (one per user+cycle). For Fellowship we pin the
     // shortform version on create and never re-pin on subsequent saves — same
     // pattern as Standard's generalChallengeVersionId.
     const application = await prisma.application.upsert({
@@ -182,8 +182,8 @@ export async function action({ request }: Route.ActionArgs) {
       create: {
         userId: auth.user.sub,
         applicationCycleId: active.id,
-        applicationType: "InternToFull",
-        internToFullFormVersionId: formVersionId,
+        applicationType: "Fellowship",
+        shortformVersionId: formVersionId,
         answers,
         statusUpdates: {
           create: { newStatus: "Draft", userId: auth.user.sub },
@@ -241,7 +241,7 @@ export async function action({ request }: Route.ActionArgs) {
 
 // ─── UI ──────────────────────────────────────────────────────────────────────
 
-export default function InternToFullRoute() {
+export default function FellowshipRoute() {
   const data = useLoaderData<typeof loader>();
 
   if (data.reason === "not-member") {

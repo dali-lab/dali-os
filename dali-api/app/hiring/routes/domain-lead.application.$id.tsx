@@ -93,7 +93,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           user: true,
           statusUpdates: true,
           generalChallengeVersion: true,
-          internToFullFormVersion: true,
+          shortformVersion: true,
           applicationCycle: {
             include: { statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 } },
           },
@@ -130,7 +130,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
 
   if (!da) return redirect("/hiring/domain-lead");
-  // Standard cycles link domain via challengeVersion. InternToFull links it
+  // Standard cycles link domain via challengeVersion. Fellowship links it
   // directly. Use whichever is present.
   const daDomainId = da.challengeVersion?.domainId ?? da.domainId ?? null;
   if (!daDomainId || !leadDomainIds.includes(daDomainId)) return redirect("/hiring/domain-lead");

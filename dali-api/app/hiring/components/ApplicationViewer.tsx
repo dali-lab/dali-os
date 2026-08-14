@@ -346,7 +346,7 @@ function AnnotatableField({
 }
 
 // Shape of the application as returned by the reviewer.application.$id loader.
-// On InternToFull cycles, `challengeVersion` is null and the domain is loaded
+// On Fellowship cycles, `challengeVersion` is null and the domain is loaded
 // directly via the `domain` relation instead. `description` fields must be
 // loader-normalized block JSON (ensureBlocks) — published ChallengeVersion
 // rows are immutable, so hosts convert legacy ProseMirror on read.
@@ -461,7 +461,7 @@ export function ApplicationViewer({ application, questionLabels, initialAnnotati
         const directDomain = dapp.domain
         const domainName = cv?.domain.displayName ?? cv?.domain.name ?? directDomain?.displayName ?? directDomain?.name ?? 'Domain'
         if (!cv) {
-          // InternToFull domain selection — no challenge content to render.
+          // Fellowship domain selection — no challenge content to render.
           return (
             <div key={dapp.id} className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
               <div className="px-6 py-4 border-b border-border bg-muted/50">

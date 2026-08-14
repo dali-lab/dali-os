@@ -83,7 +83,7 @@ function setupFinalDecision(type: "Rejected" | "InvitedToInterview" | "Accepted"
 
 function setupApplicantContext(opts: { domainName?: string | null } = {}) {
   const domainName = opts.domainName === undefined ? "Engineering" : opts.domainName;
-  // The release route now also reads `domain` (direct InternToFull relation)
+  // The release route now also reads `domain` (direct Fellowship relation)
   // and `applicationCycle.cycleType`. Default to Standard with no direct domain
   // so existing tests still flow through the challengeVersion path.
   mockPrisma.domainApplication.findUnique.mockResolvedValue({
@@ -190,7 +190,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
 
   it("refuses to release when the domain application has no linked domain at all", async () => {
     // A DomainApplication must have either a challengeVersion → domain (Standard)
-    // or a direct `domain` (InternToFull). If both are missing the data is
+    // or a direct `domain` (Fellowship). If both are missing the data is
     // corrupt; the route fails closed rather than emailing an empty {{domain}}.
     setupAuth();
     setupFinalDecision("Rejected");

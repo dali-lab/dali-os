@@ -56,12 +56,12 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!member) return { ...empty, reviewerUserId: auth.user.sub }
 
   // The single-active-cycle invariant is per-cycleType, so a Standard and an
-  // InternToFull cycle can be Open simultaneously. Probe both, collect the
+  // Fellowship cycle can be Open simultaneously. Probe both, collect the
   // ones the reviewer is actually assigned on, and let the user switch
   // between them via ?cycle=<id>. Default = first match (Standard preferred).
   const [standardActive, internToFullActive] = await Promise.all([
     getActiveCycle("Standard"),
-    getActiveCycle("InternToFull"),
+    getActiveCycle("Fellowship"),
   ])
   const candidates = [standardActive, internToFullActive].filter(
     (c): c is NonNullable<typeof standardActive> => c !== null,

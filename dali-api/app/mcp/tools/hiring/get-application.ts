@@ -49,7 +49,7 @@ export async function runGetApplication(userId: string, input: Input): Promise<u
         include: {
           user: { select: { firstName: true, lastName: true } },
           generalChallengeVersion: { select: { questions: true } },
-          internToFullFormVersion: { select: { questions: true } },
+          shortformVersion: { select: { questions: true } },
           applicationCycle: {
             select: { id: true, generalRubricVersionId: true, cycleType: true },
           },
@@ -182,8 +182,8 @@ export async function runGetApplication(userId: string, input: Input): Promise<u
       id: da.application.id,
       answers: da.application.answers,
       generalQuestions:
-        da.application.applicationCycle.cycleType === "InternToFull"
-          ? da.application.internToFullFormVersion?.questions ?? []
+        da.application.applicationCycle.cycleType === "Fellowship"
+          ? da.application.shortformVersion?.questions ?? []
           : da.application.generalChallengeVersion?.questions ?? [],
       applicant: da.application.user,
     },

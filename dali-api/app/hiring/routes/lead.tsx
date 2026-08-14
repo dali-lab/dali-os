@@ -46,7 +46,7 @@ export async function action({ request }: Route.ActionArgs) {
   const formData = await request.formData();
   const name = (formData.get("name") as string)?.trim();
   const cycleTypeRaw = (formData.get("cycleType") as string) ?? "Standard";
-  const cycleType = cycleTypeRaw === "InternToFull" ? "InternToFull" : "Standard";
+  const cycleType = cycleTypeRaw === "Fellowship" ? "Fellowship" : "Standard";
   if (!name) return { error: "Name is required" };
 
   const auth = await requireAuth(request);
@@ -129,7 +129,7 @@ export default function HiringLeadDashboard() {
                     defaultValue="Standard"
                     options={[
                       { value: "Standard", label: "Standard hire" },
-                      { value: "InternToFull", label: "Fellowship" },
+                      { value: "Fellowship", label: "Fellowship" },
                     ]}
                     buttonClassName="w-full px-3 py-2 text-sm text-foreground border border-gray-300 rounded-md inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
                   />
@@ -165,16 +165,16 @@ export default function HiringLeadDashboard() {
 
 const CYCLE_TYPE_LABELS: Record<string, string> = {
   Standard: "Standard hire",
-  InternToFull: "Fellowship",
+  Fellowship: "Fellowship",
 };
 
 function heroLinkFor(cycle: any): string {
-  return cycle.cycleType === "InternToFull"
-    ? `/hiring/lead/intern-to-full-cycle/${cycle.id}`
+  return cycle.cycleType === "Fellowship"
+    ? `/hiring/lead/internal-cycle/${cycle.id}`
     : `/hiring/lead/cycle/${cycle.id}`;
 }
 
-// Pick at most one hero per cycleType so Standard and InternToFull cycles
+// Pick at most one hero per cycleType so Standard and Fellowship cycles
 // don't fight over the single hero slot when both are active concurrently.
 // Within a type, prefers Open/UnderReview over Draft.
 function selectHeroCycles(cycles: any[]): any[] {
@@ -194,8 +194,8 @@ function selectHeroCycles(cycles: any[]): any[] {
       ["Open", "UnderReview"].includes(existing.statusUpdates[0].newStatus);
     if (isActive && !existingActive) byType.set(c.cycleType, c);
   }
-  // Standard first so it stays visually anchored when InternToFull is also active.
-  const order = ["Standard", "InternToFull"];
+  // Standard first so it stays visually anchored when Fellowship is also active.
+  const order = ["Standard", "Fellowship"];
   return order.flatMap((t) => (byType.has(t) ? [byType.get(t)] : []));
 }
 

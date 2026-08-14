@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Form, redirect, useLoaderData, useFetcher, Link } from "react-router";
-import type { Route } from "./+types/lead.intern-to-full-cycle.$id";
+import type { Route } from "./+types/lead.internal-cycle.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -53,7 +53,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     where: { id: params.id },
     include: {
       statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
-      internToFullFormVersion: true,
+      shortformVersion: true,
       generalRubricVersion: { include: { rubric: true } },
       domains: {
         include: {
@@ -70,7 +70,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
   });
 
-  if (cycle.cycleType !== "InternToFull") {
+  if (cycle.cycleType !== "Fellowship") {
     return redirect(`/hiring/lead/cycle/${cycle.id}`);
   }
 
@@ -88,7 +88,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       where: { active: true, isInternProgram: false },
       orderBy: { displayName: "asc" },
     }),
-    prisma.internToFullFormVersion.findMany({
+    prisma.shortformVersion.findMany({
       orderBy: { version: "desc" },
       include: { createdBy: { select: { firstName: true, lastName: true } } },
     }),
@@ -103,7 +103,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       orderBy: { createdAt: "asc" },
     }),
     // Draft + Final decisions awaiting hiring-lead action. Exclude Finals that
-    // already have a Released child (Decision is append-only). For InternToFull
+    // already have a Released child (Decision is append-only). For Fellowship
     // the Domain on DomainApplication is set directly (no challengeVersion).
     prisma.decision.findMany({
       where: {
@@ -164,14 +164,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       name: cycle.name,
       status: cycle.statusUpdates[0]?.newStatus ?? "Draft",
       closeDate: cycle.closeDate ? cycle.closeDate.toISOString() : null,
-      formVersion: cycle.internToFullFormVersion
+      formVersion: cycle.shortformVersion
         ? {
-            id: cycle.internToFullFormVersion.id,
-            version: cycle.internToFullFormVersion.version,
+            id: cycle.shortformVersion.id,
+            version: cycle.shortformVersion.version,
             // Frozen versions may hold legacy ProseMirror info bodies —
             // convert on read so the preview only ever sees string | blocks.
             questions: normalizeQuestionBodies(
-              (cycle.internToFullFormVersion.questions as unknown as Question[]) ?? [],
+              (cycle.shortformVersion.questions as unknown as Question[]) ?? [],
             ),
           }
         : null,
@@ -185,7 +185,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         displayName: d.domain.displayName,
         isReady: d.isReady,
       })),
-      // InternToFull uses a single reviewer pool: each member reads every DA
+      // Fellowship uses a single reviewer pool: each member reads every DA
       // across all target domains. The schema still stores one CycleReviewer
       // row per (user, cycle, domain) so the existing fan-out (auto-assign,
       // review submission) works unchanged — dedupe by userId for the UI.
@@ -270,7 +270,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     const formVersionId = (formData.get("formVersionId") as string) || null;
     await prisma.applicationCycle.update({
       where: { id: cycleId },
-      data: { internToFullFormVersionId: formVersionId },
+      data: { shortformVersionId: formVersionId },
     });
     return { ok: true };
   }
@@ -278,12 +278,12 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (intent === "create-form-version") {
     const questions = JSON.parse((formData.get("questions") as string) || "[]") as Question[];
     // Use the highest existing version + 1; protected by the unique constraint.
-    const latest = await prisma.internToFullFormVersion.findFirst({
+    const latest = await prisma.shortformVersion.findFirst({
       orderBy: { version: "desc" },
       select: { version: true },
     });
     const nextVersion = (latest?.version ?? 0) + 1;
-    const created = await prisma.internToFullFormVersion.create({
+    const created = await prisma.shortformVersion.create({
       data: {
         version: nextVersion,
         // Prisma's Json type rejects arrays — wrap via JSON round-trip cast.
@@ -293,7 +293,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     });
     await prisma.applicationCycle.update({
       where: { id: cycleId },
-      data: { internToFullFormVersionId: created.id },
+      data: { shortformVersionId: created.id },
     });
     return { ok: true, formVersionId: created.id };
   }
@@ -392,7 +392,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   if (intent === "add-reviewer-pool") {
-    // InternToFull cycles use a single reviewer pool. Adding a pool member
+    // Fellowship cycles use a single reviewer pool. Adding a pool member
     // creates one CycleReviewer row per current target domain so the existing
     // per-domain fan-out (auto-assign, review join keys) keeps working.
     const userId = formData.get("userId") as string;
@@ -474,7 +474,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
 // ─── UI ──────────────────────────────────────────────────────────────────────
 
-export default function InternToFullCycleSetup() {
+export default function FellowshipCycleSetup() {
   const data = useLoaderData<typeof loader>();
   const {
     cycle,

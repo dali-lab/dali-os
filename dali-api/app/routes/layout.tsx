@@ -67,7 +67,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     // getActiveCycle() only looks at Standard cycles, so an intern on a live
     // conversion cycle would otherwise read as "on no active cycle" and lose
     // the Hiring tab under nav-regroup.
-    timed(request, 'activeInternCycle', () => getActiveCycle('InternToFull')),
+    timed(request, 'activeInternCycle', () => getActiveCycle('Fellowship')),
     // Powers the sidebar Favorites + Recent lists (same source as the Home
     // panel). Access re-checked per read, so a restricted/moved page drops out.
     // `request` shares one read with the Home panel on the same navigation.

@@ -399,7 +399,7 @@ async function searchApplications(
     if (pairs.length === 0) return [];
     where = {
       selected: true,
-      // Standard cycles link Domain via challengeVersion; InternToFull links it
+      // Standard cycles link Domain via challengeVersion; Fellowship links it
       // directly — match whichever path is set (mirrors the reviewer route).
       OR: pairs.map((r) => ({
         application: { applicationCycleId: r.applicationCycleId, ...nameMatch },

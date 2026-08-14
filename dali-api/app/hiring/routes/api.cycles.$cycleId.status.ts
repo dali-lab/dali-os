@@ -48,7 +48,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const { newStatus, force } = body;
 
   // Single-active-cycle invariant — enforced *per cycleType*. A Standard hire
-  // cycle and an InternToFull conversion cycle may overlap, but two of the
+  // cycle and an Fellowship conversion cycle may overlap, but two of the
   // same type may not. We look up this cycle's type first so the check is
   // scoped correctly.
   if (newStatus === "Open" || newStatus === "UnderReview") {
@@ -70,7 +70,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   // Draft → Open: validate per-cycleType readiness. Standard requires a
-  // linked challenge version per domain (challenge-based hiring); InternToFull
+  // linked challenge version per domain (challenge-based hiring); Fellowship
   // skips challenges and only requires the shortform to be pinned.
   if (newStatus === "Open") {
     const cycle = await prisma.applicationCycle.findUniqueOrThrow({
@@ -109,10 +109,10 @@ export async function action({ request, params }: Route.ActionArgs) {
           }
         }
       }
-    } else if (cycle.cycleType === "InternToFull") {
-      if (!cycle.internToFullFormVersionId) {
+    } else if (cycle.cycleType === "Fellowship") {
+      if (!cycle.shortformVersionId) {
         return Response.json(
-                { error: "Shortform must be selected before opening an InternToFull cycle" },
+                { error: "Shortform must be selected before opening an Fellowship cycle" },
                 { status: 400 },
               );
       }
@@ -153,11 +153,11 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
   }
 
-  // For InternToFull cycles opening for the first time, prepare the
+  // For Fellowship cycles opening for the first time, prepare the
   // notification fan-out. We pre-compute the recipient list outside the
   // transaction (it's a pure read), then commit the status transition,
   // notification rows, and idempotency marker atomically. The
-  // internsNotifiedAt flag guards against re-spam if the lead later bounces
+  // applicantsNotifiedAt flag guards against re-spam if the lead later bounces
   // Open→Draft→Open during setup.
   let fanOutPlan: {
     userIds: string[];
@@ -167,9 +167,9 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (newStatus === "Open") {
     const cycle = await prisma.applicationCycle.findUniqueOrThrow({
       where: { id: params.cycleId! },
-      select: { cycleType: true, closeDate: true, name: true, internsNotifiedAt: true },
+      select: { cycleType: true, closeDate: true, name: true, applicantsNotifiedAt: true },
     });
-    if (cycle.cycleType === "InternToFull" && !cycle.internsNotifiedAt) {
+    if (cycle.cycleType === "Fellowship" && !cycle.applicantsNotifiedAt) {
       const userIds = await eligibleInternUserIds();
       const closeText = cycle.closeDate
         ? ` Apply by ${cycle.closeDate.toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: APPLICATION_TZ })}.`
@@ -194,14 +194,14 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (fanOutPlan) {
       await tx.applicationCycle.update({
         where: { id: params.cycleId! },
-        data: { internsNotifiedAt: new Date() },
+        data: { applicantsNotifiedAt: new Date() },
       });
     }
   });
 
   // Fan out after commit, best-effort (matching the interview-notifications
   // convention: a flaky notification write must not roll back a committed
-  // status change). internsNotifiedAt is already set, so a crash between
+  // status change). applicantsNotifiedAt is already set, so a crash between
   // commit and fan-out drops the batch rather than re-spamming on retry.
   if (fanOutPlan && fanOutPlan.userIds.length > 0) {
     await notify({
@@ -210,7 +210,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       message: {
         title: fanOutPlan.title,
         body: fanOutPlan.body,
-        link: "/intern-to-full",
+        link: "/fellowship",
       },
       recipients: fanOutPlan.userIds.map((userId) => ({ userId })),
     }).catch((err) => console.error("[cycle-status] fellowship fan-out failed:", err));

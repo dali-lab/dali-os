@@ -120,7 +120,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     : [];
 
   // DomainApplications for the selected cycle, scoped to visible domains.
-  // Standard cycles link Domain via challengeVersion; InternToFull links
+  // Standard cycles link Domain via challengeVersion; Fellowship links
   // Domain directly — match whichever path is set (mirrors reviewer route).
   const domainApps = visibleDomainIds.length
     ? await prisma.domainApplication.findMany({
