@@ -39,6 +39,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       auth.user.sub,
       `/members/${params.id}`,
       `${data.member.firstName} ${data.member.lastName}`.trim(),
+      request,
     );
   }
   return data;

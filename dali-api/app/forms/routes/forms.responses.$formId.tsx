@@ -71,7 +71,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
   if (!form) return redirect("/forms");
   // After the Core gate — the responses view the viewer can open lands in recents.
-  recordRouteVisit(auth.user.sub, `/forms/responses/${form.id}`, `${form.name} responses`);
+  recordRouteVisit(auth.user.sub, `/forms/responses/${form.id}`, `${form.name} responses`, request);
   const crumbs = await folderCrumbs(form.folderId);
 
   // When this form is the bound partner application form, the applications
