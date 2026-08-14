@@ -37,7 +37,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!level) return redirect("/forms"); // unknown folder → top level
   // After the Core gate — the folder the viewer can open lands in recents.
   if (level.current) {
-    recordRouteVisit(auth.user.sub, `/forms/${level.current.id}`, level.current.name);
+    recordRouteVisit(auth.user.sub, `/forms/${level.current.id}`, level.current.name, request);
   }
   return level;
 }

@@ -139,7 +139,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   // After the gate, so a 404 never lands in someone's recents. Detached — a
   // failed bookkeeping write must not cost the reader their document.
-  recordPageVisit(auth.user.sub, page.id);
+  recordPageVisit(auth.user.sub, page.id, request);
   const favorited = await isFavorited(auth.user.sub, page.id);
 
   // Every workspace type now carries a shareable audience (named shares +

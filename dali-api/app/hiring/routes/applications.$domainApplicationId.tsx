@@ -120,6 +120,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     auth.user.sub,
     `/hiring/applications/${params.domainApplicationId}`,
     `${da.application.user.firstName} ${da.application.user.lastName}`.trim(),
+    request,
   );
 
   const isInternToFull = da.application.applicationCycle.cycleType === "InternToFull";
