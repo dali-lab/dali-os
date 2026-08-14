@@ -93,7 +93,6 @@ const SEGMENT_LABELS: Record<string, string> = {
 
   projects: 'Projects',
   staffing: 'Staffing',
-  'my-staffing': 'My Staffing',
   'level-up': 'Level Up',
   'intent-to-work': 'Intent to Work',
   'project-bids': 'Project Bids',

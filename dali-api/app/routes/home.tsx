@@ -546,13 +546,28 @@ function ShortcutTiles({
   // instructions under it just crowds that.
   if (shortcuts.length === 0) return null;
 
+  // The row is one merged list, so name only the halves that survived the
+  // slice — captioning "recently visited" over nothing but favorites lies.
+  const shownFavorites = Math.min(pages.favorites.length, shortcuts.length);
+  const caption =
+    shownFavorites === 0
+      ? "Recently visited"
+      : shownFavorites === shortcuts.length
+        ? "Favorites"
+        : "Favorites & recently visited";
+
   return (
     // Wrapping row rather than a grid so a partial last row stays centered
     // under the search box.
-    <div className="flex w-full max-w-xl flex-wrap justify-center gap-1">
-      {shortcuts.map((p) => (
-        <ShortcutTile key={p.id} page={p} onChanged={onChanged} />
-      ))}
+    <div className="flex w-full max-w-xl flex-col items-center gap-1">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+        {caption}
+      </p>
+      <div className="flex w-full flex-wrap justify-center gap-1">
+        {shortcuts.map((p) => (
+          <ShortcutTile key={p.id} page={p} onChanged={onChanged} />
+        ))}
+      </div>
     </div>
   );
 }
