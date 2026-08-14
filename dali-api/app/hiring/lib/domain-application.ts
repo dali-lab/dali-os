@@ -21,14 +21,24 @@ export async function reconcileDomainApplications({
   applicationId,
   domainIds,
   challengeVersionByDomain,
+  challengeFormVersionByDomain,
 }: {
   applicationId: string;
   domainIds: string[];
   challengeVersionByDomain?: Map<string, string>;
+  // Drive-Form challenges: domain → picked FormVersion id. Per domain, at most
+  // one of challengeVersionByDomain / challengeFormVersionByDomain is set.
+  challengeFormVersionByDomain?: Map<string, string>;
 }): Promise<void> {
   const existing = await prisma.domainApplication.findMany({
     where: { applicationId },
-    select: { id: true, domainId: true, selected: true, challengeVersionId: true },
+    select: {
+      id: true,
+      domainId: true,
+      selected: true,
+      challengeVersionId: true,
+      challengeFormVersionId: true,
+    },
   });
   const byDomain = new Map(
     existing.filter((da) => da.domainId).map((da) => [da.domainId!, da]),
@@ -36,6 +46,7 @@ export async function reconcileDomainApplications({
 
   for (const domainId of domainIds) {
     const desiredCv = challengeVersionByDomain?.get(domainId);
+    const desiredForm = challengeFormVersionByDomain?.get(domainId);
     const ex = byDomain.get(domainId);
     if (!ex) {
       await prisma.domainApplication.create({
@@ -43,15 +54,28 @@ export async function reconcileDomainApplications({
           applicationId,
           domainId,
           ...(desiredCv ? { challengeVersionId: desiredCv } : {}),
+          ...(desiredForm ? { challengeFormVersionId: desiredForm } : {}),
           answers: {},
         },
       });
       continue;
     }
-    const updates: { selected?: boolean; challengeVersionId?: string; answers?: object } = {};
+    const updates: {
+      selected?: boolean;
+      challengeVersionId?: string | null;
+      challengeFormVersionId?: string | null;
+      answers?: object;
+    } = {};
     if (!ex.selected) updates.selected = true;
-    if (desiredCv && ex.challengeVersionId !== desiredCv) {
+    // Switching the picked challenge (either kind, or CV↔Form) wipes answers —
+    // the question set changed. Set the picked kind and clear the other.
+    if (desiredForm && ex.challengeFormVersionId !== desiredForm) {
+      updates.challengeFormVersionId = desiredForm;
+      updates.challengeVersionId = null;
+      updates.answers = {};
+    } else if (desiredCv && ex.challengeVersionId !== desiredCv) {
       updates.challengeVersionId = desiredCv;
+      updates.challengeFormVersionId = null;
       updates.answers = {};
     }
     if (Object.keys(updates).length > 0) {

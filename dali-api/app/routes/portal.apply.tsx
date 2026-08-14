@@ -9,6 +9,7 @@ import { getApplicationsGmailRefreshToken } from "~/lib/gmail-integration";
 import { renderForSlot, notificationSlot } from "~/hiring/lib/email-variables";
 import { getActiveCycle } from "~/hiring/lib/cycles";
 import { loadHiringForm } from "~/hiring/lib/application-form.server";
+import { safeParseJsonString } from "~/forms/lib/forms-data";
 import { reconcileDomainApplications } from "~/hiring/lib/domain-application";
 import { checkGitHubUrl, checkFigmaUrl, checkDriveUrl } from "~/lib/submission-check";
 import type { SubmissionCheckResult } from "~/lib/submission-check";
@@ -56,6 +57,14 @@ export async function loader({ request }: Route.LoaderArgs) {
           },
         },
       },
+      // Per-domain challenge Forms (additive alongside legacy ChallengeVersions).
+      domainChallengeForms: {
+        include: {
+          form: {
+            include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } },
+          },
+        },
+      },
     },
   });
 
@@ -87,22 +96,36 @@ export async function loader({ request }: Route.LoaderArgs) {
     form ? form.description : generalCvac!.challengeVersion.description,
   );
 
-  // Build domain info with all linked challenge versions (applicant picks one).
+  // Build domain info with all linked challenges (applicant picks one). Legacy
+  // ChallengeVersion challenges and Drive-Form challenges are merged into one
+  // list; Form options carry an opaque "form:<formId>" id so the picker (which
+  // treats the id as opaque) works unchanged.
   const domains = cycle.domains.map(dac => {
     const linked = cycle.challengeVersions.filter(
       cvc => cvc.challengeVersion.domainId === dac.domainId,
     );
+    const legacyChallenges = linked.map(cvc => ({
+      challengeVersionId: cvc.challengeVersionId,
+      challengeName: (cvc.challengeVersion as any).challenge?.name ?? "Challenge",
+      description: ensureBlocks((cvc.challengeVersion as any).description),
+      questions: normalizeQuestionBodies(
+        ((cvc.challengeVersion.questions as unknown) as Question[]) ?? [],
+      ),
+    }));
+    const formChallenges = cycle.domainChallengeForms
+      .filter(cdf => cdf.domainId === dac.domainId && cdf.form.versions[0])
+      .map(cdf => ({
+        challengeVersionId: `form:${cdf.formId}`,
+        challengeName: cdf.form.name,
+        description: ensureBlocks(safeParseJsonString(cdf.form.versions[0]!.intro)),
+        questions: normalizeQuestionBodies(
+          ((cdf.form.versions[0]!.questions as unknown) as Question[]) ?? [],
+        ),
+      }));
     return {
       id: dac.domainId,
       name: dac.domain.name,
-      challenges: linked.map(cvc => ({
-        challengeVersionId: cvc.challengeVersionId,
-        challengeName: (cvc.challengeVersion as any).challenge?.name ?? "Challenge",
-        description: ensureBlocks((cvc.challengeVersion as any).description),
-        questions: normalizeQuestionBodies(
-          ((cvc.challengeVersion.questions as unknown) as Question[]) ?? [],
-        ),
-      })),
+      challenges: [...legacyChallenges, ...formChallenges],
     };
   });
 
@@ -117,6 +140,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       domainApplications: {
         include: {
           challengeVersion: { select: { domainId: true } },
+          challengeFormVersion: { select: { formId: true } },
         },
       },
     },
@@ -144,12 +168,58 @@ export async function loader({ request }: Route.LoaderArgs) {
             domainApplications: draft.domainApplications.map(da => ({
               id: da.id,
               domainId: da.domainId,
-              challengeVersionId: da.challengeVersionId,
+              // Restore the opaque picker id: "form:<formId>" for a Form
+              // challenge, else the legacy ChallengeVersion id.
+              challengeVersionId: da.challengeFormVersion
+                ? `form:${da.challengeFormVersion.formId}`
+                : da.challengeVersionId,
               answers: da.answers as Record<string, string>,
             })),
           }
         : null,
     };
+}
+
+// Resolve + validate applicant challenge selections against what's linked to
+// the cycle. Each selection's `challengeVersionId` is either a legacy
+// ChallengeVersion id or an opaque "form:<formId>" id. Returns one pin per
+// valid selection: {domainId} + exactly one of challengeVersionId /
+// challengeFormVersionId (the picked Form's latest version).
+type ResolvedPin = { domainId: string; challengeVersionId?: string; challengeFormVersionId?: string };
+async function resolveChallengeSelections(
+  cycleId: string,
+  selections: { domainId: string; challengeVersionId: string }[],
+): Promise<ResolvedPin[]> {
+  const [cvacs, cdfs] = await Promise.all([
+    prisma.challengeVersionApplicationCycle.findMany({
+      where: { applicationCycleId: cycleId },
+      include: { challengeVersion: { select: { domainId: true } } },
+    }),
+    prisma.cycleDomainForm.findMany({
+      where: { applicationCycleId: cycleId },
+      include: { form: { include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } } } },
+    }),
+  ]);
+  const cvPairs = new Set(
+    cvacs
+      .filter(c => c.challengeVersion.domainId)
+      .map(c => `${c.challengeVersion.domainId}:${c.challengeVersionId}`),
+  );
+  const formVersionByPair = new Map(
+    cdfs.map(c => [`${c.domainId}:${c.formId}`, c.form.versions[0]?.id]),
+  );
+
+  const out: ResolvedPin[] = [];
+  for (const s of selections) {
+    if (s.challengeVersionId.startsWith("form:")) {
+      const formId = s.challengeVersionId.slice("form:".length);
+      const versionId = formVersionByPair.get(`${s.domainId}:${formId}`);
+      if (versionId) out.push({ domainId: s.domainId, challengeFormVersionId: versionId });
+    } else if (cvPairs.has(`${s.domainId}:${s.challengeVersionId}`)) {
+      out.push({ domainId: s.domainId, challengeVersionId: s.challengeVersionId });
+    }
+  }
+  return out;
 }
 
 // ─── Action ──────────────────────────────────────────────────────────────────
@@ -172,21 +242,9 @@ export async function action({ request }: Route.ActionArgs) {
       challengeVersionId: string;
     }[];
 
-    // Validate every chosen CV is linked to this cycle and matches the claimed domain.
-    const cvacs = await prisma.challengeVersionApplicationCycle.findMany({
-      where: { applicationCycleId: cycleId },
-      include: { challengeVersion: true },
-    });
-    const cvByPair = new Map<string, string>();
-    for (const c of cvacs) {
-      if (c.challengeVersion.domainId) {
-        cvByPair.set(`${c.challengeVersion.domainId}:${c.challengeVersionId}`, c.challengeVersionId);
-      }
-    }
-
-    const validSelections = selectedDomains.filter(s =>
-      cvByPair.has(`${s.domainId}:${s.challengeVersionId}`),
-    );
+    // Validate every chosen challenge (legacy CV or Form) is linked to this
+    // cycle for the claimed domain, and resolve the pin.
+    const resolved = await resolveChallengeSelections(cycleId, selectedDomains);
 
     // Upsert keyed on the (userId, applicationCycleId) unique constraint so
     // that two concurrent "Start Application" clicks (e.g. from two open tabs)
@@ -211,16 +269,20 @@ export async function action({ request }: Route.ActionArgs) {
           create: { newStatus: "Draft", userId: auth.user.sub },
         },
         domainApplications: {
-          create: validSelections.map(s => ({
-            domainId: s.domainId,
-            challengeVersionId: s.challengeVersionId,
+          create: resolved.map(r => ({
+            domainId: r.domainId,
+            ...(r.challengeVersionId ? { challengeVersionId: r.challengeVersionId } : {}),
+            ...(r.challengeFormVersionId ? { challengeFormVersionId: r.challengeFormVersionId } : {}),
             answers: {},
           })),
         },
       },
       include: {
         domainApplications: {
-          include: { challengeVersion: { select: { domainId: true } } },
+          include: {
+            challengeVersion: { select: { domainId: true } },
+            challengeFormVersion: { select: { formId: true } },
+          },
         },
       },
     });
@@ -235,7 +297,9 @@ export async function action({ request }: Route.ActionArgs) {
             domainApplications: application.domainApplications.map((da) => ({
               id: da.id,
               domainId: da.domainId,
-              challengeVersionId: da.challengeVersionId,
+              challengeVersionId: da.challengeFormVersion
+                ? `form:${da.challengeFormVersion.formId}`
+                : da.challengeVersionId,
               answers: da.answers,
             })),
           },
@@ -250,27 +314,21 @@ export async function action({ request }: Route.ActionArgs) {
       challengeVersionId: string;
     }[];
 
-    // Validate every chosen CV is linked to this cycle and matches the claimed domain.
-    const cvacs = await prisma.challengeVersionApplicationCycle.findMany({
-      where: { applicationCycleId: cycleId },
-      include: { challengeVersion: true },
-    });
-    const cvByPair = new Map<string, string>();
-    for (const c of cvacs) {
-      if (c.challengeVersion.domainId) {
-        cvByPair.set(`${c.challengeVersion.domainId}:${c.challengeVersionId}`, c.challengeVersionId);
-      }
-    }
-    const validSelections = newSelections.filter(s =>
-      cvByPair.has(`${s.domainId}:${s.challengeVersionId}`),
+    // Validate + resolve every chosen challenge (legacy CV or Form).
+    const resolved = await resolveChallengeSelections(cycleId, newSelections);
+    const newDomainIds = resolved.map(r => r.domainId);
+    const desiredCvByDomain = new Map(
+      resolved.filter(r => r.challengeVersionId).map(r => [r.domainId, r.challengeVersionId!]),
     );
-    const newDomainIds = validSelections.map(s => s.domainId);
-    const desiredCvByDomain = new Map(validSelections.map(s => [s.domainId, s.challengeVersionId]));
+    const desiredFormByDomain = new Map(
+      resolved.filter(r => r.challengeFormVersionId).map(r => [r.domainId, r.challengeFormVersionId!]),
+    );
 
     await reconcileDomainApplications({
       applicationId,
       domainIds: newDomainIds,
       challengeVersionByDomain: desiredCvByDomain,
+      challengeFormVersionByDomain: desiredFormByDomain,
     });
 
     // Return full updated draft
@@ -278,7 +336,10 @@ export async function action({ request }: Route.ActionArgs) {
       where: { id: applicationId },
       include: {
         domainApplications: {
-          include: { challengeVersion: { select: { domainId: true } } },
+          include: {
+            challengeVersion: { select: { domainId: true } },
+            challengeFormVersion: { select: { formId: true } },
+          },
         },
       },
     });
@@ -291,7 +352,9 @@ export async function action({ request }: Route.ActionArgs) {
             domainApplications: updatedApp.domainApplications.map((da) => ({
               id: da.id,
               domainId: da.domainId,
-              challengeVersionId: da.challengeVersionId,
+              challengeVersionId: da.challengeFormVersion
+                ? `form:${da.challengeFormVersion.formId}`
+                : da.challengeVersionId,
               answers: da.answers,
             })),
           } : null,
@@ -360,8 +423,14 @@ export async function action({ request }: Route.ActionArgs) {
       where: { applicationId },
       include: {
         challengeVersion: { select: { domainId: true, questions: true } },
+        challengeFormVersion: { select: { questions: true } },
       },
     });
+    // Per-DA challenge questions: prefer the picked Form's version, else legacy.
+    const daQuestions = (dbDa: (typeof allDas)[number]): Question[] =>
+      ((dbDa.challengeFormVersion?.questions ??
+        dbDa.challengeVersion?.questions ??
+        []) as unknown as Question[]);
 
     const wordCountErrors: Record<string, WordCountViolation> = {
       ...validateWordLimits(generalQuestions, answers),
@@ -369,8 +438,7 @@ export async function action({ request }: Route.ActionArgs) {
     for (const da of domainAnswers) {
       const dbDa = allDas.find(d => d.id === da.domainApplicationId);
       if (!dbDa) continue;
-      const questions = (dbDa.challengeVersion!.questions as unknown as Question[]) ?? [];
-      Object.assign(wordCountErrors, validateWordLimits(questions, da.answers));
+      Object.assign(wordCountErrors, validateWordLimits(daQuestions(dbDa), da.answers));
     }
     if (Object.keys(wordCountErrors).length > 0) {
       return { wordCountErrors };
@@ -392,7 +460,7 @@ export async function action({ request }: Route.ActionArgs) {
         missingRequired.push(`selected domain has no application record`);
         continue;
       }
-      const questions = (dbDa.challengeVersion!.questions as unknown as Question[]) ?? [];
+      const questions = daQuestions(dbDa);
       const submitted = domainAnswers.find(da => da.domainApplicationId === dbDa.id)?.answers ?? {};
       for (const q of questions) {
         if (q.required && !isAnswered(submitted[q.key], q)) {

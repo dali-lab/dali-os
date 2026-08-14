@@ -55,6 +55,13 @@ export const prisma = {
     findFirst: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
   },
+  cycleDomainForm: {
+    findFirst: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+    findUnique: vi.fn(),
+    create: vi.fn(),
+    delete: vi.fn(),
+  },
   delibsSession: {
     findUnique: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),

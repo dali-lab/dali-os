@@ -343,6 +343,7 @@ model ApplicationCycle {
   applications      Application[]
   domains           DomainApplicationCycle[]
   challengeVersions ChallengeVersionApplicationCycle[]
+  domainChallengeForms CycleDomainForm[]
 
   interviewConfig    InterviewConfig?
   cycleReviewers     CycleReviewer[]
@@ -471,6 +472,12 @@ model DomainApplication {
   // Application via applicationFormVersionId — there's nothing per-domain to pin).
   challengeVersionId String?
   challengeVersion   ChallengeVersion? @relation(fields: [challengeVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  // Drive-Form equivalent of challengeVersionId: the FormVersion of the picked
+  // per-domain challenge Form the applicant answered, pinned at pick time. On a
+  // Standard DA exactly one of challengeVersionId / challengeFormVersionId is
+  // set (legacy ChallengeVersion vs a bound Drive Form). Null on internal cycles.
+  challengeFormVersionId String?
+  challengeFormVersion   FormVersion? @relation("DomainApplicationChallengeForm", fields: [challengeFormVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   // The target Domain this DA represents. Required for every DA regardless
   // of cycle type — single source of truth for "what domain is this for".
   // Backfilled from challengeVersion.domainId for pre-existing Standard rows.
@@ -484,6 +491,28 @@ model DomainApplication {
   @@index([applicationId])
   @@index([domainId])
   @@index([challengeVersionId])
+  @@index([challengeFormVersionId])
+}
+
+// Drive-Form equivalent of ChallengeVersionApplicationCycle for per-domain
+// challenges: links a Form (definition) to a (cycle, domain) as one of that
+// domain's challenges. A domain may have several — the applicant picks one.
+// Additive: cycles can mix legacy ChallengeVersion challenges and Form ones.
+model CycleDomainForm {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  applicationCycleId String
+  applicationCycle   ApplicationCycle @relation(fields: [applicationCycleId], references: [id])
+  domainId           String
+  domain             Domain           @relation(fields: [domainId], references: [id])
+  formId             String
+  form               Form             @relation(fields: [formId], references: [id])
+
+  @@unique([applicationCycleId, domainId, formId])
+  @@index([applicationCycleId])
+  @@index([domainId])
+  @@index([formId])
 }
 
 model Challenge {
@@ -531,6 +560,7 @@ model Domain {
   delibsSessions        DelibsSession[]
   // Internal-cycle DomainApplications link Domain directly (no ChallengeVersion).
   domainApplications    DomainApplication[]
+  cycleChallengeForms   CycleDomainForm[]
 
   // ─── Phase 1 back-relations ───────────────────────────────────────────────
   eligibilities             DomainEligibility[]
@@ -3667,6 +3697,7 @@ model Form {
   educationOfferingsAsApplicationForm EducationOffering[]             @relation("EducationOfferingApplicationForm")
   educationBindings                   EducationFormBinding[]          @relation("EducationFormBindings")
   hiringCyclesAsApplicationForm       ApplicationCycle[]              @relation("CycleApplicationForm")
+  hiringDomainChallenges              CycleDomainForm[]
 
   @@index([folderId])
   @@index([folderPageId])
@@ -3696,6 +3727,7 @@ model FormVersion {
 
   // Internal hiring applications that pinned this version (see Application.applicationFormVersionId).
   hiringApplicationsAsPinnedForm Application[] @relation("ApplicationApplicationForm")
+  hiringDomainApplicationsAsChallenge DomainApplication[] @relation("DomainApplicationChallengeForm")
 
   @@unique([formId, versionNumber])
   @@index([formId, versionNumber])

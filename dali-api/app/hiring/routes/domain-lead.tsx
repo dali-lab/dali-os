@@ -9,6 +9,7 @@ import { hiringPills } from "~/hiring/components/hiringPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import { requireAuth } from "~/lib/auth";
 import { CheckCircle, Plus, Trash2, Check, Clock, X, CircleDashed, ChevronDown, Eye, Send, Search, ChevronUp } from "lucide-react";
+import { createDomainChallengeForm } from "~/hiring/lib/application-form.server";
 import { inferDomainApplicationStatus } from "~/hiring/lib/domain-application-status";
 import { inReviewPipelineFilter } from "~/hiring/lib/application-pipeline-filter";
 import { getReviewStatus } from "~/hiring/lib/review-status";
@@ -141,7 +142,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       const requestedCycleId = new URL(request.url).searchParams.get("cycle");
       const activeCycle = selectActiveCycleForDomainLead(candidateCycles, requestedCycleId);
 
-      if (!activeCycle) return [{ assignment, cycle: null, availableCycles, apps: [], challengeVersionOptions: [], linkedChallengeVersions: [], isChallengeReady: false, interviews: [], reviewers: [], delibsSessions: [], draftDecisions: [], cycleReviewersForDomain: [], initialDelibsCount: 0, finalDelibsCount: 0, rubricVersionOptions: [], currentRubricVersionId: null, rubricCriteria: [], interviewers: [], hasApplicationReviews: false, confidentialityRequired: null as null | "no_agreement" | "unsigned" }];
+      if (!activeCycle) return [{ assignment, cycle: null, availableCycles, apps: [], challengeVersionOptions: [], linkedChallengeVersions: [], linkedChallengeForms: [], isChallengeReady: false, interviews: [], reviewers: [], delibsSessions: [], draftDecisions: [], cycleReviewersForDomain: [], initialDelibsCount: 0, finalDelibsCount: 0, rubricVersionOptions: [], currentRubricVersionId: null, rubricCriteria: [], interviewers: [], hasApplicationReviews: false, confidentialityRequired: null as null | "no_agreement" | "unsigned" }];
 
       const confState = await getCycleConfidentialityState(auth.user.sub, activeCycle.id);
       const confidentialityRequired = confState.status === "signed" ? null : confState.status;
@@ -186,6 +187,18 @@ export async function loader({ request }: Route.LoaderArgs) {
         ...cv,
         description: ensureBlocks(cv.description),
         versionNumber: cvNumberMap.get(cv.id) ?? null,
+      }));
+
+      // Drive challenge Forms linked to this domain in this cycle (additive
+      // alongside legacy ChallengeVersions).
+      const linkedChallengeFormsRaw = await prisma.cycleDomainForm.findMany({
+        where: { applicationCycleId: cycle.id, domainId: assignment.domainId },
+        include: { form: { select: { id: true, name: true } } },
+      });
+      const linkedChallengeForms = linkedChallengeFormsRaw.map((cdf) => ({
+        id: cdf.id,
+        formId: cdf.formId,
+        name: cdf.form.name,
       }));
 
       // isReady lives on DomainApplicationCycle (per domain+cycle, not per challenge version)
@@ -438,7 +451,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         };
       }
 
-      return { assignment, cycle, availableCycles, apps: appsWithStatus, challengeVersionOptions, linkedChallengeVersions, isChallengeReady, interviews, reviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, initialDelibsCount, finalDelibsCount, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews, confidentialityRequired: null as null | "no_agreement" | "unsigned" };
+      return { assignment, cycle, availableCycles, apps: appsWithStatus, challengeVersionOptions, linkedChallengeVersions, linkedChallengeForms, isChallengeReady, interviews, reviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, initialDelibsCount, finalDelibsCount, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews, confidentialityRequired: null as null | "no_agreement" | "unsigned" };
       })(activeCycle)];
     })
   );
@@ -546,6 +559,47 @@ export async function action({ request }: Route.ActionArgs) {
     await prisma.challengeVersionApplicationCycle.deleteMany({
       where: { challengeVersionId: versionId, applicationCycleId: cycleId },
     });
+    return redirect("/hiring/domain-lead");
+  }
+
+  if (intent === "create-challenge-form") {
+    // Auto-create a Drive challenge Form for this domain and link it (Draft only).
+    const auth = await requireAuth(request);
+    if (!auth.ok) return auth.response;
+    const cycleId = formData.get("cycleId") as string;
+    const domainId = formData.get("domainId") as string;
+    const latestUpdate = await prisma.applicationCycleStatusUpdate.findFirst({
+      where: { applicationCycleId: cycleId },
+      orderBy: { createdAt: "desc" },
+    });
+    if ((latestUpdate?.newStatus ?? "Draft") !== "Draft") {
+      return redirect("/hiring/domain-lead");
+    }
+    await createDomainChallengeForm(cycleId, domainId, auth.user.sub);
+    return redirect("/hiring/domain-lead");
+  }
+
+  if (intent === "remove-challenge-form") {
+    const cdfId = formData.get("cdfId") as string;
+    const cdf = await prisma.cycleDomainForm.findUnique({ where: { id: cdfId } });
+    if (!cdf) return redirect("/hiring/domain-lead");
+    const latestUpdate = await prisma.applicationCycleStatusUpdate.findFirst({
+      where: { applicationCycleId: cdf.applicationCycleId },
+      orderBy: { createdAt: "desc" },
+    });
+    if ((latestUpdate?.newStatus ?? "Draft") !== "Draft") {
+      return redirect("/hiring/domain-lead");
+    }
+    // Refuse if any DomainApplication picked a version of this form.
+    const inUse = await prisma.domainApplication.count({
+      where: {
+        challengeFormVersion: { formId: cdf.formId },
+        application: { applicationCycleId: cdf.applicationCycleId },
+      },
+    });
+    if (inUse === 0) {
+      await prisma.cycleDomainForm.delete({ where: { id: cdfId } });
+    }
     return redirect("/hiring/domain-lead");
   }
 
@@ -691,7 +745,7 @@ export default function DomainLeadDashboard() {
       {areaPills}
       <h1 className="font-heading text-2xl font-bold text-foreground">Domain Lead Dashboard</h1>
 
-      {domainData.map(({ assignment, cycle, availableCycles, apps, challengeVersionOptions, linkedChallengeVersions, isChallengeReady, interviews, reviewers: cycleReviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, initialDelibsCount, finalDelibsCount, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews, confidentialityRequired }: any, idx: number) => {
+      {domainData.map(({ assignment, cycle, availableCycles, apps, challengeVersionOptions, linkedChallengeVersions, linkedChallengeForms, isChallengeReady, interviews, reviewers: cycleReviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, initialDelibsCount, finalDelibsCount, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews, confidentialityRequired }: any, idx: number) => {
         const isFellowship = cycle?.cycleType === "Fellowship";
         const hasLinkedChallenge = (linkedChallengeVersions ?? []).length > 0;
         const currentStatus = cycle?.statusUpdates[0]?.newStatus ?? null;
@@ -769,6 +823,7 @@ export default function DomainLeadDashboard() {
                           domainId={assignment.domainId}
                           challengeVersionOptions={challengeVersionOptions}
                           linkedChallengeVersions={linkedChallengeVersions ?? []}
+                          linkedChallengeForms={linkedChallengeForms ?? []}
                           isChallengeReady={isChallengeReady}
                         />
                         <div className="flex items-center gap-3 pt-2 border-t border-border">
@@ -1339,14 +1394,15 @@ export default function DomainLeadDashboard() {
   );
 }
 
-function DraftSection({ cycle, domainId, challengeVersionOptions, linkedChallengeVersions, isChallengeReady }: {
+function DraftSection({ cycle, domainId, challengeVersionOptions, linkedChallengeVersions, linkedChallengeForms, isChallengeReady }: {
   cycle: any;
   domainId: string;
   challengeVersionOptions: any[];
   linkedChallengeVersions: any[];
+  linkedChallengeForms: any[];
   isChallengeReady: boolean;
 }) {
-  const hasLinkedChallenge = linkedChallengeVersions.length > 0;
+  const hasLinkedChallenge = linkedChallengeVersions.length > 0 || linkedChallengeForms.length > 0;
   const totalQuestions = linkedChallengeVersions.reduce(
     (sum: number, cv: any) => sum + ((cv.questions as any[])?.length ?? 0),
     0,
@@ -1379,6 +1435,14 @@ function DraftSection({ cycle, domainId, challengeVersionOptions, linkedChalleng
                   {cv.challenge?.name ?? "Untitled"}
                 </Link>
                 <span className="text-xs text-muted-foreground">{(cv.questions as any[])?.length ?? 0} questions</span>
+              </li>
+            ))}
+            {linkedChallengeForms.map((cf: any) => (
+              <li key={cf.id} className="flex items-center justify-between">
+                <Link to={`/forms/edit/${cf.formId}`} className="text-blue-600 hover:text-blue-800">
+                  {cf.name}
+                </Link>
+                <span className="text-xs text-muted-foreground">Drive form</span>
               </li>
             ))}
           </ul>
@@ -1438,6 +1502,7 @@ function DraftSection({ cycle, domainId, challengeVersionOptions, linkedChalleng
           domainId={domainId}
           options={challengeVersionOptions}
           linkedChallengeVersions={linkedChallengeVersions}
+          linkedChallengeForms={linkedChallengeForms}
         />
       </div>
     );
@@ -1455,16 +1520,18 @@ function DraftSection({ cycle, domainId, challengeVersionOptions, linkedChalleng
         domainId={domainId}
         options={challengeVersionOptions}
         linkedChallengeVersions={linkedChallengeVersions}
+          linkedChallengeForms={linkedChallengeForms}
       />
     </div>
   );
 }
 
-function ChallengeSelector({ cycleId, domainId, options, linkedChallengeVersions }: {
+function ChallengeSelector({ cycleId, domainId, options, linkedChallengeVersions, linkedChallengeForms }: {
   cycleId: string;
   domainId: string;
   options: any[];
   linkedChallengeVersions: any[];
+  linkedChallengeForms: any[];
 }) {
   const linkedIds = new Set(linkedChallengeVersions.map((cv: any) => cv.id));
   const linkedChallengeIds = new Set(linkedChallengeVersions.map((cv: any) => cv.challengeId));
@@ -1541,6 +1608,41 @@ function ChallengeSelector({ cycleId, domainId, options, linkedChallengeVersions
           })}
         </div>
       )}
+
+      {/* Drive challenge Forms (additive alongside legacy ChallengeVersions). */}
+      {linkedChallengeForms.length > 0 && (
+        <div className="border border-border rounded-md divide-y divide-gray-100">
+          {linkedChallengeForms.map((cf: any) => (
+            <div key={cf.id} className="px-4 py-3 flex items-center justify-between gap-3">
+              <div className="text-sm font-medium">
+                <Link to={`/forms/edit/${cf.formId}`} className="text-blue-600 hover:text-blue-800">
+                  {cf.name}
+                </Link>
+                <span className="ml-2 text-xs text-muted-foreground">Drive form</span>
+              </div>
+              <Form method="post" preventScrollReset>
+                <input type="hidden" name="intent" value="remove-challenge-form" />
+                <input type="hidden" name="cdfId" value={cf.id} />
+                <button
+                  type="submit"
+                  aria-label={`Remove ${cf.name}`}
+                  className="text-muted-foreground hover:text-red-600 transition"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </Form>
+            </div>
+          ))}
+        </div>
+      )}
+      <Form method="post" preventScrollReset>
+        <input type="hidden" name="intent" value="create-challenge-form" />
+        <input type="hidden" name="cycleId" value={cycleId} />
+        <input type="hidden" name="domainId" value={domainId} />
+        <button type="submit" className="text-sm font-medium text-blue-700 hover:underline">
+          + Add challenge form (Drive)
+        </button>
+      </Form>
 
       {availableOptions.length > 0 ? (
         <Form method="post" preventScrollReset className="flex items-end gap-3">

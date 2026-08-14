@@ -112,6 +112,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         challengeVersion: {
           include: { domain: true, challenge: true },
         },
+        challengeFormVersion: { select: { questions: true, intro: true } },
         domain: true,
       },
     }),
@@ -146,18 +147,26 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     applicationBase.answers as Record<string, string>,
   )
   const presignedDomainApplications = await Promise.all(
-    domainApplications.map(async (da: any) => ({
-      ...da,
-      // Immutable ChallengeVersion rows: legacy ProseMirror descriptions
-      // convert to block JSON on read (ApplicationViewer expects blocks).
-      challengeVersion: da.challengeVersion
-        ? { ...da.challengeVersion, description: ensureBlocks(da.challengeVersion.description) }
-        : da.challengeVersion,
-      answers: await presignAnswers(
-        (da.challengeVersion?.questions as unknown as Question[]) ?? [],
-        da.answers as Record<string, string>,
-      ),
-    })),
+    domainApplications.map(async (da: any) => {
+      // Per-domain challenge: prefer the picked Drive Form's version (intro →
+      // description), else the legacy ChallengeVersion. The viewer renders the
+      // `challengeVersion` shape {questions, description} either way.
+      const challengeVersion = da.challengeFormVersion
+        ? {
+            questions: da.challengeFormVersion.questions,
+            description: ensureBlocks(safeParseJsonString(da.challengeFormVersion.intro)),
+          }
+        : da.challengeVersion
+          ? { ...da.challengeVersion, description: ensureBlocks(da.challengeVersion.description) }
+          : da.challengeVersion
+      const questions =
+        (da.challengeFormVersion?.questions ?? da.challengeVersion?.questions ?? []) as Question[]
+      return {
+        ...da,
+        challengeVersion,
+        answers: await presignAnswers(questions, da.answers as Record<string, string>),
+      }
+    }),
   )
 
   const application = {

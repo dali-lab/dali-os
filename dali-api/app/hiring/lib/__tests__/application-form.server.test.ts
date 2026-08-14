@@ -3,6 +3,7 @@ import { prisma } from "~/lib/db";
 import { resolveReferenceOptions } from "~/forms/lib/reference-sources";
 import {
   createCycleApplicationForm,
+  createDomainChallengeForm,
   loadHiringForm,
 } from "~/hiring/lib/application-form.server";
 
@@ -12,6 +13,8 @@ vi.mock("~/lib/db", () => ({
     formFolder: { findFirst: vi.fn(), create: vi.fn() },
     formVersion: { create: vi.fn(), findUnique: vi.fn() },
     applicationCycle: { findUnique: vi.fn(), update: vi.fn() },
+    domain: { findUnique: vi.fn() },
+    cycleDomainForm: { create: vi.fn() },
   },
 }));
 vi.mock("~/forms/lib/reference-sources", () => ({
@@ -25,6 +28,8 @@ const mockPrisma = prisma as unknown as {
   form: { findFirst: ReturnType<typeof vi.fn>; findUnique: ReturnType<typeof vi.fn>; create: ReturnType<typeof vi.fn> };
   formFolder: { findFirst: ReturnType<typeof vi.fn>; create: ReturnType<typeof vi.fn> };
   applicationCycle: { findUnique: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
+  domain: { findUnique: ReturnType<typeof vi.fn> };
+  cycleDomainForm: { create: ReturnType<typeof vi.fn> };
 };
 
 beforeEach(() => vi.clearAllMocks());
@@ -97,6 +102,28 @@ describe("createCycleApplicationForm", () => {
     expect(mockPrisma.applicationCycle.update).toHaveBeenCalledWith({
       where: { id: "c1" },
       data: { applicationFormId: "new-form" },
+    });
+  });
+});
+
+describe("createDomainChallengeForm", () => {
+  it("creates a challenge Form and links it to the (cycle, domain) via CycleDomainForm", async () => {
+    mockPrisma.applicationCycle.findUnique.mockResolvedValue({ id: "c1", name: "Fall" });
+    mockPrisma.domain.findUnique.mockResolvedValue({ id: "d1", displayName: "Design" });
+    // ensureHiringTemplate: template exists with a version.
+    mockPrisma.formFolder.findFirst.mockResolvedValue({ id: "folder" });
+    mockPrisma.form.findFirst.mockResolvedValue({ id: "tmpl", versions: [{ id: "tv" }] });
+    mockPrisma.form.findUnique.mockResolvedValue({
+      versions: [{ questions: [{ key: "q", type: "text", required: false, data: { label: "Q" } }], intro: null }],
+    });
+    mockPrisma.form.create.mockResolvedValue({ id: "chal-form" });
+
+    const id = await createDomainChallengeForm("c1", "d1", "actor");
+    expect(id).toBe("chal-form");
+    const created = mockPrisma.form.create.mock.calls[0][0].data;
+    expect(created.name).toContain("Design");
+    expect(mockPrisma.cycleDomainForm.create).toHaveBeenCalledWith({
+      data: { applicationCycleId: "c1", domainId: "d1", formId: "chal-form" },
     });
   });
 });
