@@ -1,4 +1,4 @@
-import { redirect, useLoaderData, useSearchParams, useRevalidator } from "react-router";
+import { redirect, useLoaderData, useSearchParams, useNavigate, useRevalidator } from "react-router";
 import type { Route } from "./+types/drive.hub";
 import {
   HardDrive,
@@ -8,13 +8,9 @@ import {
   Paperclip,
   FolderOpen,
   Plus,
-  Users,
   ChevronDown,
-  Folder as FolderIcon,
   LayoutTemplate,
   Upload,
-  User,
-  Shield,
 } from "lucide-react";
 import { useState, useCallback, useEffect, useRef, useId, useMemo } from "react";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
@@ -23,8 +19,8 @@ import { canViewForms as checkCanViewForms, getUserRoles } from "~/lib/roles";
 import { loader as docsLoader } from "~/routes/documents.hub";
 import { loadDriveScopes } from "~/lib/drive-scopes.server";
 import type { DriveItem } from "~/lib/drive.server";
-import { DriveTree } from "~/components/drive/DriveTree";
-import type { DriveTreeMoveArgs, RowActions } from "~/components/drive/DriveTree";
+import { DriveBrowser } from "~/components/drive/DriveBrowser";
+import type { RowActions } from "~/components/drive/DriveBrowser";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
 import { Menu } from "~/components/ui/floating";
@@ -352,11 +348,15 @@ type ScopeActions = {
 
 function makeScopeActions({
   scope,
+  currentFolderId,
   dialog,
   toast,
   revalidate,
 }: {
   scope: DriveScope;
+  /** Folder the browser is currently in within this scope — new items land
+   *  here. null = the scope's top level. */
+  currentFolderId: string | null;
   dialog: ReturnType<typeof useDialog>;
   toast: ReturnType<typeof useToast>;
   revalidate: () => void;
@@ -365,6 +365,9 @@ function makeScopeActions({
   // The DB parent that this scope's "top level" maps to — null for most drives,
   // the Core root folder for the Core drive (so items land inside the scope).
   const rootParent = scope.rootFolderId ?? null;
+  // New items are created in the current folder, falling back to the scope's
+  // top level (rootParent) when browsing at the scope root.
+  const createParent = currentFolderId ?? rootParent;
 
   async function createPage(
     pageKind: "FreeForm" | "Folder",
@@ -401,7 +404,7 @@ function makeScopeActions({
       validate: (v) => (v.trim() ? null : "Enter a name"),
     });
     if (name === null) return;
-    const id = await createPage("FreeForm", name.trim(), rootParent);
+    const id = await createPage("FreeForm", name.trim(), createParent);
     if (id) window.location.assign(`/documents/${id}`);
     else toast.error("Couldn't create the document");
   }
@@ -415,7 +418,7 @@ function makeScopeActions({
       validate: (v) => (v.trim() ? null : "Enter a name"),
     });
     if (name === null) return;
-    const id = await createPage("Folder", name.trim(), rootParent);
+    const id = await createPage("Folder", name.trim(), createParent);
     if (id) {
       toast.success("Folder created");
       revalidate();
@@ -557,199 +560,30 @@ function makeScopeActions({
   return { createDoc, createFolder, rename, remove, requestMove, performMove };
 }
 
-// One collapsible scope section in the Browse view — a "drive". Each carries its
-// own New ▾ menu (creating into that scope) and its tree; row "⋯" menus and
-// drag-drop both route through the scope's action factory.
-function ScopeSection({
+// ── New menu (contextual to the current location) ────────────────────────────
+
+// The New ▾ button in the header. Creates into the current scope + folder via
+// the scope's action factory; Lab adds form/agreement/template extras. Hidden
+// at the Drive root (you pick a drive first).
+function NewMenu({
   scope,
-  typeFilter,
-  defaultOpen,
-  extraNewItems,
-}: {
-  scope: DriveScope;
-  typeFilter: DriveTypeFilter;
-  defaultOpen: boolean;
-  /** Lab-only extra New-menu items (form, agreement, template, upload). */
-  extraNewItems?: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-  const dialog = useDialog();
-  const toast = useToast();
-  const revalidator = useRevalidator();
-  const isMine = scope.id === "mine";
-  const isLab = scope.id === "lab";
-  const isCore = scope.id === "core";
-  const isProject = !isMine && !isLab && !isCore;
-
-  const actions = useMemo(
-    () => makeScopeActions({ scope, dialog, toast, revalidate: () => revalidator.revalidate() }),
-    [scope, dialog, toast, revalidator],
-  );
-
-  const rowActions: RowActions = useMemo(
-    () => ({
-      onRename: actions.rename,
-      onRequestMove: actions.requestMove,
-      onDelete: actions.remove,
-    }),
-    [actions],
-  );
-
-  const onMove = useCallback(
-    (args: DriveTreeMoveArgs) => {
-      void actions.performMove(args.item, args.destFolderId);
-    },
-    [actions],
-  );
-
-  // Per-scope upload. Every drive holds files: My Drive (private/Member), Lab,
-  // Core (uploaded into the Core folder so it inherits Core-only access), and
-  // each project. rootFolderId is null except for Core (its folder id).
-  const uploadTarget: UploadTarget = isMine
-    ? { scope: { kind: "Member" } }
-    : isProject
-      ? { scope: { kind: "Project", projectId: scope.id } }
-      : { scope: { kind: "Lab" }, folderPageId: scope.rootFolderId ?? null };
-  const { inputRef, uploading, uploadError, handleFileChange } = useDriveFileUpload(
-    uploadTarget,
-    () => revalidator.revalidate(),
-  );
-
-  // When type filter is active, count the matching items for the badge.
-  const filteredCount =
-    typeFilter !== "all"
-      ? scope.items.filter((it) => it.type === typeFilter).length
-      : scope.items.length;
-
-  // Items shown in the tree. A type filter narrows the *leaves* to that type but
-  // always keeps folders — the folder tree is the navigation skeleton, so you
-  // can still browse into where the matching items live.
-  const treeItems =
-    typeFilter === "all"
-      ? scope.items
-      : scope.items.filter((it) => it.type === "folder" || it.type === typeFilter);
-
-  const label = isMine ? "My Drive" : isLab ? "Lab" : scope.label;
-
-  return (
-    <section
-      className="bg-card border border-border rounded-lg overflow-hidden"
-      data-testid={`drive-scope-${scope.id}`}
-    >
-      {/* Scope header: collapse toggle on the left, scope-scoped New ▾ on the right */}
-      <div className="flex items-center gap-2 px-3 py-2.5">
-        <button
-          type="button"
-          aria-expanded={open}
-          onClick={() => setOpen((v) => !v)}
-          className="flex items-center gap-2 min-w-0 flex-1 text-left rounded-md px-1 py-0.5 hover:bg-muted/40 transition-colors"
-        >
-          <ChevronDown
-            className={`w-3.5 h-3.5 text-muted-foreground shrink-0 transition-transform ${open ? "" : "-rotate-90"}`}
-          />
-          {isMine ? (
-            <User className="w-4 h-4 text-muted-foreground shrink-0" />
-          ) : isCore ? (
-            <Shield className="w-4 h-4 text-accent-coral/80 shrink-0" />
-          ) : isLab ? (
-            <Users className="w-4 h-4 text-muted-foreground shrink-0" />
-          ) : scope.iconEmoji ? (
-            <span className="text-sm leading-none">{scope.iconEmoji}</span>
-          ) : (
-            <FolderIcon className="w-4 h-4 text-muted-foreground shrink-0" />
-          )}
-          <span className="font-semibold text-foreground text-sm truncate">{label}</span>
-          {isCore && (
-            <span className="text-[10px] uppercase tracking-wide text-accent-coral/70 shrink-0">
-              Core only
-            </span>
-          )}
-          {isProject && (
-            <span className="text-[10px] uppercase tracking-wide text-accent-coral/70 shrink-0">
-              Project
-            </span>
-          )}
-          {!open && filteredCount > 0 && (
-            <span className="text-[11px] text-muted-foreground shrink-0">({filteredCount})</span>
-          )}
-        </button>
-
-        <Menu
-          align="right"
-          ariaLabel={`New in ${label}`}
-          trigger={
-            <button
-              type="button"
-              data-testid={`drive-new-menu-${scope.id}`}
-              className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground hover:bg-muted/60 transition-colors shrink-0"
-            >
-              <Plus className="w-3.5 h-3.5" /> New
-              <ChevronDown className="w-3 h-3 opacity-70" />
-            </button>
-          }
-        >
-          <Menu.Item icon={<FileText className="w-3.5 h-3.5" />} onSelect={() => void actions.createDoc()}>
-            <span data-testid={`drive-new-doc-${scope.id}`}>New document</span>
-          </Menu.Item>
-          <Menu.Item icon={<FolderOpen className="w-3.5 h-3.5" />} onSelect={() => void actions.createFolder()}>
-            <span data-testid={`drive-new-folder-${scope.id}`}>New folder</span>
-          </Menu.Item>
-          {extraNewItems}
-          <Menu.Item
-            icon={<Upload className="w-3.5 h-3.5" />}
-            disabled={uploading}
-            onSelect={() => inputRef.current?.click()}
-          >
-            <span data-testid={`drive-new-upload-${scope.id}`}>
-              {uploading ? "Uploading…" : "Upload file"}
-            </span>
-          </Menu.Item>
-        </Menu>
-      </div>
-
-      {/* Hidden file input for this drive's Upload item + inline upload error */}
-      <input
-        ref={inputRef}
-        type="file"
-        className="sr-only"
-        aria-hidden="true"
-        tabIndex={-1}
-        onChange={handleFileChange}
-      />
-      {uploadError && <p className="text-sm text-red-600 px-3 pb-2">{uploadError}</p>}
-
-      {open && (
-        <div className="border-t border-border px-2 pb-2">
-          <DriveTree scopeId={scope.id} items={treeItems} onMove={onMove} actions={rowActions} />
-        </div>
-      )}
-    </section>
-  );
-}
-
-// ── Browse view (the only main view) ──────────────────────────────────────────
-
-function BrowseView({
-  driveScopes,
+  actions,
   canViewForms,
   canManageAgreements,
-  typeFilter,
-  onTypeFilterChange,
+  onUploadClick,
+  uploading,
+  onTemplate,
 }: {
-  driveScopes: DriveScope[];
+  scope: DriveScope;
+  actions: ScopeActions;
   canViewForms: boolean;
   canManageAgreements: boolean;
-  typeFilter: DriveTypeFilter;
-  onTypeFilterChange: (f: DriveTypeFilter) => void;
+  onUploadClick: () => void;
+  uploading: boolean;
+  onTemplate: () => void;
 }) {
-  const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
-
-  // Visible filter chips: always show All/Documents/Files; role-gate Forms and
-  // Agreements (Core-only).
-  const caps = { canViewForms, canManageAgreements };
-  const visibleFilters = TYPE_FILTERS.filter(
-    (f) => !f.requiresCap || caps[f.requiresCap],
-  );
+  const isLab = scope.id === "lab";
+  const label = scope.id === "mine" ? "My Drive" : isLab ? "Lab" : scope.label;
 
   // Create an agreement from the Lab New menu. The admin create action redirects
   // to the agreement detail route; we follow it and rewrite the admin path to
@@ -762,55 +596,185 @@ function BrowseView({
     formData.set("gateScope", "None");
     formData.set("audience", "Manual");
     formData.set("cadence", "Once");
-    const res = await fetch("/admin/agreements", {
-      method: "POST",
-      body: formData,
-      credentials: "include",
-    });
+    const res = await fetch("/admin/agreements", { method: "POST", body: formData, credentials: "include" });
     if (res.ok || res.redirected) {
-      const driveUrl = res.url.replace(
-        /\/admin\/agreements\/([^/]+)$/,
-        "/documents/agreement/$1",
-      );
+      const driveUrl = res.url.replace(/\/admin\/agreements\/([^/]+)$/, "/documents/agreement/$1");
       window.location.assign(driveUrl);
     }
   }
 
-  // Lab-only New-menu extras (form, agreement, template), rendered inside the Lab
-  // scope's New ▾. Upload is handled per-scope by ScopeSection (every drive), so
-  // it's not here. The template picker modal lives in BrowseView (below).
-  const labExtraNewItems = (
-    <>
-      {canViewForms && (
-        <Menu.Item
-          icon={<ClipboardList className="w-3.5 h-3.5" />}
-          onSelect={() => window.location.assign("/forms")}
+  return (
+    <Menu
+      align="right"
+      ariaLabel={`New in ${label}`}
+      trigger={
+        <button
+          type="button"
+          data-testid={`drive-new-menu-${scope.id}`}
+          className="inline-flex items-center gap-1 rounded-md bg-accent-coral px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-coral/90 transition-colors shrink-0"
         >
+          <Plus className="w-4 h-4" /> New
+          <ChevronDown className="w-3.5 h-3.5 opacity-80" />
+        </button>
+      }
+    >
+      <Menu.Item icon={<FileText className="w-3.5 h-3.5" />} onSelect={() => void actions.createDoc()}>
+        <span data-testid={`drive-new-doc-${scope.id}`}>New document</span>
+      </Menu.Item>
+      <Menu.Item icon={<FolderOpen className="w-3.5 h-3.5" />} onSelect={() => void actions.createFolder()}>
+        <span data-testid={`drive-new-folder-${scope.id}`}>New folder</span>
+      </Menu.Item>
+      {isLab && canViewForms && (
+        <Menu.Item icon={<ClipboardList className="w-3.5 h-3.5" />} onSelect={() => window.location.assign("/forms")}>
           <span data-testid="drive-new-form">New form</span>
         </Menu.Item>
       )}
-      {canManageAgreements && (
-        <Menu.Item
-          icon={<FileSignature className="w-3.5 h-3.5" />}
-          onSelect={() => void createAgreement()}
-        >
+      {isLab && canManageAgreements && (
+        <Menu.Item icon={<FileSignature className="w-3.5 h-3.5" />} onSelect={() => void createAgreement()}>
           <span data-testid="drive-new-agreement">New agreement</span>
         </Menu.Item>
       )}
+      {isLab && (
+        <>
+          <Menu.Separator />
+          <Menu.Item icon={<LayoutTemplate className="w-3.5 h-3.5" />} onSelect={onTemplate}>
+            <span data-testid="drive-new-template">From template…</span>
+          </Menu.Item>
+        </>
+      )}
       <Menu.Separator />
-      <Menu.Item
-        icon={<LayoutTemplate className="w-3.5 h-3.5" />}
-        onSelect={() => setTemplatePickerOpen(true)}
-      >
-        <span data-testid="drive-new-template">From template…</span>
+      <Menu.Item icon={<Upload className="w-3.5 h-3.5" />} disabled={uploading} onSelect={onUploadClick}>
+        <span data-testid={`drive-new-upload-${scope.id}`}>{uploading ? "Uploading…" : "Upload file"}</span>
       </Menu.Item>
-    </>
+    </Menu>
+  );
+}
+
+// ── Hub shell ─────────────────────────────────────────────────────────────────
+
+export default function DriveHub() {
+  const { driveScopes, canViewForms, canManageAgreements } = useLoaderData() as LoaderData;
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const dialog = useDialog();
+  const toast = useToast();
+  const revalidator = useRevalidator();
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
+  // Search is a client-side filter over already-loaded items, so it lives in
+  // local state — keeping it out of the URL avoids a loader revalidation on
+  // every keystroke. Scope/folder/type stay in the URL (linkable, back/forward).
+  const [search, setSearch] = useState("");
+
+  // Location + view state from the URL. No scope/folder = Drive root.
+  const currentScopeId = searchParams.get("scope");
+  const currentFolderId = searchParams.get("folder");
+  const rawType = searchParams.get("type") as DriveTypeFilter | null;
+  const typeFilter: DriveTypeFilter =
+    rawType === "doc" || rawType === "file" || rawType === "form" || rawType === "agreement" ? rawType : "all";
+
+  const currentScope = useMemo(
+    () => driveScopes.find((s) => s.id === currentScopeId) ?? null,
+    [driveScopes, currentScopeId],
+  );
+  // A scope id in the URL that no longer resolves (e.g. left the project) →
+  // treat as root rather than a blank screen.
+  const effectiveScopeId = currentScope ? currentScope.id : null;
+
+  function patchParams(mutate: (p: URLSearchParams) => void, opts?: { replace?: boolean }) {
+    setSearchParams(
+      (prev) => {
+        const p = new URLSearchParams(prev);
+        mutate(p);
+        return p;
+      },
+      { replace: opts?.replace ?? true },
+    );
+  }
+
+  const onNavigate = useCallback(
+    (scopeId: string | null, folderId: string | null) => {
+      // Clicking into the tree leaves search mode.
+      setSearch("");
+      patchParams((p) => {
+        if (scopeId) p.set("scope", scopeId);
+        else p.delete("scope");
+        if (folderId) p.set("folder", folderId);
+        else p.delete("folder");
+      });
+    },
+    [setSearchParams],
   );
 
-  // Empty state: when a type filter is on and no scope has matching items.
-  const hasAnyMatch =
-    typeFilter === "all" ||
-    driveScopes.some((s) => s.items.some((it) => it.type === typeFilter));
+  const onSearchChange = useCallback((q: string) => setSearch(q), []);
+
+  function setTypeFilter(f: DriveTypeFilter) {
+    patchParams((p) => {
+      if (f === "all") p.delete("type");
+      else p.set("type", f);
+    });
+  }
+
+  // Per-scope action factory map. Creates land in the current folder for the
+  // scope being browsed; other scopes (search-result rows) only rename/move/
+  // delete, so their create-folder target doesn't matter.
+  const scopeActionsMap = useMemo(() => {
+    const map = new Map<string, ScopeActions>();
+    for (const scope of driveScopes) {
+      map.set(
+        scope.id,
+        makeScopeActions({
+          scope,
+          currentFolderId: scope.id === effectiveScopeId ? currentFolderId : null,
+          dialog,
+          toast,
+          revalidate: () => revalidator.revalidate(),
+        }),
+      );
+    }
+    return map;
+  }, [driveScopes, effectiveScopeId, currentFolderId, dialog, toast, revalidator]);
+
+  const getScopeActions = useCallback(
+    (scopeId: string): RowActions => {
+      const a = scopeActionsMap.get(scopeId);
+      if (!a) return { onRename: () => {}, onRequestMove: () => {}, onDelete: () => {} };
+      return { onRename: a.rename, onRequestMove: a.requestMove, onDelete: a.remove };
+    },
+    [scopeActionsMap],
+  );
+
+  const onMove = useCallback(
+    (scopeId: string, item: DriveItem, destFolderId: string | null) => {
+      void scopeActionsMap.get(scopeId)?.performMove(item, destFolderId);
+    },
+    [scopeActionsMap],
+  );
+
+  const onOpenItem = useCallback(
+    (item: DriveItem) => {
+      navigate(item.href);
+    },
+    [navigate],
+  );
+
+  // Upload for the current scope + folder. Called unconditionally (hook rule);
+  // when at the Drive root the target defaults to Lab but the New menu (and thus
+  // the upload item) isn't rendered there.
+  const uploadTarget: UploadTarget = useMemo(() => {
+    if (!currentScope) return { scope: { kind: "Lab" } };
+    if (currentScope.id === "mine") return { scope: { kind: "Member" }, folderPageId: currentFolderId };
+    if (currentScope.id === "lab" || currentScope.id === "core")
+      return { scope: { kind: "Lab" }, folderPageId: currentFolderId ?? currentScope.rootFolderId ?? null };
+    return { scope: { kind: "Project", projectId: currentScope.id }, folderPageId: currentFolderId };
+  }, [currentScope, currentFolderId]);
+  const { inputRef, uploading, uploadError, handleFileChange } = useDriveFileUpload(uploadTarget, () =>
+    revalidator.revalidate(),
+  );
+
+  const currentActions = effectiveScopeId ? scopeActionsMap.get(effectiveScopeId) : undefined;
+
+  const caps = { canViewForms, canManageAgreements };
+  const visibleFilters = TYPE_FILTERS.filter((f) => !f.requiresCap || caps[f.requiresCap]);
 
   const chipBase =
     "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium transition-colors border";
@@ -819,15 +783,34 @@ function BrowseView({
     "bg-transparent border-transparent text-muted-foreground hover:text-foreground hover:border-border";
 
   return (
-    <div className="flex flex-col gap-4" data-testid="drive-browse">
-      {/* Type filter chip row */}
+    <div className="w-full flex flex-col gap-4 p-4">
+      {/* Header: title + contextual New (only inside a drive) */}
+      <div className="flex items-center justify-between gap-3 min-w-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <HardDrive className="w-5 h-5 text-accent-coral" />
+          <h1 className="text-lg font-semibold text-foreground">Drive</h1>
+        </div>
+        {currentScope && currentActions && (
+          <NewMenu
+            scope={currentScope}
+            actions={currentActions}
+            canViewForms={canViewForms}
+            canManageAgreements={canManageAgreements}
+            onUploadClick={() => inputRef.current?.click()}
+            uploading={uploading}
+            onTemplate={() => setTemplatePickerOpen(true)}
+          />
+        )}
+      </div>
+
+      {/* Type filter chips */}
       <div className="flex items-center gap-1.5 flex-wrap" role="group" aria-label="Filter by type">
         {visibleFilters.map((f) => (
           <button
             key={f.value}
             type="button"
             aria-pressed={typeFilter === f.value}
-            onClick={() => onTypeFilterChange(f.value)}
+            onClick={() => setTypeFilter(f.value)}
             data-testid={`drive-filter-${f.value}`}
             className={`${chipBase} ${typeFilter === f.value ? chipActive : chipInactive}`}
           >
@@ -837,94 +820,31 @@ function BrowseView({
         ))}
       </div>
 
-      {/* Template picker modal (Lab New → From template…) */}
-      <TemplatePicker
-        open={templatePickerOpen}
-        onClose={() => setTemplatePickerOpen(false)}
-      />
+      {uploadError && <p className="text-sm text-red-600">{uploadError}</p>}
 
-      {/* Scope sections (named drives) */}
-      {driveScopes.length === 0 ? (
-        <div className="rounded-lg border border-border bg-card p-6 text-center">
-          <HardDrive className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
-          <p className="text-sm font-medium text-foreground">Your Drive is empty</p>
-          <p className="text-xs text-muted-foreground mt-1">
-            Create a document or folder to get started.
-          </p>
-        </div>
-      ) : (
-        <>
-          {driveScopes.map((scope) => (
-            <ScopeSection
-              key={scope.id}
-              scope={scope}
-              typeFilter={typeFilter}
-              defaultOpen={scope.id === "mine" || scope.id === "lab" || scope.id === "core"}
-              extraNewItems={scope.id === "lab" ? labExtraNewItems : undefined}
-            />
-          ))}
-          {!hasAnyMatch && (
-            <p className="text-sm text-muted-foreground italic px-1">
-              No{" "}
-              {typeFilter === "doc"
-                ? "documents"
-                : typeFilter === "file"
-                ? "files"
-                : typeFilter === "form"
-                ? "forms"
-                : "agreements"}{" "}
-              in any of your drives.
-            </p>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
-// ── Hub shell ─────────────────────────────────────────────────────────────────
-
-export default function DriveHub() {
-  const { driveScopes, canViewForms, canManageAgreements } = useLoaderData() as LoaderData;
-  const [searchParams, setSearchParams] = useSearchParams();
-
-  // Type filter comes from ?type= (default "all").
-  const rawType = searchParams.get("type") as DriveTypeFilter | null;
-  const typeFilter: DriveTypeFilter =
-    rawType === "doc" || rawType === "file" || rawType === "form" || rawType === "agreement"
-      ? rawType
-      : "all";
-
-  function setTypeFilter(f: DriveTypeFilter) {
-    setSearchParams(
-      (prev) => {
-        const p = new URLSearchParams(prev);
-        if (f === "all") p.delete("type");
-        else p.set("type", f);
-        return p;
-      },
-      { replace: true },
-    );
-  }
-
-  return (
-    <div className="w-full flex flex-col gap-4 p-4">
-      {/* Header row: Drive title only — Agreements and Templates shelves removed.
-          Signed agreements are in Settings → Agreements.
-          Page templates are accessible via the New ▾ menu. */}
-      <div className="flex items-center gap-2 min-w-0">
-        <HardDrive className="w-5 h-5 text-accent-coral" />
-        <h1 className="text-lg font-semibold text-foreground">Drive</h1>
-      </div>
-
-      {/* Browse is the sole main view */}
-      <BrowseView
-        driveScopes={driveScopes}
-        canViewForms={canViewForms}
-        canManageAgreements={canManageAgreements}
+      <DriveBrowser
+        scopes={driveScopes}
+        currentScopeId={effectiveScopeId}
+        currentFolderId={currentFolderId}
         typeFilter={typeFilter}
-        onTypeFilterChange={setTypeFilter}
+        search={search}
+        onSearchChange={onSearchChange}
+        onNavigate={onNavigate}
+        onOpenItem={onOpenItem}
+        onMove={onMove}
+        getScopeActions={getScopeActions}
       />
+
+      {/* Hidden upload input (driven by the New menu) + template picker modal */}
+      <input
+        ref={inputRef}
+        type="file"
+        className="sr-only"
+        aria-hidden="true"
+        tabIndex={-1}
+        onChange={handleFileChange}
+      />
+      <TemplatePicker open={templatePickerOpen} onClose={() => setTemplatePickerOpen(false)} />
     </div>
   );
 }

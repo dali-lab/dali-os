@@ -259,9 +259,9 @@ export function DocumentsHubBody({ docs, workspaces, allTags, terms, selectedTer
   const [query, setQuery] = useState("");
   const [scope, setScope] = useState<"all" | "lab" | "project">("all");
   const [selectedTagIds, setSelectedTagIds] = useState<Set<string>>(() => new Set());
-  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(
-    () => new Set(docs.filter((d) => d.kind === "Folder").map((d) => d.id)),
-  );
+  // Folders start collapsed (Finder/Drive convention) — the user expands the
+  // ones they want. Previously every folder was expanded on load.
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => new Set());
   // Projects collapsed by default — see ProjectFolderRow. Lab-wide docs are
   // never in this set; they're the top level of the tree, not a workspace.
   const [collapsedWorkspaces, setCollapsedWorkspaces] = useState<Set<string>>(

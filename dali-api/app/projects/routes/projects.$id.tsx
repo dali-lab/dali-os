@@ -12,8 +12,9 @@ import {
   useSubmit,
   type ShouldRevalidateFunctionArgs,
 } from "react-router";
-import { Select } from "~/components/ui/floating";
-import { CalendarDays, CalendarX, ChartNoAxesGantt, Check, Globe, Handshake, History, List, Pencil, Pin, X, Settings, Folder, FolderInput, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink } from "lucide-react";
+import { Select, Menu } from "~/components/ui/floating";
+import { CalendarDays, CalendarX, ChartNoAxesGantt, Check, Globe, Handshake, History, List, Pencil, Pin, X, Settings, Folder, FolderInput, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink, MoreHorizontal, ExternalLink, Star } from "lucide-react";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { MoveToDialog } from "~/components/sharing/MoveToDialog";
 import { useDialog, useConfirmSubmit } from "~/components/ui/dialog";
@@ -3183,16 +3184,18 @@ function DocumentsBlock({
 }) {
   const dialog = useDialog();
   const revalidator = useRevalidator();
+  // When the Drive redesign is on, this block reads as a compact "Drive" embed
+  // of the project's folder: renamed heading, an Open-in-Drive link, and row
+  // actions tucked behind a "⋯" menu. Flag-off keeps the current inline layout
+  // (which the partner-portal e2e depends on).
+  const driveUi = useFeatureFlag("drive-consolidation");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   // "Move to…" dialog state — tracks which doc the user wants to move.
   const [moveDoc, setMoveDoc] = useState<{ id: string; title: string } | null>(null);
-  // Folders default open so the (usually few) default folders' contents are
-  // visible without an extra click; new folders created this session are
-  // added here too (see createFolder).
-  const [expanded, setExpanded] = useState<Set<string>>(
-    () => new Set(documents.filter((d) => d.kind === "Folder").map((d) => d.id)),
-  );
+  // Folders start collapsed (Finder/Drive convention). Newly created folders are
+  // added to this set so their contents show right after creation.
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   function toggleExpanded(id: string) {
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -3265,6 +3268,28 @@ function DocumentsBlock({
         const b = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(b.error ?? "Failed to update pin");
       }
+      revalidator.revalidate();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Toggle the viewer's personal favorite for a page (same endpoint as
+  // FavoriteStar). Used by the row "⋯" menu under the Drive redesign, where the
+  // star lives in the menu rather than inline.
+  async function toggleFavorite(id: string, next: boolean) {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/pages/${id}/favorite`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ favorited: next }),
+      });
+      if (!res.ok) throw new Error("Failed to update favorite");
       revalidator.revalidate();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
@@ -3428,9 +3453,76 @@ function DocumentsBlock({
     );
   }
 
+  // Row "⋯" menu (Drive redesign) — every per-row action (favorite, partner
+  // share, pin, move, delete) lives here instead of as loose inline icons.
+  function DocRowMenu({
+    doc,
+    indent,
+  }: {
+    doc: LoaderData["documents"][number]["children"][number];
+    indent: boolean;
+  }) {
+    return (
+      <Menu
+        align="right"
+        ariaLabel="Document actions"
+        trigger={
+          <button
+            type="button"
+            aria-label="Document actions"
+            className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
+          >
+            <MoreHorizontal className="w-4 h-4" />
+          </button>
+        }
+      >
+        {doc.kind !== "Folder" && (
+          <Menu.Item
+            icon={<Star className={`w-3.5 h-3.5 ${doc.favorited ? "fill-current text-accent-coral" : ""}`} />}
+            onSelect={() => void toggleFavorite(doc.id, !doc.favorited)}
+          >
+            {doc.favorited ? "Remove from favorites" : "Add to favorites"}
+          </Menu.Item>
+        )}
+        {canEdit && (
+          <Menu.Item
+            icon={<Handshake className="w-3.5 h-3.5" />}
+            onSelect={() => void togglePartnerVisible(doc.id, !doc.partnerVisible)}
+          >
+            {doc.partnerVisible ? "Stop sharing with partner" : "Share with partner"}
+          </Menu.Item>
+        )}
+        {canEdit && !indent && (
+          <Menu.Item
+            icon={<Pin className={`w-3.5 h-3.5 ${doc.pinned ? "fill-current" : ""}`} />}
+            onSelect={() => void togglePin(doc.id, !doc.pinned)}
+          >
+            {doc.pinned ? "Unpin" : "Pin to top"}
+          </Menu.Item>
+        )}
+        {canEdit && !doc.isSystem && (
+          <Menu.Item
+            icon={<FolderInput className="w-3.5 h-3.5" />}
+            onSelect={() => setMoveDoc({ id: doc.id, title: doc.title })}
+          >
+            Move to…
+          </Menu.Item>
+        )}
+        {canEdit && (
+          <>
+            <Menu.Separator />
+            <Menu.Item icon={<Trash2 className="w-3.5 h-3.5" />} onSelect={() => void deleteDocument(doc.id, doc.title)}>
+              Delete
+            </Menu.Item>
+          </>
+        )}
+      </Menu>
+    );
+  }
+
   function DocRowInner({ doc, indent }: { doc: LoaderData["documents"][number]["children"][number]; indent: boolean }) {
     return (
-      <div className={`py-2.5 flex items-center justify-between gap-3 text-sm ${indent ? "pl-6" : ""}`}>
+      <div className={`group py-2.5 flex items-center justify-between gap-3 text-sm ${indent ? "pl-6" : ""}`}>
         <button
           type="button"
           onClick={() => openDocumentTab(doc.id, doc.title)}
@@ -3440,6 +3532,27 @@ function DocumentsBlock({
           <span className="truncate">{doc.title}</span>
         </button>
         <div className="flex items-center gap-3 flex-shrink-0">
+          {driveUi ? (
+            <>
+              {/* Read-only status badges stay inline; all actions live in "⋯". */}
+              {doc.partnerVisible && (
+                <Tooltip label="Shared with partner">
+                  <span className="flex items-center text-accent-teal">
+                    <Handshake className="w-3.5 h-3.5" />
+                  </span>
+                </Tooltip>
+              )}
+              {doc.publicVisible && (
+                <Tooltip label="Public write-up — rendered on this project's page on dali.website">
+                  <span className="flex items-center text-accent-coral">
+                    <Globe className="w-3.5 h-3.5" />
+                  </span>
+                </Tooltip>
+              )}
+              <DocRowMenu doc={doc} indent={indent} />
+            </>
+          ) : (
+            <>
           {doc.kind !== "Folder" && (
             <FavoriteStar pageId={doc.id} favorited={doc.favorited} />
           )}
@@ -3536,6 +3649,8 @@ function DocumentsBlock({
               </button>
             </Tooltip>
           )}
+            </>
+          )}
         </div>
       </div>
     );
@@ -3545,33 +3660,69 @@ function DocumentsBlock({
     <section className="bg-card border border-border rounded-lg p-4">
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
-          <Folder className="w-4 h-4" /> Documents
+          <Folder className="w-4 h-4" /> {driveUi ? "Drive" : "Documents"}
         </h2>
-        {canEdit && (
+        {driveUi ? (
+          // Drive redesign: this block is an embed of the project's Drive
+          // folder. An Open-in-Drive link jumps to it in the main Drive; create
+          // actions consolidate into one New ▾ menu.
           <div className="flex items-center gap-2">
-            <Tooltip label="New folder">
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void createFolder()}
-                aria-label="New folder"
-                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-60"
+            <Link
+              to={`/drive?scope=${projectId}`}
+              className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-accent-coral transition-colors"
+            >
+              Open in Drive <ExternalLink className="w-3.5 h-3.5" />
+            </Link>
+            {canEdit && (
+              <Menu
+                align="right"
+                ariaLabel="New in project Drive"
+                trigger={
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground hover:bg-muted/60 transition-colors"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> New
+                    <ChevronDown className="w-3 h-3 opacity-70" />
+                  </button>
+                }
               >
-                <FolderPlus className="w-3.5 h-3.5" />
-              </button>
-            </Tooltip>
-            <Tooltip label="Add document">
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void createDocument()}
-                aria-label="Add document"
-                className="p-1 rounded text-accent-coral hover:bg-accent-coral/10 disabled:opacity-60"
-              >
-                <Plus className="w-3.5 h-3.5" />
-              </button>
-            </Tooltip>
+                <Menu.Item icon={<FileText className="w-3.5 h-3.5" />} onSelect={() => void createDocument()}>
+                  New document
+                </Menu.Item>
+                <Menu.Item icon={<FolderPlus className="w-3.5 h-3.5" />} onSelect={() => void createFolder()}>
+                  New folder
+                </Menu.Item>
+              </Menu>
+            )}
           </div>
+        ) : (
+          canEdit && (
+            <div className="flex items-center gap-2">
+              <Tooltip label="New folder">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void createFolder()}
+                  aria-label="New folder"
+                  className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-60"
+                >
+                  <FolderPlus className="w-3.5 h-3.5" />
+                </button>
+              </Tooltip>
+              <Tooltip label="Add document">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void createDocument()}
+                  aria-label="Add document"
+                  className="p-1 rounded text-accent-coral hover:bg-accent-coral/10 disabled:opacity-60"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+              </Tooltip>
+            </div>
+          )
         )}
       </div>
 
