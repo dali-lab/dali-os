@@ -57,7 +57,7 @@ const fakeDa = {
     answers: {},
     user: { firstName: "Alice", lastName: "Smith" },
     generalChallengeVersion: null,
-    shortformVersion: null,
+    applicationFormVersion: null,
     applicationCycle: {
       id: "cy1",
       generalRubricVersionId: null,

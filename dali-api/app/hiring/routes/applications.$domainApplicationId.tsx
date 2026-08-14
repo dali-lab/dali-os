@@ -1,4 +1,5 @@
 import { redirect, useLoaderData, useSearchParams } from "react-router";
+import { isInternalCycleType } from "~/hiring/lib/internal-cycles";
 import type { Route } from "./+types/applications.$domainApplicationId";
 import { prisma } from "~/lib/db";
 import { recordRouteVisit } from "~/lib/user-pages.server";
@@ -74,7 +75,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           answers: true,
           applicationCycleId: true,
           generalChallengeVersion: { select: { questions: true, description: true } },
-          shortformVersion: { select: { questions: true } },
+          applicationFormVersion: { select: { questions: true } },
           applicationCycle: {
             select: {
               name: true,
@@ -123,11 +124,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     request,
   );
 
-  const isFellowship = da.application.applicationCycle.cycleType === "Fellowship";
+  const isInternalCycle = isInternalCycleType(da.application.applicationCycle.cycleType);
 
   // Presign file answers so the viewer renders download links, not S3 keys.
-  const generalQuestions = isFellowship
-    ? ((da.application.shortformVersion?.questions as unknown as Question[]) ?? [])
+  const generalQuestions = isInternalCycle
+    ? ((da.application.applicationFormVersion?.questions as unknown as Question[]) ?? [])
     : ((da.application.generalChallengeVersion?.questions as unknown as Question[]) ?? []);
   const [generalAnswers, domainAnswers] = await Promise.all([
     presignAnswers(generalQuestions, da.application.answers as Record<string, string>),

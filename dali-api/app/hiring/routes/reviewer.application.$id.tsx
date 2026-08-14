@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { isInternalCycleType } from "~/hiring/lib/internal-cycles";
 import { redirect, useLoaderData, useSubmit } from 'react-router'
 import { HelpCircle, X, Check } from 'lucide-react'
 import { prisma } from '~/lib/db'
@@ -46,7 +47,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     include: {
       user: true,
       generalChallengeVersion: true,
-      shortformVersion: true,
+      applicationFormVersion: true,
       applicationCycle: {
         include: {
           statusUpdates: { orderBy: { createdAt: 'desc' }, take: 1 },
@@ -62,7 +63,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
   })
 
-  const isFellowship = applicationBase.applicationCycle.cycleType === 'Fellowship'
+  const isInternalCycle = isInternalCycleType(applicationBase.applicationCycle.cycleType)
 
   if (!(await hasCycleAccess(auth.user.sub, applicationBase.applicationCycleId)))
     throw redirectToLogin(request)
@@ -133,10 +134,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   // Presign file-type answers so the viewer can render real download links
   // instead of raw S3 keys. For Fellowship cycles, the application's
-  // "general" questions live on shortformVersion, and per-domain
+  // "general" questions live on applicationFormVersion, and per-domain
   // entries carry no challenge content.
-  const generalQuestionsForPresign = isFellowship
-    ? ((applicationBase.shortformVersion?.questions as unknown as Question[]) ?? [])
+  const generalQuestionsForPresign = isInternalCycle
+    ? ((applicationBase.applicationFormVersion?.questions as unknown as Question[]) ?? [])
     : ((applicationBase.generalChallengeVersion?.questions as unknown as Question[]) ?? [])
   const presignedGeneralAnswers = await presignAnswers(
     generalQuestionsForPresign,
@@ -306,10 +307,10 @@ export default function ReviewerApplicationReview() {
   const submit = useSubmit()
 
   const cycle = application.applicationCycle
-  const isFellowship = cycle.cycleType === 'Fellowship'
+  const isInternalCycle = isInternalCycleType(cycle.cycleType)
   const generalCv = application.generalChallengeVersion
-  const formQuestions = isFellowship
-    ? ((application.shortformVersion?.questions as unknown as Question[]) ?? [])
+  const formQuestions = isInternalCycle
+    ? ((application.applicationFormVersion?.questions as unknown as Question[]) ?? [])
     : ((generalCv?.questions as unknown as Question[]) ?? [])
 
   // Collect all rubric criteria: general form rubric + per-domain-application rubrics

@@ -7,12 +7,10 @@ import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";
 import { isInternalCycleType, CYCLE_TYPE_LABELS } from "~/hiring/lib/internal-cycles";
 import { getCoreDomain, defaultCoreReviewerIds } from "~/hiring/lib/core-hiring.server";
+import { createCycleApplicationForm } from "~/hiring/lib/application-form.server";
 import type { Question } from "~/types";
-import type { Prisma } from "~/generated/prisma/client";
 import { CycleSetupSection as Section } from "~/hiring/components/CycleSetupSection";
 import { ChallengePreviewModal } from "~/hiring/components/ChallengePreviewModal";
-import { DocEditor } from "~/components/doc";
-import { hasInfoBody } from "~/components/form-builder/info-body";
 import { normalizeQuestionBodies } from "~/lib/question-blocks.server";
 import { renderEmail } from "~/lib/email";
 import {
@@ -25,7 +23,7 @@ import {
 import { AlertTriangle, CheckCircle, Eye, Mail } from "lucide-react";
 import { DateField } from "~/components/ui/DateField";
 import { Checkbox } from "~/components/ui/Checkbox";
-import { Modal, ModalHeader, ModalFooter } from "~/components/Modal";
+import { Modal, ModalHeader } from "~/components/Modal";
 import { Select, type SelectOption } from "~/components/ui/floating";
 
 import {
@@ -55,7 +53,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     where: { id: params.id },
     include: {
       statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
-      shortformVersion: true,
+      applicationForm: {
+        include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } },
+      },
       generalRubricVersion: { include: { rubric: true } },
       domains: {
         include: {
@@ -79,7 +79,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const [
     allDomains,
-    allFormVersions,
+    allForms,
     allRubricVersions,
     members,
     pendingDecisions,
@@ -91,9 +91,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       where: { active: true, isInternProgram: false, isSystem: false },
       orderBy: { displayName: "asc" },
     }),
-    prisma.shortformVersion.findMany({
-      orderBy: { version: "desc" },
-      include: { createdBy: { select: { firstName: true, lastName: true } } },
+    // All Drive Forms — for the "bind a different form" picker.
+    prisma.form.findMany({
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
     }),
     prisma.rubricVersion.findMany({
       include: { rubric: { select: { id: true, name: true } } },
@@ -169,14 +170,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       cycleType: cycle.cycleType,
       status: cycle.statusUpdates[0]?.newStatus ?? "Draft",
       closeDate: cycle.closeDate ? cycle.closeDate.toISOString() : null,
-      formVersion: cycle.shortformVersion
+      // The bound Drive Form (authored in the Forms builder). Preview shows its
+      // latest version's questions.
+      applicationForm: cycle.applicationForm
         ? {
-            id: cycle.shortformVersion.id,
-            version: cycle.shortformVersion.version,
-            // Frozen versions may hold legacy ProseMirror info bodies —
-            // convert on read so the preview only ever sees string | blocks.
+            id: cycle.applicationForm.id,
+            name: cycle.applicationForm.name,
             questions: normalizeQuestionBodies(
-              (cycle.shortformVersion.questions as unknown as Question[]) ?? [],
+              (cycle.applicationForm.versions[0]?.questions as unknown as Question[]) ?? [],
             ),
           }
         : null,
@@ -210,11 +211,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       ),
     },
     allDomains: allDomains.map((d) => ({ id: d.id, code: d.code, displayName: d.displayName })),
-    allFormVersions: allFormVersions.map((fv) => ({
-      id: fv.id,
-      version: fv.version,
-      createdBy: [fv.createdBy.firstName, fv.createdBy.lastName].filter(Boolean).join(" "),
-    })),
+    allForms: allForms.map((f) => ({ id: f.id, name: f.name })),
     allRubricVersions: allRubricVersions.map((rv) => ({
       id: rv.id,
       label: `${rv.rubric.name} v${rv.versionNumber}`,
@@ -271,36 +268,20 @@ export async function action({ request, params }: Route.ActionArgs) {
     return { ok: true };
   }
 
-  if (intent === "set-form-version") {
-    const formVersionId = (formData.get("formVersionId") as string) || null;
+  if (intent === "set-application-form") {
+    // Rebind the cycle to a different existing Drive Form.
+    const formId = (formData.get("formId") as string) || null;
     await prisma.applicationCycle.update({
       where: { id: cycleId },
-      data: { shortformVersionId: formVersionId },
+      data: { applicationFormId: formId },
     });
     return { ok: true };
   }
 
-  if (intent === "create-form-version") {
-    const questions = JSON.parse((formData.get("questions") as string) || "[]") as Question[];
-    // Use the highest existing version + 1; protected by the unique constraint.
-    const latest = await prisma.shortformVersion.findFirst({
-      orderBy: { version: "desc" },
-      select: { version: true },
-    });
-    const nextVersion = (latest?.version ?? 0) + 1;
-    const created = await prisma.shortformVersion.create({
-      data: {
-        version: nextVersion,
-        // Prisma's Json type rejects arrays — wrap via JSON round-trip cast.
-        questions: questions as unknown as Prisma.InputJsonValue,
-        createdById: auth.user.sub,
-      },
-    });
-    await prisma.applicationCycle.update({
-      where: { id: cycleId },
-      data: { shortformVersionId: created.id },
-    });
-    return { ok: true, formVersionId: created.id };
+  if (intent === "create-application-form") {
+    // Auto-create + bind a fresh Drive Form (no-op if already bound).
+    const formId = await createCycleApplicationForm(cycleId, auth.user.sub);
+    return { ok: true, formId };
   }
 
   if (intent === "set-target-domains") {
@@ -509,7 +490,7 @@ export default function FellowshipCycleSetup() {
     isCoreCycle,
     cycle,
     allDomains,
-    allFormVersions,
+    allForms,
     allRubricVersions,
     members,
     pendingDecisions,
@@ -537,10 +518,10 @@ export default function FellowshipCycleSetup() {
         status={cycle.status}
       />
 
-      <FormVersionSection
+      <ApplicationFormSection
         cycleId={cycle.id}
-        current={cycle.formVersion}
-        allVersions={allFormVersions}
+        current={cycle.applicationForm}
+        allForms={allForms}
         disabled={isOpen}
       />
 
@@ -649,36 +630,38 @@ function CloseDateSection({
   );
 }
 
-function FormVersionSection({
-  cycleId,
+function ApplicationFormSection({
   current,
-  allVersions,
+  allForms,
   disabled,
 }: {
   cycleId: string;
-  current: { id: string; version: number; questions: Question[] } | null;
-  allVersions: { id: string; version: number; createdBy: string }[];
+  current: { id: string; name: string; questions: Question[] } | null;
+  allForms: { id: string; name: string }[];
   disabled: boolean;
 }) {
   const fetcher = useFetcher();
-  const [creating, setCreating] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   return (
     <Section
-      title="Shortform"
-      description="DB-backed questions interns will answer. Pin a version (or create a new one) — once the cycle is Open, the version is frozen for in-progress drafts."
+      title="Application form"
+      description="A Drive Form applicants fill out — author it in the Forms builder, where it lives alongside every other form. The version each applicant answers is frozen when they start."
     >
       {current ? (
         <div className="mb-3 flex flex-wrap items-center gap-3">
-          <p className="text-sm font-medium text-dark-blue">
+          <p className="text-sm font-medium text-dark-blue">{current.name}</p>
+          <span className="text-xs text-muted-foreground">
             {(() => {
               const qCount = current.questions.filter((q) => q.type !== "info").length;
               const iCount = current.questions.length - qCount;
               const parts = [`${qCount} question${qCount === 1 ? "" : "s"}`];
               if (iCount > 0) parts.push(`${iCount} info block${iCount === 1 ? "" : "s"}`);
-              return `v${current.version} (${parts.join(", ")})`;
+              return parts.join(", ");
             })()}
-          </p>
+          </span>
+          <Link to={`/forms/edit/${current.id}`} className="text-xs font-medium text-blue-700 hover:underline">
+            Edit in Drive →
+          </Link>
           <button
             type="button"
             onClick={() => setPreviewing(true)}
@@ -688,233 +671,40 @@ function FormVersionSection({
           </button>
         </div>
       ) : (
-        <p className="text-sm text-muted-foreground mb-3">No shortform pinned yet.</p>
-      )}
-      {!disabled && (
-        <div className="flex flex-wrap items-center gap-2">
-          <Select
-            defaultValue={current?.id ?? ""}
-            placeholder="— pick existing —"
-            onChange={(id) => {
-              if (!id) return;
-              fetcher.submit({ intent: "set-form-version", formVersionId: id }, { method: "post" });
-            }}
-            options={allVersions.map((v) => ({ value: v.id, label: `v${v.version} · ${v.createdBy}` }))}
-            buttonClassName="px-3 py-2 text-sm border border-border rounded-md inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-          />
+        <div className="mb-3 flex items-center gap-3">
+          <p className="text-sm text-muted-foreground">No application form bound yet.</p>
           <button
-            onClick={() => setCreating(true)}
-            className="px-3 py-2 text-sm font-medium text-blue-700 hover:underline"
+            onClick={() => fetcher.submit({ intent: "create-application-form" }, { method: "post" })}
+            className="text-sm font-medium text-blue-700 hover:underline"
           >
-            + Create new version
+            + Create form
           </button>
         </div>
       )}
-      {creating && (
-        <CreateFormVersionModal
-          onClose={() => setCreating(false)}
-          onSubmit={(questions) => {
-            fetcher.submit(
-              {
-                intent: "create-form-version",
-                questions: JSON.stringify(questions),
-              },
-              { method: "post" },
-            );
-            setCreating(false);
-          }}
-        />
+      {!disabled && allForms.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Select
+            defaultValue={current?.id ?? ""}
+            placeholder="— bind a different form —"
+            onChange={(id) => {
+              if (!id || id === current?.id) return;
+              fetcher.submit({ intent: "set-application-form", formId: id }, { method: "post" });
+            }}
+            options={allForms.map((f) => ({ value: f.id, label: f.name }))}
+            buttonClassName="px-3 py-2 text-sm border border-border rounded-md inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+          />
+        </div>
       )}
       {previewing && current && (
         <ChallengePreviewModal
           challengeVersionId={current.id}
-          challengeName="Shortform"
-          versionLabel={`v${current.version}`}
+          challengeName={current.name}
+          versionLabel="Latest"
           questions={current.questions}
           onClose={() => setPreviewing(false)}
         />
       )}
     </Section>
-  );
-}
-
-function CreateFormVersionModal({
-  onClose,
-  onSubmit,
-}: {
-  onClose: () => void;
-  onSubmit: (qs: Question[]) => void;
-}) {
-  const [qs, setQs] = useState<Question[]>([
-    { key: crypto.randomUUID(), type: "textarea", required: true, data: { label: "" } },
-  ]);
-  const [previewing, setPreviewing] = useState(false);
-  function addQ() {
-    setQs((prev) => [...prev, { key: crypto.randomUUID(), type: "textarea", required: false, data: { label: "" } }]);
-  }
-  function addInfo() {
-    setQs((prev) => [
-      ...prev,
-      { key: crypto.randomUUID(), type: "info", required: false, data: { label: "" } },
-    ]);
-  }
-  function removeQ(idx: number) {
-    setQs((prev) => prev.filter((_, i) => i !== idx));
-  }
-  function move(idx: number, dir: -1 | 1) {
-    setQs((prev) => {
-      const target = idx + dir;
-      if (target < 0 || target >= prev.length) return prev;
-      const next = [...prev];
-      [next[idx], next[target]] = [next[target], next[idx]];
-      return next;
-    });
-  }
-  function update(
-    idx: number,
-    patch: Partial<Omit<Question, "data">> & { data?: Partial<Question["data"]> },
-  ) {
-    setQs((prev) =>
-      prev.map((q, i) =>
-        i === idx ? { ...q, ...patch, data: { ...q.data, ...(patch.data ?? {}) } } : q,
-      ),
-    );
-  }
-  return (
-    <Modal
-      open
-      onClose={onClose}
-      labelledBy="new-shortform-title"
-      containerClassName="bg-card rounded-lg shadow-xl w-full max-w-2xl p-6 space-y-4 max-h-[90vh] overflow-auto my-auto"
-    >
-      <>
-        <ModalHeader
-          titleId="new-shortform-title"
-          title="New shortform version"
-          onClose={onClose}
-          className="mb-0"
-        />
-        <div className="space-y-3">
-          {qs.map((q, idx) => {
-            const isInfo = q.type === "info";
-            return (
-              <div key={q.key} className="border border-border rounded-md p-3 space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs text-muted-foreground">
-                    {isInfo ? "Info text" : "Question"} {idx + 1}
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => move(idx, -1)}
-                      disabled={idx === 0}
-                      className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-30"
-                      title="Move up"
-                    >
-                      ↑
-                    </button>
-                    <button
-                      onClick={() => move(idx, 1)}
-                      disabled={idx === qs.length - 1}
-                      className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-30"
-                      title="Move down"
-                    >
-                      ↓
-                    </button>
-                    <button onClick={() => removeQ(idx)} className="text-xs text-red-600 hover:underline">
-                      Remove
-                    </button>
-                  </div>
-                </div>
-                {isInfo ? (
-                  // New info bodies are stored as BlockNote block JSON inside
-                  // the draft question array (hasInfoBody handles both shapes).
-                  <DocEditor
-                    density="compact"
-                    initialContent={q.data.body}
-                    onChange={(body) => update(idx, { data: { body } })}
-                    placeholder="Free-form text shown to the applicant (e.g. instructions or context)."
-                    className="rounded-md border border-border bg-card py-2"
-                  />
-                ) : (
-                  <>
-                    <input
-                      value={q.data.label}
-                      onChange={(e) => update(idx, { data: { label: e.target.value } })}
-                      placeholder="Question prompt"
-                      className="w-full px-2 py-1.5 text-sm border border-border rounded-md"
-                    />
-                    <input
-                      value={q.data.description ?? ""}
-                      onChange={(e) => update(idx, { data: { description: e.target.value } })}
-                      placeholder="Description (optional, e.g. 'Keep it under 200 words.')"
-                      className="w-full px-2 py-1.5 text-xs border border-border rounded-md text-muted-foreground"
-                    />
-                    <div className="flex items-center gap-4 text-xs">
-                      <Checkbox
-                        label="Required"
-                        checked={q.required}
-                        onChange={(e) => update(idx, { required: e.target.checked })}
-                      />
-                      <label className="flex items-center gap-1">
-                        Type:
-                        <Select
-                          value={q.type}
-                          onChange={(v) => update(idx, { type: v as Question["type"] })}
-                          options={[
-                            { value: "textarea", label: "Long answer" },
-                            { value: "text", label: "Short answer" },
-                          ]}
-                          buttonClassName="px-2 py-0.5 border border-border rounded inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-                        />
-                      </label>
-                    </div>
-                  </>
-                )}
-              </div>
-            );
-          })}
-        </div>
-        <div className="flex items-center gap-4">
-          <button onClick={addQ} className="text-sm text-blue-700 hover:underline">
-            + Add question
-          </button>
-          <button onClick={addInfo} className="text-sm text-blue-700 hover:underline">
-            + Add info text
-          </button>
-        </div>
-        <ModalFooter onCancel={onClose} className="pt-3 border-t border-border">
-          <button
-            onClick={() => setPreviewing(true)}
-            className="px-3 py-2 text-sm font-medium text-blue-700 bg-card border border-blue-300 rounded-md hover:bg-blue-50"
-          >
-            Preview
-          </button>
-          <button
-            onClick={() => {
-              const cleaned = qs.filter((q) =>
-                q.type === "info" ? hasInfoBody(q.data.body) : q.data.label.trim(),
-              );
-              if (cleaned.length === 0) return;
-              onSubmit(cleaned);
-            }}
-            className="px-3 py-2 text-sm font-medium text-white bg-accent-coral rounded-md hover:bg-accent-coral/90"
-          >
-            Create
-          </button>
-        </ModalFooter>
-        {previewing && (
-          <ChallengePreviewModal
-            challengeVersionId="draft"
-            challengeName="Shortform"
-            versionLabel="Draft"
-            questions={qs.filter((q) =>
-              q.type === "info" ? hasInfoBody(q.data.body) : q.data.label.trim(),
-            )}
-            onClose={() => setPreviewing(false)}
-          />
-        )}
-      </>
-    </Modal>
   );
 }
 

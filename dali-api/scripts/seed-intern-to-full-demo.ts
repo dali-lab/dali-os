@@ -172,31 +172,33 @@ async function main() {
   });
   console.log(`✓ Reviewers: admin + ${reviewer2.daliEmail}`);
 
-  // 5. Shortform + Rubric ------------------------------------------------------
-  const latestForm = await prisma.shortformVersion.findFirst({
-    orderBy: { version: "desc" },
-    select: { version: true },
-  });
-  const formVersion = await prisma.shortformVersion.create({
+  // 5. Application form (a Drive Form) + Rubric --------------------------------
+  const applicationForm = await prisma.form.create({
     data: {
-      version: (latestForm?.version ?? 0) + 1,
-      questions: [
-        {
-          key: "q1",
-          type: "textarea",
-          required: true,
-          data: {
-            label: "Why do you want to convert from your intern role to full-time?",
-          },
-        },
-        {
-          key: "q2",
-          type: "textarea",
-          required: true,
-          data: { label: "What domain skills did you grow most during the intern term?" },
-        },
-      ] as any,
+      name: `Intern → Full ${termCode} demo application`,
       createdById: admin.id,
+      versions: {
+        create: {
+          versionNumber: 1,
+          questions: [
+            {
+              key: "q1",
+              type: "textarea",
+              required: true,
+              data: {
+                label: "Why do you want to convert from your intern role to full-time?",
+              },
+            },
+            {
+              key: "q2",
+              type: "textarea",
+              required: true,
+              data: { label: "What domain skills did you grow most during the intern term?" },
+            },
+          ] as any,
+          createdById: admin.id,
+        },
+      },
     },
   });
 
@@ -216,7 +218,7 @@ async function main() {
       createdById: admin.id,
     },
   });
-  console.log(`✓ Shortform v${formVersion.version} + rubric ${rubric.name} v${rubricVersion.versionNumber}`);
+  console.log(`✓ Application form ${applicationForm.name} + rubric ${rubric.name} v${rubricVersion.versionNumber}`);
 
   // 6. Cycle -------------------------------------------------------------------
   const closeDate = new Date(now);
@@ -227,7 +229,7 @@ async function main() {
       name: `Intern → Full ${termCode} demo`,
       cycleType: "Fellowship",
       closeDate,
-      shortformVersionId: formVersion.id,
+      applicationFormId: applicationForm.id,
       statusUpdates: { create: { newStatus: "Draft", userId: admin.id } },
       domains: {
         create: [

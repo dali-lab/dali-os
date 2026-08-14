@@ -9,6 +9,7 @@
 
 import { prisma } from "~/lib/db";
 import { hasCycleAccess } from "~/lib/roles";
+import { isInternalCycleType } from "~/hiring/lib/internal-cycles";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { buildCriteriaLabelMap } from "~/hiring/lib/rubric-criteria";
 import { McpNotFoundError, McpForbiddenError } from "../../registry";
@@ -49,7 +50,7 @@ export async function runGetApplication(userId: string, input: Input): Promise<u
         include: {
           user: { select: { firstName: true, lastName: true } },
           generalChallengeVersion: { select: { questions: true } },
-          shortformVersion: { select: { questions: true } },
+          applicationFormVersion: { select: { questions: true } },
           applicationCycle: {
             select: { id: true, generalRubricVersionId: true, cycleType: true },
           },
@@ -182,8 +183,8 @@ export async function runGetApplication(userId: string, input: Input): Promise<u
       id: da.application.id,
       answers: da.application.answers,
       generalQuestions:
-        da.application.applicationCycle.cycleType === "Fellowship"
-          ? da.application.shortformVersion?.questions ?? []
+        isInternalCycleType(da.application.applicationCycle.cycleType)
+          ? da.application.applicationFormVersion?.questions ?? []
           : da.application.generalChallengeVersion?.questions ?? [],
       applicant: da.application.user,
     },

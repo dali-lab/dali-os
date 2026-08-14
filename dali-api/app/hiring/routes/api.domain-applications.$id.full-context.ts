@@ -1,4 +1,5 @@
 import type { Route } from "./+types/api.domain-applications.$id.full-context";
+import { isInternalCycleType } from "~/hiring/lib/internal-cycles";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { hasCycleAccess } from "~/lib/roles";
@@ -23,7 +24,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         include: {
           user: { select: { firstName: true, lastName: true } },
           generalChallengeVersion: { select: { questions: true } },
-          shortformVersion: { select: { questions: true } },
+          applicationFormVersion: { select: { questions: true } },
           applicationCycle: { select: { id: true, generalRubricVersionId: true, cycleType: true } },
         },
       },
@@ -145,8 +146,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         id: da.application.id,
         answers: da.application.answers,
         generalQuestions:
-          da.application.applicationCycle.cycleType === "Fellowship"
-            ? da.application.shortformVersion?.questions ?? []
+          isInternalCycleType(da.application.applicationCycle.cycleType)
+            ? da.application.applicationFormVersion?.questions ?? []
             : da.application.generalChallengeVersion?.questions ?? [],
         applicant: da.application.user,
       },

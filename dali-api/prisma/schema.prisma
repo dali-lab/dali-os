@@ -148,7 +148,6 @@ model User {
   oauthSessions                 OAuthSession[]
   sessions                      Session[]
   rubricVersions                RubricVersion[]
-  shortformVersions             ShortformVersion[]
   authoredSigningVersions       SigningDocumentVersion[]            @relation("SigningVersionAuthor")
   signingSignatures             SigningSignature[]                  @relation("SigningSigner")
 
@@ -333,10 +332,12 @@ model ApplicationCycle {
   // layer (see findOtherActiveCycleId).
   cycleType ApplicationCycleType @default(Standard)
 
-  // When cycleType is an internal type (Fellowship/Core), the shortform
-  // questions are pinned via this version. Always null on Standard cycles.
-  shortformVersionId String?
-  shortformVersion   ShortformVersion? @relation(fields: [shortformVersionId], references: [id])
+  // The cycle's application form (a Drive Form). For internal cycles
+  // (Fellowship/Core) this is the whole application form; it stays UNPUBLISHED —
+  // the hiring portal reads its latest version directly and eligibility is the
+  // fill gate. Auto-created + rebindable via app/hiring/lib/application-form.server.ts.
+  applicationFormId String?
+  applicationForm   Form?   @relation("CycleApplicationForm", fields: [applicationFormId], references: [id])
 
   statusUpdates     ApplicationCycleStatusUpdate[]
   applications      Application[]
@@ -393,15 +394,16 @@ model Application {
   applicationCycle          ApplicationCycle  @relation(fields: [applicationCycleId], references: [id])
   // Pinned at application creation time so that form updates do not affect
   // in-progress drafts. Required on Standard cycles; null on internal
-  // (Fellowship/Core) cycles (which pin `shortformVersionId` instead). One of
-  // the two must be set — enforced at the app layer.
+  // (Fellowship/Core) cycles (which pin `applicationFormVersionId` instead).
+  // One of the two must be set — enforced at the app layer.
   generalChallengeVersionId String?
   generalChallengeVersion   ChallengeVersion? @relation("ApplicationGeneralChallenge", fields: [generalChallengeVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
-  // Pinned at creation time for internal (Fellowship/Core) applications. Null
-  // on Standard.
-  shortformVersionId String?
-  shortformVersion   ShortformVersion? @relation("ApplicationShortform", fields: [shortformVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  // The FormVersion of the cycle's application form that this applicant
+  // answered, pinned at creation so later edits to the form don't change an
+  // in-progress draft. Set on internal (Fellowship/Core) applications.
+  applicationFormVersionId String?
+  applicationFormVersion   FormVersion? @relation("ApplicationApplicationForm", fields: [applicationFormVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   // Phase 1: distinguishes the application's purpose. Standard = regular DALI
   // hire cycle (only value used today). Intern = shorter form for intern
@@ -437,24 +439,6 @@ enum ApplicationCycleType {
   Core
 }
 
-// Immutable snapshot of the shortform used for internal (Fellowship/Core)
-// cycles. Never update rows — create a new version. `questions` shape mirrors
-// the JSON schema used by ChallengeVersion.questions so the existing
-// QuestionList / answer-storage code can render it without forking.
-model ShortformVersion {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-
-  version   Int  @unique
-  questions Json
-
-  createdById String
-  createdBy   User   @relation(fields: [createdById], references: [id])
-
-  cycles       ApplicationCycle[]
-  applications Application[]      @relation("ApplicationShortform")
-}
-
 // On Standard cycles, the domain is derived via challengeVersion.domain (the
 // applicant answers a per-domain challenge). On internal (Fellowship/Core)
 // cycles there is no per-domain challenge, so `challengeVersionId` is null and
@@ -484,7 +468,7 @@ model DomainApplication {
   application        Application       @relation(fields: [applicationId], references: [id])
   // Pins the questions the applicant answered. Always set on Standard cycles
   // (per-domain challenge). Null on internal cycles (questions live on the
-  // Application via shortformVersionId — there's nothing per-domain to pin).
+  // Application via applicationFormVersionId — there's nothing per-domain to pin).
   challengeVersionId String?
   challengeVersion   ChallengeVersion? @relation(fields: [challengeVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   // The target Domain this DA represents. Required for every DA regardless
@@ -3682,6 +3666,7 @@ model Form {
   partnerApplicationBindings          PartnerApplicationFormBinding[]
   educationOfferingsAsApplicationForm EducationOffering[]             @relation("EducationOfferingApplicationForm")
   educationBindings                   EducationFormBinding[]          @relation("EducationFormBindings")
+  hiringCyclesAsApplicationForm       ApplicationCycle[]              @relation("CycleApplicationForm")
 
   @@index([folderId])
   @@index([folderPageId])
@@ -3708,6 +3693,9 @@ model FormVersion {
   createdBy   User   @relation(fields: [createdById], references: [id])
 
   submissions FormSubmission[]
+
+  // Internal hiring applications that pinned this version (see Application.applicationFormVersionId).
+  hiringApplicationsAsPinnedForm Application[] @relation("ApplicationApplicationForm")
 
   @@unique([formId, versionNumber])
   @@index([formId, versionNumber])

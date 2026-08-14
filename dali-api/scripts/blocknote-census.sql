@@ -85,8 +85,8 @@ SELECT 'ChallengeVersion' AS src, count(*) AS info_questions
 FROM "ChallengeVersion", jsonb_array_elements("questions") q
 WHERE q->>'type' = 'info'
 UNION ALL
-SELECT 'ShortformVersion', count(*)
-FROM "ShortformVersion", jsonb_array_elements("questions") q
+SELECT 'FormVersion', count(*)
+FROM "FormVersion", jsonb_array_elements("questions") q
 WHERE q->>'type' = 'info';
 
 -- ============================================================================

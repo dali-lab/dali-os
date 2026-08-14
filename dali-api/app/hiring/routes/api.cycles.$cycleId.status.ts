@@ -111,11 +111,11 @@ export async function action({ request, params }: Route.ActionArgs) {
         }
       }
     } else if (isInternalCycleType(cycle.cycleType)) {
-      // Internal cycles (Fellowship/Core) skip challenges — only the shortform
-      // must be pinned before opening.
-      if (!cycle.shortformVersionId) {
+      // Internal cycles (Fellowship/Core) skip challenges — only the application
+      // form must be bound before opening.
+      if (!cycle.applicationFormId) {
         return Response.json(
-                { error: "Shortform must be selected before opening this cycle" },
+                { error: "An application form must be bound before opening this cycle" },
                 { status: 400 },
               );
       }

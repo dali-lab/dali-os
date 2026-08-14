@@ -200,20 +200,8 @@ async function transcodeColumns() {
     });
   }
 
-  // ShortformVersion + FormVersion: questions info bodies.
-  for (const row of await prisma.shortformVersion.findMany({
-    select: { id: true, questions: true },
-  })) {
-    const questions = transcodeQuestions(`ShortformVersion(${row.id}).questions`, row.questions);
-    if (!questions.changed) continue;
-    updates++;
-    console.log(`ShortformVersion ${row.id}${DRY_RUN ? " [dry-run]" : ""}`);
-    if (DRY_RUN) continue;
-    await prisma.shortformVersion.update({
-      where: { id: row.id },
-      data: { questions: questions.next },
-    });
-  }
+  // FormVersion: questions info bodies (internal-cycle shortforms are now
+  // ordinary Forms, so they're covered here too).
   for (const row of await prisma.formVersion.findMany({
     select: { id: true, questions: true },
   })) {

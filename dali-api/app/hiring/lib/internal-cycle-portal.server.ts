@@ -11,6 +11,7 @@ import { findMissingRequired } from "~/lib/form-answers";
 import { resolveUserTimeZone } from "~/lib/timezone";
 import { INTERNAL_CYCLES, type InternalCycleType } from "./internal-cycles.server";
 import { getCoreDomain } from "./core-hiring.server";
+import { loadHiringForm } from "./application-form.server";
 
 // Shared loader/action for the member-authed internal-cycle applicant portal
 // (Fellowship and Core). The two routes are thin wrappers that pass their
@@ -81,13 +82,15 @@ export async function loadInternalCyclePortal(
   const cycle = await prisma.applicationCycle.findUnique({
     where: { id: active.id },
     include: {
-      shortformVersion: true,
       domains: { include: { domain: true } },
     },
   });
-  if (!cycle || !cycle.shortformVersion) {
+  if (!cycle || !cycle.applicationFormId) {
     return { reason: "no-active-cycle", cycleType, contextDomains };
   }
+  // The cycle's application form (a Drive Form) at its latest version.
+  const form = await loadHiringForm(cycle.applicationFormId, auth.user.sub);
+  if (!form) return { reason: "no-active-cycle", cycleType, contextDomains };
 
   // target-domains cycles let the applicant pick from the cycle's real target
   // domains; single-core-domain cycles auto-select the one CORE domain.
@@ -119,12 +122,10 @@ export async function loadInternalCyclePortal(
       name: cycle.name,
       currentStatus: active.currentStatus,
       closeDate: cycle.closeDate ? cycle.closeDate.toISOString() : null,
-      formVersionId: cycle.shortformVersionId!,
+      formVersionId: form.versionId,
       // Frozen versions may hold legacy ProseMirror info bodies — convert on
       // read so the fill UI only ever sees string | blocks.
-      questions: normalizeQuestionBodies(
-        (cycle.shortformVersion.questions as unknown as Question[]) ?? [],
-      ),
+      questions: normalizeQuestionBodies(form.questions),
       targetDomains,
     },
     contextDomains,
@@ -171,15 +172,18 @@ export async function handleInternalCyclePortalAction(
     const cycle = await prisma.applicationCycle.findUniqueOrThrow({
       where: { id: active.id },
       include: {
-        shortformVersion: true,
         domains: { select: { domainId: true } },
       },
     });
-    if (!cycle.shortformVersionId || !cycle.shortformVersion) {
+    if (!cycle.applicationFormId) {
       return Response.json({ error: "Cycle is not configured" }, { status: 409 });
     }
-    const formVersionId = cycle.shortformVersionId;
-    const questions = (cycle.shortformVersion.questions as unknown as Question[]) ?? [];
+    const form = await loadHiringForm(cycle.applicationFormId, auth.user.sub);
+    if (!form) {
+      return Response.json({ error: "Cycle is not configured" }, { status: 409 });
+    }
+    const formVersionId = form.versionId;
+    const questions = form.questions;
     const allowedDomainIds = new Set(cycle.domains.map((d) => d.domainId));
 
     const answers = JSON.parse((formData.get("answers") as string) || "{}") as Record<string, string>;
@@ -214,7 +218,7 @@ export async function handleInternalCyclePortalAction(
       }
     }
 
-    // Upsert the Application (one per user+cycle). Pin the shortform version on
+    // Upsert the Application (one per user+cycle). Pin the form version on
     // create and never re-pin on subsequent saves.
     const application = await prisma.application.upsert({
       where: {
@@ -225,7 +229,7 @@ export async function handleInternalCyclePortalAction(
         userId: auth.user.sub,
         applicationCycleId: active.id,
         applicationType: cycleType,
-        shortformVersionId: formVersionId,
+        applicationFormVersionId: formVersionId,
         answers,
         statusUpdates: { create: { newStatus: "Draft", userId: auth.user.sub } },
       },

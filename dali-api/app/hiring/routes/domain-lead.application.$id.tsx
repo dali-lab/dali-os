@@ -93,7 +93,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           user: true,
           statusUpdates: true,
           generalChallengeVersion: true,
-          shortformVersion: true,
+          applicationFormVersion: true,
           applicationCycle: {
             include: { statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 } },
           },
