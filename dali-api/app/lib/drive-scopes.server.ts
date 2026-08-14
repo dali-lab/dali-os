@@ -5,6 +5,18 @@
 import { loadDriveScope } from "~/lib/drive.server";
 import type { DriveItem } from "~/lib/drive.server";
 import { ensureCoreDriveRoot } from "~/lib/pages";
+import { favoritePageIds } from "~/lib/user-pages.server";
+
+// Tag each doc/folder item with whether the viewer has favorited it (drives the
+// inline star). Files/forms/agreements aren't page-favoritable, so they pass
+// through untagged. Mutates in place for brevity — the arrays are freshly built.
+function tagFavorites(items: DriveItem[], favIds: Set<string>): DriveItem[] {
+  return items.map((it) =>
+    (it.type === "doc" || it.type === "folder") && favIds.has(it.id)
+      ? { ...it, favorited: true }
+      : it,
+  );
+}
 
 export type DriveTreeScope = {
   id: string;
@@ -78,6 +90,8 @@ export async function loadDriveScopes({
   // Provision the Core drive root on first Core visit (idempotent). Only Core
   // members trigger creation; the folder is Core-scoped so non-Core never see it.
   const coreRoot = isCore ? await ensureCoreDriveRoot(userSub) : null;
+  // The viewer's favorited page ids — applied to every scope's items below.
+  const favIds = await favoritePageIds(userSub);
   const projectIds = projectWorkspaces.map((w) => w.key);
   const projectNames = new Map(projectWorkspaces.map((w) => [w.key, w.label]));
   const projectEmojis = new Map(
@@ -150,19 +164,19 @@ export async function loadDriveScopes({
   return [
     // The viewer's private drive leads — personal notes have no forms to
     // de-dup, so they pass through untouched.
-    { id: "mine", label: "My Drive", iconEmoji: null, items: memberItems },
-    { id: "lab", label: "Lab-wide", iconEmoji: null, items: filteredLab },
+    { id: "mine", label: "My Drive", iconEmoji: null, items: tagFavorites(memberItems, favIds) },
+    { id: "lab", label: "Lab-wide", iconEmoji: null, items: tagFavorites(filteredLab, favIds) },
     // Core drive: auto-provisioned, Core-only. Shown whenever the root exists
     // (which implies the viewer is Core), even when empty — it's a place to
     // create Core-scoped docs. Creates/moves land inside the Core root folder.
     ...(coreRoot
-      ? [{ id: "core", label: "Core", iconEmoji: null, items: coreItems, rootFolderId: coreRoot.id }]
+      ? [{ id: "core", label: "Core", iconEmoji: null, items: tagFavorites(coreItems, favIds), rootFolderId: coreRoot.id }]
       : []),
     ...projectIds.map((id, i) => ({
       id,
       label: projectNames.get(id) ?? "Project",
       iconEmoji: projectEmojis.get(id) ?? null,
-      items: filteredProjects[i],
+      items: tagFavorites(filteredProjects[i], favIds),
     })),
   ];
 }
