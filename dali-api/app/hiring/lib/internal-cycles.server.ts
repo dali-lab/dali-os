@@ -6,17 +6,14 @@ import { promoteToMember } from "~/members/lib/membership.server";
 import { provisionNewMember, type ProvisionResult } from "~/members/lib/provisioning.server";
 import { sendWelcome } from "~/members/lib/welcome.server";
 import { isCoreCycleEligible, defaultCoreReviewerIds, coreOnAccept } from "./core-hiring.server";
+import { isInternalCycleType, type InternalCycleType } from "./internal-cycles";
 
-// "Internal" cycle types share the member-authed applicant portal, a DB-backed
-// shortform (no per-domain challenges), no interviews, a single reviewer pool,
-// and a single Final delibs round. Everything that differs between them lives
-// in INTERNAL_CYCLES below so the shared machinery (portal, setup, status
-// fan-out, decision release) stays cycle-type-agnostic.
-export type InternalCycleType = "Fellowship" | "Core";
-
-export function isInternalCycleType(t: ApplicationCycleType): t is InternalCycleType {
-  return t === "Fellowship" || t === "Core";
-}
+// The shared machinery (portal, setup, status fan-out, decision release) stays
+// cycle-type-agnostic; everything that differs between internal cycle types
+// lives in INTERNAL_CYCLES below. Pure type helpers (isInternalCycleType, the
+// InternalCycleType union) live in the client-safe internal-cycles.ts and are
+// re-exported here for existing importers.
+export { isInternalCycleType, type InternalCycleType };
 
 export interface AcceptContext {
   userId: string;

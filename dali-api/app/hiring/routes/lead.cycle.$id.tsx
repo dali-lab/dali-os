@@ -7,6 +7,7 @@ import { recordRouteVisit } from "~/lib/user-pages.server";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";
+import { isInternalCycleType } from "~/hiring/lib/internal-cycles";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { parseSessionCookie } from "~/lib/cookies";
 import { getPresenceUser } from "~/lib/presence-user";
@@ -163,14 +164,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!auth.ok) return redirectToLogin(request);
   if (!(await isCore(auth.user.sub))) return redirect("/");
 
-  // Fellowship cycles use a separate, simpler setup page (no challenges,
-  // no interview config). Forward there before any of the Standard-cycle
-  // payload is loaded.
+  // Internal cycles (Fellowship/Core) use a separate, simpler setup page (no
+  // challenges, no interview config). Forward there before any of the
+  // Standard-cycle payload is loaded.
   const cycleTypeRow = await prisma.applicationCycle.findUnique({
     where: { id: params.id },
     select: { cycleType: true },
   });
-  if (cycleTypeRow?.cycleType === "Fellowship") {
+  if (cycleTypeRow && isInternalCycleType(cycleTypeRow.cycleType)) {
     return redirect(`/hiring/lead/internal-cycle/${params.id}`);
   }
 

@@ -1,7 +1,8 @@
 import type { Prisma } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db";
 import { getActiveCycle } from "~/hiring/lib/cycles";
-import { isFellowshipEligible } from "~/hiring/lib/intern-eligibility";
+import { INTERNAL_CYCLES } from "~/hiring/lib/internal-cycles.server";
+import { INTERNAL_CYCLE_TYPES, type InternalCycleType } from "~/hiring/lib/internal-cycles";
 import { ONBOARDING_EVENT_TYPE } from "~/members/lib/welcome.server";
 import { fullName } from "~/lib/display";
 
@@ -187,22 +188,44 @@ const TASK_WHERE = (
 
 /** Count of open tasks for a user. Cheap — used by the sidebar poller. */
 export async function countOpenTasks(userId: string): Promise<number> {
-  const [notifs, fellowship] = await Promise.all([
+  const [notifs, applyTasks] = await Promise.all([
     prisma.notification.count({ where: TASK_WHERE(userId) }),
-    getFellowshipTask(userId),
+    getInternalCycleApplyTasks(userId),
   ]);
-  return notifs + (fellowship ? 1 : 0);
+  return notifs + applyTasks.length;
 }
 
+const APPLY_TASK_COPY: Record<InternalCycleType, { draft: string; apply: string }> = {
+  Fellowship: {
+    draft: "Continue your fellowship application",
+    apply: "Apply to the fellowship",
+  },
+  Core: {
+    draft: "Continue your Core application",
+    apply: "Apply to Core",
+  },
+};
+
 /**
- * Synthetic "apply to the fellowship" task for current interns when an
- * Fellowship cycle is Open and they haven't finished their application. This
- * is not a Notification row — it's derived state, so it persists in the
- * attention banner across reloads until the user submits or withdraws.
+ * Synthetic "apply to <internal cycle>" tasks: for each internal cycle type
+ * (Fellowship, Core) that's Open and the user is eligible for + hasn't finished.
+ * These are not Notification rows — they're derived state, so they persist in
+ * the attention banner across reloads until the user submits or withdraws.
  */
-export async function getFellowshipTask(userId: string): Promise<Task | null> {
-  if (!(await isFellowshipEligible(userId))) return null;
-  const cycle = await getActiveCycle("Fellowship");
+export async function getInternalCycleApplyTasks(userId: string): Promise<Task[]> {
+  const results = await Promise.all(
+    INTERNAL_CYCLE_TYPES.map((t) => getInternalCycleApplyTask(userId, t)),
+  );
+  return results.filter((t): t is Task => t != null);
+}
+
+async function getInternalCycleApplyTask(
+  userId: string,
+  cycleType: InternalCycleType,
+): Promise<Task | null> {
+  const config = INTERNAL_CYCLES[cycleType];
+  if (!(await config.eligible(userId))) return null;
+  const cycle = await getActiveCycle(cycleType);
   if (!cycle || cycle.currentStatus !== "Open") return null;
 
   const app = await prisma.application.findFirst({
@@ -216,22 +239,23 @@ export async function getFellowshipTask(userId: string): Promise<Task | null> {
   if (status === "Submitted" || status === "Withdrawn") return null;
 
   const isDraft = status === "Draft";
+  const copy = APPLY_TASK_COPY[cycleType];
   return {
-    id: `fellowship-${cycle.id}`,
-    title: isDraft ? "Continue your fellowship application" : "Apply to the fellowship",
+    id: `${cycleType.toLowerCase()}-apply-${cycle.id}`,
+    title: isDraft ? copy.draft : copy.apply,
     body: cycle.name,
-    link: "/fellowship",
+    link: config.portalPath,
     createdAt: (app?.statusUpdates[0]?.createdAt ?? new Date()).toISOString(),
     source: "general",
     dueAt: cycle.closeDate ? cycle.closeDate.toISOString() : null,
-    // Clears by self-action (submit / withdraw in /fellowship) — no Confirm button.
+    // Clears by self-action (submit / withdraw in the portal) — no Confirm button.
     hasAction: true,
   };
 }
 
 /** Open tasks for a user, newest first, with deadlines resolved. */
 export async function listOpenTasks(userId: string): Promise<Task[]> {
-  const [rows, fellowship] = await Promise.all([
+  const [rows, applyTasks] = await Promise.all([
     prisma.notification.findMany({
       where: TASK_WHERE(userId),
       orderBy: { createdAt: "desc" },
@@ -256,7 +280,7 @@ export async function listOpenTasks(userId: string): Promise<Task[]> {
         form: { select: { published: true, publicToken: true } },
       },
     }),
-    getFellowshipTask(userId),
+    getInternalCycleApplyTasks(userId),
   ]);
 
   const notifTasks = rows
@@ -329,7 +353,7 @@ export async function listOpenTasks(userId: string): Promise<Task[]> {
     };
   });
 
-  return fellowship ? [fellowship, ...notifTasks] : notifTasks;
+  return [...applyTasks, ...notifTasks];
 }
 
 export interface NotificationHistoryOptions {

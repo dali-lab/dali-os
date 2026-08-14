@@ -216,6 +216,7 @@ export default [
     // members use their existing session rather than the CAS flow built for
     // external applicants. Both render the shared internal-cycle portal.
     route("fellowship", "routes/fellowship.tsx"),
+    route("core", "routes/core.tsx"),
     // Legacy path — old notification/task links pointed at /intern-to-full.
     route("intern-to-full", "routes/intern-to-full.legacy.tsx"),
 

@@ -1,9 +1,7 @@
 import { useSearchParams } from "react-router";
+import { CYCLE_TYPE_LABELS } from "~/hiring/lib/internal-cycles";
 
-export const CYCLE_TYPE_LABELS: Record<string, string> = {
-  Standard: "Standard hire",
-  Fellowship: "Fellowship",
-};
+export { CYCLE_TYPE_LABELS };
 
 export function CycleSelector({
   cycles,
@@ -34,7 +32,7 @@ export function CycleSelector({
             }`}
             title={c.name}
           >
-            {CYCLE_TYPE_LABELS[c.cycleType] ?? c.cycleType}
+            {CYCLE_TYPE_LABELS[c.cycleType as keyof typeof CYCLE_TYPE_LABELS] ?? c.cycleType}
           </button>
         );
       })}

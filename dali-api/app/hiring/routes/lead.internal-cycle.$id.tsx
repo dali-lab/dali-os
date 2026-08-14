@@ -5,6 +5,8 @@ import { prisma } from "~/lib/db";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";
+import { isInternalCycleType, CYCLE_TYPE_LABELS } from "~/hiring/lib/internal-cycles";
+import { getCoreDomain, defaultCoreReviewerIds } from "~/hiring/lib/core-hiring.server";
 import type { Question } from "~/types";
 import type { Prisma } from "~/generated/prisma/client";
 import { CycleSetupSection as Section } from "~/hiring/components/CycleSetupSection";
@@ -70,9 +72,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
   });
 
-  if (cycle.cycleType !== "Fellowship") {
+  if (!isInternalCycleType(cycle.cycleType)) {
     return redirect(`/hiring/lead/cycle/${cycle.id}`);
   }
+  const isCoreCycle = cycle.cycleType === "Core";
 
   const [
     allDomains,
@@ -85,7 +88,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     releasedDecisions,
   ] = await Promise.all([
     prisma.domain.findMany({
-      where: { active: true, isInternProgram: false },
+      where: { active: true, isInternProgram: false, isSystem: false },
       orderBy: { displayName: "asc" },
     }),
     prisma.shortformVersion.findMany({
@@ -159,9 +162,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const releasedDecisionTypes = releasedDecisions.map((d) => d.type);
 
   return {
+    isCoreCycle,
     cycle: {
       id: cycle.id,
       name: cycle.name,
+      cycleType: cycle.cycleType,
       status: cycle.statusUpdates[0]?.newStatus ?? "Draft",
       closeDate: cycle.closeDate ? cycle.closeDate.toISOString() : null,
       formVersion: cycle.shortformVersion
@@ -417,6 +422,30 @@ export async function action({ request, params }: Route.ActionArgs) {
     return { ok: true };
   }
 
+  if (intent === "reset-default-reviewers") {
+    // Core only: replace the reviewer pool with the current graduating Core
+    // seniors (the default seed). One CycleReviewer row per (user, CORE domain).
+    const coreDomain = await getCoreDomain();
+    if (!coreDomain) {
+      return Response.json({ error: "Core domain is not configured." }, { status: 409 });
+    }
+    const reviewerIds = await defaultCoreReviewerIds();
+    await prisma.$transaction(async (tx) => {
+      await tx.cycleReviewer.deleteMany({ where: { applicationCycleId: cycleId } });
+      if (reviewerIds.length > 0) {
+        await tx.cycleReviewer.createMany({
+          data: reviewerIds.map((userId) => ({
+            userId,
+            applicationCycleId: cycleId,
+            domainId: coreDomain.id,
+          })),
+          skipDuplicates: true,
+        });
+      }
+    });
+    return { ok: true, resetCount: reviewerIds.length };
+  }
+
   if (intent === "remove-reviewer-pool") {
     const userId = formData.get("userId") as string;
     await prisma.cycleReviewer.deleteMany({
@@ -477,6 +506,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 export default function FellowshipCycleSetup() {
   const data = useLoaderData<typeof loader>();
   const {
+    isCoreCycle,
     cycle,
     allDomains,
     allFormVersions,
@@ -495,7 +525,7 @@ export default function FellowshipCycleSetup() {
         <div>
           <h1 className="font-heading text-2xl font-bold text-dark-blue">{cycle.name}</h1>
           <p className="text-xs text-muted-foreground mt-1">
-            Fellowship cycle · {cycle.status}
+            {CYCLE_TYPE_LABELS[cycle.cycleType]} cycle · {cycle.status}
           </p>
         </div>
         <StatusButton cycleId={cycle.id} currentStatus={cycle.status} />
@@ -521,18 +551,33 @@ export default function FellowshipCycleSetup() {
         allRubricVersions={allRubricVersions}
       />
 
-      <TargetDomainsSection
-        cycleId={cycle.id}
-        targetDomains={cycle.targetDomains}
-        allDomains={allDomains}
-        disabled={isOpen}
-      />
+      {/* Core cycles aren't domain-scoped — applicants apply to Core generally,
+          so there's no target-domain picker (the single synthetic CORE domain is
+          linked automatically at cycle creation). */}
+      {isCoreCycle ? (
+        <Section
+          title="Applicant pool"
+          description="Core cycles are open to all current lab members and aren't domain-scoped. Every applicant applies to Core and is read by the whole reviewer pool."
+        >
+          <p className="text-sm text-muted-foreground">
+            No target domains to configure.
+          </p>
+        </Section>
+      ) : (
+        <TargetDomainsSection
+          cycleId={cycle.id}
+          targetDomains={cycle.targetDomains}
+          allDomains={allDomains}
+          disabled={isOpen}
+        />
+      )}
 
       <ReviewersSection
         cycleId={cycle.id}
         reviewers={cycle.reviewers}
         targetDomains={cycle.targetDomains}
         members={members}
+        isCoreCycle={isCoreCycle}
       />
 
       <DecisionEmailsSection
@@ -1033,11 +1078,13 @@ function ReviewersSection({
   reviewers,
   targetDomains,
   members,
+  isCoreCycle,
 }: {
   cycleId: string;
   reviewers: { userId: string; displayName: string }[];
   targetDomains: { domainId: string; code: string; displayName: string }[];
   members: { userId: string; displayName: string }[];
+  isCoreCycle: boolean;
 }) {
   const fetcher = useFetcher();
   const assignedIds = new Set(reviewers.map((r) => r.userId));
@@ -1051,10 +1098,16 @@ function ReviewersSection({
   return (
     <Section
       title="Reviewers"
-      description={`Single reviewer pool — every reviewer reads every application across all target domains. Add at least ${MIN_POOL_SIZE}.`}
+      description={
+        isCoreCycle
+          ? `Single reviewer pool, defaulted to Core members graduating this year — edit freely. Add at least ${MIN_POOL_SIZE}.`
+          : `Single reviewer pool — every reviewer reads every application across all target domains. Add at least ${MIN_POOL_SIZE}.`
+      }
     >
       {targetDomains.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Pick target domains first.</p>
+        <p className="text-sm text-muted-foreground">
+          {isCoreCycle ? "Core domain is not configured." : "Pick target domains first."}
+        </p>
       ) : (
         <div className="border border-border rounded-md p-3">
           <div className="flex items-center justify-between mb-2">
@@ -1101,6 +1154,16 @@ function ReviewersSection({
             options={candidates.map((m) => ({ value: m.userId, label: m.displayName }))}
             buttonClassName="text-sm px-2 py-1.5 border border-border rounded inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
           />
+          {isCoreCycle && (
+            <button
+              onClick={() =>
+                fetcher.submit({ intent: "reset-default-reviewers" }, { method: "post" })
+              }
+              className="mt-2 ml-2 text-xs text-blue-600 hover:underline"
+            >
+              Reset to graduating Core seniors
+            </button>
+          )}
           {error && (
             <p className="mt-2 text-xs text-red-600">{error}</p>
           )}
