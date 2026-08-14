@@ -149,6 +149,26 @@ export function termIdsInRange(
     .map((t) => t.id);
 }
 
+/**
+ * Does a task match a board search? Every whitespace-separated token has to
+ * land somewhere in the task, so "sophie login" narrows rather than widens.
+ * Searches what the card shows (title, assignees, domain) plus the description
+ * the modal holds — a task you remember by its body is still findable.
+ */
+export function taskMatchesQuery(task: TaskCardModel, query: string): boolean {
+  const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return true;
+  const haystack = [
+    task.title,
+    task.description ?? "",
+    task.domain?.name ?? "",
+    ...task.assignees.map((a) => a.name),
+  ]
+    .join(" ")
+    .toLowerCase();
+  return tokens.every((token) => haystack.includes(token));
+}
+
 export type TaskBoard = Record<TaskStatus, TaskCardModel[]>;
 
 /**

@@ -723,6 +723,11 @@ function WeekPanel({
                 key={lane.id}
                 className={cn(
                   "flex flex-col gap-3.5 rounded-xl border border-border bg-card p-5 transition-opacity",
+                  // Capped so one long deliverables list can't stretch its whole
+                  // grid row — every card reads at the same height and the list
+                  // scrolls inside instead. Uncapped while editing, where a
+                  // deliverable you can't see is one you can't fix.
+                  !editing && "max-h-96",
                   filter !== ALL && filter !== domain.key && "opacity-30",
                 )}
                 style={{ borderTop: `5px solid ${domain.color}` }}
@@ -747,7 +752,7 @@ function WeekPanel({
                   }
                   onFocusField={focusReporter(`lane:${lane.id}.role`, `${domain.name} role`)}
                 />
-                <ul className="flex flex-col">
+                <ul className="flex min-h-0 flex-col overflow-y-auto">
                   {lane.deliverables.map((text, k) => (
                     <li
                       key={k}
