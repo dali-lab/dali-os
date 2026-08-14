@@ -96,7 +96,7 @@ export async function loader({ request }: Route.LoaderArgs) {
               domainApplications: {
                 where: {
                   selected: true,
-                  // Standard cycles link Domain via challengeVersion; InternToFull
+                  // Standard cycles link Domain via challengeVersion; Fellowship
                   // links it directly. OR matches DAs from both cycle types.
                   OR: [
                     { challengeVersion: { domainId: assignment.domainId } },
@@ -126,7 +126,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       });
 
       // Cycles eligible for the picker: anything Open/UnderReview/Draft for
-      // this domain. After cycleType split, a Standard + InternToFull cycle
+      // this domain. After cycleType split, a Standard + Fellowship cycle
       // can both be active for the same domain (target domains overlap).
       const candidateCycles = allCycles.filter((c) => {
         const status = c.statusUpdates[0]?.newStatus;
@@ -256,9 +256,9 @@ export async function loader({ request }: Route.LoaderArgs) {
         : [];
 
       // Count qualifying applications for each delibs type
-      const isInternToFull = cycle?.cycleType === "InternToFull";
+      const isFellowship = cycle?.cycleType === "Fellowship";
       // Domain-linkage OR matches DAs whether they're attached via
-      // challengeVersion (Standard) or directly (InternToFull).
+      // challengeVersion (Standard) or directly (Fellowship).
       const daDomainMatch = {
         OR: [
           { challengeVersion: { domainId: assignment.domainId } },
@@ -266,9 +266,9 @@ export async function loader({ request }: Route.LoaderArgs) {
         ],
       };
 
-      // InternToFull cycles skip the Initial→interview round, so the Initial
+      // Fellowship cycles skip the Initial→interview round, so the Initial
       // delibs count is always 0 for them.
-      const initialDelibsCount = cycle && !isInternToFull
+      const initialDelibsCount = cycle && !isFellowship
         ? await prisma.domainApplication.count({
             where: {
               selected: true,
@@ -281,14 +281,14 @@ export async function loader({ request }: Route.LoaderArgs) {
         : 0;
 
       // Final-delibs qualifier differs by cycle type. Standard: post-interview.
-      // InternToFull: no interview, so "all reviews submitted" is the gate.
+      // Fellowship: no interview, so "all reviews submitted" is the gate.
       const finalDelibsCount = cycle
         ? await prisma.domainApplication.count({
             where: {
               selected: true,
               ...daDomainMatch,
               application: { applicationCycleId: cycle.id, ...inReviewPipelineFilter },
-              ...(isInternToFull
+              ...(isFellowship
                 ? {
                     reviews: { every: { submittedAt: { not: null } }, some: {} },
                     decisions: { none: { stage: { in: ["Final", "Released"] } } },
@@ -692,7 +692,7 @@ export default function DomainLeadDashboard() {
       <h1 className="font-heading text-2xl font-bold text-foreground">Domain Lead Dashboard</h1>
 
       {domainData.map(({ assignment, cycle, availableCycles, apps, challengeVersionOptions, linkedChallengeVersions, isChallengeReady, interviews, reviewers: cycleReviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, initialDelibsCount, finalDelibsCount, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews, confidentialityRequired }: any, idx: number) => {
-        const isInternToFull = cycle?.cycleType === "InternToFull";
+        const isFellowship = cycle?.cycleType === "Fellowship";
         const hasLinkedChallenge = (linkedChallengeVersions ?? []).length > 0;
         const currentStatus = cycle?.statusUpdates[0]?.newStatus ?? null;
 
@@ -751,8 +751,8 @@ export default function DomainLeadDashboard() {
                 </div>
 
                 <div className="px-4 sm:px-6 py-2 divide-y divide-border">
-                  {/* Setup — Draft only. Hidden on InternToFull (no challenges). */}
-                  {currentStatus === "Draft" && !isInternToFull && (
+                  {/* Setup — Draft only. Hidden on Fellowship (no challenges). */}
+                  {currentStatus === "Draft" && !isFellowship && (
                     <Section
                       title="Challenges (setup)"
                       subtitle="Pick which challenge versions applicants answer."
@@ -781,8 +781,8 @@ export default function DomainLeadDashboard() {
                   )}
 
                   {/* Setup — just the domain challenges (read-only after Draft).
-                      Hidden on InternToFull (no challenges). */}
-                  {currentStatus !== "Draft" && (currentStatus === "Open" || currentStatus === "UnderReview") && !isInternToFull && (
+                      Hidden on Fellowship (no challenges). */}
+                  {currentStatus !== "Draft" && (currentStatus === "Open" || currentStatus === "UnderReview") && !isFellowship && (
                     <div className="pt-4">
                     <Section
                       title="Challenges (locked)"
@@ -845,10 +845,10 @@ export default function DomainLeadDashboard() {
                   )}
 
                   {/* Rubric — scoring criteria.
-                      InternToFull cycles use only the cycle-level general
+                      Fellowship cycles use only the cycle-level general
                       rubric (set by the hiring lead), so the per-domain picker
                       is hidden and replaced with a read-only summary. */}
-                  {isInternToFull ? (
+                  {isFellowship ? (
                     <Section
                       title="Rubric"
                       subtitle="Cycle-wide rubric set by the hiring lead — applies to every application."
@@ -909,23 +909,23 @@ export default function DomainLeadDashboard() {
                   <Section
                     title="Team"
                     subtitle={
-                      isInternToFull
+                      isFellowship
                         ? "Reviewers assigned to this domain."
                         : "Reviewers and interviewers assigned to this domain."
                     }
                     badge={
                       <span className="text-xs text-muted-foreground">
                         {cycleReviewers.length} reviewer{cycleReviewers.length !== 1 ? "s" : ""}
-                        {!isInternToFull && (
+                        {!isFellowship && (
                           <>, {(interviewers ?? []).length} interviewer{(interviewers ?? []).length !== 1 ? "s" : ""}</>
                         )}
                       </span>
                     }
                     defaultOpen={currentStatus === "Draft" || currentStatus === "Open"}
                   >
-                    <div className={`grid grid-cols-1 ${isInternToFull ? "" : "md:grid-cols-2"} gap-4`}>
+                    <div className={`grid grid-cols-1 ${isFellowship ? "" : "md:grid-cols-2"} gap-4`}>
                       <ReviewerSection cycleId={cycle.id} domainId={assignment.domainId} initialReviewers={cycleReviewers} />
-                      {!isInternToFull && (
+                      {!isFellowship && (
                         <InterviewerSection cycleId={cycle.id} domainId={assignment.domainId} initialInterviewers={interviewers ?? []} />
                       )}
                     </div>
@@ -974,7 +974,7 @@ export default function DomainLeadDashboard() {
                           cycleId={cycle.id}
                           domainId={assignment.domainId}
                           currentStatus={currentStatus}
-                          canAssignReviewers={isInternToFull ? !!cycle.generalRubricVersionId : !!currentRubricVersionId && !!cycle.generalRubricVersionId}
+                          canAssignReviewers={isFellowship ? !!cycle.generalRubricVersionId : !!currentRubricVersionId && !!cycle.generalRubricVersionId}
                           rubricCriteria={rubricCriteria ?? []}
                         />
                       ) : (
@@ -995,7 +995,7 @@ export default function DomainLeadDashboard() {
                           <span className="text-xs text-muted-foreground">hidden</span>
                         ) : (
                           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                            {!isInternToFull && (
+                            {!isFellowship && (
                               <>
                                 <span>{initialDelibsCount ?? 0} ready for initial</span>
                                 <span>·</span>
@@ -1019,9 +1019,9 @@ export default function DomainLeadDashboard() {
                     </Section>
                   )}
 
-                  {/* Interviews — Standard cycles only (InternToFull has no
+                  {/* Interviews — Standard cycles only (Fellowship has no
                       interview round). */}
-                  {isInternToFull ? null : confidentialityRequired && currentStatus === "UnderReview" ? (
+                  {isFellowship ? null : confidentialityRequired && currentStatus === "UnderReview" ? (
                     <Section
                       title="Interviews"
                       badge={<span className="text-xs text-muted-foreground">hidden</span>}

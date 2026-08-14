@@ -1,7 +1,7 @@
 // Unit tests for the domain-lead cycle picker. The full loader needs ~12
 // prisma mocks, so we extract the selection logic as a pure helper and test
 // it here in isolation. Behavioral coverage: ?cycle param honored, Standard
-// preferred over InternToFull when both active, fallback to Draft, etc.
+// preferred over Fellowship when both active, fallback to Draft, etc.
 
 import { describe, it, expect } from "vitest";
 import { selectActiveCycleForDomainLead } from "~/hiring/lib/cycle-picker";
@@ -11,8 +11,8 @@ type C = { id: string; cycleType: string; statusUpdates: Array<{ newStatus: stri
 const draftStandard: C = { id: "std-draft", cycleType: "Standard", statusUpdates: [{ newStatus: "Draft" }] };
 const openStandard: C = { id: "std-open", cycleType: "Standard", statusUpdates: [{ newStatus: "Open" }] };
 const underReviewStandard: C = { id: "std-ur", cycleType: "Standard", statusUpdates: [{ newStatus: "UnderReview" }] };
-const openIntern: C = { id: "itf-open", cycleType: "InternToFull", statusUpdates: [{ newStatus: "Open" }] };
-const draftIntern: C = { id: "itf-draft", cycleType: "InternToFull", statusUpdates: [{ newStatus: "Draft" }] };
+const openIntern: C = { id: "itf-open", cycleType: "Fellowship", statusUpdates: [{ newStatus: "Open" }] };
+const draftIntern: C = { id: "itf-draft", cycleType: "Fellowship", statusUpdates: [{ newStatus: "Draft" }] };
 
 describe("selectActiveCycleForDomainLead", () => {
   it("returns null when there are no candidates", () => {
@@ -23,11 +23,11 @@ describe("selectActiveCycleForDomainLead", () => {
     expect(selectActiveCycleForDomainLead([openStandard], null)).toBe(openStandard);
   });
 
-  it("returns the only InternToFull active cycle when no Standard is active", () => {
+  it("returns the only Fellowship active cycle when no Standard is active", () => {
     expect(selectActiveCycleForDomainLead([openIntern], null)).toBe(openIntern);
   });
 
-  it("prefers Standard Open/UnderReview when both Standard and InternToFull are active", () => {
+  it("prefers Standard Open/UnderReview when both Standard and Fellowship are active", () => {
     expect(selectActiveCycleForDomainLead([openIntern, openStandard], null)).toBe(openStandard);
     expect(selectActiveCycleForDomainLead([openIntern, underReviewStandard], null)).toBe(underReviewStandard);
   });

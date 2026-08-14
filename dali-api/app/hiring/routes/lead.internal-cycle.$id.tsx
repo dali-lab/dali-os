@@ -1,16 +1,16 @@
 import { useState } from "react";
 import { Form, redirect, useLoaderData, useFetcher, Link } from "react-router";
-import type { Route } from "./+types/lead.intern-to-full-cycle.$id";
+import type { Route } from "./+types/lead.internal-cycle.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";
+import { isInternalCycleType, CYCLE_TYPE_LABELS } from "~/hiring/lib/internal-cycles";
+import { getCoreDomain, defaultCoreReviewerIds } from "~/hiring/lib/core-hiring.server";
+import { createCycleApplicationForm } from "~/hiring/lib/application-form.server";
 import type { Question } from "~/types";
-import type { Prisma } from "~/generated/prisma/client";
 import { CycleSetupSection as Section } from "~/hiring/components/CycleSetupSection";
 import { ChallengePreviewModal } from "~/hiring/components/ChallengePreviewModal";
-import { DocEditor } from "~/components/doc";
-import { hasInfoBody } from "~/components/form-builder/info-body";
 import { normalizeQuestionBodies } from "~/lib/question-blocks.server";
 import { renderEmail } from "~/lib/email";
 import {
@@ -23,7 +23,7 @@ import {
 import { AlertTriangle, CheckCircle, Eye, Mail } from "lucide-react";
 import { DateField } from "~/components/ui/DateField";
 import { Checkbox } from "~/components/ui/Checkbox";
-import { Modal, ModalHeader, ModalFooter } from "~/components/Modal";
+import { Modal, ModalHeader } from "~/components/Modal";
 import { Select, type SelectOption } from "~/components/ui/floating";
 
 import {
@@ -53,7 +53,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     where: { id: params.id },
     include: {
       statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
-      internToFullFormVersion: true,
+      applicationForm: {
+        include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } },
+      },
       generalRubricVersion: { include: { rubric: true } },
       domains: {
         include: {
@@ -70,13 +72,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
   });
 
-  if (cycle.cycleType !== "InternToFull") {
+  if (!isInternalCycleType(cycle.cycleType)) {
     return redirect(`/hiring/lead/cycle/${cycle.id}`);
   }
+  const isCoreCycle = cycle.cycleType === "Core";
 
   const [
     allDomains,
-    allFormVersions,
+    allForms,
     allRubricVersions,
     members,
     pendingDecisions,
@@ -85,12 +88,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     releasedDecisions,
   ] = await Promise.all([
     prisma.domain.findMany({
-      where: { active: true, isInternProgram: false },
+      where: { active: true, isInternProgram: false, isSystem: false },
       orderBy: { displayName: "asc" },
     }),
-    prisma.internToFullFormVersion.findMany({
-      orderBy: { version: "desc" },
-      include: { createdBy: { select: { firstName: true, lastName: true } } },
+    // All Drive Forms — for the "bind a different form" picker.
+    prisma.form.findMany({
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
     }),
     prisma.rubricVersion.findMany({
       include: { rubric: { select: { id: true, name: true } } },
@@ -103,7 +107,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       orderBy: { createdAt: "asc" },
     }),
     // Draft + Final decisions awaiting hiring-lead action. Exclude Finals that
-    // already have a Released child (Decision is append-only). For InternToFull
+    // already have a Released child (Decision is append-only). For Fellowship
     // the Domain on DomainApplication is set directly (no challengeVersion).
     prisma.decision.findMany({
       where: {
@@ -159,19 +163,21 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const releasedDecisionTypes = releasedDecisions.map((d) => d.type);
 
   return {
+    isCoreCycle,
     cycle: {
       id: cycle.id,
       name: cycle.name,
+      cycleType: cycle.cycleType,
       status: cycle.statusUpdates[0]?.newStatus ?? "Draft",
       closeDate: cycle.closeDate ? cycle.closeDate.toISOString() : null,
-      formVersion: cycle.internToFullFormVersion
+      // The bound Drive Form (authored in the Forms builder). Preview shows its
+      // latest version's questions.
+      applicationForm: cycle.applicationForm
         ? {
-            id: cycle.internToFullFormVersion.id,
-            version: cycle.internToFullFormVersion.version,
-            // Frozen versions may hold legacy ProseMirror info bodies —
-            // convert on read so the preview only ever sees string | blocks.
+            id: cycle.applicationForm.id,
+            name: cycle.applicationForm.name,
             questions: normalizeQuestionBodies(
-              (cycle.internToFullFormVersion.questions as unknown as Question[]) ?? [],
+              (cycle.applicationForm.versions[0]?.questions as unknown as Question[]) ?? [],
             ),
           }
         : null,
@@ -185,7 +191,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         displayName: d.domain.displayName,
         isReady: d.isReady,
       })),
-      // InternToFull uses a single reviewer pool: each member reads every DA
+      // Fellowship uses a single reviewer pool: each member reads every DA
       // across all target domains. The schema still stores one CycleReviewer
       // row per (user, cycle, domain) so the existing fan-out (auto-assign,
       // review submission) works unchanged — dedupe by userId for the UI.
@@ -205,11 +211,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       ),
     },
     allDomains: allDomains.map((d) => ({ id: d.id, code: d.code, displayName: d.displayName })),
-    allFormVersions: allFormVersions.map((fv) => ({
-      id: fv.id,
-      version: fv.version,
-      createdBy: [fv.createdBy.firstName, fv.createdBy.lastName].filter(Boolean).join(" "),
-    })),
+    allForms: allForms.map((f) => ({ id: f.id, name: f.name })),
     allRubricVersions: allRubricVersions.map((rv) => ({
       id: rv.id,
       label: `${rv.rubric.name} v${rv.versionNumber}`,
@@ -266,36 +268,20 @@ export async function action({ request, params }: Route.ActionArgs) {
     return { ok: true };
   }
 
-  if (intent === "set-form-version") {
-    const formVersionId = (formData.get("formVersionId") as string) || null;
+  if (intent === "set-application-form") {
+    // Rebind the cycle to a different existing Drive Form.
+    const formId = (formData.get("formId") as string) || null;
     await prisma.applicationCycle.update({
       where: { id: cycleId },
-      data: { internToFullFormVersionId: formVersionId },
+      data: { applicationFormId: formId },
     });
     return { ok: true };
   }
 
-  if (intent === "create-form-version") {
-    const questions = JSON.parse((formData.get("questions") as string) || "[]") as Question[];
-    // Use the highest existing version + 1; protected by the unique constraint.
-    const latest = await prisma.internToFullFormVersion.findFirst({
-      orderBy: { version: "desc" },
-      select: { version: true },
-    });
-    const nextVersion = (latest?.version ?? 0) + 1;
-    const created = await prisma.internToFullFormVersion.create({
-      data: {
-        version: nextVersion,
-        // Prisma's Json type rejects arrays — wrap via JSON round-trip cast.
-        questions: questions as unknown as Prisma.InputJsonValue,
-        createdById: auth.user.sub,
-      },
-    });
-    await prisma.applicationCycle.update({
-      where: { id: cycleId },
-      data: { internToFullFormVersionId: created.id },
-    });
-    return { ok: true, formVersionId: created.id };
+  if (intent === "create-application-form") {
+    // Auto-create + bind a fresh Drive Form (no-op if already bound).
+    const formId = await createCycleApplicationForm(cycleId, auth.user.sub);
+    return { ok: true, formId };
   }
 
   if (intent === "set-target-domains") {
@@ -392,7 +378,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   if (intent === "add-reviewer-pool") {
-    // InternToFull cycles use a single reviewer pool. Adding a pool member
+    // Fellowship cycles use a single reviewer pool. Adding a pool member
     // creates one CycleReviewer row per current target domain so the existing
     // per-domain fan-out (auto-assign, review join keys) keeps working.
     const userId = formData.get("userId") as string;
@@ -415,6 +401,30 @@ export async function action({ request, params }: Route.ActionArgs) {
       skipDuplicates: true,
     });
     return { ok: true };
+  }
+
+  if (intent === "reset-default-reviewers") {
+    // Core only: replace the reviewer pool with the current graduating Core
+    // seniors (the default seed). One CycleReviewer row per (user, CORE domain).
+    const coreDomain = await getCoreDomain();
+    if (!coreDomain) {
+      return Response.json({ error: "Core domain is not configured." }, { status: 409 });
+    }
+    const reviewerIds = await defaultCoreReviewerIds();
+    await prisma.$transaction(async (tx) => {
+      await tx.cycleReviewer.deleteMany({ where: { applicationCycleId: cycleId } });
+      if (reviewerIds.length > 0) {
+        await tx.cycleReviewer.createMany({
+          data: reviewerIds.map((userId) => ({
+            userId,
+            applicationCycleId: cycleId,
+            domainId: coreDomain.id,
+          })),
+          skipDuplicates: true,
+        });
+      }
+    });
+    return { ok: true, resetCount: reviewerIds.length };
   }
 
   if (intent === "remove-reviewer-pool") {
@@ -474,12 +484,13 @@ export async function action({ request, params }: Route.ActionArgs) {
 
 // ─── UI ──────────────────────────────────────────────────────────────────────
 
-export default function InternToFullCycleSetup() {
+export default function FellowshipCycleSetup() {
   const data = useLoaderData<typeof loader>();
   const {
+    isCoreCycle,
     cycle,
     allDomains,
-    allFormVersions,
+    allForms,
     allRubricVersions,
     members,
     pendingDecisions,
@@ -495,7 +506,7 @@ export default function InternToFullCycleSetup() {
         <div>
           <h1 className="font-heading text-2xl font-bold text-dark-blue">{cycle.name}</h1>
           <p className="text-xs text-muted-foreground mt-1">
-            Fellowship cycle · {cycle.status}
+            {CYCLE_TYPE_LABELS[cycle.cycleType]} cycle · {cycle.status}
           </p>
         </div>
         <StatusButton cycleId={cycle.id} currentStatus={cycle.status} />
@@ -507,10 +518,10 @@ export default function InternToFullCycleSetup() {
         status={cycle.status}
       />
 
-      <FormVersionSection
+      <ApplicationFormSection
         cycleId={cycle.id}
-        current={cycle.formVersion}
-        allVersions={allFormVersions}
+        current={cycle.applicationForm}
+        allForms={allForms}
         disabled={isOpen}
       />
 
@@ -521,18 +532,33 @@ export default function InternToFullCycleSetup() {
         allRubricVersions={allRubricVersions}
       />
 
-      <TargetDomainsSection
-        cycleId={cycle.id}
-        targetDomains={cycle.targetDomains}
-        allDomains={allDomains}
-        disabled={isOpen}
-      />
+      {/* Core cycles aren't domain-scoped — applicants apply to Core generally,
+          so there's no target-domain picker (the single synthetic CORE domain is
+          linked automatically at cycle creation). */}
+      {isCoreCycle ? (
+        <Section
+          title="Applicant pool"
+          description="Core cycles are open to all current lab members and aren't domain-scoped. Every applicant applies to Core and is read by the whole reviewer pool."
+        >
+          <p className="text-sm text-muted-foreground">
+            No target domains to configure.
+          </p>
+        </Section>
+      ) : (
+        <TargetDomainsSection
+          cycleId={cycle.id}
+          targetDomains={cycle.targetDomains}
+          allDomains={allDomains}
+          disabled={isOpen}
+        />
+      )}
 
       <ReviewersSection
         cycleId={cycle.id}
         reviewers={cycle.reviewers}
         targetDomains={cycle.targetDomains}
         members={members}
+        isCoreCycle={isCoreCycle}
       />
 
       <DecisionEmailsSection
@@ -604,36 +630,38 @@ function CloseDateSection({
   );
 }
 
-function FormVersionSection({
-  cycleId,
+function ApplicationFormSection({
   current,
-  allVersions,
+  allForms,
   disabled,
 }: {
   cycleId: string;
-  current: { id: string; version: number; questions: Question[] } | null;
-  allVersions: { id: string; version: number; createdBy: string }[];
+  current: { id: string; name: string; questions: Question[] } | null;
+  allForms: { id: string; name: string }[];
   disabled: boolean;
 }) {
   const fetcher = useFetcher();
-  const [creating, setCreating] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   return (
     <Section
-      title="Shortform"
-      description="DB-backed questions interns will answer. Pin a version (or create a new one) — once the cycle is Open, the version is frozen for in-progress drafts."
+      title="Application form"
+      description="A Drive Form applicants fill out — author it in the Forms builder, where it lives alongside every other form. The version each applicant answers is frozen when they start."
     >
       {current ? (
         <div className="mb-3 flex flex-wrap items-center gap-3">
-          <p className="text-sm font-medium text-dark-blue">
+          <p className="text-sm font-medium text-dark-blue">{current.name}</p>
+          <span className="text-xs text-muted-foreground">
             {(() => {
               const qCount = current.questions.filter((q) => q.type !== "info").length;
               const iCount = current.questions.length - qCount;
               const parts = [`${qCount} question${qCount === 1 ? "" : "s"}`];
               if (iCount > 0) parts.push(`${iCount} info block${iCount === 1 ? "" : "s"}`);
-              return `v${current.version} (${parts.join(", ")})`;
+              return parts.join(", ");
             })()}
-          </p>
+          </span>
+          <Link to={`/forms/edit/${current.id}`} className="text-xs font-medium text-blue-700 hover:underline">
+            Edit in Drive →
+          </Link>
           <button
             type="button"
             onClick={() => setPreviewing(true)}
@@ -643,233 +671,40 @@ function FormVersionSection({
           </button>
         </div>
       ) : (
-        <p className="text-sm text-muted-foreground mb-3">No shortform pinned yet.</p>
-      )}
-      {!disabled && (
-        <div className="flex flex-wrap items-center gap-2">
-          <Select
-            defaultValue={current?.id ?? ""}
-            placeholder="— pick existing —"
-            onChange={(id) => {
-              if (!id) return;
-              fetcher.submit({ intent: "set-form-version", formVersionId: id }, { method: "post" });
-            }}
-            options={allVersions.map((v) => ({ value: v.id, label: `v${v.version} · ${v.createdBy}` }))}
-            buttonClassName="px-3 py-2 text-sm border border-border rounded-md inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-          />
+        <div className="mb-3 flex items-center gap-3">
+          <p className="text-sm text-muted-foreground">No application form bound yet.</p>
           <button
-            onClick={() => setCreating(true)}
-            className="px-3 py-2 text-sm font-medium text-blue-700 hover:underline"
+            onClick={() => fetcher.submit({ intent: "create-application-form" }, { method: "post" })}
+            className="text-sm font-medium text-blue-700 hover:underline"
           >
-            + Create new version
+            + Create form
           </button>
         </div>
       )}
-      {creating && (
-        <CreateFormVersionModal
-          onClose={() => setCreating(false)}
-          onSubmit={(questions) => {
-            fetcher.submit(
-              {
-                intent: "create-form-version",
-                questions: JSON.stringify(questions),
-              },
-              { method: "post" },
-            );
-            setCreating(false);
-          }}
-        />
+      {!disabled && allForms.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Select
+            defaultValue={current?.id ?? ""}
+            placeholder="— bind a different form —"
+            onChange={(id) => {
+              if (!id || id === current?.id) return;
+              fetcher.submit({ intent: "set-application-form", formId: id }, { method: "post" });
+            }}
+            options={allForms.map((f) => ({ value: f.id, label: f.name }))}
+            buttonClassName="px-3 py-2 text-sm border border-border rounded-md inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+          />
+        </div>
       )}
       {previewing && current && (
         <ChallengePreviewModal
           challengeVersionId={current.id}
-          challengeName="Shortform"
-          versionLabel={`v${current.version}`}
+          challengeName={current.name}
+          versionLabel="Latest"
           questions={current.questions}
           onClose={() => setPreviewing(false)}
         />
       )}
     </Section>
-  );
-}
-
-function CreateFormVersionModal({
-  onClose,
-  onSubmit,
-}: {
-  onClose: () => void;
-  onSubmit: (qs: Question[]) => void;
-}) {
-  const [qs, setQs] = useState<Question[]>([
-    { key: crypto.randomUUID(), type: "textarea", required: true, data: { label: "" } },
-  ]);
-  const [previewing, setPreviewing] = useState(false);
-  function addQ() {
-    setQs((prev) => [...prev, { key: crypto.randomUUID(), type: "textarea", required: false, data: { label: "" } }]);
-  }
-  function addInfo() {
-    setQs((prev) => [
-      ...prev,
-      { key: crypto.randomUUID(), type: "info", required: false, data: { label: "" } },
-    ]);
-  }
-  function removeQ(idx: number) {
-    setQs((prev) => prev.filter((_, i) => i !== idx));
-  }
-  function move(idx: number, dir: -1 | 1) {
-    setQs((prev) => {
-      const target = idx + dir;
-      if (target < 0 || target >= prev.length) return prev;
-      const next = [...prev];
-      [next[idx], next[target]] = [next[target], next[idx]];
-      return next;
-    });
-  }
-  function update(
-    idx: number,
-    patch: Partial<Omit<Question, "data">> & { data?: Partial<Question["data"]> },
-  ) {
-    setQs((prev) =>
-      prev.map((q, i) =>
-        i === idx ? { ...q, ...patch, data: { ...q.data, ...(patch.data ?? {}) } } : q,
-      ),
-    );
-  }
-  return (
-    <Modal
-      open
-      onClose={onClose}
-      labelledBy="new-shortform-title"
-      containerClassName="bg-card rounded-lg shadow-xl w-full max-w-2xl p-6 space-y-4 max-h-[90vh] overflow-auto my-auto"
-    >
-      <>
-        <ModalHeader
-          titleId="new-shortform-title"
-          title="New shortform version"
-          onClose={onClose}
-          className="mb-0"
-        />
-        <div className="space-y-3">
-          {qs.map((q, idx) => {
-            const isInfo = q.type === "info";
-            return (
-              <div key={q.key} className="border border-border rounded-md p-3 space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs text-muted-foreground">
-                    {isInfo ? "Info text" : "Question"} {idx + 1}
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => move(idx, -1)}
-                      disabled={idx === 0}
-                      className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-30"
-                      title="Move up"
-                    >
-                      ↑
-                    </button>
-                    <button
-                      onClick={() => move(idx, 1)}
-                      disabled={idx === qs.length - 1}
-                      className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-30"
-                      title="Move down"
-                    >
-                      ↓
-                    </button>
-                    <button onClick={() => removeQ(idx)} className="text-xs text-red-600 hover:underline">
-                      Remove
-                    </button>
-                  </div>
-                </div>
-                {isInfo ? (
-                  // New info bodies are stored as BlockNote block JSON inside
-                  // the draft question array (hasInfoBody handles both shapes).
-                  <DocEditor
-                    density="compact"
-                    initialContent={q.data.body}
-                    onChange={(body) => update(idx, { data: { body } })}
-                    placeholder="Free-form text shown to the applicant (e.g. instructions or context)."
-                    className="rounded-md border border-border bg-card py-2"
-                  />
-                ) : (
-                  <>
-                    <input
-                      value={q.data.label}
-                      onChange={(e) => update(idx, { data: { label: e.target.value } })}
-                      placeholder="Question prompt"
-                      className="w-full px-2 py-1.5 text-sm border border-border rounded-md"
-                    />
-                    <input
-                      value={q.data.description ?? ""}
-                      onChange={(e) => update(idx, { data: { description: e.target.value } })}
-                      placeholder="Description (optional, e.g. 'Keep it under 200 words.')"
-                      className="w-full px-2 py-1.5 text-xs border border-border rounded-md text-muted-foreground"
-                    />
-                    <div className="flex items-center gap-4 text-xs">
-                      <Checkbox
-                        label="Required"
-                        checked={q.required}
-                        onChange={(e) => update(idx, { required: e.target.checked })}
-                      />
-                      <label className="flex items-center gap-1">
-                        Type:
-                        <Select
-                          value={q.type}
-                          onChange={(v) => update(idx, { type: v as Question["type"] })}
-                          options={[
-                            { value: "textarea", label: "Long answer" },
-                            { value: "text", label: "Short answer" },
-                          ]}
-                          buttonClassName="px-2 py-0.5 border border-border rounded inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-                        />
-                      </label>
-                    </div>
-                  </>
-                )}
-              </div>
-            );
-          })}
-        </div>
-        <div className="flex items-center gap-4">
-          <button onClick={addQ} className="text-sm text-blue-700 hover:underline">
-            + Add question
-          </button>
-          <button onClick={addInfo} className="text-sm text-blue-700 hover:underline">
-            + Add info text
-          </button>
-        </div>
-        <ModalFooter onCancel={onClose} className="pt-3 border-t border-border">
-          <button
-            onClick={() => setPreviewing(true)}
-            className="px-3 py-2 text-sm font-medium text-blue-700 bg-card border border-blue-300 rounded-md hover:bg-blue-50"
-          >
-            Preview
-          </button>
-          <button
-            onClick={() => {
-              const cleaned = qs.filter((q) =>
-                q.type === "info" ? hasInfoBody(q.data.body) : q.data.label.trim(),
-              );
-              if (cleaned.length === 0) return;
-              onSubmit(cleaned);
-            }}
-            className="px-3 py-2 text-sm font-medium text-white bg-accent-coral rounded-md hover:bg-accent-coral/90"
-          >
-            Create
-          </button>
-        </ModalFooter>
-        {previewing && (
-          <ChallengePreviewModal
-            challengeVersionId="draft"
-            challengeName="Shortform"
-            versionLabel="Draft"
-            questions={qs.filter((q) =>
-              q.type === "info" ? hasInfoBody(q.data.body) : q.data.label.trim(),
-            )}
-            onClose={() => setPreviewing(false)}
-          />
-        )}
-      </>
-    </Modal>
   );
 }
 
@@ -1033,11 +868,13 @@ function ReviewersSection({
   reviewers,
   targetDomains,
   members,
+  isCoreCycle,
 }: {
   cycleId: string;
   reviewers: { userId: string; displayName: string }[];
   targetDomains: { domainId: string; code: string; displayName: string }[];
   members: { userId: string; displayName: string }[];
+  isCoreCycle: boolean;
 }) {
   const fetcher = useFetcher();
   const assignedIds = new Set(reviewers.map((r) => r.userId));
@@ -1051,10 +888,16 @@ function ReviewersSection({
   return (
     <Section
       title="Reviewers"
-      description={`Single reviewer pool — every reviewer reads every application across all target domains. Add at least ${MIN_POOL_SIZE}.`}
+      description={
+        isCoreCycle
+          ? `Single reviewer pool, defaulted to Core members graduating this year — edit freely. Add at least ${MIN_POOL_SIZE}.`
+          : `Single reviewer pool — every reviewer reads every application across all target domains. Add at least ${MIN_POOL_SIZE}.`
+      }
     >
       {targetDomains.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Pick target domains first.</p>
+        <p className="text-sm text-muted-foreground">
+          {isCoreCycle ? "Core domain is not configured." : "Pick target domains first."}
+        </p>
       ) : (
         <div className="border border-border rounded-md p-3">
           <div className="flex items-center justify-between mb-2">
@@ -1101,6 +944,16 @@ function ReviewersSection({
             options={candidates.map((m) => ({ value: m.userId, label: m.displayName }))}
             buttonClassName="text-sm px-2 py-1.5 border border-border rounded inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
           />
+          {isCoreCycle && (
+            <button
+              onClick={() =>
+                fetcher.submit({ intent: "reset-default-reviewers" }, { method: "post" })
+              }
+              className="mt-2 ml-2 text-xs text-blue-600 hover:underline"
+            >
+              Reset to graduating Core seniors
+            </button>
+          )}
           {error && (
             <p className="mt-2 text-xs text-red-600">{error}</p>
           )}

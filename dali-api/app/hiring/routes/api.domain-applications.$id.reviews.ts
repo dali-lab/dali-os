@@ -60,7 +60,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     include: {
       application: true,
       challengeVersion: { select: { domainId: true } },
-      // InternToFull links Domain directly; needed when challengeVersion is null.
+      // Fellowship links Domain directly; needed when challengeVersion is null.
       domain: { select: { id: true } },
     },
   });
@@ -74,7 +74,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   // ChallengeVersion.domainId is nullable because the general application form
   // is also a ChallengeVersion. A DomainApplication should never reference one,
   // so this is a data invariant error rather than a user-facing condition.
-  // InternToFull DomainApplications link Domain directly instead of via a
+  // Fellowship DomainApplications link Domain directly instead of via a
   // ChallengeVersion, so fall back to the direct relation when it's set.
   const domainId = domainApp.challengeVersion?.domainId ?? domainApp.domainId;
   if (!domainId) {
@@ -104,9 +104,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     return Response.json({ error: "A general application rubric must be set before assigning reviewers to applications" }, { status: 400 });
   }
 
-  // InternToFull cycles use only the cycle-level general rubric; per-domain
+  // Fellowship cycles use only the cycle-level general rubric; per-domain
   // rubrics aren't part of that flow, so skip the per-domain check.
-  if (cycle.cycleType !== "InternToFull") {
+  if (cycle.cycleType !== "Fellowship") {
     const domainCycle = await prisma.domainApplicationCycle.findUnique({
       where: { domainId_applicationCycleId: { domainId, applicationCycleId: cycle.id } },
     });

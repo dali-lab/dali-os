@@ -1,11 +1,12 @@
 import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
+import type { EventType } from "~/lib/notification-events";
 import { parseJson } from "~/lib/validate";
 import { requireAuth } from "~/lib/auth";
 import { isCore, hasCycleAccess } from "~/lib/roles";
 import { autoCloseIfExpired, findOtherActiveCycleId } from "~/hiring/lib/cycles";
-import { eligibleInternUserIds } from "~/hiring/lib/intern-eligibility";
+import { internalCycleConfig, isInternalCycleType } from "~/hiring/lib/internal-cycles.server";
 import { inReviewPipelineFilter } from "~/hiring/lib/application-pipeline-filter";
 import { APPLICATION_TZ } from "~/lib/timezone";
 import type { Route } from "./+types/api.cycles.$cycleId.status";
@@ -48,7 +49,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const { newStatus, force } = body;
 
   // Single-active-cycle invariant — enforced *per cycleType*. A Standard hire
-  // cycle and an InternToFull conversion cycle may overlap, but two of the
+  // cycle and an Fellowship conversion cycle may overlap, but two of the
   // same type may not. We look up this cycle's type first so the check is
   // scoped correctly.
   if (newStatus === "Open" || newStatus === "UnderReview") {
@@ -70,7 +71,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   // Draft → Open: validate per-cycleType readiness. Standard requires a
-  // linked challenge version per domain (challenge-based hiring); InternToFull
+  // linked challenge version per domain (challenge-based hiring); Fellowship
   // skips challenges and only requires the shortform to be pinned.
   if (newStatus === "Open") {
     const cycle = await prisma.applicationCycle.findUniqueOrThrow({
@@ -109,10 +110,12 @@ export async function action({ request, params }: Route.ActionArgs) {
           }
         }
       }
-    } else if (cycle.cycleType === "InternToFull") {
-      if (!cycle.internToFullFormVersionId) {
+    } else if (isInternalCycleType(cycle.cycleType)) {
+      // Internal cycles (Fellowship/Core) skip challenges — only the application
+      // form must be bound before opening.
+      if (!cycle.applicationFormId) {
         return Response.json(
-                { error: "Shortform must be selected before opening an InternToFull cycle" },
+                { error: "An application form must be bound before opening this cycle" },
                 { status: 400 },
               );
       }
@@ -153,31 +156,37 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
   }
 
-  // For InternToFull cycles opening for the first time, prepare the
-  // notification fan-out. We pre-compute the recipient list outside the
+  // For internal (Fellowship/Core) cycles opening for the first time, prepare
+  // the notification fan-out. We pre-compute the recipient list outside the
   // transaction (it's a pure read), then commit the status transition,
   // notification rows, and idempotency marker atomically. The
-  // internsNotifiedAt flag guards against re-spam if the lead later bounces
-  // Open→Draft→Open during setup.
+  // applicantsNotifiedAt flag guards against re-spam if the lead later bounces
+  // Open→Draft→Open during setup. Copy + recipient set + event come from the
+  // internal-cycle registry.
   let fanOutPlan: {
     userIds: string[];
+    eventType: EventType;
     title: string;
     body: string;
+    link: string;
   } | null = null;
   if (newStatus === "Open") {
     const cycle = await prisma.applicationCycle.findUniqueOrThrow({
       where: { id: params.cycleId! },
-      select: { cycleType: true, closeDate: true, name: true, internsNotifiedAt: true },
+      select: { cycleType: true, closeDate: true, name: true, applicantsNotifiedAt: true },
     });
-    if (cycle.cycleType === "InternToFull" && !cycle.internsNotifiedAt) {
-      const userIds = await eligibleInternUserIds();
+    const config = internalCycleConfig(cycle.cycleType);
+    if (config && !cycle.applicantsNotifiedAt) {
+      const userIds = await config.eligibleUserIds();
       const closeText = cycle.closeDate
         ? ` Apply by ${cycle.closeDate.toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: APPLICATION_TZ })}.`
         : "";
       fanOutPlan = {
         userIds,
-        title: "Fellowship application is open",
-        body: `${cycle.name} is accepting fellowship applications.${closeText}`,
+        eventType: config.openInvite.eventType,
+        title: config.openInvite.title(cycle.name),
+        body: config.openInvite.body(cycle.name, closeText),
+        link: config.openInvite.link,
       };
     }
   }
@@ -194,26 +203,26 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (fanOutPlan) {
       await tx.applicationCycle.update({
         where: { id: params.cycleId! },
-        data: { internsNotifiedAt: new Date() },
+        data: { applicantsNotifiedAt: new Date() },
       });
     }
   });
 
   // Fan out after commit, best-effort (matching the interview-notifications
   // convention: a flaky notification write must not roll back a committed
-  // status change). internsNotifiedAt is already set, so a crash between
+  // status change). applicantsNotifiedAt is already set, so a crash between
   // commit and fan-out drops the batch rather than re-spamming on retry.
   if (fanOutPlan && fanOutPlan.userIds.length > 0) {
     await notify({
-      eventType: "hiring.fellowship_invite",
+      eventType: fanOutPlan.eventType,
       createdByUserId: auth.user.sub,
       message: {
         title: fanOutPlan.title,
         body: fanOutPlan.body,
-        link: "/intern-to-full",
+        link: fanOutPlan.link,
       },
       recipients: fanOutPlan.userIds.map((userId) => ({ userId })),
-    }).catch((err) => console.error("[cycle-status] fellowship fan-out failed:", err));
+    }).catch((err) => console.error("[cycle-status] internal-cycle fan-out failed:", err));
   }
 
   return Response.json({ currentStatus: newStatus });

@@ -148,7 +148,6 @@ model User {
   oauthSessions                 OAuthSession[]
   sessions                      Session[]
   rubricVersions                RubricVersion[]
-  internToFullFormVersions      InternToFullFormVersion[]
   authoredSigningVersions       SigningDocumentVersion[]            @relation("SigningVersionAuthor")
   signingSignatures             SigningSignature[]                  @relation("SigningSigner")
 
@@ -314,11 +313,11 @@ model ApplicationCycle {
   // can re-trigger the notice.
   extensionNoticeSentAt DateTime?
 
-  // Idempotency marker for the InternToFull eligibility notification fan-out
-  // (sent when the cycle first transitions to Open). Stays set across
-  // Open→Draft→Open bounces so leads can iterate during setup without
-  // re-spamming interns. Always null on Standard cycles.
-  internsNotifiedAt DateTime?
+  // Idempotency marker for the internal-cycle eligibility notification fan-out
+  // (Fellowship/Core, sent when the cycle first transitions to Open). Stays set
+  // across Open→Draft→Open bounces so leads can iterate during setup without
+  // re-spamming eligible members. Always null on Standard cycles.
+  applicantsNotifiedAt DateTime?
 
   // Rubric for the general application form (reviewers score this alongside
   // the per-domain rubric set on DomainApplicationCycle).
@@ -326,16 +325,19 @@ model ApplicationCycle {
   generalRubricVersion   RubricVersion? @relation("CycleGeneralRubric", fields: [generalRubricVersionId], references: [id])
 
   // Discriminator. Standard = the normal hire cycle (CAS-authed applicants,
-  // general form + per-domain challenge + interviews). InternToFull = current
-  // interns applying to convert to full-time members; uses a shorter DB-backed
-  // form, no challenges, no interviews. One active cycle per cycleType is
-  // enforced at the route layer (see findOtherActiveCycleId).
+  // general form + per-domain challenge + interviews). Fellowship = current
+  // interns converting to full-time; Core = current members applying to join
+  // Core. Both internal types use a shorter DB-backed shortform, no challenges,
+  // no interviews. One active cycle per cycleType is enforced at the route
+  // layer (see findOtherActiveCycleId).
   cycleType ApplicationCycleType @default(Standard)
 
-  // When cycleType=InternToFull, the shortform questions are pinned via this
-  // version. Always null on Standard cycles.
-  internToFullFormVersionId String?
-  internToFullFormVersion   InternToFullFormVersion? @relation(fields: [internToFullFormVersionId], references: [id])
+  // The cycle's application form (a Drive Form). For internal cycles
+  // (Fellowship/Core) this is the whole application form; it stays UNPUBLISHED —
+  // the hiring portal reads its latest version directly and eligibility is the
+  // fill gate. Auto-created + rebindable via app/hiring/lib/application-form.server.ts.
+  applicationFormId String?
+  applicationForm   Form?   @relation("CycleApplicationForm", fields: [applicationFormId], references: [id])
 
   statusUpdates     ApplicationCycleStatusUpdate[]
   applications      Application[]
@@ -391,20 +393,23 @@ model Application {
   applicationCycleId        String
   applicationCycle          ApplicationCycle  @relation(fields: [applicationCycleId], references: [id])
   // Pinned at application creation time so that form updates do not affect
-  // in-progress drafts. Required on Standard cycles; null on InternToFull
-  // cycles (which pin `internToFullFormVersionId` instead). One of the two
-  // must be set — enforced at the app layer.
+  // in-progress drafts. Required on Standard cycles; null on internal
+  // (Fellowship/Core) cycles (which pin `applicationFormVersionId` instead).
+  // One of the two must be set — enforced at the app layer.
   generalChallengeVersionId String?
   generalChallengeVersion   ChallengeVersion? @relation("ApplicationGeneralChallenge", fields: [generalChallengeVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
-  // Pinned at creation time for InternToFull applications. Null on Standard.
-  internToFullFormVersionId String?
-  internToFullFormVersion   InternToFullFormVersion? @relation("ApplicationInternToFullForm", fields: [internToFullFormVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  // The FormVersion of the cycle's application form that this applicant
+  // answered, pinned at creation so later edits to the form don't change an
+  // in-progress draft. Set on internal (Fellowship/Core) applications.
+  applicationFormVersionId String?
+  applicationFormVersion   FormVersion? @relation("ApplicationApplicationForm", fields: [applicationFormVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   // Phase 1: distinguishes the application's purpose. Standard = regular DALI
   // hire cycle (only value used today). Intern = shorter form for intern
-  // programs (ERAS, EEJUST, WISP). InternToFull = current intern applying
-  // for regular hire. Transfer = informal internal domain transfer.
+  // programs (ERAS, EEJUST, WISP). Fellowship = current intern applying for
+  // regular hire. Core = current member applying to join Core. Transfer =
+  // informal internal domain transfer.
   applicationType ApplicationType @default(Standard)
 
   statusUpdates      ApplicationStatusUpdate[]
@@ -419,46 +424,33 @@ model Application {
 enum ApplicationType {
   Standard
   Intern
-  InternToFull
+  Fellowship
+  Core
   Transfer
 }
 
 // Cycle-level discriminator. Drives form rendering, eligibility gating,
-// interview/challenge presence, and delibs column layout.
+// interview/challenge presence, and delibs column layout. Fellowship and Core
+// are the "internal" cycle types (member-authed portal, shortform, no
+// interviews) — see app/hiring/lib/internal-cycles.server.ts.
 enum ApplicationCycleType {
   Standard
-  InternToFull
-}
-
-// Immutable snapshot of the shortform used for InternToFull cycles. Never
-// update rows — create a new version. `questions` shape mirrors the JSON
-// schema used by ChallengeVersion.questions so the existing QuestionList /
-// answer-storage code can render it without forking.
-model InternToFullFormVersion {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-
-  version   Int  @unique
-  questions Json
-
-  createdById String
-  createdBy   User   @relation(fields: [createdById], references: [id])
-
-  cycles       ApplicationCycle[]
-  applications Application[]      @relation("ApplicationInternToFullForm")
+  Fellowship
+  Core
 }
 
 // On Standard cycles, the domain is derived via challengeVersion.domain (the
-// applicant answers a per-domain challenge). On InternToFull cycles there is
-// no per-domain challenge, so `challengeVersionId` is null and `domainId` is
-// set directly. Exactly one of the two is set — enforced at the app layer.
+// applicant answers a per-domain challenge). On internal (Fellowship/Core)
+// cycles there is no per-domain challenge, so `challengeVersionId` is null and
+// `domainId` is set directly. Exactly one of the two is set — enforced at the
+// app layer.
 model DomainApplication {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   // answers: same shape as Application.answers, keyed by question UUID from
-  // the challenge version. Empty `{}` on InternToFull (no per-domain content).
+  // the challenge version. Empty `{}` on internal cycles (no per-domain content).
   answers Json
 
   // Free-form note written by leads during Initial delibs ("specific things to
@@ -475,9 +467,8 @@ model DomainApplication {
   applicationId      String
   application        Application       @relation(fields: [applicationId], references: [id])
   // Pins the questions the applicant answered. Always set on Standard cycles
-  // (per-domain challenge). Null on InternToFull (questions live on the
-  // Application via internToFullFormVersionId — there's nothing per-domain
-  // to pin).
+  // (per-domain challenge). Null on internal cycles (questions live on the
+  // Application via applicationFormVersionId — there's nothing per-domain to pin).
   challengeVersionId String?
   challengeVersion   ChallengeVersion? @relation(fields: [challengeVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   // The target Domain this DA represents. Required for every DA regardless
@@ -524,6 +515,11 @@ model Domain {
   // After the intern term, members apply normally and get a fresh
   // DomainEligibility in their actual hire domain.
   isInternProgram Boolean @default(false)
+  // System domains are synthetic pseudo-domains used to hang the domain-keyed
+  // review/delibs/decision pipeline off cycles that aren't really domain-scoped
+  // (the single "CORE" domain backs Core cycles). Excluded from Standard/
+  // Fellowship domain pickers and staffing.
+  isSystem        Boolean @default(false)
   // Toggle visibility from Admin Console without code changes.
   active          Boolean @default(true)
 
@@ -533,7 +529,7 @@ model Domain {
   cycleReviewers        CycleReviewer[]
   cycleInterviewers     CycleInterviewer[]
   delibsSessions        DelibsSession[]
-  // InternToFull DomainApplications link Domain directly (no ChallengeVersion).
+  // Internal-cycle DomainApplications link Domain directly (no ChallengeVersion).
   domainApplications    DomainApplication[]
 
   // ─── Phase 1 back-relations ───────────────────────────────────────────────
@@ -3670,6 +3666,7 @@ model Form {
   partnerApplicationBindings          PartnerApplicationFormBinding[]
   educationOfferingsAsApplicationForm EducationOffering[]             @relation("EducationOfferingApplicationForm")
   educationBindings                   EducationFormBinding[]          @relation("EducationFormBindings")
+  hiringCyclesAsApplicationForm       ApplicationCycle[]              @relation("CycleApplicationForm")
 
   @@index([folderId])
   @@index([folderPageId])
@@ -3696,6 +3693,9 @@ model FormVersion {
   createdBy   User   @relation(fields: [createdById], references: [id])
 
   submissions FormSubmission[]
+
+  // Internal hiring applications that pinned this version (see Application.applicationFormVersionId).
+  hiringApplicationsAsPinnedForm Application[] @relation("ApplicationApplicationForm")
 
   @@unique([formId, versionNumber])
   @@index([formId, versionNumber])

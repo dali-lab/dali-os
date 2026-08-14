@@ -185,7 +185,22 @@ export const EVENT_TYPES = {
     kind: "General",
     area: "Hiring",
     label: "Fellowship invitations",
-    description: "When an intern-to-full application window opens for you.",
+    description: "When a fellowship (intern → full-time) application window opens for you.",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
+  },
+  "hiring.core_invite": {
+    kind: "General",
+    area: "Hiring",
+    label: "Core application invitations",
+    description: "When a Core application window opens for you.",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
+  },
+  "hiring.core_decision": {
+    kind: "General",
+    area: "Hiring",
+    label: "Core application decisions",
+    description: "When a decision on your Core application is released, or you're added to Core.",
+    lockedInApp: true,
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
   },
   announcement: {

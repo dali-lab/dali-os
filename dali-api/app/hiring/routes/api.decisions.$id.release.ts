@@ -7,9 +7,14 @@ import { getApplicationsGmailRefreshToken } from "~/lib/gmail-integration";
 import { renderForSlot, decisionSlot } from "~/hiring/lib/email-variables";
 import { logAuditEvent } from "~/lib/audit";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
-import { promoteToMember } from "~/members/lib/membership.server";
-import { sendWelcome, onboardingEmailHtml } from "~/members/lib/welcome.server";
-import { provisionNewMember, type ProvisionResult } from "~/members/lib/provisioning.server";
+import { onboardingEmailHtml } from "~/members/lib/welcome.server";
+import type { ProvisionResult } from "~/members/lib/provisioning.server";
+import {
+  internalCycleConfig,
+  memberOnAccept,
+  type AcceptContext,
+} from "~/hiring/lib/internal-cycles.server";
+import { notify } from "~/lib/notify.server";
 import { resolveCandidateEmail, redirectBannerHtml } from "~/lib/candidate-email";
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -91,6 +96,12 @@ export async function action({ request, params }: Route.ActionArgs) {
   );
   if (gate) return gate;
 
+  // Internal cycles (Fellowship/Core) each pick how decisions reach the
+  // applicant. Fellowship uses email (binding required); Core notifies in-app
+  // (binding optional). Standard cycles are email-only.
+  const config = internalCycleConfig(domainApp.application.applicationCycle.cycleType);
+  const decisionChannel = config?.decisionChannel ?? "email";
+
   const binding = await prisma.cycleDecisionEmail.findUnique({
     where: {
       applicationCycleId_decisionType: {
@@ -100,7 +111,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     },
     include: { emailTemplateVersion: true },
   });
-  if (!binding) {
+  if (!binding && decisionChannel === "email") {
     return Response.json(
           {
             error: `No email template is bound to ${decision.type} in this cycle. Bind one on the Setup tab before releasing.`,
@@ -121,59 +132,32 @@ export async function action({ request, params }: Route.ActionArgs) {
     },
   });
 
-  // ── Acceptance side-effect: promote to member + grant eligibility ─────────
-  // When ANY applicant is accepted (Standard or InternToFull), make them a lab
-  // member and grant DomainEligibility in the target domain at P1 so staffing
-  // flows pick them up. Previously only InternToFull granted eligibility and
-  // nobody was auto-promoted to a member. Idempotent: promoteToMember upserts
-  // the DALIMember row and eligibility, so a re-release changes nothing. A
-  // brand-new member's onboardedAt stays null → the layout gate routes them
-  // through /onboarding on first login.
-  let memberPromoted = false;
-  let welcomeNotified = false;
+  // ── Acceptance side-effect (per cycle type) ──────────────────────────────
+  // Standard + Fellowship promote the applicant to a lab member (grant P1
+  // eligibility in the target domain, provision the account, file the
+  // onboarding todo). Core instead materializes CoreAssignment rows + notifies
+  // admins. The handler comes from the internal-cycle registry; Standard (no
+  // config) falls back to the member path. Idempotent: a re-release is a no-op.
+  let acceptAuditMeta: Record<string, unknown> = {};
   let provisionResult: ProvisionResult | null = null;
   if (decision.type === "Accepted") {
-    const { created } = await promoteToMember({
+    const onAccept = config ? config.onAccept : memberOnAccept;
+    const u = domainApp.application.user;
+    const ctx: AcceptContext = {
       userId: domainApp.application.userId,
-      domainId: targetDomain.id,
-      level: "P1",
       actorId: auth.user.sub,
-    });
-    memberPromoted = created;
-
-    // Provision FIRST — this creates the @dali.dartmouth.edu account and the
-    // Slack invite. The welcome email then references the new DALI email.
-    // Best-effort: each step is isolated; failures are recorded, not thrown.
-    try {
-      provisionResult = await provisionNewMember({
-        userId: domainApp.application.userId,
-        domainId: targetDomain.id,
-      });
-    } catch (err) {
-      console.error("Failed to provision new member:", err);
-    }
-
-    // Welcome the new member with a persistent "finish onboarding" todo. The
-    // welcome *email* is folded into the Accepted decision email below (single
-    // email per acceptance), so this no longer sends mail. Best-effort.
-    try {
-      const u = domainApp.application.user;
-      const welcomeEmail =
-        u?.dartmouthEmail ?? (u?.netId ? `${u.netId}@dartmouth.edu` : null);
-      const { notified } = await sendWelcome({
-        userId: domainApp.application.userId,
-        actorId: auth.user.sub,
-        firstName: u?.firstName ?? "",
-        email: welcomeEmail,
-        daliEmail: provisionResult?.daliEmail ?? null,
-      });
-      welcomeNotified = notified;
-    } catch (err) {
-      console.error("Failed to send welcome:", err);
-    }
+      domainId: targetDomain.id,
+      firstName: u?.firstName ?? "",
+      candidateEmail: u?.dartmouthEmail ?? (u?.netId ? `${u.netId}@dartmouth.edu` : null),
+    };
+    const result = await onAccept(ctx);
+    acceptAuditMeta = result.auditMeta;
+    provisionResult = result.provision;
   }
 
   // ── Send notification email via per-cycle binding ────────────────────────────
+  // Sent whenever a template is bound (always for email-channel cycles;
+  // optional for in-app cycles like Core).
   let emailSent = false;
   try {
     const user = domainApp.application.user;
@@ -186,7 +170,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     // candidate; prod: send to the candidate.
     const { to, redirectedFrom } = resolveCandidateEmail(intendedEmail);
 
-    if (to && user) {
+    if (binding && to && user) {
       const refreshToken = await getApplicationsGmailRefreshToken();
 
       if (refreshToken) {
@@ -199,18 +183,18 @@ export async function action({ request, params }: Route.ActionArgs) {
           },
         );
 
-        // For acceptances, append the onboarding block (account details + login
-        // link + logo) so the new member gets a single email instead of a
-        // separate welcome message. The temporary password is rendered ONLY into
-        // this email — never logged (see the audit metadata below, which omits
-        // it).
-        const onboarding =
-          decision.type === "Accepted"
-            ? onboardingEmailHtml(
-                provisionResult?.daliEmail ?? null,
-                provisionResult?.daliTempPassword ?? null,
-              )
-            : "";
+        // For member-producing acceptances (Standard/Fellowship), append the
+        // onboarding block (account details + login link + logo) so the new
+        // member gets a single email instead of a separate welcome message. The
+        // temporary password is rendered ONLY into this email — never logged
+        // (see the audit metadata below, which omits it). Core acceptances don't
+        // provision an account, so there's no onboarding block.
+        const onboarding = provisionResult
+          ? onboardingEmailHtml(
+              provisionResult.daliEmail ?? null,
+              provisionResult.daliTempPassword ?? null,
+            )
+          : "";
 
         await sendEmail({
           refreshToken,
@@ -224,6 +208,30 @@ export async function action({ request, params }: Route.ActionArgs) {
   } catch (err) {
     // Log but don't fail the release if email sending fails.
     console.error("Failed to send release email:", err);
+  }
+
+  // ── In-app decision notification (in-app–channel cycles, e.g. Core) ──────────
+  // Applicants are current members, so the released decision reaches them in
+  // the app rather than by email. Best-effort.
+  let inAppNotified = false;
+  if (config?.decisionChannel === "inApp" && config.decisionNotificationEvent) {
+    const accepted = decision.type === "Accepted";
+    const message = accepted
+      ? { title: "You've been added to Core", body: "Welcome to Core — your assignment is active for this cycle." }
+      : decision.type === "Waitlisted"
+        ? { title: "Core application update", body: "You've been placed on the Core waitlist." }
+        : { title: "Core application update", body: "A decision on your Core application has been released." };
+    try {
+      await notify({
+        eventType: config.decisionNotificationEvent,
+        createdByUserId: auth.user.sub,
+        message: { ...message, link: config.portalPath },
+        recipients: [{ userId: domainApp.application.userId }],
+      });
+      inAppNotified = true;
+    } catch (err) {
+      console.error("[decision-release] in-app notify failed:", err);
+    }
   }
 
   // Strip the one-time temp password before it reaches the audit log — it's a
@@ -245,9 +253,9 @@ export async function action({ request, params }: Route.ActionArgs) {
       domainApplicationId: decision.domainApplicationId,
       type: released.type,
       emailSent,
-      memberPromoted,
-      welcomeNotified,
+      inAppNotified,
       provisioning: provisioningForAudit,
+      ...acceptAuditMeta,
     },
     request,
   });

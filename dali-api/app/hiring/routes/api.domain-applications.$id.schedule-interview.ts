@@ -58,7 +58,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   // DomainApplications always attach to a domain-scoped challenge version on
-  // Standard cycles. InternToFull cycles don't run interviews, so reaching
+  // Standard cycles. Fellowship cycles don't run interviews, so reaching
   // this route with a null challengeVersion means something is misconfigured.
   if (!da.challengeVersion?.domainId) {
     return Response.json({ error: "Domain application is not attached to a domain" }, { status: 400 });

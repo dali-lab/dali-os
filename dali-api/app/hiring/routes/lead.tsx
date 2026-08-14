@@ -11,6 +11,10 @@ import { ChevronRight, ChevronDown, Plus } from "lucide-react";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { STATUS_COLORS, STATUS_LABELS } from "~/hiring/lib/labels";
 import { Select, type SelectOption } from "~/components/ui/floating";
+import { isInternalCycleType, CYCLE_TYPE_LABELS } from "~/hiring/lib/internal-cycles";
+import { getCoreDomain, defaultCoreReviewerIds } from "~/hiring/lib/core-hiring.server";
+import { createCycleApplicationForm } from "~/hiring/lib/application-form.server";
+import type { ApplicationCycleType } from "~/generated/prisma/client";
 
 export const handle = { areaPills: true };
 
@@ -46,7 +50,8 @@ export async function action({ request }: Route.ActionArgs) {
   const formData = await request.formData();
   const name = (formData.get("name") as string)?.trim();
   const cycleTypeRaw = (formData.get("cycleType") as string) ?? "Standard";
-  const cycleType = cycleTypeRaw === "InternToFull" ? "InternToFull" : "Standard";
+  const cycleType: ApplicationCycleType =
+    cycleTypeRaw === "Fellowship" || cycleTypeRaw === "Core" ? cycleTypeRaw : "Standard";
   if (!name) return { error: "Name is required" };
 
   const auth = await requireAuth(request);
@@ -66,7 +71,45 @@ export async function action({ request }: Route.ActionArgs) {
     },
   });
 
-  return redirect(`/hiring/lead/cycle/${cycle.id}`);
+  // Internal cycles (Fellowship/Core) get an auto-created Drive Form as their
+  // application form — authored in the Forms builder, browsable in Drive,
+  // rebindable in setup.
+  if (isInternalCycleType(cycleType)) {
+    await createCycleApplicationForm(cycle.id, adminUser.id);
+  }
+
+  // Core cycles aren't domain-scoped: link the single synthetic CORE domain
+  // (auto-ready — there's nothing per-domain to configure) and seed the
+  // reviewer pool with the graduating Core seniors (editable afterward).
+  if (cycleType === "Core") {
+    const coreDomain = await getCoreDomain();
+    if (coreDomain) {
+      await prisma.domainApplicationCycle.upsert({
+        where: {
+          domainId_applicationCycleId: { domainId: coreDomain.id, applicationCycleId: cycle.id },
+        },
+        update: { isReady: true },
+        create: { domainId: coreDomain.id, applicationCycleId: cycle.id, isReady: true },
+      });
+      const reviewerIds = await defaultCoreReviewerIds();
+      if (reviewerIds.length > 0) {
+        await prisma.cycleReviewer.createMany({
+          data: reviewerIds.map((userId) => ({
+            userId,
+            applicationCycleId: cycle.id,
+            domainId: coreDomain.id,
+          })),
+          skipDuplicates: true,
+        });
+      }
+    }
+  }
+
+  return redirect(
+    isInternalCycleType(cycleType)
+      ? `/hiring/lead/internal-cycle/${cycle.id}`
+      : `/hiring/lead/cycle/${cycle.id}`,
+  );
 }
 
 export default function HiringLeadDashboard() {
@@ -129,12 +172,14 @@ export default function HiringLeadDashboard() {
                     defaultValue="Standard"
                     options={[
                       { value: "Standard", label: "Standard hire" },
-                      { value: "InternToFull", label: "Fellowship" },
+                      { value: "Fellowship", label: "Fellowship" },
+                      { value: "Core", label: "Core" },
                     ]}
                     buttonClassName="w-full px-3 py-2 text-sm text-foreground border border-gray-300 rounded-md inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
                   />
                   <p className="text-xs text-muted-foreground mt-1">
-                    Fellowship cycles use a shortform (no challenge) and skip interviews.
+                    Fellowship (interns → full-time) and Core (members → Core) cycles use a
+                    shortform (no challenge) and skip interviews.
                   </p>
                 </div>
                 <div className="flex justify-end gap-2">
@@ -163,19 +208,14 @@ export default function HiringLeadDashboard() {
   );
 }
 
-const CYCLE_TYPE_LABELS: Record<string, string> = {
-  Standard: "Standard hire",
-  InternToFull: "Fellowship",
-};
-
 function heroLinkFor(cycle: any): string {
-  return cycle.cycleType === "InternToFull"
-    ? `/hiring/lead/intern-to-full-cycle/${cycle.id}`
+  return isInternalCycleType(cycle.cycleType)
+    ? `/hiring/lead/internal-cycle/${cycle.id}`
     : `/hiring/lead/cycle/${cycle.id}`;
 }
 
-// Pick at most one hero per cycleType so Standard and InternToFull cycles
-// don't fight over the single hero slot when both are active concurrently.
+// Pick at most one hero per cycleType so Standard, Fellowship, and Core cycles
+// don't fight over the single hero slot when several are active concurrently.
 // Within a type, prefers Open/UnderReview over Draft.
 function selectHeroCycles(cycles: any[]): any[] {
   const byType = new Map<string, any>();
@@ -194,8 +234,8 @@ function selectHeroCycles(cycles: any[]): any[] {
       ["Open", "UnderReview"].includes(existing.statusUpdates[0].newStatus);
     if (isActive && !existingActive) byType.set(c.cycleType, c);
   }
-  // Standard first so it stays visually anchored when InternToFull is also active.
-  const order = ["Standard", "InternToFull"];
+  // Standard first so it stays visually anchored when internal cycles are also active.
+  const order = ["Standard", "Fellowship", "Core"];
   return order.flatMap((t) => (byType.has(t) ? [byType.get(t)] : []));
 }
 
@@ -226,7 +266,7 @@ function ActiveCycleHero({ cycles }: { cycles: any[] }) {
               <div className="space-y-2">
                 <div className="flex items-center gap-3 flex-wrap">
                   <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    {CYCLE_TYPE_LABELS[c.cycleType] ?? c.cycleType}
+                    {CYCLE_TYPE_LABELS[c.cycleType as ApplicationCycleType] ?? c.cycleType}
                   </span>
                   <span className="text-xl font-bold text-foreground">{c.name}</span>
                   <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[currentStatus]}`}>
@@ -282,7 +322,7 @@ function PastCycles({ cycles }: { cycles: any[] }) {
               >
                 <div className="flex items-center gap-3 flex-wrap">
                   <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-                    {CYCLE_TYPE_LABELS[cycle.cycleType] ?? cycle.cycleType}
+                    {CYCLE_TYPE_LABELS[cycle.cycleType as ApplicationCycleType] ?? cycle.cycleType}
                   </span>
                   <span className="text-sm font-medium text-foreground">{cycle.name}</span>
                   <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[currentStatus]}`}>
