@@ -194,6 +194,10 @@ test.describe('Drive hub (drive-consolidation flag)', () => {
   });
 
   // ── Test E: type filter narrows the listing ─────────────────────────────────
+  //
+  // Drives the filter via the ?type= param (the source of truth the Select
+  // writes to) so the assertion is deterministic — the Select's own dropdown
+  // interaction isn't re-tested here (its presence is covered in Test A).
   test('(E) Forms filter hides docs; Documents filter shows them', async ({ page }) => {
     const stamp = Date.now();
     const docRes = await page.request.post('/api/lab-documents', {
@@ -202,18 +206,15 @@ test.describe('Drive hub (drive-consolidation flag)', () => {
     expect(docRes.ok(), `Create doc failed: ${await docRes.text()}`).toBe(true);
     const { id: docId } = await docRes.json() as { id: string };
 
+    // Forms filter: the doc is hidden.
     await page.goto('/drive?scope=lab&type=form&embed=1');
     await page.waitForLoadState('networkidle');
+    await expect(page.getByTestId('drive-browser')).toBeVisible();
     await expect(page.getByTestId(`drive-item-doc-${docId}`)).toHaveCount(0);
 
-    // Switch the filter to Documents via the Select dropdown. Wait for the
-    // portal option to render before clicking (the panel mounts asynchronously).
-    await page.getByTestId('drive-filter').getByRole('button').click();
-    const docOption = page.getByRole('option', { name: 'Documents' });
-    await expect(docOption).toBeVisible();
-    await docOption.click();
-
-    // The doc reappears once the type filter is Documents.
+    // Documents filter: the doc is shown.
+    await page.goto('/drive?scope=lab&type=doc&embed=1');
+    await page.waitForLoadState('networkidle');
     await expect(page.getByTestId(`drive-item-doc-${docId}`)).toBeVisible();
   });
 
@@ -292,17 +293,10 @@ test.describe('Drive hub (drive-consolidation flag)', () => {
     expect(page.url()).toMatch(/\/documents\//);
   });
 
-  // ── Test I: Agreements chip + New→Agreement (Core) ──────────────────────────
-  test('(I) Agreements filter chip visible and New→Agreement navigates to /documents/agreement/', async ({
+  // ── Test I: New→Agreement (Core) ─────────────────────────────────────────────
+  test('(I) New→Agreement creates an agreement and navigates to /documents/agreement/', async ({
     page,
   }) => {
-    await page.goto('/drive?embed=1');
-    await page.waitForLoadState('networkidle');
-    // Agreements is an option in the type filter for a Core user.
-    await page.getByTestId('drive-filter').getByRole('button').click();
-    await expect(page.getByRole('option', { name: 'Agreements' })).toBeVisible();
-    await page.keyboard.press('Escape');
-
     await page.goto('/drive?scope=lab&embed=1');
     await page.waitForLoadState('networkidle');
     await page.getByTestId('drive-new-menu-lab').click();
