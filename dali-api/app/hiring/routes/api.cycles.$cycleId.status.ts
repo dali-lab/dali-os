@@ -1,11 +1,12 @@
 import { z } from "zod";
 import { prisma } from "~/lib/db";
 import { notify } from "~/lib/notify.server";
+import type { EventType } from "~/lib/notification-events";
 import { parseJson } from "~/lib/validate";
 import { requireAuth } from "~/lib/auth";
 import { isCore, hasCycleAccess } from "~/lib/roles";
 import { autoCloseIfExpired, findOtherActiveCycleId } from "~/hiring/lib/cycles";
-import { eligibleInternUserIds } from "~/hiring/lib/intern-eligibility";
+import { internalCycleConfig, isInternalCycleType } from "~/hiring/lib/internal-cycles.server";
 import { inReviewPipelineFilter } from "~/hiring/lib/application-pipeline-filter";
 import { APPLICATION_TZ } from "~/lib/timezone";
 import type { Route } from "./+types/api.cycles.$cycleId.status";
@@ -109,10 +110,12 @@ export async function action({ request, params }: Route.ActionArgs) {
           }
         }
       }
-    } else if (cycle.cycleType === "Fellowship") {
+    } else if (isInternalCycleType(cycle.cycleType)) {
+      // Internal cycles (Fellowship/Core) skip challenges — only the shortform
+      // must be pinned before opening.
       if (!cycle.shortformVersionId) {
         return Response.json(
-                { error: "Shortform must be selected before opening an Fellowship cycle" },
+                { error: "Shortform must be selected before opening this cycle" },
                 { status: 400 },
               );
       }
@@ -153,31 +156,37 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
   }
 
-  // For Fellowship cycles opening for the first time, prepare the
-  // notification fan-out. We pre-compute the recipient list outside the
+  // For internal (Fellowship/Core) cycles opening for the first time, prepare
+  // the notification fan-out. We pre-compute the recipient list outside the
   // transaction (it's a pure read), then commit the status transition,
   // notification rows, and idempotency marker atomically. The
   // applicantsNotifiedAt flag guards against re-spam if the lead later bounces
-  // Open→Draft→Open during setup.
+  // Open→Draft→Open during setup. Copy + recipient set + event come from the
+  // internal-cycle registry.
   let fanOutPlan: {
     userIds: string[];
+    eventType: EventType;
     title: string;
     body: string;
+    link: string;
   } | null = null;
   if (newStatus === "Open") {
     const cycle = await prisma.applicationCycle.findUniqueOrThrow({
       where: { id: params.cycleId! },
       select: { cycleType: true, closeDate: true, name: true, applicantsNotifiedAt: true },
     });
-    if (cycle.cycleType === "Fellowship" && !cycle.applicantsNotifiedAt) {
-      const userIds = await eligibleInternUserIds();
+    const config = internalCycleConfig(cycle.cycleType);
+    if (config && !cycle.applicantsNotifiedAt) {
+      const userIds = await config.eligibleUserIds();
       const closeText = cycle.closeDate
         ? ` Apply by ${cycle.closeDate.toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: APPLICATION_TZ })}.`
         : "";
       fanOutPlan = {
         userIds,
-        title: "Fellowship application is open",
-        body: `${cycle.name} is accepting fellowship applications.${closeText}`,
+        eventType: config.openInvite.eventType,
+        title: config.openInvite.title(cycle.name),
+        body: config.openInvite.body(cycle.name, closeText),
+        link: config.openInvite.link,
       };
     }
   }
@@ -205,15 +214,15 @@ export async function action({ request, params }: Route.ActionArgs) {
   // commit and fan-out drops the batch rather than re-spamming on retry.
   if (fanOutPlan && fanOutPlan.userIds.length > 0) {
     await notify({
-      eventType: "hiring.fellowship_invite",
+      eventType: fanOutPlan.eventType,
       createdByUserId: auth.user.sub,
       message: {
         title: fanOutPlan.title,
         body: fanOutPlan.body,
-        link: "/fellowship",
+        link: fanOutPlan.link,
       },
       recipients: fanOutPlan.userIds.map((userId) => ({ userId })),
-    }).catch((err) => console.error("[cycle-status] fellowship fan-out failed:", err));
+    }).catch((err) => console.error("[cycle-status] internal-cycle fan-out failed:", err));
   }
 
   return Response.json({ currentStatus: newStatus });
