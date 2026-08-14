@@ -1805,6 +1805,12 @@ model ScheduledMeeting {
   attendanceMode AttendanceMode @default(Roster)
   checkInToken   String?        @unique
 
+  // Optional Core marker, set at invite time by a Core member. Independent of
+  // scope: it pulls a meeting onto the Core hub's week calendar without
+  // changing who is invited, so a project or ad-hoc meeting Core needs to see
+  // shows up there next to the meetings scoped to the Core group itself.
+  isCoreMeeting Boolean @default(false)
+
   exceptions    MeetingException[]
   notifications Notification[]
   reminderLogs  MeetingReminderLog[]
