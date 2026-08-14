@@ -269,7 +269,7 @@ export function MemberProfileView({
           while scrolling a long profile. */}
       <div className="w-full xl:w-80 xl:shrink-0 xl:sticky xl:top-6 flex flex-col gap-6">
         <AchievementsBlock achievements={achievements} />
-        <ComplianceBlock compliance={compliance} />
+        <ComplianceBlock compliance={compliance} isSelf={isSelf} />
         <PersonalNotesRail
           ownerId={member.id}
           ownerFirstName={member.firstName}

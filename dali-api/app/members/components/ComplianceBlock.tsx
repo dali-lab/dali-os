@@ -1,8 +1,9 @@
-import { Check, FileSignature, GraduationCap, TriangleAlert } from "lucide-react";
+import { Check, FileSignature, GraduationCap, TriangleAlert, UserCheck } from "lucide-react";
 import type { ProfilePageData } from "~/members/lib/profile-page.server";
 
-// The paperwork side of a profile: the CE credit the term requires, and the
-// agreements this member has actually signed.
+// The paperwork side of a profile: the CE credit the term requires, the
+// agreements this member has actually signed, and the cycle's staffing forms
+// (the surface that used to be its own /projects/my-staffing page).
 //
 // Only rendered for the member themselves and for Core/Admin — the loader
 // returns null for anyone else, so this component never has to decide who may
@@ -12,13 +13,15 @@ import type { ProfilePageData } from "~/members/lib/profile-page.server";
 
 export function ComplianceBlock({
   compliance,
+  isSelf,
 }: {
   compliance: ProfilePageData["compliance"];
+  isSelf: boolean;
 }) {
   if (!compliance) return null;
-  const { ce, agreements } = compliance;
-  // Nothing to say: not staffed this term and never signed anything.
-  if (!ce && agreements.length === 0) return null;
+  const { ce, agreements, staffingForms } = compliance;
+  // Nothing to say: not staffed this term, never signed anything, no open forms.
+  if (!ce && agreements.length === 0 && staffingForms.length === 0) return null;
 
   return (
     <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
@@ -94,6 +97,47 @@ export function ComplianceBlock({
           </ul>
         )}
       </div>
+
+      {staffingForms.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          <p className="inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+            <UserCheck className="h-3 w-3" aria-hidden />
+            Staffing forms
+          </p>
+          <ul className="flex flex-col gap-1">
+            {staffingForms.map((f) => (
+              <li
+                key={f.slot}
+                className="flex items-baseline justify-between gap-2 rounded-md border border-border bg-muted px-2.5 py-1.5"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate text-sm text-foreground">{f.slotLabel}</span>
+                  <span className="block truncate text-[11px] text-muted-foreground">
+                    {f.submitted && f.submittedAt
+                      ? `Submitted ${new Date(f.submittedAt).toLocaleDateString(undefined, {
+                          month: "short",
+                          day: "numeric",
+                          year: "numeric",
+                        })}`
+                      : "Not submitted"}
+                  </span>
+                </span>
+                {/* The fill link submits as whoever clicks it, so it is only
+                    ever offered on your own profile; Core reading someone
+                    else's sees the status alone. */}
+                {isSelf && (
+                  <a
+                    href={f.fillLink}
+                    className="shrink-0 rounded-md border border-border px-2 py-1 text-[11px] font-medium text-foreground hover:bg-card"
+                  >
+                    {f.submitted ? "View / update" : "Open form"}
+                  </a>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {!ce && (
         // Staffed members get the CE line; everyone else gets a word on why

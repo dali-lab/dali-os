@@ -98,6 +98,13 @@ function areaOptionClass(selected: boolean) {
   )
 }
 
+// Favorites are stored as `pathname + search` and the focused tab url keeps its
+// query, so highlight comparisons run on the path alone.
+function pathnameOf(p: string) {
+  const cut = p.search(/[?#]/)
+  return cut === -1 ? p : p.slice(0, cut)
+}
+
 // A sub-tab under the open area. Same problem, same fix — plus the coral rail
 // below, which lights up the guide line at your position.
 function subtabClass(active: boolean, collapsed: boolean) {
@@ -423,18 +430,29 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
 
   // A Favorites/Recent row: a launcher (open-only) that respects tab/tabless
   // mode. Route favorites get a compass; pages show their emoji or a doc icon.
-  const renderPageRow = (p: FavoritePage) => (
-    <button
-      key={p.id}
-      type="button"
-      title={p.title || 'Untitled'}
-      {...tabClickProps({ url: p.href, label: p.title || 'Untitled' })}
-      className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] font-medium text-left text-white/55 hover:text-white hover:bg-white/5 transition-colors"
-    >
-      <FavoriteIcon page={p} glyphClassName="text-white/40" />
-      <span className="truncate">{p.title || 'Untitled'}</span>
-    </button>
-  )
+  // Carries the same active well as a sub-tab so the row you're standing on is
+  // marked here too; no rail, because this list has no guide line to light up.
+  const renderPageRow = (p: FavoritePage) => {
+    const active = pathnameOf(p.href) === pathnameOf(path)
+    return (
+      <button
+        key={p.id}
+        type="button"
+        title={p.title || 'Untitled'}
+        aria-current={active ? 'page' : undefined}
+        {...tabClickProps({ url: p.href, label: p.title || 'Untitled' })}
+        className={cn(
+          'flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] font-medium text-left transition-colors',
+          active
+            ? 'bg-white/[0.13] font-semibold text-white'
+            : 'text-white/55 hover:text-white hover:bg-white/5',
+        )}
+      >
+        <FavoriteIcon page={p} glyphClassName={active ? 'text-accent-coral' : 'text-white/40'} />
+        <span className="truncate">{p.title || 'Untitled'}</span>
+      </button>
+    )
+  }
 
   const initials = userInitials(user)
   const openTasks = useOpenTasks()
@@ -796,13 +814,13 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
           <div className="mt-2 pt-2 border-t border-white/10 flex flex-col gap-3">
             {favorites.length > 0 && (
               <div className="flex flex-col gap-0.5">
-                <div className="px-2.5 pb-0.5 text-[11px] font-semibold uppercase tracking-wide text-white/35">Favorites</div>
+                <div className="px-2.5 pb-0.5 text-[11px] font-semibold uppercase tracking-wide text-white/60">Favorites</div>
                 {favorites.map(renderPageRow)}
               </div>
             )}
             {recents.length > 0 && (
               <div className="flex flex-col gap-0.5">
-                <div className="px-2.5 pb-0.5 text-[11px] font-semibold uppercase tracking-wide text-white/35">Recent</div>
+                <div className="px-2.5 pb-0.5 text-[11px] font-semibold uppercase tracking-wide text-white/60">Recent</div>
                 {recents.map(renderPageRow)}
               </div>
             )}
