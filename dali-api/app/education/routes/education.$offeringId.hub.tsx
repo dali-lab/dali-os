@@ -31,7 +31,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
   if (!hub) throw new Response("Not found", { status: 404 });
   // After the enrollment gate — the hub the viewer can open lands in recents.
-  recordRouteVisit(auth.user.sub, `/education/${hub.offering.id}/hub`, hub.offering.title);
+  recordRouteVisit(auth.user.sub, `/education/${hub.offering.id}/hub`, hub.offering.title, request);
   return { hub, collabToken: parseSessionCookie(request) };
 }
 

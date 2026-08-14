@@ -4,7 +4,7 @@ import { prisma } from "~/lib/db";
  * Reconcile DomainApplication rows for an Application against a desired set of
  * domains.
  *
- * - InternToFull cycles call with just `domainIds` — DAs hold a direct
+ * - Fellowship cycles call with just `domainIds` — DAs hold a direct
  *   domainId FK and no challenge version.
  * - Standard cycles call with `challengeVersionByDomain` populated — DAs are
  *   pinned to a per-domain ChallengeVersion; switching the CV wipes that

@@ -7,6 +7,7 @@ import { Breadcrumbs } from '~/components/Breadcrumbs'
 import { PageDocProvider, PageDocButton, PageDocOutlet } from '~/components/page-docs/PageDocButton'
 import { useShowTablessHistoryNav } from '~/components/TablessHistoryNav'
 import { LaunchWelcome } from '~/components/LaunchWelcome'
+import { NavPreloader } from '~/components/NavPreloader'
 import { TimeZonePrompt } from '~/components/TimeZonePrompt'
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth"
 import { redirectToLogin } from '~/lib/login-next';
@@ -66,7 +67,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     // getActiveCycle() only looks at Standard cycles, so an intern on a live
     // conversion cycle would otherwise read as "on no active cycle" and lose
     // the Hiring tab under nav-regroup.
-    timed(request, 'activeInternCycle', () => getActiveCycle('InternToFull')),
+    timed(request, 'activeInternCycle', () => getActiveCycle('Fellowship')),
     // Powers the sidebar Favorites + Recent lists (same source as the Home
     // panel). Access re-checked per read, so a restricted/moved page drops out.
     // `request` shares one read with the Home panel on the same navigation.
@@ -449,6 +450,11 @@ export default function AppLayoutRoute() {
           </LayoutClassic>
         )}
       </PageDocProvider>
+      {/* Warms the sidebar's Favorites/Recent destinations once the shell is
+          idle. Mounted here, not in Layout, so it runs under both shells and
+          exactly once per document — the embedded branch returns above, so a
+          workspace iframe never starts a second round of prefetches. */}
+      {(flags['nav-preload'] ?? false) && <NavPreloader favorites={favorites} recents={recents} />}
       <LaunchWelcome firstName={user.firstName || user.email.split('@')[0]} hasCalendarLink={hasCalendarLink} shouldShowTour={shouldShowTour} tabless={tabless} />
       <TimeZonePrompt userTimeZone={userTimeZone} userTimeZoneIsExplicit={userTimeZoneIsExplicit} dismissedZone={tzDismissedZone} />
     </FeatureFlagsProvider>

@@ -16,10 +16,12 @@ import {
   TASK_STATUSES,
   TASK_STATUS_LABELS,
   type TaskBoardOptions,
+  taskMatchesQuery,
   type TaskCardModel,
   type TaskStatus,
   type Priority,
 } from "../lib/task-board";
+import { SearchInput } from "~/components/ui/SearchInput";
 import { TaskModal, type NewTaskValues } from "./TaskModal";
 
 type Props = {
@@ -77,6 +79,11 @@ export function TaskBoard({
   const [showArchived, setShowArchived] = useState(false);
   const [archiving, setArchiving] = useState(false);
   const [celebrate, setCelebrate] = useState(false);
+  // Board search. Deliberately component state, not a `?q=` param like the
+  // epic/sprint/term filters: those are shareable slices set by a click, while
+  // this changes on every keystroke — and a search-param change revalidates the
+  // project loader, so `?q=` would refetch the whole board per character.
+  const [query, setQuery] = useState("");
   // View density preference (per-browser, not shared): collapse empty
   // Backlog/Cancelled columns so they stop eating horizontal space. Defaults
   // to on; a toggle reveals them and the choice persists in localStorage.
@@ -255,8 +262,9 @@ export function TaskBoard({
           : sprintTermById.get(t.sprintId) === effectiveTerm,
       );
     }
+    if (query.trim()) ts = ts.filter((t) => taskMatchesQuery(t, query));
     return ts;
-  }, [tasks, epicFilter, sprintFilter, effectiveTerm, sprintTermById]);
+  }, [tasks, epicFilter, sprintFilter, effectiveTerm, sprintTermById, query]);
 
   const board = useMemo(() => buildTaskBoard(filteredTasks), [filteredTasks]);
   const openTask = openTaskId ? tasks.find((t) => t.id === openTaskId) ?? null : null;
@@ -487,6 +495,13 @@ export function TaskBoard({
     <div className="flex flex-col gap-3">
       <Confetti trigger={celebrate} onFire={() => setCelebrate(false)} />
       <div className="flex flex-wrap items-center gap-2">
+        <SearchInput
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search tasks…"
+          aria-label="Search tasks on this board"
+          containerClassName="w-full sm:w-56"
+        />
         {termFilterEnabled && (
           <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
             <span className="font-medium">Term</span>
@@ -599,6 +614,12 @@ export function TaskBoard({
           </div>
         )}
       </div>
+
+      {query.trim() && filteredTasks.length === 0 && (
+        <p className="text-sm text-muted-foreground">
+          No tasks match &ldquo;{query.trim()}&rdquo;.
+        </p>
+      )}
 
       <KanbanBoard<TaskCardModel>
         id="task-board"

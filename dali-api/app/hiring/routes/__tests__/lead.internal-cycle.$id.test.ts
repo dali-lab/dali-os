@@ -11,7 +11,7 @@ vi.mock("~/lib/roles");
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
-import { action } from "~/hiring/routes/lead.intern-to-full-cycle.$id";
+import { action } from "~/hiring/routes/lead.internal-cycle.$id";
 
 const CORE_ID = "core-1";
 const CYCLE_ID = "cycle-1";
@@ -33,7 +33,7 @@ beforeEach(() => {
 
 function makeRequest(form: Record<string, string>) {
   const body = new URLSearchParams(form);
-  return new Request(`http://localhost/hiring/lead/intern-to-full-cycle/${CYCLE_ID}`, {
+  return new Request(`http://localhost/hiring/lead/internal-cycle/${CYCLE_ID}`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
@@ -48,7 +48,7 @@ function callAction(form: Record<string, string>) {
   } as any);
 }
 
-describe("lead.intern-to-full-cycle.$id action — set-close-date", () => {
+describe("lead.internal-cycle.$id action — set-close-date", () => {
   it("returns 403 when caller is not core", async () => {
     vi.mocked(isCore).mockResolvedValueOnce(false);
     const res = await callAction({ intent: "set-close-date", closeDate: "2026-06-01" });

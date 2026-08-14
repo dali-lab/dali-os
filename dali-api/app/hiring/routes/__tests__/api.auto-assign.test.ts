@@ -91,12 +91,12 @@ describe("auto-assign action — withdrawn applications are skipped", () => {
   });
 });
 
-describe("auto-assign action — InternToFull cycles", () => {
-  it("skips the per-domain rubric requirement on InternToFull cycles", async () => {
+describe("auto-assign action — Fellowship cycles", () => {
+  it("skips the per-domain rubric requirement on Fellowship cycles", async () => {
     mockPrisma.applicationCycle.findUniqueOrThrow.mockResolvedValueOnce({
       id: CYCLE_ID,
       generalRubricVersionId: "rubric-general",
-      cycleType: "InternToFull",
+      cycleType: "Fellowship",
     });
     mockPrisma.domainApplicationCycle.findUnique.mockResolvedValueOnce({
       reviewersPerApplication: 2,
@@ -110,11 +110,11 @@ describe("auto-assign action — InternToFull cycles", () => {
     expect(mockPrisma.domainApplication.findMany).toHaveBeenCalledTimes(1);
   });
 
-  it("still requires the cycle-level general rubric on InternToFull cycles", async () => {
+  it("still requires the cycle-level general rubric on Fellowship cycles", async () => {
     mockPrisma.applicationCycle.findUniqueOrThrow.mockResolvedValueOnce({
       id: CYCLE_ID,
       generalRubricVersionId: null,
-      cycleType: "InternToFull",
+      cycleType: "Fellowship",
     });
 
     const res = await callAction();
@@ -122,7 +122,7 @@ describe("auto-assign action — InternToFull cycles", () => {
     expect(mockPrisma.domainApplication.findMany).not.toHaveBeenCalled();
   });
 
-  it("filters DomainApplications by direct domainId (works for InternToFull with no challengeVersion)", async () => {
+  it("filters DomainApplications by direct domainId (works for Fellowship with no challengeVersion)", async () => {
     await callAction();
 
     const where = mockPrisma.domainApplication.findMany.mock.calls[0][0].where;

@@ -36,7 +36,7 @@ export default [
     route("hiring/domain-lead/delibs/:id", "hiring/routes/domain-lead.delibs.$id.tsx"),
     route("hiring/lead", "hiring/routes/lead.tsx"),
     route("hiring/lead/cycle/:id", "hiring/routes/lead.cycle.$id.tsx"),
-    route("hiring/lead/intern-to-full-cycle/:id", "hiring/routes/lead.intern-to-full-cycle.$id.tsx"),
+    route("hiring/lead/internal-cycle/:id", "hiring/routes/lead.internal-cycle.$id.tsx"),
     // Cross-cycle by design (accepting off a waitlist may land in a later
     // cycle), so it lives beside the other hiring tools, not under /lead.
     route("hiring/waitlists", "hiring/routes/waitlists.tsx"),
@@ -111,10 +111,6 @@ export default [
     // Projects. The bare /projects route is the area hub (the project list).
     route("projects", "projects/routes/projects.hub.tsx"),
     route("projects/staffing", "projects/routes/projects.staffing.tsx"),
-    // Member-facing staffing destination (requireMember, not canViewStaffing):
-    // the persistent place a member fills/revisits the cycle's staffing forms.
-    // Must precede projects/:id so it isn't captured by the :id param.
-    route("projects/my-staffing", "projects/routes/projects.my-staffing.tsx"),
     // Staffing input forms (member self-service). Must precede projects/:id
     // so these literal segments aren't captured by the :id param.
     route("projects/intent-to-work", "projects/routes/projects.intent-to-work.tsx"),
@@ -215,10 +211,14 @@ export default [
     route("forms/responses/:formId", "forms/routes/forms.responses.$formId.tsx"),
     route("forms/:folderId", "forms/routes/forms.$folderId.tsx"),
 
-    // Internal applicant portal — intern → full-time conversion. Authenticated
-    // member route (not under /portal) so interns use their existing session
-    // rather than the CAS flow built for external applicants.
-    route("intern-to-full", "routes/intern-to-full.tsx"),
+    // Internal applicant portal — Fellowship (intern → full-time) and Core
+    // (member → Core). Authenticated member routes (not under /portal) so
+    // members use their existing session rather than the CAS flow built for
+    // external applicants. Both render the shared internal-cycle portal.
+    route("fellowship", "routes/fellowship.tsx"),
+    route("core", "routes/core.tsx"),
+    // Legacy path — old notification/task links pointed at /intern-to-full.
+    route("intern-to-full", "routes/intern-to-full.legacy.tsx"),
 
     // Settings — opened from the sidebar footer icon. Lives under the layout
     // so in-iframe navigation posts `dali:tabNavigated` and the workspace's

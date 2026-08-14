@@ -7,6 +7,8 @@ import { recordRouteVisit } from "~/lib/user-pages.server";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";
+import { isInternalCycleType } from "~/hiring/lib/internal-cycles";
+import { createCycleApplicationForm } from "~/hiring/lib/application-form.server";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { parseSessionCookie } from "~/lib/cookies";
 import { getPresenceUser } from "~/lib/presence-user";
@@ -163,15 +165,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!auth.ok) return redirectToLogin(request);
   if (!(await isCore(auth.user.sub))) return redirect("/");
 
-  // InternToFull cycles use a separate, simpler setup page (no challenges,
-  // no interview config). Forward there before any of the Standard-cycle
-  // payload is loaded.
+  // Internal cycles (Fellowship/Core) use a separate, simpler setup page (no
+  // challenges, no interview config). Forward there before any of the
+  // Standard-cycle payload is loaded.
   const cycleTypeRow = await prisma.applicationCycle.findUnique({
     where: { id: params.id },
     select: { cycleType: true },
   });
-  if (cycleTypeRow?.cycleType === "InternToFull") {
-    return redirect(`/hiring/lead/intern-to-full-cycle/${params.id}`);
+  if (cycleTypeRow && isInternalCycleType(cycleTypeRow.cycleType)) {
+    return redirect(`/hiring/lead/internal-cycle/${params.id}`);
   }
 
   // Hiring leads must be able to reach this page to bind a confidentiality
@@ -197,11 +199,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       },
       statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
       challengeVersions: { include: { challengeVersion: { include: { domain: true, challenge: true, createdBy: { select: { firstName: true, lastName: true } } } } } },
+      applicationForm: { include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } } },
     },
   });
 
   // After the Core gate — this cycle lands in the lead's recents.
-  recordRouteVisit(auth.user.sub, `/hiring/lead/cycle/${params.id}`, cycleBase.name);
+  recordRouteVisit(auth.user.sub, `/hiring/lead/cycle/${params.id}`, cycleBase.name, request);
 
   const applications = confidentialityRequired
     ? []
@@ -792,6 +795,22 @@ export async function action({ request, params }: Route.ActionArgs) {
     // Link the new one
     await prisma.challengeVersionApplicationCycle.create({
       data: { challengeVersionId, applicationCycleId: params.id },
+    });
+    return cycleRedirect(request, params.id!);
+  }
+
+  if (intent === "create-application-form") {
+    // Auto-create + bind a Drive Form as this cycle's general application form
+    // (no-op if already bound). Takes precedence over any legacy general-form link.
+    await createCycleApplicationForm(params.id!, auth.user.sub);
+    return cycleRedirect(request, params.id!);
+  }
+
+  if (intent === "set-application-form") {
+    const formId = (formData.get("formId") as string) || null;
+    await prisma.applicationCycle.update({
+      where: { id: params.id! },
+      data: { applicationFormId: formId },
     });
     return cycleRedirect(request, params.id!);
   }
@@ -1902,7 +1921,45 @@ export default function HiringLeadCycleDetails() {
             )}
           </div>
 
-          {/* General Form picker */}
+          {/* Application form (Drive) — the general form as a real Drive Form.
+              Takes precedence over the legacy general-form link below when set. */}
+          <div className="rounded-lg border border-border bg-card p-4 mb-4">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <h3 className="text-sm font-semibold text-dark-blue">Application form (Drive)</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {cycle?.applicationForm
+                    ? "Applicants fill this Drive form. It takes precedence over the legacy general form below."
+                    : "Bind a Drive form as the general application form (recommended). Falls back to the legacy general form below if unset."}
+                </p>
+              </div>
+              {cycle?.applicationForm ? (
+                <Link
+                  to={`/forms/edit/${cycle.applicationForm.id}`}
+                  className="text-xs font-medium text-blue-700 hover:underline whitespace-nowrap"
+                >
+                  Edit in Drive →
+                </Link>
+              ) : (
+                <Form method="post">
+                  <input type="hidden" name="intent" value="create-application-form" />
+                  <button
+                    type="submit"
+                    className="text-xs font-medium text-blue-700 hover:underline whitespace-nowrap"
+                  >
+                    + Create form
+                  </button>
+                </Form>
+              )}
+            </div>
+            {cycle?.applicationForm && (
+              <p className="text-xs text-muted-foreground mt-2">
+                {cycle.applicationForm.name}
+              </p>
+            )}
+          </div>
+
+          {/* Legacy general-form picker (used when no Drive form is bound) */}
           <GeneralFormPicker
             currentCvId={(() => {
               const generalCv = (cycle?.challengeVersions ?? []).find((cv: any) => cv.challengeVersion?.domainId === null);

@@ -21,6 +21,7 @@ import {
   achievementsForMember,
   type Achievement,
 } from "~/members/lib/achievements.server";
+import { listMemberStaffingForms, type MemberStaffingForm } from "~/projects/lib/member-staffing.server";
 import { listMySignedDocuments } from "~/signing/lib/state.server";
 import {
   currentTerm,
@@ -122,6 +123,9 @@ export type ProfilePageData = {
      *  requirement of being hired, so there's nothing to be compliant with. */
     ce: { termCode: string; credits: number; compliant: boolean } | null;
     agreements: { signatureId: string; documentName: string; context: string; signedAt: string }[];
+    /** This cycle's staffing forms for the member — the surface that used to
+     *  live at /projects/my-staffing. Empty outside an open cycle. */
+    staffingForms: MemberStaffingForm[];
   } | null;
   allDomains: Array<{ id: string; displayName: string }>;
   photoUrlResolved: string | null;
@@ -441,7 +445,7 @@ export async function loadProfilePage({
   const canSeeCompliance = isSelf || canManageEligibility;
   const compliance = canSeeCompliance
     ? await (async () => {
-        const [staffedThisTerm, signed] = await Promise.all([
+        const [staffedThisTerm, signed, staffingForms] = await Promise.all([
           term
             ? prisma.projectAssignment.findFirst({
                 where: { userId: targetId, termId: term.id },
@@ -449,6 +453,7 @@ export async function loadProfilePage({
               })
             : Promise.resolve(null),
           listMySignedDocuments(targetId),
+          listMemberStaffingForms(targetId),
         ]);
         // Full-time staff are exempt from the student checklist, so they get no
         // CE line even when staffed.
@@ -464,6 +469,7 @@ export async function loadProfilePage({
             : null;
         return {
           ce,
+          staffingForms,
           agreements: signed.map((d) => ({
             signatureId: d.signatureId,
             documentName: d.documentName,

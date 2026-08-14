@@ -6,7 +6,7 @@
 //   1. Honor ?cycle=<id> when it matches one of the candidates.
 //   2. Prefer a Standard cycle in Open/UnderReview — keeps the existing
 //      single-cycle UX unchanged when a Standard cycle is the "main" one.
-//   3. Any cycle in Open/UnderReview (InternToFull falls here).
+//   3. Any cycle in Open/UnderReview (Fellowship falls here).
 //   4. Any Draft cycle.
 //   5. Otherwise null (caller falls back to a "no active cycle" card).
 export function selectActiveCycleForDomainLead<

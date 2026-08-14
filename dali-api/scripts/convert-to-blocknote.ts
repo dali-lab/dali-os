@@ -14,7 +14,7 @@
 // JSON in place: ChallengeVersion.description, PageDoc.body + sections[].body,
 // MentorNote.contentJson, MentorNoteTemplate.contentJson, question-array info
 // bodies (data.body where type === "info") in ChallengeVersion /
-// InternToFullFormVersion / FormVersion, and SigningDocumentVersion.body.
+// ShortformVersion / FormVersion, and SigningDocumentVersion.body.
 // SigningSignature.frozenBody is NEVER transcoded — frozen snapshots are
 // legal artifacts and the PDF pipeline reads them via ensureBlocks at export
 // time.
@@ -200,20 +200,8 @@ async function transcodeColumns() {
     });
   }
 
-  // InternToFullFormVersion + FormVersion: questions info bodies.
-  for (const row of await prisma.internToFullFormVersion.findMany({
-    select: { id: true, questions: true },
-  })) {
-    const questions = transcodeQuestions(`InternToFullFormVersion(${row.id}).questions`, row.questions);
-    if (!questions.changed) continue;
-    updates++;
-    console.log(`InternToFullFormVersion ${row.id}${DRY_RUN ? " [dry-run]" : ""}`);
-    if (DRY_RUN) continue;
-    await prisma.internToFullFormVersion.update({
-      where: { id: row.id },
-      data: { questions: questions.next },
-    });
-  }
+  // FormVersion: questions info bodies (internal-cycle shortforms are now
+  // ordinary Forms, so they're covered here too).
   for (const row of await prisma.formVersion.findMany({
     select: { id: true, questions: true },
   })) {

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { isInternalCycleType } from "~/hiring/lib/internal-cycles";
 import { redirect, useLoaderData, useSubmit } from 'react-router'
 import { HelpCircle, X, Check } from 'lucide-react'
 import { prisma } from '~/lib/db'
@@ -11,6 +12,7 @@ import { getPresenceUser } from '~/lib/presence-user'
 import { requirePageSignedOrRedirect } from '~/hiring/lib/confidentiality'
 import { presignAnswers } from '~/hiring/lib/presign'
 import { ensureBlocks } from '~/collab/legacy/pm-to-blocknote'
+import { safeParseJsonString } from '~/forms/lib/forms-data'
 import type { Route } from './+types/reviewer.application.$id'
 import { ApplicationViewer } from '~/hiring/components/ApplicationViewer'
 import { SaveStatusIndicator } from '~/hiring/components/SaveStatusIndicator'
@@ -46,7 +48,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     include: {
       user: true,
       generalChallengeVersion: true,
-      internToFullFormVersion: true,
+      applicationFormVersion: true,
       applicationCycle: {
         include: {
           statusUpdates: { orderBy: { createdAt: 'desc' }, take: 1 },
@@ -61,8 +63,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       },
     },
   })
-
-  const isInternToFull = applicationBase.applicationCycle.cycleType === 'InternToFull'
 
   if (!(await hasCycleAccess(auth.user.sub, applicationBase.applicationCycleId)))
     throw redirectToLogin(request)
@@ -80,6 +80,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     auth.user.sub,
     `/hiring/reviewer/application/${params.id}`,
     `${applicationBase.user.firstName} ${applicationBase.user.lastName}`.trim(),
+    request,
   )
 
   // Scope domainApplications to only the domains this reviewer is assigned to
@@ -100,7 +101,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       where: {
         applicationId: params.id,
         selected: true,
-        // Standard cycles link Domain via challengeVersion; InternToFull cycles
+        // Standard cycles link Domain via challengeVersion; Fellowship cycles
         // link Domain directly. Match whichever path is set.
         OR: [
           { challengeVersion: { domainId: { in: reviewerDomainIds } } },
@@ -131,12 +132,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
 
   // Presign file-type answers so the viewer can render real download links
-  // instead of raw S3 keys. For InternToFull cycles, the application's
-  // "general" questions live on internToFullFormVersion, and per-domain
+  // instead of raw S3 keys. For Fellowship cycles, the application's
+  // "general" questions live on applicationFormVersion, and per-domain
   // entries carry no challenge content.
-  const generalQuestionsForPresign = isInternToFull
-    ? ((applicationBase.internToFullFormVersion?.questions as unknown as Question[]) ?? [])
-    : ((applicationBase.generalChallengeVersion?.questions as unknown as Question[]) ?? [])
+  // Prefer the bound Drive Form's questions; fall back to the legacy general
+  // ChallengeVersion for pre-migration Standard applications.
+  const generalQuestionsForPresign =
+    ((applicationBase.applicationFormVersion?.questions as unknown as Question[]) ??
+      (applicationBase.generalChallengeVersion?.questions as unknown as Question[]) ??
+      [])
   const presignedGeneralAnswers = await presignAnswers(
     generalQuestionsForPresign,
     applicationBase.answers as Record<string, string>,
@@ -159,12 +163,23 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const application = {
     ...applicationBase,
     answers: presignedGeneralAnswers,
-    generalChallengeVersion: applicationBase.generalChallengeVersion
+    // The viewer renders `generalChallengeVersion` {questions, description};
+    // synthesize it from the bound Drive Form version when present (intro →
+    // description), else fall back to the legacy general ChallengeVersion.
+    generalChallengeVersion: applicationBase.applicationFormVersion
       ? {
-          ...applicationBase.generalChallengeVersion,
-          description: ensureBlocks(applicationBase.generalChallengeVersion.description),
+          id: applicationBase.applicationFormVersion.id,
+          questions: applicationBase.applicationFormVersion.questions,
+          description: ensureBlocks(
+            safeParseJsonString(applicationBase.applicationFormVersion.intro),
+          ),
         }
-      : applicationBase.generalChallengeVersion,
+      : applicationBase.generalChallengeVersion
+        ? {
+            ...applicationBase.generalChallengeVersion,
+            description: ensureBlocks(applicationBase.generalChallengeVersion.description),
+          }
+        : applicationBase.generalChallengeVersion,
     domainApplications: presignedDomainApplications,
   }
 
@@ -254,7 +269,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       // Pin the rubric version these score keys belong to, so a later rubric
       // edit (which mints new crit-<ts> keys) doesn't orphan them at render
       // time. Prefer the per-domain rubric (Standard cycles); fall back to the
-      // cycle-level general rubric (InternToFull, which has no per-domain).
+      // cycle-level general rubric (Fellowship, which has no per-domain).
       const da = existing.domainApplication
       const domainId = da.domainId ?? da.challengeVersion?.domainId ?? null
       let rubricVersionId: string | null = existing.rubricVersionId ?? null
@@ -305,10 +320,10 @@ export default function ReviewerApplicationReview() {
   const submit = useSubmit()
 
   const cycle = application.applicationCycle
-  const isInternToFull = cycle.cycleType === 'InternToFull'
+  const isInternalCycle = isInternalCycleType(cycle.cycleType)
   const generalCv = application.generalChallengeVersion
-  const formQuestions = isInternToFull
-    ? ((application.internToFullFormVersion?.questions as unknown as Question[]) ?? [])
+  const formQuestions = isInternalCycle
+    ? ((application.applicationFormVersion?.questions as unknown as Question[]) ?? [])
     : ((generalCv?.questions as unknown as Question[]) ?? [])
 
   // Collect all rubric criteria: general form rubric + per-domain-application rubrics

@@ -12,7 +12,7 @@ export type ActiveStatus = (typeof ACTIVE_STATUSES)[number];
  * Find the single currently-active cycle for a given cycleType, or null if
  * none. Default cycleType is `Standard` so legacy callers keep their old
  * behavior. Different cycleTypes may be active concurrently (e.g. a Standard
- * hire cycle running alongside an InternToFull conversion cycle).
+ * hire cycle running alongside an Fellowship conversion cycle).
  *
  * Pure read — does not write. If an Open cycle is past its `closeDate`, the
  * returned `currentStatus` is derived as `UnderReview`; the DB row is

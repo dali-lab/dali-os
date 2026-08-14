@@ -11,6 +11,7 @@ export const Prisma = {
 export const prisma = {
   user: {
     findUnique: vi.fn(),
+    findFirst: vi.fn(),
     findMany: vi.fn(),
     update: vi.fn(),
     delete: vi.fn(),

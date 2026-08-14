@@ -1,11 +1,11 @@
 import { prisma } from "~/lib/db";
 import { currentTermStrict } from "~/lib/roles";
 
-// A user is eligible to apply to an InternToFull cycle iff they currently
+// A user is eligible to apply to an Fellowship cycle iff they currently
 // hold a ProjectAssignment in the active term where the project's domain is
 // flagged as an intern program. `currentTermStrict` ensures the window
 // between intern terms fails closed (no roll-forward to the next term).
-export async function isInternToFullEligible(userId: string): Promise<boolean> {
+export async function isFellowshipEligible(userId: string): Promise<boolean> {
   const activeTerm = await currentTermStrict();
   if (!activeTerm) return false;
 
@@ -20,7 +20,7 @@ export async function isInternToFullEligible(userId: string): Promise<boolean> {
   return assignment != null;
 }
 
-// Returns user IDs of everyone currently eligible for an InternToFull cycle:
+// Returns user IDs of everyone currently eligible for an Fellowship cycle:
 // any DALI member with a ProjectAssignment in the active term whose domain
 // is flagged as an intern program. Used to fan out the "cycle is open"
 // notification. Returns [] when no term is currently active.

@@ -25,7 +25,6 @@ import {
   Settings,
   Shield,
   SlidersHorizontal,
-  UserCheck,
   Users,
   UserPlus,
   UsersRound,
@@ -107,7 +106,6 @@ export const NAV_AREAS: NavArea[] = [
       { label: "Intent to Work", href: "/projects/intent-to-work", icon: ClipboardPen, gate: (r) => r.canViewStaffing },
       { label: "Project Bids", href: "/projects/project-bids", icon: Gavel, gate: (r) => r.canViewStaffing },
       { label: "Level Up", href: "/projects/level-up", icon: ArrowUpCircle, gate: (r) => r.canViewStaffing },
-      { label: "My Staffing", href: "/projects/my-staffing", icon: UserCheck },
       { label: "Transfer", href: "/projects/transfer", icon: ArrowLeftRight },
     ],
   },
@@ -209,7 +207,7 @@ export const NAV_AREAS: NavArea[] = [
 // The nav-regroup area set.
 //
 // Five areas grouped by WHO a surface is for, not by what it is: regular
-// members get Projects + Education (+ Hiring while they're on a live cycle),
+// members get General + Education (+ Hiring while they're on a live cycle),
 // Core gets everything. Drive is not an area here at all — it is pinned under
 // Calendar (see pinnedNavItems). Every Core process page keeps a working
 // pre-regroup URL; the /core/* path is canonical only for flag-on viewers,
@@ -227,11 +225,11 @@ const coreClusterSubtabs: SubTab[] = CORE_CLUSTERS.map((c) => ({
 const REGROUPED_AREAS: NavArea[] = [
   {
     key: "projects",
-    label: "Projects",
+    label: "General",
     icon: FolderKanban,
     hubPath: "/projects",
     subtabs: [
-      { label: "Hub", href: "/projects", icon: LayoutGrid },
+      { label: "Projects", href: "/projects", icon: LayoutGrid },
       { label: "People", href: "/members", icon: UsersRound },
       // Groups' own pill row is hidden under the sidebar redesign, so without a
       // sub-tab here the page would be reachable only from ⌘K.
@@ -239,7 +237,6 @@ const REGROUPED_AREAS: NavArea[] = [
       { label: "Partners", href: "/partners", icon: Handshake },
       { label: "Mentorship", href: "/mentorship", icon: Heart, gate: (r) => r.isLabMentor || r.isCore },
       { label: "Transfer", href: "/projects/transfer", icon: ArrowLeftRight },
-      { label: "My Staffing", href: "/projects/my-staffing", icon: UserCheck },
     ],
   },
   {
@@ -260,7 +257,7 @@ const REGROUPED_AREAS: NavArea[] = [
     hubPath: "/core",
     gate: (r) => r.isCore,
     subtabs: [
-      { label: "Core Hub", href: "/core", icon: LayoutGrid },
+      { label: "Hub", href: "/core", icon: LayoutGrid },
       { label: "Staffing", href: "/core/staffing", icon: Kanban },
       { label: "Intent to Work", href: "/core/intent-to-work", icon: ClipboardPen },
       { label: "Project Bids", href: "/core/project-bids", icon: Gavel },

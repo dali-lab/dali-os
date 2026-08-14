@@ -93,7 +93,6 @@ const SEGMENT_LABELS: Record<string, string> = {
 
   projects: 'Projects',
   staffing: 'Staffing',
-  'my-staffing': 'My Staffing',
   'level-up': 'Level Up',
   'intent-to-work': 'Intent to Work',
   'project-bids': 'Project Bids',
@@ -142,7 +141,7 @@ const UNROUTED_SEGMENTS = new Set([
   'confidentiality-agreements',
   'cycle', // /hiring/lead/cycle/:id
   'cycles', // /hiring/cycles/:cycleId/confidentiality
-  'intern-to-full-cycle',
+  'internal-cycle',
   'delibs',
   'assignments', // /education/manage/assignments/:assignmentId
   'page',
