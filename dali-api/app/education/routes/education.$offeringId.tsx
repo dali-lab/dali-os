@@ -50,7 +50,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
 
   // After the gate — a course the viewer can open lands in their recents.
-  recordRouteVisit(auth.user.sub, `/education/${offering.id}`, offering.title);
+  recordRouteVisit(auth.user.sub, `/education/${offering.id}`, offering.title, request);
 
   const [descriptionHtml, myApplication] = await Promise.all([
     offering.descriptionDocId

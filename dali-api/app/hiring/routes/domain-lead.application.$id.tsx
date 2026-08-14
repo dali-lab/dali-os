@@ -148,6 +148,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     auth.user.sub,
     `/hiring/domain-lead/application/${params.id}`,
     `${da.application.user.firstName} ${da.application.user.lastName}`.trim(),
+    request,
   );
 
   // Resolve criterion-key -> label for score display. Prefers the current

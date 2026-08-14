@@ -201,7 +201,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
 
   // After the Core gate — this cycle lands in the lead's recents.
-  recordRouteVisit(auth.user.sub, `/hiring/lead/cycle/${params.id}`, cycleBase.name);
+  recordRouteVisit(auth.user.sub, `/hiring/lead/cycle/${params.id}`, cycleBase.name, request);
 
   const applications = confidentialityRequired
     ? []
