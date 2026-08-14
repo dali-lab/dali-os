@@ -12,6 +12,7 @@ import { getPresenceUser } from '~/lib/presence-user'
 import { requirePageSignedOrRedirect } from '~/hiring/lib/confidentiality'
 import { presignAnswers } from '~/hiring/lib/presign'
 import { ensureBlocks } from '~/collab/legacy/pm-to-blocknote'
+import { safeParseJsonString } from '~/forms/lib/forms-data'
 import type { Route } from './+types/reviewer.application.$id'
 import { ApplicationViewer } from '~/hiring/components/ApplicationViewer'
 import { SaveStatusIndicator } from '~/hiring/components/SaveStatusIndicator'
@@ -62,8 +63,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       },
     },
   })
-
-  const isInternalCycle = isInternalCycleType(applicationBase.applicationCycle.cycleType)
 
   if (!(await hasCycleAccess(auth.user.sub, applicationBase.applicationCycleId)))
     throw redirectToLogin(request)
@@ -136,9 +135,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // instead of raw S3 keys. For Fellowship cycles, the application's
   // "general" questions live on applicationFormVersion, and per-domain
   // entries carry no challenge content.
-  const generalQuestionsForPresign = isInternalCycle
-    ? ((applicationBase.applicationFormVersion?.questions as unknown as Question[]) ?? [])
-    : ((applicationBase.generalChallengeVersion?.questions as unknown as Question[]) ?? [])
+  // Prefer the bound Drive Form's questions; fall back to the legacy general
+  // ChallengeVersion for pre-migration Standard applications.
+  const generalQuestionsForPresign =
+    ((applicationBase.applicationFormVersion?.questions as unknown as Question[]) ??
+      (applicationBase.generalChallengeVersion?.questions as unknown as Question[]) ??
+      [])
   const presignedGeneralAnswers = await presignAnswers(
     generalQuestionsForPresign,
     applicationBase.answers as Record<string, string>,
@@ -161,12 +163,23 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const application = {
     ...applicationBase,
     answers: presignedGeneralAnswers,
-    generalChallengeVersion: applicationBase.generalChallengeVersion
+    // The viewer renders `generalChallengeVersion` {questions, description};
+    // synthesize it from the bound Drive Form version when present (intro →
+    // description), else fall back to the legacy general ChallengeVersion.
+    generalChallengeVersion: applicationBase.applicationFormVersion
       ? {
-          ...applicationBase.generalChallengeVersion,
-          description: ensureBlocks(applicationBase.generalChallengeVersion.description),
+          id: applicationBase.applicationFormVersion.id,
+          questions: applicationBase.applicationFormVersion.questions,
+          description: ensureBlocks(
+            safeParseJsonString(applicationBase.applicationFormVersion.intro),
+          ),
         }
-      : applicationBase.generalChallengeVersion,
+      : applicationBase.generalChallengeVersion
+        ? {
+            ...applicationBase.generalChallengeVersion,
+            description: ensureBlocks(applicationBase.generalChallengeVersion.description),
+          }
+        : applicationBase.generalChallengeVersion,
     domainApplications: presignedDomainApplications,
   }
 

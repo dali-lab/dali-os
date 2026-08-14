@@ -1,5 +1,4 @@
 import type { Route } from "./+types/api.domain-applications.$id.full-context";
-import { isInternalCycleType } from "~/hiring/lib/internal-cycles";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { hasCycleAccess } from "~/lib/roles";
@@ -145,10 +144,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       application: {
         id: da.application.id,
         answers: da.application.answers,
+        // Prefer the bound Drive Form's questions; fall back to the legacy
+        // general ChallengeVersion for pre-migration applications.
         generalQuestions:
-          isInternalCycleType(da.application.applicationCycle.cycleType)
-            ? da.application.applicationFormVersion?.questions ?? []
-            : da.application.generalChallengeVersion?.questions ?? [],
+          da.application.applicationFormVersion?.questions ??
+          da.application.generalChallengeVersion?.questions ??
+          [],
         applicant: da.application.user,
       },
       reviews: da.reviews,

@@ -9,7 +9,6 @@
 
 import { prisma } from "~/lib/db";
 import { hasCycleAccess } from "~/lib/roles";
-import { isInternalCycleType } from "~/hiring/lib/internal-cycles";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { buildCriteriaLabelMap } from "~/hiring/lib/rubric-criteria";
 import { McpNotFoundError, McpForbiddenError } from "../../registry";
@@ -182,10 +181,12 @@ export async function runGetApplication(userId: string, input: Input): Promise<u
     application: {
       id: da.application.id,
       answers: da.application.answers,
+      // Prefer the bound Drive Form's questions; fall back to the legacy
+      // general ChallengeVersion for pre-migration applications.
       generalQuestions:
-        isInternalCycleType(da.application.applicationCycle.cycleType)
-          ? da.application.applicationFormVersion?.questions ?? []
-          : da.application.generalChallengeVersion?.questions ?? [],
+        da.application.applicationFormVersion?.questions ??
+        da.application.generalChallengeVersion?.questions ??
+        [],
       applicant: da.application.user,
     },
     reviews: da.reviews,

@@ -1,5 +1,5 @@
 import { redirect, useLoaderData, useSearchParams } from "react-router";
-import { isInternalCycleType } from "~/hiring/lib/internal-cycles";
+import { safeParseJsonString } from "~/forms/lib/forms-data";
 import type { Route } from "./+types/applications.$domainApplicationId";
 import { prisma } from "~/lib/db";
 import { recordRouteVisit } from "~/lib/user-pages.server";
@@ -75,7 +75,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           answers: true,
           applicationCycleId: true,
           generalChallengeVersion: { select: { questions: true, description: true } },
-          applicationFormVersion: { select: { questions: true } },
+          applicationFormVersion: { select: { questions: true, intro: true } },
           applicationCycle: {
             select: {
               name: true,
@@ -124,12 +124,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     request,
   );
 
-  const isInternalCycle = isInternalCycleType(da.application.applicationCycle.cycleType);
-
   // Presign file answers so the viewer renders download links, not S3 keys.
-  const generalQuestions = isInternalCycle
-    ? ((da.application.applicationFormVersion?.questions as unknown as Question[]) ?? [])
-    : ((da.application.generalChallengeVersion?.questions as unknown as Question[]) ?? []);
+  // Prefer the bound Drive Form; fall back to the legacy general ChallengeVersion.
+  const generalQuestions =
+    (da.application.applicationFormVersion?.questions as unknown as Question[]) ??
+    (da.application.generalChallengeVersion?.questions as unknown as Question[]) ??
+    [];
   const [generalAnswers, domainAnswers] = await Promise.all([
     presignAnswers(generalQuestions, da.application.answers as Record<string, string>),
     presignAnswers(
@@ -409,12 +409,19 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // to block JSON on read (ApplicationViewer expects blocks).
   const application = {
     answers: generalAnswers,
-    generalChallengeVersion: da.application.generalChallengeVersion
+    generalChallengeVersion: da.application.applicationFormVersion
       ? {
-          questions: da.application.generalChallengeVersion.questions,
-          description: ensureBlocks(da.application.generalChallengeVersion.description),
+          questions: da.application.applicationFormVersion.questions,
+          description: ensureBlocks(
+            safeParseJsonString(da.application.applicationFormVersion.intro),
+          ),
         }
-      : null,
+      : da.application.generalChallengeVersion
+        ? {
+            questions: da.application.generalChallengeVersion.questions,
+            description: ensureBlocks(da.application.generalChallengeVersion.description),
+          }
+        : null,
     domainApplications: [
       {
         id: da.id,
