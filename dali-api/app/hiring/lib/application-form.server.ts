@@ -153,6 +153,53 @@ export async function createCycleApplicationForm(
   return form.id;
 }
 
+/**
+ * Auto-create a per-domain challenge Form (in the "Hiring" folder) and link it
+ * to the (cycle, domain) via CycleDomainForm. Returns the new form id. A domain
+ * may have several challenge Forms — the applicant picks one.
+ */
+export async function createDomainChallengeForm(
+  cycleId: string,
+  domainId: string,
+  actorId: string,
+): Promise<string | null> {
+  const [cycle, domain] = await Promise.all([
+    prisma.applicationCycle.findUnique({ where: { id: cycleId }, select: { id: true, name: true } }),
+    prisma.domain.findUnique({ where: { id: domainId }, select: { id: true, displayName: true } }),
+  ]);
+  if (!cycle || !domain) return null;
+
+  const templateId = await ensureHiringTemplate(actorId);
+  const template = await prisma.form.findUnique({
+    where: { id: templateId },
+    select: { versions: { orderBy: { versionNumber: "desc" }, take: 1, select: { questions: true, intro: true } } },
+  });
+  const templateVersion = template?.versions[0];
+  const questions = (templateVersion?.questions as unknown as Question[]) ?? defaultQuestions();
+
+  const folderId = await ensureFolder(HIRING_FOLDER, actorId);
+  const form = await prisma.form.create({
+    data: {
+      name: `${cycle.name} — ${domain.displayName} challenge`,
+      folderId,
+      createdById: actorId,
+      versions: {
+        create: {
+          versionNumber: 1,
+          questions: questions as unknown as object,
+          intro: templateVersion?.intro ?? null,
+          createdById: actorId,
+        },
+      },
+    },
+    select: { id: true },
+  });
+  await prisma.cycleDomainForm.create({
+    data: { applicationCycleId: cycleId, domainId, formId: form.id },
+  });
+  return form.id;
+}
+
 export type HiringApplicationForm = {
   formId: string;
   name: string;

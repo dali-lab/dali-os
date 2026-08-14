@@ -18,6 +18,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           domain: { select: { id: true, name: true } },
         },
       },
+      challengeFormVersion: { select: { questions: true } },
       domain: { select: { id: true, name: true } },
       application: {
         include: {
@@ -138,7 +139,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         id: da.id,
         answers: da.answers,
         domain: da.challengeVersion?.domain ?? da.domain ?? null,
-        challengeQuestions: da.challengeVersion?.questions ?? [],
+        challengeQuestions:
+          da.challengeFormVersion?.questions ?? da.challengeVersion?.questions ?? [],
         interviewPrepNote: da.interviewPrepNote,
       },
       application: {

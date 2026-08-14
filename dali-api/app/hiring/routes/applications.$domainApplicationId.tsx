@@ -69,6 +69,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           challenge: { select: { name: true } },
         },
       },
+      challengeFormVersion: { select: { questions: true, intro: true } },
       application: {
         select: {
           id: true,
@@ -130,18 +131,20 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     (da.application.applicationFormVersion?.questions as unknown as Question[]) ??
     (da.application.generalChallengeVersion?.questions as unknown as Question[]) ??
     [];
+  // Per-domain challenge questions: prefer the picked Drive Form, else legacy.
+  const challengeQuestions =
+    (da.challengeFormVersion?.questions as unknown as Question[]) ??
+    (da.challengeVersion?.questions as unknown as Question[]) ??
+    [];
   const [generalAnswers, domainAnswers] = await Promise.all([
     presignAnswers(generalQuestions, da.application.answers as Record<string, string>),
-    presignAnswers(
-      (da.challengeVersion?.questions as unknown as Question[]) ?? [],
-      da.answers as Record<string, string>,
-    ),
+    presignAnswers(challengeQuestions, da.answers as Record<string, string>),
   ]);
 
   // Question labels for the viewer (general + this domain's challenge).
   const questionLabels: Record<string, string> = {};
   for (const q of generalQuestions) questionLabels[q.key] = q.data.label;
-  for (const q of (da.challengeVersion?.questions as unknown as Question[]) ?? []) {
+  for (const q of challengeQuestions) {
     questionLabels[q.key] = q.data.label;
   }
 
@@ -427,8 +430,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         id: da.id,
         answers: domainAnswers,
         challengeVersion: {
-          questions: da.challengeVersion?.questions ?? [],
-          description: ensureBlocks(da.challengeVersion?.description),
+          questions: challengeQuestions,
+          description: da.challengeFormVersion
+            ? ensureBlocks(safeParseJsonString(da.challengeFormVersion.intro))
+            : ensureBlocks(da.challengeVersion?.description),
           domain: { name: da.challengeVersion?.domain?.name ?? domainName },
           challenge: { name: da.challengeVersion?.challenge?.name ?? "Challenge" },
         },

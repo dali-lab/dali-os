@@ -44,6 +44,7 @@ export async function runGetApplication(userId: string, input: Input): Promise<u
           domain: { select: { id: true, name: true } },
         },
       },
+      challengeFormVersion: { select: { questions: true } },
       domain: { select: { id: true, name: true } },
       application: {
         include: {
@@ -175,7 +176,8 @@ export async function runGetApplication(userId: string, input: Input): Promise<u
       id: da.id,
       answers: da.answers,
       domain: da.challengeVersion?.domain ?? da.domain ?? null,
-      challengeQuestions: da.challengeVersion?.questions ?? [],
+      challengeQuestions:
+        da.challengeFormVersion?.questions ?? da.challengeVersion?.questions ?? [],
       interviewPrepNote: da.interviewPrepNote,
     },
     application: {

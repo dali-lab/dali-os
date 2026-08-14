@@ -8,6 +8,7 @@ import { redirectToLogin } from "~/lib/login-next";
 import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
 import { presignAnswers } from "~/hiring/lib/presign";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
+import { safeParseJsonString } from "~/forms/lib/forms-data";
 import { ChevronDown } from "lucide-react";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { Avatar } from "~/components/ui/Avatar";
@@ -87,6 +88,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     include: {
       ...domainApplicationStatusInclude,
       challengeVersion: { include: { domain: true, challenge: true } },
+      challengeFormVersion: { select: { questions: true, intro: true } },
       domain: true,
       application: {
         include: {
@@ -224,10 +226,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   // Presign file-type answers so reviewers see real download links rather
   // than raw S3 keys.
+  // Prefer bound Drive Forms; fall back to legacy ChallengeVersions.
   const generalQuestions =
-    (da.application.generalChallengeVersion?.questions as unknown as Question[]) ?? [];
+    (da.application.applicationFormVersion?.questions as unknown as Question[]) ??
+    (da.application.generalChallengeVersion?.questions as unknown as Question[]) ??
+    [];
   const challengeQuestions =
-    (da.challengeVersion?.questions as unknown as Question[]) ?? [];
+    (da.challengeFormVersion?.questions as unknown as Question[]) ??
+    (da.challengeVersion?.questions as unknown as Question[]) ??
+    [];
   const presignedGeneralAnswers = await presignAnswers(
     generalQuestions,
     da.application.answers as Record<string, string>,
@@ -248,11 +255,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   return {
       domainApplication: {
         ...da,
-        // Immutable ChallengeVersion rows: legacy ProseMirror descriptions
-        // convert to block JSON on read (ApplicationViewer expects blocks).
-        challengeVersion: da.challengeVersion
-          ? { ...da.challengeVersion, description: ensureBlocks(da.challengeVersion.description) }
-          : da.challengeVersion,
+        // Per-domain challenge: prefer the picked Drive Form (intro →
+        // description), else the legacy ChallengeVersion. Viewer expects blocks.
+        challengeVersion: da.challengeFormVersion
+          ? {
+              questions: da.challengeFormVersion.questions,
+              description: ensureBlocks(safeParseJsonString(da.challengeFormVersion.intro)),
+            }
+          : da.challengeVersion
+            ? { ...da.challengeVersion, description: ensureBlocks(da.challengeVersion.description) }
+            : da.challengeVersion,
         answers: presignedChallengeAnswers,
         interviews: interviewsWithNotes,
         reviews: reviewsWithPhotos,
@@ -260,12 +272,18 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       application: {
         ...da.application,
         answers: presignedGeneralAnswers,
-        generalChallengeVersion: da.application.generalChallengeVersion
+        // Prefer the bound Drive Form (intro → description); fall back to legacy.
+        generalChallengeVersion: da.application.applicationFormVersion
           ? {
-              ...da.application.generalChallengeVersion,
-              description: ensureBlocks(da.application.generalChallengeVersion.description),
+              questions: da.application.applicationFormVersion.questions,
+              description: ensureBlocks(safeParseJsonString(da.application.applicationFormVersion.intro)),
             }
-          : da.application.generalChallengeVersion,
+          : da.application.generalChallengeVersion
+            ? {
+                ...da.application.generalChallengeVersion,
+                description: ensureBlocks(da.application.generalChallengeVersion.description),
+              }
+            : da.application.generalChallengeVersion,
       },
       inferredStatus,
       criteriaByKey,

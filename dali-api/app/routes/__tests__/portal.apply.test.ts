@@ -608,7 +608,8 @@ describe("POST /portal/apply (update-domains) — multi-challenge", () => {
 
     expect(mockPrisma.domainApplication.update).toHaveBeenCalledWith({
       where: { id: "da-1" },
-      data: { challengeVersionId: CV_A2, answers: {} },
+      // Switching to a legacy CV also clears any prior Form-challenge pin.
+      data: { challengeVersionId: CV_A2, challengeFormVersionId: null, answers: {} },
     });
   });
 
