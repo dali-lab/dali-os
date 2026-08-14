@@ -206,9 +206,14 @@ test.describe('Drive hub (drive-consolidation flag)', () => {
     await page.waitForLoadState('networkidle');
     await expect(page.getByTestId(`drive-item-doc-${docId}`)).toHaveCount(0);
 
-    // Switch the filter to Documents via the Select dropdown.
+    // Switch the filter to Documents via the Select dropdown. Wait for the
+    // portal option to render before clicking (the panel mounts asynchronously).
     await page.getByTestId('drive-filter').getByRole('button').click();
-    await page.getByRole('option', { name: 'Documents' }).click();
+    const docOption = page.getByRole('option', { name: 'Documents' });
+    await expect(docOption).toBeVisible();
+    await docOption.click();
+
+    // The doc reappears once the type filter is Documents.
     await expect(page.getByTestId(`drive-item-doc-${docId}`)).toBeVisible();
   });
 
