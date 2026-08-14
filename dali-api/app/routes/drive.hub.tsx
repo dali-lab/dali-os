@@ -222,63 +222,63 @@ function useDriveFileUpload(target: UploadTarget, onComplete: () => void) {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    // Reset the input so the same file can be re-selected after an error.
-    e.target.value = "";
+  // Upload a single file: presign → PUT S3 → register in the target drive.
+  async function uploadOne(file: File): Promise<void> {
+    const key = `drive-files/${crypto.randomUUID()}-${file.name}`;
+    const presignRes = await fetch("/api/upload/presign", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        key,
+        contentType: file.type || "application/octet-stream",
+        contentLength: file.size,
+      }),
+    });
+    if (!presignRes.ok) {
+      const body = await presignRes.json().catch(() => ({})) as { error?: string };
+      throw new Error(body.error ?? "Failed to get upload URL");
+    }
+    const { url, fields, key: s3Key } = await presignRes.json() as {
+      url: string;
+      fields: Record<string, string>;
+      key: string;
+    };
 
+    const formData = new FormData();
+    for (const [name, value] of Object.entries(fields)) formData.append(name, value);
+    formData.append("file", file);
+    const uploadRes = await fetch(url, { method: "POST", body: formData });
+    if (!uploadRes.ok) throw new Error("Upload to storage failed");
+
+    const registerRes = await fetch("/api/drive/files", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        s3Key,
+        title: file.name,
+        fileName: file.name,
+        contentType: file.type || "application/octet-stream",
+        sizeBytes: file.size,
+        scope: target.scope,
+        ...(target.folderPageId ? { folderPageId: target.folderPageId } : {}),
+      }),
+    });
+    if (!registerRes.ok) {
+      const body = await registerRes.json().catch(() => ({})) as { error?: string };
+      throw new Error(body.error ?? "Failed to register file");
+    }
+  }
+
+  // Upload one or many files (drag-drop can drop several). Sequential so an
+  // early failure surfaces without racing the rest.
+  async function uploadFiles(files: File[]): Promise<void> {
+    if (files.length === 0) return;
     setUploading(true);
     setUploadError(null);
     try {
-      const key = `drive-files/${crypto.randomUUID()}-${file.name}`;
-      const presignRes = await fetch("/api/upload/presign", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          key,
-          contentType: file.type || "application/octet-stream",
-          contentLength: file.size,
-        }),
-      });
-      if (!presignRes.ok) {
-        const body = await presignRes.json().catch(() => ({})) as { error?: string };
-        throw new Error(body.error ?? "Failed to get upload URL");
-      }
-      const { url, fields, key: s3Key } = await presignRes.json() as {
-        url: string;
-        fields: Record<string, string>;
-        key: string;
-      };
-
-      // POST to S3 multipart (presigned-post pattern used everywhere in the app).
-      const formData = new FormData();
-      for (const [name, value] of Object.entries(fields)) formData.append(name, value);
-      formData.append("file", file);
-      const uploadRes = await fetch(url, { method: "POST", body: formData });
-      if (!uploadRes.ok) throw new Error("Upload to storage failed");
-
-      // Register the file in the target drive.
-      const registerRes = await fetch("/api/drive/files", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          s3Key,
-          title: file.name,
-          fileName: file.name,
-          contentType: file.type || "application/octet-stream",
-          sizeBytes: file.size,
-          scope: target.scope,
-          ...(target.folderPageId ? { folderPageId: target.folderPageId } : {}),
-        }),
-      });
-      if (!registerRes.ok) {
-        const body = await registerRes.json().catch(() => ({})) as { error?: string };
-        throw new Error(body.error ?? "Failed to register file");
-      }
-
+      for (const file of files) await uploadOne(file);
       onComplete();
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : "Upload failed");
@@ -287,7 +287,14 @@ function useDriveFileUpload(target: UploadTarget, onComplete: () => void) {
     }
   }
 
-  return { inputRef, uploading, uploadError, handleFileChange };
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files ? Array.from(e.target.files) : [];
+    // Reset the input so the same file can be re-selected after an error.
+    e.target.value = "";
+    await uploadFiles(files);
+  }
+
+  return { inputRef, uploading, uploadError, handleFileChange, uploadFiles };
 }
 
 // ── Browse scope section ───────────────────────────────────────────────────────
@@ -341,6 +348,8 @@ type ScopeActions = {
   createFolder: () => Promise<void>;
   rename: (item: DriveItem) => Promise<void>;
   remove: (item: DriveItem) => Promise<void>;
+  /** Delete request without the confirm/toast — used by bulk delete. */
+  deleteItem: (item: DriveItem) => Promise<Response>;
   requestMove: (item: DriveItem) => Promise<void>;
   performMove: (item: DriveItem, destFolderId: string | null) => Promise<void>;
 };
@@ -468,6 +477,21 @@ function makeScopeActions({
     }
   }
 
+  // The raw delete request for an item, routed to the right endpoint. No
+  // confirm/toast — the single-item `remove` and the hub's bulk delete wrap it.
+  async function deleteItem(item: DriveItem): Promise<Response> {
+    if (item.type === "file") {
+      return fetch(`/api/files/${item.id}`, { method: "DELETE", credentials: "include" });
+    }
+    if (kind === "mine") {
+      const fd = new FormData();
+      fd.set("intent", "archive");
+      fd.set("pageId", item.id);
+      return fetch("/api/notes", { method: "POST", body: fd, credentials: "include" });
+    }
+    return fetch(`/api/documents/${item.id}`, { method: "DELETE", credentials: "include" });
+  }
+
   async function remove(item: DriveItem) {
     const confirmed = await dialog.confirm({
       title: `Delete "${item.title || "Untitled"}"?`,
@@ -480,17 +504,7 @@ function makeScopeActions({
     });
     if (!confirmed) return;
 
-    let res: Response;
-    if (item.type === "file") {
-      res = await fetch(`/api/files/${item.id}`, { method: "DELETE", credentials: "include" });
-    } else if (kind === "mine") {
-      const fd = new FormData();
-      fd.set("intent", "archive");
-      fd.set("pageId", item.id);
-      res = await fetch("/api/notes", { method: "POST", body: fd, credentials: "include" });
-    } else {
-      res = await fetch(`/api/documents/${item.id}`, { method: "DELETE", credentials: "include" });
-    }
+    const res = await deleteItem(item);
     if (res.ok) {
       toast.success("Deleted");
       revalidate();
@@ -556,7 +570,7 @@ function makeScopeActions({
     await performMove(item, dest === "__root__" ? null : dest);
   }
 
-  return { createDoc, createFolder, rename, remove, requestMove, performMove };
+  return { createDoc, createFolder, rename, remove, deleteItem, requestMove, performMove };
 }
 
 // ── New menu (contextual to the current location) ────────────────────────────
@@ -756,6 +770,47 @@ export default function DriveHub() {
     [navigate],
   );
 
+  // Toggle the viewer's personal favorite on a page item (doc/folder).
+  const onToggleFavorite = useCallback(
+    async (item: DriveItem) => {
+      if (item.type !== "doc" && item.type !== "folder") return;
+      await fetch(`/api/pages/${item.id}/favorite`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ favorited: !item.favorited }),
+      });
+      revalidator.revalidate();
+    },
+    [revalidator],
+  );
+
+  // Bulk delete the selected items (one confirm, then delete each). Selection is
+  // always within the current scope, so we route through its action factory.
+  const onBulkDelete = useCallback(
+    async (items: DriveItem[]) => {
+      if (items.length === 0 || !effectiveScopeId) return;
+      const actions = scopeActionsMap.get(effectiveScopeId);
+      if (!actions) return;
+      const confirmed = await dialog.confirm({
+        title: `Delete ${items.length} item${items.length === 1 ? "" : "s"}?`,
+        description: "Folders must be empty first.",
+        tone: "destructive",
+        confirmLabel: "Delete",
+      });
+      if (!confirmed) return;
+      let fail = 0;
+      for (const it of items) {
+        const res = await actions.deleteItem(it);
+        if (!res.ok) fail++;
+      }
+      revalidator.revalidate();
+      if (fail) toast.error(`${fail} item${fail === 1 ? "" : "s"} couldn't be deleted`);
+      else toast.success(`Deleted ${items.length}`);
+    },
+    [effectiveScopeId, scopeActionsMap, dialog, toast, revalidator],
+  );
+
   // Upload for the current scope + folder. Called unconditionally (hook rule);
   // when at the Drive root the target defaults to Lab but the New menu (and thus
   // the upload item) isn't rendered there.
@@ -766,8 +821,9 @@ export default function DriveHub() {
       return { scope: { kind: "Lab" }, folderPageId: currentFolderId ?? currentScope.rootFolderId ?? null };
     return { scope: { kind: "Project", projectId: currentScope.id }, folderPageId: currentFolderId };
   }, [currentScope, currentFolderId]);
-  const { inputRef, uploading, uploadError, handleFileChange } = useDriveFileUpload(uploadTarget, () =>
-    revalidator.revalidate(),
+  const { inputRef, uploading, uploadError, handleFileChange, uploadFiles } = useDriveFileUpload(
+    uploadTarget,
+    () => revalidator.revalidate(),
   );
 
   const currentActions = effectiveScopeId ? scopeActionsMap.get(effectiveScopeId) : undefined;
@@ -820,6 +876,9 @@ export default function DriveHub() {
         onOpenItem={onOpenItem}
         onMove={onMove}
         getScopeActions={getScopeActions}
+        onToggleFavorite={onToggleFavorite}
+        onBulkDelete={onBulkDelete}
+        onUploadFiles={currentScope ? uploadFiles : undefined}
         filterControl={filterControl}
         newMenu={newMenuNode}
       />

@@ -61,8 +61,11 @@ test.describe('Drive hub (drive-consolidation flag)', () => {
     await expect(page.getByTestId('drive-scope-mine')).toBeVisible();
     await expect(page.getByTestId('drive-scope-lab')).toBeVisible();
 
-    // Type filter control (Select dropdown) is present.
+    // Type filter control (Select dropdown) + view/details toolbar controls.
     await expect(page.getByTestId('drive-filter')).toBeVisible();
+    await expect(page.getByTestId('drive-view-list')).toBeVisible();
+    await expect(page.getByTestId('drive-view-grid')).toBeVisible();
+    await expect(page.getByTestId('drive-details-toggle')).toBeVisible();
 
     // No contextual New menu at the Drive root — you pick a drive first.
     await expect(page.getByTestId('drive-new-menu-lab')).toHaveCount(0);
@@ -343,6 +346,48 @@ test.describe('Drive hub (drive-consolidation flag)', () => {
     await page.getByTestId('drive-scope-lab').dblclick();
     await page.getByTestId(`drive-item-folder-${folderId}`).dblclick();
     await expect(page.getByTestId(`drive-item-doc-${docId}`)).toBeVisible();
+  });
+
+  // ── Test K: multi-select shows the bulk action bar ───────────────────────────
+  test('(K) Ctrl/Cmd-clicking two rows shows the bulk action bar', async ({ page }) => {
+    const stamp = Date.now();
+    const a = await page.request.post('/api/lab-documents', { data: { title: `E2E bulk a ${stamp}`, kind: 'FreeForm' } });
+    const b = await page.request.post('/api/lab-documents', { data: { title: `E2E bulk b ${stamp}`, kind: 'FreeForm' } });
+    expect(a.ok() && b.ok(), 'create docs failed').toBe(true);
+    const { id: idA } = await a.json() as { id: string };
+    const { id: idB } = await b.json() as { id: string };
+
+    await page.goto('/drive?scope=lab&embed=1');
+    await page.waitForLoadState('networkidle');
+
+    await page.getByTestId(`drive-item-doc-${idA}`).click();
+    await page.getByTestId(`drive-item-doc-${idB}`).click({ modifiers: ['Control'] });
+
+    const bar = page.getByTestId('drive-bulk-bar');
+    await expect(bar).toBeVisible();
+    await expect(bar.getByText('2 selected')).toBeVisible();
+  });
+
+  // ── Test L: view toggle switches list/grid + sort header present ─────────────
+  test('(L) Grid/list view toggle works and sortable column header is present', async ({ page }) => {
+    const stamp = Date.now();
+    const res = await page.request.post('/api/lab-documents', { data: { title: `E2E view ${stamp}`, kind: 'FreeForm' } });
+    expect(res.ok(), 'create doc failed').toBe(true);
+
+    await page.goto('/drive?scope=lab&embed=1');
+    await page.waitForLoadState('networkidle');
+
+    // List view is default → the sortable Name header is present.
+    await expect(page.getByTestId('drive-sort-name')).toBeVisible();
+
+    // Switch to grid: the grid toggle becomes pressed and the column header goes away.
+    await page.getByTestId('drive-view-grid').click();
+    await expect(page.getByTestId('drive-view-grid')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByTestId('drive-sort-name')).toHaveCount(0);
+
+    // Back to list.
+    await page.getByTestId('drive-view-list').click();
+    await expect(page.getByTestId('drive-sort-name')).toBeVisible();
   });
 });
 

@@ -44,6 +44,10 @@ export type DriveItem =
       iconEmoji: string | null;
       updatedAt: Date;
       href: string;
+      /** File size in bytes (files only; null elsewhere). Drives the Size column. */
+      sizeBytes?: number | null;
+      /** Whether the viewer has favorited this item (pages only). */
+      favorited?: boolean;
     }
   | {
       type: "doc";
@@ -53,6 +57,10 @@ export type DriveItem =
       iconEmoji: string | null;
       updatedAt: Date;
       href: string;
+      /** File size in bytes (files only; null elsewhere). Drives the Size column. */
+      sizeBytes?: number | null;
+      /** Whether the viewer has favorited this item (pages only). */
+      favorited?: boolean;
     }
   | {
       type: "file";
@@ -63,6 +71,10 @@ export type DriveItem =
       iconEmoji: null; // files have no emoji; callers use a fixed icon
       updatedAt: Date;
       href: string;
+      /** File size in bytes (files only; null elsewhere). Drives the Size column. */
+      sizeBytes?: number | null;
+      /** Whether the viewer has favorited this item (pages only). */
+      favorited?: boolean;
     }
   | {
       type: "form";
@@ -73,6 +85,10 @@ export type DriveItem =
       iconEmoji: null; // forms have no emoji; callers use a fixed icon
       updatedAt: Date;
       href: string;
+      /** File size in bytes (files only; null elsewhere). Drives the Size column. */
+      sizeBytes?: number | null;
+      /** Whether the viewer has favorited this item (pages only). */
+      favorited?: boolean;
     }
   | {
       type: "agreement";
@@ -84,6 +100,10 @@ export type DriveItem =
       iconEmoji: null;
       updatedAt: Date;
       href: string;
+      /** File size in bytes (files only; null elsewhere). Drives the Size column. */
+      sizeBytes?: number | null;
+      /** Whether the viewer has favorited this item (pages only). */
+      favorited?: boolean;
     };
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
@@ -247,7 +267,13 @@ async function loadMemberFiles(userSub: string): Promise<DriveItem[]> {
   const rows = await prisma.projectFile.findMany({
     where: { workspaceType: "Member", workspaceId: userSub, archivedAt: null },
     orderBy: { updatedAt: "desc" },
-    select: { id: true, title: true, folderPageId: true, updatedAt: true },
+    select: {
+      id: true,
+      title: true,
+      folderPageId: true,
+      updatedAt: true,
+      currentVersion: { select: { sizeBytes: true } },
+    },
   });
   return rows.map((f) => ({
     type: "file" as const,
@@ -257,6 +283,7 @@ async function loadMemberFiles(userSub: string): Promise<DriveItem[]> {
     iconEmoji: null,
     updatedAt: f.updatedAt,
     href: `/documents/file/${f.id}`,
+    sizeBytes: f.currentVersion?.sizeBytes ?? null,
   }));
 }
 
@@ -278,6 +305,7 @@ async function loadLabFiles(userSub: string, request?: Request): Promise<DriveIt
       title: true,
       folderPageId: true,
       updatedAt: true,
+      currentVersion: { select: { sizeBytes: true } },
     },
   });
   const out: DriveItem[] = [];
@@ -301,6 +329,7 @@ async function loadLabFiles(userSub: string, request?: Request): Promise<DriveIt
       iconEmoji: null,
       updatedAt: f.updatedAt,
       href: `/documents/file/${f.id}`,
+      sizeBytes: f.currentVersion?.sizeBytes ?? null,
     });
   }
   return out;
@@ -319,6 +348,7 @@ async function loadFiles(projectIds: string[]): Promise<DriveItem[]> {
       title: true,
       folderPageId: true,
       updatedAt: true,
+      currentVersion: { select: { sizeBytes: true } },
     },
   });
   return rows.map((f) => ({
@@ -329,6 +359,7 @@ async function loadFiles(projectIds: string[]): Promise<DriveItem[]> {
     iconEmoji: null,
     updatedAt: f.updatedAt,
     href: `/documents/file/${f.id}`,
+    sizeBytes: f.currentVersion?.sizeBytes ?? null,
   }));
 }
 
