@@ -1,15 +1,15 @@
-// Dev script that stands up an InternToFull cycle end-to-end on a local DB.
+// Dev script that stands up an Fellowship cycle end-to-end on a local DB.
 //
 // What it does (idempotent — re-run safe):
 //   1. Ensures an intern-program Domain (ERAS) and a target Domain (Engineering).
 //   2. Ensures a Term that covers today's date.
 //   3. Creates a test "intern" User + DALIMember and assigns them to a Project
 //      in the ERAS domain for the active Term — this is what makes them
-//      eligible for the InternToFull flow.
+//      eligible for the Fellowship flow.
 //   4. Ensures a reviewer User + DALIMember + AdminMembership (so they can also
 //      release decisions during testing).
 //   5. Creates a tiny ShortformVersion (2 questions) and a Rubric.
-//   6. Creates an InternToFull ApplicationCycle, binds the form + target
+//   6. Creates an Fellowship ApplicationCycle, binds the form + target
 //      domains + rubric + reviewers, and transitions it to Open.
 //   7. Prints next-step URLs.
 //
@@ -21,9 +21,9 @@
 //
 // After it runs you can:
 //   - Log in as intern@dali.dartmouth.edu (use /dev-login-as) and open
-//     /intern-to-full to submit a shortform.
+//     /fellowship to submit a shortform.
 //   - Log in as admin@dali.dartmouth.edu to review at /hiring/reviewer and
-//     release decisions at /hiring/lead/intern-to-full-cycle/<id>.
+//     release decisions at /hiring/lead/internal-cycle/<id>.
 
 import { PrismaClient } from "../app/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
@@ -33,7 +33,7 @@ const prisma = new PrismaClient({ adapter });
 
 async function main() {
   const now = new Date();
-  console.log(`Seeding InternToFull demo @ ${now.toISOString()}\n`);
+  console.log(`Seeding Fellowship demo @ ${now.toISOString()}\n`);
 
   // 1. Domains -----------------------------------------------------------------
   const internDomain = await prisma.domain.upsert({
@@ -203,7 +203,7 @@ async function main() {
   const rubric = await prisma.rubric.upsert({
     where: { id: "demo-itf-rubric" },
     update: {},
-    create: { id: "demo-itf-rubric", name: "InternToFull Demo Rubric" },
+    create: { id: "demo-itf-rubric", name: "Fellowship Demo Rubric" },
   });
   const rubricVersion = await prisma.rubricVersion.create({
     data: {
@@ -285,7 +285,7 @@ async function main() {
         kind: "General" as const,
         title: "Intern → Full-time application is open",
         body: `${cycle.name} is accepting conversion applications.${closeText}`,
-        link: "/intern-to-full",
+        link: "/fellowship",
       })),
     });
   }
@@ -295,9 +295,9 @@ async function main() {
   });
   console.log(`✓ Notified ${eligibleAssignments.length} eligible intern(s)`);
 
-  console.log("\n✓ InternToFull demo cycle is Open\n");
-  console.log(`  Cycle:   /hiring/lead/intern-to-full-cycle/${cycle.id}`);
-  console.log("  Apply:   /intern-to-full   (log in as intern@dali.dartmouth.edu via /dev-login-as)");
+  console.log("\n✓ Fellowship demo cycle is Open\n");
+  console.log(`  Cycle:   /hiring/lead/internal-cycle/${cycle.id}`);
+  console.log("  Apply:   /fellowship   (log in as intern@dali.dartmouth.edu via /dev-login-as)");
   console.log("  Review:  /hiring/reviewer   (log in as admin@dali.dartmouth.edu)\n");
 }
 
