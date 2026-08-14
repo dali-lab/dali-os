@@ -8,6 +8,7 @@ import { sendEmail } from "~/lib/gmail";
 import { getApplicationsGmailRefreshToken } from "~/lib/gmail-integration";
 import { renderForSlot, notificationSlot } from "~/hiring/lib/email-variables";
 import { getActiveCycle } from "~/hiring/lib/cycles";
+import { loadHiringForm } from "~/hiring/lib/application-form.server";
 import { reconcileDomainApplications } from "~/hiring/lib/domain-application";
 import { checkGitHubUrl, checkFigmaUrl, checkDriveUrl } from "~/lib/submission-check";
 import type { SubmissionCheckResult } from "~/lib/submission-check";
@@ -60,20 +61,31 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   if (!cycle) return redirect("/portal");
 
-  // General form = ChallengeVersion with domainId: null linked to this cycle
+  // General form: prefer a bound Drive Form (applicationFormId); fall back to
+  // the legacy general ChallengeVersion (domainId: null) linked to this cycle.
+  // Additive — existing cycles keep working via the fallback.
+  const form = cycle.applicationFormId
+    ? await loadHiringForm(cycle.applicationFormId, auth.user.sub)
+    : null;
   const generalCvac = cycle.challengeVersions.find(
     cvc => cvc.challengeVersion.domainId === null,
   );
+  if (!form && !generalCvac) return redirect("/portal");
 
-  if (!generalCvac) return redirect("/portal");
-
-  // Immutable ChallengeVersion rows: legacy ProseMirror descriptions/info
-  // bodies convert to block JSON on read — the portal only ever sees blocks.
-  const generalChallengeVersionId = generalCvac.challengeVersionId;
+  // The pin the applicant's Application carries for the general form: a
+  // FormVersion (new) or the legacy ChallengeVersion. Exactly one is set.
+  const applicationFormVersionId = form ? form.versionId : null;
+  const generalChallengeVersionId = form ? null : generalCvac!.challengeVersionId;
+  // Immutable snapshots: legacy ProseMirror descriptions/info bodies convert to
+  // block JSON on read — the portal only ever sees blocks.
   const formQuestions = normalizeQuestionBodies(
-    (generalCvac.challengeVersion.questions as unknown as Question[]) ?? [],
+    form
+      ? form.questions
+      : ((generalCvac!.challengeVersion.questions as unknown as Question[]) ?? []),
   );
-  const generalDescription = ensureBlocks(generalCvac.challengeVersion.description);
+  const generalDescription = ensureBlocks(
+    form ? form.description : generalCvac!.challengeVersion.description,
+  );
 
   // Build domain info with all linked challenge versions (applicant picks one).
   const domains = cycle.domains.map(dac => {
@@ -117,6 +129,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       cycleName: active.name,
       closeDate: active.closeDate ? active.closeDate.toISOString() : null,
       generalChallengeVersionId,
+      applicationFormVersionId,
       formQuestions,
       generalDescription,
       domains,
@@ -150,7 +163,10 @@ export async function action({ request }: Route.ActionArgs) {
 
   if (intent === "create-draft") {
     const cycleId = formData.get("cycleId") as string;
-    const generalChallengeVersionId = formData.get("generalChallengeVersionId") as string;
+    // Exactly one of these is set: a Drive Form version (new) or the legacy
+    // general ChallengeVersion.
+    const generalChallengeVersionId = (formData.get("generalChallengeVersionId") as string) || null;
+    const applicationFormVersionId = (formData.get("applicationFormVersionId") as string) || null;
     const selectedDomains = JSON.parse(formData.get("selectedDomains") as string) as {
       domainId: string;
       challengeVersionId: string;
@@ -189,6 +205,7 @@ export async function action({ request }: Route.ActionArgs) {
         userId: auth.user.sub,
         applicationCycleId: cycleId,
         generalChallengeVersionId,
+        applicationFormVersionId,
         answers: {},
         statusUpdates: {
           create: { newStatus: "Draft", userId: auth.user.sub },
@@ -325,14 +342,19 @@ export async function action({ request }: Route.ActionArgs) {
       where: { id: applicationId },
       select: {
         applicationCycleId: true,
+        applicationFormVersion: { select: { questions: true } },
         generalChallengeVersion: { select: { questions: true } },
       },
     });
     if (!application) {
       return Response.json({ error: "Application not found" }, { status: 404 });
     }
+    // Prefer the bound Drive Form's questions; fall back to the legacy general
+    // ChallengeVersion for pre-migration applications.
     const generalQuestions =
-      (application.generalChallengeVersion?.questions as unknown as Question[]) ?? [];
+      (application.applicationFormVersion?.questions as unknown as Question[]) ??
+      (application.generalChallengeVersion?.questions as unknown as Question[]) ??
+      [];
 
     const allDas = await prisma.domainApplication.findMany({
       where: { applicationId },
@@ -755,7 +777,7 @@ function BackToTopButton() {
 export default function PortalApply() {
   const toast = useToast();
   const loaderData = useLoaderData<typeof loader>() as any;
-  const { cycleId, cycleName, generalChallengeVersionId, formQuestions, generalDescription, domains, isAlreadySubmitted } = loaderData;
+  const { cycleId, cycleName, generalChallengeVersionId, applicationFormVersionId, formQuestions, generalDescription, domains, isAlreadySubmitted } = loaderData;
   const [draft, setDraft] = useState(loaderData.draft);
   const [selectedDomainIds, setSelectedDomainIds] = useState<string[]>(
     loaderData.draft?.selectedDomainIds ?? [],
@@ -983,7 +1005,8 @@ export default function PortalApply() {
     const form = new FormData();
     form.set("intent", "create-draft");
     form.set("cycleId", cycleId);
-    form.set("generalChallengeVersionId", generalChallengeVersionId);
+    form.set("generalChallengeVersionId", generalChallengeVersionId ?? "");
+    form.set("applicationFormVersionId", applicationFormVersionId ?? "");
     form.set(
       "selectedDomains",
       JSON.stringify(buildSelectedDomainsPayload(selectedDomainIds, pickedChallengeByDomain)),
