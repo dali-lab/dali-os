@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   buildTaskBoard,
+  taskMatchesQuery,
   moveTaskInBoard,
   nextPositionInColumn,
   resolveTermIdForDate,
@@ -187,5 +188,42 @@ describe("termIdsInRange", () => {
         new Date("2026-07-10T00:00:00Z"),
       ),
     ).toEqual(["summer"]);
+  });
+});
+
+describe("taskMatchesQuery", () => {
+  const searchable = (over: Partial<TaskCardModel>): TaskCardModel => ({
+    ...task("t1", "Todo", 0),
+    title: "Fix login redirect",
+    description: "Bounces back to the landing page after CAS",
+    assignees: [{ id: "u2", name: "Sophie Park" }],
+    domain: { id: "d1", name: "Software" },
+    ...over,
+  });
+
+  it("matches an empty or whitespace-only query", () => {
+    expect(taskMatchesQuery(searchable({}), "")).toBe(true);
+    expect(taskMatchesQuery(searchable({}), "   ")).toBe(true);
+  });
+
+  it("matches on title, description, assignee and domain, case-insensitively", () => {
+    const t = searchable({});
+    expect(taskMatchesQuery(t, "LOGIN")).toBe(true);
+    expect(taskMatchesQuery(t, "cas")).toBe(true);
+    expect(taskMatchesQuery(t, "sophie")).toBe(true);
+    expect(taskMatchesQuery(t, "software")).toBe(true);
+    expect(taskMatchesQuery(t, "figma")).toBe(false);
+  });
+
+  it("requires every token to land, so extra words narrow the result", () => {
+    const t = searchable({});
+    expect(taskMatchesQuery(t, "login sophie")).toBe(true);
+    expect(taskMatchesQuery(t, "login rachel")).toBe(false);
+  });
+
+  it("handles a task with no description, assignees or domain", () => {
+    const bare = searchable({ description: null, assignees: [], domain: null });
+    expect(taskMatchesQuery(bare, "login")).toBe(true);
+    expect(taskMatchesQuery(bare, "sophie")).toBe(false);
   });
 });
