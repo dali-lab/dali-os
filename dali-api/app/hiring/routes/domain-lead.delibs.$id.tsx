@@ -73,6 +73,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     auth.user.sub,
     `/hiring/domain-lead/delibs/${params.id}`,
     `${session.domain?.name ?? "Domain"} delibs`,
+    request,
   );
 
   // Load domain applications that qualify for this delibs type.

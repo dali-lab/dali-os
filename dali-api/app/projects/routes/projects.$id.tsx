@@ -364,7 +364,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   // After the gate, so a 404 never lands in someone's recents. Detached —
   // a failed bookkeeping write must not cost the reader their project.
-  recordRouteVisit(auth.user.sub, `/projects/${project.id}`, project.name);
+  recordRouteVisit(auth.user.sub, `/projects/${project.id}`, project.name, request);
 
   // Backfill the two default, undeletable meeting-note folders (idempotent —
   // no-ops once they exist) so every project's Documents block always shows

@@ -80,6 +80,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     auth.user.sub,
     `/hiring/reviewer/application/${params.id}`,
     `${applicationBase.user.firstName} ${applicationBase.user.lastName}`.trim(),
+    request,
   )
 
   // Scope domainApplications to only the domains this reviewer is assigned to

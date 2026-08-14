@@ -10,6 +10,7 @@ import { getPageAccess, type PageShape } from "~/lib/pageAccess.server";
 import { isNavbarRoute } from "~/lib/navbar-routes";
 import { isAreaSubtabPath } from "~/lib/nav-areas";
 import { cachedForRequest } from "~/lib/request-cache";
+import { isPrefetchRequest } from "~/lib/prefetch";
 import { resolvePhotoUrl } from "~/lib/photo";
 
 /** How a Favorites/Recent row draws its leading icon. */
@@ -422,8 +423,13 @@ export async function setRouteFavorite(
 /**
  * Note that this user just opened this page. Fire-and-forget from the loader:
  * a failure here must never cost someone the document they asked for.
+ *
+ * `request` is what distinguishes a real open from a prefetch: the sidebar
+ * preloader warms these very pages, and counting that as a visit would rewrite
+ * the Recent order it was reading from.
  */
-export function recordPageVisit(userId: string, pageId: string): void {
+export function recordPageVisit(userId: string, pageId: string, request: Request): void {
+  if (isPrefetchRequest(request)) return;
   void prisma.userFavorite
     .upsert({
       where: { userId_pageId: { userId, pageId } },
@@ -445,8 +451,15 @@ export function recordPageVisit(userId: string, pageId: string): void {
  * `label` is refreshed as a fallback name; the live entity name is preferred at
  * read time. Keyed on the (userId, href) unique so a repeat visit just bumps
  * the timestamp (leaving favoritedAt untouched if the route is also pinned).
+ * Skips prefetches for the same reason recordPageVisit does.
  */
-export function recordRouteVisit(userId: string, href: string, label: string): void {
+export function recordRouteVisit(
+  userId: string,
+  href: string,
+  label: string,
+  request: Request,
+): void {
+  if (isPrefetchRequest(request)) return;
   void prisma.userFavorite
     .upsert({
       where: { userId_href: { userId, href } },

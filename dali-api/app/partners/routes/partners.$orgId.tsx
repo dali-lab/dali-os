@@ -105,7 +105,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   // After the gate, so a 404 never lands in someone's recents. Detached — a
   // failed bookkeeping write must not cost the reader their org page.
-  recordRouteVisit(auth.user.sub, `/partners/${org.id}`, org.name);
+  recordRouteVisit(auth.user.sub, `/partners/${org.id}`, org.name, request);
 
   const [pendingInvites, linkableProjects, otherOrgs] = await Promise.all([
     canEdit ? listPendingInvites(org.id) : Promise.resolve([]),

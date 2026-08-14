@@ -81,6 +81,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     auth.user.sub,
     `/mentorship/notes/${note.id}`,
     `${fullName(note.mentee)} — mentor note`,
+    request,
   );
 
   const [project, term, domain, core, me] = await Promise.all([
