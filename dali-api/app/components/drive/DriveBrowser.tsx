@@ -73,6 +73,10 @@ export type DriveBrowserProps = {
   onMove: (scopeId: string, item: DriveItem, destFolderId: string | null) => void;
   /** Row "⋯" actions for a given scope. */
   getScopeActions: (scopeId: string) => RowActions;
+  /** Type-filter control rendered in the toolbar (the site's Select dropdown). */
+  filterControl?: React.ReactNode;
+  /** Contextual New menu, rendered at the toolbar's trailing edge. Null at root. */
+  newMenu?: React.ReactNode;
 };
 
 // ── Pure helpers (client-safe; operate on the flat item list) ────────────────
@@ -375,6 +379,8 @@ export function DriveBrowser({
   onOpenItem,
   onMove,
   getScopeActions,
+  filterControl,
+  newMenu,
 }: DriveBrowserProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const currentScope = useMemo(
@@ -483,6 +489,8 @@ export function DriveBrowser({
           ))}
         </nav>
 
+        {filterControl}
+
         <div className="relative w-full sm:w-64 shrink-0">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input
@@ -508,6 +516,8 @@ export function DriveBrowser({
             </button>
           )}
         </div>
+
+        {newMenu}
       </div>
 
       {/* Listing */}

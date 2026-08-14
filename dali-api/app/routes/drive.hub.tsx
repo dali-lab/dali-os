@@ -1,7 +1,6 @@
 import { redirect, useLoaderData, useSearchParams, useNavigate, useRevalidator } from "react-router";
 import type { Route } from "./+types/drive.hub";
 import {
-  HardDrive,
   FileText,
   ClipboardList,
   FileSignature,
@@ -23,7 +22,7 @@ import { DriveBrowser } from "~/components/drive/DriveBrowser";
 import type { RowActions } from "~/components/drive/DriveBrowser";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
-import { Menu } from "~/components/ui/floating";
+import { Menu, Select } from "~/components/ui/floating";
 import { Modal } from "~/components/Modal";
 
 export const meta: Route.MetaFunction = () => [{ title: "Drive · DALI OS" }];
@@ -776,50 +775,38 @@ export default function DriveHub() {
   const caps = { canViewForms, canManageAgreements };
   const visibleFilters = TYPE_FILTERS.filter((f) => !f.requiresCap || caps[f.requiresCap]);
 
-  const chipBase =
-    "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium transition-colors border";
-  const chipActive = "bg-accent-coral/10 border-accent-coral/40 text-accent-coral";
-  const chipInactive =
-    "bg-transparent border-transparent text-muted-foreground hover:text-foreground hover:border-border";
+  // Type filter as the site's Select dropdown (matches members/forms filters),
+  // collapsing the old chip row into one compact control.
+  const filterControl = (
+    <div data-testid="drive-filter">
+      <Select<DriveTypeFilter>
+        value={typeFilter}
+        onChange={setTypeFilter}
+        ariaLabel="Filter by type"
+        align="right"
+        options={visibleFilters.map((f) => ({ value: f.value, label: f.label, icon: f.icon }))}
+        buttonClassName="px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground sm:w-40 hover:bg-muted/40 transition-colors"
+      />
+    </div>
+  );
+
+  const newMenuNode =
+    currentScope && currentActions ? (
+      <NewMenu
+        scope={currentScope}
+        actions={currentActions}
+        canViewForms={canViewForms}
+        canManageAgreements={canManageAgreements}
+        onUploadClick={() => inputRef.current?.click()}
+        uploading={uploading}
+        onTemplate={() => setTemplatePickerOpen(true)}
+      />
+    ) : null;
 
   return (
-    <div className="w-full flex flex-col gap-4 p-4">
-      {/* Header: title + contextual New (only inside a drive) */}
-      <div className="flex items-center justify-between gap-3 min-w-0">
-        <div className="flex items-center gap-2 min-w-0">
-          <HardDrive className="w-5 h-5 text-accent-coral" />
-          <h1 className="text-lg font-semibold text-foreground">Drive</h1>
-        </div>
-        {currentScope && currentActions && (
-          <NewMenu
-            scope={currentScope}
-            actions={currentActions}
-            canViewForms={canViewForms}
-            canManageAgreements={canManageAgreements}
-            onUploadClick={() => inputRef.current?.click()}
-            uploading={uploading}
-            onTemplate={() => setTemplatePickerOpen(true)}
-          />
-        )}
-      </div>
-
-      {/* Type filter chips */}
-      <div className="flex items-center gap-1.5 flex-wrap" role="group" aria-label="Filter by type">
-        {visibleFilters.map((f) => (
-          <button
-            key={f.value}
-            type="button"
-            aria-pressed={typeFilter === f.value}
-            onClick={() => setTypeFilter(f.value)}
-            data-testid={`drive-filter-${f.value}`}
-            className={`${chipBase} ${typeFilter === f.value ? chipActive : chipInactive}`}
-          >
-            {f.icon}
-            {f.label}
-          </button>
-        ))}
-      </div>
-
+    <div className="w-full flex flex-col gap-3 p-4">
+      {/* The breadcrumb (with the Drive root) is the sole title — no separate
+          "Drive" header. Filter + New live in the browser's toolbar row. */}
       {uploadError && <p className="text-sm text-red-600">{uploadError}</p>}
 
       <DriveBrowser
@@ -833,6 +820,8 @@ export default function DriveHub() {
         onOpenItem={onOpenItem}
         onMove={onMove}
         getScopeActions={getScopeActions}
+        filterControl={filterControl}
+        newMenu={newMenuNode}
       />
 
       {/* Hidden upload input (driven by the New menu) + template picker modal */}

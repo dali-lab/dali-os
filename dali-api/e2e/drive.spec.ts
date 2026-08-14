@@ -14,7 +14,8 @@ import { enableDriveFlagForUser, clearDriveFlag } from './helpers';
 //     drive-crumb-root / drive-crumb-scope / drive-crumb-<folderId>.
 //   - Search box: data-testid="drive-search" (client-side, across all drives);
 //     results container drive-search-results, hit rows drive-search-hit-<id>.
-//   - Type filter chips: drive-filter-all|doc|file|form|agreement.
+//   - Type filter: a Select dropdown (data-testid="drive-filter"); options
+//     All / Documents / Files / Forms / Agreements set the ?type= param.
 //   - Contextual New ▾ menu (only inside a drive): drive-new-menu-<scopeId> with
 //     drive-new-doc-<scopeId> / drive-new-folder-<scopeId> / drive-new-upload-
 //     <scopeId>; Lab adds drive-new-form / drive-new-agreement / drive-new-template.
@@ -60,11 +61,8 @@ test.describe('Drive hub (drive-consolidation flag)', () => {
     await expect(page.getByTestId('drive-scope-mine')).toBeVisible();
     await expect(page.getByTestId('drive-scope-lab')).toBeVisible();
 
-    // Filter chips (admin = Core → Forms + Agreements chips shown).
-    await expect(page.getByTestId('drive-filter-all')).toBeVisible();
-    await expect(page.getByTestId('drive-filter-doc')).toBeVisible();
-    await expect(page.getByTestId('drive-filter-file')).toBeVisible();
-    await expect(page.getByTestId('drive-filter-form')).toBeVisible();
+    // Type filter control (Select dropdown) is present.
+    await expect(page.getByTestId('drive-filter')).toBeVisible();
 
     // No contextual New menu at the Drive root — you pick a drive first.
     await expect(page.getByTestId('drive-new-menu-lab')).toHaveCount(0);
@@ -203,10 +201,11 @@ test.describe('Drive hub (drive-consolidation flag)', () => {
 
     await page.goto('/drive?scope=lab&type=form&embed=1');
     await page.waitForLoadState('networkidle');
-    await expect(page.getByTestId('drive-filter-form')).toHaveAttribute('aria-pressed', 'true');
     await expect(page.getByTestId(`drive-item-doc-${docId}`)).toHaveCount(0);
 
-    await page.getByTestId('drive-filter-doc').click();
+    // Switch the filter to Documents via the Select dropdown.
+    await page.getByTestId('drive-filter').getByRole('button').click();
+    await page.getByRole('option', { name: 'Documents' }).click();
     await expect(page.getByTestId(`drive-item-doc-${docId}`)).toBeVisible();
   });
 
@@ -291,7 +290,10 @@ test.describe('Drive hub (drive-consolidation flag)', () => {
   }) => {
     await page.goto('/drive?embed=1');
     await page.waitForLoadState('networkidle');
-    await expect(page.getByTestId('drive-filter-agreement')).toBeVisible();
+    // Agreements is an option in the type filter for a Core user.
+    await page.getByTestId('drive-filter').getByRole('button').click();
+    await expect(page.getByRole('option', { name: 'Agreements' })).toBeVisible();
+    await page.keyboard.press('Escape');
 
     await page.goto('/drive?scope=lab&embed=1');
     await page.waitForLoadState('networkidle');
