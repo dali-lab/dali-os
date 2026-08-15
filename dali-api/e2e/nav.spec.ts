@@ -21,7 +21,7 @@ test.describe('navigation for hiring lead', () => {
     await expect(frame.getByRole('link', { name: 'Reviews' })).toBeVisible();
     await expect(frame.getByRole('link', { name: 'Domain' })).toBeVisible();
     await expect(frame.getByRole('link', { name: 'Cycles' })).toBeVisible();
-    await expect(frame.getByRole('link', { name: 'Library' })).toBeVisible();
+    // Library was folded into the Hiring drive (/drive); no pill anymore.
   });
 
   test('can navigate to cycles page', async ({ page }) => {
