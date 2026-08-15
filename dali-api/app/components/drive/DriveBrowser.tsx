@@ -95,6 +95,8 @@ export type DriveBrowserProps = {
   onToggleFavorite?: (item: DriveItem) => void;
   /** Delete every item in the set (one confirm, handled by the hub). */
   onBulkDelete?: (items: DriveItem[]) => void;
+  /** Move every item in the set to another drive/folder (picker + confirm in the hub). */
+  onBulkMove?: (items: DriveItem[]) => void;
   /** Upload files dropped from the desktop into the current scope+folder. */
   onUploadFiles?: (files: File[]) => void;
   filterControl?: ReactNode;
@@ -445,6 +447,7 @@ export function DriveBrowser({
   getScopeActions,
   onToggleFavorite,
   onBulkDelete,
+  onBulkMove,
   onUploadFiles,
   filterControl,
   newMenu,
@@ -906,6 +909,16 @@ export function DriveBrowser({
             onClick={(e) => e.stopPropagation()}
           >
             <span className="font-medium text-foreground">{selected.size} selected</span>
+            {onBulkMove && (
+              <button
+                type="button"
+                data-testid="drive-bulk-move"
+                onClick={() => onBulkMove(selectedItems)}
+                className="inline-flex items-center gap-1 text-foreground hover:text-accent-coral"
+              >
+                <FolderInput className="w-3.5 h-3.5" /> Move
+              </button>
+            )}
             {onBulkDelete && (
               <button
                 type="button"

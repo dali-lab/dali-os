@@ -248,14 +248,24 @@ export function FormDetail() {
             {usages.length > 0 && (
               <div className="mt-2 flex items-center gap-1.5 flex-wrap text-xs">
                 <span className="text-muted-foreground font-medium">In use:</span>
-                {usages.map((u) => (
-                  <span
-                    key={`${u.kind}:${u.label}`}
-                    className="inline-flex items-center px-2 py-0.5 rounded-full bg-accent-teal/10 text-accent-teal border border-accent-teal/20"
-                  >
-                    {u.label}
-                  </span>
-                ))}
+                {usages.map((u) => {
+                  const className =
+                    "inline-flex items-center px-2 py-0.5 rounded-full bg-accent-teal/10 text-accent-teal border border-accent-teal/20";
+                  return u.href ? (
+                    <Link
+                      key={`${u.kind}:${u.label}`}
+                      to={u.href}
+                      className={`${className} hover:bg-accent-teal/20 hover:underline transition-colors`}
+                      title="Open where this form is managed"
+                    >
+                      {u.label}
+                    </Link>
+                  ) : (
+                    <span key={`${u.kind}:${u.label}`} className={className}>
+                      {u.label}
+                    </span>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -277,7 +287,16 @@ export function FormDetail() {
           <div className="rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-900/40 dark:bg-blue-900/20 p-4 flex items-start gap-3">
             <Lock className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
             <div className="text-sm text-blue-900 dark:text-blue-200">
-              <p className="font-semibold">Managed form — {managing.label}</p>
+              <p className="font-semibold">
+                Managed form —{" "}
+                {managing.href ? (
+                  <Link to={managing.href} className="underline hover:no-underline">
+                    {managing.label}
+                  </Link>
+                ) : (
+                  managing.label
+                )}
+              </p>
               <p className="mt-0.5 text-blue-800/80 dark:text-blue-300/80">
                 Who can fill this form and when is controlled by that feature, so
                 publishing, the public link, schedule, audience, and response
