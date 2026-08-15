@@ -543,10 +543,19 @@ export function DriveBrowser({
     return listing.map((i) => i.id);
   }, [searching, hits, currentScope, scopes, listing]);
 
-  const selectedItems = useMemo(
-    () => listing.filter((i) => selected.has(i.id)),
-    [listing, selected],
-  );
+  // Items backing the current selection. In column view the selectable pool is
+  // the union of items across the open columns; in list/grid it's the listing.
+  const selectedItems = useMemo(() => {
+    if (viewMode === "columns") {
+      const pool = new Map<string, DriveItem>();
+      for (const level of colSel.levels) {
+        for (const it of itemsForLevel(level)) pool.set(it.id, it);
+      }
+      return [...pool.values()].filter((i) => selected.has(i.id));
+    }
+    return listing.filter((i) => selected.has(i.id));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode, colSel, listing, selected]);
 
   // ── List/Grid Selection ────────────────────────────────────────────────────
   function selectOnly(id: string) {
@@ -724,7 +733,32 @@ export function DriveBrowser({
   }
 
   // Click a row inside a column: either drill into folder or highlight leaf.
-  function handleColumnRowClick(levelIdx: number, item: DriveItem, scopeId: string) {
+  // Cmd/Ctrl- or Shift-click multi-selects within that column (like list/grid)
+  // instead of navigating, driving the same bulk bar.
+  function handleColumnRowClick(levelIdx: number, item: DriveItem, scopeId: string, e?: ReactMouseEvent) {
+    if (e && (e.metaKey || e.ctrlKey)) {
+      setSelected((prev) => {
+        const next = new Set(prev);
+        if (next.has(item.id)) next.delete(item.id);
+        else next.add(item.id);
+        return next;
+      });
+      setAnchorId(item.id);
+      return;
+    }
+    if (e && e.shiftKey && anchorId) {
+      const ids = itemsForLevel(colSel.levels[levelIdx]).map((i) => i.id);
+      const a = ids.indexOf(anchorId);
+      const b = ids.indexOf(item.id);
+      if (a !== -1 && b !== -1) {
+        const [lo, hi] = a <= b ? [a, b] : [b, a];
+        setSelected(new Set(ids.slice(lo, hi + 1)));
+        return;
+      }
+    }
+    // Plain click: drop any multi-selection, then navigate/highlight as before.
+    if (selected.size > 0) setSelected(new Set());
+    setAnchorId(item.id);
     if (item.type === "folder") {
       // Drill into folder: truncate anything to the right of this column, open
       // a new column for this folder's children, and update URL.
@@ -913,8 +947,8 @@ export function DriveBrowser({
           {newMenu}
         </div>
 
-        {/* ── Bulk action bar (multi-select, list/grid only) ── */}
-        {showBulk && viewMode !== "columns" && (
+        {/* ── Bulk action bar (multi-select, all views) ── */}
+        {showBulk && (
           <div
             className="flex items-center gap-3 rounded-md border border-accent-coral/40 bg-accent-coral/5 px-3 py-1.5 text-sm"
             data-testid="drive-bulk-bar"
@@ -1110,9 +1144,10 @@ export function DriveBrowser({
                               item={item}
                               scopeId={sId}
                               isHighlighted={isHighlighted}
+                              isSelected={selected.has(item.id)}
                               scopeActions={scopeActions}
                               onToggleFavorite={onToggleFavorite}
-                              onClick={() => { if (sId) handleColumnRowClick(levelIdx, item, sId); }}
+                              onClick={(e) => { if (sId) handleColumnRowClick(levelIdx, item, sId, e); }}
                               onDoubleClick={() => handleColumnRowDblClick(item)}
                               onOpen={() => onOpenItem(item)}
                             />
@@ -1274,6 +1309,7 @@ function ColumnItemRow({
   item,
   scopeId,
   isHighlighted,
+  isSelected,
   scopeActions,
   onToggleFavorite,
   onClick,
@@ -1283,9 +1319,10 @@ function ColumnItemRow({
   item: DriveItem;
   scopeId: string | null;
   isHighlighted: boolean;
+  isSelected: boolean;
   scopeActions: RowActions | null;
   onToggleFavorite?: (item: DriveItem) => void;
-  onClick: () => void;
+  onClick: (e: ReactMouseEvent) => void;
   onDoubleClick: () => void;
   onOpen: () => void;
 }) {
@@ -1303,12 +1340,12 @@ function ColumnItemRow({
       {...drag.attributes}
       {...drag.listeners}
       data-testid={`drive-item-${item.type}-${item.id}`}
-      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      onClick={(e) => { e.stopPropagation(); onClick(e); }}
       onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick(); }}
       className={`group flex items-center gap-2 px-3 py-2 text-sm cursor-default select-none ${
         drag.isDragging ? "opacity-40" : ""
       } ${
-        isHighlighted
+        isHighlighted || isSelected
           ? "bg-accent-coral/10 text-accent-coral"
           : "hover:bg-muted/50 text-foreground"
       }`}
