@@ -149,6 +149,22 @@ export async function action({ request, params }: Route.ActionArgs) {
     const result = await onAccept(ctx);
     acceptAuditMeta = result.auditMeta;
     provisionResult = result.provision;
+
+    // Single placement: an Accept is final, so the applicant's other domains
+    // this cycle are moot. Close every still-undecided sibling DA (selected,
+    // no Released decision of its own, not already closed) as "Accepted
+    // elsewhere" so it stops reading as a stale "Pending". Rejected/Waitlisted
+    // siblings keep their recorded outcome; idempotent on re-release.
+    await prisma.domainApplication.updateMany({
+      where: {
+        applicationId: domainApp.applicationId,
+        id: { not: domainApp.id },
+        selected: true,
+        closureReason: null,
+        decisions: { none: { stage: "Released" } },
+      },
+      data: { closureReason: "AcceptedElsewhere", closedAt: new Date() },
+    });
   }
 
   // ── Send notification email via per-cycle binding ────────────────────────────
