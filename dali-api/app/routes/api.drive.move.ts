@@ -26,7 +26,7 @@ import { parseJson } from "~/lib/validate";
 import { logAuditEvent } from "~/lib/audit";
 
 const BodySchema = z.object({
-  itemType: z.enum(["file", "form"]),
+  itemType: z.enum(["file", "form", "rubric", "agreement"]),
   itemId: z.string().min(1),
   // Null = unplace (remove from the unified tree; falls back to legacy location).
   destFolderPageId: z.string().min(1).nullable(),
@@ -69,8 +69,7 @@ export async function action({ request }: Route.ActionArgs) {
         Response.json({ error: "You can't move this file" }, { status: 403 }),
       );
     }
-  } else {
-    // form
+  } else if (itemType === "form") {
     const form = await prisma.form.findUnique({
       where: { id: itemId },
       select: { id: true },
@@ -84,6 +83,22 @@ export async function action({ request }: Route.ActionArgs) {
       return withCors(
         request,
         Response.json({ error: "You can't move this form" }, { status: 403 }),
+      );
+    }
+  } else {
+    // rubric | agreement — hiring artifacts. Manage requires Core or the forms
+    // gate; the destination-folder canEdit check below is the real placement
+    // guard (you can only drop into a folder you can edit, e.g. the Hiring drive).
+    const table = itemType === "rubric" ? prisma.rubric : prisma.signingDocument;
+    const exists = await (table as any).findUnique({ where: { id: itemId }, select: { id: true } });
+    if (!exists) {
+      return withCors(request, Response.json({ error: `${itemType} not found` }, { status: 404 }));
+    }
+    const canManage = (await isCore(userId, request)) || (await canViewForms(userId));
+    if (!canManage) {
+      return withCors(
+        request,
+        Response.json({ error: `You can't move this ${itemType}` }, { status: 403 }),
       );
     }
   }
@@ -136,8 +151,18 @@ export async function action({ request }: Route.ActionArgs) {
       where: { id: itemId },
       data: { folderPageId: destFolderPageId },
     });
-  } else {
+  } else if (itemType === "form") {
     await prisma.form.update({
+      where: { id: itemId },
+      data: { folderPageId: destFolderPageId },
+    });
+  } else if (itemType === "rubric") {
+    await prisma.rubric.update({
+      where: { id: itemId },
+      data: { folderPageId: destFolderPageId },
+    });
+  } else {
+    await prisma.signingDocument.update({
       where: { id: itemId },
       data: { folderPageId: destFolderPageId },
     });

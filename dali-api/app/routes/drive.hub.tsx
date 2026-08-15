@@ -1,4 +1,4 @@
-import { redirect, useLoaderData, useSearchParams, useNavigate, useRevalidator } from "react-router";
+import { redirect, useLoaderData, useSearchParams, useNavigate, useRevalidator, useLocation } from "react-router";
 import type { Route } from "./+types/drive.hub";
 import {
   FileText,
@@ -691,8 +691,13 @@ export default function DriveHub() {
   // every keystroke. Scope/folder/type stay in the URL (linkable, back/forward).
   const [search, setSearch] = useState("");
 
-  // Location + view state from the URL. No scope/folder = Drive root.
-  const currentScopeId = searchParams.get("scope");
+  // Location + view state from the URL. No scope/folder = Drive root — except
+  // when this same hub is embedded at /hiring/library, where it opens straight
+  // into the Hiring drive so the hiring team lands on their artifacts.
+  const location = useLocation();
+  const currentScopeId =
+    searchParams.get("scope") ??
+    (location.pathname.startsWith("/hiring/library") ? "hiring" : null);
   const currentFolderId = searchParams.get("folder");
   const rawType = searchParams.get("type") as DriveTypeFilter | null;
   const typeFilter: DriveTypeFilter =

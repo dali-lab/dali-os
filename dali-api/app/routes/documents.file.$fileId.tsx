@@ -33,7 +33,14 @@ export const handle = {
     const d = data as
       | { projectId?: string; projectName?: string; projectIconEmoji?: string | null; title?: string }
       | undefined;
-    if (!d?.projectId || !d.projectName) return null;
+    if (!d?.title) return null;
+    // Lab files (no project) root at Drive.
+    if (!d.projectId || !d.projectName) {
+      return [
+        { label: "Drive", to: "/drive" },
+        { label: d.title },
+      ];
+    }
     return [
       { label: "Projects", to: "/projects" },
       {
@@ -41,7 +48,7 @@ export const handle = {
         to: `/projects/${d.projectId}`,
         icon: <ProjectIcon iconEmoji={d.projectIconEmoji} />,
       },
-      { label: d.title ?? "File" },
+      { label: d.title },
     ];
   },
 };
