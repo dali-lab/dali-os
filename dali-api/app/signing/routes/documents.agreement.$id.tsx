@@ -1,25 +1,48 @@
 // Drive-namespaced authoring route for agreement templates.
 //
-// This file is a PURE RE-EXPORT of the admin.agreements.$id route — there is
-// exactly one implementation (the admin route) and this module delegates to it
-// entirely. The Drive URL (/documents/agreement/:id) becomes the canonical
-// surface when the drive-consolidation flag is on; the admin URL redirects here
-// so old bookmarks keep working.
+// Re-exports the admin.agreements.$id route action + component but provides
+// its own loader that augments the admin loader's result with driveCrumbs so
+// the breadcrumb shows the full Drive folder path instead of just the name.
 //
 // The redirect-loop guard lives in admin.agreements.$id.tsx: its loader only
-// redirects when the request path starts with /admin/agreements, so re-exporting
+// redirects when the request path starts with /admin/agreements, so wrapping
 // that loader here is safe — loading /documents/agreement/:id will not redirect.
 
-export { loader, action, default } from "./admin.agreements.$id";
+import type { Route } from "./+types/documents.agreement.$id";
+import { loader as adminLoader } from "./admin.agreements.$id";
+import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
+import { PageIcon } from "~/components/PageIcon";
+
+export { action, default } from "./admin.agreements.$id";
+
+export async function loader(args: Route.LoaderArgs) {
+  const result = await adminLoader(args as unknown as Parameters<typeof adminLoader>[0]);
+  // If the admin loader redirected, pass it through.
+  if (result instanceof Response) return result;
+  const doc = (result as { document?: { folderPageId?: string | null } }).document;
+  const driveCrumbs = await driveFolderCrumbs(doc?.folderPageId);
+  return { ...(result as object), driveCrumbs };
+}
 
 // Override the adminHandle breadcrumb trail (which roots at Admin) so the Drive
-// surface shows "Drive › <agreement name>" instead of the admin trail.
+// surface shows "Drive › Folder › … › <agreement name>" instead of the admin trail.
 export const handle = {
   breadcrumbTrail: (data: unknown) => {
-    const name = (data as { document?: { name?: string } } | undefined)?.document?.name;
+    const d = data as {
+      document?: { name?: string };
+      driveCrumbs?: { scope: string; folders: { id: string; title: string; iconEmoji: string | null }[] } | null;
+    } | undefined;
+    const name = d?.document?.name;
     if (!name) return null;
+    const scope = d?.driveCrumbs?.scope ?? "lab";
+    const scopeQuery = scope === "lab" ? "" : `?scope=${scope}`;
     return [
-      { label: "Drive", to: "/drive" },
+      { label: "Drive", to: `/drive${scopeQuery}` },
+      ...(d?.driveCrumbs?.folders ?? []).map((f) => ({
+        label: f.title || "Untitled folder",
+        to: `/drive?scope=${scope}&folder=${f.id}`,
+        icon: <PageIcon iconEmoji={f.iconEmoji} />,
+      })),
       { label: name },
     ];
   },
