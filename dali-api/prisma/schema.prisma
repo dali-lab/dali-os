@@ -935,7 +935,14 @@ model Rubric {
 
   name String
 
+  // Unified-Drive tree placement (Page of kind=Folder). Null = unplaced.
+  // Organisation only — never affects who can view/edit the rubric. Lets a
+  // rubric live in the Hiring drive alongside the forms it scores.
+  folderPageId String?
+
   versions RubricVersion[]
+
+  @@index([folderPageId])
 }
 
 // Immutable snapshot of a rubric. Never update rows in this table —
@@ -1555,6 +1562,12 @@ model SigningDocument {
   gateScope SigningGateScope    @default(None) // how an unsigned copy is enforced
   audience  SigningAudience     @default(Manual) // who is required to sign
   cadence   SigningCadence      @default(Once) // how often a fresh signature is required
+
+  // Unified-Drive tree placement (Page of kind=Folder). Null = unplaced
+  // (agreements render at Lab top level today). Set for hiring Confidentiality
+  // agreements so they live in the Hiring drive. Organisation only — signing
+  // gates/audience are unchanged.
+  folderPageId String?
 
   // Optional repeating page-header banner + footer for PDF export (the paper
   // letterhead look). Null = no running header/footer.
