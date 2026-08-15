@@ -13,6 +13,11 @@ export const test = base.extend<{ loginAs: (opts: LoginOptions) => Promise<void>
     await page.addInitScript((key) => {
       try {
         window.localStorage.setItem(key, 'e2e');
+        // The Drive suite predates the Miller-columns view and exercises
+        // list/grid behaviour (bulk-select, drag-and-drop, dblclick nav). Pin
+        // List view so those specs run against the UI they were written for;
+        // column view (the app default) is covered separately.
+        window.localStorage.setItem('dali_drive_view', 'list');
       } catch {
         // localStorage unavailable (e.g. about:blank) — ignore.
       }
