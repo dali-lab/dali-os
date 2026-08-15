@@ -26,6 +26,7 @@ import { hasSubnavRow } from '~/lib/nav-areas'
 import { listFavoritesAndRecents } from '~/lib/user-pages.server'
 import { loadShellUser } from '~/lib/shell-user.server'
 import { guideRequirements } from '~/lib/guide.server'
+import { guideProgress } from '~/lib/guide'
 import { resolveFeatureFlags } from '~/lib/feature-flags.server'
 import { FeatureFlagsProvider } from '~/components/FeatureFlags'
 import { timed } from '~/lib/server-timing'
@@ -168,12 +169,17 @@ export async function loader({ request }: Route.LoaderArgs) {
     clearedIds: me?.daliMember?.guideStepIds ?? [],
   }
 
-  // Auto-show the guide once per USER (server-driven, not browser
-  // localStorage): a member who has finished onboarding but not yet dismissed
-  // it. Established members were backfilled (tourCompletedAt set), so only the
-  // just-onboarded get it. The Help page can re-open it later regardless.
+  // Show the guide when the member has finished onboarding and either hasn't
+  // dismissed it yet, or still owes a required setup step (photo, timezone,
+  // linked calendar). Dismissing is a snooze rather than an exit while
+  // anything is outstanding — otherwise one click on "Finish later" at the
+  // calendar step escapes the gate permanently, and the required steps aren't
+  // required at all. Once nothing is outstanding, a dismissal ends it for good.
+  const outstanding = guideProgress(guide.clearedIds, guide.requirements)
+    .outstanding.length
   const shouldShowTour =
-    !!me?.daliMember?.onboardedAt && me.daliMember.tourCompletedAt === null
+    !!me?.daliMember?.onboardedAt &&
+    (me.daliMember.tourCompletedAt === null || outstanding > 0)
 
   // Detect iframe context from Sec-Fetch-Dest. Modern browsers (Chrome, Firefox,
   // Safari 16+) set this automatically and it survives server-side redirects,

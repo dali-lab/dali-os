@@ -1,23 +1,19 @@
 import { test, expect } from './fixtures';
+import { clearGuideSetup, satisfyGuideSetup } from './helpers';
 
-// The guide's spotlight is an interaction lock: while a step points at
-// something, the only live surfaces are that element and the guide card. These
-// run in the suite's tabbed mode, so they also cover the cross-frame path —
-// /help renders in a workspace iframe while the guide card lives in the shell.
+// The interactive guide, in the suite's tabbed mode — which also exercises the
+// cross-frame path, since /help renders in a workspace iframe while the guide
+// card lives in the shell.
 
+const CARD = '.fixed.bottom-4.right-4';
+
+/** Open the guide at step one. */
 async function openGuide(page: import('@playwright/test').Page) {
   await page.goto('/help');
-  // The guide is resumable and its progress is per-user server state, so a
-  // previous run would otherwise leave this member part-way through and the
-  // intro modal would be skipped. Reset so every test starts at step one.
-  await page.request.post('/api/tour/progress', { form: { intent: 'reset' } });
-  await page.reload();
-  const help = page.frameLocator('iframe[title="Help"]');
-  await help.getByRole('button', { name: /Continue the guide|Start the guide/ }).click();
-  const intro = page.getByRole('button', { name: /Show me around|Pick up where I left off/ });
-  await intro.waitFor({ state: 'visible' });
-  await intro.click();
-  const card = page.locator('.fixed.bottom-4.right-4');
+  // Every step is outstanding after clearGuideSetup, so the shell auto-opens
+  // the guide on load and the intro modal is waiting.
+  await page.getByRole('button', { name: /Show me around|Pick up where I left off/ }).click();
+  const card = page.locator(CARD);
   await expect(card).toContainText('Step 1 of');
   return card;
 }
@@ -25,6 +21,7 @@ async function openGuide(page: import('@playwright/test').Page) {
 test.describe('interactive guide', () => {
   test.beforeEach(async ({ loginAs }) => {
     await loginAs({ daliEmail: 'admin@dali.dartmouth.edu' });
+    await clearGuideSetup('admin@dali.dartmouth.edu');
   });
 
   test('spotlight blocks everything except its target and the card', async ({ page }) => {
@@ -46,7 +43,7 @@ test.describe('interactive guide', () => {
     const tasks = page.locator('aside').getByRole('button', { name: /^My Tasks/ }).first();
     const target = await tasks.boundingBox();
     await page.mouse.click(target!.x + target!.width / 2, target!.y + target!.height / 2);
-    await expect(card).toContainText("Anything waiting on you");
+    await expect(card).toContainText('Anything waiting on you');
   });
 
   test('a gated step leaves the page interactive and blocks Next', async ({ page }) => {
@@ -70,4 +67,43 @@ test.describe('interactive guide', () => {
     await expect(card.getByRole('button', { name: 'Next' })).toBeDisabled();
     await expect(card.getByRole('button', { name: "I'm there" })).toHaveCount(0);
   });
+
+  test('dismissing snoozes the guide but it returns at the step still owed', async ({ page }) => {
+    const card = await openGuide(page);
+
+    // Leaving is always allowed — the guide never traps anyone on a page.
+    await card.getByRole('button', { name: 'Finish later' }).click();
+    await expect(card).toHaveCount(0);
+
+    // ...but a required step is still owed, so the next navigation brings it
+    // back. Without this, one click on "Finish later" at a gated step escapes
+    // the gate permanently and the required steps aren't required at all.
+    await page.locator('aside').getByRole('button', { name: /^Projects/ }).first().click();
+    await expect(card).toBeVisible({ timeout: 15_000 });
+
+    // It returns on what's missing rather than restarting the walkthrough, and
+    // since that's a gated step the page stays usable.
+    await expect(card).toContainText('Add a photo');
+    await expect(page.locator('.cursor-not-allowed')).toHaveCount(0);
+    await expect(card.getByRole('button', { name: 'Next' })).toBeDisabled();
+  });
+
+  test('the Help page can reopen the guide from inside the workspace iframe', async ({ page }) => {
+    // A settled member: nothing outstanding, guide already dismissed, so the
+    // shell won't auto-open it and no spotlight is covering the page.
+    await satisfyGuideSetup('admin@dali.dartmouth.edu');
+    await page.goto('/help');
+    await expect(page.locator(CARD)).toHaveCount(0);
+
+    // /help renders in a workspace iframe while the guide card lives in the
+    // shell, so this only works if the click crosses the frame boundary.
+    await page
+      .frameLocator('iframe[title="Help"]')
+      .getByRole('button', { name: /Run the guide again|Continue the guide|Start the guide/ })
+      .click();
+    await expect(
+      page.getByRole('button', { name: /Show me around|Pick up where I left off/ }),
+    ).toBeVisible({ timeout: 10_000 });
+  });
+
 });

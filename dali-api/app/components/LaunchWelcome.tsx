@@ -255,6 +255,40 @@ export function LaunchWelcome({
     }
   }, []);
 
+  // Dismissing silences the guide for the page the member is on, not for good:
+  // while a required step is outstanding the server keeps shouldShowTour true,
+  // and the next navigation brings the guide back at the step they still owe.
+  // Re-reads from the server rather than trusting this card's copy, which stops
+  // being refreshed the moment they dismiss.
+  const snoozed = useRef(false);
+  const reopenIfOwed = useCallback(async () => {
+    if (!snoozed.current) return;
+    snoozed.current = false;
+    try {
+      const res = await fetch("/api/tour/progress", { credentials: "include" });
+      if (!res.ok) return;
+      const data = await res.json();
+      const owed = data?.progress?.outstanding?.[0];
+      if (!owed) return;
+      // Reopen on the step they actually owe, not wherever they left off. It
+      // comes back because setup is incomplete, so it should say so — making
+      // them re-walk the tour to reach the calendar step would punish the
+      // dismissal rather than collect the thing that's missing. Gated steps
+      // also carry no spotlight, so the page they just navigated to stays
+      // usable while the card asks.
+      const at = steps.findIndex((s) => s.id === owed.id);
+      if (at < 0) return;
+      setRequirements(data.requirements);
+      setCleared(data.clearedIds);
+      setStep(at);
+      setArrived(false);
+      setNudge(0);
+      setPhase("card");
+    } catch {
+      // Offline — the next navigation tries again.
+    }
+  }, []);
+
   // Auto-show is server-driven, and resumes at the first unfinished step so a
   // member who bailed halfway doesn't have to walk the whole thing again.
   //
@@ -367,11 +401,12 @@ export function LaunchWelcome({
         return;
       }
       if (d.type !== "dali:tabNavigated" || typeof d.url !== "string") return;
+      void reopenIfOwed();
       handleUrl(d.url);
     }
     window.addEventListener("message", onMsg);
     return () => window.removeEventListener("message", onMsg);
-  }, [handleUrl]);
+  }, [handleUrl, reopenIfOwed]);
 
   // Tabless equivalent of the `dali:tabNavigated` bridge above: the page is a
   // real navigation in this window, so clear the step off the router location.
@@ -380,15 +415,24 @@ export function LaunchWelcome({
     handleUrl(routerLocation.pathname);
   }, [tabless, routerLocation.pathname, handleUrl]);
 
+  useEffect(() => {
+    if (!tabless) return;
+    void reopenIfOwed();
+  }, [tabless, routerLocation.key, reopenIfOwed]);
+
   function startGuide() {
     void post({ intent: "start" });
     setArrived(false);
     setPhase("card");
   }
 
-  /** Leave the guide. Progress is kept — the Help page can resume it. */
+  /**
+   * Leave the guide. Progress is kept — the Help page can resume it, and while
+   * a required step is outstanding the next navigation reopens it.
+   */
   function dismiss() {
     void post({ intent: "dismiss" });
+    snoozed.current = true;
     setPhase("done");
   }
 

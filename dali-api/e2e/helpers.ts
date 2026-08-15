@@ -105,3 +105,87 @@ export async function resetEducationApplications(offeringId: string) {
     await client.end();
   }
 }
+
+/**
+ * Put a member back in the state the interactive guide cares about: owing at
+ * least one required setup step. Clears the profile photo and any Google
+ * calendar link, and resets guide progress. Without this the guide specs
+ * depend on whatever the seed (or a previous run) left behind — and once every
+ * requirement happens to be satisfied, the "it comes back" behaviour correctly
+ * stops happening and the spec fails for the wrong reason.
+ *
+ * Safe to run against admin: no other spec asserts admin's avatar or calendar
+ * links (calendar-settings.spec uses jordan.taylor).
+ */
+export async function clearGuideSetup(daliEmail: string) {
+  const client = new pg.Client(DATABASE_URL);
+  await client.connect();
+  try {
+    const userRow = await client.query<{ id: string }>(
+      `SELECT id FROM "User" WHERE "daliEmail" = $1`,
+      [daliEmail],
+    );
+    if (userRow.rowCount === 0) {
+      throw new Error(`clearGuideSetup: no User found for daliEmail=${daliEmail}`);
+    }
+    const userId = userRow.rows[0].id;
+    await client.query(`UPDATE "User" SET "photoUrl" = NULL WHERE id = $1`, [userId]);
+    await client.query(
+      `DELETE FROM "UserCalendarLink" WHERE "userId" = $1 AND provider = 'Google'`,
+      [userId],
+    );
+    await client.query(
+      `UPDATE "DALIMember"
+         SET "guideStepIds" = ARRAY[]::TEXT[],
+             "guideStartedAt" = NULL,
+             "tourCompletedAt" = NULL,
+             "onboardedAt" = COALESCE("onboardedAt", NOW())
+       WHERE "userId" = $1`,
+      [userId],
+    );
+  } finally {
+    await client.end();
+  }
+}
+
+/**
+ * The opposite of clearGuideSetup: every requirement satisfied and the guide
+ * dismissed, so nothing auto-opens. This is the state a settled member is in
+ * when they want to re-run the guide from the Help page.
+ */
+export async function satisfyGuideSetup(daliEmail: string) {
+  const client = new pg.Client(DATABASE_URL);
+  await client.connect();
+  try {
+    const userRow = await client.query<{ id: string }>(
+      `SELECT id FROM "User" WHERE "daliEmail" = $1`,
+      [daliEmail],
+    );
+    if (userRow.rowCount === 0) {
+      throw new Error(`satisfyGuideSetup: no User found for daliEmail=${daliEmail}`);
+    }
+    const userId = userRow.rows[0].id;
+    await client.query(
+      `UPDATE "User"
+         SET "photoUrl" = COALESCE("photoUrl", 'https://example.test/avatar.png'),
+             "timeZone" = COALESCE("timeZone", 'America/New_York')
+       WHERE id = $1`,
+      [userId],
+    );
+    await client.query(
+      `INSERT INTO "UserCalendarLink"
+         ("id", "userId", provider, "externalEmail", "oauthTokens", "subCalendarIds", enabled)
+       VALUES ($1, $2, 'Google', $3, 'e2e', ARRAY[]::TEXT[], true)
+       ON CONFLICT ("userId", provider, "externalEmail") DO NOTHING`,
+      [`e2e-guide-${userId}`, userId, `${daliEmail}.e2e-guide`],
+    );
+    await client.query(
+      `UPDATE "DALIMember"
+         SET "guideStepIds" = ARRAY[]::TEXT[], "tourCompletedAt" = NOW()
+       WHERE "userId" = $1`,
+      [userId],
+    );
+  } finally {
+    await client.end();
+  }
+}
