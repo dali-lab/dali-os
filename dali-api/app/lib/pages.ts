@@ -215,6 +215,80 @@ export async function ensureCoreDriveRoot(createdById: string): Promise<{ id: st
   }
 }
 
+/**
+ * Auto-provisioned "Hiring" Drive root — the scoped folder where all hiring
+ * artifacts (application/challenge Forms, Rubrics, Confidentiality agreements)
+ * live in Drive. Mirrors ensureCoreDriveRoot, but scoped to the dynamic
+ * "hiring" group (Core + domain leads + cycle reviewers/interviewers) so anyone
+ * with hiring access sees it and nobody else does. Idempotent via systemKey.
+ */
+export async function ensureHiringDriveRoot(createdById: string): Promise<{ id: string } | null> {
+  const systemKey = "drive:hiring-root";
+  const existing = await prisma.page.findUnique({ where: { systemKey }, select: { id: true } });
+  if (existing) return existing;
+
+  // Self-contained: guarantee the dynamic hiring group exists (avoids a
+  // circular import of groups.ts). Membership resolves via dynamicQuery.
+  const hiringGroup = await prisma.groupDefinition.upsert({
+    where: { systemKey: "hiring" },
+    update: {},
+    create: { name: "Hiring team", type: "Dynamic", dynamicQuery: "hiring", systemKey: "hiring" },
+    select: { id: true },
+  });
+
+  try {
+    const last = await prisma.page.findFirst({
+      where: { workspaceType: "Lab", workspaceId: null, parentPageId: null },
+      orderBy: { position: "desc" },
+      select: { position: true },
+    });
+    const root = await prisma.page.create({
+      data: {
+        workspaceType: "Lab",
+        workspaceId: null,
+        title: "Hiring",
+        kind: "Folder",
+        position: last ? last.position + 1 : 0,
+        createdById,
+        systemKey,
+        scopeKind: "Group",
+        scopeGroupId: hiringGroup.id,
+        scopePermission: "Edit",
+        // Restricted: the scope grants the hiring team; nobody reaches it via
+        // the lab link.
+        linkAccess: "Restricted",
+        linkPermission: "View",
+      },
+      select: { id: true },
+    });
+    // Adopt existing hiring artifacts into the drive on first creation: any
+    // hiring-bound Form (cycle application form or per-domain challenge) that
+    // predates the drive and has no placement yet. New ones are placed on
+    // create. Best-effort — a failure here doesn't block the root.
+    const unplaced = await prisma.form.findMany({
+      where: {
+        folderPageId: null,
+        OR: [
+          { hiringCyclesAsApplicationForm: { some: {} } },
+          { hiringDomainChallenges: { some: {} } },
+        ],
+      },
+      select: { id: true },
+    });
+    if (unplaced.length > 0) {
+      await prisma.form.updateMany({
+        where: { id: { in: unplaced.map((f) => f.id) } },
+        data: { folderPageId: root.id },
+      });
+    }
+    return root;
+  } catch {
+    const retry = await prisma.page.findUnique({ where: { systemKey }, select: { id: true } });
+    if (retry) return retry;
+    throw new Error("Failed to ensure Hiring drive root");
+  }
+}
+
 export type MeetingNotesFolderKind = "Team" | "Partner";
 
 const MEETING_NOTES_FOLDER_TITLE: Record<MeetingNotesFolderKind, string> = {

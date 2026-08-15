@@ -32,6 +32,8 @@ export async function resolveDynamicQuery(query: string): Promise<string[]> {
       return id ? resolveOfferingMembers(id) : [];
     case "core":
       return resolveCoreMembers();
+    case "hiring":
+      return resolveHiringMembers();
     case "alumni":
       return resolveAlumni();
     default:
@@ -124,6 +126,24 @@ async function resolveCoreMembers(): Promise<string[]> {
     distinct: ["userId"],
   });
   return rows.map((r) => r.userId);
+}
+
+// "Has hiring access": Core plus anyone ever assigned a hiring role — domain
+// leads and cycle reviewers/interviewers. Matches the nav's hasHiringAccess
+// gate (which admits any-cycle reviewers forever), so this group governs who
+// sees the Hiring drive scope and its artifacts.
+async function resolveHiringMembers(): Promise<string[]> {
+  const [core, leads, reviewers, interviewers] = await Promise.all([
+    resolveCoreMembers(),
+    prisma.domainLeadAssignment.findMany({ select: { userId: true }, distinct: ["userId"] }),
+    prisma.cycleReviewer.findMany({ select: { userId: true }, distinct: ["userId"] }),
+    prisma.cycleInterviewer.findMany({ select: { userId: true }, distinct: ["userId"] }),
+  ]);
+  const set = new Set<string>(core);
+  for (const r of leads) set.add(r.userId);
+  for (const r of reviewers) set.add(r.userId);
+  for (const r of interviewers) set.add(r.userId);
+  return [...set];
 }
 
 // Whether `userId` belongs to at least one of `groupIds`. Static membership
@@ -341,6 +361,19 @@ export async function ensureCoreGroup() {
   });
 }
 
+export async function ensureHiringGroup() {
+  await prisma.groupDefinition.upsert({
+    where: { systemKey: "hiring" },
+    update: {},
+    create: {
+      name: "Hiring team",
+      type: "Dynamic",
+      dynamicQuery: "hiring",
+      systemKey: "hiring",
+    },
+  });
+}
+
 export async function ensureAlumniGroup() {
   await prisma.groupDefinition.upsert({
     where: { systemKey: "alumni" },
@@ -366,6 +399,7 @@ export async function syncDefaultGroups() {
   ]);
   await Promise.all([
     ensureCoreGroup(),
+    ensureHiringGroup(),
     ensureAlumniGroup(),
     ...terms.map((t) => ensureTermGroup(t.id, t.code)),
     ...projects.map((p) => ensureProjectGroup(p.id, p.name)),

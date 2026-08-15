@@ -57,7 +57,7 @@ function formatDateShort(iso: string, tz: string) {
 //                         (save-version) and clears the draft. Frozen versions
 //                         are read-only and are what publishing serves.
 export function FormDetail() {
-  const { form, terms, usages, groups } = useLoaderData<typeof loader>();
+  const { form, terms, usages, groups, managing } = useLoaderData<typeof loader>();
   const tz = useUserTimeZone();
   // A dedicated fetcher for saves so the builder's buttons can reflect
   // request state ("Saving…"/"Saved ✓"). The submitted intent tells us which
@@ -269,26 +269,43 @@ export function FormDetail() {
           </div>
         </div>
 
-        <PublishControl
-          formId={form.id}
-          published={form.published}
-          publicToken={form.publicToken}
-          hasVersions={form.versions.length > 0}
-          inUse={usages.length > 0}
-          audience={form.audience}
-        />
+        {managing ? (
+          <div className="rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-900/40 dark:bg-blue-900/20 p-4 flex items-start gap-3">
+            <Lock className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+            <div className="text-sm text-blue-900 dark:text-blue-200">
+              <p className="font-semibold">Managed form — {managing.label}</p>
+              <p className="mt-0.5 text-blue-800/80 dark:text-blue-300/80">
+                Who can fill this form and when is controlled by that feature, so
+                publishing, the public link, schedule, audience, and response
+                settings don&apos;t apply here. Edit the questions below; the
+                feature serves the latest saved version.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <>
+            <PublishControl
+              formId={form.id}
+              published={form.published}
+              publicToken={form.publicToken}
+              hasVersions={form.versions.length > 0}
+              inUse={usages.length > 0}
+              audience={form.audience}
+            />
 
-        <FormSettingsCard
-          formId={form.id}
-          oneResponsePerMember={form.oneResponsePerMember}
-          notifyOnSubmission={form.notifyOnSubmission}
-          listed={form.listed}
-          audience={form.audience}
-          audienceGroupIds={form.audienceGroupIds}
-          groups={groups}
-          opensAt={form.opensAt}
-          closesAt={form.closesAt}
-        />
+            <FormSettingsCard
+              formId={form.id}
+              oneResponsePerMember={form.oneResponsePerMember}
+              notifyOnSubmission={form.notifyOnSubmission}
+              listed={form.listed}
+              audience={form.audience}
+              audienceGroupIds={form.audienceGroupIds}
+              groups={groups}
+              opensAt={form.opensAt}
+              closesAt={form.closesAt}
+            />
+          </>
+        )}
       </div>
 
       <div className="flex flex-col lg:flex-row gap-8">
