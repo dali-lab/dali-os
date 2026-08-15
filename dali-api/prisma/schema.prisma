@@ -3685,13 +3685,23 @@ model Form {
   @@index([createdById])
 }
 
-// Immutable snapshot of a form's question set. Never update — append a new
-// version. `questions` is a JSON array of question objects:
+// Snapshot of a form's question set. Append-only ONCE USED: a version whose
+// questions have been served in a real response (a FormSubmission, or a hiring
+// Application/DomainApplication that pinned it) is frozen — edits from then on
+// must create a new version. Until first use it may be edited or deleted in
+// place (Forms editor), which is how an accidental "Save as version" gets
+// corrected without accreting dead versions. `questions` is a JSON array of
+// question objects:
 //   { id, type: "shortText"|"longText"|"select"|"multiSelect", label,
 //     required, options?: string[], max?: number }
 model FormVersion {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
+  // Bumps on every in-place edit. Doubles as the fingerprint a filler carries
+  // from page-load to submit: a mismatch means the version was edited underneath
+  // them, so the submit is rejected with a reload prompt instead of recording
+  // answers keyed to questions that no longer exist.
+  updatedAt DateTime @updatedAt @default(now())
 
   versionNumber Int
   questions     Json

@@ -54,6 +54,9 @@ export async function loader({ request }: Route.LoaderArgs) {
       ? {
           questions: applicationForm.questions,
           description: applicationForm.description,
+          // Echoed back on submit so an in-place edit to the bound form's
+          // (not-yet-used) version between load and submit is caught.
+          versionUpdatedAt: applicationForm.versionUpdatedAt,
         }
       : null,
   };
@@ -97,6 +100,17 @@ export async function action({ request }: Route.ActionArgs) {
   const applicationForm = await loadApplicationForm(auth.user.sub);
   let formAnswers: Record<string, unknown> = {};
   if (applicationForm) {
+    // The bound form's version can be edited in place until first use — if it
+    // changed since this page loaded, reject rather than record answers keyed
+    // to questions that may no longer exist.
+    const loadedFingerprint = form.get("formVersionUpdatedAt");
+    if (
+      typeof loadedFingerprint === "string" &&
+      loadedFingerprint &&
+      loadedFingerprint !== applicationForm.versionUpdatedAt
+    ) {
+      return { error: "This form was just updated — reload and re-submit." };
+    }
     const rawAnswers = form.get("formAnswers");
     if (typeof rawAnswers === "string" && rawAnswers) {
       try {
@@ -389,6 +403,11 @@ export default function PartnerApply({ actionData }: Route.ComponentProps) {
               type="hidden"
               name="formAnswers"
               value={JSON.stringify(formAnswers)}
+            />
+            <input
+              type="hidden"
+              name="formVersionUpdatedAt"
+              value={applicationForm.versionUpdatedAt}
             />
           </section>
         )}
