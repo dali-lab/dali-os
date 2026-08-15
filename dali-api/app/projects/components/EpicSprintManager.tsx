@@ -78,6 +78,11 @@ export type EditableSprint = {
 
 const EPIC_STATUSES = ["Backlog", "Open", "InProgress", "Done", "Cancelled"] as const;
 const STORY_PRIORITIES: StoryPriority[] = ["Must", "Should", "Could", "Wont"];
+
+// Shared control styling for the epic detail rows, so the read and edit
+// affordances occupy the same box.
+const EPIC_FIELD =
+  "w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40";
 const STORY_PRIORITY_TONE: Record<StoryPriority, string> = {
   Must: "text-accent-coral font-semibold",
   Should: "text-foreground",
@@ -158,9 +163,6 @@ export function EpicSprintManager({
   // "All" shows every epic; otherwise only epics matching the selected
   // The selected epic opens its detail view in a modal over the timeline.
   const [openEpicId, setOpenEpicId] = useState<string | null>(null);
-  // When set, the detail panel opens straight into the epic edit form rather
-  // than the default read view (used by deep flows that mean "edit now").
-  const [openInEdit, setOpenInEdit] = useState(false);
 
   // Flat "depends on" target list for the story form: every story in the
   // project, labelled with its epic so same-titled stories stay tellable apart.
@@ -172,14 +174,12 @@ export function EpicSprintManager({
     [epics],
   );
 
-  function openEpic(epicId: string, opts?: { edit?: boolean }) {
-    setOpenInEdit(opts?.edit ?? false);
+  function openEpic(epicId: string) {
     setOpenEpicId(epicId);
   }
 
   function closeEpic() {
     setOpenEpicId(null);
-    setOpenInEdit(false);
   }
 
   function run(fn: () => Promise<void>) {
@@ -269,7 +269,6 @@ export function EpicSprintManager({
             terms={terms}
             canManage={canManage}
             busy={busy}
-            startInEdit={openInEdit}
             run={run}
             api={api}
             collabToken={collabToken}
@@ -309,7 +308,6 @@ function EpicDetail({
   terms,
   canManage,
   busy,
-  startInEdit,
   run,
   api,
   collabToken,
@@ -325,10 +323,6 @@ function EpicDetail({
   terms: EpicTermOption[];
   canManage: boolean;
   busy: boolean;
-  // When true the detail panel opens with the epic edit form already
-  // expanded. The default open is a read view; deep flows that mean "edit
-  // now" (and the sprint entry points below) opt in.
-  startInEdit: boolean;
   run: (fn: () => Promise<void>) => void;
   api: (url: string, method: "POST" | "DELETE", body?: unknown) => Promise<void>;
   collabToken: string | null;
@@ -337,13 +331,16 @@ function EpicDetail({
   onDeleted: () => void;
 }) {
   const dialog = useDialog();
-  const [editEpicOpen, setEditEpicOpen] = useState(canManage && startInEdit);
   const [newStoryOpen, setNewStoryOpen] = useState(false);
   const [editStoryId, setEditStoryId] = useState<string | null>(null);
   // The epic name is edited in place in the header (there's no title field in
   // the details form below). Committed on blur/Enter.
   const [draftTitle, setDraftTitle] = useState(epic.title);
   useEffect(() => setDraftTitle(epic.title), [epic.id, epic.title]);
+
+  function saveEpic(values: Record<string, unknown>) {
+    run(() => api(`/api/epics/${epic.id}`, "POST", values));
+  }
 
   async function saveTitle() {
     const next = draftTitle.trim();
@@ -431,18 +428,6 @@ function EpicDetail({
               </h2>
             )}
           </div>
-          {!editEpicOpen && (
-            <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
-              <span className="px-1.5 py-0.5 rounded-full border border-border bg-muted/30">
-                {epic.status}
-              </span>
-              {epic.startsAt && epic.endsAt && (
-                <span>
-                  {dateInputValue(epic.startsAt)} → {dateInputValue(epic.endsAt)}
-                </span>
-              )}
-            </p>
-          )}
         </div>
         <div className="flex items-center gap-3 flex-shrink-0">
           {canManage && (
@@ -484,68 +469,90 @@ function EpicDetail({
         </div>
       </div>
 
-      {/* Epic details (status / dates) — title edits in the header above.
-          Description is a separate collab editor below. */}
+      {/* Epic details. Every field sits in the same row whether you're reading
+          it or changing it — there's no edit mode that swaps one layout for
+          another, so nothing appears or disappears on entering it. Each
+          control saves itself; the API takes partial updates. */}
       <section className="border-t border-border pt-4 first:border-t-0 first:pt-0">
-        {editEpicOpen ? (
-          <EpicForm
-            busy={busy}
-            initial={epic}
-            terms={terms}
-            title={draftTitle}
-            hideTitle
-            onCancel={() => {
-              setDraftTitle(epic.title);
-              setEditEpicOpen(false);
-            }}
-            onSubmit={(values) =>
-              run(async () => {
-                await api(`/api/epics/${epic.id}`, "POST", values);
-                setEditEpicOpen(false);
-              })
-            }
-          />
-        ) : (
-          <div className="flex items-center justify-between text-xs">
-            <div className="flex flex-wrap items-center gap-3 text-muted-foreground">
-              <span>Status: <span className="text-foreground">{epic.status}</span></span>
-              {epic.targetTermId && (
-                <span>
-                  Target term:{" "}
-                  <span className="text-foreground">
-                    {terms.find((t) => t.id === epic.targetTermId)?.code ??
-                      "—"}
-                  </span>
-                </span>
-              )}
-              {epic.startsAt && (
-                <span>
-                  Start:{" "}
-                  <span className="text-foreground">
-                    {dateInputValue(epic.startsAt)}
-                  </span>
-                </span>
-              )}
-              {epic.endsAt && (
-                <span>
-                  End:{" "}
-                  <span className="text-foreground">
-                    {dateInputValue(epic.endsAt)}
-                  </span>
-                </span>
-              )}
-            </div>
-            {canManage && (
-              <button
-                type="button"
-                onClick={() => setEditEpicOpen(true)}
-                className="text-xs text-muted-foreground hover:text-foreground flex-shrink-0"
-              >
-                Edit details
-              </button>
+        <dl className="grid grid-cols-[7rem_1fr] items-center gap-x-3 gap-y-2 text-xs">
+          <dt className="text-muted-foreground">Status</dt>
+          <dd className="min-w-0">
+            {canManage ? (
+              <Select
+                value={epic.status}
+                onChange={(value) => void saveEpic({ status: value })}
+                options={EPIC_STATUSES.map((st) => ({ value: st, label: st }))}
+                buttonClassName={EPIC_FIELD}
+              />
+            ) : (
+              <span className="text-sm text-foreground">{epic.status}</span>
             )}
-          </div>
-        )}
+          </dd>
+
+          {terms.length > 0 && (
+            <>
+              <dt className="text-muted-foreground">Target term</dt>
+              <dd className="min-w-0">
+                {canManage ? (
+                  <Select
+                    value={epic.targetTermId ?? ""}
+                    onChange={(value) => void saveEpic({ targetTermId: value || null })}
+                    placeholder="No target term"
+                    options={[
+                      { value: "", label: "No target term" },
+                      ...terms.map((t) => ({ value: t.id, label: t.code })),
+                    ]}
+                    buttonClassName={EPIC_FIELD}
+                  />
+                ) : (
+                  <span className="text-sm text-foreground">
+                    {terms.find((t) => t.id === epic.targetTermId)?.code ?? "—"}
+                  </span>
+                )}
+              </dd>
+            </>
+          )}
+
+          <dt className="text-muted-foreground">Starts</dt>
+          <dd className="min-w-0">
+            {canManage ? (
+              <DateField
+                mode="date"
+                value={epic.startsAt ? dateInputValue(epic.startsAt) : ""}
+                onChange={(value) =>
+                  void saveEpic({
+                    startsAt: value ? new Date(value).toISOString() : null,
+                  })
+                }
+                ariaLabel="Epic start date"
+              />
+            ) : (
+              <span className="text-sm text-foreground">
+                {epic.startsAt ? dateInputValue(epic.startsAt) : "—"}
+              </span>
+            )}
+          </dd>
+
+          <dt className="text-muted-foreground">Ends</dt>
+          <dd className="min-w-0">
+            {canManage ? (
+              <DateField
+                mode="date"
+                value={epic.endsAt ? dateInputValue(epic.endsAt) : ""}
+                onChange={(value) =>
+                  void saveEpic({
+                    endsAt: value ? new Date(value).toISOString() : null,
+                  })
+                }
+                ariaLabel="Epic end date"
+              />
+            ) : (
+              <span className="text-sm text-foreground">
+                {epic.endsAt ? dateInputValue(epic.endsAt) : "—"}
+              </span>
+            )}
+          </dd>
+        </dl>
       </section>
 
       {/* Description — always live as a collab editor (the project's
@@ -759,8 +766,6 @@ function EpicForm({
   terms,
   onSubmit,
   onCancel,
-  hideTitle = false,
-  title: titleProp,
 }: {
   initial?: EditableEpic;
   busy: boolean;
@@ -773,12 +778,8 @@ function EpicForm({
     endsAt: string | null;
   }) => void;
   onCancel: () => void;
-  /** When true, title is edited elsewhere (e.g. modal header) via `title`. */
-  hideTitle?: boolean;
-  title?: string;
 }) {
-  const [titleInternal, setTitleInternal] = useState(initial?.title ?? "");
-  const title = hideTitle ? (titleProp ?? "") : titleInternal;
+  const [title, setTitle] = useState(initial?.title ?? "");
   const [status, setStatus] = useState(initial?.status ?? "Open");
   const [targetTermId, setTargetTermId] = useState(initial?.targetTermId ?? "");
   const [startsAt, setStartsAt] = useState(
@@ -805,17 +806,15 @@ function EpicForm({
       className="flex flex-col gap-2 mb-3"
     >
       <div className="flex flex-wrap items-end gap-2">
-        {!hideTitle && (
-          <label className="flex flex-col gap-1 text-xs flex-1 min-w-[200px]">
-            <span className="text-muted-foreground">Title</span>
-            <input
-              autoFocus
-              value={titleInternal}
-              onChange={(e) => setTitleInternal(e.target.value)}
-              className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-            />
-          </label>
-        )}
+        <label className="flex flex-col gap-1 text-xs flex-1 min-w-[200px]">
+          <span className="text-muted-foreground">Title</span>
+          <input
+            autoFocus
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+          />
+        </label>
         <label className="flex flex-col gap-1 text-xs">
           <span className="text-muted-foreground">Status</span>
           <Select
