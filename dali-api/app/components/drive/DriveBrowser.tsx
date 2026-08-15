@@ -44,6 +44,7 @@ import {
   User,
   Users,
   Shield,
+  Briefcase,
   HardDrive,
   Search,
   X,
@@ -220,6 +221,7 @@ function itemIcon(item: DriveItem, big = false) {
 function scopeIcon(scope: DriveTreeScope) {
   if (scope.id === "mine") return <User className="w-4 h-4 text-muted-foreground shrink-0" />;
   if (scope.id === "core") return <Shield className="w-4 h-4 text-accent-coral/80 shrink-0" />;
+  if (scope.id === "hiring") return <Briefcase className="w-4 h-4 text-accent-coral/80 shrink-0" />;
   if (scope.id === "lab") return <Users className="w-4 h-4 text-muted-foreground shrink-0" />;
   if (scope.iconEmoji) return <span className="text-base leading-none shrink-0">{scope.iconEmoji}</span>;
   return <Folder className="w-4 h-4 text-accent-coral/80 shrink-0" />;
@@ -917,7 +919,8 @@ function ScopeList({
     <div className="flex flex-col divide-y divide-border/50 p-1">
       {scopes.map((scope) => {
         const isCore = scope.id === "core";
-        const isProject = scope.id !== "mine" && scope.id !== "lab" && !isCore;
+        const isHiring = scope.id === "hiring";
+        const isProject = scope.id !== "mine" && scope.id !== "lab" && !isCore && !isHiring;
         const label = scope.id === "mine" ? "My Drive" : scope.id === "lab" ? "Lab" : scope.label;
         return (
           <div
@@ -932,6 +935,7 @@ function ScopeList({
             {scopeIcon(scope)}
             <span className="min-w-0 flex-1 truncate font-semibold text-foreground">{label}</span>
             {isCore && <span className="shrink-0 text-[10px] uppercase tracking-wide text-accent-coral/70">Core only</span>}
+            {isHiring && <span className="shrink-0 text-[10px] uppercase tracking-wide text-accent-coral/70">Hiring team</span>}
             {isProject && <span className="shrink-0 text-[10px] uppercase tracking-wide text-accent-coral/70">Project</span>}
             <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
           </div>

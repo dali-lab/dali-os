@@ -17,6 +17,11 @@ vi.mock("~/lib/db", () => ({
     cycleDomainForm: { create: vi.fn() },
   },
 }));
+vi.mock("~/lib/pages", () => ({
+  // Placement in the Hiring drive is a side effect; stub the root so the form
+  // create just records folderPageId.
+  ensureHiringDriveRoot: vi.fn().mockResolvedValue({ id: "hiring-root" }),
+}));
 vi.mock("~/forms/lib/reference-sources", () => ({
   resolveReferenceOptions: vi.fn().mockResolvedValue([{ value: "p1", label: "Project 1" }]),
 }));

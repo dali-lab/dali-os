@@ -14,7 +14,7 @@ import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import type { Question } from "~/types";
 import { isReferenceSourceKey, referenceSourceNeedsTerm } from "./reference-sources.shared";
 import type { FolderOption } from "./folder-tree.shared";
-import { formDeletionBlockers } from "./form-usages.server";
+import { formDeletionBlockers, formUsages, managingUsage } from "./form-usages.server";
 import { isGroupArchived } from "~/lib/groups";
 
 const QUESTION_TYPES: Question["type"][] = [
@@ -413,6 +413,25 @@ export async function runFormsAction(
   const parsed = ActionSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: "Invalid input", status: 400 };
   const input = parsed.data;
+
+  // Managed forms (owned by hiring/education/staffing/partner) have their
+  // distribution governed by that feature — reject any attempt to change
+  // publish/schedule/audience/response settings, even via a crafted request.
+  const DISTRIBUTION_INTENTS = new Set([
+    "publish-form",
+    "unpublish-form",
+    "update-form-settings",
+    "update-form-audience",
+  ]);
+  if (DISTRIBUTION_INTENTS.has(input.intent) && "id" in input) {
+    if (managingUsage(await formUsages(input.id))) {
+      return {
+        error:
+          "This form is managed by another feature; its distribution settings are controlled there.",
+        status: 409,
+      };
+    }
+  }
 
   switch (input.intent) {
     case "create-form": {
