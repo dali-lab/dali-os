@@ -1,12 +1,6 @@
-import { redirect } from "react-router";
-import type { Route } from "./+types/library";
-
-export const handle = { areaPills: true };
-
-export async function loader(_: Route.LoaderArgs) {
-  return redirect("/drive");
-}
-
-export default function Library() {
-  return null;
-}
+// The hiring "Library" is now an embedded view of the Hiring drive: reuse the
+// unified Drive hub, which opens straight into the Hiring scope at this path
+// (see the /hiring/library default in drive.hub.tsx). Rubrics, agreements and
+// challenge/application forms all live there, so this replaces the old tabbed
+// Library without leaving the Hiring area.
+export { loader, default } from "~/routes/drive.hub";

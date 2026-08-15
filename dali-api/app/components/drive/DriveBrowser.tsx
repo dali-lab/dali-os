@@ -247,7 +247,7 @@ function itemMenuItems(
   onToggleFavorite?: (item: DriveItem) => void,
 ): ReactNode {
   const canRename = item.type === "folder" || item.type === "doc" || item.type === "file";
-  const canMove = item.type !== "agreement";
+  const canMove = true;
   const canDelete = item.type === "folder" || item.type === "doc" || item.type === "file";
   const canFavorite = item.type === "doc" || item.type === "folder";
   return (
@@ -781,7 +781,7 @@ export function DriveBrowser({
   const canLeafRename =
     selectedLeaf &&
     (selectedLeaf.type === "folder" || selectedLeaf.type === "doc" || selectedLeaf.type === "file");
-  const canLeafMove = selectedLeaf && selectedLeaf.type !== "agreement";
+  const canLeafMove = !!selectedLeaf;
   const canLeafDelete =
     selectedLeaf &&
     (selectedLeaf.type === "folder" || selectedLeaf.type === "doc" || selectedLeaf.type === "file");

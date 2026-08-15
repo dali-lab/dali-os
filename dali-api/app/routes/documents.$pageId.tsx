@@ -44,7 +44,14 @@ export const handle = {
           workspaceType?: string
         }
       | undefined;
-    if (!d?.title || !d.hubName || !d.hubHref) return null;
+    if (!d?.title) return null;
+    // Lab pages (no workspace hub) root at Drive.
+    if (!d.hubName || !d.hubHref) {
+      return [
+        { label: "Drive", to: "/drive" },
+        { label: d.title, icon: <PageIcon iconEmoji={d.iconEmoji} /> },
+      ];
+    }
     const root =
       d.workspaceType === "EducationOffering"
         ? { label: "Education", to: "/education" }
@@ -64,13 +71,6 @@ export const handle = {
       // The leaf carries the page's own icon (emoji, or the neutral doc glyph).
       { label: d.title, icon: <PageIcon iconEmoji={d.iconEmoji} /> },
     ];
-  },
-  breadcrumb: (data: unknown) => {
-    const d = data as { title?: string; iconEmoji?: string | null } | undefined;
-    if (!d?.title) return null;
-    // Lab pages have no workspace trail — still show the page's own icon on the
-    // leaf so it matches the document header.
-    return [{ label: d.title, icon: <PageIcon iconEmoji={d.iconEmoji} /> }];
   },
 };
 
