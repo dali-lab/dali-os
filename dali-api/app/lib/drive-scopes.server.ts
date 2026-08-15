@@ -119,6 +119,10 @@ export async function loadDriveScopes({
       scope: { kind: "Lab" },
       canViewForms: labCanViewForms,
       canManageAgreements: labCanManageAgreements,
+      // Email templates are Core-only and live under the Core drive's Templates
+      // area — gate on REAL isCore (never widened for hiring), so the Core
+      // subtree split routes them into the Core scope and nowhere else.
+      canManageEmailTemplates: isCore,
       request,
     }),
     ...projectIds.map((projectId) =>
@@ -173,13 +177,9 @@ export async function loadDriveScopes({
       (it) => it.type !== "agreement" && it.type !== "rubric",
     );
   }
-  // Email templates are Core-only — stricter than rubrics/agreements which
-  // hiring-team members can also see. Strip from any viewer who isn't Core,
-  // including hiring-team members who only have hasHiringAccess.
-  if (!isCore) {
-    labVisibleItems = labVisibleItems.filter((it) => it.type !== "emailTemplate");
-    hiringItems = hiringItems.filter((it) => it.type !== "emailTemplate");
-  }
+  // Email templates need no strip here: they're loaded only for real Core
+  // (canManageEmailTemplates: isCore) and live under the Core root, so the
+  // Core-subtree split above already routed them into the Core scope.
 
   // Build a folder-id set per scope for the de-dup pass below.
   const labFolderIds = new Set(

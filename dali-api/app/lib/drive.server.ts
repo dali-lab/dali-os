@@ -439,13 +439,14 @@ async function loadRubrics(): Promise<DriveItem[]> {
   }));
 }
 
-/** Load email templates. Only called when the caller passes `canManageAgreements: true`
- *  (= isCore) — same gate as rubrics and agreements, since email templates are
- *  authored and managed exclusively by Core. Templates with a `folderPageId` are
- *  placed inside that folder; unplaced ones render at the Lab top level.
+/** Load email templates. Only called when the caller passes
+ *  `canManageEmailTemplates: true` (= real isCore, NOT the hiring-widened gate)
+ *  — email templates are global, Core-only artifacts that live under the Core
+ *  drive's Templates area. Templates are filed into that subtree by
+ *  `ensureCoreDriveRoot`; the Core-subtree split routes them into the Core scope.
  *
- *  NO-WIDENING GUARANTEE: email templates → Core only. The caller is responsible
- *  for passing `canManageAgreements` only when the viewer isCore. */
+ *  NO-WIDENING GUARANTEE: email templates → Core only. The caller must pass
+ *  `canManageEmailTemplates` only when the viewer isCore (never hasHiringAccess). */
 async function loadEmailTemplates(): Promise<DriveItem[]> {
   const rows = await prisma.emailTemplate.findMany({
     where: { folderPageId: { not: null } },
@@ -515,6 +516,15 @@ export interface LoadDriveScopeOptions {
    */
   canManageAgreements?: boolean;
   /**
+   * Whether this viewer may manage email templates (= real isCore, un-widened).
+   * Must be computed by the caller. Email templates are global Core-only
+   * artifacts that live under the Core drive; unlike agreements this gate is
+   * NEVER widened for hiring-team members.
+   *
+   * NO-WIDENING: email templates → Core only.
+   */
+  canManageEmailTemplates?: boolean;
+  /**
    * Optional request for per-request role-check caching (isCore/isLabMember).
    * Callers from route loaders should pass their `request` object.
    */
@@ -539,6 +549,7 @@ export async function loadDriveScope({
   scope,
   canViewForms = false,
   canManageAgreements = false,
+  canManageEmailTemplates = false,
   request,
 }: LoadDriveScopeOptions): Promise<DriveItem[]> {
   if (scope.kind === "Member") {
@@ -560,11 +571,12 @@ export async function loadDriveScope({
       loadLabPages(userSub, request),
       loadLabFiles(userSub, request),
       canViewForms ? loadForms() : Promise.resolve([] as DriveItem[]),
-      // Agreements, rubrics, and email templates → Core only. canManageAgreements
-      // must be derived upstream.
+      // Agreements and rubrics → Core (canManageAgreements, widened for hiring
+      // team). Email templates → real Core only (canManageEmailTemplates, never
+      // widened). All derived upstream.
       canManageAgreements ? loadAgreements() : Promise.resolve([] as DriveItem[]),
       canManageAgreements ? loadRubrics() : Promise.resolve([] as DriveItem[]),
-      canManageAgreements ? loadEmailTemplates() : Promise.resolve([] as DriveItem[]),
+      canManageEmailTemplates ? loadEmailTemplates() : Promise.resolve([] as DriveItem[]),
     ]);
     return [...pages, ...files, ...forms, ...agreements, ...rubrics, ...emailTemplates];
   }
