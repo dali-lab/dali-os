@@ -2,7 +2,7 @@ import type { Route } from "./+types/api.scheduled-meetings";
 import { z } from "zod";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { canViewForms } from "~/lib/roles";
+import { canViewForms, isCore } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
 import {
   createScheduledMeeting,
@@ -24,6 +24,9 @@ const Base = {
   // SelfCheckIn is independent of meeting notes — attendance rows fan out
   // whenever SelfCheckIn (or meetingType) is set; see createScheduledMeeting.
   attendanceMode: z.enum(["Roster", "SelfCheckIn"]).optional(),
+  // Core-only marker that lifts the meeting onto the Core hub calendar without
+  // changing its participant scope. Gated below, not by the schema.
+  isCoreMeeting: z.boolean().optional(),
 } as const;
 
 const CreateSchema = z
@@ -62,6 +65,12 @@ export async function action({ request }: Route.ActionArgs) {
     return forbidden(request);
   }
 
+  // Marking a meeting as Core is Core-only. Checked here rather than trusted
+  // from the form, which only hides the checkbox.
+  if (body.isCoreMeeting && !(await isCore(auth.user.sub))) {
+    return forbidden(request);
+  }
+
   let scope: ScheduledMeetingScope;
   if (body.scopeType === "Group") {
     scope = { type: "Group", groupId: body.groupId };
@@ -84,6 +93,7 @@ export async function action({ request }: Route.ActionArgs) {
     meetingTypeLabel: body.meetingTypeLabel,
     projectId: body.projectId,
     attendanceMode: body.attendanceMode,
+    isCoreMeeting: body.isCoreMeeting,
   });
 
   if (!result.ok) {

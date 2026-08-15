@@ -99,6 +99,9 @@ export type CreateScheduledMeetingInput = {
   // works with or without a meeting note (QR lives on the note when present,
   // otherwise on /calendar/check-in/:id).
   attendanceMode?: AttendanceMode;
+  // Core marker — see ScheduledMeeting.isCoreMeeting. Callers are responsible
+  // for checking the setter is Core; this layer just persists the flag.
+  isCoreMeeting?: boolean;
 };
 
 export type CreateScheduledMeetingResult =
@@ -163,6 +166,7 @@ export async function createScheduledMeeting(
       projectId: input.meetingType ? (input.projectId ?? null) : null,
       attendanceMode,
       checkInToken,
+      isCoreMeeting: input.isCoreMeeting ?? false,
     },
   });
 
