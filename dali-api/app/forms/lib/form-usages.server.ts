@@ -1,6 +1,7 @@
 import { prisma } from "~/lib/db";
 import { SLOTS, isSlot } from "~/projects/lib/form-slots";
 import { NEW_MEMBER_PROFILE_FORM_NAME } from "~/members/lib/profile-form-interpreter";
+import { isInternalCycleType } from "~/hiring/lib/internal-cycles";
 
 // Central answer to "where is this form used?". Each surface keeps its own
 // binding (StaffingCycleFormBinding, PartnerApplicationFormBinding,
@@ -19,6 +20,9 @@ export type FormUsageKind =
 export type FormUsage = {
   kind: FormUsageKind;
   label: string;
+  /** Where this usage is managed — the feature surface that owns the form.
+   *  Absent when there's no single meaningful target. */
+  href?: string;
 };
 
 // A form is "managed" by a feature when that feature owns who fills it and
@@ -69,23 +73,23 @@ export async function formUsages(formId: string): Promise<FormUsage[]> {
     // Hiring: cycle general/internal application form + per-domain challenges.
     prisma.applicationCycle.findMany({
       where: { applicationFormId: formId },
-      select: { name: true },
+      select: { id: true, name: true, cycleType: true },
     }),
     prisma.cycleDomainForm.findMany({
       where: { formId },
       select: {
-        applicationCycle: { select: { name: true } },
+        applicationCycle: { select: { id: true, name: true } },
         domain: { select: { displayName: true } },
       },
     }),
     // Education: offering application form + other education form bindings.
     prisma.educationOffering.findMany({
       where: { applicationFormId: formId },
-      select: { title: true },
+      select: { id: true, title: true },
     }),
     prisma.educationFormBinding.findMany({
       where: { formId },
-      select: { offering: { select: { title: true } } },
+      select: { offering: { select: { id: true, title: true } } },
     }),
     prisma.notification.count({ where: { formId } }),
     prisma.notification.count({
@@ -99,33 +103,51 @@ export async function formUsages(formId: string): Promise<FormUsage[]> {
     usages.push({
       kind: "staffing",
       label: `${b.staffingCycle.term.code} ${slotName}`,
+      href: "/core/staffing",
     });
   }
   if (partnerBinding) {
     usages.push({
       kind: "partner-application",
       label: "Partner application (/partner/apply)",
+      href: "/partners/applications",
     });
   }
   for (const c of hiringCycles) {
-    usages.push({ kind: "hiring", label: `${c.name} — application form` });
+    usages.push({
+      kind: "hiring",
+      label: `${c.name} — application form`,
+      href: isInternalCycleType(c.cycleType)
+        ? `/hiring/lead/internal-cycle/${c.id}`
+        : `/hiring/lead/cycle/${c.id}`,
+    });
   }
   for (const ch of hiringChallenges) {
     usages.push({
       kind: "hiring",
       label: `${ch.applicationCycle.name} — ${ch.domain.displayName} challenge`,
+      href: `/hiring/lead/cycle/${ch.applicationCycle.id}`,
     });
   }
   for (const o of educationOfferings) {
-    usages.push({ kind: "education", label: `${o.title} — application form` });
+    usages.push({
+      kind: "education",
+      label: `${o.title} — application form`,
+      href: `/education/manage/${o.id}`,
+    });
   }
   for (const b of educationBindings) {
-    usages.push({ kind: "education", label: `${b.offering.title} (education)` });
+    usages.push({
+      kind: "education",
+      label: `${b.offering.title} (education)`,
+      href: `/education/manage/${b.offering.id}`,
+    });
   }
   if (form?.name === NEW_MEMBER_PROFILE_FORM_NAME) {
     usages.push({
       kind: "onboarding-profile",
       label: "New-member onboarding profile",
+      href: "/onboarding",
     });
   }
   if (attachedCount > 0) {
@@ -136,6 +158,7 @@ export async function formUsages(formId: string): Promise<FormUsage[]> {
     usages.push({
       kind: "notification",
       label: `Attached to ${attachedCount} announcement${attachedCount === 1 ? "" : "s"}${todos}`,
+      href: "/core/communications/announcements",
     });
   }
   return usages;
