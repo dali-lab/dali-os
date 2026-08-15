@@ -103,7 +103,7 @@ const INSET_PER_LEVEL = 3;
 // fill and label ink from the same value. All three are brand tokens
 // (accent-coral / accent-teal / accent-pink) and hold their value in both
 // themes, so the bars read the same light or dark.
-const LEVEL_COLOR: Record<Level, string> = {
+export const LEVEL_COLOR: Record<Level, string> = {
   epic: "#FF8B81",
   story: "#00ADAB",
   task: "#E68FBE",
@@ -346,6 +346,7 @@ export function EpicsTimeline({
   taskCounts,
   terms = [],
   storyDependencies = [],
+  actions,
   onEpicClick,
   onStoryClick,
   onTaskClick,
@@ -361,6 +362,9 @@ export function EpicsTimeline({
   // arrows between story bars. Edges whose endpoints aren't currently laid out
   // (epic scrolled out of view, or story level hidden) are skipped.
   storyDependencies?: StoryDependencyEdge[];
+  // Rendered flush right on the level-toggle row, so the page's primary action
+  // shares a line with the legend instead of taking a toolbar of its own.
+  actions?: ReactNode;
   onEpicClick?: (epicId: string) => void;
   onStoryClick?: (epicId: string, storyId: string) => void;
   onTaskClick?: (taskId: string) => void;
@@ -664,7 +668,7 @@ export function EpicsTimeline({
 
   return (
     <div className="space-y-2.5">
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {(["epic", "story", "task"] as const).map((lvl) => {
           const on = visibleLevels[lvl];
           return (
@@ -695,6 +699,7 @@ export function EpicsTimeline({
             </button>
           );
         })}
+        {actions && <div className="ml-auto flex items-center gap-2">{actions}</div>}
       </div>
 
       <div className="border border-border rounded-lg bg-card overflow-hidden">

@@ -1,26 +1,9 @@
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-  type ReactNode,
-} from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRevalidator } from "react-router";
 import { Select } from "~/components/ui/floating";
-import { X, GripVertical, Check, Trash2, Pencil, Maximize2 } from "lucide-react";
+import { X, Check, Trash2 } from "lucide-react";
 import { Tooltip } from "~/components/ui/IconButton";
 import { Checkbox } from "~/components/ui/Checkbox";
-import {
-  DndContext,
-  PointerSensor,
-  closestCenter,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from "@dnd-kit/core";
-import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
 import { Modal } from "~/components/Modal";
 import { Button } from "~/components/ui/Button";
 import { DateField } from "~/components/ui/DateField";
@@ -29,6 +12,7 @@ import { DocEditor } from "~/components/doc";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import {
   EpicsTimeline,
+  LEVEL_COLOR,
   type TimelineEpic,
   type TimelineTerm,
   type StoryDependencyEdge,
@@ -119,11 +103,7 @@ type Props = {
   // the editor's read-only fallback handles it.
   collabToken: string | null;
   userName: string;
-  // Which body to render. "timeline" (the default planning view) swaps the
-  // epic/sprint list for the clickable timeline; the New-epic + detail modals
-  // stay shared across both. "list" keeps the original manager.
-  view?: "list" | "timeline";
-  // TimelineEpic shape for the timeline body (only read when view=timeline).
+  // TimelineEpic shape for the timeline body.
   timelineEpics?: TimelineEpic[];
   // Story dependency edges, drawn as arrows between story bars on the timeline.
   storyDependencies?: StoryDependencyEdge[];
@@ -132,9 +112,6 @@ type Props = {
   // Opens a task from a timeline task bar. Left to the caller because the task
   // modal lives on the board (?task=), not in this component.
   onTaskClick?: (taskId: string) => void;
-  // The list/timeline view switch, rendered on the toolbar row (right side),
-  // with the "Add epic" button on the left of the same line.
-  viewToggle?: ReactNode;
 };
 
 function dateInputValue(iso: string): string {
@@ -171,30 +148,18 @@ export function EpicSprintManager({
   canManage,
   collabToken,
   userName,
-  view = "list",
   timelineEpics = [],
   storyDependencies = [],
   timelineTerms = [],
   onTaskClick,
-  viewToggle,
 }: Props) {
-  const dialog = useDialog();
   const revalidator = useRevalidator();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const [newEpicOpen, setNewEpicOpen] = useState(false);
   // "All" shows every epic; otherwise only epics matching the selected
-  // status. Reordering is disabled while filtered — the reorder endpoint
-  // requires the full epic id set, and a filtered drag would only submit a
-  // subset (see /api/projects/:id/epics/reorder).
-  const [statusFilter, setStatusFilter] = useState<"All" | EditableEpic["status"]>("All");
-  const [epicsOpen, setEpicsOpen] = useState(true);
-  // The all-sprints section below the epic list.
-  const [allSprintsOpen, setAllSprintsOpen] = useState(true);
-  const [newSprintOpen, setNewSprintOpen] = useState(false);
-  const [editSprintId, setEditSprintId] = useState<string | null>(null);
-  // The selected epic opens its detail view in a modal over the list.
+  // The selected epic opens its detail view in a modal over the timeline.
   const [openEpicId, setOpenEpicId] = useState<string | null>(null);
   // When set, the detail panel opens straight into the epic edit form rather
   // than the default read view (used by deep flows that mean "edit now").
@@ -202,10 +167,9 @@ export function EpicSprintManager({
   // When set, the detail panel opens with this sprint's edit form expanded
   // (entered by clicking a nested sprint row in the epic list).
   const [openSprintId, setOpenSprintId] = useState<string | null>(null);
-  // Opens the epic detail already scrolled to the Sprints section (e.g. "Add one").
+  // Opens the epic detail already scrolled to the Sprints section (e.g. straight
+  // after creating an epic).
   const [openAddSprint, setOpenAddSprint] = useState(false);
-  // Which epics are expanded to show their nested sprints in the list.
-  const [expandedEpicIds, setExpandedEpicIds] = useState<Set<string>>(new Set());
 
   // Flat "depends on" target list for the story form: every story in the
   // project, labelled with its epic so same-titled stories stay tellable apart.
@@ -216,15 +180,6 @@ export function EpicSprintManager({
       ),
     [epics],
   );
-
-  function toggleExpanded(epicId: string) {
-    setExpandedEpicIds((cur) => {
-      const next = new Set(cur);
-      if (next.has(epicId)) next.delete(epicId);
-      else next.add(epicId);
-      return next;
-    });
-  }
 
   function openEpic(
     epicId: string,
@@ -252,39 +207,6 @@ export function EpicSprintManager({
       .finally(() => setBusy(false));
   }
 
-  // Optimistic epic order: drag updates it immediately so the row animates to
-  // its new slot without waiting on the round trip; a revalidate reconciles
-  // with the server, and a failed save reverts it. Synced from `epics` (keyed
-  // off the prop's identity, same as StaffingBoard's `order` state) so a
-  // server-side change (another editor, or our own save landing) adopts.
-  const [orderedEpics, setOrderedEpics] = useState(epics);
-  useEffect(() => setOrderedEpics(epics), [epics]);
-
-  const dragSensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-  );
-
-  function handleEpicDragEnd(event: DragEndEvent) {
-    if (!canManage) return;
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const oldIndex = orderedEpics.findIndex((e) => e.id === active.id);
-    const newIndex = orderedEpics.findIndex((e) => e.id === over.id);
-    if (oldIndex === -1 || newIndex === -1) return;
-
-    const prev = orderedEpics;
-    const next = arrayMove(orderedEpics, oldIndex, newIndex);
-    setOrderedEpics(next);
-    setError(null);
-
-    api(`/api/projects/${projectId}/epics/reorder`, "POST", { epicIds: next.map((e) => e.id) })
-      .then(() => revalidator.revalidate())
-      .catch((e) => {
-        setOrderedEpics(prev);
-        setError(e instanceof Error ? e.message : "Failed to reorder epics");
-      });
-  }
-
   const errorBanner = error && (
     <div className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-md px-3 py-2">
       {error}
@@ -295,37 +217,9 @@ export function EpicSprintManager({
   // It survives revalidation because we look the epic up fresh each render.
   const activeEpic = openEpicId ? epics.find((e) => e.id === openEpicId) : null;
 
-  const visibleEpics =
-    statusFilter === "All"
-      ? orderedEpics
-      : orderedEpics.filter((e) => e.status === statusFilter);
-  const filtering = statusFilter !== "All";
-
-  // For the all-sprints section: resolve each sprint's owning epic title.
-  const epicTitleById = new Map(epics.map((e) => [e.id, e.title]));
-
   return (
     <div className="flex flex-col gap-4">
       {errorBanner}
-
-      {/* Toolbar: "Add epic" (timeline view) on the left, the list/timeline
-          toggle on the right — same line. */}
-      {viewToggle && (
-        <div className="flex items-center justify-between gap-2">
-          {view === "timeline" && canManage ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => setNewEpicOpen(true)}
-            >
-              + Add epic
-            </Button>
-          ) : (
-            <span />
-          )}
-          {viewToggle}
-        </div>
-      )}
 
       {/* New epic — a modal like the detail view, not inline inputs in the
           list. On save we immediately reopen as the real detail modal for the
@@ -405,408 +299,24 @@ export function EpicSprintManager({
         )}
       </Modal>
 
-      {view === "timeline" ? (
-        <div className="flex flex-col gap-3">
-          {/* Clicking an epic or story bar opens the same detail/edit modal
-              the list view uses (openEpic); a task bar defers to the caller,
-              which opens the board's task modal via ?task=. */}
-          <EpicsTimeline
-            epics={timelineEpics}
-            taskCounts={taskCounts}
-            terms={timelineTerms}
-            storyDependencies={storyDependencies}
-            onEpicClick={canManage ? (id) => openEpic(id) : undefined}
-            onStoryClick={canManage ? (epicId) => openEpic(epicId) : undefined}
-            onTaskClick={onTaskClick}
-          />
-        </div>
-      ) : (
-        <>
-      {/* Epics */}
-      <section className="bg-card border border-border rounded-lg p-4">
-        <div className={`flex items-center justify-between gap-2 ${epicsOpen ? "mb-3" : ""}`}>
-          <button
-            type="button"
-            onClick={() => setEpicsOpen((o) => !o)}
-            aria-expanded={epicsOpen}
-            className="flex items-center gap-1.5 min-w-0"
-          >
-            <span
-              aria-hidden
-              className={`inline-block text-muted-foreground transition-transform ${epicsOpen ? "rotate-90" : ""}`}
-            >
-              ›
-            </span>
-            <h3 className="text-sm font-semibold text-foreground">Epics</h3>
-          </button>
-          <div className="flex items-center gap-3">
-            {epics.length > 0 && (
-              <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <span className="sr-only">Filter by status</span>
-                <Select
-                  value={statusFilter}
-                  onChange={(value) =>
-                    setStatusFilter(value as "All" | EditableEpic["status"])
-                  }
-                  ariaLabel="Filter epics by status"
-                  options={[
-                    { value: "All", label: "All statuses" },
-                    ...EPIC_STATUSES.map((s) => ({ value: s, label: s })),
-                  ]}
-                  buttonClassName="px-1.5 py-1 text-xs border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-                />
-              </label>
-            )}
-            {canManage && !newEpicOpen && (
-              <button
-                type="button"
-                onClick={() => {
-                  setEpicsOpen(true);
-                  setNewEpicOpen(true);
-                }}
-                className="text-xs font-medium text-accent-coral hover:underline flex-shrink-0"
-              >
-                + New epic
-              </button>
-            )}
-          </div>
-        </div>
-
-        {epicsOpen && (
-          <>
-        {/* Reordering needs the full epic id set, so drag grips disappear
-            while a status filter is active — say so instead of hiding them
-            silently. */}
-        {filtering && canManage && orderedEpics.length > 1 && visibleEpics.length > 0 && (
-          <p className="text-[11px] text-muted-foreground italic mb-2">
-            Clear the status filter to reorder.
-          </p>
-        )}
-        {visibleEpics.length === 0 && !newEpicOpen ? (
-          <p className="text-sm text-muted-foreground italic">
-            {filtering ? `No epics with status "${statusFilter}".` : "No epics yet."}
-          </p>
-        ) : (
-          <DndContext sensors={dragSensors} collisionDetection={closestCenter} onDragEnd={handleEpicDragEnd}>
-            <SortableContext items={visibleEpics.map((e) => e.id)} strategy={verticalListSortingStrategy}>
-              <div className="flex flex-col divide-y divide-border">
-                {visibleEpics.map((epic) => {
-              const epicSprints = sprints.filter((s) => s.epicId === epic.id);
-              const expanded = expandedEpicIds.has(epic.id);
-              const counts = taskCounts[epic.id];
-              return (
-                <SortableEpicRow key={epic.id} id={epic.id} draggable={canManage && !filtering}>
-                  {(dragHandleProps, isDragging) => (
-                <div className={`py-1 ${isDragging ? "opacity-60" : ""}`}>
-                  <div className="py-1 flex items-center gap-2 text-sm hover:bg-muted/50 -mx-2 px-2 rounded transition-colors">
-                    {canManage && !filtering && (
-                      <div
-                        {...dragHandleProps}
-                        aria-label={`Reorder ${epic.title}`}
-                        className="flex-shrink-0 -ml-1 cursor-grab active:cursor-grabbing text-muted-foreground/50 hover:text-muted-foreground"
-                      >
-                        <GripVertical className="w-3.5 h-3.5" />
-                      </div>
-                    )}
-                    {/* Chevron toggles the nested sprint list. Present on every
-                        row (even sprint-less epics, where it reveals an "add"
-                        affordance) so the rows stay aligned. */}
-                    <button
-                      type="button"
-                      onClick={() => toggleExpanded(epic.id)}
-                      aria-label={expanded ? `Collapse ${epic.title}` : `Expand ${epic.title}`}
-                      aria-expanded={expanded}
-                      className="flex-shrink-0 w-4 text-muted-foreground hover:text-foreground transition-transform"
-                    >
-                      <span
-                        aria-hidden
-                        className={`inline-block transition-transform ${expanded ? "rotate-90" : ""}`}
-                      >
-                        ›
-                      </span>
-                    </button>
-                    <div className="min-w-0 flex-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-                      <button
-                        type="button"
-                        onClick={() => openEpic(epic.id)}
-                        className="min-w-0 text-left"
-                      >
-                        <span className="text-foreground">{epic.title}</span>
-                        {epic.startsAt && epic.endsAt && (
-                          <span className="text-[11px] text-muted-foreground ml-2">
-                            {dateInputValue(epic.startsAt)} → {dateInputValue(epic.endsAt)}
-                          </span>
-                        )}
-                      </button>
-                      {/* Status sits between the name and the sprint/story
-                          counts. Managers can change it inline without opening
-                          the epic; viewers see a static pill. */}
-                      {canManage ? (
-                        <Select
-                          value={epic.status}
-                          disabled={busy}
-                          ariaLabel={`Status for ${epic.title}`}
-                          onChange={(value) => {
-                            run(() => api(`/api/epics/${epic.id}`, "POST", { status: value }));
-                          }}
-                          options={EPIC_STATUSES.map((s) => ({ value: s, label: s }))}
-                          buttonClassName="text-[11px] px-1.5 py-0.5 rounded-full border border-border text-muted-foreground bg-muted/30 disabled:opacity-60 inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-                        />
-                      ) : (
-                        <span className="text-[11px] px-1.5 py-0.5 rounded-full border border-border text-muted-foreground bg-muted/30">
-                          {epic.status}
-                        </span>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => openEpic(epic.id)}
-                        className="text-[11px] text-muted-foreground text-left"
-                      >
-                        {epicSprints.length}{" "}
-                        {epicSprints.length === 1 ? "sprint" : "sprints"} ·{" "}
-                        {epic.stories.length}{" "}
-                        {epic.stories.length === 1 ? "story" : "stories"}
-                      </button>
-                      {counts && counts.total > 0 && (
-                        <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                          {counts.done}/{counts.total} tasks
-                          <span
-                            aria-hidden
-                            className="inline-block w-14 h-0.5 rounded-full bg-border overflow-hidden"
-                          >
-                            <span
-                              className="block h-full rounded-full bg-accent-teal/70"
-                              style={{
-                                width: `${Math.round((counts.done / counts.total) * 100)}%`,
-                              }}
-                            />
-                          </span>
-                        </span>
-                      )}
-                    </div>
-                    <Tooltip label="Open">
-                      <button
-                        type="button"
-                        onClick={() => openEpic(epic.id)}
-                        aria-label={`Open ${epic.title}`}
-                        className="flex-shrink-0 text-muted-foreground hover:text-accent-coral"
-                      >
-                        <Maximize2 className="w-3.5 h-3.5" />
-                      </button>
-                    </Tooltip>
-                  </div>
-
-                  {expanded && (
-                    <div className="ml-6 mt-0.5 flex flex-col border-l border-border pl-3">
-                      {epicSprints.length === 0 ? (
-                        <p className="py-1.5 text-[11px] text-muted-foreground italic">
-                          No sprints yet.{" "}
-                          {canManage && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                openEpic(epic.id, { edit: false, addSprint: true })
-                              }
-                              className="text-accent-coral hover:underline"
-                            >
-                              Add one
-                            </button>
-                          )}
-                        </p>
-                      ) : (
-                        epicSprints.map((sprint) => (
-                          <button
-                            key={sprint.id}
-                            type="button"
-                            onClick={() => openEpic(epic.id, { sprintId: sprint.id })}
-                            className="py-1.5 flex items-center justify-between gap-3 text-left text-[13px] hover:bg-muted/50 -ml-3 pl-3 pr-2 rounded transition-colors"
-                          >
-                            <span className="min-w-0 truncate">
-                              <span className="text-foreground">{sprint.name}</span>
-                              <span className="text-[11px] text-muted-foreground ml-2">
-                                {dateInputValue(sprint.startsAt)} →{" "}
-                                {dateInputValue(sprint.endsAt)}
-                              </span>
-                            </span>
-                            <span className="text-[11px] text-muted-foreground flex-shrink-0">
-                              {sprint.status}
-                            </span>
-                          </button>
-                        ))
-                      )}
-                    </div>
-                  )}
-                </div>
-                  )}
-                </SortableEpicRow>
-              );
-                })}
-              </div>
-            </SortableContext>
-          </DndContext>
-        )}
-          </>
-        )}
-      </section>
-
-      {/* All sprints — sprints can exist without an epic (Sprint.epicId is
-          nullable and the task board filters by sprint), so the epic detail
-          modal isn't a complete home for them. Every sprint is listed and
-          editable here; per-epic editing inside the modal stays intact. */}
-      <section className="bg-card border border-border rounded-lg p-4">
-        <div className={`flex items-center justify-between gap-2 ${allSprintsOpen ? "mb-3" : ""}`}>
-          <button
-            type="button"
-            onClick={() => setAllSprintsOpen((o) => !o)}
-            aria-expanded={allSprintsOpen}
-            className="flex items-center gap-1.5 min-w-0"
-          >
-            <span
-              aria-hidden
-              className={`inline-block text-muted-foreground transition-transform ${allSprintsOpen ? "rotate-90" : ""}`}
-            >
-              ›
-            </span>
-            <h3 className="text-sm font-semibold text-foreground">Sprints</h3>
-          </button>
-          {canManage && !newSprintOpen && (
-            <button
-              type="button"
-              onClick={() => {
-                setAllSprintsOpen(true);
-                setNewSprintOpen(true);
-              }}
-              className="text-xs font-medium text-accent-coral hover:underline"
-            >
-              + New sprint
-            </button>
-          )}
-        </div>
-
-        {allSprintsOpen && (
-          <>
-        {newSprintOpen && (
-          <SprintForm
-            busy={busy}
-            epics={epics}
-            onCancel={() => setNewSprintOpen(false)}
-            onSubmit={(values) =>
-              run(async () => {
-                await api(`/api/projects/${projectId}/sprints`, "POST", values);
-                setNewSprintOpen(false);
-              })
-            }
-          />
-        )}
-
-        {sprints.length === 0 && !newSprintOpen ? (
-          <p className="text-sm text-muted-foreground italic">No sprints yet.</p>
-        ) : (
-          <div className="flex flex-col divide-y divide-border">
-            {sprints.map((sprint) =>
-              editSprintId === sprint.id ? (
-                <div key={sprint.id} className="py-2">
-                  <SprintForm
-                    busy={busy}
-                    initial={sprint}
-                    epics={epics}
-                    sprintOptions={sprints}
-                    onCancel={() => setEditSprintId(null)}
-                    onSubmit={(values) =>
-                      run(async () => {
-                        await api(`/api/sprints/${sprint.id}`, "POST", values);
-                        setEditSprintId(null);
-                      })
-                    }
-                    onDelete={async () => {
-                      if (
-                        !(await dialog.confirm({
-                          title: `Delete sprint "${sprint.name}"?`,
-                          description: "Its tasks move back to the backlog.",
-                          confirmLabel: "Delete",
-                          tone: "destructive",
-                        }))
-                      )
-                        return;
-                      run(async () => {
-                        await api(`/api/sprints/${sprint.id}`, "DELETE");
-                        setEditSprintId(null);
-                      });
-                    }}
-                  />
-                </div>
-              ) : (
-                <div
-                  key={sprint.id}
-                  className="py-2 flex items-center justify-between gap-3 text-sm"
-                >
-                  <div className="min-w-0 flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <span className="text-foreground">{sprint.name}</span>
-                    <span className="text-[11px] px-1.5 py-0.5 rounded-full border border-border text-muted-foreground bg-muted/30">
-                      {sprint.status}
-                    </span>
-                    <span className="text-[11px] text-muted-foreground">
-                      {dateInputValue(sprint.startsAt)} → {dateInputValue(sprint.endsAt)}
-                    </span>
-                    <span className="text-[11px] text-muted-foreground">
-                      {sprint.epicId ? (
-                        (epicTitleById.get(sprint.epicId) ?? "Unknown epic")
-                      ) : (
-                        <span className="italic">No epic</span>
-                      )}
-                    </span>
-                  </div>
-                  {canManage && (
-                    <button
-                      type="button"
-                      onClick={() => setEditSprintId(sprint.id)}
-                      className="text-xs font-medium text-muted-foreground hover:text-foreground px-2 py-1 rounded-md hover:bg-muted flex-shrink-0"
-                    >
-                      Edit
-                    </button>
-                  )}
-                </div>
-              ),
-            )}
-          </div>
-        )}
-          </>
-        )}
-      </section>
-        </>
-      )}
-    </div>
-  );
-}
-
-// Sortable wrapper for one epic row. Split from the row body (a render-prop
-// child) so the drag handle can be spread onto a small grip icon rather than
-// the whole row — the row has its own buttons/select the drag listeners must
-// not swallow (see TaskBoard's identical handle/body split).
-function SortableEpicRow({
-  id,
-  draggable,
-  children,
-}: {
-  id: string;
-  draggable: boolean;
-  children: (dragHandleProps: Record<string, unknown>, isDragging: boolean) => ReactNode;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id,
-    disabled: !draggable,
-  });
-  const style: CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
-  const dragHandleProps = draggable
-    ? ({ ...attributes, ...listeners } as Record<string, unknown>)
-    : {};
-
-  return (
-    <div ref={setNodeRef} style={style}>
-      {children(dragHandleProps, isDragging)}
+      {/* Clicking an epic or story bar opens the detail/edit modal; a task bar
+          defers to the caller, which opens the board's task modal via ?task=. */}
+      <EpicsTimeline
+        epics={timelineEpics}
+        taskCounts={taskCounts}
+        terms={timelineTerms}
+        storyDependencies={storyDependencies}
+        actions={
+          canManage ? (
+            <Button variant="secondary" size="sm" onClick={() => setNewEpicOpen(true)}>
+              + Add epic
+            </Button>
+          ) : undefined
+        }
+        onEpicClick={canManage ? (id) => openEpic(id) : undefined}
+        onStoryClick={canManage ? (epicId) => openEpic(epicId) : undefined}
+        onTaskClick={onTaskClick}
+      />
     </div>
   );
 }
@@ -855,13 +365,6 @@ function EpicDetail({
   onDeleted: () => void;
 }) {
   const dialog = useDialog();
-  // The modal opens as a read view by default; "editing" switches on the
-  // edit affordances (title input, details form, story/sprint editing, live
-  // description). Deep flows that arrive to edit — startInEdit, a nested
-  // sprint row, "Add one" — start with it on.
-  const [editing, setEditing] = useState(
-    canManage && (startInEdit || startEditSprintId != null || startAddSprint),
-  );
   // Editing a sprint takes precedence over the epic-edit form so opening from
   // a nested sprint row lands directly on that sprint. Opening to add a sprint
   // skips the epic-edit form and scrolls to Sprints instead.
@@ -930,8 +433,9 @@ function EpicDetail({
     return () => cancelAnimationFrame(id);
   }, [startEditSprintId, startAddSprint]);
 
-  // Story/sprint edit affordances show only while the modal is in edit mode.
-  const canEditContent = canManage && editing;
+  // There is no modal-level edit mode: a manager can add a story or a sprint,
+  // or open the details form, straight from the read view.
+  const canEditContent = canManage;
 
   return (
     <div className="flex flex-col gap-4 max-h-[80vh] overflow-y-auto">
@@ -950,9 +454,14 @@ function EpicDetail({
           ) : (
             <h2
               id="epic-detail-title"
-              className="font-heading text-lg font-bold text-foreground truncate"
+              className="flex items-center gap-2 font-heading text-lg font-bold text-foreground"
             >
-              {epic.title}
+              <span
+                aria-hidden
+                className="h-2.5 w-2.5 flex-shrink-0 rounded-full"
+                style={{ background: LEVEL_COLOR.epic }}
+              />
+              <span className="truncate">{epic.title}</span>
             </h2>
           )}
           {!editEpicOpen && (
@@ -969,40 +478,6 @@ function EpicDetail({
           )}
         </div>
         <div className="flex items-center gap-3 flex-shrink-0">
-          {canManage && !editing && (
-            <Tooltip label="Edit">
-              <button
-                type="button"
-                onClick={() => {
-                  // Enter edit mode for description / stories / sprints. Epic
-                  // status/dates stay behind "Edit details" so story edits aren't
-                  // nested under a second epic form.
-                  setEditing(true);
-                }}
-                aria-label="Edit epic"
-                className="text-muted-foreground hover:text-accent-coral"
-              >
-                <Pencil className="w-4 h-4" />
-              </button>
-            </Tooltip>
-          )}
-          {canManage && editing && (
-            <button
-              type="button"
-              onClick={() => {
-                setEditing(false);
-                setEditEpicOpen(false);
-                setEditStoryId(null);
-                setNewStoryOpen(false);
-                setEditSprintId(null);
-                setNewSprintOpen(false);
-                setDraftTitle(epic.title);
-              }}
-              className="text-xs font-medium text-muted-foreground hover:text-foreground px-2 py-1 rounded-md hover:bg-muted"
-            >
-              Done
-            </button>
-          )}
           {canManage && (
             <Tooltip label="Delete epic">
               <button
@@ -1043,9 +518,7 @@ function EpicDetail({
       </div>
 
       {/* Epic details (status / dates) — title edits in the header above.
-          Description is a separate collab editor below. Edit mode only: the
-          read view already shows status + dates in the header. */}
-      {editing && (
+          Description is a separate collab editor below. */}
       <section className="bg-card border border-border rounded-lg p-4">
         {editEpicOpen ? (
           <EpicForm
@@ -1107,7 +580,6 @@ function EpicDetail({
           </div>
         )}
       </section>
-      )}
 
       {/* Description — always live as a collab editor (the project's
           Overview/PRD pattern). The room name is the epic's descriptionDocId
@@ -1150,12 +622,20 @@ function EpicDetail({
           pencil; each story expands inline rather than a nested table-row form. */}
       <section className="bg-card border border-border rounded-lg p-4">
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold text-foreground">User stories</h3>
+          <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+            <span
+              aria-hidden
+              className="h-2 w-2 rounded-full"
+              style={{ background: LEVEL_COLOR.story }}
+            />
+            User stories
+          </h3>
           {canEditContent && !newStoryOpen && (
             <button
               type="button"
               onClick={() => setNewStoryOpen(true)}
-              className="text-xs font-medium text-accent-coral hover:underline"
+              className="text-xs font-medium hover:underline"
+              style={{ color: LEVEL_COLOR.story }}
             >
               + New story
             </button>
@@ -1180,12 +660,13 @@ function EpicDetail({
         {epic.stories.length === 0 && !newStoryOpen ? (
           <p className="text-sm text-muted-foreground italic">No user stories yet.</p>
         ) : (
-          <ul className="flex flex-col gap-3">
+          <ul className="flex gap-3 overflow-x-auto pb-1 -mx-1 px-1 snap-x">
             {epic.stories.map((story) =>
               editStoryId === story.id ? (
                 <li
                   key={story.id}
-                  className="rounded-lg border border-accent-coral/40 bg-muted/20 p-3"
+                  className="w-[22rem] flex-shrink-0 snap-start rounded-lg border bg-muted/20 p-3"
+                  style={{ borderColor: LEVEL_COLOR.story }}
                 >
                   <StoryForm
                     busy={busy}
@@ -1203,7 +684,10 @@ function EpicDetail({
               ) : (
                 <li
                   key={story.id}
-                  className="rounded-lg border border-border bg-background p-3 sm:p-4"
+                  className="w-[22rem] flex-shrink-0 snap-start rounded-lg border bg-background p-3 sm:p-4"
+                  style={{
+                    borderColor: `color-mix(in srgb, ${LEVEL_COLOR.story} 45%, transparent)`,
+                  }}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">

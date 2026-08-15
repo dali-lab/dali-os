@@ -13,7 +13,7 @@ import {
   type ShouldRevalidateFunctionArgs,
 } from "react-router";
 import { Select, Menu } from "~/components/ui/floating";
-import { CalendarDays, CalendarX, ChartNoAxesGantt, Check, Globe, Handshake, History, List, Pencil, Pin, X, Settings, Folder, FolderInput, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink, MoreHorizontal, ExternalLink, Star } from "lucide-react";
+import { CalendarDays, CalendarX, Check, Globe, Handshake, History, Pencil, Pin, X, Settings, Folder, FolderInput, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink, MoreHorizontal, ExternalLink, Star } from "lucide-react";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { MoveToDialog } from "~/components/sharing/MoveToDialog";
@@ -4289,11 +4289,8 @@ function FilesBlock({
   }
 }
 
-// Planning holds the epics & sprints manager with the timeline as a display
-// toggle (Linear-style: the list and the Gantt are two renderings of the same
-// epics-and-sprints data, so they get a ViewToggle-pattern switch, not
-// navigation). The toggle lives in `?view=` like the rest of this page's UI
-// state so a timeline link is shareable.
+// Planning holds the epics & sprints manager, rendered as the Gantt timeline
+// at the top of Overview.
 function PlanningTab({
   projectId,
   epics,
@@ -4321,20 +4318,6 @@ function PlanningTab({
   userName: string;
   onTaskClick: (taskId: string) => void;
 }) {
-  const [searchParams, setSearchParams] = useSearchParams();
-  // Timeline is the default view; the list view is opt-in via ?view=list.
-  const timeline = searchParams.get("view") !== "list";
-  const setTimeline = (next: boolean) => {
-    setSearchParams(
-      (prev) => {
-        if (next) prev.delete("view");
-        else prev.set("view", "list");
-        return prev;
-      },
-      { replace: true, preventScrollReset: true },
-    );
-  };
-
   return (
     <div className="flex flex-col gap-3">
       <EpicSprintManager
@@ -4346,33 +4329,10 @@ function PlanningTab({
         canManage={canEdit}
         collabToken={collabToken}
         userName={userName}
-        view={timeline ? "timeline" : "list"}
         timelineEpics={epics}
         storyDependencies={storyDependencies}
         timelineTerms={timelineTerms}
         onTaskClick={onTaskClick}
-        viewToggle={
-          <div
-            className="inline-flex items-center border border-border rounded-md overflow-hidden"
-            role="group"
-            aria-label="Planning view"
-          >
-            <PlanningToggleButton
-              active={!timeline}
-              onClick={() => setTimeline(false)}
-              label="List view"
-            >
-              <List className="w-3.5 h-3.5" />
-            </PlanningToggleButton>
-            <PlanningToggleButton
-              active={timeline}
-              onClick={() => setTimeline(true)}
-              label="Timeline view"
-            >
-              <ChartNoAxesGantt className="w-3.5 h-3.5" />
-            </PlanningToggleButton>
-          </div>
-        }
       />
     </div>
   );
@@ -4381,32 +4341,4 @@ function PlanningTab({
 // Same look as ViewToggle's buttons (the hub's list/cards switch) — that
 // component is hardwired to list/card values, so the planning toggle borrows
 // its styling rather than its state.
-function PlanningToggleButton({
-  active,
-  onClick,
-  label,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      aria-label={label}
-      title={label}
-      className={`px-2 py-1.5 transition-colors ${
-        active
-          ? "bg-accent-coral/15 text-accent-coral"
-          : "text-muted-foreground hover:bg-muted"
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
 
