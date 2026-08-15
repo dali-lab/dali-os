@@ -77,6 +77,13 @@ const HEADER_ROWS = 3; // month, day number, sprint band
 const BODY_TOP_PAD = 14; // clear gap below the sprint band before bars start
 const BODY_BOTTOM_PAD = 20;
 
+// Cap on the scroll box. Past this the body scrolls vertically inside the card
+// rather than pushing the rest of the page down — a project with many
+// overlapping epics can otherwise run to several thousand pixels. The floor
+// keeps a usable strip of bars visible under the 102px header on short
+// viewports, where 70vh alone would leave almost nothing.
+const MAX_BODY_H = "clamp(360px, 70vh, 880px)";
+
 const EPIC_TOP_PAD = 16;
 const EPIC_BOTTOM_PAD = 12;
 const EPIC_GAP = 40;
@@ -691,7 +698,15 @@ export function EpicsTimeline({
       </div>
 
       <div className="border border-border rounded-lg bg-card overflow-hidden">
-        <div ref={scrollerRef} className="overflow-x-auto" onScroll={handleScroll}>
+        {/* Scrolls in both axes. Giving the box a vertical scrollport is also
+            what finally makes the header's `sticky top-0` bite — until now its
+            nearest scrollport was the page, so it never pinned. */}
+        <div
+          ref={scrollerRef}
+          className="overflow-auto"
+          style={{ maxHeight: MAX_BODY_H }}
+          onScroll={handleScroll}
+        >
           <div
             className="relative"
             style={{ width: bounds ? bounds.width : "100%", height: gridHeight }}
