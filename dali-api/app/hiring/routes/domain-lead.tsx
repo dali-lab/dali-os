@@ -18,7 +18,6 @@ import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { ConfidentialityGate } from "~/hiring/components/ConfidentialityGate";
 import { DocEditor } from "~/components/doc";
 import { isEmptyBlocks } from "~/lib/blocks";
-import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { Modal } from "~/components/Modal";
 import { ChallengePreviewModal } from "~/hiring/components/ChallengePreviewModal";
 import { Tooltip } from "~/components/ui/IconButton";
@@ -33,7 +32,7 @@ import {
 } from "~/hiring/lib/decision-pills";
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
 import type { DecisionType } from "~/types";
-import { formatVersionLabel, buildVersionNumberMap } from "~/lib/formatVersion";
+import { formatVersionLabel } from "~/lib/formatVersion";
 import { selectActiveCycleForDomainLead } from "~/hiring/lib/cycle-picker";
 import { STATUS_LABELS, DECISION_LABELS, STATUS_COLORS, DECISION_COLORS } from "~/hiring/lib/labels";
 import { Select, type SelectOption } from "~/components/ui/floating";
@@ -79,17 +78,6 @@ export async function loader({ request }: Route.LoaderArgs) {
         include: {
           statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
           domains: { where: { domainId: assignment.domainId } },
-          challengeVersions: {
-            include: {
-              challengeVersion: {
-                include: {
-                  challenge: true,
-                  domain: true,
-                  createdBy: { select: { firstName: true, lastName: true } },
-                },
-              },
-            },
-          },
           applications: {
             include: {
               user: true,
@@ -97,15 +85,10 @@ export async function loader({ request }: Route.LoaderArgs) {
               domainApplications: {
                 where: {
                   selected: true,
-                  // Standard cycles link Domain via challengeVersion; Fellowship
-                  // links it directly. OR matches DAs from both cycle types.
-                  OR: [
-                    { challengeVersion: { domainId: assignment.domainId } },
-                    { domainId: assignment.domainId },
-                  ],
+                  domainId: assignment.domainId,
                 },
                 include: {
-                  challengeVersion: { include: { domain: true } },
+                  domain: true,
                   reviews: {
                     include: {
                       cycleReviewer: {
@@ -142,55 +125,14 @@ export async function loader({ request }: Route.LoaderArgs) {
       const requestedCycleId = new URL(request.url).searchParams.get("cycle");
       const activeCycle = selectActiveCycleForDomainLead(candidateCycles, requestedCycleId);
 
-      if (!activeCycle) return [{ assignment, cycle: null, availableCycles, apps: [], challengeVersionOptions: [], linkedChallengeVersions: [], linkedChallengeForms: [], isChallengeReady: false, interviews: [], reviewers: [], delibsSessions: [], draftDecisions: [], cycleReviewersForDomain: [], initialDelibsCount: 0, finalDelibsCount: 0, rubricVersionOptions: [], currentRubricVersionId: null, rubricCriteria: [], interviewers: [], hasApplicationReviews: false, confidentialityRequired: null as null | "no_agreement" | "unsigned" }];
+      if (!activeCycle) return [{ assignment, cycle: null, availableCycles, apps: [], linkedChallengeForms: [], isChallengeReady: false, interviews: [], reviewers: [], delibsSessions: [], draftDecisions: [], cycleReviewersForDomain: [], initialDelibsCount: 0, finalDelibsCount: 0, rubricVersionOptions: [], currentRubricVersionId: null, rubricCriteria: [], interviewers: [], hasApplicationReviews: false, confidentialityRequired: null as null | "no_agreement" | "unsigned" }];
 
       const confState = await getCycleConfidentialityState(auth.user.sub, activeCycle.id);
       const confidentialityRequired = confState.status === "signed" ? null : confState.status;
 
       return [await (async (cycle) => {
 
-      // Challenge versions available for this domain
-      const challengeVersionOptionsRaw = await prisma.challengeVersion.findMany({
-        where: { domainId: assignment.domainId },
-        include: { challenge: true, createdBy: { select: { firstName: true, lastName: true } } },
-        orderBy: { createdAt: "desc" },
-      });
-
-      // Challenge versions linked to this domain in this cycle (may be 0, 1, or many)
-      const linkedChallengeVersionsRaw = cycle.challengeVersions
-        .filter((cv) => cv.challengeVersion.domainId === assignment.domainId)
-        .map((cv) => cv.challengeVersion);
-
-      // Derive a 1-based versionNumber for each ChallengeVersion by ranking
-      // siblings within the same `challengeId` ascending by createdAt.
-      // ChallengeVersion has no versionNumber column (RubricVersion does), so
-      // we compute it here for symmetry in the picker labels.
-      const cvFamilyIds = new Set<string>([
-        ...challengeVersionOptionsRaw.map((cv) => cv.challengeId),
-        ...linkedChallengeVersionsRaw.map((cv) => cv.challengeId),
-      ]);
-      const cvSiblings = cvFamilyIds.size > 0
-        ? await prisma.challengeVersion.findMany({
-            where: { challengeId: { in: [...cvFamilyIds] } },
-            select: { id: true, challengeId: true, createdAt: true },
-          })
-        : [];
-      const cvNumberMap = buildVersionNumberMap(cvSiblings);
-      // description: immutable ChallengeVersion rows — legacy ProseMirror
-      // converts to block JSON on read (the viewers expect blocks).
-      const challengeVersionOptions = challengeVersionOptionsRaw.map((cv) => ({
-        ...cv,
-        description: ensureBlocks(cv.description),
-        versionNumber: cvNumberMap.get(cv.id) ?? null,
-      }));
-      const linkedChallengeVersions = linkedChallengeVersionsRaw.map((cv) => ({
-        ...cv,
-        description: ensureBlocks(cv.description),
-        versionNumber: cvNumberMap.get(cv.id) ?? null,
-      }));
-
-      // Drive challenge Forms linked to this domain in this cycle (additive
-      // alongside legacy ChallengeVersions).
+      // Drive challenge Forms linked to this domain in this cycle.
       const linkedChallengeFormsRaw = await prisma.cycleDomainForm.findMany({
         where: { applicationCycleId: cycle.id, domainId: assignment.domainId },
         include: { form: { select: { id: true, name: true } } },
@@ -222,21 +164,18 @@ export async function loader({ request }: Route.LoaderArgs) {
               applicationCycleId: cycle.id,
               status: { in: ["Scheduled", "Completed"] },
               domainApplication: {
-                OR: [
-                  { challengeVersion: { domainId: assignment.domainId } },
-                  { domainId: assignment.domainId },
-                ],
+                domainId: assignment.domainId,
               },
             },
             include: {
               domainApplication: {
                 include: {
+                  domain: true,
                   application: {
                     include: {
                       user: { select: { firstName: true, lastName: true } },
                     },
                   },
-                  challengeVersion: { include: { domain: true } },
                 },
               },
               assignments: {
@@ -270,14 +209,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
       // Count qualifying applications for each delibs type
       const isFellowship = cycle?.cycleType === "Fellowship";
-      // Domain-linkage OR matches DAs whether they're attached via
-      // challengeVersion (Standard) or directly (Fellowship).
-      const daDomainMatch = {
-        OR: [
-          { challengeVersion: { domainId: assignment.domainId } },
-          { domainId: assignment.domainId },
-        ],
-      };
+      const daDomainMatch = { domainId: assignment.domainId };
 
       // Fellowship cycles skip the Initial→interview round, so the Initial
       // delibs count is always 0 for them.
@@ -432,8 +364,7 @@ export async function loader({ request }: Route.LoaderArgs) {
           cycle: sanitizedCycle,
           availableCycles,
           apps: [] as any[],
-          challengeVersionOptions,
-          linkedChallengeVersions,
+          linkedChallengeForms,
           isChallengeReady,
           interviews: [] as any[],
           reviewers,
@@ -451,7 +382,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         };
       }
 
-      return { assignment, cycle, availableCycles, apps: appsWithStatus, challengeVersionOptions, linkedChallengeVersions, linkedChallengeForms, isChallengeReady, interviews, reviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, initialDelibsCount, finalDelibsCount, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews, confidentialityRequired: null as null | "no_agreement" | "unsigned" };
+      return { assignment, cycle, availableCycles, apps: appsWithStatus, linkedChallengeForms, isChallengeReady, interviews, reviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, initialDelibsCount, finalDelibsCount, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews, confidentialityRequired: null as null | "no_agreement" | "unsigned" };
       })(activeCycle)];
     })
   );
@@ -471,10 +402,7 @@ export async function action({ request }: Route.ActionArgs) {
     const hasAssignedReviews = await prisma.applicationReview.count({
       where: {
         domainApplication: {
-          OR: [
-            { challengeVersion: { domainId } },
-            { domainId },
-          ],
+          domainId,
           application: { applicationCycleId: cycleId },
         },
       },
@@ -486,78 +414,6 @@ export async function action({ request }: Route.ActionArgs) {
     await prisma.domainApplicationCycle.update({
       where: { domainId_applicationCycleId: { domainId, applicationCycleId: cycleId } },
       data: { rubricVersionId },
-    });
-    return redirect("/hiring/domain-lead");
-  }
-
-  if (intent === "add-challenge") {
-    const cycleId = formData.get("cycleId") as string;
-    const newVersionId = formData.get("challengeVersionId") as string;
-    const domainId = formData.get("domainId") as string;
-
-    const latestUpdate = await prisma.applicationCycleStatusUpdate.findFirst({
-      where: { applicationCycleId: cycleId },
-      orderBy: { createdAt: "desc" },
-    });
-    if ((latestUpdate?.newStatus ?? "Draft") !== "Draft") {
-      return redirect("/hiring/domain-lead");
-    }
-
-    // Confirm the chosen version belongs to the named domain — guard against
-    // form tampering linking a different domain's challenge.
-    const cv = await prisma.challengeVersion.findUnique({ where: { id: newVersionId } });
-    if (!cv || cv.domainId !== domainId) {
-      return redirect("/hiring/domain-lead");
-    }
-
-    // Prevent linking two versions of the same underlying challenge in one cycle.
-    const sameChallenge = await prisma.challengeVersionApplicationCycle.findFirst({
-      where: {
-        applicationCycleId: cycleId,
-        challengeVersion: { challengeId: cv.challengeId, domainId },
-      },
-    });
-    if (sameChallenge) {
-      return redirect("/hiring/domain-lead");
-    }
-
-    // Idempotent: skip if already linked.
-    const existing = await prisma.challengeVersionApplicationCycle.findUnique({
-      where: { challengeVersionId_applicationCycleId: { challengeVersionId: newVersionId, applicationCycleId: cycleId } },
-    });
-    if (!existing) {
-      await prisma.challengeVersionApplicationCycle.create({
-        data: { challengeVersionId: newVersionId, applicationCycleId: cycleId },
-      });
-    }
-    return redirect("/hiring/domain-lead");
-  }
-
-  if (intent === "remove-challenge") {
-    const cycleId = formData.get("cycleId") as string;
-    const versionId = formData.get("challengeVersionId") as string;
-
-    const latestUpdate = await prisma.applicationCycleStatusUpdate.findFirst({
-      where: { applicationCycleId: cycleId },
-      orderBy: { createdAt: "desc" },
-    });
-    if ((latestUpdate?.newStatus ?? "Draft") !== "Draft") {
-      return redirect("/hiring/domain-lead");
-    }
-
-    // Refuse to remove if any DomainApplication in this cycle picked this CV.
-    const inUse = await prisma.domainApplication.count({
-      where: {
-        challengeVersionId: versionId,
-        application: { applicationCycleId: cycleId },
-      },
-    });
-    if (inUse > 0) {
-      return redirect("/hiring/domain-lead");
-    }
-
-    await prisma.challengeVersionApplicationCycle.deleteMany({
-      where: { challengeVersionId: versionId, applicationCycleId: cycleId },
     });
     return redirect("/hiring/domain-lead");
   }

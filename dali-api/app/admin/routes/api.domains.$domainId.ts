@@ -6,7 +6,6 @@ import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent } from "~/lib/audit";
 
 const RELATION_LABELS: Record<string, string> = {
-  challengeVersions: "challenge versions",
   applicationCycles: "application cycles",
   domainLeadAssignments: "domain lead assignments",
   cycleReviewers: "cycle reviewers",
@@ -23,7 +22,6 @@ const RELATION_LABELS: Record<string, string> = {
 };
 
 export type DomainUsageCounts = {
-  challengeVersions: number;
   applicationCycles: number;
   domainLeadAssignments: number;
   cycleReviewers: number;
@@ -41,7 +39,6 @@ export type DomainUsageCounts = {
 
 // Prisma _count select shape — kept here so callers don't repeat it.
 export const DOMAIN_USAGE_COUNT_SELECT = {
-  challengeVersions: true,
   applicationCycles: true,
   domainLeadAssignments: true,
   cycleReviewers: true,

@@ -36,7 +36,6 @@ export async function runListDomains(callerId: string) {
       },
       _count: {
         select: {
-          challengeVersions: true,
           applicationCycles: true,
           domainLeadAssignments: true,
           cycleReviewers: true,

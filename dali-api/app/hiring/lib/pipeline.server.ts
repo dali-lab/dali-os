@@ -145,13 +145,13 @@ export async function getPipelineData(
   const domainApplications = await prisma.domainApplication.findMany({
     where: {
       selected: true,
-      challengeVersion: { domainId: { in: queryDomainIds } },
+      domainId: { in: queryDomainIds },
       application: { applicationCycleId: cycleId },
     },
     include: {
       ...domainApplicationStatusInclude,
-      challengeVersion: {
-        select: { domain: { select: { id: true, name: true } } },
+      domain: {
+        select: { id: true, name: true },
       },
       application: {
         include: {
@@ -223,7 +223,7 @@ export async function getPipelineData(
       applicantName: fullName(da.application.user),
       status,
       statusLabel: STATUS_LABELS[status],
-      domain: (da as any).challengeVersion.domain.name,
+      domain: da.domain?.name ?? "",
       reviewers: reviewerNames,
       interviewers: interviewerNames,
       rawStatus: status,

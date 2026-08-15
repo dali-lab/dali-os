@@ -81,11 +81,13 @@ try {
     select: {
       id: true,
       name: true,
-      challengeVersions: {
+      applicationForm: {
+        select: { versions: { orderBy: { versionNumber: "desc" }, take: 1, select: { id: true } } },
+      },
+      domainChallengeForms: {
         select: {
-          challengeVersion: {
-            select: { id: true, domain: { select: { id: true, name: true } } },
-          },
+          domainId: true,
+          form: { select: { versions: { orderBy: { versionNumber: "desc" }, take: 1, select: { id: true } } } },
         },
       },
       domains: { select: { domain: { select: { id: true, name: true } } } },
@@ -94,16 +96,15 @@ try {
   if (!cycle) throw new Error(`Cycle ${args.cycle} not found`);
   console.log(`Cycle: ${cycle.name} (${cycle.id})`);
 
-  // ─── Find the general challenge version + domain CVs for the cycle ──────
-  const generalCv = cycle.challengeVersions.find(c => c.challengeVersion.domain === null);
-  if (!generalCv) throw new Error(`Cycle has no general challenge version linked`);
-  const generalCvId = generalCv.challengeVersion.id;
+  // ─── Find the general form version + domain challenge form versions ──────
+  const generalFormVersion = cycle.applicationForm?.versions[0];
+  if (!generalFormVersion) throw new Error(`Cycle has no general application form linked`);
+  const generalCvId = generalFormVersion.id;
 
   const domainCvByDomainId = new Map<string, string>();
-  for (const c of cycle.challengeVersions) {
-    if (c.challengeVersion.domain) {
-      domainCvByDomainId.set(c.challengeVersion.domain.id, c.challengeVersion.id);
-    }
+  for (const cdf of cycle.domainChallengeForms) {
+    const fv = cdf.form.versions[0];
+    if (fv) domainCvByDomainId.set(cdf.domainId, fv.id);
   }
 
   // ─── Resolve requested domain names → domain ids ────────────────────────
@@ -130,7 +131,7 @@ try {
     select: { id: true, netId: true, dartmouthEmail: true, firstName: true, lastName: true },
   });
 
-  let existingApp: { id: string; domainApplications: { id: string; selected: boolean; challengeVersion: { domain: { id: string; name: string } | null } }[] } | null = null;
+  let existingApp: { id: string; domainApplications: { id: string; selected: boolean; domainId: string; domain: { id: string; name: string } }[] } | null = null;
   if (existingUser) {
     console.log(`Existing User found — will reuse:`);
     console.log(`  id: ${existingUser.id}`);
@@ -144,7 +145,8 @@ try {
           select: {
             id: true,
             selected: true,
-            challengeVersion: { select: { domain: { select: { id: true, name: true } } } },
+            domainId: true,
+            domain: { select: { id: true, name: true } },
           },
         },
       },
@@ -152,7 +154,7 @@ try {
     if (existingApp) {
       console.log(`  has Application: ${existingApp.id}`);
       for (const da of existingApp.domainApplications) {
-        console.log(`    da: ${da.id}  domain: ${da.challengeVersion.domain?.name ?? "?"}  selected: ${da.selected}`);
+        console.log(`    da: ${da.id}  domain: ${da.domain.name}  selected: ${da.selected}`);
       }
     }
   } else {
@@ -167,15 +169,11 @@ try {
   // ─── Branch: augment existing Application vs. create new ────────────────
   if (existingApp) {
     const existingDomainIds = new Set(
-      existingApp.domainApplications
-        .map(da => da.challengeVersion.domain?.id)
-        .filter((id): id is string => !!id),
+      existingApp.domainApplications.map(da => da.domainId),
     );
     const toCreate = cycle.domains.filter(d => !existingDomainIds.has(d.domain.id));
     const toReselect = existingApp.domainApplications.filter(da =>
-      da.challengeVersion.domain &&
-      resolved.some(r => r.id === da.challengeVersion.domain!.id) &&
-      !da.selected,
+      resolved.some(r => r.id === da.domainId) && !da.selected,
     );
 
     console.log(`Augmenting existing Application ${existingApp.id}:`);
@@ -189,7 +187,7 @@ try {
       console.log(`  CREATE DomainApplication: ${d.domain.name} (selected: ${selected})`);
     }
     for (const da of toReselect) {
-      console.log(`  UPDATE DomainApplication ${da.id} (${da.challengeVersion.domain?.name}): selected false → true`);
+      console.log(`  UPDATE DomainApplication ${da.id} (${da.domain.name}): selected false → true`);
     }
 
     if (!args.execute) {
@@ -207,7 +205,8 @@ try {
         await tx.domainApplication.create({
           data: {
             applicationId: existingApp!.id,
-            challengeVersionId: cvId,
+            challengeFormVersionId: cvId,
+            domainId: d.domain.id,
             selected,
             answers: {},
           },
@@ -223,10 +222,10 @@ try {
     console.log(`  application_id: ${existingApp.id}`);
     const refreshed = await prisma.domainApplication.findMany({
       where: { applicationId: existingApp.id },
-      select: { id: true, selected: true, challengeVersion: { select: { domain: { select: { name: true } } } } },
+      select: { id: true, selected: true, domain: { select: { name: true } } },
     });
     for (const da of refreshed) {
-      console.log(`  da [${da.selected ? "selected" : "deselected"}]: ${da.id}  domain: ${da.challengeVersion.domain?.name ?? "?"}`);
+      console.log(`  da [${da.selected ? "selected" : "deselected"}]: ${da.id}  domain: ${da.domain.name}`);
     }
     console.log();
     console.log(`Next: use manual-submit.ts with the application_id + the selected da_id(s).`);
@@ -268,7 +267,7 @@ try {
       data: {
         userId: user.id,
         applicationCycleId: cycle.id,
-        generalChallengeVersionId: generalCvId,
+        applicationFormVersionId: generalCvId,
         answers: {},
       },
       select: { id: true },
@@ -288,7 +287,8 @@ try {
       const da = await tx.domainApplication.create({
         data: {
           applicationId: app.id,
-          challengeVersionId: cvId,
+          challengeFormVersionId: cvId,
+          domainId: d.domain.id,
           selected,
           answers: {},
         },

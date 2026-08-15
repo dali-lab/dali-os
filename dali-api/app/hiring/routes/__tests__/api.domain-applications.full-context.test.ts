@@ -45,16 +45,16 @@ function setupHappyPathDomainApp() {
   mockPrisma.domainApplication.findUnique.mockResolvedValue({
     id: DA_ID,
     answers: { q1: "challenge answer" },
-    challengeVersion: {
+    challengeFormVersion: {
       questions: [{ key: "q1", data: { label: "Q1" } }],
-      domain: { id: "dom-1", name: "Engineering" },
     },
+    domain: { id: "dom-1", name: "Engineering" },
     application: {
       id: "app-1",
       answers: { g1: "general answer" },
       applicationCycleId: CYCLE_ID,
       user: { firstName: "Ada", lastName: "Lovelace" },
-      generalChallengeVersion: {
+      applicationFormVersion: {
         questions: [{ key: "g1", data: { label: "G1" } }],
       },
       applicationCycle: { id: CYCLE_ID, generalRubricVersionId: "grv-1" },

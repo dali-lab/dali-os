@@ -181,24 +181,9 @@ function transcodeQuestions(
 async function transcodeColumns() {
   let updates = 0;
 
-  // ChallengeVersion: description + questions info bodies.
-  for (const row of await prisma.challengeVersion.findMany({
-    select: { id: true, description: true, questions: true },
-  })) {
-    const description = transcode(`ChallengeVersion(${row.id}).description`, row.description);
-    const questions = transcodeQuestions(`ChallengeVersion(${row.id}).questions`, row.questions);
-    if (!description && !questions.changed) continue;
-    updates++;
-    console.log(`ChallengeVersion ${row.id}${DRY_RUN ? " [dry-run]" : ""}`);
-    if (DRY_RUN) continue;
-    await prisma.challengeVersion.update({
-      where: { id: row.id },
-      data: {
-        ...(description ? { description } : {}),
-        ...(questions.changed ? { questions: questions.next } : {}),
-      },
-    });
-  }
+  // FormVersion: questions info bodies (covers all question sets including
+  // domain challenge forms, which are now Drive Forms).
+  // Note: FormVersion has no separate description column; only questions is updated here.
 
   // FormVersion: questions info bodies (internal-cycle shortforms are now
   // ordinary Forms, so they're covered here too).

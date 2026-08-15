@@ -55,9 +55,6 @@ export async function action({ request, params }: Route.ActionArgs) {
   const domainApp = await prisma.domainApplication.findUnique({
     where: { id: decision.domainApplicationId },
     include: {
-      challengeVersion: {
-        include: { domain: { select: { id: true, name: true, displayName: true } } },
-      },
       domain: { select: { id: true, name: true, displayName: true } },
       application: {
         include: {
@@ -80,9 +77,8 @@ export async function action({ request, params }: Route.ActionArgs) {
         );
   }
 
-  // Resolve the target Domain regardless of how it was linked.
-  const targetDomain =
-    domainApp.domain ?? domainApp.challengeVersion?.domain ?? null;
+  // Resolve the target Domain via the direct relation (always set).
+  const targetDomain = domainApp.domain ?? null;
   if (!targetDomain) {
     return Response.json(
       { error: "Domain application has no linked domain — cannot release." },

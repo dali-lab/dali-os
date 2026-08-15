@@ -15,16 +15,15 @@ import { hiringPills } from "~/hiring/components/hiringPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import type { loader } from "~/hiring/routes/library";
 
-type Tab = "challenges" | "rubrics" | "agreements";
+type Tab = "rubrics" | "agreements";
 
 const TABS: { id: Tab; label: string }[] = [
-  { id: "challenges", label: "Challenges" },
   { id: "rubrics", label: "Rubrics" },
   { id: "agreements", label: "Agreements" },
 ];
 
 function parseTab(value: string | null): Tab {
-  return value === "rubrics" || value === "agreements" ? value : "challenges";
+  return value === "agreements" ? value : "rubrics";
 }
 
 export default function Library() {
@@ -67,192 +66,10 @@ export default function Library() {
         })}
       </div>
 
-      {tab === "challenges" && (
-        <ChallengesPanel domains={data.domains} challenges={data.challenges} />
-      )}
       {tab === "rubrics" && <RubricsPanel rubrics={data.rubrics} />}
       {tab === "agreements" && (
         <AgreementsPanel agreements={data.agreements} canEdit={data.canEdit} />
       )}
-    </div>
-  );
-}
-
-function ChallengesPanel({
-  domains,
-  challenges,
-}: {
-  domains: any[];
-  challenges: any[];
-}) {
-  // "General" is a synthetic tab for domainId: null, listed first.
-  const GENERAL_TAB_ID = "__general__";
-  const [activeDomain, setActiveDomain] = useState<string>(GENERAL_TAB_ID);
-  const [showModal, setShowModal] = useState(false);
-  const [newChallengeName, setNewChallengeName] = useState("");
-
-  const isGeneral = activeDomain === GENERAL_TAB_ID;
-  const filtered = challenges.filter((c: any) =>
-    c.versions.some((v: any) =>
-      isGeneral ? v.domainId === null : v.domainId === activeDomain,
-    ),
-  );
-
-  const activeDomainName = isGeneral
-    ? "General"
-    : (domains.find((d: any) => d.id === activeDomain)?.name ?? "");
-
-  return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-start gap-4 flex-wrap">
-        <div className="min-w-0">
-          <h2 className="text-lg font-bold text-foreground">
-            {activeDomainName} Challenges
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {isGeneral
-              ? "Manage the general application form and its versions."
-              : "Manage domain challenges and their versions independently of hiring cycles."}
-          </p>
-        </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <Select
-            value={activeDomain}
-            options={[
-              { value: GENERAL_TAB_ID, label: "General" },
-              ...domains.map((domain: any) => ({ value: domain.id, label: domain.name })),
-            ] as SelectOption<string>[]}
-            ariaLabel="Domain"
-            buttonClassName="inline-flex items-center justify-between gap-1 px-3 py-2 rounded-lg border border-border bg-card text-sm font-medium text-foreground transition-colors hover:bg-muted/40"
-            onChange={(value) => setActiveDomain(value)}
-          />
-          <Button variant="primary" size="sm" onClick={() => setShowModal(true)}>
-            <Plus className="w-4 h-4" />
-            New Challenge
-          </Button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-6">
-        {filtered.map((challenge: any) => {
-          const domainVersionCount = challenge.versions.filter((v: any) =>
-            isGeneral ? v.domainId === null : v.domainId === activeDomain,
-          ).length;
-          return (
-            <Link
-              key={challenge.id}
-              to={`/hiring/challenges/${challenge.id}`}
-              className="bg-card rounded-xl border border-border p-6 shadow-sm hover:shadow-md transition-shadow group block"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-center gap-3 min-w-0 flex-1">
-                  <div className="p-2 bg-blue-50 rounded-lg text-blue-600 flex-shrink-0">
-                    <FileText className="w-6 h-6" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <h3 className="text-lg font-bold text-foreground group-hover:text-blue-600 transition-colors break-words">
-                      {challenge.name}
-                    </h3>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      {domainVersionCount} version
-                      {domainVersionCount !== 1 ? "s" : ""}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1 flex-shrink-0">
-                  <Form method="post" onClick={(e) => e.stopPropagation()}>
-                    <input type="hidden" name="entity" value="challenge" />
-                    <input type="hidden" name="intent" value="delete" />
-                    <input type="hidden" name="id" value={challenge.id} />
-                    <button
-                      type="submit"
-                      className="p-1.5 text-muted-foreground/70 hover:text-red-600 hover:bg-red-50 rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </Form>
-                  <ChevronRight className="w-5 h-5 text-muted-foreground/70 group-hover:text-blue-500 transition-colors" />
-                </div>
-              </div>
-              <div className="mt-6 pt-4 border-t border-border text-sm text-muted-foreground">
-                Created {new Date(challenge.createdAt).toLocaleDateString()}
-              </div>
-            </Link>
-          );
-        })}
-        {filtered.length === 0 && (
-          <div className="col-span-full text-center py-12 text-muted-foreground/70 text-sm">
-            No challenges for this domain yet.
-          </div>
-        )}
-      </div>
-
-      <Modal
-        open={showModal}
-        onClose={() => setShowModal(false)}
-        labelledBy="new-challenge-title"
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/10 backdrop-blur-[1px] p-4 sm:p-6 overflow-y-auto"
-        containerClassName="bg-card rounded-xl shadow-xl max-w-md w-full p-6 my-auto space-y-6"
-      >
-        <ModalHeader
-          titleId="new-challenge-title"
-          title="New Challenge"
-          onClose={() => setShowModal(false)}
-          className="mb-0"
-        />
-
-        <Form
-          method="post"
-          onSubmit={() => {
-            setNewChallengeName("");
-            setShowModal(false);
-          }}
-          className="space-y-4"
-        >
-          <input type="hidden" name="entity" value="challenge" />
-          <input type="hidden" name="intent" value="create" />
-          {isGeneral ? (
-            <input type="hidden" name="general" value="1" />
-          ) : (
-            <input type="hidden" name="domainId" value={activeDomain} />
-          )}
-          <div>
-            <label className="block text-sm font-medium text-foreground/80 mb-1">
-              Challenge Name <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              name="name"
-              value={newChallengeName}
-              onChange={(e) => setNewChallengeName(e.target.value)}
-              placeholder="e.g. Engineering Challenge Fall 2026"
-              required
-              autoFocus
-              autoComplete="off"
-              className="block w-full rounded-lg border border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2.5 text-foreground bg-card placeholder-gray-400"
-            />
-          </div>
-
-          <div className="flex justify-end gap-3 pt-2 border-t border-border">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => setShowModal(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              variant="primary"
-              size="sm"
-              disabled={!newChallengeName.trim()}
-            >
-              Create Challenge
-            </Button>
-          </div>
-        </Form>
-      </Modal>
     </div>
   );
 }

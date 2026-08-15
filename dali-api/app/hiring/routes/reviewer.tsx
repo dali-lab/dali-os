@@ -119,7 +119,7 @@ export async function loader({ request }: Route.LoaderArgs) {
           application: {
             include: { user: { select: { firstName: true, lastName: true } } },
           },
-          challengeVersion: { include: { domain: true } },
+          domain: true,
         },
       },
     },
@@ -185,7 +185,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     const qualifying = await prisma.domainApplication.findMany({
       where: {
         selected: true,
-        challengeVersion: { domainId: session.domainId },
+        domainId: session.domainId,
         application: {
           applicationCycleId: session.applicationCycleId,
           ...inReviewPipelineFilter,
@@ -599,7 +599,7 @@ function DelibsSessionView({
 function ReviewCard({ review, variant }: { review: any; variant: 'pending' | 'inProgress' | 'submitted' }) {
   const da = review.domainApplication
   const user = da?.application?.user
-  const domain = da?.challengeVersion?.domain
+  const domain = da?.domain ?? da?.challengeVersion?.domain
   const appId = da?.applicationId ?? da?.application?.id
 
   const borderClass = variant === 'submitted'

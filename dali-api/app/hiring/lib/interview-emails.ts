@@ -127,10 +127,10 @@ export async function sendInterviewReminderEmails(interviewId: string): Promise<
 
     const da = await prisma.domainApplication.findUnique({
       where: { id: interview.domainApplicationId },
-      include: { challengeVersion: { include: { domain: { select: { name: true } } } } },
+      include: { domain: { select: { name: true } } },
     });
     const baseVars: Omit<InterpolationVars, "firstName"> = {
-      domain: da?.challengeVersion?.domain?.name ?? "DALI Lab",
+      domain: da?.domain?.name ?? "DALI Lab",
       time: formatTime(interview.startTime),
       location: formatLocation(interview.location, interview.zoomJoinUrl),
       meetingUrl: interview.zoomJoinUrl ?? undefined,
@@ -195,9 +195,9 @@ export async function sendInterviewInviteEmails(
 
     const da = await prisma.domainApplication.findUnique({
       where: { id: domainApplicationId },
-      include: { challengeVersion: { include: { domain: { select: { name: true } } } } },
+      include: { domain: { select: { name: true } } },
     });
-    const domainName = da?.challengeVersion?.domain?.name ?? "DALI Lab";
+    const domainName = da?.domain?.name ?? "DALI Lab";
 
     const baseVars: Omit<InterpolationVars, "firstName"> = {
       domain: domainName,
@@ -293,9 +293,9 @@ export async function sendInterviewCancelEmails(
 
     const da = await prisma.domainApplication.findUnique({
       where: { id: domainApplicationId },
-      include: { challengeVersion: { include: { domain: { select: { name: true } } } } },
+      include: { domain: { select: { name: true } } },
     });
-    const domainName = da?.challengeVersion?.domain?.name ?? "DALI Lab";
+    const domainName = da?.domain?.name ?? "DALI Lab";
 
     const baseVars: Omit<InterpolationVars, "firstName"> = {
       domain: domainName,
@@ -391,9 +391,9 @@ export async function sendReassignmentEmails(
 
     const da = await prisma.domainApplication.findUnique({
       where: { id: domainApplicationId },
-      include: { challengeVersion: { include: { domain: { select: { name: true } } } } },
+      include: { domain: { select: { name: true } } },
     });
-    const domainName = da?.challengeVersion?.domain?.name ?? "DALI Lab";
+    const domainName = da?.domain?.name ?? "DALI Lab";
 
     const baseVars: Omit<InterpolationVars, "firstName"> = {
       domain: domainName,
@@ -529,9 +529,9 @@ export async function sendLocationChangeEmails(
 
     const da = await prisma.domainApplication.findUnique({
       where: { id: domainApplicationId },
-      include: { challengeVersion: { include: { domain: { select: { name: true } } } } },
+      include: { domain: { select: { name: true } } },
     });
-    const domainName = da?.challengeVersion?.domain?.name ?? "DALI Lab";
+    const domainName = da?.domain?.name ?? "DALI Lab";
 
     const baseVars: Omit<InterpolationVars, "firstName"> = {
       domain: domainName,

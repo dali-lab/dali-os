@@ -29,7 +29,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
                 user: { select: { id: true, firstName: true, lastName: true } },
               },
             },
-            challengeVersion: { include: { domain: true } },
+            domain: true,
+            challengeFormVersion: { select: { questions: true, intro: true } },
           },
         },
         assignments: {
@@ -67,7 +68,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           },
         },
         domain: true,
-        challengeVersion: { include: { domain: true } },
         decisions: {
           where: { stage: "Released" },
           orderBy: { createdAt: "desc" },
@@ -86,9 +86,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       domainApplication: {
         id: da.id,
         domain: { name: da.domain.name },
-        challengeVersion: da.challengeVersion?.domain
-          ? { domain: { name: da.challengeVersion.domain.name } }
-          : null,
         application: {
           user: {
             id: da.application.user.id,

@@ -20,7 +20,6 @@ export async function action({ request, params }: Route.ActionArgs) {
       domainApplication: {
         select: {
           domainId: true,
-          challengeVersion: { select: { domainId: true } },
           application: { select: { applicationCycleId: true } },
         },
       },
@@ -58,7 +57,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     const patch: typeof parsed & { rubricVersionId?: string } = { ...parsed };
     const da = review.domainApplication;
     if (parsed.scores !== undefined && !review.rubricVersionId && da) {
-      const domainId = da.domainId ?? da.challengeVersion?.domainId ?? null;
+      const domainId = da.domainId ?? null;
       const applicationCycleId = da.application?.applicationCycleId ?? null;
       if (domainId && applicationCycleId) {
         const dac = await prisma.domainApplicationCycle.findUnique({
