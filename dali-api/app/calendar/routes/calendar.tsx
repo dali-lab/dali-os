@@ -28,6 +28,7 @@ import { prisma } from "~/lib/db";
 import { listVisibleGroupsForUser } from "~/lib/groups";
 import {
   canViewForms,
+  isCore,
   currentTermMemberWhere,
   getUserRoleInstances,
   resolveRoleRef,
@@ -194,6 +195,8 @@ type LoaderData = {
   timeEntries: TimeEntryDTO[];
   /** Core, Admin, or Instructor — can enable Self check-in (QR) on meetings. */
   canSetSelfCheckIn: boolean;
+  /** Core — can mark a meeting as a Core meeting (shows on the Core hub calendar). */
+  canMarkCoreMeeting: boolean;
   // Scheduled meetings the viewer was invited to whose start falls in the
   // visible week. Rendered as RSVP-able blocks on the My Availability grid so
   // Accept/Maybe/Decline is available in the calendar, not just in tasks.
@@ -312,6 +315,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     myRoles,
     timeEntryRows,
     canSetSelfCheckIn,
+    canMarkCoreMeeting,
   ] = await Promise.all([
       prisma.userAvailabilitySettings.findUnique({ where: { userId } }),
       prisma.user.findUnique({ where: { id: userId }, select: { timeZone: true } }),
@@ -368,6 +372,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       }),
       // Same gate as Forms: Core, Admin, or Instructor.
       canViewForms(userId),
+      isCore(userId, request),
     ]);
 
   // Working hours are interpreted in the availability-settings zone when set;
@@ -609,6 +614,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     myProjects,
     myRoles,
     canSetSelfCheckIn,
+    canMarkCoreMeeting,
     timeEntries: timeEntryRows.map((t) => ({
       id: t.id,
       source: t.source,
@@ -2842,6 +2848,7 @@ function ScheduleView({ data }: { data: LoaderData }) {
         calendarLinks={data.calendarLinks}
         myProjects={data.myProjects}
         canSetSelfCheckIn={data.canSetSelfCheckIn}
+        canMarkCoreMeeting={data.canMarkCoreMeeting}
         startLocal={startLocal}
         onStartLocalChange={setStartLocal}
         endLocal={endLocal}
@@ -3780,6 +3787,7 @@ function CreateScheduledMeetingForm({
   calendarLinks,
   myProjects,
   canSetSelfCheckIn,
+  canMarkCoreMeeting,
   startLocal,
   onStartLocalChange,
   endLocal,
@@ -3795,6 +3803,7 @@ function CreateScheduledMeetingForm({
   calendarLinks: CalendarLinkDTO[];
   myProjects: ProjectOption[];
   canSetSelfCheckIn: boolean;
+  canMarkCoreMeeting: boolean;
   startLocal: string;
   onStartLocalChange: (v: string) => void;
   endLocal: string;
@@ -3819,6 +3828,7 @@ function CreateScheduledMeetingForm({
   // Self check-in is independent of the meeting note (QR lives on the note when
   // one exists, otherwise on /calendar/check-in/:id).
   const [selfCheckIn, setSelfCheckIn] = useState(false);
+  const [coreMeeting, setCoreMeeting] = useState(false);
   const [status, setStatus] = useState<
     | null
     | {
@@ -3884,6 +3894,9 @@ function CreateScheduledMeetingForm({
       if (canSetSelfCheckIn) {
         payload.attendanceMode = selfCheckIn ? "SelfCheckIn" : "Roster";
       }
+      if (canMarkCoreMeeting && coreMeeting) {
+        payload.isCoreMeeting = true;
+      }
 
       // If exactly one group is picked and no extra people are added, record the
       // group scope so notifications carry sourceGroupId. Otherwise submit as UserList.
@@ -3926,6 +3939,7 @@ function CreateScheduledMeetingForm({
         setMeetingTypeLabel("");
         setProjectId("");
         setSelfCheckIn(false);
+        setCoreMeeting(false);
       }
     } catch (err) {
       setStatus({ ok: false, error: err instanceof Error ? err.message : "Network error" });
@@ -4114,6 +4128,17 @@ function CreateScheduledMeetingForm({
               </div>
             )}
           </div>
+
+          {canMarkCoreMeeting && (
+            <div className="rounded-md border border-border bg-muted/20 p-3">
+              <Checkbox
+                checked={coreMeeting}
+                onChange={(e) => setCoreMeeting(e.target.checked)}
+                label="Core meeting"
+                description="Shows this meeting on the Core hub's week calendar. Doesn't change who's invited."
+              />
+            </div>
+          )}
 
           {canSetSelfCheckIn && (
             <div className="rounded-md border border-border bg-muted/20 p-3">
