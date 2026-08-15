@@ -34,6 +34,7 @@ import { formatVersionLabel } from "~/lib/formatVersion";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { sendExtensionNoticeIfDue, resendExtensionNotice } from "~/hiring/lib/extension-notice";
 import { ConfidentialityGate } from "~/hiring/components/ConfidentialityGate";
+import { HiringFormEmbed } from "~/hiring/components/HiringFormEmbed";
 import { STATUS_COLORS, STATUS_LABELS } from "~/hiring/lib/labels";
 import {
   zonedDayStartUtc,
@@ -1739,24 +1740,23 @@ export default function HiringLeadCycleDetails() {
           </div>
 
           {/* Application form (Drive) */}
-          <div className="rounded-lg border border-border bg-card p-4 mb-4">
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div>
-                <h3 className="text-sm font-semibold text-dark-blue">Application form (Drive)</h3>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {cycle?.applicationForm
-                    ? "Applicants fill this Drive form."
-                    : "Bind a Drive form as the general application form."}
-                </p>
-              </div>
-              {cycle?.applicationForm ? (
-                <Link
-                  to={`/forms/edit/${cycle.applicationForm.id}`}
-                  className="text-xs font-medium text-blue-700 hover:underline whitespace-nowrap"
-                >
-                  Edit in Drive →
-                </Link>
-              ) : (
+          <div className="mb-4 space-y-2">
+            <div>
+              <h3 className="text-sm font-semibold text-dark-blue">Application form (Drive)</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {cycle?.applicationForm
+                  ? "Applicants fill this Drive form — edit it in Drive, preview it inline."
+                  : "Bind a Drive form as the general application form."}
+              </p>
+            </div>
+            {cycle?.applicationForm ? (
+              <HiringFormEmbed
+                formId={cycle.applicationForm.id}
+                name={cycle.applicationForm.name}
+                questions={(cycle.applicationForm.versions?.[0]?.questions as any) ?? []}
+              />
+            ) : (
+              <div className="rounded-lg border border-border bg-card p-4">
                 <Form method="post">
                   <input type="hidden" name="intent" value="create-application-form" />
                   <button
@@ -1766,12 +1766,7 @@ export default function HiringLeadCycleDetails() {
                     + Create form
                   </button>
                 </Form>
-              )}
-            </div>
-            {cycle?.applicationForm && (
-              <p className="text-xs text-muted-foreground mt-2">
-                {cycle.applicationForm.name}
-              </p>
+              </div>
             )}
           </div>
 
