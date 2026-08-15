@@ -62,6 +62,7 @@ import {
   Share2,
   Columns,
   ClipboardCheck,
+  Mail,
 } from "lucide-react";
 import type { DriveItem } from "~/lib/drive.server";
 import type { DriveTreeScope } from "~/lib/drive-scopes.server";
@@ -118,6 +119,8 @@ function kindLabel(item: DriveItem): string {
       return "Form";
     case "rubric":
       return "Rubric";
+    case "emailTemplate":
+      return "Email Template";
     default:
       return "Agreement";
   }
@@ -225,6 +228,8 @@ function itemIcon(item: DriveItem, big = false) {
       return <FileSignature className={`${cls} text-muted-foreground shrink-0`} />;
     case "rubric":
       return <ClipboardCheck className={`${cls} text-muted-foreground shrink-0`} />;
+    case "emailTemplate":
+      return <Mail className={`${cls} text-muted-foreground shrink-0`} />;
     default:
       return <PageIcon iconEmoji={item.iconEmoji} />;
   }

@@ -1382,7 +1382,15 @@ model EmailTemplate {
 
   name String
 
+  // Unified-Drive tree placement (Page of kind=Folder). Null = unplaced.
+  // Organisation only — never affects who can send or edit the template.
+  // Lets an email template live in the Hiring drive alongside other hiring
+  // artifacts.
+  folderPageId String?
+
   versions EmailTemplateVersion[]
+
+  @@index([folderPageId])
 }
 
 // Immutable snapshot of an EmailTemplate. Never update — append a new version.

@@ -117,6 +117,20 @@ export type DriveItem =
       sizeBytes?: number | null;
       /** Whether the viewer has favorited this item (pages only). */
       favorited?: boolean;
+    }
+  | {
+      type: "emailTemplate";
+      id: string;
+      title: string;
+      /** `folderPageId` — null when unplaced. */
+      parentFolderId: string | null;
+      iconEmoji: null; // email templates have no emoji; callers use a fixed icon
+      updatedAt: Date;
+      href: string;
+      /** File size in bytes (files only; null elsewhere). Drives the Size column. */
+      sizeBytes?: number | null;
+      /** Whether the viewer has favorited this item (pages only). */
+      favorited?: boolean;
     };
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
@@ -425,6 +439,30 @@ async function loadRubrics(): Promise<DriveItem[]> {
   }));
 }
 
+/** Load email templates. Only called when the caller passes `canManageAgreements: true`
+ *  (= isCore) — same gate as rubrics and agreements, since email templates are
+ *  authored and managed exclusively by Core. Templates with a `folderPageId` are
+ *  placed inside that folder; unplaced ones render at the Lab top level.
+ *
+ *  NO-WIDENING GUARANTEE: email templates → Core only. The caller is responsible
+ *  for passing `canManageAgreements` only when the viewer isCore. */
+async function loadEmailTemplates(): Promise<DriveItem[]> {
+  const rows = await prisma.emailTemplate.findMany({
+    where: { folderPageId: { not: null } },
+    orderBy: { updatedAt: "desc" },
+    select: { id: true, name: true, folderPageId: true, updatedAt: true },
+  });
+  return rows.map((t) => ({
+    type: "emailTemplate" as const,
+    id: t.id,
+    title: t.name,
+    parentFolderId: t.folderPageId,
+    iconEmoji: null,
+    updatedAt: t.updatedAt,
+    href: `/admin/email-templates/${t.id}`,
+  }));
+}
+
 /** Load forms. Only called when the viewer passes the `canViewForms` gate.
  *  `folderPageId` sets the tree position; it does not change form visibility. */
 async function loadForms(): Promise<DriveItem[]> {
@@ -518,15 +556,17 @@ export async function loadDriveScope({
     // to all lab members (except scoped-folder files, filtered in loadLabFiles).
     // Project-owned files are NOT included here — they appear only in their
     // respective project scope.
-    const [pages, files, forms, agreements, rubrics] = await Promise.all([
+    const [pages, files, forms, agreements, rubrics, emailTemplates] = await Promise.all([
       loadLabPages(userSub, request),
       loadLabFiles(userSub, request),
       canViewForms ? loadForms() : Promise.resolve([] as DriveItem[]),
-      // Agreements + rubrics → Core only. canManageAgreements must be derived upstream.
+      // Agreements, rubrics, and email templates → Core only. canManageAgreements
+      // must be derived upstream.
       canManageAgreements ? loadAgreements() : Promise.resolve([] as DriveItem[]),
       canManageAgreements ? loadRubrics() : Promise.resolve([] as DriveItem[]),
+      canManageAgreements ? loadEmailTemplates() : Promise.resolve([] as DriveItem[]),
     ]);
-    return [...pages, ...files, ...forms, ...agreements, ...rubrics];
+    return [...pages, ...files, ...forms, ...agreements, ...rubrics, ...emailTemplates];
   }
 
   // Project scope

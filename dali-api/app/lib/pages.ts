@@ -317,6 +317,12 @@ export async function ensureHiringDriveRoot(createdById: string): Promise<{ id: 
       where: { folderPageId: null, kind: "Confidentiality" },
       data: { folderPageId: rootId },
     });
+
+    // EmailTemplates: all are global hiring artifacts — adopt all unplaced ones.
+    await prisma.emailTemplate.updateMany({
+      where: { folderPageId: null },
+      data: { folderPageId: rootId },
+    });
   } catch {
     // Adoption is best-effort; don't surface errors to the caller.
   }

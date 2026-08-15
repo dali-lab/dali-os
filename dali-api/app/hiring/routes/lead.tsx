@@ -13,7 +13,6 @@ import { STATUS_COLORS, STATUS_LABELS } from "~/hiring/lib/labels";
 import { Select, type SelectOption } from "~/components/ui/floating";
 import { isInternalCycleType, CYCLE_TYPE_LABELS } from "~/hiring/lib/internal-cycles";
 import { getCoreDomain, defaultCoreReviewerIds } from "~/hiring/lib/core-hiring.server";
-import { createCycleApplicationForm } from "~/hiring/lib/application-form.server";
 import type { ApplicationCycleType } from "~/generated/prisma/client";
 
 export const handle = { areaPills: true };
@@ -71,12 +70,9 @@ export async function action({ request }: Route.ActionArgs) {
     },
   });
 
-  // Internal cycles (Fellowship/Core) get an auto-created Drive Form as their
-  // application form — authored in the Forms builder, browsable in Drive,
-  // rebindable in setup.
-  if (isInternalCycleType(cycleType)) {
-    await createCycleApplicationForm(cycle.id, adminUser.id);
-  }
+  // Application form is bound in setup, not here: cycles start with no form so
+  // an operator can reuse an existing Drive Form (bind picker) or create a fresh
+  // one on demand — auto-creating one per cycle left unused forms behind.
 
   // Core cycles aren't domain-scoped: link the single synthetic CORE domain
   // (auto-ready — there's nothing per-domain to configure) and seed the

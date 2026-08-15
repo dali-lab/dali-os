@@ -173,6 +173,13 @@ export async function loadDriveScopes({
       (it) => it.type !== "agreement" && it.type !== "rubric",
     );
   }
+  // Email templates are Core-only — stricter than rubrics/agreements which
+  // hiring-team members can also see. Strip from any viewer who isn't Core,
+  // including hiring-team members who only have hasHiringAccess.
+  if (!isCore) {
+    labVisibleItems = labVisibleItems.filter((it) => it.type !== "emailTemplate");
+    hiringItems = hiringItems.filter((it) => it.type !== "emailTemplate");
+  }
 
   // Build a folder-id set per scope for the de-dup pass below.
   const labFolderIds = new Set(
