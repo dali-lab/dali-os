@@ -9,6 +9,8 @@ import {
   loadFormForEdit,
   runFormsAction,
 } from "~/forms/lib/forms-data";
+import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
+import { PageIcon } from "~/components/PageIcon";
 import { formUsages, managingUsage } from "~/forms/lib/form-usages.server";
 import {
   loadFormHiringLinks,
@@ -28,10 +30,20 @@ export const meta: Route.MetaFunction = ({ data }) => [
 // Breadcrumbs' DROPPED_SEGMENTS.
 export const handle = {
   breadcrumbTrail: (data: unknown) => {
-    const d = data as { form?: { name: string } } | undefined;
+    const d = data as {
+      form?: { name: string };
+      driveCrumbs?: { scope: string; folders: { id: string; title: string; iconEmoji: string | null }[] } | null;
+    } | undefined;
     if (!d?.form) return null;
+    const scope = d.driveCrumbs?.scope ?? "lab";
+    const scopeQuery = scope === "lab" ? "" : `?scope=${scope}`;
     return [
-      { label: "Drive", to: "/drive" },
+      { label: "Drive", to: `/drive${scopeQuery}` },
+      ...(d.driveCrumbs?.folders ?? []).map((f) => ({
+        label: f.title || "Untitled folder",
+        to: `/drive?scope=${scope}&folder=${f.id}`,
+        icon: <PageIcon iconEmoji={f.iconEmoji} />,
+      })),
       { label: d.form.name },
     ];
   },
@@ -48,7 +60,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!form) return redirect("/forms");
   // Terms for term-scoped reference questions (e.g. projects active in a
   // chosen term). Newest first so the most likely choices are at the top.
-  const [terms, usages, crumbs, allGroups, hiringLinks] =
+  const [terms, usages, crumbs, allGroups, hiringLinks, driveCrumbs] =
     await Promise.all([
       prisma.term.findMany({
         orderBy: { sortKey: "desc" },
@@ -60,6 +72,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       // helper): a Core author must be able to target groups they aren't in.
       listAllGroups(),
       loadFormHiringLinks(params.formId),
+      driveFolderCrumbs(form.folderPageId),
     ]);
   // When a feature owns this form's distribution (hiring cycle, education
   // offering, staffing, partner), the generic publish/audience settings are
@@ -72,6 +85,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     managing,
     hiringLinks,
     crumbs,
+    driveCrumbs,
     groups: allGroups
       .filter((g) => !g.archived)
       .map((g) => ({ id: g.id, name: g.name, type: g.type })),

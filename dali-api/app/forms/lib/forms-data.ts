@@ -86,6 +86,7 @@ export type FormDetail = {
   id: string;
   name: string;
   folderId: string | null;
+  folderPageId: string | null;
   createdAt: string;
   published: boolean;
   publicToken: string | null;
@@ -128,6 +129,7 @@ export async function loadFormForEdit(
     id: form.id,
     name: form.name,
     folderId: form.folderId,
+    folderPageId: form.folderPageId,
     createdAt: form.createdAt.toISOString(),
     published: form.published,
     publicToken: form.publicToken,
