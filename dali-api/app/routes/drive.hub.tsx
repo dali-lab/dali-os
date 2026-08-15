@@ -619,6 +619,7 @@ function NewMenu({
   onUploadClick,
   uploading,
   onTemplate,
+  currentFolderId,
 }: {
   scope: DriveScope;
   actions: ScopeActions;
@@ -627,11 +628,26 @@ function NewMenu({
   onUploadClick: () => void;
   uploading: boolean;
   onTemplate: () => void;
+  currentFolderId: string | null;
 }) {
   const isLab = scope.id === "lab";
   const label = scope.id === "mine" ? "My Drive" : isLab ? "Lab" : scope.label;
 
-  // Create an agreement from the Lab New menu. The admin create action redirects
+  // Create a form into the current Drive folder, then navigate to its editor.
+  async function createForm() {
+    const folderPageId = currentFolderId ?? scope.rootFolderId ?? null;
+    const formData = new FormData();
+    formData.set("intent", "create-form");
+    formData.set("name", "Untitled form");
+    if (folderPageId) formData.set("folderPageId", folderPageId);
+    const res = await fetch("/forms", { method: "POST", body: formData, credentials: "include" });
+    const json = await res.json() as { ok?: boolean; formId?: string };
+    if (json.ok && json.formId) {
+      window.location.assign(`/forms/edit/${json.formId}`);
+    }
+  }
+
+  // Create an agreement from the Core New menu. The admin create action redirects
   // to the agreement detail route; we follow it and rewrite the admin path to
   // the Drive-namespaced one.
   async function createAgreement() {
@@ -670,12 +686,12 @@ function NewMenu({
       <Menu.Item icon={<FolderOpen className="w-3.5 h-3.5" />} onSelect={() => void actions.createFolder()}>
         <span data-testid={`drive-new-folder-${scope.id}`}>New folder</span>
       </Menu.Item>
-      {isLab && canViewForms && (
-        <Menu.Item icon={<ClipboardList className="w-3.5 h-3.5" />} onSelect={() => window.location.assign("/forms")}>
+      {canViewForms && (
+        <Menu.Item icon={<ClipboardList className="w-3.5 h-3.5" />} onSelect={() => void createForm()}>
           <span data-testid="drive-new-form">New form</span>
         </Menu.Item>
       )}
-      {isLab && canManageAgreements && (
+      {scope.id === "core" && canManageAgreements && (
         <Menu.Item icon={<FileSignature className="w-3.5 h-3.5" />} onSelect={() => void createAgreement()}>
           <span data-testid="drive-new-agreement">New agreement</span>
         </Menu.Item>
@@ -894,6 +910,7 @@ export default function DriveHub() {
         onUploadClick={() => inputRef.current?.click()}
         uploading={uploading}
         onTemplate={() => setTemplatePickerOpen(true)}
+        currentFolderId={currentFolderId}
       />
     ) : null;
 

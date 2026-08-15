@@ -229,27 +229,82 @@ export async function ensureCoreDriveRoot(createdById: string): Promise<{ id: st
   // Child folders inherit the Core root's Restricted scope, so this stays
   // Core-only. Best-effort: a failure here doesn't block the root return.
   try {
-    const templatesRoot = await ensureCoreChildFolder(
+    const templatesRoot = await ensureSystemChildFolder(
       "drive:core-templates",
       rootId,
       "Templates",
       createdById,
     );
     const [hiringFolder, educationFolder] = await Promise.all([
-      ensureCoreChildFolder("drive:core-templates-hiring", templatesRoot, "Hiring", createdById),
-      ensureCoreChildFolder("drive:core-templates-education", templatesRoot, "Education", createdById),
+      ensureSystemChildFolder("drive:core-templates-hiring", templatesRoot, "Hiring", createdById),
+      ensureSystemChildFolder("drive:core-templates-education", templatesRoot, "Education", createdById),
     ]);
     await adoptEmailTemplatesByBinding({ templatesRoot, hiringFolder, educationFolder });
   } catch {
     // Templates provisioning is best-effort — never block the Core drive.
   }
 
+  // ── 3. Ensure "Agreements" + "Rubrics" areas + adopt into them ───────────
+  // Agreements (by kind) and rubrics are Core-managed and confined to these
+  // areas, so they never float loose in the Lab drive. Both were previously
+  // filed under the Hiring root — re-home any stragglers found there too, so
+  // existing data migrates to the Core drive.
+  try {
+    const hiringRootId = (
+      await prisma.page.findUnique({
+        where: { systemKey: "drive:hiring-root" },
+        select: { id: true },
+      })
+    )?.id ?? null;
+
+    const agreementsRoot = await ensureSystemChildFolder(
+      "drive:core-agreements",
+      rootId,
+      "Agreements",
+      createdById,
+    );
+    const kindFolders: Record<string, string> = {};
+    for (const { key, kind, title } of AGREEMENT_KIND_FOLDERS) {
+      kindFolders[kind] = await ensureSystemChildFolder(key, agreementsRoot, title, createdById);
+    }
+    await adoptAgreementsByKind(kindFolders, hiringRootId);
+
+    const rubricsFolder = await ensureSystemChildFolder(
+      "drive:core-rubrics",
+      rootId,
+      "Rubrics",
+      createdById,
+    );
+    await prisma.rubric.updateMany({
+      where: { OR: strayFilter(hiringRootId) },
+      data: { folderPageId: rubricsFolder },
+    });
+  } catch {
+    // Best-effort — never block the Core drive.
+  }
+
   return { id: rootId };
 }
 
+/** Items to (re-)file into a Core folder: those never placed (null) plus any
+ *  previously auto-filed into the old Hiring root. Manual placements elsewhere
+ *  are left alone. */
+function strayFilter(hiringRootId: string | null): { folderPageId: string | null }[] {
+  return hiringRootId ? [{ folderPageId: null }, { folderPageId: hiringRootId }] : [{ folderPageId: null }];
+}
+
+// The Core ▸ Agreements subfolders, one per SigningDocumentKind. Unplaced
+// signing docs are filed into the folder matching their kind.
+const AGREEMENT_KIND_FOLDERS = [
+  { key: "drive:core-agreements-general", kind: "General", title: "General" },
+  { key: "drive:core-agreements-member", kind: "MemberAgreement", title: "Member" },
+  { key: "drive:core-agreements-mentorship", kind: "MentorshipAgreement", title: "Mentorship" },
+  { key: "drive:core-agreements-confidentiality", kind: "Confidentiality", title: "Confidentiality" },
+] as const;
+
 /** Idempotently ensure a system-keyed child Folder page under `parentPageId`.
  *  No explicit scope — it inherits access from its ancestor scoped root. */
-async function ensureCoreChildFolder(
+async function ensureSystemChildFolder(
   systemKey: string,
   parentPageId: string,
   title: string,
@@ -344,6 +399,25 @@ async function adoptEmailTemplatesByBinding(folders: {
   );
 }
 
+/** File signing documents into the Agreements area by their kind. Touches
+ *  unplaced rows plus any previously filed under the old Hiring root
+ *  (Confidentiality agreements) — see strayFilter — so placed agreements a Core
+ *  user moved deliberately stay put. */
+async function adoptAgreementsByKind(
+  kindFolders: Record<string, string>,
+  hiringRootId: string | null,
+): Promise<void> {
+  const stray = strayFilter(hiringRootId);
+  await Promise.all(
+    Object.entries(kindFolders).map(([kind, folderPageId]) =>
+      prisma.signingDocument.updateMany({
+        where: { kind: kind as never, OR: stray },
+        data: { folderPageId },
+      }),
+    ),
+  );
+}
+
 /**
  * Auto-provisioned "Hiring" Drive root — the scoped folder where all hiring
  * artifacts (application/challenge Forms, Rubrics, Confidentiality agreements)
@@ -435,19 +509,10 @@ export async function ensureHiringDriveRoot(createdById: string): Promise<{ id: 
       });
     }
 
-    // Rubrics: all hiring artifacts — scalar filter, so updateMany directly.
-    await prisma.rubric.updateMany({
-      where: { folderPageId: null },
-      data: { folderPageId: rootId },
-    });
-
-    // SigningDocuments: only the Confidentiality kind belongs in the Hiring drive.
-    await prisma.signingDocument.updateMany({
-      where: { folderPageId: null, kind: "Confidentiality" },
-      data: { folderPageId: rootId },
-    });
-    // Email templates are global (not hiring-owned) — they're filed under the
-    // Core drive's Templates area by ensureCoreDriveRoot, not here.
+    // Rubrics, agreements (incl. Confidentiality), and email templates are all
+    // Core-managed artifacts filed under the Core drive (Rubrics / Agreements /
+    // Templates) by ensureCoreDriveRoot — not here. The Hiring drive holds only
+    // the hiring application/challenge Forms.
   } catch {
     // Adoption is best-effort; don't surface errors to the caller.
   }
