@@ -26,9 +26,6 @@ export async function action({ request, params }: Route.ActionArgs) {
   const domainApp = await prisma.domainApplication.findUnique({
     where: { id: params.id },
     include: {
-      challengeVersion: {
-        include: { domain: { select: { id: true, name: true, displayName: true } } },
-      },
       domain: { select: { id: true, name: true, displayName: true } },
       application: {
         include: {
@@ -76,8 +73,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     );
   }
 
-  const targetDomain =
-    domainApp.domain ?? domainApp.challengeVersion?.domain ?? null;
+  const targetDomain = domainApp.domain ?? null;
   if (!targetDomain) {
     return Response.json(
       { error: "Domain application has no linked domain." },

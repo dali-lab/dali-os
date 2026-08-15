@@ -9,7 +9,6 @@ import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";
 import { isInternalCycleType } from "~/hiring/lib/internal-cycles";
 import { createCycleApplicationForm } from "~/hiring/lib/application-form.server";
-import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { parseSessionCookie } from "~/lib/cookies";
 import { getPresenceUser } from "~/lib/presence-user";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
@@ -26,16 +25,16 @@ import {
 } from "~/hiring/lib/email-variables";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
-import { ChallengePreviewModal } from "~/hiring/components/ChallengePreviewModal";
 import { Tooltip } from "~/components/ui/IconButton";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
 import { useToast } from "~/components/ui/toast";
 import { Settings, Users, Calendar, AlertTriangle, Trash2, Plus, CheckCircle, ArrowRight, Circle, ChevronRight, X, LayoutDashboard, Eye, Mail } from 'lucide-react'
-import { formatVersionLabel, buildVersionNumberMap } from "~/lib/formatVersion";
+import { formatVersionLabel } from "~/lib/formatVersion";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { sendExtensionNoticeIfDue, resendExtensionNotice } from "~/hiring/lib/extension-notice";
 import { ConfidentialityGate } from "~/hiring/components/ConfidentialityGate";
+import { HiringFormEmbed } from "~/hiring/components/HiringFormEmbed";
 import { STATUS_COLORS, STATUS_LABELS } from "~/hiring/lib/labels";
 import {
   zonedDayStartUtc,
@@ -81,7 +80,7 @@ interface InterviewRow {
   zoomJoinUrl: string | null
   domainApplication: {
     id: string
-    challengeVersion: { domain: { name: string } }
+    domain: { name: string }
     application: { user: { firstName: string; lastName: string } }
   }
   assignments: {
@@ -101,7 +100,6 @@ interface PendingInviteRow {
   domainApplication: {
     id: string
     domain: { name: string }
-    challengeVersion: { domain: { name: string } } | null
     application: { user: { id: string; firstName: string | null; lastName: string | null } }
   }
 }
@@ -198,7 +196,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         include: { domain: true },
       },
       statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
-      challengeVersions: { include: { challengeVersion: { include: { domain: true, challenge: true, createdBy: { select: { firstName: true, lastName: true } } } } } },
       applicationForm: { include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } } },
     },
   });
@@ -215,20 +212,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
           domainApplications: {
             where: { selected: true },
-            include: { challengeVersion: { include: { domain: true } } },
+            include: { domain: true },
           },
         },
       });
   const cycle = { ...cycleBase, applications };
 
   const allDomains = await prisma.domain.findMany({ orderBy: { name: "asc" } });
-
-  // General challenge versions (domainId is null) for the form picker
-  const generalChallengeVersions = await prisma.challengeVersion.findMany({
-    where: { domainId: null },
-    include: { challenge: true, createdBy: { select: { firstName: true, lastName: true } } },
-    orderBy: { createdAt: "desc" },
-  });
 
   const rubricVersionOptions = await prisma.rubricVersion.findMany({
     include: { rubric: { select: { name: true } }, createdBy: { select: { firstName: true, lastName: true } } },
@@ -285,15 +275,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         },
       });
 
-  // Per-domain options + which domains already have reviews assigned (used to
-  // gate rubric edits — once any domain application has a review, changing
-  // the rubric out from under it would invalidate scoring).
+  // Which domains already have reviews assigned (used to gate rubric edits —
+  // once any domain application has a review, changing the rubric out from
+  // under it would invalidate scoring).
   const domainIds: string[] = cycle.domains.map((d: any) => d.domainId);
-  const domainChallengeVersions = await prisma.challengeVersion.findMany({
-    where: { domainId: { in: domainIds } },
-    include: { challenge: true, createdBy: { select: { firstName: true, lastName: true } } },
-    orderBy: { createdAt: "desc" },
-  });
   const domainRubricVersions = await prisma.rubricVersion.findMany({
     include: { rubric: { select: { name: true } }, createdBy: { select: { firstName: true, lastName: true } } },
     orderBy: { createdAt: "desc" },
@@ -308,14 +293,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           domainApplication: {
             select: {
               domainId: true,
-              challengeVersion: { select: { domainId: true } },
             },
           },
         },
       });
   const reviewedDomainIdSet = new Set<string>();
   for (const r of reviewsForCycle) {
-    const did = r.domainApplication.challengeVersion?.domainId ?? r.domainApplication.domainId ?? null;
+    const did = r.domainApplication.domainId ?? null;
     if (did) reviewedDomainIdSet.add(did);
   }
   const reviewedDomainIds = Array.from(reviewedDomainIdSet);
@@ -338,11 +322,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           domainApplication: {
             include: {
               application: { include: { user: { select: { firstName: true, lastName: true, dartmouthEmail: true, netId: true } } } },
-              // domain is the always-present source of truth; challengeVersion is
-              // null on rows without a per-domain challenge (e.g. Standard-cycle
-              // DomainApplications), so don't rely on it for the domain name.
               domain: { select: { name: true } },
-              challengeVersion: { include: { domain: { select: { name: true } } } },
             },
           },
           madeBy: { select: { firstName: true, lastName: true } },
@@ -408,51 +388,19 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     if (!list.some((u) => u.id === a.user.id)) list.push(a.user);
   }
 
-  // ChallengeVersion has no `versionNumber` column on the schema, so derive
-  // one per challenge family by ranking siblings by createdAt asc. We pull
-  // all sibling versions for any challenge surfaced in this loader so the
-  // numbers stay stable even when only a subset is shown to the picker.
-  const challengeIdsToRank = new Set<string>();
-  for (const cv of generalChallengeVersions) challengeIdsToRank.add(cv.challengeId);
-  for (const cv of domainChallengeVersions) challengeIdsToRank.add(cv.challengeId);
-  for (const link of cycle.challengeVersions) challengeIdsToRank.add(link.challengeVersion.challengeId);
-  const cvSiblings = challengeIdsToRank.size > 0
-    ? await prisma.challengeVersion.findMany({
-        where: { challengeId: { in: [...challengeIdsToRank] } },
-        select: { id: true, challengeId: true, createdAt: true },
-      })
-    : [];
-  const cvNumberMap = buildVersionNumberMap(cvSiblings);
-  // description: immutable ChallengeVersion rows — legacy ProseMirror converts
-  // to block JSON on read (ChallengePreviewModal's viewer expects blocks).
-  const withCvNumber = <T extends { id: string; description?: unknown }>(cv: T) => ({
-    ...cv,
-    description: ensureBlocks(cv.description),
-    versionNumber: cvNumberMap.get(cv.id) ?? null,
-  });
-  const cycleWithCvNumbers = {
-    ...cycle,
-    challengeVersions: cycle.challengeVersions.map((link) => ({
-      ...link,
-      challengeVersion: withCvNumber(link.challengeVersion),
-    })),
-  };
-
   const collabToken = parseSessionCookie(request);
   const presenceUser = await getPresenceUser(auth.user.sub);
 
   return {
-      cycle: cycleWithCvNumbers,
+      cycle,
       allDomains,
       finalDecisions,
       rubricVersionOptions,
       cycleApplicationReviewCount,
-      generalChallengeVersions: generalChallengeVersions.map(withCvNumber),
       emailTemplates,
       currentDecisionEmails,
       currentNotificationEmails,
       releasedDecisionTypes,
-      domainChallengeVersions: domainChallengeVersions.map(withCvNumber),
       domainRubricVersions,
       reviewedDomainIds,
       domainLeadsByDomain,
@@ -775,30 +723,6 @@ export async function action({ request, params }: Route.ActionArgs) {
     return cycleRedirect(request, params.id!);
   }
 
-  if (intent === "link-general-form") {
-    const challengeVersionId = formData.get("challengeVersionId") as string;
-    if (!challengeVersionId) {
-      return cycleRedirect(request, params.id!);
-    }
-    // Remove any existing general form link (domainId is null)
-    const existing = await prisma.challengeVersionApplicationCycle.findMany({
-      where: { applicationCycleId: params.id },
-      include: { challengeVersion: true },
-    });
-    for (const e of existing) {
-      if (e.challengeVersion.domainId === null) {
-        await prisma.challengeVersionApplicationCycle.delete({
-          where: { challengeVersionId_applicationCycleId: { challengeVersionId: e.challengeVersionId, applicationCycleId: params.id } },
-        });
-      }
-    }
-    // Link the new one
-    await prisma.challengeVersionApplicationCycle.create({
-      data: { challengeVersionId, applicationCycleId: params.id },
-    });
-    return cycleRedirect(request, params.id!);
-  }
-
   if (intent === "create-application-form") {
     // Auto-create + bind a Drive Form as this cycle's general application form
     // (no-op if already bound). Takes precedence over any legacy general-form link.
@@ -815,76 +739,6 @@ export async function action({ request, params }: Route.ActionArgs) {
     return cycleRedirect(request, params.id!);
   }
 
-  if (intent === "hl-add-domain-challenge") {
-    const domainId = formData.get("domainId") as string;
-    const challengeVersionId = formData.get("challengeVersionId") as string;
-    if (!domainId || !challengeVersionId) {
-      return cycleRedirect(request, params.id!);
-    }
-    // Hiring lead override mirrors domain lead's window: challenge edits are
-    // Draft-only because applicants see the form once the cycle is Open.
-    const latestUpdate = await prisma.applicationCycleStatusUpdate.findFirst({
-      where: { applicationCycleId: params.id },
-      orderBy: { createdAt: "desc" },
-    });
-    if ((latestUpdate?.newStatus ?? "Draft") !== "Draft") {
-      return cycleRedirect(request, params.id!);
-    }
-    // Confirm the chosen version belongs to the named domain — guard against
-    // form tampering linking a different domain's challenge.
-    const cv = await prisma.challengeVersion.findUnique({ where: { id: challengeVersionId } });
-    if (!cv || cv.domainId !== domainId) {
-      return cycleRedirect(request, params.id!);
-    }
-    // Prevent linking two versions of the same underlying challenge in one cycle.
-    const sameChallenge = await prisma.challengeVersionApplicationCycle.findFirst({
-      where: {
-        applicationCycleId: params.id!,
-        challengeVersion: { challengeId: cv.challengeId, domainId },
-      },
-    });
-    if (sameChallenge) {
-      return cycleRedirect(request, params.id!);
-    }
-    const existing = await prisma.challengeVersionApplicationCycle.findUnique({
-      where: { challengeVersionId_applicationCycleId: { challengeVersionId, applicationCycleId: params.id! } },
-    });
-    if (!existing) {
-      await prisma.challengeVersionApplicationCycle.create({
-        data: { challengeVersionId, applicationCycleId: params.id! },
-      });
-    }
-    return cycleRedirect(request, params.id!);
-  }
-
-  if (intent === "hl-remove-domain-challenge") {
-    const challengeVersionId = formData.get("challengeVersionId") as string;
-    if (!challengeVersionId) {
-      return cycleRedirect(request, params.id!);
-    }
-    const latestUpdate = await prisma.applicationCycleStatusUpdate.findFirst({
-      where: { applicationCycleId: params.id },
-      orderBy: { createdAt: "desc" },
-    });
-    if ((latestUpdate?.newStatus ?? "Draft") !== "Draft") {
-      return cycleRedirect(request, params.id!);
-    }
-    // Refuse to remove if any DomainApplication in this cycle picked this CV.
-    const inUse = await prisma.domainApplication.count({
-      where: {
-        challengeVersionId,
-        application: { applicationCycleId: params.id! },
-      },
-    });
-    if (inUse > 0) {
-      return cycleRedirect(request, params.id!);
-    }
-    await prisma.challengeVersionApplicationCycle.deleteMany({
-      where: { challengeVersionId, applicationCycleId: params.id! },
-    });
-    return cycleRedirect(request, params.id!);
-  }
-
   if (intent === "hl-set-domain-rubric") {
     const domainId = formData.get("domainId") as string;
     const rubricVersionId = (formData.get("rubricVersionId") as string) || null;
@@ -896,7 +750,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     const hasAssignedReviews = await prisma.applicationReview.count({
       where: {
         domainApplication: {
-          challengeVersion: { domainId },
+          domainId,
           application: { applicationCycleId: params.id },
         },
       },
@@ -934,20 +788,6 @@ export async function action({ request, params }: Route.ActionArgs) {
       return cycleRedirect(request, params.id!);
     }
     const isReady = intent === "hl-force-mark-ready";
-    if (isReady) {
-      // Marking ready without a challenge linked would let the cycle pretend
-      // it's configured when advance-status would still block — surface that
-      // by refusing the override here.
-      const hasChallenge = await prisma.challengeVersionApplicationCycle.count({
-        where: {
-          applicationCycleId: params.id,
-          challengeVersion: { domainId },
-        },
-      });
-      if (hasChallenge === 0) {
-        return cycleRedirect(request, params.id!);
-      }
-    }
     await prisma.domainApplicationCycle.upsert({
       where: { domainId_applicationCycleId: { domainId, applicationCycleId: params.id } },
       update: { isReady },
@@ -983,7 +823,6 @@ export async function action({ request, params }: Route.ActionArgs) {
       include: {
         statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
         domains: true,
-        challengeVersions: { include: { challengeVersion: true } },
       },
     });
 
@@ -993,11 +832,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
     if (currentStatus === "Draft") {
       const hasCloseDate = !!cycle.closeDate;
-      const coveredDomainIds = new Set(
-        cycle.challengeVersions.map((cv) => cv.challengeVersion.domainId)
-      );
-      const allDomainsCovered = cycle.domains.length > 0 && cycle.domains.every((d) => coveredDomainIds.has(d.domainId));
-      if (!hasCloseDate || !allDomainsCovered) return null;
+      if (!hasCloseDate || cycle.domains.length === 0) return null;
     }
 
     await prisma.applicationCycleStatusUpdate.create({
@@ -1642,11 +1477,8 @@ export default function HiringLeadCycleDetails() {
         const draftChecklistMet = cycleStatus !== 'Draft' || (() => {
           const hasCloseDate = !!cycle?.closeDate;
           const domains = cycle?.domains ?? [];
-          const challengeVersions = cycle?.challengeVersions ?? [];
-          const coveredDomainIds = new Set(challengeVersions.map((cv: any) => cv.challengeVersion?.domainId));
-          const hasGeneralForm = challengeVersions.some((cv: any) => cv.challengeVersion?.domainId === null);
           const allDomainsReady = domains.length > 0 && domains.every((d: any) => d.isReady);
-          return hasCloseDate && domains.length > 0 && domains.every((d: any) => coveredDomainIds.has(d.domainId)) && hasGeneralForm && allDomainsReady;
+          return hasCloseDate && domains.length > 0 && allDomainsReady;
         })();
         const nextStepCopy: Record<string, string> = {
           Draft: 'Work the inbox below, then open applications to applicants.',
@@ -1658,9 +1490,7 @@ export default function HiringLeadCycleDetails() {
         // ── Inbox computation ────────────────────────────────────────────
         // "Your actions": items only the hiring lead can resolve. Folds in
         // the Draft-checklist conditions owned by the hiring lead.
-        const hasGeneralForm = (cycle?.challengeVersions ?? []).some(
-          (cv: any) => cv.challengeVersion?.domainId === null
-        );
+        const hasApplicationForm = !!cycle?.applicationForm;
         const hasGeneralRubric = !!cycle?.generalRubricVersionId;
         const boundDecisionTypes = new Set(
           (loaderData?.currentDecisionEmails ?? []).map((b: any) => b.decisionType)
@@ -1679,8 +1509,8 @@ export default function HiringLeadCycleDetails() {
         if (cycleStatus === 'Draft' && !cycle?.closeDate) {
           myActions.push({ key: 'close-date', label: 'Set the application close date', tab: 'setup' });
         }
-        if (cycleStatus === 'Draft' && !hasGeneralForm) {
-          myActions.push({ key: 'general-form', label: 'Link the general application form', tab: 'setup' });
+        if (cycleStatus === 'Draft' && !hasApplicationForm) {
+          myActions.push({ key: 'general-form', label: 'Create the application form (Drive)', tab: 'setup' });
         }
         if (!hasGeneralRubric && cycleStatus !== 'Completed') {
           myActions.push({
@@ -1713,10 +1543,6 @@ export default function HiringLeadCycleDetails() {
         if (cycleStatus === 'Draft') {
           for (const d of (cycle?.domains ?? [])) {
             const issues: string[] = [];
-            const linkedCv = (cycle?.challengeVersions ?? []).find(
-              (cv: any) => cv.challengeVersion?.domainId === d.domainId
-            );
-            if (!linkedCv) issues.push('missing challenge');
             if (!d.rubricVersionId) issues.push('missing rubric');
             if (!d.isReady) issues.push('not marked ready');
             if (issues.length === 0) continue;
@@ -1866,17 +1692,11 @@ export default function HiringLeadCycleDetails() {
           <div className="bg-card rounded-xl border border-border shadow-sm p-6 space-y-4">
             <h3 className="text-sm font-bold text-foreground/80">Domains in this Cycle</h3>
             <p className="text-xs text-muted-foreground">
-              Hiring leads can override per-domain challenge, rubric, and ready-state selections set by domain leads.
+              Hiring leads can override per-domain rubric and ready-state selections set by domain leads.
             </p>
             {(cycle?.domains ?? []).length > 0 ? (
               <div className="space-y-3">
                 {(cycle?.domains ?? []).map((d: any) => {
-                  const linkedCvLinks = (cycle?.challengeVersions ?? []).filter(
-                    (cv: any) => cv.challengeVersion?.domainId === d.domainId
-                  );
-                  const challengeOptions = (loaderData?.domainChallengeVersions ?? []).filter(
-                    (cv: any) => cv.domainId === d.domainId,
-                  );
                   const rubricOptions = loaderData?.domainRubricVersions ?? [];
                   const reviewedDomainIds: string[] = loaderData?.reviewedDomainIds ?? [];
                   const rubricLocked = reviewedDomainIds.includes(d.domainId);
@@ -1885,8 +1705,6 @@ export default function HiringLeadCycleDetails() {
                       key={d.domainId}
                       domain={d}
                       cycleStatus={cycleStatus}
-                      linkedCvLinks={linkedCvLinks}
-                      challengeOptions={challengeOptions}
                       rubricOptions={rubricOptions}
                       rubricLocked={rubricLocked}
                     />
@@ -1921,26 +1739,24 @@ export default function HiringLeadCycleDetails() {
             )}
           </div>
 
-          {/* Application form (Drive) — the general form as a real Drive Form.
-              Takes precedence over the legacy general-form link below when set. */}
-          <div className="rounded-lg border border-border bg-card p-4 mb-4">
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div>
-                <h3 className="text-sm font-semibold text-dark-blue">Application form (Drive)</h3>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {cycle?.applicationForm
-                    ? "Applicants fill this Drive form. It takes precedence over the legacy general form below."
-                    : "Bind a Drive form as the general application form (recommended). Falls back to the legacy general form below if unset."}
-                </p>
-              </div>
-              {cycle?.applicationForm ? (
-                <Link
-                  to={`/forms/edit/${cycle.applicationForm.id}`}
-                  className="text-xs font-medium text-blue-700 hover:underline whitespace-nowrap"
-                >
-                  Edit in Drive →
-                </Link>
-              ) : (
+          {/* Application form (Drive) */}
+          <div className="mb-4 space-y-2">
+            <div>
+              <h3 className="text-sm font-semibold text-dark-blue">Application form (Drive)</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {cycle?.applicationForm
+                  ? "Applicants fill this Drive form — edit it in Drive, preview it inline."
+                  : "Bind a Drive form as the general application form."}
+              </p>
+            </div>
+            {cycle?.applicationForm ? (
+              <HiringFormEmbed
+                formId={cycle.applicationForm.id}
+                name={cycle.applicationForm.name}
+                questions={(cycle.applicationForm.versions?.[0]?.questions as any) ?? []}
+              />
+            ) : (
+              <div className="rounded-lg border border-border bg-card p-4">
                 <Form method="post">
                   <input type="hidden" name="intent" value="create-application-form" />
                   <button
@@ -1950,35 +1766,9 @@ export default function HiringLeadCycleDetails() {
                     + Create form
                   </button>
                 </Form>
-              )}
-            </div>
-            {cycle?.applicationForm && (
-              <p className="text-xs text-muted-foreground mt-2">
-                {cycle.applicationForm.name}
-              </p>
+              </div>
             )}
           </div>
-
-          {/* Legacy general-form picker (used when no Drive form is bound) */}
-          <GeneralFormPicker
-            currentCvId={(() => {
-              const generalCv = (cycle?.challengeVersions ?? []).find((cv: any) => cv.challengeVersion?.domainId === null);
-              return generalCv?.challengeVersionId ?? null;
-            })()}
-            currentCvLabel={(() => {
-              const generalCv = (cycle?.challengeVersions ?? []).find((cv: any) => cv.challengeVersion?.domainId === null);
-              if (!generalCv) return null;
-              const cv = generalCv.challengeVersion;
-              return formatVersionLabel({
-                name: cv?.challenge?.name ?? 'Untitled',
-                versionNumber: cv?.versionNumber ?? null,
-                createdAt: cv?.createdAt,
-                createdBy: cv?.createdBy,
-              });
-            })()}
-            options={loaderData?.generalChallengeVersions ?? []}
-            locked={cycleStatus !== 'Draft'}
-          />
 
           {/* General Form Rubric */}
           <GeneralRubricPicker
@@ -2121,7 +1911,7 @@ export default function HiringLeadCycleDetails() {
         />
       ) : tab === 'interviews' && (() => {
         // Filter inputs derived from current data so empty options never show.
-        const domainFor = (p: PendingInviteRow) => p.domainApplication.challengeVersion?.domain.name ?? p.domainApplication.domain.name
+        const domainFor = (p: PendingInviteRow) => p.domainApplication.domain.name
         const isCancelled = (status: string) =>
           status === 'CancelledByApplicant' || status === 'CancelledByAdmin'
         // Hide cancelled interviews unless the user opted in. A cancelled-only
@@ -2132,7 +1922,7 @@ export default function HiringLeadCycleDetails() {
           : interviews.filter(i => !isCancelled(i.status))
         const hiddenCancelledCount = interviews.length - visibleInterviews.length
         const availableDomains = Array.from(new Set<string>([
-          ...visibleInterviews.map(i => i.domainApplication.challengeVersion.domain.name).filter(Boolean),
+          ...visibleInterviews.map(i => i.domainApplication.domain.name).filter(Boolean),
           ...pendingInvites.map(domainFor).filter(Boolean),
         ])).sort()
         const availableStatuses = Array.from(new Set<string>([
@@ -2141,7 +1931,7 @@ export default function HiringLeadCycleDetails() {
         ]))
         const filtersActive = interviewDomainFilter !== 'all' || interviewStatusFilter !== 'all'
         const filteredInterviews = visibleInterviews.filter(i => {
-          if (interviewDomainFilter !== 'all' && i.domainApplication.challengeVersion.domain.name !== interviewDomainFilter) return false
+          if (interviewDomainFilter !== 'all' && i.domainApplication.domain.name !== interviewDomainFilter) return false
           if (interviewStatusFilter !== 'all' && i.status !== interviewStatusFilter) return false
           return true
         })
@@ -2295,7 +2085,7 @@ export default function HiringLeadCycleDetails() {
                 })}
                 {filteredInterviews.map(interview => {
                   const isFuture = new Date(interview.startTime) > new Date()
-                  const domainName = interview.domainApplication.challengeVersion.domain.name
+                  const domainName = interview.domainApplication.domain.name
                   const start = new Date(interview.startTime)
                   const end = new Date(interview.endTime)
 
@@ -2507,7 +2297,7 @@ export default function HiringLeadCycleDetails() {
               })}
               {filteredInterviews.map(interview => {
                 const isFuture = new Date(interview.startTime) > new Date()
-                const domainName = interview.domainApplication.challengeVersion.domain.name
+                const domainName = interview.domainApplication.domain.name
                 const start = new Date(interview.startTime)
                 const end = new Date(interview.endTime)
                 const editable = isFuture && interview.status === 'Scheduled'
@@ -3063,7 +2853,7 @@ export default function HiringLeadCycleDetails() {
           (loaderData?.currentDecisionEmails ?? []).map((b: any) => b.decisionType)
         )
         const domainNameOf = (d: any) =>
-          d.domainApplication.domain?.name ?? d.domainApplication.challengeVersion?.domain?.name ?? ''
+          d.domainApplication.domain?.name ?? ''
         const availableDomains = Array.from(
           new Set(pendingDecisions.map(domainNameOf))
         ).sort()
@@ -3370,7 +3160,6 @@ function DecisionEmailPreviewModal({ decision, binding, onClose }: {
   const firstName = decision.domainApplication.application.user.firstName ?? ''
   const domain =
     decision.domainApplication.domain?.name ??
-    decision.domainApplication.challengeVersion?.domain?.name ??
     ''
   const tmpl = binding?.emailTemplateVersion ?? null
   const rendered = tmpl ? renderEmail(tmpl, { firstName, domain }) : null
@@ -4098,46 +3887,20 @@ function GeneralRubricPicker({ currentRubricVersionId, rubricVersionOptions, loc
 function DomainOverridePanel({
   domain,
   cycleStatus,
-  linkedCvLinks,
-  challengeOptions,
   rubricOptions,
   rubricLocked,
 }: {
   domain: any;
   cycleStatus: string;
-  linkedCvLinks: any[];
-  challengeOptions: any[];
   rubricOptions: any[];
   rubricLocked: boolean;
 }) {
   const [showReadyModal, setShowReadyModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [previewCvId, setPreviewCvId] = useState<string | null>(null);
   const [showRubricPreview, setShowRubricPreview] = useState(false);
 
-  const challengeLocked = cycleStatus !== 'Draft';
   const readyLocked = cycleStatus !== 'Draft';
   const isReady: boolean = !!domain.isReady;
-  const linkedCvs: any[] = linkedCvLinks.map((l: any) => l.challengeVersion).filter(Boolean);
-  const linkedCvIds = new Set<string>(linkedCvs.map((cv: any) => cv.id));
-  const linkedChallengeIds = new Set<string>(linkedCvs.map((cv: any) => cv.challengeId));
-  const hasLinkedChallenge = linkedCvs.length > 0;
-  const summaryLabel = !hasLinkedChallenge
-    ? null
-    : linkedCvs.length === 1
-      ? formatVersionLabel({
-          name: linkedCvs[0].challenge?.name ?? 'Untitled',
-          versionNumber: linkedCvs[0].versionNumber,
-          createdAt: linkedCvs[0].createdAt,
-          createdBy: linkedCvs[0].createdBy,
-        })
-      : `${linkedCvs.length} challenges linked`;
-
-  // Picker for adding a new CV (filtered to those not yet linked, and not a duplicate challenge)
-  const addableOptions = challengeOptions.filter((cv: any) => !linkedCvIds.has(cv.id) && !linkedChallengeIds.has(cv.challengeId));
-  const [pickerCvId, setPickerCvId] = useState('');
-  // Reset picker when the linked set changes (after a redirect re-render)
-  useEffect(() => { setPickerCvId(''); }, [linkedCvIds.size]);
 
   // Close the ready modal when isReady flips — same-URL redirects don't remount
   // the component so the modal state survives the round-trip without this.
@@ -4156,24 +3919,11 @@ function DomainOverridePanel({
       })
     : null;
 
-  const previewCv = previewCvId
-    ? (challengeOptions.find((cv: any) => cv.id === previewCvId) ?? linkedCvs.find((cv: any) => cv.id === previewCvId))
-    : null;
-
   return (
     <div className="border border-border rounded-lg p-4 space-y-3">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-sm font-semibold text-foreground">{domain.domain?.name ?? domain.domainId}</span>
-          {hasLinkedChallenge ? (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700">
-              <CheckCircle className="w-3 h-3" /> {linkedCvs.length === 1 ? 'Challenge linked' : `${linkedCvs.length} challenges linked`}
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-yellow-100 text-yellow-700">
-              <AlertTriangle className="w-3 h-3" /> No challenge
-            </span>
-          )}
           {isReady ? (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700">
               <CheckCircle className="w-3 h-3" /> Domain marked ready
@@ -4196,111 +3946,7 @@ function DomainOverridePanel({
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div className="space-y-2">
-          <label className="block text-xs font-medium text-muted-foreground">
-            Challenge versions {challengeLocked && <span className="text-muted-foreground/70">(locked — cycle is past Draft)</span>}
-          </label>
-          {linkedCvs.length > 0 && (
-            <ul className="border border-border rounded-lg divide-y divide-border bg-card">
-              {linkedCvs.map((cv: any) => (
-                <li key={cv.id} className="flex items-center justify-between px-3 py-2 text-sm">
-                  <span className="text-foreground/80 truncate">
-                    {formatVersionLabel({
-                      name: cv.challenge?.name ?? 'Untitled',
-                      versionNumber: cv.versionNumber,
-                      createdAt: cv.createdAt,
-                      createdBy: cv.createdBy,
-                    })}
-                  </span>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <Tooltip label="Preview">
-                      <button
-                        type="button"
-                        onClick={() => setPreviewCvId(cv.id)}
-                        aria-label="Preview"
-                        className="flex items-center justify-center p-1.5 text-xs font-medium rounded-lg border border-border hover:bg-muted/50 text-foreground/70 transition"
-                      >
-                        <Eye className="w-3 h-3" />
-                      </button>
-                    </Tooltip>
-                    {!challengeLocked && (
-                      <Form method="post" preventScrollReset>
-                        <input type="hidden" name="intent" value="hl-remove-domain-challenge" />
-                        <input type="hidden" name="challengeVersionId" value={cv.id} />
-                        <button
-                          type="submit"
-                          aria-label={`Remove ${cv.challenge?.name ?? 'challenge'}`}
-                          className="text-muted-foreground hover:text-red-600 transition px-1"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </Form>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-          {challengeLocked ? (
-            !hasLinkedChallenge && (
-              <div className="text-sm text-foreground/80 px-3 py-2 bg-muted/40 rounded-lg">
-                No challenge linked
-              </div>
-            )
-          ) : addableOptions.length === 0 ? (
-            !hasLinkedChallenge && (
-              <p className="text-xs text-muted-foreground/70 px-3 py-2 bg-muted/30 rounded-lg">
-                No challenge versions exist for this domain. Create one on the Challenges page.
-              </p>
-            )
-          ) : (
-            <Form method="post" preventScrollReset className="flex items-end gap-2">
-              <input type="hidden" name="intent" value="hl-add-domain-challenge" />
-              <input type="hidden" name="domainId" value={domain.domainId} />
-              <div className="flex-1 min-w-0">
-                <Select
-                  name="challengeVersionId"
-                  value={pickerCvId}
-                  onChange={(value) => setPickerCvId(value)}
-                  placeholder="Add a challenge version..."
-                  ariaLabel={`Add challenge version for ${domain.domain?.name ?? domain.domainId}`}
-                  options={addableOptions.map((cv: any): SelectOption => ({
-                    value: cv.id,
-                    label: formatVersionLabel({
-                      name: cv.challenge?.name ?? 'Untitled',
-                      versionNumber: cv.versionNumber,
-                      createdAt: cv.createdAt,
-                      createdBy: cv.createdBy,
-                    }),
-                  }))}
-                  buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-                />
-              </div>
-              {pickerCvId && (
-                <Tooltip label="Preview">
-                  <button
-                    type="button"
-                    onClick={() => setPreviewCvId(pickerCvId)}
-                    aria-label="Preview"
-                    className="flex items-center justify-center p-1.5 text-xs font-medium rounded-lg border border-border hover:bg-muted/50 text-foreground/70 transition"
-                  >
-                    <Eye className="w-3 h-3" />
-                  </button>
-                </Tooltip>
-              )}
-              <button
-                type="submit"
-                disabled={!pickerCvId}
-                className="px-3 py-2 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition disabled:opacity-50"
-              >
-                Add
-              </button>
-            </Form>
-          )}
-        </div>
-
-        <div>
+      <div>
           <label className="block text-xs font-medium text-muted-foreground mb-1">
             Rubric version {rubricLocked && <span className="text-muted-foreground/70">(locked — reviews assigned)</span>}
           </label>
@@ -4373,7 +4019,6 @@ function DomainOverridePanel({
             </Form>
           )}
         </div>
-      </div>
 
       {!readyLocked && (
         <div className="pt-2 border-t border-border flex items-center justify-between gap-3">
@@ -4383,8 +4028,6 @@ function DomainOverridePanel({
           <button
             type="button"
             onClick={() => setShowReadyModal(true)}
-            disabled={!isReady && !hasLinkedChallenge}
-            title={!isReady && !hasLinkedChallenge ? 'Link a challenge before marking ready' : undefined}
             className={`px-3 py-1.5 text-sm font-medium rounded-lg transition disabled:opacity-50 ${
               isReady
                 ? 'bg-card border border-border hover:bg-muted/50 text-foreground/80'
@@ -4407,24 +4050,7 @@ function DomainOverridePanel({
         <ForceReadyModal
           domain={domain}
           isReady={isReady}
-          selectedCvLabel={summaryLabel}
           onClose={() => setShowReadyModal(false)}
-        />
-      )}
-
-      {previewCv && (
-        <ChallengePreviewModal
-          challengeVersionId={previewCv.id}
-          challengeName={previewCv.challenge?.name ?? 'Challenge'}
-          versionLabel={formatVersionLabel({
-            name: previewCv.challenge?.name ?? 'Challenge',
-            versionNumber: previewCv.versionNumber,
-            createdAt: previewCv.createdAt,
-            createdBy: previewCv.createdBy,
-          })}
-          description={previewCv.description}
-          questions={(previewCv.questions as any[]) ?? []}
-          onClose={() => setPreviewCvId(null)}
         />
       )}
 
@@ -4441,12 +4067,10 @@ function DomainOverridePanel({
 function ForceReadyModal({
   domain,
   isReady,
-  selectedCvLabel,
   onClose,
 }: {
   domain: any;
   isReady: boolean;
-  selectedCvLabel: string | null;
   onClose: () => void;
 }) {
   const intent = isReady ? 'hl-force-unmark-ready' : 'hl-force-mark-ready';
@@ -4461,10 +4085,6 @@ function ForceReadyModal({
           <p>
             Domain: <span className="font-semibold text-foreground">{domain.domain?.name ?? domain.domainId}</span>
           </p>
-          <div className="bg-muted/40 rounded-lg p-3 text-xs">
-            <span className="font-medium text-foreground/80">Challenge: </span>
-            {selectedCvLabel ?? <span className="text-amber-700">none</span>}
-          </div>
           {isReady ? (
             <p>This will revert the domain back to "not ready" until the domain lead (or a hiring lead) marks it ready again.</p>
           ) : (
@@ -4558,84 +4178,6 @@ function RubricPreviewModal({ rv, onClose }: { rv: any; onClose: () => void }) {
         )}
       </div>
     </Modal>
-  );
-}
-
-function GeneralFormPicker({ currentCvId, currentCvLabel, options, locked }: {
-  currentCvId: string | null;
-  currentCvLabel: string | null;
-  options: any[];
-  locked: boolean;
-}) {
-  const [editing, setEditing] = useState(!currentCvId);
-
-  return (
-    <div className="bg-card rounded-xl border border-border shadow-sm p-6 space-y-3">
-      <h3 className="text-sm font-bold text-foreground/80">General Application Form</h3>
-
-      {locked ? (
-        currentCvId ? (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <CheckCircle className="w-4 h-4 text-green-600" />
-            <span>{currentCvLabel}</span>
-            <span className="text-xs text-muted-foreground/70 ml-2">(locked — cycle is past Draft)</span>
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground/70">No general form linked.</p>
-        )
-      ) : currentCvId && !editing ? (
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <CheckCircle className="w-4 h-4 text-green-600" />
-            <span>{currentCvLabel}</span>
-          </div>
-          <button
-            onClick={() => setEditing(true)}
-            className="text-xs text-blue-600 hover:text-blue-800 font-medium"
-          >
-            Change
-          </button>
-        </div>
-      ) : options.length > 0 ? (
-        <Form method="post" preventScrollReset className="flex items-end gap-3" onSubmit={() => setEditing(false)}>
-          <input type="hidden" name="intent" value="link-general-form" />
-          <div className="flex-1">
-            <Select
-              name="challengeVersionId"
-              defaultValue={currentCvId ?? ""}
-              placeholder="Select a general form..."
-              options={options.map((cv: any): SelectOption => ({
-                value: cv.id,
-                label: formatVersionLabel({
-                  name: cv.challenge?.name ?? 'Untitled',
-                  versionNumber: cv.versionNumber,
-                  createdAt: cv.createdAt,
-                  createdBy: cv.createdBy,
-                }),
-              }))}
-              buttonClassName="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-            />
-          </div>
-          <button
-            type="submit"
-            className="px-4 py-2 text-sm font-medium rounded-lg bg-accent-coral hover:bg-accent-coral/90 text-white transition"
-          >
-            Save
-          </button>
-          {currentCvId && (
-            <button
-              type="button"
-              onClick={() => setEditing(false)}
-              className="px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground"
-            >
-              Cancel
-            </button>
-          )}
-        </Form>
-      ) : (
-        <p className="text-xs text-muted-foreground/70">No general forms available. Create a challenge with no domain on the Challenges page first.</p>
-      )}
-    </div>
   );
 }
 

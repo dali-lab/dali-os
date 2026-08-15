@@ -40,13 +40,11 @@ export async function loader({ request }: Route.LoaderArgs) {
     include: {
       statusUpdates: { orderBy: { createdAt: "asc" } },
       applicationFormVersion: { select: { questions: true } },
-      generalChallengeVersion: { select: { questions: true } },
       domainApplications: {
         where: { selected: true },
         include: {
-          challengeVersion: {
-            select: { questions: true, domain: true },
-          },
+          challengeFormVersion: { select: { questions: true } },
+          domain: true,
         },
       },
     },
@@ -63,20 +61,18 @@ export async function loader({ request }: Route.LoaderArgs) {
   const canWithdraw = !!active && !isWithdrawn;
 
   const generalQuestions =
-    (application.applicationFormVersion?.questions as unknown as Question[]) ??
-    (application.generalChallengeVersion?.questions as unknown as Question[]) ??
-    [];
+    (application.applicationFormVersion?.questions as unknown as Question[]) ?? [];
   const rawGeneralAnswers = application.answers as Record<string, string>;
   const generalAnswers = await presignAnswers(generalQuestions, rawGeneralAnswers);
 
   const domains = await Promise.all(
     application.domainApplications.map(async (da: any) => {
-      const questions = da.challengeVersion.questions as unknown as Question[];
+      const questions = (da.challengeFormVersion?.questions ?? []) as unknown as Question[];
       const rawAnswers = da.answers as Record<string, string>;
       const answers = await presignAnswers(questions, rawAnswers);
       return {
         id: da.id,
-        name: da.challengeVersion.domain?.name ?? "Unknown Domain",
+        name: da.domain?.name ?? "Unknown Domain",
         questions,
         answers,
       };

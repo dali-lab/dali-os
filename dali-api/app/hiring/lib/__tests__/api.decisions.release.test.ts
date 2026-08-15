@@ -30,22 +30,8 @@ vi.mock("~/members/lib/provisioning.server", () => ({
 vi.mock("~/lib/audit", () => ({
   logAuditEvent: vi.fn().mockResolvedValue(undefined),
 }));
-// Core acceptance dispatches through the registry to coreOnAccept and delivers
-// decisions in-app via notify(); stub both so this suite stays focused on the
-// release route's dispatch + channel behavior (coreOnAccept has its own tests).
-vi.mock("~/lib/notify.server", () => ({
-  notify: vi.fn().mockResolvedValue({ inApp: 1, emailed: 0, slackDmed: 0 }),
-}));
-vi.mock("~/hiring/lib/core-hiring.server", () => ({
-  coreOnAccept: vi.fn().mockResolvedValue({ auditMeta: { coreTermsCreated: 4 }, provision: null }),
-  isCoreCycleEligible: vi.fn(),
-  defaultCoreReviewerIds: vi.fn(),
-  getCoreDomain: vi.fn(),
-}));
 
 import { prisma } from "~/lib/db";
-import { notify } from "~/lib/notify.server";
-import { coreOnAccept } from "~/hiring/lib/core-hiring.server";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { sendEmail } from "~/lib/gmail";
@@ -62,7 +48,10 @@ const mockPrisma = prisma as unknown as {
     findUnique: ReturnType<typeof vi.fn>;
     create: ReturnType<typeof vi.fn>;
   };
-  domainApplication: { findUnique: ReturnType<typeof vi.fn> };
+  domainApplication: {
+    findUnique: ReturnType<typeof vi.fn>;
+    updateMany: ReturnType<typeof vi.fn>;
+  };
   cycleDecisionEmail: { findUnique: ReturnType<typeof vi.fn> };
   user: { findUnique: ReturnType<typeof vi.fn> };
   gmailIntegration: { findFirst: ReturnType<typeof vi.fn> };
@@ -97,13 +86,9 @@ function setupFinalDecision(type: "Rejected" | "InvitedToInterview" | "Accepted"
 
 function setupApplicantContext(opts: { domainName?: string | null } = {}) {
   const domainName = opts.domainName === undefined ? "Engineering" : opts.domainName;
-  // The release route now also reads `domain` (direct Fellowship relation)
-  // and `applicationCycle.cycleType`. Default to Standard with no direct domain
-  // so existing tests still flow through the challengeVersion path.
   mockPrisma.domainApplication.findUnique.mockResolvedValue({
     id: "da-1",
-    challengeVersion: { domain: domainName ? { id: "dom-1", name: domainName, displayName: domainName } : null },
-    domain: null,
+    domain: domainName ? { id: "dom-1", name: domainName, displayName: domainName } : null,
     application: {
       userId: "applicant-user-id",
       applicationCycleId: CYCLE_ID,
@@ -126,7 +111,10 @@ beforeEach(() => {
   process.env.DALI_APP_ENV = "prod";
   (mockPrisma as any).dALIMember = { findUnique: vi.fn() };
   (mockPrisma as any).decision = { findUnique: vi.fn(), create: vi.fn() };
-  (mockPrisma as any).domainApplication = { findUnique: vi.fn() };
+  (mockPrisma as any).domainApplication = {
+    findUnique: vi.fn(),
+    updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+  };
   (mockPrisma as any).cycleDecisionEmail = { findUnique: vi.fn() };
   (mockPrisma as any).user = { findUnique: vi.fn() };
   (mockPrisma as any).gmailIntegration = { findFirst: vi.fn() };
@@ -180,7 +168,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     expect(args.refreshToken).toBe("gmail-rt");
   });
 
-  it("interpolates {{domain}} from domainApplication.challengeVersion.domain.name", async () => {
+  it("interpolates {{domain}} from domainApplication.domain.name", async () => {
     setupAuth();
     setupFinalDecision("Rejected");
     setupApplicantContext({ domainName: "Design" });
@@ -204,7 +192,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
 
   it("refuses to release when the domain application has no linked domain at all", async () => {
     // A DomainApplication must have either a challengeVersion → domain (Standard)
-    // or a direct `domain` (Fellowship). If both are missing the data is
+    // or a direct `domain` (InternToFull). If both are missing the data is
     // corrupt; the route fails closed rather than emailing an empty {{domain}}.
     setupAuth();
     setupFinalDecision("Rejected");
@@ -274,8 +262,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     setupFinalDecision("InvitedToInterview");
     mockPrisma.domainApplication.findUnique.mockResolvedValue({
       id: "da-1",
-      challengeVersion: { domain: { id: "dom-1", name: "Engineering", displayName: "Engineering" } },
-      domain: null,
+      domain: { id: "dom-1", name: "Engineering", displayName: "Engineering" },
       application: {
         userId: "applicant-user-id",
         applicationCycleId: CYCLE_ID,
@@ -384,6 +371,48 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     });
   });
 
+  it("on Accepted, closes the applicant's other undecided domains this cycle (single placement)", async () => {
+    setupAuth();
+    setupFinalDecision("Accepted");
+    setupApplicantContext();
+    mockPrisma.cycleDecisionEmail.findUnique.mockResolvedValue({
+      applicationCycleId: CYCLE_ID,
+      decisionType: "Accepted",
+      emailTemplateVersionId: "etv-1",
+      emailTemplateVersion: { id: "etv-1", subject: "Welcome!", body: "Hi {{firstName}}" },
+    });
+
+    const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
+    expect(res.status).toBe(201);
+
+    expect(mockPrisma.domainApplication.updateMany).toHaveBeenCalledOnce();
+    const arg = vi.mocked(mockPrisma.domainApplication.updateMany).mock.calls[0][0];
+    // Only sibling DAs (not this one), still selected, undecided, not already closed.
+    expect(arg.where).toMatchObject({
+      id: { not: "da-1" },
+      selected: true,
+      closureReason: null,
+      decisions: { none: { stage: "Released" } },
+    });
+    expect(arg.data).toMatchObject({ closureReason: "AcceptedElsewhere" });
+  });
+
+  it("does NOT close siblings for a non-Accepted decision", async () => {
+    setupAuth();
+    setupFinalDecision("Rejected");
+    setupApplicantContext();
+    mockPrisma.cycleDecisionEmail.findUnique.mockResolvedValue({
+      applicationCycleId: CYCLE_ID,
+      decisionType: "Rejected",
+      emailTemplateVersionId: "etv-1",
+      emailTemplateVersion: { id: "etv-1", subject: "Update", body: "Hi {{firstName}}" },
+    });
+
+    const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
+    expect(res.status).toBe(201);
+    expect(mockPrisma.domainApplication.updateMany).not.toHaveBeenCalled();
+  });
+
   it("folds the provisioned daliEmail into the welcome call", async () => {
     setupAuth();
     setupFinalDecision("Accepted");
@@ -460,63 +489,6 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     // …but the decision email still goes out — without the onboarding block.
     expect(sendEmail).toHaveBeenCalledOnce();
     expect(vi.mocked(sendEmail).mock.calls[0][0].html).not.toContain("<onboarding");
-  });
-
-  function setupCoreApplicantContext(
-    type: "Accepted" | "Rejected" | "Waitlisted" = "Accepted",
-  ) {
-    setupFinalDecision(type);
-    // Core cycles link the CORE domain directly (no challengeVersion).
-    mockPrisma.domainApplication.findUnique.mockResolvedValue({
-      id: "da-1",
-      challengeVersion: null,
-      domain: { id: "core-domain", name: "Core", displayName: "Core" },
-      application: {
-        userId: "applicant-user-id",
-        applicationCycleId: CYCLE_ID,
-        applicationCycle: { cycleType: "Core" },
-        user: { firstName: "Ada", dartmouthEmail: "ada@dartmouth.edu", netId: null },
-      },
-    });
-    mockPrisma.gmailIntegration.findFirst.mockResolvedValue({ oauthTokens: "gmail-rt" });
-  }
-
-  it("on a Core acceptance, dispatches to coreOnAccept (not promoteToMember) and notifies in-app with no email binding", async () => {
-    setupAuth();
-    setupCoreApplicantContext("Accepted");
-    // No decision-email binding — Core is an in-app channel, so this must NOT 409.
-    mockPrisma.cycleDecisionEmail.findUnique.mockResolvedValue(null);
-
-    const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
-    expect(res.status).toBe(201);
-
-    expect(coreOnAccept).toHaveBeenCalledOnce();
-    expect(vi.mocked(coreOnAccept).mock.calls[0][0]).toMatchObject({
-      userId: "applicant-user-id",
-      domainId: "core-domain",
-      actorId: USER_ID,
-    });
-    // Core does NOT run the member-promotion path.
-    expect(promoteToMember).not.toHaveBeenCalled();
-    expect(provisionNewMember).not.toHaveBeenCalled();
-    // No binding → no email, but the applicant is notified in-app.
-    expect(sendEmail).not.toHaveBeenCalled();
-    expect(notify).toHaveBeenCalledOnce();
-    const notifyArgs = vi.mocked(notify).mock.calls[0][0];
-    expect(notifyArgs.eventType).toBe("hiring.core_decision");
-    expect(notifyArgs.recipients).toEqual([{ userId: "applicant-user-id" }]);
-  });
-
-  it("on a Core rejection, notifies in-app without coreOnAccept", async () => {
-    setupAuth();
-    setupCoreApplicantContext("Rejected");
-    mockPrisma.cycleDecisionEmail.findUnique.mockResolvedValue(null);
-
-    const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
-    expect(res.status).toBe(201);
-    expect(coreOnAccept).not.toHaveBeenCalled();
-    expect(notify).toHaveBeenCalledOnce();
-    expect(vi.mocked(notify).mock.calls[0][0].eventType).toBe("hiring.core_decision");
   });
 
   it("still releases (201) when provisioning throws — failure is isolated", async () => {

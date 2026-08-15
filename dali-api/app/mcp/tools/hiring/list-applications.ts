@@ -87,10 +87,7 @@ export async function runListApplications(userId: string, input: Input): Promise
   if (effectiveDomainIds !== undefined && effectiveDomainIds.length === 0) return [];
 
   const whereOr = effectiveDomainIds
-    ? [
-        { challengeVersion: { domainId: { in: effectiveDomainIds } } },
-        { domainId: { in: effectiveDomainIds } },
-      ]
+    ? [{ domainId: { in: effectiveDomainIds } }]
     : undefined;
 
   const domainApps = await prisma.domainApplication.findMany({
@@ -103,9 +100,6 @@ export async function runListApplications(userId: string, input: Input): Promise
       id: true,
       domainId: true,
       domain: { select: { displayName: true, name: true } },
-      challengeVersion: {
-        select: { domain: { select: { displayName: true, name: true } } },
-      },
       application: {
         select: {
           id: true,
@@ -141,8 +135,6 @@ export async function runListApplications(userId: string, input: Input): Promise
     const domainDisplay =
       da.domain?.displayName ??
       da.domain?.name ??
-      da.challengeVersion?.domain?.displayName ??
-      da.challengeVersion?.domain?.name ??
       null;
     return {
       domainApplicationId: da.id,

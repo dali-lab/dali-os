@@ -47,7 +47,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     where: { id: params.id },
     include: {
       user: true,
-      generalChallengeVersion: true,
       applicationFormVersion: true,
       applicationCycle: {
         include: {
@@ -101,18 +100,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       where: {
         applicationId: params.id,
         selected: true,
-        // Standard cycles link Domain via challengeVersion; Fellowship cycles
-        // link Domain directly. Match whichever path is set.
-        OR: [
-          { challengeVersion: { domainId: { in: reviewerDomainIds } } },
-          { domainId: { in: reviewerDomainIds } },
-        ],
+        domainId: { in: reviewerDomainIds },
       },
       include: {
-        challengeVersion: {
-          include: { domain: true, challenge: true },
-        },
-        challengeFormVersion: { select: { questions: true, intro: true } },
+        challengeFormVersion: { select: { questions: true, intro: true, form: { select: { name: true } } } },
         domain: true,
       },
     }),
@@ -124,43 +115,37 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     }),
   ])
 
-  // Helper: resolve a domainApplication's effective Domain regardless of cycleType.
+  // Helper: resolve a domainApplication's effective Domain.
   function daDomain(da: (typeof domainApplications)[number]) {
-    return da.domain ?? da.challengeVersion?.domain ?? null
+    return da.domain ?? null
   }
   function daDomainId(da: (typeof domainApplications)[number]): string | null {
-    return da.domainId ?? da.challengeVersion?.domainId ?? null
+    return da.domainId ?? null
   }
 
   // Presign file-type answers so the viewer can render real download links
   // instead of raw S3 keys. For Fellowship cycles, the application's
   // "general" questions live on applicationFormVersion, and per-domain
   // entries carry no challenge content.
-  // Prefer the bound Drive Form's questions; fall back to the legacy general
-  // ChallengeVersion for pre-migration Standard applications.
   const generalQuestionsForPresign =
-    ((applicationBase.applicationFormVersion?.questions as unknown as Question[]) ??
-      (applicationBase.generalChallengeVersion?.questions as unknown as Question[]) ??
-      [])
+    (applicationBase.applicationFormVersion?.questions as unknown as Question[]) ?? []
   const presignedGeneralAnswers = await presignAnswers(
     generalQuestionsForPresign,
     applicationBase.answers as Record<string, string>,
   )
   const presignedDomainApplications = await Promise.all(
     domainApplications.map(async (da: any) => {
-      // Per-domain challenge: prefer the picked Drive Form's version (intro →
-      // description), else the legacy ChallengeVersion. The viewer renders the
-      // `challengeVersion` shape {questions, description} either way.
+      // Per-domain challenge: synthesize the viewer shape {questions, description}
+      // from the bound Drive Form version.
       const challengeVersion = da.challengeFormVersion
         ? {
             questions: da.challengeFormVersion.questions,
             description: ensureBlocks(safeParseJsonString(da.challengeFormVersion.intro)),
+            domain: da.domain ?? { name: "Domain" },
+            challenge: { name: da.challengeFormVersion.form?.name ?? "Challenge" },
           }
-        : da.challengeVersion
-          ? { ...da.challengeVersion, description: ensureBlocks(da.challengeVersion.description) }
-          : da.challengeVersion
-      const questions =
-        (da.challengeFormVersion?.questions ?? da.challengeVersion?.questions ?? []) as Question[]
+        : null
+      const questions = (da.challengeFormVersion?.questions ?? []) as Question[]
       return {
         ...da,
         challengeVersion,
@@ -173,8 +158,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     ...applicationBase,
     answers: presignedGeneralAnswers,
     // The viewer renders `generalChallengeVersion` {questions, description};
-    // synthesize it from the bound Drive Form version when present (intro →
-    // description), else fall back to the legacy general ChallengeVersion.
+    // synthesize it from the bound Drive Form version (intro → description).
     generalChallengeVersion: applicationBase.applicationFormVersion
       ? {
           id: applicationBase.applicationFormVersion.id,
@@ -183,12 +167,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
             safeParseJsonString(applicationBase.applicationFormVersion.intro),
           ),
         }
-      : applicationBase.generalChallengeVersion
-        ? {
-            ...applicationBase.generalChallengeVersion,
-            description: ensureBlocks(applicationBase.generalChallengeVersion.description),
-          }
-        : applicationBase.generalChallengeVersion,
+      : null,
     domainApplications: presignedDomainApplications,
   }
 
@@ -267,7 +246,6 @@ export async function action({ request, params }: Route.ActionArgs) {
         domainApplication: {
           select: {
             domainId: true,
-            challengeVersion: { select: { domainId: true } },
             application: { select: { applicationCycleId: true } },
           },
         },
@@ -277,10 +255,10 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (existing) {
       // Pin the rubric version these score keys belong to, so a later rubric
       // edit (which mints new crit-<ts> keys) doesn't orphan them at render
-      // time. Prefer the per-domain rubric (Standard cycles); fall back to the
-      // cycle-level general rubric (Fellowship, which has no per-domain).
+      // time. Prefer the per-domain rubric; fall back to the cycle-level
+      // general rubric (Fellowship, which has no per-domain).
       const da = existing.domainApplication
-      const domainId = da.domainId ?? da.challengeVersion?.domainId ?? null
+      const domainId = da.domainId ?? null
       let rubricVersionId: string | null = existing.rubricVersionId ?? null
       if (domainId) {
         const dac = await prisma.domainApplicationCycle.findUnique({
@@ -343,7 +321,7 @@ export default function ReviewerApplicationReview() {
     if (criteria.length > 0) allCriteria.push({ sectionLabel: 'General Application', criteria })
   }
   for (const da of application.domainApplications) {
-    const dDomainId = (da as any).domainId ?? (da as any).challengeVersion?.domainId ?? null
+    const dDomainId = (da as any).domainId ?? null
     const dDomain = (da as any).domain ?? (da as any).challengeVersion?.domain ?? null
     if (!dDomainId || !dDomain) continue
     const domainCycle = cycle.domains?.find((dc: any) => dc.domainId === dDomainId)
@@ -423,7 +401,7 @@ export default function ReviewerApplicationReview() {
     questionLabels[q.key] = q.data.label
   }
   for (const da of application.domainApplications) {
-    const qs = ((da as any).challengeVersion?.questions as unknown as Question[]) ?? []
+    const qs = ((da as any).challengeVersion?.questions as unknown as Question[] | undefined) ?? []
     for (const q of qs) {
       questionLabels[q.key] = q.data.label
     }

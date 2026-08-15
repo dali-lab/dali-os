@@ -4,7 +4,7 @@
 
 import { loadDriveScope } from "~/lib/drive.server";
 import type { DriveItem } from "~/lib/drive.server";
-import { ensureCoreDriveRoot } from "~/lib/pages";
+import { ensureCoreDriveRoot, ensureHiringDriveRoot } from "~/lib/pages";
 import { favoritePageIds } from "~/lib/user-pages.server";
 
 // Tag each doc/folder item with whether the viewer has favorited it (drives the
@@ -76,6 +76,7 @@ export async function loadDriveScopes({
   canViewForms,
   canManageAgreements,
   isCore,
+  hasHiringAccess,
   request,
 }: {
   userSub: string;
@@ -85,11 +86,16 @@ export async function loadDriveScopes({
   canManageAgreements: boolean;
   /** Whether the viewer is Core — gates the auto-provisioned Core drive. */
   isCore: boolean;
+  /** Whether the viewer has hiring access — gates the auto-provisioned Hiring drive. */
+  hasHiringAccess: boolean;
   request: Request;
 }): Promise<DriveTreeScope[]> {
   // Provision the Core drive root on first Core visit (idempotent). Only Core
   // members trigger creation; the folder is Core-scoped so non-Core never see it.
   const coreRoot = isCore ? await ensureCoreDriveRoot(userSub) : null;
+  // Same for the Hiring drive: hiring-team members trigger creation; the folder
+  // is scoped to the "hiring" group so nobody else sees it.
+  const hiringRoot = hasHiringAccess ? await ensureHiringDriveRoot(userSub) : null;
   // The viewer's favorited page ids — applied to every scope's items below.
   const favIds = await favoritePageIds(userSub);
   const projectIds = projectWorkspaces.map((w) => w.key);
@@ -98,13 +104,21 @@ export async function loadDriveScopes({
     projectWorkspaces.map((w) => [w.key, w.projectIconEmoji ?? null]),
   );
 
+  // Hiring-team members who aren't Core still need to see the Forms / Rubrics /
+  // Agreements that live in the Hiring drive. Those loaders are role-gated
+  // (canViewForms / canManageAgreements), so widen the Lab load for hiring
+  // users — then strip any UNPLACED (non-hiring) ones below so nothing leaks
+  // into their Lab scope.
+  const labCanViewForms = canViewForms || hasHiringAccess;
+  const labCanManageAgreements = canManageAgreements || hasHiringAccess;
+
   const [memberItems, labItems, ...projectItemArrays] = await Promise.all([
     loadDriveScope({ userSub, scope: { kind: "Member" }, request }),
     loadDriveScope({
       userSub,
       scope: { kind: "Lab" },
-      canViewForms,
-      canManageAgreements,
+      canViewForms: labCanViewForms,
+      canManageAgreements: labCanManageAgreements,
       request,
     }),
     ...projectIds.map((projectId) =>
@@ -132,6 +146,32 @@ export async function loadDriveScopes({
       .map((it) =>
         it.parentFolderId === coreRoot.id ? { ...it, parentFolderId: null } : it,
       );
+  }
+
+  // Same split for the Hiring drive, on the post-Core lab items.
+  let hiringItems: DriveItem[] = [];
+  if (hiringRoot) {
+    const inHiring = subtreeIds(labVisibleItems, hiringRoot.id);
+    const remaining = labVisibleItems.filter((it) => !inHiring.has(it.id));
+    hiringItems = labVisibleItems
+      .filter((it) => it.id !== hiringRoot.id && inHiring.has(it.id))
+      .map((it) =>
+        it.parentFolderId === hiringRoot.id ? { ...it, parentFolderId: null } : it,
+      );
+    labVisibleItems = remaining;
+  }
+
+  // If the viewer only got Forms/Rubrics/Agreements via hiring access (not a
+  // genuine lab-wide capability), strip any that DIDN'T end up in the Hiring
+  // drive so they don't leak into the viewer's Lab scope. The hiring-placed
+  // ones are already partitioned into hiringItems above.
+  if (!canViewForms) {
+    labVisibleItems = labVisibleItems.filter((it) => it.type !== "form");
+  }
+  if (!canManageAgreements) {
+    labVisibleItems = labVisibleItems.filter(
+      (it) => it.type !== "agreement" && it.type !== "rubric",
+    );
   }
 
   // Build a folder-id set per scope for the de-dup pass below.
@@ -171,6 +211,11 @@ export async function loadDriveScopes({
     // create Core-scoped docs. Creates/moves land inside the Core root folder.
     ...(coreRoot
       ? [{ id: "core", label: "Core", iconEmoji: null, items: tagFavorites(coreItems, favIds), rootFolderId: coreRoot.id }]
+      : []),
+    // Hiring drive: auto-provisioned, hiring-team-only. Home for hiring Forms,
+    // Rubrics, and Confidentiality agreements. Creates/moves land inside it.
+    ...(hiringRoot
+      ? [{ id: "hiring", label: "Hiring", iconEmoji: null, items: tagFavorites(hiringItems, favIds), rootFolderId: hiringRoot.id }]
       : []),
     ...projectIds.map((id, i) => ({
       id,

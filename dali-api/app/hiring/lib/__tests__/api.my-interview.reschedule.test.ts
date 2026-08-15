@@ -86,8 +86,8 @@ describe("POST /api/hiring/my-interview/reschedule", () => {
       domainApplication: {
         application: {
           domainApplications: [
-            { challengeVersion: { domainId: "domain-design" } },
-            { challengeVersion: { domainId: "domain-eng" } },
+            { domainId: "domain-design" },
+            { domainId: "domain-eng" },
           ],
         },
       },
@@ -124,8 +124,8 @@ describe("POST /api/hiring/my-interview/reschedule", () => {
       domainApplication: {
         application: {
           domainApplications: [
-            { challengeVersion: { domainId: "domain-design" } },
-            { challengeVersion: { domainId: "domain-eng" } },
+            { domainId: "domain-design" },
+            { domainId: "domain-eng" },
           ],
         },
       },

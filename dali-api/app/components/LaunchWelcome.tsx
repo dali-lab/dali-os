@@ -192,6 +192,9 @@ export type GuideCardProps = {
   clearedIds: string[];
   /** Which gated steps the member's account already satisfies. */
   requirements: GuideRequirements;
+  /** Member has been through the guide before — they're being brought back for
+   *  outstanding setup, not walked through the app for the first time. */
+  returning?: boolean;
   /** Server says: auto-show the guide (onboarded, hasn't dismissed it). */
   shouldShowTour?: boolean;
   /** Tabless mode: pages render in this window, so there's no
@@ -203,6 +206,7 @@ export function LaunchWelcome({
   firstName,
   clearedIds: initialCleared,
   requirements: initialRequirements,
+  returning = false,
   shouldShowTour = false,
   tabless = false,
 }: GuideCardProps) {
@@ -300,10 +304,18 @@ export function LaunchWelcome({
     if (!shouldShowTour || autoShown.current) return;
     autoShown.current = true;
     const resume = guideProgress(initialCleared, initialRequirements);
-    setStep(Math.min(resume.resumeIndex, steps.length));
+    // A returning member is here because setup is incomplete, so open on the
+    // step they owe. Established members were backfilled with no cleared steps,
+    // so resuming by position would drop them at step one — restarting a tour
+    // they never asked for and, since step one spotlights the sidebar, locking
+    // the page they were actually using.
+    const owed = returning ? resume.outstanding[0] : undefined;
+    const at = owed ? steps.findIndex((s) => s.id === owed.id) : -1;
+    const next = at >= 0 ? at : Math.min(resume.resumeIndex, steps.length);
+    setStep(next);
     setArrived(false);
-    setPhase(resume.resumeIndex > 0 ? "card" : "modal");
-  }, [shouldShowTour, initialCleared, initialRequirements]);
+    setPhase(next > 0 ? "card" : "modal");
+  }, [shouldShowTour, initialCleared, initialRequirements, returning]);
 
   // Manual (re)start from the Help page. `detail.restart` means start over from
   // step one; otherwise pick up where they left off.

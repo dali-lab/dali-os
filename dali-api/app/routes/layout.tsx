@@ -167,6 +167,10 @@ export async function loader({ request }: Route.LoaderArgs) {
   const guide = {
     requirements: guideRequirements(me),
     clearedIds: me?.daliMember?.guideStepIds ?? [],
+    // Whether this member has been through the guide before. A first-timer gets
+    // the walkthrough from step one; anyone else is only being brought back
+    // because setup is incomplete, so the card opens on what they owe.
+    returning: me?.daliMember?.tourCompletedAt !== null,
   }
 
   // Show the guide when the member has finished onboarding and either hasn't
@@ -466,7 +470,7 @@ export default function AppLayoutRoute() {
           exactly once per document — the embedded branch returns above, so a
           workspace iframe never starts a second round of prefetches. */}
       {(flags['nav-preload'] ?? false) && <NavPreloader favorites={favorites} recents={recents} />}
-      <LaunchWelcome firstName={user.firstName || user.email.split('@')[0]} clearedIds={guide.clearedIds} requirements={guide.requirements} shouldShowTour={shouldShowTour} tabless={tabless} />
+      <LaunchWelcome firstName={user.firstName || user.email.split('@')[0]} clearedIds={guide.clearedIds} requirements={guide.requirements} returning={guide.returning} shouldShowTour={shouldShowTour} tabless={tabless} />
       <TimeZonePrompt userTimeZone={userTimeZone} userTimeZoneIsExplicit={userTimeZoneIsExplicit} dismissedZone={tzDismissedZone} />
     </FeatureFlagsProvider>
   )

@@ -25,12 +25,13 @@ const app = await prisma.application.findUnique({
   include: {
     user: { select: { firstName: true, lastName: true, dartmouthEmail: true, daliEmail: true } },
     applicationCycle: { select: { name: true } },
-    generalChallengeVersion: { select: { questions: true } },
+    applicationFormVersion: { select: { questions: true } },
     domainApplications: {
       include: {
-        challengeVersion: {
-          select: { questions: true, domain: { select: { name: true } } },
+        challengeFormVersion: {
+          select: { questions: true },
         },
+        domain: { select: { name: true } },
       },
     },
   },
@@ -75,16 +76,16 @@ function renderAnswers(label: string, questions: Question[], answers: Record<str
 
 renderAnswers(
   "General Application",
-  (app.generalChallengeVersion?.questions ?? []) as Question[],
+  (app.applicationFormVersion?.questions ?? []) as Question[],
   (app.answers ?? {}) as Record<string, unknown>,
 );
 
 for (const da of app.domainApplications) {
-  const dom = da.challengeVersion.domain?.name ?? "?";
+  const dom = da.domain?.name ?? "?";
   const tag = `Domain: ${dom}${da.selected ? "" : " (DESELECTED)"}`;
   renderAnswers(
     tag,
-    (da.challengeVersion.questions ?? []) as Question[],
+    (da.challengeFormVersion?.questions ?? []) as Question[],
     (da.answers ?? {}) as Record<string, unknown>,
   );
 }

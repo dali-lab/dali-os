@@ -4,6 +4,12 @@ import { clearGuideSetup, satisfyGuideSetup } from './helpers';
 // The interactive guide, in the suite's tabbed mode — which also exercises the
 // cross-frame path, since /help renders in a workspace iframe while the guide
 // card lives in the shell.
+//
+// Runs as design.lead rather than admin. These specs have to put the member in
+// "owes required setup" state, and in that state the guide auto-opens on every
+// page with a spotlight that blocks clicks — which would break any spec sharing
+// the account while these run. Twelve specs use admin; none use this member.
+// Same isolation-by-user reasoning as the drive-flag helpers.
 
 const CARD = '.fixed.bottom-4.right-4';
 
@@ -11,17 +17,30 @@ const CARD = '.fixed.bottom-4.right-4';
 async function openGuide(page: import('@playwright/test').Page) {
   await page.goto('/help');
   // Every step is outstanding after clearGuideSetup, so the shell auto-opens
-  // the guide on load and the intro modal is waiting.
-  await page.getByRole('button', { name: /Show me around|Pick up where I left off/ }).click();
+  // the guide on load and the intro modal is waiting. Retry the click: under
+  // parallel load the button can be painted before React has hydrated, and a
+  // click that lands first does nothing at all.
+  const intro = page.getByRole('button', { name: /Show me around|Pick up where I left off/ });
   const card = page.locator(CARD);
-  await expect(card).toContainText('Step 1 of');
+  await expect(async () => {
+    if (await intro.count()) await intro.click();
+    await expect(card).toContainText('Step 1 of', { timeout: 2_000 });
+  }).toPass({ timeout: 25_000 });
   return card;
 }
 
 test.describe('interactive guide', () => {
+  const MEMBER = 'design.lead@dali.dartmouth.edu';
+
   test.beforeEach(async ({ loginAs }) => {
-    await loginAs({ daliEmail: 'admin@dali.dartmouth.edu' });
-    await clearGuideSetup('admin@dali.dartmouth.edu');
+    await loginAs({ daliEmail: MEMBER });
+    await clearGuideSetup(MEMBER);
+  });
+
+  // Leave the account settled so a later run (or a parallel worker that picks
+  // this member up) isn't met by an auto-opening guide.
+  test.afterEach(async () => {
+    await satisfyGuideSetup(MEMBER);
   });
 
   test('spotlight blocks everything except its target and the card', async ({ page }) => {
@@ -91,7 +110,7 @@ test.describe('interactive guide', () => {
   test('the Help page can reopen the guide from inside the workspace iframe', async ({ page }) => {
     // A settled member: nothing outstanding, guide already dismissed, so the
     // shell won't auto-open it and no spotlight is covering the page.
-    await satisfyGuideSetup('admin@dali.dartmouth.edu');
+    await satisfyGuideSetup(MEMBER);
     await page.goto('/help');
     await expect(page.locator(CARD)).toHaveCount(0);
 

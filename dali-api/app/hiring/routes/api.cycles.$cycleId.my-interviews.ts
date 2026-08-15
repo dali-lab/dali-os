@@ -46,7 +46,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
                   user: { select: { firstName: true, lastName: true } },
                 },
               },
-              challengeVersion: { include: { domain: true } },
+              domain: true,
             },
           },
           assignments: {

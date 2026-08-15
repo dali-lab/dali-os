@@ -20,6 +20,7 @@ import { getPresenceUser } from '~/lib/presence-user'
 import { requirePageSignedOrRedirect } from '~/hiring/lib/confidentiality'
 import { presignAnswers } from '~/hiring/lib/presign'
 import { ensureBlocks } from '~/collab/legacy/pm-to-blocknote'
+import { safeParseJsonString } from '~/forms/lib/forms-data'
 import { DocEditor } from '~/components/doc'
 import { PresenceProvider } from '~/components/collab/PresenceProvider'
 import { PresenceBar } from '~/components/collab/PresenceBar'
@@ -76,10 +77,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           application: {
             include: {
               user: true,
-              generalChallengeVersion: true,
+              applicationFormVersion: { select: { questions: true, intro: true } },
             },
           },
-          challengeVersion: { include: { domain: true } },
+          challengeFormVersion: { select: { questions: true, intro: true } },
+          domain: true,
           reviews: {
             where: { submittedAt: { not: null } },
             orderBy: { submittedAt: 'asc' },
@@ -107,10 +109,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   )
   if (confRedirect) throw confRedirect
 
-  // Rubric criteria for the applicant's domain. Interviews only exist on
-  // Standard cycles where challengeVersion is always set; the optional chain
-  // is just to satisfy TS now that the column is nullable.
-  const domainId = interview.domainApplication.challengeVersion?.domainId ?? null
+  // Rubric criteria for the applicant's domain. DomainApplication.domainId is
+  // always set for Standard cycles (the only cycleType that schedules interviews).
+  const domainId = interview.domainApplication.domainId ?? null
   let domainRubricVersionId: string | null = null
   if (domainId) {
     const domainAppCycle = await prisma.domainApplicationCycle.findUnique({
@@ -140,9 +141,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // Presign file-type answers so interviewers can download uploads instead of
   // staring at raw S3 keys.
   const generalQuestions =
-    (interview.domainApplication.application.generalChallengeVersion?.questions as unknown as Question[]) ?? []
+    (interview.domainApplication.application.applicationFormVersion?.questions as unknown as Question[]) ?? []
   const challengeQuestions =
-    (interview.domainApplication.challengeVersion?.questions as unknown as Question[]) ?? []
+    (interview.domainApplication.challengeFormVersion?.questions as unknown as Question[]) ?? []
   const presignedGeneralAnswers = await presignAnswers(
     generalQuestions,
     interview.domainApplication.application.answers as Record<string, string>,
@@ -158,31 +159,32 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       reviewerPhotoUrl: await resolvePhotoUrl(r.cycleReviewer?.user?.photoUrl),
     })),
   )
-  // Immutable ChallengeVersion rows: legacy ProseMirror descriptions convert
-  // to block JSON on read (ApplicationViewer expects blocks).
+  // FormVersion.intro is stored as a JSON string; ensureBlocks converts it to
+  // block JSON for ApplicationViewer. Descriptions come from intro now that
+  // ChallengeVersion is gone.
   const interviewWithPresignedAnswers = {
     ...interview,
     domainApplication: {
       ...interview.domainApplication,
-      challengeVersion: interview.domainApplication.challengeVersion
+      challengeFormVersion: interview.domainApplication.challengeFormVersion
         ? {
-            ...interview.domainApplication.challengeVersion,
-            description: ensureBlocks(interview.domainApplication.challengeVersion.description),
+            ...interview.domainApplication.challengeFormVersion,
+            description: ensureBlocks(safeParseJsonString(interview.domainApplication.challengeFormVersion.intro)),
           }
-        : interview.domainApplication.challengeVersion,
+        : interview.domainApplication.challengeFormVersion,
       answers: presignedChallengeAnswers,
       reviews: reviewsWithPhotos,
       application: {
         ...interview.domainApplication.application,
         answers: presignedGeneralAnswers,
-        generalChallengeVersion: interview.domainApplication.application.generalChallengeVersion
+        applicationFormVersion: interview.domainApplication.application.applicationFormVersion
           ? {
-              ...interview.domainApplication.application.generalChallengeVersion,
+              ...interview.domainApplication.application.applicationFormVersion,
               description: ensureBlocks(
-                interview.domainApplication.application.generalChallengeVersion.description,
+                safeParseJsonString(interview.domainApplication.application.applicationFormVersion.intro),
               ),
             }
-          : interview.domainApplication.application.generalChallengeVersion,
+          : interview.domainApplication.application.applicationFormVersion,
       },
     },
   }
@@ -228,7 +230,7 @@ export default function InterviewDetailPage() {
   } = useLoaderData<typeof loader>() as any
 
   const applicant = interview.domainApplication?.application?.user
-  const domain = interview.domainApplication?.challengeVersion?.domain?.name
+  const domain = interview.domainApplication?.domain?.name
   const startDate = new Date(interview.startTime)
   const endDate = new Date(interview.endTime)
 
@@ -251,9 +253,9 @@ export default function InterviewDetailPage() {
 
   const application = interview.domainApplication?.application
   const generalQuestions: any[] =
-    application?.generalChallengeVersion?.questions ?? []
+    application?.applicationFormVersion?.questions ?? []
   const domainQuestions: any[] =
-    interview.domainApplication?.challengeVersion?.questions ?? []
+    interview.domainApplication?.challengeFormVersion?.questions ?? []
   const submittedReviews: any[] = interview.domainApplication?.reviews ?? []
 
   const questionLabels: Record<string, string> = {}
@@ -262,24 +264,25 @@ export default function InterviewDetailPage() {
   }
   const viewerApplication = {
     answers: application?.answers ?? {},
-    generalChallengeVersion: application?.generalChallengeVersion
+    // ApplicationViewer renders `generalChallengeVersion`/`challengeVersion`
+    // {questions, description}; synthesize those shapes from the bound Forms.
+    generalChallengeVersion: application?.applicationFormVersion
       ? {
-          questions: application.generalChallengeVersion.questions ?? [],
-          description: application.generalChallengeVersion.description,
+          questions: application.applicationFormVersion.questions ?? [],
+          description: application.applicationFormVersion.description,
         }
       : null,
     domainApplications: [
       {
         id: interview.domainApplication?.id,
         answers: interview.domainApplication?.answers ?? {},
-        challengeVersion: interview.domainApplication?.challengeVersion
+        challengeVersion: interview.domainApplication?.challengeFormVersion
           ? {
-              questions: interview.domainApplication.challengeVersion.questions ?? [],
-              description: interview.domainApplication.challengeVersion.description,
-              domain: interview.domainApplication.challengeVersion.domain ?? { name: 'Domain' },
+              questions: interview.domainApplication.challengeFormVersion.questions ?? [],
+              description: interview.domainApplication.challengeFormVersion.description,
             }
           : null,
-        domain: null,
+        domain: interview.domainApplication?.domain ?? null,
       },
     ],
   }
@@ -479,7 +482,7 @@ export default function InterviewDetailPage() {
         {showApplication && (
           <div className="px-6 pb-6 border-t border-border pt-6">
             <ApplicationViewer
-              application={viewerApplication}
+              application={viewerApplication as any}
               questionLabels={questionLabels}
               readOnly
             />

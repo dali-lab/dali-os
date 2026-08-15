@@ -215,6 +215,115 @@ export async function ensureCoreDriveRoot(createdById: string): Promise<{ id: st
   }
 }
 
+/**
+ * Auto-provisioned "Hiring" Drive root — the scoped folder where all hiring
+ * artifacts (application/challenge Forms, Rubrics, Confidentiality agreements)
+ * live in Drive. Mirrors ensureCoreDriveRoot, but scoped to the dynamic
+ * "hiring" group (Core + domain leads + cycle reviewers/interviewers) so anyone
+ * with hiring access sees it and nobody else does. Idempotent via systemKey.
+ *
+ * Adoption (setting folderPageId = root for unplaced hiring artifacts) runs on
+ * EVERY call — not just on first creation — so newly-created rubrics and
+ * agreements are picked up on the next Drive visit without a separate backfill.
+ * Each adoption query is a no-op once all rows are placed, so repeat calls are
+ * cheap.
+ */
+export async function ensureHiringDriveRoot(createdById: string): Promise<{ id: string } | null> {
+  const systemKey = "drive:hiring-root";
+
+  // ── 1. Ensure the root exists ────────────────────────────────────────────
+  let rootId: string;
+
+  const existing = await prisma.page.findUnique({ where: { systemKey }, select: { id: true } });
+  if (existing) {
+    rootId = existing.id;
+  } else {
+    // Self-contained: guarantee the dynamic hiring group exists (avoids a
+    // circular import of groups.ts). Membership resolves via dynamicQuery.
+    const hiringGroup = await prisma.groupDefinition.upsert({
+      where: { systemKey: "hiring" },
+      update: {},
+      create: { name: "Hiring team", type: "Dynamic", dynamicQuery: "hiring", systemKey: "hiring" },
+      select: { id: true },
+    });
+
+    try {
+      const last = await prisma.page.findFirst({
+        where: { workspaceType: "Lab", workspaceId: null, parentPageId: null },
+        orderBy: { position: "desc" },
+        select: { position: true },
+      });
+      const root = await prisma.page.create({
+        data: {
+          workspaceType: "Lab",
+          workspaceId: null,
+          title: "Hiring",
+          kind: "Folder",
+          position: last ? last.position + 1 : 0,
+          createdById,
+          systemKey,
+          scopeKind: "Group",
+          scopeGroupId: hiringGroup.id,
+          scopePermission: "Edit",
+          // Restricted: the scope grants the hiring team; nobody reaches it via
+          // the lab link.
+          linkAccess: "Restricted",
+          linkPermission: "View",
+        },
+        select: { id: true },
+      });
+      rootId = root.id;
+    } catch {
+      const retry = await prisma.page.findUnique({ where: { systemKey }, select: { id: true } });
+      if (retry) {
+        rootId = retry.id;
+      } else {
+        throw new Error("Failed to ensure Hiring drive root");
+      }
+    }
+  }
+
+  // ── 2. Idempotent adoption — runs on every call ──────────────────────────
+  // Each query is a no-op once all artifacts are placed, so this is cheap on
+  // repeat calls. Best-effort: a failure here doesn't block the root return.
+  try {
+    // Forms: updateMany doesn't support to-many relation filters, so we
+    // findMany first to get the scalar id list, then updateMany by id.
+    const unplacedForms = await prisma.form.findMany({
+      where: {
+        folderPageId: null,
+        OR: [
+          { hiringCyclesAsApplicationForm: { some: {} } },
+          { hiringDomainChallenges: { some: {} } },
+        ],
+      },
+      select: { id: true },
+    });
+    if (unplacedForms.length > 0) {
+      await prisma.form.updateMany({
+        where: { id: { in: unplacedForms.map((f) => f.id) } },
+        data: { folderPageId: rootId },
+      });
+    }
+
+    // Rubrics: all hiring artifacts — scalar filter, so updateMany directly.
+    await prisma.rubric.updateMany({
+      where: { folderPageId: null },
+      data: { folderPageId: rootId },
+    });
+
+    // SigningDocuments: only the Confidentiality kind belongs in the Hiring drive.
+    await prisma.signingDocument.updateMany({
+      where: { folderPageId: null, kind: "Confidentiality" },
+      data: { folderPageId: rootId },
+    });
+  } catch {
+    // Adoption is best-effort; don't surface errors to the caller.
+  }
+
+  return { id: rootId };
+}
+
 export type MeetingNotesFolderKind = "Team" | "Partner";
 
 const MEETING_NOTES_FOLDER_TITLE: Record<MeetingNotesFolderKind, string> = {

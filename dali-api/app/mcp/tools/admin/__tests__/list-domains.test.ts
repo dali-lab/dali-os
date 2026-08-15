@@ -30,7 +30,6 @@ const DOMAIN = {
   displayName: "Design",
   domainLeadAssignments: [],
   _count: {
-    challengeVersions: 2,
     applicationCycles: 1,
     domainLeadAssignments: 0,
     cycleReviewers: 3,
@@ -100,7 +99,6 @@ describe("list_domains", () => {
 
     const out = await runListDomains("u-core");
     expect(out.domains[0].domainLeadAssignments).toHaveLength(1);
-    expect(out.domains[0]._count.challengeVersions).toBe(2);
     expect(out.domains[0]._count.cycleReviewers).toBe(3);
   });
 });
