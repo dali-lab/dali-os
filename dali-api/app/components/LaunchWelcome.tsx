@@ -71,48 +71,115 @@ function useTargetRect(target: HTMLElement | null): DOMRect | null {
   return rect;
 }
 
-/** Pulsing coral ring positioned around an element. No dim. */
-function PulseRing({ target, zIndex }: { target: HTMLElement; zIndex: number }) {
-  const rect = useTargetRect(target);
-  if (!rect) return null;
-  const PAD = 6;
-  return (
-    <div
-      aria-hidden="true"
-      className="pointer-events-none fixed rounded-md launch-tour-pulse"
-      style={{
-        top: rect.top - PAD,
-        left: rect.left - PAD,
-        width: rect.width + PAD * 2,
-        height: rect.height + PAD * 2,
-        zIndex,
-      }}
-    />
-  );
-}
+const PAD = 6;
 
-/** Full spotlight: dims the page everywhere except a cut-out over `target`,
- *  with a pulsing ring on top. */
-function Spotlight({ target }: { target: HTMLElement }) {
-  const rect = useTargetRect(target);
-  if (!rect) return null;
-  const PAD = 6;
-  const box = {
+/** The padded box the spotlight cuts out and the ring draws around. */
+function boxFor(rect: DOMRect) {
+  return {
     top: rect.top - PAD,
     left: rect.left - PAD,
     width: rect.width + PAD * 2,
     height: rect.height + PAD * 2,
   };
+}
+
+/**
+ * Pulsing coral ring positioned around an element. No dim.
+ *
+ * `nudge` restarts the animation when it changes — bumped when the member
+ * clicks somewhere the guide is blocking, so the dead click answers itself by
+ * drawing the eye to the one thing that is clickable.
+ */
+function PulseRing({
+  target,
+  zIndex,
+  nudge = 0,
+}: {
+  target: HTMLElement;
+  zIndex: number;
+  nudge?: number;
+}) {
+  const rect = useTargetRect(target);
+  if (!rect) return null;
+  return (
+    <div
+      key={nudge}
+      aria-hidden="true"
+      className={
+        "pointer-events-none fixed rounded-md " +
+        (nudge > 0 ? "launch-tour-nudge" : "launch-tour-pulse")
+      }
+      style={{ ...boxFor(rect), zIndex }}
+    />
+  );
+}
+
+/**
+ * Full spotlight: dims the page everywhere except a cut-out over `target`,
+ * with a pulsing ring on top, and blocks interaction with everything outside
+ * the cut-out. While a step is pointing at something, the only live surfaces
+ * are that element and the guide card (z-50, above these) — so the member
+ * either does the step or leaves the guide, and can't half-navigate somewhere
+ * the guide isn't tracking.
+ *
+ * The dim and the blocking are separate layers on purpose: one box-shadow
+ * gives a seamless dim, while hit-testing needs four rects around the hole.
+ * Sub-pixel seams between invisible blockers cost nothing; seams in the dim
+ * would show as light lines.
+ */
+function Spotlight({
+  target,
+  onBlockedClick,
+  nudge,
+}: {
+  target: HTMLElement;
+  onBlockedClick: () => void;
+  nudge: number;
+}) {
+  const rect = useTargetRect(target);
+  if (!rect) return null;
+  const box = boxFor(rect);
+  const bottom = box.top + box.height;
+  const right = box.left + box.width;
+  const blocker = "fixed z-40 cursor-not-allowed";
   return (
     <>
-      {/* Cut-out: transparent rect with huge outward box-shadow dims the rest
-          of the page. pointer-events: none so clicks pass through. */}
       <div
         aria-hidden="true"
         className="pointer-events-none fixed z-40 rounded-md"
         style={{ ...box, boxShadow: "0 0 0 9999px rgba(0, 0, 0, 0.55)" }}
       />
-      <PulseRing target={target} zIndex={41} />
+      <div
+        className={blocker}
+        onClick={onBlockedClick}
+        style={{ top: 0, left: 0, right: 0, height: Math.max(0, box.top) }}
+      />
+      <div
+        className={blocker}
+        onClick={onBlockedClick}
+        style={{ top: Math.max(0, bottom), left: 0, right: 0, bottom: 0 }}
+      />
+      <div
+        className={blocker}
+        onClick={onBlockedClick}
+        style={{
+          top: Math.max(0, box.top),
+          left: 0,
+          width: Math.max(0, box.left),
+          height: Math.max(0, box.height),
+        }}
+      />
+      <div
+        className={blocker}
+        onClick={onBlockedClick}
+        style={{
+          top: Math.max(0, box.top),
+          left: Math.max(0, right),
+          right: 0,
+          height: Math.max(0, box.height),
+        }}
+      />
+      <PulseRing target={target} zIndex={41} nudge={nudge} />
     </>
   );
 }
@@ -147,6 +214,8 @@ export function LaunchWelcome({
   const [requirements, setRequirements] =
     useState<GuideRequirements>(initialRequirements);
   const [sidebarTarget, setSidebarTarget] = useState<HTMLElement | null>(null);
+  // Bumped on every click the spotlight blocks, to re-flash the ring.
+  const [nudge, setNudge] = useState(0);
   const nextButtonRef = useRef<HTMLButtonElement | null>(null);
   const [nextTarget, setNextTarget] = useState<HTMLElement | null>(null);
   const titleId = useId();
@@ -337,6 +406,7 @@ export function LaunchWelcome({
     void post({ intent: "step", stepId: id });
     setStep(step + 1);
     setArrived(false);
+    setNudge(0);
   }
 
   if (phase === "done") return null;
@@ -404,16 +474,34 @@ export function LaunchWelcome({
               0 0 24px 8px rgba(255, 139, 129, 0);
           }
         }
+        @keyframes launch-tour-nudge {
+          0%, 100% { transform: scale(1); }
+          40% { transform: scale(1.07); }
+        }
         .launch-tour-pulse {
           animation: launch-tour-pulse 1.6s ease-in-out infinite;
         }
+        .launch-tour-nudge {
+          animation:
+            launch-tour-pulse 1.6s ease-in-out infinite,
+            launch-tour-nudge 0.45s ease-out 1;
+        }
         @media (prefers-reduced-motion: reduce) {
-          .launch-tour-pulse { animation: none; }
+          .launch-tour-pulse, .launch-tour-nudge { animation: none; }
         }
       `}</style>
 
-      {/* Sidebar spotlight before they click. */}
-      {sidebarTarget && !stepDone && <Spotlight target={sidebarTarget} />}
+      {/* Sidebar spotlight before they click. Also the interaction lock: while
+          it's up, only the spotlit element and this card respond. Steps with no
+          spotlight (the gated ones) deliberately leave the page live — the
+          member has to reach a settings page to satisfy the gate. */}
+      {sidebarTarget && !stepDone && (
+        <Spotlight
+          target={sidebarTarget}
+          nudge={nudge}
+          onBlockedClick={() => setNudge((n) => n + 1)}
+        />
+      )}
 
       {/* Next-button ring once it's the thing to click (no dim — the card is
           already prominent). */}
