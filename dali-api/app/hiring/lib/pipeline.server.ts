@@ -27,6 +27,7 @@ const STATUS_LABELS: Record<AnalyticsStatus, string> = {
   PostInterviewPending: "Post-Interview",
   Withdrawn: "Withdrawn",
   Accepted: "Accepted",
+  AcceptedElsewhere: "Accepted elsewhere",
   Rejected: "Rejected",
   Waitlisted: "Waitlisted",
 };
@@ -39,6 +40,7 @@ const STATUS_ORDER: AnalyticsStatus[] = [
   "InterviewScheduled",
   "PostInterviewPending",
   "Accepted",
+  "AcceptedElsewhere",
   "Waitlisted",
   "Rejected",
   "Withdrawn",
@@ -199,8 +201,11 @@ export async function getPipelineData(
     );
 
     // Override: any DA whose application was never submitted is "InProgress"
-    // for analytics purposes, regardless of cycle status.
-    const status: AnalyticsStatus = !hasSubmitted ? "InProgress" : baseStatus;
+    // for analytics purposes, regardless of cycle status — EXCEPT one closed
+    // because the applicant was placed in another domain, which stays
+    // "Accepted elsewhere" (a real terminal state, not in-progress work).
+    const status: AnalyticsStatus =
+      !hasSubmitted && baseStatus !== "AcceptedElsewhere" ? "InProgress" : baseStatus;
 
     sliceCounts.set(status, (sliceCounts.get(status) ?? 0) + 1);
 

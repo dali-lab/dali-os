@@ -5,11 +5,13 @@ function makeDa(overrides: {
   statusUpdates?: Array<{ newStatus: string }>;
   decisions?: Array<{ stage: string; type: string; createdAt: Date }>;
   interviews?: Array<{ status: string }>;
+  closureReason?: "AcceptedElsewhere" | null;
 } = {}): any {
   return {
     application: { statusUpdates: overrides.statusUpdates ?? [] },
     decisions: overrides.decisions ?? [],
     interviews: overrides.interviews ?? [],
+    closureReason: overrides.closureReason ?? null,
   };
 }
 
@@ -58,5 +60,36 @@ describe("inferDomainApplicationStatus", () => {
         "UnderReview",
       ),
     ).toBe("Pending");
+  });
+
+  it("returns AcceptedElsewhere for a closed DA instead of a stale Pending", () => {
+    // Accepted into another domain this cycle → this sibling was closed.
+    const status = inferDomainApplicationStatus(
+      makeDa({
+        statusUpdates: [{ newStatus: "Submitted" }],
+        closureReason: "AcceptedElsewhere",
+      }),
+      "UnderReview",
+    );
+    expect(status).toBe("AcceptedElsewhere");
+  });
+
+  it("closure applies even when the app was never submitted (over ApplicationOpen)", () => {
+    const status = inferDomainApplicationStatus(
+      makeDa({ closureReason: "AcceptedElsewhere" }),
+      "Open",
+    );
+    expect(status).toBe("AcceptedElsewhere");
+  });
+
+  it("an explicit Withdrawal still wins over closure", () => {
+    const status = inferDomainApplicationStatus(
+      makeDa({
+        statusUpdates: [{ newStatus: "Submitted" }, { newStatus: "Withdrawn" }],
+        closureReason: "AcceptedElsewhere",
+      }),
+      "UnderReview",
+    );
+    expect(status).toBe("Withdrawn");
   });
 });
