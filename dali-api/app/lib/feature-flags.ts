@@ -33,7 +33,9 @@ export type FeatureFlagDef = {
   label: string;
   description: string;
   // Seed values written when the row is first created (and used as the
-  // resolved value while no row exists). Omitted => off.
+  // resolved value while no row exists). Omitted => off; a rolled-out flag
+  // sets both so a fresh environment (dev, a preview branch, CI) matches
+  // production without anyone visiting Admin → Feature Flags.
   defaultEnabled?: boolean;
   defaultEveryone?: boolean;
   // Multi-value flags: the options an operator picks between, instead of the
@@ -49,12 +51,16 @@ export type FeatureFlagDef = {
 export const FEATURE_FLAGS = [
   {
     key: "desktop-app",
+    defaultEnabled: true,
+    defaultEveryone: true,
     label: "Desktop app",
     description:
       "Show the desktop-app download banner, /download surfaces, and welcome CTA.",
   },
   {
     key: "home-surface",
+    defaultEnabled: true,
+    defaultEveryone: true,
     label: "Home page",
     description:
       "Which page / renders for the people this flag targets. Everyone it doesn't target keeps the current home — except members on the new left navigation, who get the search-first home with it.",
@@ -79,24 +85,32 @@ export const FEATURE_FLAGS = [
   },
   {
     key: "sidebar-redesign",
+    defaultEnabled: true,
+    defaultEveryone: true,
     label: "New left navigation",
     description:
       "Pinned Home / Tasks / Calendar plus a single active-area dropdown. When on, the in-page horizontal pill rows are hidden. When off, users see the current flat sidebar with in-page pills.",
   },
   {
     key: "drive-consolidation",
+    defaultEnabled: true,
+    defaultEveryone: true,
     label: "Unified Drive",
     description:
       "Merge Documents + Forms (and files, agreements, templates) into one Google-Shared-Drives-style section organized by access scope. When on, the sidebar shows a single Drive area instead of separate Documents and Forms entries.",
   },
   {
     key: "nav-regroup",
+    defaultEnabled: true,
+    defaultEveryone: true,
     label: "Role-grouped navigation",
     description:
       "Collapses the sidebar to Projects / Education / Core / Admin / Hiring, with Drive pinned under Calendar. Core process tooling (staffing, intent to work, bids, level up, access, attendance, communications) moves out of Projects and Admin into a Core area at /core/*, leaving Admin strictly system-level. Needs the new left navigation to take effect.",
   },
   {
     key: "nav-preload",
+    defaultEnabled: true,
+    defaultEveryone: true,
     label: "Preload favorites & recents",
     description:
       "After the shell finishes loading, quietly warm the pages in the sidebar's Favorites and Recent lists so opening one from the nav is instant. Skipped on data-saver and 2g connections.",

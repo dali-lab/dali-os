@@ -2,10 +2,13 @@ import { test, expect } from './fixtures';
 
 const ADMIN_EMAIL = 'admin@dali.dartmouth.edu';
 
-// /admin/domains renders inside the workspace iframe. The Admin
-// sidebar area is childless, so the tab is seeded with the area label.
+// Domain management lives at /core/access/domains — nav-regroup (on for
+// everyone) moved the lab-process pages out of Admin into Core, and
+// /admin/domains redirects here. It renders inside the workspace iframe,
+// which is seeded with the area label.
+const DOMAINS_URL = '/core/access/domains';
 const domainsFrame = (page: import('@playwright/test').Page) =>
-  page.frameLocator('iframe[title="Admin"]');
+  page.frameLocator('iframe[title="Core"]');
 
 test.describe('admin domain management', () => {
   test.beforeEach(async ({ loginAs }) => {
@@ -15,7 +18,7 @@ test.describe('admin domain management', () => {
   test('admin can create a new domain and then delete it', async ({ page }) => {
     const name = `E2E Domain ${Date.now()}`;
 
-    await page.goto('/admin/domains');
+    await page.goto(DOMAINS_URL);
     const frame = domainsFrame(page);
     await expect(frame.getByRole('heading', { name: 'Domains' })).toBeVisible();
 
@@ -31,7 +34,7 @@ test.describe('admin domain management', () => {
   });
 
   test('delete is disabled for a seeded domain that is in use', async ({ page }) => {
-    await page.goto('/admin/domains');
+    await page.goto(DOMAINS_URL);
     const frame = domainsFrame(page);
 
     const engRow = frame.getByRole('listitem').filter({ hasText: /^Engineering/ });
@@ -47,10 +50,11 @@ test.describe('admin console access tiers', () => {
   // member eligibilities without needing Admin. Admin-only actions
   // (set-admin, create-domain, delete-domain) still 403 inside the action
   // handler.
-  test('hiring lead (Core) can access admin console members', async ({ loginAs, page }) => {
+  test('hiring lead (Core) can access the member roles page', async ({ loginAs, page }) => {
     await loginAs({ daliEmail: 'jordan.taylor@dali.dartmouth.edu' });
+    // /admin/members redirects to its Core home under nav-regroup.
     await page.goto('/admin/members');
-    await expect(page).toHaveURL(/\/admin\/members/);
+    await expect(page).toHaveURL(/\/core\/access\/roles/);
   });
 
   // A lab member with neither Core nor Admin is still redirected away.

@@ -1,6 +1,5 @@
 import { test, expect } from './fixtures';
 import type { Page, Locator } from '@playwright/test';
-import { enableDriveFlagForUser, clearDriveFlag } from './helpers';
 
 // E2E tests for the Finder/Google-Drive-style Drive hub (drive-consolidation
 // flag-gated).
@@ -24,8 +23,8 @@ import { enableDriveFlagForUser, clearDriveFlag } from './helpers';
 //     click selects, double click opens (folder → navigate in; leaf → editor).
 //   - Row actions menu: drive-item-actions-<id> (Rename / Move to… / Delete).
 //
-// The flag is scoped to admin@dali.dartmouth.edu only (everyone=false) so other
-// parallel workers that use a different user are unaffected.
+// drive-consolidation is on for everyone by registry default, so the Drive is
+// simply the app: no per-user flag row to stamp, and every member has it.
 //
 // ?embed=1: standalone route render (no TabWorkspace iframe shell). Required for
 // dnd-kit drag tests — same pattern as kanban-drag.spec.ts.
@@ -35,20 +34,12 @@ const DRIVE_USER = 'admin@dali.dartmouth.edu';
 test.describe.configure({ mode: 'serial' });
 
 test.describe('Drive hub (drive-consolidation flag)', () => {
-  test.beforeAll(async () => {
-    await enableDriveFlagForUser(DRIVE_USER);
-  });
-
-  test.afterAll(async () => {
-    await clearDriveFlag();
-  });
-
   test.beforeEach(async ({ loginAs }) => {
     await loginAs({ daliEmail: DRIVE_USER });
   });
 
   // ── Test A: root lists the drives + filter chips + breadcrumb; no root New ──
-  test('(A) Drive root lists drives with breadcrumb + filter chips; no New menu at root; non-targeted user has no Drive nav', async ({
+  test('(A) Drive root lists drives with breadcrumb + filter chips; no New menu at root; every member has Drive nav', async ({
     page,
   }) => {
     await page.goto('/drive?embed=1');
@@ -71,12 +62,9 @@ test.describe('Drive hub (drive-consolidation flag)', () => {
     // No contextual New menu at the Drive root — you pick a drive first.
     await expect(page.getByTestId('drive-new-menu-lab')).toHaveCount(0);
 
-    // ── Non-targeted user: no Drive area in the sidebar ──────────────────────
+    // ── A member with no special roles still gets the Drive ─────────────────
     const reviewerCtx = await page.context().browser()!.newContext();
     const reviewerPage = await reviewerCtx.newPage();
-    await reviewerPage.addInitScript(() => {
-      try { window.localStorage.setItem('dalios-launch-welcome-seen-v1', 'e2e'); } catch {}
-    });
     const baseURL = page.url().replace(/\/drive.*/, '');
     await reviewerCtx.addCookies([{ name: 'dali_tabless', value: '0', url: baseURL }]);
 
@@ -85,15 +73,9 @@ test.describe('Drive hub (drive-consolidation flag)', () => {
     await reviewerPage.goto(`${baseURL}/`);
     await reviewerPage.waitForLoadState('networkidle');
 
-    const areaMenuBtn = reviewerPage.locator('aside button[aria-haspopup="listbox"]');
-    if (await areaMenuBtn.isVisible()) {
-      await areaMenuBtn.click();
-      const listbox = reviewerPage.locator('[role="listbox"]');
-      await expect(listbox).toBeVisible();
-      await expect(listbox.getByText('Drive', { exact: true })).not.toBeVisible();
-    } else {
-      await expect(reviewerPage.locator('aside a[href="/drive"]')).not.toBeVisible();
-    }
+    await expect(
+      reviewerPage.locator('aside').getByRole('button', { name: 'Drive' }),
+    ).toBeVisible();
 
     await reviewerCtx.close();
   });
