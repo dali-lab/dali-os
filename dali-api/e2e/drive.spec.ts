@@ -324,12 +324,6 @@ test.describe('Drive hub (drive-consolidation flag)', () => {
     expect(docRes.ok(), `Create doc failed: ${await docRes.text()}`).toBe(true);
     const { id: docId } = await docRes.json() as { id: string };
 
-    // Drive now defaults to Miller-columns (no drag-and-drop); DnD lives in the
-    // List view, so pin it before loading.
-    await page.addInitScript(() => {
-      try { window.localStorage.setItem('dali_drive_view', 'list'); } catch {}
-    });
-
     await page.goto('/drive?scope=lab&embed=1');
     await page.waitForLoadState('networkidle');
 
