@@ -10,7 +10,7 @@ import { getCoreDomain, defaultCoreReviewerIds } from "~/hiring/lib/core-hiring.
 import { createCycleApplicationForm } from "~/hiring/lib/application-form.server";
 import type { Question } from "~/types";
 import { CycleSetupSection as Section } from "~/hiring/components/CycleSetupSection";
-import { ChallengePreviewModal } from "~/hiring/components/ChallengePreviewModal";
+import { HiringFormEmbed } from "~/hiring/components/HiringFormEmbed";
 import { normalizeQuestionBodies } from "~/lib/question-blocks.server";
 import { renderEmail } from "~/lib/email";
 import {
@@ -641,34 +641,19 @@ function ApplicationFormSection({
   disabled: boolean;
 }) {
   const fetcher = useFetcher();
-  const [previewing, setPreviewing] = useState(false);
   return (
     <Section
       title="Application form"
       description="A Drive Form applicants fill out — author it in the Forms builder, where it lives alongside every other form. The version each applicant answers is frozen when they start."
     >
       {current ? (
-        <div className="mb-3 flex flex-wrap items-center gap-3">
-          <p className="text-sm font-medium text-dark-blue">{current.name}</p>
-          <span className="text-xs text-muted-foreground">
-            {(() => {
-              const qCount = current.questions.filter((q) => q.type !== "info").length;
-              const iCount = current.questions.length - qCount;
-              const parts = [`${qCount} question${qCount === 1 ? "" : "s"}`];
-              if (iCount > 0) parts.push(`${iCount} info block${iCount === 1 ? "" : "s"}`);
-              return parts.join(", ");
-            })()}
-          </span>
-          <Link to={`/forms/edit/${current.id}`} className="text-xs font-medium text-blue-700 hover:underline">
-            Edit in Drive →
-          </Link>
-          <button
-            type="button"
-            onClick={() => setPreviewing(true)}
-            className="text-xs font-medium text-blue-700 hover:underline"
-          >
-            Preview
-          </button>
+        <div className="mb-3">
+          <HiringFormEmbed
+            formId={current.id}
+            name={current.name}
+            questions={current.questions}
+            defaultOpen
+          />
         </div>
       ) : (
         <div className="mb-3 flex items-center gap-3">
@@ -694,15 +679,6 @@ function ApplicationFormSection({
             buttonClassName="px-3 py-2 text-sm border border-border rounded-md inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
           />
         </div>
-      )}
-      {previewing && current && (
-        <ChallengePreviewModal
-          challengeVersionId={current.id}
-          challengeName={current.name}
-          versionLabel="Latest"
-          questions={current.questions}
-          onClose={() => setPreviewing(false)}
-        />
       )}
     </Section>
   );
