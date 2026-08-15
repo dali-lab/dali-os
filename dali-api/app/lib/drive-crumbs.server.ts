@@ -1,4 +1,5 @@
 import { prisma } from "~/lib/db";
+import { driveRootCrumbs } from "~/lib/drive-crumbs";
 
 // Breadcrumb ancestry for an item that lives in the Drive tree. Walks up the
 // Page folder chain from `folderPageId` to the (scoped) root, so a document,
@@ -60,12 +61,10 @@ export async function driveFolderCrumbs(
 /** The "Drive" root crumb + each ancestor folder, as plain {label, to} entries
  *  rooted at the Drive hub. Folders deep-link into the Drive folder view. */
 export function driveCrumbTrail(crumbs: DriveCrumbs): { label: string; to: string; id?: string }[] {
-  const scopeQuery = crumbs.scope === "lab" ? "" : `?scope=${crumbs.scope}`;
-  const root = { label: "Drive", to: `/drive${scopeQuery}` };
   const folders = crumbs.folders.map((f) => ({
     label: f.title || "Untitled folder",
     to: `/drive?scope=${crumbs.scope}&folder=${f.id}`,
     id: f.id,
   }));
-  return [root, ...folders];
+  return [...driveRootCrumbs(crumbs.scope), ...folders];
 }
