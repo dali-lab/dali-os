@@ -54,6 +54,10 @@ export async function submitApplication(args: {
   offeringId: string;
   userId: string;
   answers: Record<string, unknown>;
+  // Fingerprint (OfferingApplicationForm.versionUpdatedAt) captured when the
+  // applicant loaded the form. Optional (MCP/programmatic callers omit it);
+  // when present, a mismatch means the version was edited underneath them.
+  versionUpdatedAt?: string;
 }): Promise<SubmitApplicationResult> {
   const offering = await prisma.educationOffering.findUnique({
     where: { id: args.offeringId },
@@ -73,6 +77,16 @@ export async function submitApplication(args: {
   const form = await loadOfferingApplicationForm(args.offeringId, args.userId);
   if (!form)
     return { error: "This offering isn't accepting applications yet.", status: 400 };
+
+  // The application form's version can be edited in place until first use — if
+  // it changed since the applicant loaded it, reject rather than record answers
+  // keyed to questions that may no longer exist.
+  if (args.versionUpdatedAt && args.versionUpdatedAt !== form.versionUpdatedAt) {
+    return {
+      error: "This form was just updated — reload to continue.",
+      status: 409,
+    };
+  }
 
   const invalid = await validateAnswers(form.questions, args.answers, args.userId);
   if (invalid) return invalid;

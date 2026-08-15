@@ -108,4 +108,43 @@ describe("submitAnonymousForm", () => {
     expect(result).toHaveProperty("error", '"Feedback" is required.');
     expect(mockPrisma.formSubmission.create).not.toHaveBeenCalled();
   });
+
+  // The version an unused form serves can be edited in place between load and
+  // submit; a filler that sends the fingerprint it loaded is protected.
+  const STAMP = "2026-08-15T12:00:00.000Z";
+
+  it("records the submit when the fingerprint still matches", async () => {
+    mockPrisma.form.findUnique.mockResolvedValue(
+      formRow({ versions: [{ id: "ver-1", questions: QUESTIONS, updatedAt: new Date(STAMP) }] }),
+    );
+
+    const result = await submit({ versionUpdatedAt: STAMP });
+
+    expect(result).toEqual({ ok: true });
+    expect(mockPrisma.formSubmission.create).toHaveBeenCalled();
+  });
+
+  it("409s a stale fingerprint (version edited under the filler)", async () => {
+    mockPrisma.form.findUnique.mockResolvedValue(
+      formRow({
+        versions: [
+          { id: "ver-1", questions: QUESTIONS, updatedAt: new Date("2026-08-15T13:00:00.000Z") },
+        ],
+      }),
+    );
+
+    const result = await submit({ versionUpdatedAt: STAMP });
+
+    expect(result).toMatchObject({ status: 409 });
+    expect(mockPrisma.formSubmission.create).not.toHaveBeenCalled();
+  });
+
+  it("409s when the loaded version was deleted (fingerprint present, id gone)", async () => {
+    mockPrisma.form.findUnique.mockResolvedValue(formRow({ versions: [] }));
+
+    const result = await submit({ versionId: "ver-gone", versionUpdatedAt: STAMP });
+
+    expect(result).toMatchObject({ status: 409 });
+    expect(mockPrisma.formSubmission.create).not.toHaveBeenCalled();
+  });
 });

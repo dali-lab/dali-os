@@ -40,7 +40,9 @@ function formRow() {
     applicationForm: {
       id: "form-1",
       name: "Test — Application",
-      versions: [{ id: "ver-1", questions: QUESTIONS, intro: null }],
+      versions: [
+        { id: "ver-1", questions: QUESTIONS, intro: null, updatedAt: new Date("2026-08-15T00:00:00Z") },
+      ],
     },
   };
 }

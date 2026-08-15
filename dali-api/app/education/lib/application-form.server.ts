@@ -166,6 +166,8 @@ export type OfferingApplicationForm = {
   formId: string;
   name: string;
   versionId: string;
+  // Fingerprint echoed back on submit so a mid-fill in-place edit is caught.
+  versionUpdatedAt: string;
   description: unknown;
   questions: Question[];
 };
@@ -189,7 +191,7 @@ export async function loadOfferingApplicationForm(
           versions: {
             orderBy: { versionNumber: "desc" },
             take: 1,
-            select: { id: true, questions: true, intro: true },
+            select: { id: true, questions: true, intro: true, updatedAt: true },
           },
         },
       },
@@ -215,6 +217,7 @@ export async function loadOfferingApplicationForm(
     formId: form.id,
     name: form.name,
     versionId: version.id,
+    versionUpdatedAt: version.updatedAt.toISOString(),
     description: safeParseJsonString(version.intro),
     questions: resolved,
   };

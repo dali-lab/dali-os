@@ -26,6 +26,8 @@ export type MemberFormData = {
   name: string;
   description: unknown;
   versionId: string;
+  // Fingerprint echoed back on submit so a mid-fill in-place edit is caught.
+  versionUpdatedAt: string;
   questions: Question[];
   token: string;
 };
@@ -69,7 +71,12 @@ export function MemberFormFillView({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ versionId: data.versionId, answers, ...extraBody }),
+        body: JSON.stringify({
+          versionId: data.versionId,
+          versionUpdatedAt: data.versionUpdatedAt,
+          answers,
+          ...extraBody,
+        }),
       });
       const out = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
