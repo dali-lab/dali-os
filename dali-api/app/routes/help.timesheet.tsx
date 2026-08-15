@@ -7,7 +7,7 @@ export const meta: Route.MetaFunction = () => [
 
 export default function HelpTimesheetPage() {
   return (
-    <main className="max-w-3xl">
+    <main>
       <h1 className="text-2xl font-semibold">Logging hours</h1>
       <p className="mt-2 text-sm text-muted-foreground">
         The <em>Timesheet</em> tab on the{" "}

@@ -7,7 +7,7 @@ export const meta: Route.MetaFunction = () => [
 
 export default function HelpProjectsPage() {
   return (
-    <main className="max-w-3xl">
+    <main>
       <h1 className="text-2xl font-semibold">Projects, sprints, and tasks</h1>
       <p className="mt-2 text-sm text-muted-foreground">
         A project workspace holds the team, the work, and everything written

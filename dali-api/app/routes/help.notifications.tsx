@@ -7,7 +7,7 @@ export const meta: Route.MetaFunction = () => [
 
 export default function HelpNotificationsPage() {
   return (
-    <main className="max-w-3xl">
+    <main>
       <h1 className="text-2xl font-semibold">Notifications</h1>
       <p className="mt-2 text-sm text-muted-foreground">
         DALI OS tells you about things that need your attention in two

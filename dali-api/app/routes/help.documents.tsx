@@ -7,7 +7,7 @@ export const meta: Route.MetaFunction = () => [
 
 export default function HelpDocumentsPage() {
   return (
-    <main className="max-w-3xl">
+    <main>
       <h1 className="text-2xl font-semibold">Documents and sharing</h1>
       <p className="mt-2 text-sm text-muted-foreground">
         Documents in DALI OS are collaborative: several people can type in the
