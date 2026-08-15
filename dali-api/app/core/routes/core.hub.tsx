@@ -10,6 +10,7 @@ import { loadShellUser } from "~/lib/shell-user.server";
 import { resolveUserTimeZone } from "~/lib/timezone";
 import { fetchGeneralCalendarEvents } from "~/lib/general-calendar";
 import { expandOccurrences } from "~/lib/meeting-occurrences";
+import { coreCalendarMeetingWhere } from "~/core/lib/core-calendar";
 import {
   WeekCalendarPanel,
   formatWeekRange,
@@ -50,40 +51,33 @@ export async function loader({ request }: Route.LoaderArgs) {
     now,
   );
 
-  // There is no "Core" meeting scope — a Core meeting is one scoped to the
-  // system group whose systemKey is "core" (app/lib/groups.ts).
+  // What counts as a Core meeting — see coreCalendarMeetingWhere.
   const coreGroup = await prisma.groupDefinition.findUnique({
     where: { systemKey: "core" },
     select: { id: true },
   });
 
   const [meetings, generalEvents, deadlineRows] = await Promise.all([
-    coreGroup
-      ? prisma.scheduledMeeting.findMany({
-          where: {
-            scopeType: "Group",
-            scopeId: coreGroup.id,
-            status: { not: "Cancelled" },
-          },
+    prisma.scheduledMeeting.findMany({
+      where: coreCalendarMeetingWhere(coreGroup?.id ?? null),
+      select: {
+        id: true,
+        title: true,
+        selectedAt: true,
+        durationMinutes: true,
+        recurrenceRule: true,
+        organizer: { select: { firstName: true, lastName: true } },
+        notePage: { select: { id: true, title: true } },
+        exceptions: {
           select: {
-            id: true,
-            title: true,
-            selectedAt: true,
-            durationMinutes: true,
-            recurrenceRule: true,
-            organizer: { select: { firstName: true, lastName: true } },
-            notePage: { select: { id: true, title: true } },
-            exceptions: {
-              select: {
-                originalStart: true,
-                overrideStart: true,
-                overrideDurationMin: true,
-                cancelled: true,
-              },
-            },
+            originalStart: true,
+            overrideStart: true,
+            overrideDurationMin: true,
+            cancelled: true,
           },
-        })
-      : Promise.resolve([]),
+        },
+      },
+    }),
     // Never throws: returns [] when the feed is unconfigured, and serves stale
     // data rather than failing when the fetch does.
     fetchGeneralCalendarEvents(weekStart, weekEnd),

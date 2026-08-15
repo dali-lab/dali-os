@@ -1272,8 +1272,10 @@ function MillerColumn({
   return (
     <div
       data-testid={testid}
-      className="flex flex-col overflow-y-auto shrink-0 w-52"
-      style={{ minWidth: "13rem" }}
+      // flex-1 so the open columns expand to fill the width (and share it as
+      // more open); min-width keeps each readable and lets the row scroll
+      // horizontally once it's deep enough to overflow.
+      className="flex flex-1 flex-col overflow-y-auto min-w-[14rem]"
     >
       {isEmpty ? (
         <p className="px-3 py-6 text-center text-xs text-muted-foreground italic">{emptyMessage}</p>
