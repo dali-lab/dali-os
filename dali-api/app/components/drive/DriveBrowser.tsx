@@ -62,6 +62,7 @@ import {
   Share2,
   Columns,
   ClipboardCheck,
+  Mail,
 } from "lucide-react";
 import type { DriveItem } from "~/lib/drive.server";
 import type { DriveTreeScope } from "~/lib/drive-scopes.server";
@@ -118,6 +119,8 @@ function kindLabel(item: DriveItem): string {
       return "Form";
     case "rubric":
       return "Rubric";
+    case "emailTemplate":
+      return "Email Template";
     default:
       return "Agreement";
   }
@@ -225,6 +228,8 @@ function itemIcon(item: DriveItem, big = false) {
       return <FileSignature className={`${cls} text-muted-foreground shrink-0`} />;
     case "rubric":
       return <ClipboardCheck className={`${cls} text-muted-foreground shrink-0`} />;
+    case "emailTemplate":
+      return <Mail className={`${cls} text-muted-foreground shrink-0`} />;
     default:
       return <PageIcon iconEmoji={item.iconEmoji} />;
   }
@@ -247,7 +252,7 @@ function itemMenuItems(
   onToggleFavorite?: (item: DriveItem) => void,
 ): ReactNode {
   const canRename = item.type === "folder" || item.type === "doc" || item.type === "file";
-  const canMove = true;
+  const canMove = item.type !== "agreement" && item.type !== "rubric" && item.type !== "emailTemplate";
   const canDelete = item.type === "folder" || item.type === "doc" || item.type === "file";
   const canFavorite = item.type === "doc" || item.type === "folder";
   return (
@@ -781,7 +786,11 @@ export function DriveBrowser({
   const canLeafRename =
     selectedLeaf &&
     (selectedLeaf.type === "folder" || selectedLeaf.type === "doc" || selectedLeaf.type === "file");
-  const canLeafMove = !!selectedLeaf;
+  const canLeafMove =
+    !!selectedLeaf &&
+    selectedLeaf.type !== "agreement" &&
+    selectedLeaf.type !== "rubric" &&
+    selectedLeaf.type !== "emailTemplate";
   const canLeafDelete =
     selectedLeaf &&
     (selectedLeaf.type === "folder" || selectedLeaf.type === "doc" || selectedLeaf.type === "file");
@@ -1596,7 +1605,8 @@ function ListRow({
   suppressClickRef: React.MutableRefObject<boolean>;
 }) {
   const isFolder = item.type === "folder";
-  const drag = useDraggable({ id: `${scopeId}::${item.id}`, data: { item, scopeId } });
+  const isManaged = item.type === "agreement" || item.type === "rubric" || item.type === "emailTemplate";
+  const drag = useDraggable({ id: `${scopeId}::${item.id}`, data: { item, scopeId }, disabled: isManaged });
   const drop = useDroppable({
     id: `${scopeId}::drop::${item.id}`,
     data: { destFolderId: item.id, destScopeId: scopeId },
@@ -1673,7 +1683,8 @@ function GridTile({
   suppressClickRef: React.MutableRefObject<boolean>;
 }) {
   const isFolder = item.type === "folder";
-  const drag = useDraggable({ id: `${scopeId}::${item.id}`, data: { item, scopeId } });
+  const isManaged = item.type === "agreement" || item.type === "rubric" || item.type === "emailTemplate";
+  const drag = useDraggable({ id: `${scopeId}::${item.id}`, data: { item, scopeId }, disabled: isManaged });
   const drop = useDroppable({
     id: `${scopeId}::drop::${item.id}`,
     data: { destFolderId: item.id, destScopeId: scopeId },

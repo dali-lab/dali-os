@@ -1393,7 +1393,16 @@ model EmailTemplate {
 
   name String
 
+  // Unified-Drive tree placement (Page of kind=Folder). Null = unplaced.
+  // Organisation only — never affects who can send or edit the template.
+  // Email templates live under the Core drive's "Templates" area (auto-filed
+  // into Hiring/Education subfolders by their bindings); templates are global
+  // and shared across features, so they aren't hiring-owned.
+  folderPageId String?
+
   versions EmailTemplateVersion[]
+
+  @@index([folderPageId])
 }
 
 // Immutable snapshot of an EmailTemplate. Never update — append a new version.

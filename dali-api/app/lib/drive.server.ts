@@ -117,6 +117,20 @@ export type DriveItem =
       sizeBytes?: number | null;
       /** Whether the viewer has favorited this item (pages only). */
       favorited?: boolean;
+    }
+  | {
+      type: "emailTemplate";
+      id: string;
+      title: string;
+      /** `folderPageId` — null when unplaced. */
+      parentFolderId: string | null;
+      iconEmoji: null; // email templates have no emoji; callers use a fixed icon
+      updatedAt: Date;
+      href: string;
+      /** File size in bytes (files only; null elsewhere). Drives the Size column. */
+      sizeBytes?: number | null;
+      /** Whether the viewer has favorited this item (pages only). */
+      favorited?: boolean;
     };
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
@@ -387,7 +401,10 @@ async function loadFiles(projectIds: string[]): Promise<DriveItem[]> {
  *  omission. */
 async function loadAgreements(): Promise<DriveItem[]> {
   const rows = await prisma.signingDocument.findMany({
-    where: { archivedAt: null },
+    // Placed-only: agreements live under the Core ▸ Agreements area (filed by
+    // ensureCoreDriveRoot). An unplaced row would be a brand-new one awaiting
+    // adoption on the next Core drive visit — don't float it at the Lab root.
+    where: { archivedAt: null, folderPageId: { not: null } },
     orderBy: { createdAt: "desc" },
     select: { id: true, name: true, folderPageId: true, updatedAt: true },
   });
@@ -403,11 +420,10 @@ async function loadAgreements(): Promise<DriveItem[]> {
 }
 
 /** Load rubrics. Only called when the caller passes `canManageAgreements: true`
- *  (= isCore / hiring team) — same gate as agreements, since rubrics are a
- *  hiring-internal artifact. Rubrics with a `folderPageId` are placed inside
- *  that folder; unplaced ones render at the Lab top level.
+ *  (= real isCore) — rubrics are Core-only artifacts that live under the Core
+ *  drive's Rubrics folder. Placed-only (unplaced ones are awaiting adoption).
  *
- *  NO-WIDENING GUARANTEE: rubrics → same Core gate as agreements. */
+ *  NO-WIDENING GUARANTEE: rubrics → Core only, never widened for hiring. */
 async function loadRubrics(): Promise<DriveItem[]> {
   const rows = await prisma.rubric.findMany({
     where: { folderPageId: { not: null } },
@@ -422,6 +438,31 @@ async function loadRubrics(): Promise<DriveItem[]> {
     iconEmoji: null,
     updatedAt: r.updatedAt,
     href: `/hiring/rubrics/${r.id}`,
+  }));
+}
+
+/** Load email templates. Only called when the caller passes
+ *  `canManageEmailTemplates: true` (= real isCore, NOT the hiring-widened gate)
+ *  — email templates are global, Core-only artifacts that live under the Core
+ *  drive's Templates area. Templates are filed into that subtree by
+ *  `ensureCoreDriveRoot`; the Core-subtree split routes them into the Core scope.
+ *
+ *  NO-WIDENING GUARANTEE: email templates → Core only. The caller must pass
+ *  `canManageEmailTemplates` only when the viewer isCore (never hasHiringAccess). */
+async function loadEmailTemplates(): Promise<DriveItem[]> {
+  const rows = await prisma.emailTemplate.findMany({
+    where: { folderPageId: { not: null } },
+    orderBy: { updatedAt: "desc" },
+    select: { id: true, name: true, folderPageId: true, updatedAt: true },
+  });
+  return rows.map((t) => ({
+    type: "emailTemplate" as const,
+    id: t.id,
+    title: t.name,
+    parentFolderId: t.folderPageId,
+    iconEmoji: null,
+    updatedAt: t.updatedAt,
+    href: `/admin/email-templates/${t.id}`,
   }));
 }
 
@@ -477,6 +518,15 @@ export interface LoadDriveScopeOptions {
    */
   canManageAgreements?: boolean;
   /**
+   * Whether this viewer may manage email templates (= real isCore, un-widened).
+   * Must be computed by the caller. Email templates are global Core-only
+   * artifacts that live under the Core drive; unlike agreements this gate is
+   * NEVER widened for hiring-team members.
+   *
+   * NO-WIDENING: email templates → Core only.
+   */
+  canManageEmailTemplates?: boolean;
+  /**
    * Optional request for per-request role-check caching (isCore/isLabMember).
    * Callers from route loaders should pass their `request` object.
    */
@@ -501,6 +551,7 @@ export async function loadDriveScope({
   scope,
   canViewForms = false,
   canManageAgreements = false,
+  canManageEmailTemplates = false,
   request,
 }: LoadDriveScopeOptions): Promise<DriveItem[]> {
   if (scope.kind === "Member") {
@@ -518,15 +569,18 @@ export async function loadDriveScope({
     // to all lab members (except scoped-folder files, filtered in loadLabFiles).
     // Project-owned files are NOT included here — they appear only in their
     // respective project scope.
-    const [pages, files, forms, agreements, rubrics] = await Promise.all([
+    const [pages, files, forms, agreements, rubrics, emailTemplates] = await Promise.all([
       loadLabPages(userSub, request),
       loadLabFiles(userSub, request),
       canViewForms ? loadForms() : Promise.resolve([] as DriveItem[]),
-      // Agreements + rubrics → Core only. canManageAgreements must be derived upstream.
+      // Agreements, rubrics, and email templates are all Core-only artifacts
+      // living under the Core drive (Agreements / Rubrics / Templates). All
+      // gated on real Core, derived upstream — never widened for the hiring team.
       canManageAgreements ? loadAgreements() : Promise.resolve([] as DriveItem[]),
       canManageAgreements ? loadRubrics() : Promise.resolve([] as DriveItem[]),
+      canManageEmailTemplates ? loadEmailTemplates() : Promise.resolve([] as DriveItem[]),
     ]);
-    return [...pages, ...files, ...forms, ...agreements, ...rubrics];
+    return [...pages, ...files, ...forms, ...agreements, ...rubrics, ...emailTemplates];
   }
 
   // Project scope

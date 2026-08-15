@@ -104,13 +104,12 @@ export async function loadDriveScopes({
     projectWorkspaces.map((w) => [w.key, w.projectIconEmoji ?? null]),
   );
 
-  // Hiring-team members who aren't Core still need to see the Forms / Rubrics /
-  // Agreements that live in the Hiring drive. Those loaders are role-gated
-  // (canViewForms / canManageAgreements), so widen the Lab load for hiring
-  // users — then strip any UNPLACED (non-hiring) ones below so nothing leaks
-  // into their Lab scope.
+  // Hiring-team members who aren't Core still need to see the hiring Forms that
+  // live in the Hiring drive, so widen the forms load for them — then partition
+  // into hiringItems and strip managed types from the Lab leftover below.
+  // Agreements, rubrics, and email templates are Core-only (Core ▸ Agreements /
+  // Rubrics / Templates) and are NEVER widened for the hiring team.
   const labCanViewForms = canViewForms || hasHiringAccess;
-  const labCanManageAgreements = canManageAgreements || hasHiringAccess;
 
   const [memberItems, labItems, ...projectItemArrays] = await Promise.all([
     loadDriveScope({ userSub, scope: { kind: "Member" }, request }),
@@ -118,7 +117,9 @@ export async function loadDriveScopes({
       userSub,
       scope: { kind: "Lab" },
       canViewForms: labCanViewForms,
-      canManageAgreements: labCanManageAgreements,
+      // Agreements, rubrics, email templates → REAL Core only, never widened.
+      canManageAgreements: isCore,
+      canManageEmailTemplates: isCore,
       request,
     }),
     ...projectIds.map((projectId) =>
@@ -161,17 +162,21 @@ export async function loadDriveScopes({
     labVisibleItems = remaining;
   }
 
-  // If the viewer only got Forms/Rubrics/Agreements via hiring access (not a
-  // genuine lab-wide capability), strip any that DIDN'T end up in the Hiring
-  // drive so they don't leak into the viewer's Lab scope. The hiring-placed
-  // ones are already partitioned into hiringItems above.
+  // Managed artifact types — agreements, rubrics, email templates — live ONLY
+  // in their predefined Core/Hiring folders. Whatever the Core/Hiring subtree
+  // splits already routed there stays; strip any leftover from the Lab scope so
+  // they never appear loose (e.g. a hiring-team member's widened rubric load, or
+  // a brand-new item awaiting adoption).
+  labVisibleItems = labVisibleItems.filter(
+    (it) =>
+      it.type !== "agreement" &&
+      it.type !== "rubric" &&
+      it.type !== "emailTemplate",
+  );
+  // Forms may live at the Lab top level (they're general Drive citizens), but a
+  // viewer who only got them via hiring access shouldn't see them in Lab.
   if (!canViewForms) {
     labVisibleItems = labVisibleItems.filter((it) => it.type !== "form");
-  }
-  if (!canManageAgreements) {
-    labVisibleItems = labVisibleItems.filter(
-      (it) => it.type !== "agreement" && it.type !== "rubric",
-    );
   }
 
   // Build a folder-id set per scope for the de-dup pass below.

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, Fragment } from 'react'
-import { Form, Link, useParams, useLoaderData, useSearchParams, redirect } from 'react-router'
+import { Form, Link, useParams, useLoaderData, useSearchParams, useFetcher, redirect } from 'react-router'
 import { Select, type SelectOption } from "~/components/ui/floating"
 import type { Route } from "./+types/lead.cycle.$id";
 import { prisma } from "~/lib/db";
@@ -220,6 +220,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const allDomains = await prisma.domain.findMany({ orderBy: { name: "asc" } });
 
+  // All Drive Forms — for the "bind a different form" picker in Setup.
+  const allForms = await prisma.form.findMany({
+    orderBy: { name: "asc" },
+    select: { id: true, name: true },
+  });
+
   const rubricVersionOptions = await prisma.rubricVersion.findMany({
     include: { rubric: { select: { name: true } }, createdBy: { select: { firstName: true, lastName: true } } },
     orderBy: { createdAt: "desc" },
@@ -394,6 +400,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   return {
       cycle,
       allDomains,
+      allForms,
       finalDecisions,
       rubricVersionOptions,
       cycleApplicationReviewCount,
@@ -1740,35 +1747,11 @@ export default function HiringLeadCycleDetails() {
           </div>
 
           {/* Application form (Drive) */}
-          <div className="mb-4 space-y-2">
-            <div>
-              <h3 className="text-sm font-semibold text-dark-blue">Application form (Drive)</h3>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {cycle?.applicationForm
-                  ? "Applicants fill this Drive form — edit it in Drive, preview it inline."
-                  : "Bind a Drive form as the general application form."}
-              </p>
-            </div>
-            {cycle?.applicationForm ? (
-              <HiringFormEmbed
-                formId={cycle.applicationForm.id}
-                name={cycle.applicationForm.name}
-                questions={(cycle.applicationForm.versions?.[0]?.questions as any) ?? []}
-              />
-            ) : (
-              <div className="rounded-lg border border-border bg-card p-4">
-                <Form method="post">
-                  <input type="hidden" name="intent" value="create-application-form" />
-                  <button
-                    type="submit"
-                    className="text-xs font-medium text-blue-700 hover:underline whitespace-nowrap"
-                  >
-                    + Create form
-                  </button>
-                </Form>
-              </div>
-            )}
-          </div>
+          <ApplicationFormSection
+            cycleStatus={cycleStatus}
+            applicationForm={cycle?.applicationForm ?? null}
+            allForms={loaderData?.allForms ?? []}
+          />
 
           {/* General Form Rubric */}
           <GeneralRubricPicker
@@ -3533,6 +3516,71 @@ function describeExtension(deltaMs: number): { amount: number; unit: "hours" | "
   const hours = Math.round(deltaMs / 3_600_000);
   if (hours > 0 && hours % 24 === 0) return { amount: hours / 24, unit: "days" };
   return { amount: hours, unit: "hours" };
+}
+
+// Rebind picker for the standard-cycle application form (mirroring the
+// ApplicationFormSection in lead.internal-cycle.$id.tsx).
+function ApplicationFormSection({
+  cycleStatus,
+  applicationForm,
+  allForms,
+}: {
+  cycleStatus: string;
+  applicationForm: { id: string; name: string; versions?: any[] } | null;
+  allForms: { id: string; name: string }[];
+}) {
+  const fetcher = useFetcher();
+  const editable = cycleStatus === "Draft";
+  return (
+    <div className="mb-4 space-y-2">
+      <div>
+        <h3 className="text-sm font-semibold text-dark-blue">Application form (Drive)</h3>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          {applicationForm
+            ? "Applicants fill this Drive form — edit it in Drive, preview it inline."
+            : "Bind a Drive form as the general application form."}
+        </p>
+      </div>
+      {applicationForm ? (
+        <HiringFormEmbed
+          formId={applicationForm.id}
+          name={applicationForm.name}
+          questions={(applicationForm.versions?.[0]?.questions as any) ?? []}
+        />
+      ) : (
+        <div className="rounded-lg border border-border bg-card p-4">
+          <button
+            onClick={() =>
+              fetcher.submit(
+                { intent: "create-application-form" },
+                { method: "post" },
+              )
+            }
+            className="text-xs font-medium text-blue-700 hover:underline whitespace-nowrap"
+          >
+            + Create form
+          </button>
+        </div>
+      )}
+      {editable && allForms.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Select
+            defaultValue={applicationForm?.id ?? ""}
+            placeholder="— bind a different form —"
+            onChange={(id) => {
+              if (!id || id === applicationForm?.id) return;
+              fetcher.submit(
+                { intent: "set-application-form", formId: id },
+                { method: "post" },
+              );
+            }}
+            options={allForms.map((f) => ({ value: f.id, label: f.name }))}
+            buttonClassName="px-3 py-2 text-sm border border-border rounded-md inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+          />
+        </div>
+      )}
+    </div>
+  );
 }
 
 function CloseDateCard({ cycle, cycleStatus }: { cycle: any; cycleStatus: string }) {

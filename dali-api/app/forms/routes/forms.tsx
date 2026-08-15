@@ -31,7 +31,7 @@ export async function action({ request }: Route.ActionArgs) {
   );
   if ("error" in result)
     return Response.json({ error: result.error }, { status: result.status });
-  return result;
+  return Response.json(result);
 }
 
 export default function FormsPage() {
