@@ -100,7 +100,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         where: { selected: true },
         include: {
           ...domainApplicationStatusInclude,
-          challengeVersion: { include: { domain: true } },
+          domain: true,
         },
       },
     },
@@ -137,8 +137,8 @@ export async function loader({ request }: Route.LoaderArgs) {
 
     return {
       id: da.id,
-      domainName: da.challengeVersion?.domain?.name ?? "Unknown",
-      domainId: da.challengeVersion?.domainId,
+      domainName: da.domain?.name ?? "Unknown",
+      domainId: da.domainId,
       inferredStatus,
       interview: activeInterview
         ? { id: activeInterview.id, startTime: activeInterview.startTime, endTime: activeInterview.endTime, status: activeInterview.status, location: activeInterview.location, zoomJoinUrl: activeInterview.zoomJoinUrl }

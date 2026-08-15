@@ -52,7 +52,7 @@ export async function action({ request }: Route.ActionArgs) {
             domainApplication: {
               include: {
                 application: {
-                  include: { domainApplications: { include: { challengeVersion: true } } },
+                  include: { domainApplications: { select: { domainId: true } } },
                 },
               },
             },
@@ -78,11 +78,10 @@ export async function action({ request }: Route.ActionArgs) {
           throw new Error("__TOO_SOON_TO_BOOK__");
         }
 
-        // DomainApplications always attach to a domain-scoped challenge
-        // version on Standard cycles (the only cycleType that schedules
-        // interviews); filter out any null domainIds defensively.
+        // DomainApplication.domainId is authoritative and always set for
+        // Standard cycles (the only cycleType that schedules interviews).
         const applicantDomainIds = current.domainApplication.application.domainApplications
-          .map((da) => da.challengeVersion?.domainId ?? null)
+          .map((da) => da.domainId)
           .filter((id): id is string => id !== null);
 
         await tx.interview.update({

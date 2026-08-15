@@ -59,8 +59,6 @@ export async function action({ request, params }: Route.ActionArgs) {
     where: { id: params.id },
     include: {
       application: true,
-      challengeVersion: { select: { domainId: true } },
-      // Fellowship links Domain directly; needed when challengeVersion is null.
       domain: { select: { id: true } },
     },
   });
@@ -71,12 +69,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     return Response.json({ error: "Cannot assign reviewer to a deselected domain application" }, { status: 409 });
   }
 
-  // ChallengeVersion.domainId is nullable because the general application form
-  // is also a ChallengeVersion. A DomainApplication should never reference one,
-  // so this is a data invariant error rather than a user-facing condition.
-  // Fellowship DomainApplications link Domain directly instead of via a
-  // ChallengeVersion, so fall back to the direct relation when it's set.
-  const domainId = domainApp.challengeVersion?.domainId ?? domainApp.domainId;
+  // DomainApplication.domainId is the authoritative domain reference for both
+  // Standard and Fellowship cycles.
+  const domainId = domainApp.domainId ?? domainApp.domain?.id;
   if (!domainId) {
     return Response.json({ error: "Domain application is linked to a non-domain challenge version" }, { status: 500 });
   }

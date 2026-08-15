@@ -160,17 +160,15 @@ for (const row of rows) {
         id: true,
         answers: true,
         user: { select: { id: true, firstName: true, lastName: true } },
-        generalChallengeVersion: { select: { questions: true } },
+        applicationFormVersion: { select: { questions: true } },
         domainApplications: {
           select: {
             id: true,
             answers: true,
-            challengeVersion: {
-              select: {
-                questions: true,
-                domain: { select: { name: true } },
-              },
+            challengeFormVersion: {
+              select: { questions: true },
             },
+            domain: { select: { name: true } },
           },
         },
         statusUpdates: { where: { newStatus: "Submitted" }, take: 1, select: { id: true } },
@@ -192,12 +190,12 @@ for (const row of rows) {
     if (row.domainApplicationId) {
       const da = app.domainApplications.find(d => d.id === row.domainApplicationId);
       if (!da) throw new Error(`DomainApplication ${row.domainApplicationId} not on this app`);
-      questions = (da.challengeVersion.questions as unknown as Question[]) ?? [];
+      questions = (da.challengeFormVersion?.questions as unknown as Question[]) ?? [];
       currentAnswers = (da.answers as Record<string, string>) ?? {};
-      targetLabel = `DomainApplication (${da.challengeVersion.domain?.name ?? "?"})`;
+      targetLabel = `DomainApplication (${da.domain?.name ?? "?"})`;
       updateTarget = { kind: "da", id: da.id };
     } else {
-      questions = (app.generalChallengeVersion.questions as unknown as Question[]) ?? [];
+      questions = (app.applicationFormVersion?.questions as unknown as Question[]) ?? [];
       currentAnswers = (app.answers as Record<string, string>) ?? {};
       targetLabel = "general application";
       updateTarget = { kind: "app", id: app.id };

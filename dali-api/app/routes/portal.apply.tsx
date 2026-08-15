@@ -43,21 +43,13 @@ export async function loader({ request }: Route.LoaderArgs) {
     return redirect("/portal");
   }
 
-  // Load cycle with its challenge versions and hiring domains
+  // Load cycle with its hiring domains + per-domain challenge Forms.
   const cycle = await prisma.applicationCycle.findUnique({
     where: { id: active.id },
     include: {
       domains: {
         include: { domain: true },
       },
-      challengeVersions: {
-        include: {
-          challengeVersion: {
-            include: { domain: true, challenge: true },
-          },
-        },
-      },
-      // Per-domain challenge Forms (additive alongside legacy ChallengeVersions).
       domainChallengeForms: {
         include: {
           form: {
@@ -70,48 +62,20 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   if (!cycle) return redirect("/portal");
 
-  // General form: prefer a bound Drive Form (applicationFormId); fall back to
-  // the legacy general ChallengeVersion (domainId: null) linked to this cycle.
-  // Additive — existing cycles keep working via the fallback.
+  // General form: the cycle's bound Drive Form (applicationFormId).
   const form = cycle.applicationFormId
     ? await loadHiringForm(cycle.applicationFormId, auth.user.sub)
     : null;
-  const generalCvac = cycle.challengeVersions.find(
-    cvc => cvc.challengeVersion.domainId === null,
-  );
-  if (!form && !generalCvac) return redirect("/portal");
+  if (!form) return redirect("/portal");
 
-  // The pin the applicant's Application carries for the general form: a
-  // FormVersion (new) or the legacy ChallengeVersion. Exactly one is set.
-  const applicationFormVersionId = form ? form.versionId : null;
-  const generalChallengeVersionId = form ? null : generalCvac!.challengeVersionId;
-  // Immutable snapshots: legacy ProseMirror descriptions/info bodies convert to
-  // block JSON on read — the portal only ever sees blocks.
-  const formQuestions = normalizeQuestionBodies(
-    form
-      ? form.questions
-      : ((generalCvac!.challengeVersion.questions as unknown as Question[]) ?? []),
-  );
-  const generalDescription = ensureBlocks(
-    form ? form.description : generalCvac!.challengeVersion.description,
-  );
+  // The FormVersion the applicant's Application pins for the general form.
+  const applicationFormVersionId = form.versionId;
+  const formQuestions = normalizeQuestionBodies(form.questions);
+  const generalDescription = ensureBlocks(form.description);
 
-  // Build domain info with all linked challenges (applicant picks one). Legacy
-  // ChallengeVersion challenges and Drive-Form challenges are merged into one
-  // list; Form options carry an opaque "form:<formId>" id so the picker (which
-  // treats the id as opaque) works unchanged.
+  // Build domain info with each domain's challenge Forms (applicant picks one).
+  // Each option carries an opaque "form:<formId>" id.
   const domains = cycle.domains.map(dac => {
-    const linked = cycle.challengeVersions.filter(
-      cvc => cvc.challengeVersion.domainId === dac.domainId,
-    );
-    const legacyChallenges = linked.map(cvc => ({
-      challengeVersionId: cvc.challengeVersionId,
-      challengeName: (cvc.challengeVersion as any).challenge?.name ?? "Challenge",
-      description: ensureBlocks((cvc.challengeVersion as any).description),
-      questions: normalizeQuestionBodies(
-        ((cvc.challengeVersion.questions as unknown) as Question[]) ?? [],
-      ),
-    }));
     const formChallenges = cycle.domainChallengeForms
       .filter(cdf => cdf.domainId === dac.domainId && cdf.form.versions[0])
       .map(cdf => ({
@@ -125,7 +89,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     return {
       id: dac.domainId,
       name: dac.domain.name,
-      challenges: [...legacyChallenges, ...formChallenges],
+      challenges: formChallenges,
     };
   });
 
@@ -139,7 +103,6 @@ export async function loader({ request }: Route.LoaderArgs) {
       statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
       domainApplications: {
         include: {
-          challengeVersion: { select: { domainId: true } },
           challengeFormVersion: { select: { formId: true } },
         },
       },
@@ -152,7 +115,6 @@ export async function loader({ request }: Route.LoaderArgs) {
       cycleId: active.id,
       cycleName: active.name,
       closeDate: active.closeDate ? active.closeDate.toISOString() : null,
-      generalChallengeVersionId,
       applicationFormVersionId,
       formQuestions,
       generalDescription,
@@ -168,11 +130,10 @@ export async function loader({ request }: Route.LoaderArgs) {
             domainApplications: draft.domainApplications.map(da => ({
               id: da.id,
               domainId: da.domainId,
-              // Restore the opaque picker id: "form:<formId>" for a Form
-              // challenge, else the legacy ChallengeVersion id.
+              // The opaque picker id for the picked challenge Form.
               challengeVersionId: da.challengeFormVersion
                 ? `form:${da.challengeFormVersion.formId}`
-                : da.challengeVersionId,
+                : null,
               answers: da.answers as Record<string, string>,
             })),
           }
@@ -180,44 +141,29 @@ export async function loader({ request }: Route.LoaderArgs) {
     };
 }
 
-// Resolve + validate applicant challenge selections against what's linked to
-// the cycle. Each selection's `challengeVersionId` is either a legacy
-// ChallengeVersion id or an opaque "form:<formId>" id. Returns one pin per
-// valid selection: {domainId} + exactly one of challengeVersionId /
-// challengeFormVersionId (the picked Form's latest version).
-type ResolvedPin = { domainId: string; challengeVersionId?: string; challengeFormVersionId?: string };
+// Resolve + validate applicant challenge selections against the challenge Forms
+// linked to the cycle. Each selection's `challengeVersionId` is an opaque
+// "form:<formId>" id. Returns one pin per valid selection: {domainId,
+// challengeFormVersionId} (the picked Form's latest version).
+type ResolvedPin = { domainId: string; challengeFormVersionId: string };
 async function resolveChallengeSelections(
   cycleId: string,
   selections: { domainId: string; challengeVersionId: string }[],
 ): Promise<ResolvedPin[]> {
-  const [cvacs, cdfs] = await Promise.all([
-    prisma.challengeVersionApplicationCycle.findMany({
-      where: { applicationCycleId: cycleId },
-      include: { challengeVersion: { select: { domainId: true } } },
-    }),
-    prisma.cycleDomainForm.findMany({
-      where: { applicationCycleId: cycleId },
-      include: { form: { include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } } } },
-    }),
-  ]);
-  const cvPairs = new Set(
-    cvacs
-      .filter(c => c.challengeVersion.domainId)
-      .map(c => `${c.challengeVersion.domainId}:${c.challengeVersionId}`),
-  );
+  const cdfs = await prisma.cycleDomainForm.findMany({
+    where: { applicationCycleId: cycleId },
+    include: { form: { include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } } } },
+  });
   const formVersionByPair = new Map(
     cdfs.map(c => [`${c.domainId}:${c.formId}`, c.form.versions[0]?.id]),
   );
 
   const out: ResolvedPin[] = [];
   for (const s of selections) {
-    if (s.challengeVersionId.startsWith("form:")) {
-      const formId = s.challengeVersionId.slice("form:".length);
-      const versionId = formVersionByPair.get(`${s.domainId}:${formId}`);
-      if (versionId) out.push({ domainId: s.domainId, challengeFormVersionId: versionId });
-    } else if (cvPairs.has(`${s.domainId}:${s.challengeVersionId}`)) {
-      out.push({ domainId: s.domainId, challengeVersionId: s.challengeVersionId });
-    }
+    if (!s.challengeVersionId.startsWith("form:")) continue;
+    const formId = s.challengeVersionId.slice("form:".length);
+    const versionId = formVersionByPair.get(`${s.domainId}:${formId}`);
+    if (versionId) out.push({ domainId: s.domainId, challengeFormVersionId: versionId });
   }
   return out;
 }
@@ -233,17 +179,14 @@ export async function action({ request }: Route.ActionArgs) {
 
   if (intent === "create-draft") {
     const cycleId = formData.get("cycleId") as string;
-    // Exactly one of these is set: a Drive Form version (new) or the legacy
-    // general ChallengeVersion.
-    const generalChallengeVersionId = (formData.get("generalChallengeVersionId") as string) || null;
     const applicationFormVersionId = (formData.get("applicationFormVersionId") as string) || null;
     const selectedDomains = JSON.parse(formData.get("selectedDomains") as string) as {
       domainId: string;
       challengeVersionId: string;
     }[];
 
-    // Validate every chosen challenge (legacy CV or Form) is linked to this
-    // cycle for the claimed domain, and resolve the pin.
+    // Validate every chosen challenge Form is linked to this cycle for the
+    // claimed domain, and resolve the pinned FormVersion.
     const resolved = await resolveChallengeSelections(cycleId, selectedDomains);
 
     // Upsert keyed on the (userId, applicationCycleId) unique constraint so
@@ -262,7 +205,6 @@ export async function action({ request }: Route.ActionArgs) {
       create: {
         userId: auth.user.sub,
         applicationCycleId: cycleId,
-        generalChallengeVersionId,
         applicationFormVersionId,
         answers: {},
         statusUpdates: {
@@ -271,8 +213,7 @@ export async function action({ request }: Route.ActionArgs) {
         domainApplications: {
           create: resolved.map(r => ({
             domainId: r.domainId,
-            ...(r.challengeVersionId ? { challengeVersionId: r.challengeVersionId } : {}),
-            ...(r.challengeFormVersionId ? { challengeFormVersionId: r.challengeFormVersionId } : {}),
+            challengeFormVersionId: r.challengeFormVersionId,
             answers: {},
           })),
         },
@@ -280,7 +221,6 @@ export async function action({ request }: Route.ActionArgs) {
       include: {
         domainApplications: {
           include: {
-            challengeVersion: { select: { domainId: true } },
             challengeFormVersion: { select: { formId: true } },
           },
         },
@@ -299,7 +239,7 @@ export async function action({ request }: Route.ActionArgs) {
               domainId: da.domainId,
               challengeVersionId: da.challengeFormVersion
                 ? `form:${da.challengeFormVersion.formId}`
-                : da.challengeVersionId,
+                : null,
               answers: da.answers,
             })),
           },
@@ -317,17 +257,13 @@ export async function action({ request }: Route.ActionArgs) {
     // Validate + resolve every chosen challenge (legacy CV or Form).
     const resolved = await resolveChallengeSelections(cycleId, newSelections);
     const newDomainIds = resolved.map(r => r.domainId);
-    const desiredCvByDomain = new Map(
-      resolved.filter(r => r.challengeVersionId).map(r => [r.domainId, r.challengeVersionId!]),
-    );
     const desiredFormByDomain = new Map(
-      resolved.filter(r => r.challengeFormVersionId).map(r => [r.domainId, r.challengeFormVersionId!]),
+      resolved.map(r => [r.domainId, r.challengeFormVersionId]),
     );
 
     await reconcileDomainApplications({
       applicationId,
       domainIds: newDomainIds,
-      challengeVersionByDomain: desiredCvByDomain,
       challengeFormVersionByDomain: desiredFormByDomain,
     });
 
@@ -337,7 +273,6 @@ export async function action({ request }: Route.ActionArgs) {
       include: {
         domainApplications: {
           include: {
-            challengeVersion: { select: { domainId: true } },
             challengeFormVersion: { select: { formId: true } },
           },
         },
@@ -354,7 +289,7 @@ export async function action({ request }: Route.ActionArgs) {
               domainId: da.domainId,
               challengeVersionId: da.challengeFormVersion
                 ? `form:${da.challengeFormVersion.formId}`
-                : da.challengeVersionId,
+                : null,
               answers: da.answers,
             })),
           } : null,
@@ -406,31 +341,23 @@ export async function action({ request }: Route.ActionArgs) {
       select: {
         applicationCycleId: true,
         applicationFormVersion: { select: { questions: true } },
-        generalChallengeVersion: { select: { questions: true } },
       },
     });
     if (!application) {
       return Response.json({ error: "Application not found" }, { status: 404 });
     }
-    // Prefer the bound Drive Form's questions; fall back to the legacy general
-    // ChallengeVersion for pre-migration applications.
     const generalQuestions =
-      (application.applicationFormVersion?.questions as unknown as Question[]) ??
-      (application.generalChallengeVersion?.questions as unknown as Question[]) ??
-      [];
+      (application.applicationFormVersion?.questions as unknown as Question[]) ?? [];
 
     const allDas = await prisma.domainApplication.findMany({
       where: { applicationId },
       include: {
-        challengeVersion: { select: { domainId: true, questions: true } },
         challengeFormVersion: { select: { questions: true } },
       },
     });
-    // Per-DA challenge questions: prefer the picked Form's version, else legacy.
+    // Per-DA challenge questions: the picked challenge Form's version.
     const daQuestions = (dbDa: (typeof allDas)[number]): Question[] =>
-      ((dbDa.challengeFormVersion?.questions ??
-        dbDa.challengeVersion?.questions ??
-        []) as unknown as Question[]);
+      ((dbDa.challengeFormVersion?.questions ?? []) as unknown as Question[]);
 
     const wordCountErrors: Record<string, WordCountViolation> = {
       ...validateWordLimits(generalQuestions, answers),
@@ -845,7 +772,7 @@ function BackToTopButton() {
 export default function PortalApply() {
   const toast = useToast();
   const loaderData = useLoaderData<typeof loader>() as any;
-  const { cycleId, cycleName, generalChallengeVersionId, applicationFormVersionId, formQuestions, generalDescription, domains, isAlreadySubmitted } = loaderData;
+  const { cycleId, cycleName, applicationFormVersionId, formQuestions, generalDescription, domains, isAlreadySubmitted } = loaderData;
   const [draft, setDraft] = useState(loaderData.draft);
   const [selectedDomainIds, setSelectedDomainIds] = useState<string[]>(
     loaderData.draft?.selectedDomainIds ?? [],
@@ -1073,7 +1000,6 @@ export default function PortalApply() {
     const form = new FormData();
     form.set("intent", "create-draft");
     form.set("cycleId", cycleId);
-    form.set("generalChallengeVersionId", generalChallengeVersionId ?? "");
     form.set("applicationFormVersionId", applicationFormVersionId ?? "");
     form.set(
       "selectedDomains",

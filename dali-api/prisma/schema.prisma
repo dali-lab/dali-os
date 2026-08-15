@@ -142,7 +142,6 @@ model User {
   // ─── Relations: existing ──────────────────────────────────────────────────
   daliMember                    DALIMember?
   applicationCycleStatusUpdates ApplicationCycleStatusUpdate[]
-  challengeVersions             ChallengeVersion[]
   applications                  Application[]
   applicationStatusUpdates      ApplicationStatusUpdate[]
   oauthSessions                 OAuthSession[]
@@ -353,7 +352,6 @@ model ApplicationCycle {
   statusUpdates     ApplicationCycleStatusUpdate[]
   applications      Application[]
   domains           DomainApplicationCycle[]
-  challengeVersions ChallengeVersionApplicationCycle[]
   domainChallengeForms CycleDomainForm[]
 
   interviewConfig    InterviewConfig?
@@ -404,16 +402,9 @@ model Application {
   user                      User              @relation(fields: [userId], references: [id])
   applicationCycleId        String
   applicationCycle          ApplicationCycle  @relation(fields: [applicationCycleId], references: [id])
-  // Pinned at application creation time so that form updates do not affect
-  // in-progress drafts. Required on Standard cycles; null on internal
-  // (Fellowship/Core) cycles (which pin `applicationFormVersionId` instead).
-  // One of the two must be set — enforced at the app layer.
-  generalChallengeVersionId String?
-  generalChallengeVersion   ChallengeVersion? @relation("ApplicationGeneralChallenge", fields: [generalChallengeVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-
-  // The FormVersion of the cycle's application form that this applicant
-  // answered, pinned at creation so later edits to the form don't change an
-  // in-progress draft. Set on internal (Fellowship/Core) applications.
+  // The FormVersion of the cycle's application form (a Drive Form) that this
+  // applicant answered, pinned at creation so later edits to the form don't
+  // change an in-progress draft.
   applicationFormVersionId String?
   applicationFormVersion   FormVersion? @relation("ApplicationApplicationForm", fields: [applicationFormVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
@@ -451,11 +442,10 @@ enum ApplicationCycleType {
   Core
 }
 
-// On Standard cycles, the domain is derived via challengeVersion.domain (the
-// applicant answers a per-domain challenge). On internal (Fellowship/Core)
-// cycles there is no per-domain challenge, so `challengeVersionId` is null and
-// `domainId` is set directly. Exactly one of the two is set — enforced at the
-// app layer.
+// One DomainApplication per (application, target domain). `domainId` is the
+// single source of truth for "what domain is this for". Standard cycles pin the
+// per-domain challenge Form the applicant answered via challengeFormVersionId;
+// internal (Fellowship/Core) cycles have no per-domain challenge (null).
 model DomainApplication {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
@@ -476,22 +466,23 @@ model DomainApplication {
   // preserved so answers survive re-selection.
   selected Boolean @default(true)
 
+  // Administrative closure of an otherwise-undecided DA. Set when the applicant
+  // is accepted into a *different* domain in the same cycle (single placement:
+  // an Accept is final, so the sibling domains are moot). Distinct from a lab
+  // deliberation outcome (Decision) and from applicant Withdrawal — the record
+  // is preserved and status inference reads it as "Accepted elsewhere" instead
+  // of a stale "Pending". Only ever set on DAs with no Released decision.
+  closedAt      DateTime?
+  closureReason DomainApplicationClosureReason?
+
   applicationId      String
   application        Application       @relation(fields: [applicationId], references: [id])
-  // Pins the questions the applicant answered. Always set on Standard cycles
-  // (per-domain challenge). Null on internal cycles (questions live on the
-  // Application via applicationFormVersionId — there's nothing per-domain to pin).
-  challengeVersionId String?
-  challengeVersion   ChallengeVersion? @relation(fields: [challengeVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  // Drive-Form equivalent of challengeVersionId: the FormVersion of the picked
-  // per-domain challenge Form the applicant answered, pinned at pick time. On a
-  // Standard DA exactly one of challengeVersionId / challengeFormVersionId is
-  // set (legacy ChallengeVersion vs a bound Drive Form). Null on internal cycles.
+  // The FormVersion of the picked per-domain challenge Form the applicant
+  // answered, pinned at pick time. Set on Standard cycles; null on internal.
   challengeFormVersionId String?
   challengeFormVersion   FormVersion? @relation("DomainApplicationChallengeForm", fields: [challengeFormVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   // The target Domain this DA represents. Required for every DA regardless
   // of cycle type — single source of truth for "what domain is this for".
-  // Backfilled from challengeVersion.domainId for pre-existing Standard rows.
   domainId           String
   domain             Domain            @relation(fields: [domainId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
@@ -501,7 +492,6 @@ model DomainApplication {
 
   @@index([applicationId])
   @@index([domainId])
-  @@index([challengeVersionId])
   @@index([challengeFormVersionId])
 }
 
@@ -524,16 +514,6 @@ model CycleDomainForm {
   @@index([applicationCycleId])
   @@index([domainId])
   @@index([formId])
-}
-
-model Challenge {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  name String
-
-  versions ChallengeVersion[]
 }
 
 model Domain {
@@ -563,7 +543,6 @@ model Domain {
   // Toggle visibility from Admin Console without code changes.
   active          Boolean @default(true)
 
-  challengeVersions     ChallengeVersion[]
   applicationCycles     DomainApplicationCycle[]
   domainLeadAssignments DomainLeadAssignment[]
   cycleReviewers        CycleReviewer[]
@@ -583,28 +562,6 @@ model Domain {
   partnerApplicationDomains PartnerApplicationDomain[]
   projects                  ProjectDomain[]
   projectScopes             ProjectDomainScope[]
-}
-
-// Immutable snapshot of a challenge. Never update rows in this table —
-// create a new version instead. domainId: null = general application form.
-model ChallengeVersion {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-
-  // Optional ProseMirror JSON document shown to applicants and reviewers above
-  // the questions for this challenge version. Null = no description.
-  description Json?
-  questions   Json
-  challengeId String
-  challenge   Challenge @relation(fields: [challengeId], references: [id])
-  domainId    String?
-  domain      Domain?   @relation(fields: [domainId], references: [id])
-  createdById String
-  createdBy   User      @relation(fields: [createdById], references: [id])
-
-  domainApplications    DomainApplication[]
-  applicationCycles     ChallengeVersionApplicationCycle[]
-  applicationsAsGeneral Application[]                      @relation("ApplicationGeneralChallenge")
 }
 
 // Lifecycle of an application cycle from the DALI side:
@@ -652,16 +609,6 @@ model DomainApplicationCycle {
   reviewersPerApplication Int            @default(2)
 
   @@id([domainId, applicationCycleId])
-}
-
-// Indicates that a specific version of a challenge is in use for an application cycle
-model ChallengeVersionApplicationCycle {
-  challengeVersionId String
-  challengeVersion   ChallengeVersion @relation(fields: [challengeVersionId], references: [id])
-  applicationCycleId String
-  applicationCycle   ApplicationCycle @relation(fields: [applicationCycleId], references: [id])
-
-  @@id([challengeVersionId, applicationCycleId])
 }
 
 // ─── Interview Scheduling ────────────────────────────────────────────────────
@@ -875,6 +822,12 @@ enum DecisionStage {
   Released // visible to applicant; triggers notification hook (hiring lead releases)
 }
 
+// Why an undecided DomainApplication was administratively closed (see
+// DomainApplication.closureReason). Not a deliberation outcome.
+enum DomainApplicationClosureReason {
+  AcceptedElsewhere // applicant accepted into another domain this cycle
+}
+
 // Append-only, immutable decision records. Never updated — only created.
 // Current decision = latest record by createdAt.
 // To change a Draft: create a new record (supersedes old by timestamp).
@@ -993,7 +946,14 @@ model Rubric {
 
   name String
 
+  // Unified-Drive tree placement (Page of kind=Folder). Null = unplaced.
+  // Organisation only — never affects who can view/edit the rubric. Lets a
+  // rubric live in the Hiring drive alongside the forms it scores.
+  folderPageId String?
+
   versions RubricVersion[]
+
+  @@index([folderPageId])
 }
 
 // Immutable snapshot of a rubric. Never update rows in this table —
@@ -1613,6 +1573,12 @@ model SigningDocument {
   gateScope SigningGateScope    @default(None) // how an unsigned copy is enforced
   audience  SigningAudience     @default(Manual) // who is required to sign
   cadence   SigningCadence      @default(Once) // how often a fresh signature is required
+
+  // Unified-Drive tree placement (Page of kind=Folder). Null = unplaced
+  // (agreements render at Lab top level today). Set for hiring Confidentiality
+  // agreements so they live in the Hiring drive. Organisation only — signing
+  // gates/audience are unchanged.
+  folderPageId String?
 
   // Optional repeating page-header banner + footer for PDF export (the paper
   // letterhead look). Null = no running header/footer.

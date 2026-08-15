@@ -67,7 +67,7 @@ const apps = await prisma.application.findMany({
     statusUpdates: { include: { user: { select: { firstName: true, lastName: true } } } },
     domainApplications: {
       include: {
-        challengeVersion: { include: { domain: { select: { name: true } } } },
+        domain: { select: { name: true } },
         reviews: {
           include: {
             cycleReviewer: { include: { daliMember: { include: { user: { select: { firstName: true, lastName: true } } } } } },
@@ -98,7 +98,7 @@ const who = (u?: { firstName: string; lastName: string } | null) =>
 for (const app of apps) {
   console.log(`\n--- Application: ${app.applicationCycle.name} (id ${app.id}) ---`);
   console.log(`Created: ${fmt(app.createdAt)}   Updated: ${fmt(app.updatedAt)}`);
-  console.log(`Domains applied: ${app.domainApplications.map(da => `${da.challengeVersion.domain?.name ?? "?"}${da.selected ? "" : " (deselected)"}`).join(", ") || "(none)"}`);
+  console.log(`Domains applied: ${app.domainApplications.map(da => `${da.domain?.name ?? "?"}${da.selected ? "" : " (deselected)"}`).join(", ") || "(none)"}`);
 
   const events: Event[] = [];
   events.push({ at: app.createdAt, line: `APP CREATED` });
@@ -108,7 +108,7 @@ for (const app of apps) {
   }
 
   for (const da of app.domainApplications) {
-    const dom = da.challengeVersion.domain?.name ?? "?";
+    const dom = da.domain?.name ?? "?";
     events.push({ at: da.createdAt, line: `[${dom}] domain application created${da.selected ? "" : " (later deselected)"}` });
 
     for (const r of da.reviews) {

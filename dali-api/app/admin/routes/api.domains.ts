@@ -35,7 +35,6 @@ export async function loader({ request }: Route.LoaderArgs) {
       },
       _count: {
         select: {
-          challengeVersions: true,
           applicationCycles: true,
           domainLeadAssignments: true,
           cycleReviewers: true,

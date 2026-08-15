@@ -380,7 +380,7 @@ export async function reassignInterviewer(
       include: {
         interview: {
           include: {
-            domainApplication: { include: { challengeVersion: true } },
+            domainApplication: { include: { domain: { select: { id: true } } } },
           },
         },
         cycleInterviewer: true,
@@ -401,9 +401,9 @@ export async function reassignInterviewer(
     const role = assignment.role;
 
     // Applicant's domain — used for the in-domain / cross-domain filter.
-    // Interviews only exist for Standard cycles, so challengeVersion is always
-    // set here; assert non-null to satisfy TS now that the column is nullable.
-    const applicantDomainId = interview.domainApplication.challengeVersion!.domainId;
+    // DomainApplication.domainId is always set for Standard cycles (the only
+    // cycleType that schedules interviews).
+    const applicantDomainId = interview.domainApplication.domain!.id;
 
     // Exclude any MEMBER (not just their row) who already holds an active
     // assignment on this interview. Without this, a member with multiple

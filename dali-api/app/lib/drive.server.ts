@@ -94,10 +94,23 @@ export type DriveItem =
       type: "agreement";
       id: string;
       title: string;
-      /** Signing documents have no folderPageId — they always sit at the Lab
-       *  top level, so parentFolderId is always null here. */
-      parentFolderId: null;
+      /** `folderPageId` — null when unplaced (renders at Lab top level). */
+      parentFolderId: string | null;
       iconEmoji: null;
+      updatedAt: Date;
+      href: string;
+      /** File size in bytes (files only; null elsewhere). Drives the Size column. */
+      sizeBytes?: number | null;
+      /** Whether the viewer has favorited this item (pages only). */
+      favorited?: boolean;
+    }
+  | {
+      type: "rubric";
+      id: string;
+      title: string;
+      /** `folderPageId` — null when unplaced. */
+      parentFolderId: string | null;
+      iconEmoji: null; // rubrics have no emoji; callers use a fixed icon
       updatedAt: Date;
       href: string;
       /** File size in bytes (files only; null elsewhere). Drives the Size column. */
@@ -364,8 +377,9 @@ async function loadFiles(projectIds: string[]): Promise<DriveItem[]> {
 }
 
 /** Load non-archived agreement templates (SigningDocuments). Only called when
- *  the caller passes `canManageAgreements: true` (= isCore). Agreements sit at
- *  the Lab top level — they have no folderPageId equivalent.
+ *  the caller passes `canManageAgreements: true` (= isCore). Agreements with a
+ *  `folderPageId` are placed inside that folder; unplaced ones (folderPageId
+ *  null) continue to render at the Lab top level as before.
  *
  *  NO-WIDENING GUARANTEE: agreements → Core members only. The caller is
  *  responsible for passing `canManageAgreements` only when the viewer isCore;
@@ -375,16 +389,39 @@ async function loadAgreements(): Promise<DriveItem[]> {
   const rows = await prisma.signingDocument.findMany({
     where: { archivedAt: null },
     orderBy: { createdAt: "desc" },
-    select: { id: true, name: true, updatedAt: true },
+    select: { id: true, name: true, folderPageId: true, updatedAt: true },
   });
   return rows.map((d) => ({
     type: "agreement" as const,
     id: d.id,
     title: d.name,
-    parentFolderId: null,
+    parentFolderId: d.folderPageId,
     iconEmoji: null,
     updatedAt: d.updatedAt,
     href: `/documents/agreement/${d.id}`,
+  }));
+}
+
+/** Load rubrics. Only called when the caller passes `canManageAgreements: true`
+ *  (= isCore / hiring team) — same gate as agreements, since rubrics are a
+ *  hiring-internal artifact. Rubrics with a `folderPageId` are placed inside
+ *  that folder; unplaced ones render at the Lab top level.
+ *
+ *  NO-WIDENING GUARANTEE: rubrics → same Core gate as agreements. */
+async function loadRubrics(): Promise<DriveItem[]> {
+  const rows = await prisma.rubric.findMany({
+    where: { folderPageId: { not: null } },
+    orderBy: { updatedAt: "desc" },
+    select: { id: true, name: true, folderPageId: true, updatedAt: true },
+  });
+  return rows.map((r) => ({
+    type: "rubric" as const,
+    id: r.id,
+    title: r.name,
+    parentFolderId: r.folderPageId,
+    iconEmoji: null,
+    updatedAt: r.updatedAt,
+    href: `/hiring/rubrics/${r.id}`,
   }));
 }
 
@@ -481,14 +518,15 @@ export async function loadDriveScope({
     // to all lab members (except scoped-folder files, filtered in loadLabFiles).
     // Project-owned files are NOT included here — they appear only in their
     // respective project scope.
-    const [pages, files, forms, agreements] = await Promise.all([
+    const [pages, files, forms, agreements, rubrics] = await Promise.all([
       loadLabPages(userSub, request),
       loadLabFiles(userSub, request),
       canViewForms ? loadForms() : Promise.resolve([] as DriveItem[]),
-      // Agreements → Core only. canManageAgreements must be derived upstream.
+      // Agreements + rubrics → Core only. canManageAgreements must be derived upstream.
       canManageAgreements ? loadAgreements() : Promise.resolve([] as DriveItem[]),
+      canManageAgreements ? loadRubrics() : Promise.resolve([] as DriveItem[]),
     ]);
-    return [...pages, ...files, ...forms, ...agreements];
+    return [...pages, ...files, ...forms, ...agreements, ...rubrics];
   }
 
   // Project scope

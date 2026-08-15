@@ -44,12 +44,12 @@ function makeDA(id: string, domainId: string) {
     id,
     applicationId: APPLICATION_ID,
     answers: {},
-    challengeVersion: {
-      id: `cv-${id}`,
-      domainId,
+    domainId,
+    domain: { id: domainId, name: domainId },
+    challengeFormVersion: {
       questions: [{ key: `q-${domainId}`, data: { label: `Q for ${domainId}` } }],
-      domain: { id: domainId, name: domainId },
-      challenge: { id: `challenge-${domainId}`, name: `Challenge ${domainId}` },
+      intro: null,
+      form: { name: "Challenge" },
     },
   };
 }
@@ -61,7 +61,7 @@ function setupApplicationBase() {
     applicationCycleId: CYCLE_ID,
     answers: {},
     user: { id: "u-1", firstName: "Ada", lastName: "Lovelace" },
-    generalChallengeVersion: {
+    applicationFormVersion: {
       id: "gcv-1",
       questions: [{ key: "g1", data: { label: "G1" } }],
     },
@@ -108,30 +108,26 @@ describe("reviewer.application.$id loader — domain scoping", () => {
     // The loader filters in the Prisma where clause; the mock should honor it
     // by returning DAs that match the reviewer's domain ids.
     mockPrisma.domainApplication.findMany.mockImplementation(({ where }: any) => {
-      // Loader now uses `OR: [{ challengeVersion: { domainId: { in } } }, { domainId: { in } }]`
-      // to support Fellowship cycles. Pull the in-list from the OR branch.
-      const allowed: string[] = where.OR?.[0]?.challengeVersion?.domainId?.in
-        ?? where.challengeVersion?.domainId?.in
-        ?? [];
+      const allowed: string[] = where.domainId?.in ?? [];
       const all = [
         makeDA(DESIGN_DA_ID, DESIGN_DOMAIN_ID),
         makeDA(WEB_DA_ID, WEB_DOMAIN_ID),
         makeDA(VIDEO_DA_ID, VIDEO_DOMAIN_ID),
       ];
-      return Promise.resolve(all.filter((da) => allowed.includes(da.challengeVersion.domainId)));
+      return Promise.resolve(all.filter((da) => allowed.includes(da.domainId)));
     });
 
     const result: any = await callLoader();
 
     expect(result.application.domainApplications).toHaveLength(1);
     expect(result.application.domainApplications[0].id).toBe(DESIGN_DA_ID);
-    expect(result.application.domainApplications[0].challengeVersion.domainId).toBe(DESIGN_DOMAIN_ID);
+    expect(result.application.domainApplications[0].domainId).toBe(DESIGN_DOMAIN_ID);
 
     // Confirm the loader is asking Prisma to filter by the reviewer's domain ids
     // — not relying on app-side filtering after fetching everything.
     const findManyArgs = mockPrisma.domainApplication.findMany.mock.calls[0][0];
     expect(findManyArgs.where.applicationId).toBe(APPLICATION_ID);
-    expect(findManyArgs.where.OR[0].challengeVersion.domainId.in).toEqual([DESIGN_DOMAIN_ID]);
+    expect(findManyArgs.where.domainId.in).toEqual([DESIGN_DOMAIN_ID]);
   });
 
   it("returns multiple DAs when the reviewer is assigned to multiple matching domains", async () => {
@@ -140,17 +136,13 @@ describe("reviewer.application.$id loader — domain scoping", () => {
       { id: WEB_REVIEWER_ID, domainId: WEB_DOMAIN_ID },
     ]);
     mockPrisma.domainApplication.findMany.mockImplementation(({ where }: any) => {
-      // Loader now uses `OR: [{ challengeVersion: { domainId: { in } } }, { domainId: { in } }]`
-      // to support Fellowship cycles. Pull the in-list from the OR branch.
-      const allowed: string[] = where.OR?.[0]?.challengeVersion?.domainId?.in
-        ?? where.challengeVersion?.domainId?.in
-        ?? [];
+      const allowed: string[] = where.domainId?.in ?? [];
       const all = [
         makeDA(DESIGN_DA_ID, DESIGN_DOMAIN_ID),
         makeDA(WEB_DA_ID, WEB_DOMAIN_ID),
         makeDA(VIDEO_DA_ID, VIDEO_DOMAIN_ID),
       ];
-      return Promise.resolve(all.filter((da) => allowed.includes(da.challengeVersion.domainId)));
+      return Promise.resolve(all.filter((da) => allowed.includes(da.domainId)));
     });
 
     const result: any = await callLoader();
@@ -159,7 +151,7 @@ describe("reviewer.application.$id loader — domain scoping", () => {
     expect(ids).toEqual([DESIGN_DA_ID, WEB_DA_ID].sort());
     expect(
       result.application.domainApplications.some(
-        (da: any) => da.challengeVersion.domainId === VIDEO_DOMAIN_ID,
+        (da: any) => da.domainId === VIDEO_DOMAIN_ID,
       ),
     ).toBe(false);
   });
@@ -185,23 +177,19 @@ describe("reviewer.application.$id loader — domain scoping", () => {
     // product wants admins to fall through to "show all DAs" instead.
     mockPrisma.cycleReviewer.findMany.mockResolvedValue([]);
     mockPrisma.domainApplication.findMany.mockImplementation(({ where }: any) => {
-      // Loader now uses `OR: [{ challengeVersion: { domainId: { in } } }, { domainId: { in } }]`
-      // to support Fellowship cycles. Pull the in-list from the OR branch.
-      const allowed: string[] = where.OR?.[0]?.challengeVersion?.domainId?.in
-        ?? where.challengeVersion?.domainId?.in
-        ?? [];
+      const allowed: string[] = where.domainId?.in ?? [];
       const all = [
         makeDA(DESIGN_DA_ID, DESIGN_DOMAIN_ID),
         makeDA(WEB_DA_ID, WEB_DOMAIN_ID),
       ];
-      return Promise.resolve(all.filter((da) => allowed.includes(da.challengeVersion.domainId)));
+      return Promise.resolve(all.filter((da) => allowed.includes(da.domainId)));
     });
 
     const result: any = await callLoader();
 
     expect(result.application.domainApplications).toHaveLength(0);
     const findManyArgs = mockPrisma.domainApplication.findMany.mock.calls[0][0];
-    expect(findManyArgs.where.OR[0].challengeVersion.domainId.in).toEqual([]);
+    expect(findManyArgs.where.domainId.in).toEqual([]);
   });
 
   it("redirects to /login when hasCycleAccess denies", async () => {

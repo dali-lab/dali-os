@@ -872,7 +872,7 @@ describe("reassignInterviewer", () => {
               startTime: new Date("2026-04-13T14:00:00Z"),
               endTime: new Date("2026-04-13T14:30:00Z"),
               domainApplication: {
-                challengeVersion: { domainId: "domain1" },
+                domain: { id: "domain1" },
               },
               assignments: [
                 { cycleInterviewerId: "r1" },
@@ -934,7 +934,7 @@ describe("reassignInterviewer", () => {
               startTime: new Date("2026-04-13T14:00:00Z"),
               endTime: new Date("2026-04-13T14:30:00Z"),
               domainApplication: {
-                challengeVersion: { domainId: "domain1" },
+                domain: { id: "domain1" },
               },
             },
           }),
@@ -985,7 +985,7 @@ describe("reassignInterviewer", () => {
               startTime: new Date("2026-04-13T14:00:00Z"),
               endTime: new Date("2026-04-13T14:30:00Z"),
               domainApplication: {
-                challengeVersion: { domainId: "domain1" },
+                domain: { id: "domain1" },
               },
             },
           }),

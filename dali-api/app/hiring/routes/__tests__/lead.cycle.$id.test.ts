@@ -14,7 +14,6 @@ import { action, resolveCycleTab, CYCLE_TABS } from "~/hiring/routes/lead.cycle.
 const HIRING_LEAD_ID = "hiring-lead-1";
 const CYCLE_ID = "cycle-1";
 const DOMAIN_ID = "domain-1";
-const CV_ID = "cv-1";
 const RV_ID = "rv-1";
 
 const mockPrisma = prisma as unknown as Record<string, any>;
@@ -27,14 +26,6 @@ beforeEach(() => {
     if (typeof fn === "function") return fn(mockPrisma);
     return Promise.all(fn);
   });
-  mockPrisma.challengeVersion = { findUnique: vi.fn() };
-  mockPrisma.challengeVersionApplicationCycle = {
-    deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
-    create: vi.fn().mockResolvedValue({}),
-    findUnique: vi.fn().mockResolvedValue(null),
-    findFirst: vi.fn().mockResolvedValue(null),
-    count: vi.fn(),
-  };
   mockPrisma.domainApplication = { count: vi.fn().mockResolvedValue(0) };
   mockPrisma.rubricVersion = { findUnique: vi.fn() };
   mockPrisma.applicationReview = { count: vi.fn() };
@@ -71,108 +62,9 @@ function callAction(form: Record<string, string>) {
 describe("admin.cycle.$id action — hiring lead overrides", () => {
   it("returns 403 when caller is not a hiring lead", async () => {
     vi.mocked(isCore).mockResolvedValueOnce(false);
-    const res = await callAction({ intent: "hl-add-domain-challenge", domainId: DOMAIN_ID, challengeVersionId: CV_ID });
+    const res = await callAction({ intent: "hl-set-domain-rubric", domainId: DOMAIN_ID, rubricVersionId: RV_ID });
     expect(res).not.toBeNull();
     expect((res as Response).status).toBe(403);
-    expect(mockPrisma.challengeVersionApplicationCycle.create).not.toHaveBeenCalled();
-  });
-
-  describe("hl-add-domain-challenge", () => {
-    it("links the challenge version in Draft", async () => {
-      mockPrisma.applicationCycleStatusUpdate.findFirst.mockResolvedValue({ newStatus: "Draft" });
-      mockPrisma.challengeVersion.findUnique.mockResolvedValue({ id: CV_ID, domainId: DOMAIN_ID });
-      mockPrisma.challengeVersionApplicationCycle.findUnique.mockResolvedValue(null);
-
-      await callAction({ intent: "hl-add-domain-challenge", domainId: DOMAIN_ID, challengeVersionId: CV_ID });
-
-      expect(mockPrisma.challengeVersionApplicationCycle.create).toHaveBeenCalledWith({
-        data: { challengeVersionId: CV_ID, applicationCycleId: CYCLE_ID },
-      });
-    });
-
-    it("does not delete sibling challenges (multi-challenge support)", async () => {
-      mockPrisma.applicationCycleStatusUpdate.findFirst.mockResolvedValue({ newStatus: "Draft" });
-      mockPrisma.challengeVersion.findUnique.mockResolvedValue({ id: CV_ID, domainId: DOMAIN_ID });
-      mockPrisma.challengeVersionApplicationCycle.findUnique.mockResolvedValue(null);
-
-      await callAction({ intent: "hl-add-domain-challenge", domainId: DOMAIN_ID, challengeVersionId: CV_ID });
-
-      expect(mockPrisma.challengeVersionApplicationCycle.deleteMany).not.toHaveBeenCalled();
-    });
-
-    it("is idempotent — skips create when already linked", async () => {
-      mockPrisma.applicationCycleStatusUpdate.findFirst.mockResolvedValue({ newStatus: "Draft" });
-      mockPrisma.challengeVersion.findUnique.mockResolvedValue({ id: CV_ID, domainId: DOMAIN_ID });
-      mockPrisma.challengeVersionApplicationCycle.findUnique.mockResolvedValue({
-        challengeVersionId: CV_ID,
-        applicationCycleId: CYCLE_ID,
-      });
-
-      await callAction({ intent: "hl-add-domain-challenge", domainId: DOMAIN_ID, challengeVersionId: CV_ID });
-
-      expect(mockPrisma.challengeVersionApplicationCycle.create).not.toHaveBeenCalled();
-    });
-
-    it("is a no-op when cycle is past Draft", async () => {
-      mockPrisma.applicationCycleStatusUpdate.findFirst.mockResolvedValue({ newStatus: "Open" });
-      mockPrisma.challengeVersion.findUnique.mockResolvedValue({ id: CV_ID, domainId: DOMAIN_ID });
-
-      await callAction({ intent: "hl-add-domain-challenge", domainId: DOMAIN_ID, challengeVersionId: CV_ID });
-
-      expect(mockPrisma.challengeVersionApplicationCycle.create).not.toHaveBeenCalled();
-    });
-
-    it("rejects a challenge version that does not belong to the named domain", async () => {
-      mockPrisma.applicationCycleStatusUpdate.findFirst.mockResolvedValue({ newStatus: "Draft" });
-      mockPrisma.challengeVersion.findUnique.mockResolvedValue({ id: CV_ID, domainId: "other-domain" });
-
-      await callAction({ intent: "hl-add-domain-challenge", domainId: DOMAIN_ID, challengeVersionId: CV_ID });
-
-      expect(mockPrisma.challengeVersionApplicationCycle.create).not.toHaveBeenCalled();
-    });
-
-    it("refuses to link a second version of the same underlying challenge", async () => {
-      mockPrisma.applicationCycleStatusUpdate.findFirst.mockResolvedValue({ newStatus: "Draft" });
-      mockPrisma.challengeVersion.findUnique.mockResolvedValue({ id: CV_ID, domainId: DOMAIN_ID, challengeId: "challenge-1" });
-      mockPrisma.challengeVersionApplicationCycle.findFirst.mockResolvedValue({
-        challengeVersionId: "cv-other-version",
-        applicationCycleId: CYCLE_ID,
-      });
-
-      await callAction({ intent: "hl-add-domain-challenge", domainId: DOMAIN_ID, challengeVersionId: CV_ID });
-
-      expect(mockPrisma.challengeVersionApplicationCycle.create).not.toHaveBeenCalled();
-    });
-  });
-
-  describe("hl-remove-domain-challenge", () => {
-    it("unlinks a CV in Draft when no DomainApplication references it", async () => {
-      mockPrisma.applicationCycleStatusUpdate.findFirst.mockResolvedValue({ newStatus: "Draft" });
-      mockPrisma.domainApplication.count.mockResolvedValue(0);
-
-      await callAction({ intent: "hl-remove-domain-challenge", challengeVersionId: CV_ID });
-
-      expect(mockPrisma.challengeVersionApplicationCycle.deleteMany).toHaveBeenCalledWith({
-        where: { challengeVersionId: CV_ID, applicationCycleId: CYCLE_ID },
-      });
-    });
-
-    it("refuses to unlink when a DomainApplication picked this CV", async () => {
-      mockPrisma.applicationCycleStatusUpdate.findFirst.mockResolvedValue({ newStatus: "Draft" });
-      mockPrisma.domainApplication.count.mockResolvedValue(1);
-
-      await callAction({ intent: "hl-remove-domain-challenge", challengeVersionId: CV_ID });
-
-      expect(mockPrisma.challengeVersionApplicationCycle.deleteMany).not.toHaveBeenCalled();
-    });
-
-    it("is a no-op when cycle is past Draft", async () => {
-      mockPrisma.applicationCycleStatusUpdate.findFirst.mockResolvedValue({ newStatus: "Open" });
-
-      await callAction({ intent: "hl-remove-domain-challenge", challengeVersionId: CV_ID });
-
-      expect(mockPrisma.challengeVersionApplicationCycle.deleteMany).not.toHaveBeenCalled();
-    });
   });
 
   describe("hl-set-domain-rubric", () => {
@@ -201,16 +93,14 @@ describe("admin.cycle.$id action — hiring lead overrides", () => {
   describe("hl-force-mark-ready / hl-force-unmark-ready", () => {
     it("requires confirm=true to flip ready", async () => {
       mockPrisma.applicationCycleStatusUpdate.findFirst.mockResolvedValue({ newStatus: "Draft" });
-      mockPrisma.challengeVersionApplicationCycle.count.mockResolvedValue(1);
 
       await callAction({ intent: "hl-force-mark-ready", domainId: DOMAIN_ID });
 
       expect(mockPrisma.domainApplicationCycle.upsert).not.toHaveBeenCalled();
     });
 
-    it("force-marks ready in Draft when a challenge is linked", async () => {
+    it("force-marks ready in Draft", async () => {
       mockPrisma.applicationCycleStatusUpdate.findFirst.mockResolvedValue({ newStatus: "Draft" });
-      mockPrisma.challengeVersionApplicationCycle.count.mockResolvedValue(1);
 
       await callAction({ intent: "hl-force-mark-ready", domainId: DOMAIN_ID, confirm: "true" });
 
@@ -221,15 +111,6 @@ describe("admin.cycle.$id action — hiring lead overrides", () => {
       });
     });
 
-    it("refuses to force-mark ready when no challenge is linked for the domain", async () => {
-      mockPrisma.applicationCycleStatusUpdate.findFirst.mockResolvedValue({ newStatus: "Draft" });
-      mockPrisma.challengeVersionApplicationCycle.count.mockResolvedValue(0);
-
-      await callAction({ intent: "hl-force-mark-ready", domainId: DOMAIN_ID, confirm: "true" });
-
-      expect(mockPrisma.domainApplicationCycle.upsert).not.toHaveBeenCalled();
-    });
-
     it("is a no-op when cycle is past Draft", async () => {
       mockPrisma.applicationCycleStatusUpdate.findFirst.mockResolvedValue({ newStatus: "Open" });
 
@@ -238,7 +119,7 @@ describe("admin.cycle.$id action — hiring lead overrides", () => {
       expect(mockPrisma.domainApplicationCycle.upsert).not.toHaveBeenCalled();
     });
 
-    it("force-unmarks ready (no challenge guard needed)", async () => {
+    it("force-unmarks ready", async () => {
       mockPrisma.applicationCycleStatusUpdate.findFirst.mockResolvedValue({ newStatus: "Draft" });
 
       await callAction({ intent: "hl-force-unmark-ready", domainId: DOMAIN_ID, confirm: "true" });
@@ -248,7 +129,6 @@ describe("admin.cycle.$id action — hiring lead overrides", () => {
         update: { isReady: false },
         create: { domainId: DOMAIN_ID, applicationCycleId: CYCLE_ID, isReady: false },
       });
-      expect(mockPrisma.challengeVersionApplicationCycle.count).not.toHaveBeenCalled();
     });
   });
 

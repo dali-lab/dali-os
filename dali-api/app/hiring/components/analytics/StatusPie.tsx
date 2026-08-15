@@ -48,6 +48,7 @@ export function StatusPie({ data, selectedStatus }: Props) {
   const colorFor = (status: string, i: number) => {
     const map: Record<string, string> = {
       Accepted: colors.green,
+      AcceptedElsewhere: colors.muted,
       Rejected: colors.coral,
       Waitlisted: colors.pink,
       InvitedToInterview: colors.teal,

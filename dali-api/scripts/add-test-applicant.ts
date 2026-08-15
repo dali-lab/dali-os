@@ -21,12 +21,13 @@ async function main() {
     process.exit(1);
   }
 
-  // Find the cycle with its challenge versions and domains
+  // Find the cycle with its application form, domain forms, and domains
   const cycle = await prisma.applicationCycle.findUnique({
     where: { id: cycleId },
     include: {
-      challengeVersions: {
-        include: { challengeVersion: { include: { domain: true } } },
+      applicationForm: { include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } } },
+      domainChallengeForms: {
+        include: { form: { include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } } }, domain: true },
       },
       domains: { include: { domain: true } },
     },
@@ -37,26 +38,26 @@ async function main() {
     process.exit(1);
   }
 
-  // Find the general challenge version (domainId is null)
-  const generalCv = cycle.challengeVersions.find(
-    (cv) => cv.challengeVersion.domainId === null,
-  );
-  if (!generalCv) {
-    console.error("This cycle has no general challenge version linked. Link one first.");
+  // Find the general form version
+  const generalFormVersion = cycle.applicationForm?.versions[0];
+  if (!generalFormVersion) {
+    console.error("This cycle has no general application form linked. Link one first.");
     process.exit(1);
   }
 
-  // Pick the first domain that has a challenge version
-  const domainCvs = cycle.challengeVersions.filter(
-    (cv) => cv.challengeVersion.domainId !== null,
-  );
-  if (domainCvs.length === 0) {
-    console.error("This cycle has no domain challenge versions. Link at least one domain first.");
+  // Pick the first domain that has a challenge form
+  if (cycle.domainChallengeForms.length === 0) {
+    console.error("This cycle has no domain challenge forms. Link at least one domain first.");
     process.exit(1);
   }
 
-  const domainCv = domainCvs[0];
-  const domainName = domainCv.challengeVersion.domain?.name ?? "Unknown";
+  const domainCdf = cycle.domainChallengeForms[0];
+  const domainChallengeFormVersion = domainCdf.form.versions[0];
+  if (!domainChallengeFormVersion) {
+    console.error("Domain challenge form has no version.");
+    process.exit(1);
+  }
+  const domainName = domainCdf.domain.name;
 
   // Create test user
   const user = await prisma.user.create({
@@ -73,7 +74,7 @@ async function main() {
     data: {
       userId: user.id,
       applicationCycleId: cycleId,
-      generalChallengeVersionId: generalCv.challengeVersionId,
+      applicationFormVersionId: generalFormVersion.id,
       answers: {
         "sample-q1": "I want to join DALI because I'm passionate about building real products.",
         "sample-q2": "Sophomore, Computer Science",
@@ -87,8 +88,8 @@ async function main() {
       domainApplications: {
         create: [
           {
-            challengeVersionId: domainCv.challengeVersionId,
-            domainId: domainCv.challengeVersion.domainId!,
+            challengeFormVersionId: domainChallengeFormVersion.id,
+            domainId: domainCdf.domainId,
             answers: {
               "sample-dq1": "I've worked with React and Node.js on several projects.",
               "sample-dq2": "https://github.com/testapplicant",
