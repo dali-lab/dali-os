@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Form,
   Link,
@@ -145,7 +145,7 @@ type ProjectStatus = (typeof STATUSES)[number];
 // content views. Board and Planning are separate tabs (Linear-style: different
 // data gets real navigation); the only sub-controls are display toggles and
 // filters, never a second tab level.
-const TABS = ["overview", "board", "planning", "mentorship"] as const;
+const TABS = ["overview", "board", "mentorship"] as const;
 type Tab = (typeof TABS)[number];
 function isTab(x: string | null): x is Tab {
   return (TABS as readonly string[]).includes(x ?? "");
@@ -154,7 +154,6 @@ function isTab(x: string | null): x is Tab {
 const TAB_LABELS: Record<Tab, string> = {
   overview: "Overview",
   board: "Tasks",
-  planning: "Planning",
   mentorship: "Mentorship",
 };
 
@@ -1541,7 +1540,7 @@ export default function ProjectDetail() {
     closeOpenedDocumentTabs();
     setSearchParams(
       (prev) => {
-        prev.set("tab", "tasks");
+        prev.set("tab", "board");
         prev.set("task", taskId);
         return prev;
       },
@@ -1619,6 +1618,22 @@ export default function ProjectDetail() {
 
       {tab === "overview" && (
         <OverviewTab
+          planning={
+            <PlanningTab
+              projectId={project.id}
+              epics={epics}
+              editableEpics={editableEpics}
+              sprints={sprints}
+              storyDependencies={storyDependencies}
+              timelineTerms={timelineTerms}
+              terms={plannedTerms}
+              taskCountsByEpic={taskCountsByEpic}
+              canEdit={canEdit}
+              collabToken={collabToken}
+              userName={userName}
+              onTaskClick={openTaskFromTimeline}
+            />
+          }
           project={project}
           teams={teams}
           documents={documents}
@@ -1669,9 +1684,9 @@ export default function ProjectDetail() {
         </Modal>
       )}
 
-      {/* Board and Planning key off the raw edit permission, not the
-          page-level Edit-mode toggle: epics/sprints/tasks each gate their own
-          inline edit affordances, so there's nothing to "turn on" first. */}
+      {/* Board keys off the raw edit permission, not the page-level Edit-mode
+          toggle: epics/sprints/tasks each gate their own inline edit
+          affordances, so there's nothing to "turn on" first. */}
       {tab === "board" && (
         <TaskBoard
           projectId={project.id}
@@ -1681,23 +1696,6 @@ export default function ProjectDetail() {
           currentUserId={currentUserId}
           currentUserName={userName}
           collabToken={collabToken}
-        />
-      )}
-
-      {tab === "planning" && (
-        <PlanningTab
-          projectId={project.id}
-          epics={epics}
-          editableEpics={editableEpics}
-          sprints={sprints}
-          storyDependencies={storyDependencies}
-          timelineTerms={timelineTerms}
-          terms={plannedTerms}
-          taskCountsByEpic={taskCountsByEpic}
-          canEdit={canEdit}
-          collabToken={collabToken}
-          userName={userName}
-          onTaskClick={openTaskFromTimeline}
         />
       )}
 
@@ -2752,6 +2750,7 @@ function TeamLevelEditor({
 }
 
 function OverviewTab({
+  planning,
   project,
   teams,
   documents,
@@ -2770,6 +2769,10 @@ function OverviewTab({
   plannedTerms,
   currentTerm,
 }: {
+  // The epics & sprints timeline, rendered at the top of the body. Passed in
+  // as an element so Overview doesn't have to re-declare all of Planning's
+  // props just to forward them.
+  planning: ReactNode;
   project: LoaderData["project"];
   teams: LoaderData["teams"];
   documents: LoaderData["documents"];
@@ -2818,7 +2821,11 @@ function OverviewTab({
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Description — its own segment on top, separate from Project details */}
+      {/* Epics & sprints timeline, on top — the planning view is the first
+          thing the project page shows. */}
+      {planning}
+
+      {/* Description — separate from Project details */}
       <DescriptionSegment description={project.description} canEdit={canEdit} />
 
       {/* Challenge for the current term, per declared domain (read-only). */}
