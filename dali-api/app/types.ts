@@ -21,6 +21,7 @@ export type DomainApplicationStatus =
   | 'PostInterviewPending'  // interview Completed, still on InvitedToInterview decision
   | 'Withdrawn'             // applicant cancelled their interview (withdrawal)
   | 'Accepted'              // latest Released decision is Accepted
+  | 'AcceptedElsewhere'     // closed: applicant accepted into another domain this cycle
   | 'Waitlisted'            // latest Released decision is Waitlisted
 
 export type DecisionType =

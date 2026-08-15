@@ -45,6 +45,7 @@ const STATUS_BADGE: Record<string, { bg: string; label: string }> = {
   InterviewScheduled: { bg: "bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-700", label: "Interview Scheduled" },
   PostInterviewPending: { bg: "bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-700", label: "Post-Interview" },
   Accepted: { bg: "bg-green-100 text-green-700 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700", label: "Accepted" },
+  AcceptedElsewhere: { bg: "bg-muted text-foreground/70 border-current/30", label: "Accepted elsewhere" },
   Waitlisted: { bg: "bg-yellow-100 text-yellow-700 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-700", label: "Waitlisted" },
 };
 

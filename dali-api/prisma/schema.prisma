@@ -455,6 +455,15 @@ model DomainApplication {
   // preserved so answers survive re-selection.
   selected Boolean @default(true)
 
+  // Administrative closure of an otherwise-undecided DA. Set when the applicant
+  // is accepted into a *different* domain in the same cycle (single placement:
+  // an Accept is final, so the sibling domains are moot). Distinct from a lab
+  // deliberation outcome (Decision) and from applicant Withdrawal — the record
+  // is preserved and status inference reads it as "Accepted elsewhere" instead
+  // of a stale "Pending". Only ever set on DAs with no Released decision.
+  closedAt      DateTime?
+  closureReason DomainApplicationClosureReason?
+
   applicationId      String
   application        Application       @relation(fields: [applicationId], references: [id])
   // The FormVersion of the picked per-domain challenge Form the applicant
@@ -800,6 +809,12 @@ enum DecisionStage {
   Draft // visible only to domain lead / hiring lead
   Final // locked, ready to release (domain lead marks final)
   Released // visible to applicant; triggers notification hook (hiring lead releases)
+}
+
+// Why an undecided DomainApplication was administratively closed (see
+// DomainApplication.closureReason). Not a deliberation outcome.
+enum DomainApplicationClosureReason {
+  AcceptedElsewhere // applicant accepted into another domain this cycle
 }
 
 // Append-only, immutable decision records. Never updated — only created.
