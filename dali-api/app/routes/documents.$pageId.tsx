@@ -10,6 +10,7 @@ import { getPageAccess } from "~/lib/pageAccess.server";
 import { isFavorited, recordPageVisit } from "~/lib/user-pages.server";
 import { canManageSharing } from "~/lib/page-share-access.server";
 import { normalizePageTypography } from "~/lib/page-typography";
+import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
 import { DocumentEditor } from "~/components/DocumentEditor";
 import { AttendanceChecklist, type AttendanceRow } from "~/components/AttendanceChecklist";
 import { CheckInPanel } from "~/components/CheckInPanel";
@@ -42,13 +43,25 @@ export const handle = {
           hubHref?: string
           hubIconEmoji?: string | null
           workspaceType?: string
+          driveCrumbs?: {
+            scope: string
+            folders: { id: string; title: string; iconEmoji: string | null }[]
+          } | null
         }
       | undefined;
     if (!d?.title) return null;
-    // Lab pages (no workspace hub) root at Drive.
+    // Lab pages (no workspace hub) root at Drive, then walk the folder path so
+    // nested docs keep their ancestry (Drive ▸ Folder ▸ … ▸ page).
     if (!d.hubName || !d.hubHref) {
+      const scope = d.driveCrumbs?.scope ?? "lab";
+      const scopeQuery = scope === "lab" ? "" : `?scope=${scope}`;
       return [
-        { label: "Drive", to: "/drive" },
+        { label: "Drive", to: `/drive${scopeQuery}` },
+        ...(d.driveCrumbs?.folders ?? []).map((f) => ({
+          label: f.title || "Untitled folder",
+          to: `/drive?scope=${scope}&folder=${f.id}`,
+          icon: <PageIcon iconEmoji={f.iconEmoji} />,
+        })),
         { label: d.title, icon: <PageIcon iconEmoji={d.iconEmoji} /> },
       ];
     }
@@ -88,6 +101,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       title: true,
       workspaceType: true,
       workspaceId: true,
+      parentPageId: true,
       archivedAt: true,
       meetingNoteId: true,
       iconEmoji: true,
@@ -188,6 +202,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     }
   }
 
+  // Lab pages live in the Drive tree — resolve their folder ancestry so the
+  // breadcrumb shows Drive ▸ Folder ▸ … ▸ page instead of just Drive ▸ page.
+  const driveCrumbs =
+    page.workspaceType === "Lab" ? await driveFolderCrumbs(page.parentPageId) : null;
+
   let attendance:
     | {
         meetingId: string;
@@ -282,6 +301,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     hubName,
     hubHref,
     hubIconEmoji,
+    driveCrumbs,
     iconEmoji: page.iconEmoji,
     coverImageUrl: page.coverImageUrl,
     isTemplate: page.isTemplate,
