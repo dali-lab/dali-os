@@ -18,14 +18,26 @@ const SHELL_USER_SELECT = {
     select: { id: true },
     take: 1,
   },
-  daliMember: { select: { onboardedAt: true, tourCompletedAt: true } },
+  daliMember: {
+    select: {
+      onboardedAt: true,
+      tourCompletedAt: true,
+      // Resumable guide: the shell renders the guide card on every page, so it
+      // needs the cleared-step list in the read it already makes.
+      guideStepIds: true,
+    },
+  },
 } as const;
 
 export type ShellUser = {
   photoUrl: string | null;
   timeZone: string | null;
   calendarLinks: { id: string }[];
-  daliMember: { onboardedAt: Date | null; tourCompletedAt: Date | null } | null;
+  daliMember: {
+    onboardedAt: Date | null;
+    tourCompletedAt: Date | null;
+    guideStepIds: string[];
+  } | null;
 };
 
 export function loadShellUser(

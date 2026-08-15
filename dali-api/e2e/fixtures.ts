@@ -2,21 +2,14 @@ import { test as base } from '@playwright/test';
 
 type LoginOptions = { netId?: string; daliEmail?: string; personalEmail?: string };
 
-// First-run launch welcome modal (app/components/LaunchWelcome.tsx) renders a
-// full-screen dialog overlay that intercepts pointer events on a fresh
-// localStorage. Mark it seen before any page script runs so it never blocks
-// clicks in tests. Keep this key in sync with DONE_KEY in that component.
-const LAUNCH_WELCOME_SEEN_KEY = 'dalios-launch-welcome-seen-v1';
+// The interactive guide (app/components/LaunchWelcome.tsx) is server-driven: it
+// auto-opens only for a member with onboardedAt set and tourCompletedAt null.
+// Seeded members have no onboardedAt, so it never opens here and there's
+// nothing for the suite to suppress. If a future seed onboards its members,
+// stamp tourCompletedAt on them rather than reaching for browser state.
 
 export const test = base.extend<{ loginAs: (opts: LoginOptions) => Promise<void> }>({
   page: async ({ page, baseURL }, use) => {
-    await page.addInitScript((key) => {
-      try {
-        window.localStorage.setItem(key, 'e2e');
-      } catch {
-        // localStorage unavailable (e.g. about:blank) — ignore.
-      }
-    }, LAUNCH_WELCOME_SEEN_KEY);
     // The suite was written against the tabbed workspace shell (several specs
     // locate content via frameLocator on workspace iframes). Tabless is the
     // app default now, so pin the tabbed opt-in cookie per context. Keep the
