@@ -1695,7 +1695,6 @@ export default function ProjectDetail() {
           canManage={canEdit}
           currentUserId={currentUserId}
           currentUserName={userName}
-          collabToken={collabToken}
         />
       )}
 

@@ -142,6 +142,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     dueAt?: Date | null;
     startsAt?: Date | null;
     title?: string;
+    description?: string | null;
     priority?: Priority;
     domainId?: string | null;
     sprintId?: string | null;
@@ -170,9 +171,13 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
     data.title = trimmed;
   }
-  // Task description is a live collab doc (task:{id}:description); its plaintext
-  // is mirrored to Task.description by the collab store hook, so it is not
-  // accepted here.
+  // Description is plain Markdown on the column, edited in the task modal the
+  // same way the project's own description is. (It used to be a collab doc
+  // that mirrored down to this column, which is why it wasn't accepted here.)
+  if ("description" in body) {
+    const trimmed = body.description?.trim() ?? "";
+    data.description = trimmed === "" ? null : trimmed;
+  }
   if ("priority" in body && body.priority) {
     data.priority = body.priority;
   }

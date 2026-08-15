@@ -12,8 +12,7 @@ import { Modal } from "~/components/Modal";
 import { Button } from "~/components/ui/Button";
 import { Avatar } from "~/components/ui/Avatar";
 import { MentionTextInput } from "~/components/MentionTextInput";
-import { DocEditor } from "~/components/doc";
-import { PresenceProvider } from "~/components/collab/PresenceProvider";
+import { Markdown } from "~/components/Markdown";
 import { useDialog } from "~/components/ui/dialog";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
@@ -84,18 +83,12 @@ export function TaskModal({
   onDelete,
   defaultEpicId,
   onArtifactsChanged,
-  collabToken,
-  userName,
 }: {
   // Present in edit mode; omitted (create mode) opens an empty form.
   task?: TaskCardModel;
   projectId: string;
   options: TaskBoardOptions;
   canManage: boolean;
-  // Collab wiring for the edit-mode rich description doc. Absent in create
-  // mode (no task id yet) and when the session cookie is missing.
-  collabToken?: string | null;
-  userName?: string;
   onClose: () => void;
   // Resolves with the save outcome; on failure the modal stays open and
   // shows `error` inline instead of closing.
@@ -263,8 +256,8 @@ export function TaskModal({
   function diffPatch(current: TaskCardModel): Patch {
     const patch: Patch = {};
     if (title.trim() && title.trim() !== current.title) patch.title = title.trim();
-    // Description is a live collab doc in edit mode (autosaved, mirrored to
-    // Task.description server-side) — not part of the Save patch.
+    const nextDescription = description.trim() ? description : null;
+    if (nextDescription !== current.description) patch.description = nextDescription;
     if (priority !== current.priority) patch.priority = priority;
     if (status !== current.status) patch.status = status;
     const nextDueIso = dueDate ? endOfDayIso(dueDate) : null;
@@ -659,49 +652,36 @@ export function TaskModal({
         </button>
       </div>
 
-      {/* Two columns once there's room: content (description, subtasks) on the
-          left, properties + activity (details, GitHub, files, comments) on
-          the right — the same split Linear/Notion use, so the wide majority
-          of fields aren't competing with the description for the same
-          640px-wide column. Each side scrolls independently past lg so a long
-          comment thread doesn't push the description out of view. */}
+      {/* Two columns once there's room: the task itself on the left —
+          description first, then its properties, artifacts and comment
+          thread — with the checklist parked on the right so ticking
+          subtasks off doesn't mean scrolling past every property. Each
+          side scrolls independently past lg, so a long comment thread
+          doesn't push the description out of view. */}
       <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6 p-5 sm:p-6">
         <div className="min-h-0 lg:overflow-y-auto flex flex-col gap-4 pr-1">
         <Field label="Description">
-          {/* Create mode has no task id yet, so it collects an initial
-              description via a textarea (persisted to Task.description, which
-              seeds the collab doc on first open). Edit mode is the live doc;
-              non-managers / expired sessions read the plaintext mirror. */}
-          {isCreate ? (
-            <textarea
-              value={description}
-              disabled={!canManage}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={3}
-              placeholder="What does this task involve? (optional)"
-              className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground disabled:opacity-70"
-            />
-          ) : task && canManage && collabToken ? (
-            <PresenceProvider
-              pageId={`task:${task.id}`}
-              token={collabToken}
-              userName={userName ?? ""}
-            >
-              <DocEditor
-                features="notes"
-                collab={{
-                  documentName: `task:${task.id}:description`,
-                  token: collabToken,
-                  userName: userName ?? "",
-                }}
-                placeholder="What does this task involve? (optional)"
-                className="border border-border rounded-md"
+          {/* Plain Markdown on Task.description, the same shape as the
+              project's own Description block. Descriptions written back when
+              this was a collab doc were already mirrored to this column as
+              plaintext, so they still read fine here. */}
+          {canManage ? (
+            <>
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                rows={isCreate ? 3 : 6}
+                placeholder="What does this task involve? (Markdown supported)"
+                className="w-full px-2 py-1.5 text-sm font-mono border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
               />
-            </PresenceProvider>
+              <p className="text-[11px] normal-case tracking-normal text-muted-foreground">
+                Supports Markdown — **bold**, headings, lists, links, `code`.
+              </p>
+            </>
           ) : description ? (
-            <p className="px-2 py-1.5 text-sm text-foreground whitespace-pre-wrap">
-              {description}
-            </p>
+            <div className="px-2 py-1.5">
+              <Markdown>{description}</Markdown>
+            </div>
           ) : (
             <p className="px-2 py-1.5 text-sm text-muted-foreground italic">
               No description.
@@ -709,60 +689,6 @@ export function TaskModal({
           )}
         </Field>
 
-        {!isCreate && (
-          <div className="flex flex-col gap-1.5 text-xs">
-            <span className="text-muted-foreground font-medium uppercase tracking-wide">
-              Checklist
-              {checklist.length > 0 && ` (${checklistDone}/${checklist.length})`}
-            </span>
-            {checklist.map((item, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <Checkbox
-                  checked={item.done}
-                  disabled={!canManage}
-                  onChange={() => void toggleChecklistItem(i)}
-                  aria-label={item.text}
-                />
-                <span
-                  className={`flex-1 text-sm ${
-                    item.done ? "line-through text-muted-foreground" : "text-foreground"
-                  }`}
-                >
-                  {item.text}
-                </span>
-                {canManage && (
-                  <button
-                    type="button"
-                    onClick={() => removeChecklistItem(i)}
-                    aria-label={`Remove "${item.text}"`}
-                    className="text-muted-foreground/70 hover:text-foreground rounded p-0.5 hover:bg-muted"
-                  >
-                    <X className="w-3.5 h-3.5" aria-hidden />
-                  </button>
-                )}
-              </div>
-            ))}
-            {canManage && checklist.length < CHECKLIST_MAX_ITEMS && (
-              <input
-                type="text"
-                value={newItemText}
-                maxLength={CHECKLIST_MAX_TEXT}
-                onChange={(e) => setNewItemText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    addChecklistItem();
-                  }
-                }}
-                placeholder="Add checklist item and press Enter"
-                className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
-              />
-            )}
-          </div>
-        )}
-        </div>
-
-        <div className="min-h-0 lg:overflow-y-auto flex flex-col gap-4 pr-1">
         {/* Details — one tidy property panel (label · control rows) instead of
             a grid of boxed inputs, so the metadata reads as scannable
             properties rather than a wall of fields. */}
@@ -1177,6 +1103,60 @@ export function TaskModal({
           </div>
         )}
         </div>
+
+        <div className="min-h-0 lg:overflow-y-auto flex flex-col gap-4 pr-1">
+        {!isCreate && (
+          <div className="flex flex-col gap-1.5 text-xs">
+            <span className="text-muted-foreground font-medium uppercase tracking-wide">
+              Checklist
+              {checklist.length > 0 && ` (${checklistDone}/${checklist.length})`}
+            </span>
+            {checklist.map((item, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <Checkbox
+                  checked={item.done}
+                  disabled={!canManage}
+                  onChange={() => void toggleChecklistItem(i)}
+                  aria-label={item.text}
+                />
+                <span
+                  className={`flex-1 text-sm ${
+                    item.done ? "line-through text-muted-foreground" : "text-foreground"
+                  }`}
+                >
+                  {item.text}
+                </span>
+                {canManage && (
+                  <button
+                    type="button"
+                    onClick={() => removeChecklistItem(i)}
+                    aria-label={`Remove "${item.text}"`}
+                    className="text-muted-foreground/70 hover:text-foreground rounded p-0.5 hover:bg-muted"
+                  >
+                    <X className="w-3.5 h-3.5" aria-hidden />
+                  </button>
+                )}
+              </div>
+            ))}
+            {canManage && checklist.length < CHECKLIST_MAX_ITEMS && (
+              <input
+                type="text"
+                value={newItemText}
+                maxLength={CHECKLIST_MAX_TEXT}
+                onChange={(e) => setNewItemText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addChecklistItem();
+                  }
+                }}
+                placeholder="Add checklist item and press Enter"
+                className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground"
+              />
+            )}
+          </div>
+        )}
+        </div>
       </div>
 
       <div className="flex-shrink-0 border-t border-border px-5 sm:px-6 py-4 flex flex-col gap-2">
@@ -1314,10 +1294,23 @@ function AssigneePicker({
   disabled: boolean;
   onChange: (next: string[]) => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
   function toggle(id: string) {
     if (selected.includes(id)) onChange(selected.filter((x) => x !== id));
     else onChange([...selected, id]);
   }
+
   if (all.length === 0) {
     return (
       <p className="text-xs text-muted-foreground italic">
@@ -1325,25 +1318,71 @@ function AssigneePicker({
       </p>
     );
   }
+
+  const chosen = all.filter((m) => selected.includes(m.id));
+
+  // Chips for who's on it, and everyone else behind a popover — rather than a
+  // permanently-open bordered scroll box, which read as a panel inside the
+  // properties panel and grew with the roster.
   return (
-    <div className="max-h-32 overflow-y-auto border border-border rounded-md bg-background p-1.5 flex flex-col gap-0.5">
-      {all.map((m) => (
-        <Checkbox
+    <div ref={ref} className="relative flex flex-wrap items-center gap-1.5">
+      {chosen.map((m) => (
+        <span
           key={m.id}
-          checked={selected.includes(m.id)}
-          disabled={disabled}
-          onChange={() => toggle(m.id)}
-          label={
-            <span className="flex items-center gap-2">
-              <Avatar photoUrl={m.photoUrl} name={m.name} size="xs" className="shrink-0" />
-              <span className="text-foreground">{m.name}</span>
-            </span>
-          }
-          className={`px-1.5 py-1 text-sm rounded ${
-            disabled ? "" : "hover:bg-muted/40 cursor-pointer"
-          }`}
-        />
+          className="inline-flex items-center gap-1.5 rounded-full bg-muted/60 pl-0.5 pr-1.5 py-0.5 text-xs text-foreground"
+        >
+          <Avatar photoUrl={m.photoUrl} name={m.name} size="xs" className="shrink-0" />
+          {m.name}
+          {!disabled && (
+            <button
+              type="button"
+              onClick={() => toggle(m.id)}
+              aria-label={`Remove ${m.name}`}
+              className="text-muted-foreground/70 hover:text-foreground rounded-full"
+            >
+              <X className="w-3 h-3" aria-hidden />
+            </button>
+          )}
+        </span>
       ))}
+
+      {!disabled && (
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          className="text-xs font-medium text-accent-coral hover:underline px-1 py-0.5"
+        >
+          {chosen.length === 0 ? "Assign someone" : "Edit"}
+        </button>
+      )}
+      {disabled && chosen.length === 0 && (
+        <span className="text-sm text-muted-foreground">Unassigned</span>
+      )}
+
+      {open && (
+        <div className="absolute top-full left-0 z-20 mt-1 max-h-56 w-60 overflow-y-auto rounded-md border border-border bg-card p-1 shadow-brand-2">
+          {all.map((m) => (
+            <Checkbox
+              key={m.id}
+              checked={selected.includes(m.id)}
+              onChange={() => toggle(m.id)}
+              label={
+                <span className="flex items-center gap-2 min-w-0">
+                  <Avatar
+                    photoUrl={m.photoUrl}
+                    name={m.name}
+                    size="xs"
+                    className="shrink-0"
+                  />
+                  <span className="truncate text-foreground">{m.name}</span>
+                </span>
+              }
+              className="rounded px-1.5 py-1 text-sm hover:bg-muted/40 cursor-pointer"
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
