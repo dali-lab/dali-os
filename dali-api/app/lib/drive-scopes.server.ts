@@ -104,13 +104,21 @@ export async function loadDriveScopes({
     projectWorkspaces.map((w) => [w.key, w.projectIconEmoji ?? null]),
   );
 
+  // Hiring-team members who aren't Core still need to see the Forms / Rubrics /
+  // Agreements that live in the Hiring drive. Those loaders are role-gated
+  // (canViewForms / canManageAgreements), so widen the Lab load for hiring
+  // users — then strip any UNPLACED (non-hiring) ones below so nothing leaks
+  // into their Lab scope.
+  const labCanViewForms = canViewForms || hasHiringAccess;
+  const labCanManageAgreements = canManageAgreements || hasHiringAccess;
+
   const [memberItems, labItems, ...projectItemArrays] = await Promise.all([
     loadDriveScope({ userSub, scope: { kind: "Member" }, request }),
     loadDriveScope({
       userSub,
       scope: { kind: "Lab" },
-      canViewForms,
-      canManageAgreements,
+      canViewForms: labCanViewForms,
+      canManageAgreements: labCanManageAgreements,
       request,
     }),
     ...projectIds.map((projectId) =>
@@ -151,6 +159,19 @@ export async function loadDriveScopes({
         it.parentFolderId === hiringRoot.id ? { ...it, parentFolderId: null } : it,
       );
     labVisibleItems = remaining;
+  }
+
+  // If the viewer only got Forms/Rubrics/Agreements via hiring access (not a
+  // genuine lab-wide capability), strip any that DIDN'T end up in the Hiring
+  // drive so they don't leak into the viewer's Lab scope. The hiring-placed
+  // ones are already partitioned into hiringItems above.
+  if (!canViewForms) {
+    labVisibleItems = labVisibleItems.filter((it) => it.type !== "form");
+  }
+  if (!canManageAgreements) {
+    labVisibleItems = labVisibleItems.filter(
+      (it) => it.type !== "agreement" && it.type !== "rubric",
+    );
   }
 
   // Build a folder-id set per scope for the de-dup pass below.
