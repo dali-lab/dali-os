@@ -18,7 +18,8 @@ import { enableDriveFlagForUser, clearDriveFlag } from './helpers';
 //     All / Documents / Files / Forms / Agreements set the ?type= param.
 //   - Contextual New ▾ menu (only inside a drive): drive-new-menu-<scopeId> with
 //     drive-new-doc-<scopeId> / drive-new-folder-<scopeId> / drive-new-upload-
-//     <scopeId>; Lab adds drive-new-form / drive-new-agreement / drive-new-template.
+//     <scopeId> and drive-new-form; Core adds drive-new-agreement, Lab adds
+//     drive-new-template.
 //   - Listing rows: drive-item-<type>-<id> (doc / file / form / folder). Single
 //     click selects, double click opens (folder → navigate in; leaf → editor).
 //   - Row actions menu: drive-item-actions-<id> (Rename / Move to… / Delete).
@@ -297,9 +298,9 @@ test.describe('Drive hub (drive-consolidation flag)', () => {
   test('(I) New→Agreement creates an agreement and navigates to /documents/agreement/', async ({
     page,
   }) => {
-    await page.goto('/drive?scope=lab&embed=1');
+    await page.goto('/drive?scope=core&embed=1');
     await page.waitForLoadState('networkidle');
-    await page.getByTestId('drive-new-menu-lab').click();
+    await page.getByTestId('drive-new-menu-core').click();
     await expect(page.getByTestId('drive-new-agreement')).toBeVisible();
 
     await Promise.all([
