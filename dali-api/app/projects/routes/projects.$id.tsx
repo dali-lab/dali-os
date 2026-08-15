@@ -1497,7 +1497,6 @@ export default function ProjectDetail() {
     recentActivity,
     epics,
     editableEpics,
-    sprints,
     storyDependencies,
     timelineTerms,
     tasks,
@@ -1623,7 +1622,6 @@ export default function ProjectDetail() {
               projectId={project.id}
               epics={epics}
               editableEpics={editableEpics}
-              sprints={sprints}
               storyDependencies={storyDependencies}
               timelineTerms={timelineTerms}
               terms={plannedTerms}
@@ -4295,7 +4293,6 @@ function PlanningTab({
   projectId,
   epics,
   editableEpics,
-  sprints,
   storyDependencies,
   timelineTerms,
   terms,
@@ -4308,7 +4305,6 @@ function PlanningTab({
   projectId: string;
   epics: TimelineEpic[];
   editableEpics: EditableEpic[];
-  sprints: EditableSprint[];
   storyDependencies: StoryDependencyEdge[];
   timelineTerms: TimelineTerm[];
   terms: { id: string; code: string }[];
@@ -4323,7 +4319,6 @@ function PlanningTab({
       <EpicSprintManager
         projectId={projectId}
         epics={editableEpics}
-        sprints={sprints}
         terms={terms}
         taskCounts={taskCountsByEpic}
         canManage={canEdit}
