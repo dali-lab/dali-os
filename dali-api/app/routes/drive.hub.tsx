@@ -941,6 +941,16 @@ export default function DriveHub() {
     [pickMoveDestination, moveItemToScope, effectiveScopeId, driveScopes, dialog],
   );
 
+  // Cross-drive drag-and-drop: dropping an item onto a drive row (column-view
+  // scope column) moves it to that drive's top level, confirming the re-scope.
+  const onMoveToScope = useCallback(
+    (sourceScopeId: string, destScopeId: string, item: DriveItem) => {
+      if (NON_MOVABLE.has(item.type)) return;
+      void moveItemToScope(item, sourceScopeId, destScopeId, null);
+    },
+    [moveItemToScope],
+  );
+
   const getScopeActions = useCallback(
     (scopeId: string): RowActions => {
       const a = scopeActionsMap.get(scopeId);
@@ -1071,6 +1081,7 @@ export default function DriveHub() {
         onToggleFavorite={onToggleFavorite}
         onBulkDelete={onBulkDelete}
         onBulkMove={(items) => void onBulkMove(items)}
+        onMoveToScope={onMoveToScope}
         onUploadFiles={currentScope ? uploadFiles : undefined}
         filterControl={filterControl}
         newMenu={newMenuNode}
