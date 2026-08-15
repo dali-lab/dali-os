@@ -26,7 +26,7 @@ import { parseJson } from "~/lib/validate";
 import { logAuditEvent } from "~/lib/audit";
 
 const BodySchema = z.object({
-  itemType: z.enum(["file", "form", "rubric", "agreement"]),
+  itemType: z.enum(["file", "form", "rubric", "agreement", "emailTemplate"]),
   itemId: z.string().min(1),
   // Null = unplace (remove from the unified tree; falls back to legacy location).
   destFolderPageId: z.string().min(1).nullable(),
@@ -83,6 +83,22 @@ export async function action({ request }: Route.ActionArgs) {
       return withCors(
         request,
         Response.json({ error: "You can't move this form" }, { status: 403 }),
+      );
+    }
+  } else if (itemType === "emailTemplate") {
+    // emailTemplate — Core-only hiring artifact. Only Core may reposition it.
+    const exists = await prisma.emailTemplate.findUnique({
+      where: { id: itemId },
+      select: { id: true },
+    });
+    if (!exists) {
+      return withCors(request, Response.json({ error: "Email template not found" }, { status: 404 }));
+    }
+    const canManage = await isCore(userId, request);
+    if (!canManage) {
+      return withCors(
+        request,
+        Response.json({ error: "You can't move this email template" }, { status: 403 }),
       );
     }
   } else {
@@ -158,6 +174,11 @@ export async function action({ request }: Route.ActionArgs) {
     });
   } else if (itemType === "rubric") {
     await prisma.rubric.update({
+      where: { id: itemId },
+      data: { folderPageId: destFolderPageId },
+    });
+  } else if (itemType === "emailTemplate") {
+    await prisma.emailTemplate.update({
       where: { id: itemId },
       data: { folderPageId: destFolderPageId },
     });

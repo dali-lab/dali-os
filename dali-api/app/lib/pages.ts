@@ -175,44 +175,173 @@ export async function createLabPage(input: {
 // Core GroupDefinition hasn't been provisioned yet (syncDefaultGroups seeds it).
 export async function ensureCoreDriveRoot(createdById: string): Promise<{ id: string } | null> {
   const systemKey = "drive:core-root";
+
+  // ── 1. Ensure the Core root exists ───────────────────────────────────────
+  let rootId: string;
   const existing = await prisma.page.findUnique({ where: { systemKey }, select: { id: true } });
-  if (existing) return existing;
-
-  const coreGroup = await prisma.groupDefinition.findUnique({
-    where: { systemKey: "core" },
-    select: { id: true },
-  });
-  if (!coreGroup) return null;
-
-  try {
-    const last = await prisma.page.findFirst({
-      where: { workspaceType: "Lab", workspaceId: null, parentPageId: null },
-      orderBy: { position: "desc" },
-      select: { position: true },
+  if (existing) {
+    rootId = existing.id;
+  } else {
+    const coreGroup = await prisma.groupDefinition.findUnique({
+      where: { systemKey: "core" },
+      select: { id: true },
     });
-    return await prisma.page.create({
+    if (!coreGroup) return null;
+
+    try {
+      const last = await prisma.page.findFirst({
+        where: { workspaceType: "Lab", workspaceId: null, parentPageId: null },
+        orderBy: { position: "desc" },
+        select: { position: true },
+      });
+      const root = await prisma.page.create({
+        data: {
+          workspaceType: "Lab",
+          workspaceId: null,
+          title: "Core",
+          kind: "Folder",
+          position: last ? last.position + 1 : 0,
+          createdById,
+          systemKey,
+          scopeKind: "Group",
+          scopeGroupId: coreGroup.id,
+          scopePermission: "Edit",
+          // Restricted: the scope grants Core; nobody reaches it via the lab link.
+          linkAccess: "Restricted",
+          linkPermission: "View",
+        },
+        select: { id: true },
+      });
+      rootId = root.id;
+    } catch {
+      const retry = await prisma.page.findUnique({ where: { systemKey }, select: { id: true } });
+      if (retry) {
+        rootId = retry.id;
+      } else {
+        throw new Error("Failed to ensure Core drive root");
+      }
+    }
+  }
+
+  // ── 2. Ensure the "Templates" area + adopt email templates ───────────────
+  // Email templates are global (bound by hiring cycles AND education offerings),
+  // so they live in a Core-managed Templates area rather than the Hiring drive.
+  // Child folders inherit the Core root's Restricted scope, so this stays
+  // Core-only. Best-effort: a failure here doesn't block the root return.
+  try {
+    const templatesRoot = await ensureCoreChildFolder(
+      "drive:core-templates",
+      rootId,
+      "Templates",
+      createdById,
+    );
+    const [hiringFolder, educationFolder] = await Promise.all([
+      ensureCoreChildFolder("drive:core-templates-hiring", templatesRoot, "Hiring", createdById),
+      ensureCoreChildFolder("drive:core-templates-education", templatesRoot, "Education", createdById),
+    ]);
+    await adoptEmailTemplatesByBinding({ templatesRoot, hiringFolder, educationFolder });
+  } catch {
+    // Templates provisioning is best-effort — never block the Core drive.
+  }
+
+  return { id: rootId };
+}
+
+/** Idempotently ensure a system-keyed child Folder page under `parentPageId`.
+ *  No explicit scope — it inherits access from its ancestor scoped root. */
+async function ensureCoreChildFolder(
+  systemKey: string,
+  parentPageId: string,
+  title: string,
+  createdById: string,
+): Promise<string> {
+  const existing = await prisma.page.findUnique({ where: { systemKey }, select: { id: true } });
+  if (existing) return existing.id;
+  const last = await prisma.page.findFirst({
+    where: { parentPageId },
+    orderBy: { position: "desc" },
+    select: { position: true },
+  });
+  try {
+    const created = await prisma.page.create({
       data: {
         workspaceType: "Lab",
         workspaceId: null,
-        title: "Core",
+        parentPageId,
+        title,
         kind: "Folder",
         position: last ? last.position + 1 : 0,
         createdById,
         systemKey,
-        scopeKind: "Group",
-        scopeGroupId: coreGroup.id,
-        scopePermission: "Edit",
-        // Restricted: the scope grants Core; nobody reaches it via the lab link.
-        linkAccess: "Restricted",
-        linkPermission: "View",
       },
       select: { id: true },
     });
+    return created.id;
   } catch {
     const retry = await prisma.page.findUnique({ where: { systemKey }, select: { id: true } });
-    if (retry) return retry;
-    throw new Error("Failed to ensure Core drive root");
+    if (retry) return retry.id;
+    throw new Error(`Failed to ensure folder ${systemKey}`);
   }
+}
+
+/** File unplaced email templates into the Templates area by their bindings:
+ *  hiring-only → Hiring, education-only → Education, both/neither → Templates
+ *  root. Placement is decoupled from function (bindings are untouched), so
+ *  operators can freely re-file afterward. Only touches unplaced (null) rows,
+ *  so placed templates stay where they were moved. */
+async function adoptEmailTemplatesByBinding(folders: {
+  templatesRoot: string;
+  hiringFolder: string;
+  educationFolder: string;
+}): Promise<void> {
+  const unplaced = await prisma.emailTemplate.findMany({
+    where: { folderPageId: null },
+    select: {
+      id: true,
+      versions: {
+        select: {
+          _count: {
+            select: {
+              cycleDecisionEmails: true,
+              cycleNotificationEmails: true,
+              educationDecisionEmails: true,
+            },
+          },
+        },
+      },
+    },
+  });
+  if (unplaced.length === 0) return;
+
+  const toHiring: string[] = [];
+  const toEducation: string[] = [];
+  const toRoot: string[] = [];
+  for (const t of unplaced) {
+    let hiring = 0;
+    let education = 0;
+    for (const v of t.versions) {
+      hiring += v._count.cycleDecisionEmails + v._count.cycleNotificationEmails;
+      education += v._count.educationDecisionEmails;
+    }
+    if (hiring > 0 && education === 0) toHiring.push(t.id);
+    else if (education > 0 && hiring === 0) toEducation.push(t.id);
+    else toRoot.push(t.id);
+  }
+
+  await Promise.all(
+    [
+      toHiring.length && { ids: toHiring, folderPageId: folders.hiringFolder },
+      toEducation.length && { ids: toEducation, folderPageId: folders.educationFolder },
+      toRoot.length && { ids: toRoot, folderPageId: folders.templatesRoot },
+    ]
+      .filter((x): x is { ids: string[]; folderPageId: string } => Boolean(x))
+      .map((g) =>
+        prisma.emailTemplate.updateMany({
+          where: { id: { in: g.ids } },
+          data: { folderPageId: g.folderPageId },
+        }),
+      ),
+  );
 }
 
 /**
@@ -317,6 +446,8 @@ export async function ensureHiringDriveRoot(createdById: string): Promise<{ id: 
       where: { folderPageId: null, kind: "Confidentiality" },
       data: { folderPageId: rootId },
     });
+    // Email templates are global (not hiring-owned) — they're filed under the
+    // Core drive's Templates area by ensureCoreDriveRoot, not here.
   } catch {
     // Adoption is best-effort; don't surface errors to the caller.
   }

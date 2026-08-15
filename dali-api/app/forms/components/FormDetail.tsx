@@ -13,7 +13,10 @@ import {
   Inbox,
   Eye,
   Loader2,
+  Unlink,
 } from "lucide-react";
+import { useConfirmSubmit } from "~/components/ui/dialog";
+import type { HiringFormLink } from "~/hiring/lib/form-links.server";
 import { FormBuilderTab } from "~/components/form-builder/FormBuilder";
 import { FormPreviewModal } from "~/forms/components/FormPreviewModal";
 import { DocEditor } from "~/components/doc";
@@ -57,7 +60,8 @@ function formatDateShort(iso: string, tz: string) {
 //                         (save-version) and clears the draft. Frozen versions
 //                         are read-only and are what publishing serves.
 export function FormDetail() {
-  const { form, terms, usages, groups, managing } = useLoaderData<typeof loader>();
+  const { form, terms, usages, groups, managing, hiringLinks: rawHiringLinks } = useLoaderData<typeof loader>();
+  const hiringLinks: HiringFormLink[] = rawHiringLinks ?? [];
   const tz = useUserTimeZone();
   // A dedicated fetcher for saves so the builder's buttons can reflect
   // request state ("Saving…"/"Saved ✓"). The submitted intent tells us which
@@ -307,6 +311,10 @@ export function FormDetail() {
           </>
         )}
       </div>
+
+      {hiringLinks.length > 0 && (
+        <HiringLinksPanel links={hiringLinks} />
+      )}
 
       <div className="flex flex-col lg:flex-row gap-8">
         {/* Left: draft + versions list */}
@@ -1015,5 +1023,81 @@ function PublishControl({
         </div>
       )}
     </div>
+  );
+}
+
+// Panel showing every hiring cycle this form is linked to, with an Unlink
+// button for cycles still in Draft. Renders nothing when `links` is empty.
+function HiringLinksPanel({ links }: { links: HiringFormLink[] }) {
+  const confirmSubmit = useConfirmSubmit();
+  return (
+    <div className="rounded-lg border border-border bg-card p-4 space-y-3">
+      <h3 className="text-sm font-semibold text-foreground">
+        Linked to hiring
+      </h3>
+      <ul className="space-y-2">
+        {links.map((link) => (
+          <HiringLinkRow key={`${link.linkType}:${link.cycleDomainFormId ?? link.cycleId}`} link={link} confirmSubmit={confirmSubmit} />
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function HiringLinkRow({
+  link,
+  confirmSubmit,
+}: {
+  link: HiringFormLink;
+  confirmSubmit: ReturnType<typeof useConfirmSubmit>;
+}) {
+  const fetcher = useFetcher<{ ok?: true; error?: string }>();
+  const isSubmitting = fetcher.state !== "idle";
+  const responseError =
+    fetcher.data && "error" in fetcher.data ? fetcher.data.error : null;
+
+  return (
+    <li className="flex items-center justify-between gap-3 text-sm">
+      <div className="flex items-center gap-2 min-w-0">
+        <Unlink className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+        <span className="truncate text-foreground">{link.label}</span>
+        {responseError && (
+          <span className="text-xs text-destructive ml-1">{responseError}</span>
+        )}
+      </div>
+      {link.locked ? (
+        <span className="text-xs text-muted-foreground flex-shrink-0">
+          {link.lockReason}
+        </span>
+      ) : (
+        <fetcher.Form
+          method="post"
+          onSubmit={confirmSubmit({
+            title: "Unlink this form?",
+            description: `This will remove the form from "${link.cycleName}". The form itself is kept.`,
+            tone: "destructive",
+            confirmLabel: "Unlink",
+          })}
+        >
+          <input type="hidden" name="intent" value="unlink-hiring-form" />
+          <input type="hidden" name="linkType" value={link.linkType} />
+          <input type="hidden" name="cycleId" value={link.cycleId} />
+          {link.cycleDomainFormId && (
+            <input
+              type="hidden"
+              name="cycleDomainFormId"
+              value={link.cycleDomainFormId}
+            />
+          )}
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="text-xs font-medium text-destructive hover:text-destructive/80 disabled:opacity-50 flex-shrink-0"
+          >
+            {isSubmitting ? "Unlinking…" : "Unlink"}
+          </button>
+        </fetcher.Form>
+      )}
+    </li>
   );
 }

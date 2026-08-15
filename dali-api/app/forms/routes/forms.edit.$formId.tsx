@@ -10,6 +10,10 @@ import {
   runFormsAction,
 } from "~/forms/lib/forms-data";
 import { formUsages, managingUsage } from "~/forms/lib/form-usages.server";
+import {
+  loadFormHiringLinks,
+  unlinkHiringForm,
+} from "~/hiring/lib/form-links.server";
 import { listAllGroups } from "~/lib/groups";
 import { FormDetail } from "~/forms/components/FormDetail";
 
@@ -44,7 +48,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!form) return redirect("/forms");
   // Terms for term-scoped reference questions (e.g. projects active in a
   // chosen term). Newest first so the most likely choices are at the top.
-  const [terms, usages, crumbs, allGroups] =
+  const [terms, usages, crumbs, allGroups, hiringLinks] =
     await Promise.all([
       prisma.term.findMany({
         orderBy: { sortKey: "desc" },
@@ -55,6 +59,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       // Audience picker choices. listAllGroups (not the per-user visibility
       // helper): a Core author must be able to target groups they aren't in.
       listAllGroups(),
+      loadFormHiringLinks(params.formId),
     ]);
   // When a feature owns this form's distribution (hiring cycle, education
   // offering, staffing, partner), the generic publish/audience settings are
@@ -65,6 +70,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     terms,
     usages,
     managing,
+    hiringLinks,
     crumbs,
     groups: allGroups
       .filter((g) => !g.archived)
@@ -78,7 +84,23 @@ export async function action({ request }: Route.ActionArgs) {
   if (!(await isCore(auth.user.sub)))
     return forbidden(request);
 
-  const result = await runFormsAction(await request.formData(), auth.user.sub);
+  // Read formData once so we can branch on intent without consuming the stream.
+  const formData = await request.formData();
+  const intent = formData.get("intent") as string | null;
+
+  if (intent === "unlink-hiring-form") {
+    const linkType = formData.get("linkType") as "application" | "challenge";
+    const cycleId = (formData.get("cycleId") as string) || undefined;
+    const cycleDomainFormId =
+      (formData.get("cycleDomainFormId") as string) || undefined;
+    const result = await unlinkHiringForm(
+      { linkType, cycleId, cycleDomainFormId },
+      auth.user.sub,
+    );
+    return Response.json(result, { status: "error" in result ? 400 : 200 });
+  }
+
+  const result = await runFormsAction(formData, auth.user.sub);
   if ("error" in result)
     return Response.json({ error: result.error }, { status: result.status });
   return result;
