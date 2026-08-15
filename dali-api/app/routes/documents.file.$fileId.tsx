@@ -17,6 +17,7 @@ import { TagPicker } from "~/components/TagPicker";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import { PageIcon } from "~/components/PageIcon";
 import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
+import { driveRootCrumbs } from "~/lib/drive-crumbs";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const t = (data as { title?: string } | undefined)?.title;
@@ -48,9 +49,8 @@ export const handle = {
     // Lab files (no project) root at Drive, then walk the folder path.
     if (!d.projectId || !d.projectName) {
       const scope = d.driveCrumbs?.scope ?? "lab";
-      const scopeQuery = scope === "lab" ? "" : `?scope=${scope}`;
       return [
-        { label: "Drive", to: `/drive${scopeQuery}` },
+        ...driveRootCrumbs(scope),
         ...(d.driveCrumbs?.folders ?? []).map((f) => ({
           label: f.title || "Untitled folder",
           to: `/drive?scope=${scope}&folder=${f.id}`,
@@ -66,6 +66,13 @@ export const handle = {
         to: `/projects/${d.projectId}`,
         icon: <ProjectIcon iconEmoji={d.projectIconEmoji} />,
       },
+      // Keep the file's folder ancestry within the project (hub ▸ Folder ▸ …
+      // ▸ file); each ancestor folder page opens in the doc viewer.
+      ...(d.driveCrumbs?.folders ?? []).map((f) => ({
+        label: f.title || "Untitled folder",
+        to: `/documents/${f.id}`,
+        icon: <PageIcon iconEmoji={f.iconEmoji} />,
+      })),
       { label: d.title },
     ];
   },
@@ -154,7 +161,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
 
   // Lab files live in the Drive tree — resolve folder ancestry for the crumb.
-  const driveCrumbs = file.projectId ? null : await driveFolderCrumbs(file.folderPageId);
+  // Resolve folder ancestry for both Lab files (rooted at Drive) and project
+  // files (rooted at the project hub) so the breadcrumb shows the full path.
+  const driveCrumbs = await driveFolderCrumbs(file.folderPageId);
 
   return {
     fileId: file.id,

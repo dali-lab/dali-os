@@ -238,9 +238,17 @@ export async function loader({ request }: Route.LoaderArgs) {
     weekLabel,
     timeZone: tz,
     education,
-    pages,
+    pages: {
+      favorites: pages.favorites.slice(0, HOME_PAGE_LIMIT),
+      recents: pages.recents.slice(0, HOME_PAGE_LIMIT),
+    },
   };
 }
+
+/* How many starred and how many recently-opened pages home shows. The lists
+   themselves are longer (the sidebar shows more) — home is a landing page, not
+   an index, and an unbounded pin list pushed everything else off the screen. */
+const HOME_PAGE_LIMIT = 6;
 
 type EducationSummary = {
   enrolledCount: number;
@@ -527,8 +535,8 @@ function HomeSearch() {
 /* panel on the redesigned home.                                        */
 /* ------------------------------------------------------------------ */
 
-/** Tiles fill at most two rows on a wide screen. */
-const SHORTCUT_LIMIT = 10;
+/** Favorites then recents, sharing one row — same ceiling as HOME_PAGE_LIMIT. */
+const SHORTCUT_LIMIT = HOME_PAGE_LIMIT;
 
 function ShortcutTiles({
   pages,

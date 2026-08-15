@@ -114,7 +114,10 @@ const SECTION_ORDER = [
 export function CommandPalette({ open, onClose, tabless, focusMode, roles, flags = {}, onOpen }: CommandPaletteProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
-  const [searchLoading, setSearchLoading] = useState(false);
+  // The query `results` belong to. Compared against the live query during
+  // render, so a keystroke reads as "searching" in the frame it paints —
+  // flipping a flag from an effect lands a frame late and flashes "No matches".
+  const [resultsQuery, setResultsQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -124,7 +127,7 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles, flags
     if (open) {
       setQuery("");
       setResults([]);
-      setSearchLoading(false);
+      setResultsQuery("");
       setSelectedIndex(0);
     }
   }, [open]);
@@ -136,10 +139,9 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles, flags
     const q = query.trim();
     if (q.length < 2) {
       setResults([]);
-      setSearchLoading(false);
+      setResultsQuery(q);
       return;
     }
-    setSearchLoading(true);
     const ctrl = new AbortController();
     const t = setTimeout(() => {
       fetch(`/api/search?q=${encodeURIComponent(q)}`, {
@@ -147,12 +149,14 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles, flags
         signal: ctrl.signal,
       })
         .then((r) => (r.ok ? r.json() : { results: [] }))
-        .then((d) => setResults(d.results ?? []))
-        .catch(() => {
-          /* aborted or network error — leave prior results */
+        .then((d) => {
+          setResults(d.results ?? []);
+          setResultsQuery(q);
         })
-        .finally(() => {
-          if (!ctrl.signal.aborted) setSearchLoading(false);
+        .catch(() => {
+          // Abort means a newer query is already in flight and owns the state.
+          // A real failure still has to settle, or the spinner never stops.
+          if (!ctrl.signal.aborted) setResultsQuery(q);
         });
     }, 150);
     return () => {
@@ -348,7 +352,7 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles, flags
 
   let runningIdx = -1;
   const trimmedQuery = query.trim();
-  const isSearching = searchLoading && trimmedQuery.length >= 2;
+  const isSearching = trimmedQuery.length >= 2 && resultsQuery !== trimmedQuery;
 
   return (
     <Modal
