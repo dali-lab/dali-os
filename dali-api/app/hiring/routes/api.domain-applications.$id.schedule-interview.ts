@@ -30,7 +30,6 @@ export async function action({ request, params }: Route.ActionArgs) {
     where: { id: params.id },
     include: {
       application: true,
-      challengeVersion: { select: { domainId: true } },
       // Only the active row (if any) — historical Cancelled/Completed rows
       // don't block a fresh booking.
       interviews: { where: { status: "Scheduled" } },
@@ -57,10 +56,10 @@ export async function action({ request, params }: Route.ActionArgs) {
     return Response.json({ error: "Interview already scheduled" }, { status: 409 });
   }
 
-  // DomainApplications always attach to a domain-scoped challenge version on
-  // Standard cycles. Fellowship cycles don't run interviews, so reaching
-  // this route with a null challengeVersion means something is misconfigured.
-  if (!da.challengeVersion?.domainId) {
+  // DomainApplications always have a domainId on Standard cycles. Fellowship
+  // cycles don't run interviews, so reaching this route with a null domainId
+  // means something is misconfigured.
+  if (!da.domainId) {
     return Response.json({ error: "Domain application is not attached to a domain" }, { status: 400 });
   }
 
@@ -86,7 +85,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     const interview = await assignInterviewers(
       da.application.applicationCycleId,
       da.id,
-      [da.challengeVersion.domainId],
+      [da.domainId],
       slotStart,
       slotEnd,
       undefined,

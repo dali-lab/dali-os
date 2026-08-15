@@ -18,17 +18,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!gate.ok) return gate.response;
 
   const roles = await getUserRoles(gate.auth.user.sub);
-  const [domains, challenges, rubrics, agreements] = await Promise.all([
+  const [domains, rubrics, agreements] = await Promise.all([
     prisma.domain.findMany({ orderBy: { name: "asc" } }),
-    prisma.challenge.findMany({
-      include: {
-        versions: {
-          include: { domain: true, createdBy: true },
-          orderBy: { createdAt: "asc" },
-        },
-      },
-      orderBy: { createdAt: "desc" },
-    }),
     prisma.rubric.findMany({
       include: {
         versions: {
@@ -52,7 +43,6 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   return {
     domains,
-    challenges,
     rubrics,
     agreements,
     canEdit: true,
@@ -72,31 +62,6 @@ export async function action({ request }: Route.ActionArgs) {
   const formData = await request.formData();
   const entity = formData.get("entity") as string;
   const intent = formData.get("intent") as string;
-
-  if (entity === "challenge") {
-    if (intent === "create") {
-      const name = (formData.get("name") as string)?.trim();
-      const domainId = formData.get("domainId") as string | null;
-      const isGeneral = formData.get("general") === "1";
-      if (!name) return { error: "Name is required" };
-
-      const challenge = await prisma.challenge.create({ data: { name } });
-      const dest = isGeneral
-        ? `/hiring/challenges/${challenge.id}?general=1`
-        : domainId
-          ? `/hiring/challenges/${challenge.id}?domainId=${domainId}`
-          : `/hiring/challenges/${challenge.id}`;
-      return redirect(dest);
-    }
-    if (intent === "delete") {
-      const id = formData.get("id") as string;
-      // Delete all versions first (cascade not set in schema).
-      await prisma.challengeVersion.deleteMany({ where: { challengeId: id } });
-      await prisma.challenge.delete({ where: { id } });
-      return null;
-    }
-    return null;
-  }
 
   if (entity === "rubric") {
     if (intent === "create") {

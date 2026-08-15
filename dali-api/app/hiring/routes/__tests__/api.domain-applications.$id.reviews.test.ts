@@ -41,7 +41,7 @@ beforeEach(() => {
       id: DA_ID,
       selected: true,
       application: { applicationCycleId: CYCLE_ID },
-      challengeVersion: { domainId: DOMAIN_ID },
+      domainId: DOMAIN_ID,
     }),
   };
   (mockPrisma as any).applicationCycle = {
@@ -142,7 +142,7 @@ describe("POST /api/hiring/domain-applications/:id/reviews", () => {
       id: DA_ID,
       selected: true,
       application: { applicationCycleId: CYCLE_ID },
-      challengeVersion: { domainId: OTHER_DOMAIN_ID },
+      domainId: OTHER_DOMAIN_ID,
     });
     // domainLeadAssignment.findFirst is scoped to OTHER_DOMAIN_ID — no row.
     mockPrisma.domainLeadAssignment.findFirst.mockResolvedValue(null);
@@ -180,7 +180,7 @@ describe("POST /api/hiring/domain-applications/:id/reviews", () => {
       id: DA_ID,
       selected: false,
       application: { applicationCycleId: CYCLE_ID },
-      challengeVersion: { domainId: DOMAIN_ID },
+      domainId: DOMAIN_ID,
     });
 
     const res = await action({

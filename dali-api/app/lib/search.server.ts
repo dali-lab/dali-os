@@ -53,7 +53,6 @@ export async function runSearch(opts: {
     roles.canViewForms ? searchFormFolders(q, like) : NONE,
     // Hiring library (reusable artifacts) — Core or Domain Lead, mirroring the
     // library routes. Names aren't sensitive; the routes already gate.
-    roles.isCore || roles.isDomainLead ? searchChallenges(q, like) : NONE,
     roles.isCore || roles.isDomainLead ? searchRubrics(q, like) : NONE,
     roles.isCore || roles.isDomainLead ? searchAgreements(q, like) : NONE,
     // Core-only artifacts.
@@ -283,15 +282,6 @@ async function searchFormFolders(q: string, like: Like): Promise<SearchResult[]>
   return simpleResults("formFolder", "Folder", rows.map((r) => ({ id: r.id, label: r.name })), q);
 }
 
-async function searchChallenges(q: string, like: Like): Promise<SearchResult[]> {
-  const rows = await prisma.challenge.findMany({
-    where: { name: like },
-    select: { id: true, name: true },
-    take: RAW_TAKE,
-  });
-  return simpleResults("challenge", "Challenge", rows.map((r) => ({ id: r.id, label: r.name })), q);
-}
-
 async function searchRubrics(q: string, like: Like): Promise<SearchResult[]> {
   const rows = await prisma.rubric.findMany({
     where: { name: like },
@@ -403,7 +393,7 @@ async function searchApplications(
       // directly — match whichever path is set (mirrors the reviewer route).
       OR: pairs.map((r) => ({
         application: { applicationCycleId: r.applicationCycleId, ...nameMatch },
-        OR: [{ challengeVersion: { domainId: r.domainId } }, { domainId: r.domainId }],
+        domainId: r.domainId,
       })),
     };
   }
@@ -413,7 +403,6 @@ async function searchApplications(
     select: {
       id: true,
       domain: { select: { displayName: true } },
-      challengeVersion: { select: { domain: { select: { displayName: true } } } },
       application: { select: { user: { select: { firstName: true, lastName: true } } } },
     },
     take: RAW_TAKE,
@@ -423,7 +412,7 @@ async function searchApplications(
     apps.map((da) => {
       const u = da.application.user;
       const name = `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || "Applicant";
-      const domain = da.domain?.displayName ?? da.challengeVersion?.domain?.displayName;
+      const domain = da.domain?.displayName;
       return {
         result: {
           type: "application" as const,

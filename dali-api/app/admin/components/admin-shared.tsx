@@ -72,7 +72,6 @@ export interface DomainWithCounts extends DomainRow {
   domainLeadAssignments: DomainLeadAssignmentWithUser[];
   eligibilities: DomainEligibilityForDomain[];
   _count: {
-    challengeVersions: number;
     applicationCycles: number;
     domainLeadAssignments: number;
     cycleReviewers: number;

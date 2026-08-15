@@ -103,12 +103,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const domainApplications = await prisma.domainApplication.findMany({
     where: {
       selected: true,
-      // Standard cycles join Domain via challengeVersion. Fellowship cycles
-      // store Domain directly.
-      OR: [
-        { challengeVersion: { domainId: session.domainId } },
-        { domainId: session.domainId },
-      ],
+      // DomainApplication.domainId is the authoritative domain link for both
+      // Standard and Fellowship cycles.
+      domainId: session.domainId,
       application: {
         applicationCycleId: session.applicationCycleId,
         ...inReviewPipelineFilter,

@@ -87,14 +87,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     where: { id: params.id },
     include: {
       ...domainApplicationStatusInclude,
-      challengeVersion: { include: { domain: true, challenge: true } },
-      challengeFormVersion: { select: { questions: true, intro: true } },
+      challengeFormVersion: { select: { questions: true, intro: true, form: { select: { name: true } } } },
       domain: true,
       application: {
         include: {
           user: true,
           statusUpdates: true,
-          generalChallengeVersion: true,
           applicationFormVersion: true,
           applicationCycle: {
             include: { statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 } },
@@ -132,9 +130,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
 
   if (!da) return redirect("/hiring/domain-lead");
-  // Standard cycles link domain via challengeVersion. Fellowship links it
-  // directly. Use whichever is present.
-  const daDomainId = da.challengeVersion?.domainId ?? da.domainId ?? null;
+  const daDomainId = da.domainId ?? null;
   if (!daDomainId || !leadDomainIds.includes(daDomainId)) return redirect("/hiring/domain-lead");
 
   const confRedirect = await requirePageSignedOrRedirect(
@@ -224,17 +220,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     cycleStatus,
   );
 
-  // Presign file-type answers so reviewers see real download links rather
-  // than raw S3 keys.
-  // Prefer bound Drive Forms; fall back to legacy ChallengeVersions.
+  // Presign file-type answers so reviewers see real download links rather than raw S3 keys.
   const generalQuestions =
-    (da.application.applicationFormVersion?.questions as unknown as Question[]) ??
-    (da.application.generalChallengeVersion?.questions as unknown as Question[]) ??
-    [];
+    (da.application.applicationFormVersion?.questions as unknown as Question[]) ?? [];
   const challengeQuestions =
-    (da.challengeFormVersion?.questions as unknown as Question[]) ??
-    (da.challengeVersion?.questions as unknown as Question[]) ??
-    [];
+    (da.challengeFormVersion?.questions as unknown as Question[]) ?? [];
   const presignedGeneralAnswers = await presignAnswers(
     generalQuestions,
     da.application.answers as Record<string, string>,
@@ -255,16 +245,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   return {
       domainApplication: {
         ...da,
-        // Per-domain challenge: prefer the picked Drive Form (intro →
-        // description), else the legacy ChallengeVersion. Viewer expects blocks.
+        // Per-domain challenge: synthesize from the bound Drive Form.
         challengeVersion: da.challengeFormVersion
           ? {
               questions: da.challengeFormVersion.questions,
               description: ensureBlocks(safeParseJsonString(da.challengeFormVersion.intro)),
+              domain: da.domain ?? { name: "Domain" },
+              challenge: { name: da.challengeFormVersion.form?.name ?? "Challenge" },
             }
-          : da.challengeVersion
-            ? { ...da.challengeVersion, description: ensureBlocks(da.challengeVersion.description) }
-            : da.challengeVersion,
+          : null,
         answers: presignedChallengeAnswers,
         interviews: interviewsWithNotes,
         reviews: reviewsWithPhotos,
@@ -272,18 +261,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       application: {
         ...da.application,
         answers: presignedGeneralAnswers,
-        // Prefer the bound Drive Form (intro → description); fall back to legacy.
+        // Synthesize generalChallengeVersion from the bound Drive Form.
         generalChallengeVersion: da.application.applicationFormVersion
           ? {
               questions: da.application.applicationFormVersion.questions,
               description: ensureBlocks(safeParseJsonString(da.application.applicationFormVersion.intro)),
             }
-          : da.application.generalChallengeVersion
-            ? {
-                ...da.application.generalChallengeVersion,
-                description: ensureBlocks(da.application.generalChallengeVersion.description),
-              }
-            : da.application.generalChallengeVersion,
+          : null,
       },
       inferredStatus,
       criteriaByKey,
@@ -322,7 +306,7 @@ export default function DomainLeadApplicationView() {
               questions: da.challengeVersion.questions ?? [],
               description: da.challengeVersion.description,
               domain: da.challengeVersion.domain ?? { name: "Domain" },
-              challenge: da.challengeVersion.challenge,
+              challenge: da.challengeVersion.challenge ?? null,
             }
           : null,
         domain: da.domain,
@@ -335,7 +319,7 @@ export default function DomainLeadApplicationView() {
       {/* Header */}
       <ApplicantDetailHeader
         name={`${application.user.firstName} ${application.user.lastName}`}
-        domainName={da.challengeVersion.domain?.name}
+        domainName={da.domain?.name ?? da.challengeVersion?.domain?.name}
         cycleName={application.applicationCycle.name}
         statusSlot={
           <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold border ${statusInfo.bg}`}>

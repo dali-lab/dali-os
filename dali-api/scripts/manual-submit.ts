@@ -234,17 +234,15 @@ for (const row of rows) {
         id: true,
         answers: true,
         user: { select: { id: true, firstName: true, lastName: true } },
-        generalChallengeVersion: { select: { questions: true } },
+        applicationFormVersion: { select: { questions: true } },
         domainApplications: {
           select: {
             id: true,
             answers: true,
-            challengeVersion: {
-              select: {
-                questions: true,
-                domain: { select: { name: true } },
-              },
+            challengeFormVersion: {
+              select: { questions: true },
             },
+            domain: { select: { name: true } },
           },
         },
         statusUpdates: { where: { newStatus: "Submitted" }, take: 1, select: { id: true } },
@@ -270,7 +268,7 @@ for (const row of rows) {
       if (!fallbackDa) throw new Error(`DomainApplication ${row.domainApplicationId} not on this app`);
     }
 
-    const generalQuestions = (app.generalChallengeVersion.questions as unknown as Question[]) ?? [];
+    const generalQuestions = (app.applicationFormVersion?.questions as unknown as Question[]) ?? [];
     const generalAnswers: Record<string, string> = (app.answers as Record<string, string>) ?? {};
 
     let nextGeneralAnswers = generalAnswers;
@@ -291,9 +289,9 @@ for (const row of rows) {
     let s3Key: string | undefined;
     if (row.pdfPath) {
       const pdfTargetIsDa = !!fallbackDa;
-      const pdfDaQuestions = fallbackDa ? ((fallbackDa.challengeVersion.questions as unknown as Question[]) ?? []) : [];
+      const pdfDaQuestions = fallbackDa ? ((fallbackDa.challengeFormVersion?.questions as unknown as Question[]) ?? []) : [];
       const targetLabel = pdfTargetIsDa
-        ? `DomainApplication (${fallbackDa!.challengeVersion.domain?.name ?? "?"})`
+        ? `DomainApplication (${fallbackDa!.domain?.name ?? "?"})`
         : "general application";
       const fileQs = (pdfTargetIsDa ? pdfDaQuestions : generalQuestions).filter(q => q.type === "file");
       if (fileQs.length === 0) throw new Error(`No file-type questions on ${targetLabel}`);
@@ -368,14 +366,14 @@ for (const row of rows) {
           : `--domain-answers ${spec.path} has no target — pass --domain-app or use <da_id>=<path>`);
       }
       const patch = readAnswerJson(spec.path);
-      const daQs = (targetDa.challengeVersion.questions as unknown as Question[]) ?? [];
+      const daQs = (targetDa.challengeFormVersion?.questions as unknown as Question[]) ?? [];
       const known = new Set(daQs.map(q => q.key));
       const unknown = Object.keys(patch).filter(k => !known.has(k));
       if (unknown.length > 0) {
-        throw new Error(`${spec.path}: unknown question keys for ${targetDa.challengeVersion.domain?.name}: ${unknown.join(", ")}`);
+        throw new Error(`${spec.path}: unknown question keys for ${targetDa.domain?.name}: ${unknown.join(", ")}`);
       }
       const state = getDaState(targetDa);
-      console.log(`  domain answers patch (${Object.keys(patch).length} keys) → ${targetDa.challengeVersion.domain?.name}:`);
+      console.log(`  domain answers patch (${Object.keys(patch).length} keys) → ${targetDa.domain?.name}:`);
       for (const [k, v] of Object.entries(patch)) {
         const q = daQs.find(qq => qq.key === k);
         const before = state.next[k];

@@ -127,18 +127,12 @@ export async function loader({ request }: Route.LoaderArgs) {
         where: {
           application: { applicationCycleId: selected.id },
           selected: true,
-          OR: [
-            { challengeVersion: { domainId: { in: visibleDomainIds } } },
-            { domainId: { in: visibleDomainIds } },
-          ],
+          domainId: { in: visibleDomainIds },
         },
         select: {
           id: true,
           domainId: true,
           domain: { select: { displayName: true } },
-          challengeVersion: {
-            select: { domain: { select: { displayName: true } } },
-          },
           application: {
             select: {
               user: {
@@ -170,10 +164,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         name: `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || "—",
         email: u.daliEmail ?? u.dartmouthEmail ?? null,
         domainId: da.domainId,
-        domain:
-          da.domain?.displayName ??
-          da.challengeVersion?.domain?.displayName ??
-          "—",
+        domain: da.domain?.displayName ?? "—",
         status: status as string,
         submittedAt: submittedAt ? submittedAt.toISOString() : null,
         reviewCount: da._count.reviews,
