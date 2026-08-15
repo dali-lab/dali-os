@@ -29,6 +29,7 @@ import {
   Compass,
   LogOut,
   CornerDownLeft,
+  Loader2,
 } from "lucide-react";
 import { Modal } from "~/components/Modal";
 import { Avatar } from "~/components/ui/Avatar";
@@ -113,6 +114,7 @@ const SECTION_ORDER = [
 export function CommandPalette({ open, onClose, tabless, focusMode, roles, flags = {}, onOpen }: CommandPaletteProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -122,6 +124,7 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles, flags
     if (open) {
       setQuery("");
       setResults([]);
+      setSearchLoading(false);
       setSelectedIndex(0);
     }
   }, [open]);
@@ -133,8 +136,10 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles, flags
     const q = query.trim();
     if (q.length < 2) {
       setResults([]);
+      setSearchLoading(false);
       return;
     }
+    setSearchLoading(true);
     const ctrl = new AbortController();
     const t = setTimeout(() => {
       fetch(`/api/search?q=${encodeURIComponent(q)}`, {
@@ -145,6 +150,9 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles, flags
         .then((d) => setResults(d.results ?? []))
         .catch(() => {
           /* aborted or network error — leave prior results */
+        })
+        .finally(() => {
+          if (!ctrl.signal.aborted) setSearchLoading(false);
         });
     }, 150);
     return () => {
@@ -339,6 +347,8 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles, flags
   }
 
   let runningIdx = -1;
+  const trimmedQuery = query.trim();
+  const isSearching = searchLoading && trimmedQuery.length >= 2;
 
   return (
     <Modal
@@ -371,11 +381,26 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles, flags
 
       <div ref={listRef} className="max-h-[60vh] overflow-y-auto py-2">
         {flatItems.length === 0 ? (
-          <p className="px-4 py-6 text-center text-sm text-muted-foreground">
-            {query.trim().length >= 2 ? "No matches" : "Type to search"}
-          </p>
+          isSearching ? (
+            <div
+              className="flex flex-col items-center justify-center gap-2 px-4 py-10 text-sm text-muted-foreground"
+              role="status"
+              aria-live="polite"
+            >
+              <Loader2
+                className="h-5 w-5 animate-spin motion-reduce:animate-none text-accent-coral"
+                aria-hidden
+              />
+              Searching…
+            </div>
+          ) : (
+            <p className="px-4 py-6 text-center text-sm text-muted-foreground">
+              {trimmedQuery.length >= 2 ? "No matches" : "Type to search"}
+            </p>
+          )
         ) : (
-          sections.map((section) => (
+          <>
+            {sections.map((section) => (
             <div key={section.key} className="mb-1 last:mb-0">
               <p className="px-4 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                 {section.label}
@@ -427,7 +452,21 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles, flags
                 );
               })}
             </div>
-          ))
+            ))}
+            {isSearching && (
+              <div
+                className="flex items-center gap-2 px-4 py-3 text-sm text-muted-foreground border-t border-border"
+                role="status"
+                aria-live="polite"
+              >
+                <Loader2
+                  className="h-4 w-4 animate-spin motion-reduce:animate-none"
+                  aria-hidden
+                />
+                Searching…
+              </div>
+            )}
+          </>
         )}
       </div>
     </Modal>

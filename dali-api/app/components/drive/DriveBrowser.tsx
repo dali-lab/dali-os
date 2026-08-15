@@ -95,6 +95,10 @@ export type DriveBrowserProps = {
   onToggleFavorite?: (item: DriveItem) => void;
   /** Delete every item in the set (one confirm, handled by the hub). */
   onBulkDelete?: (items: DriveItem[]) => void;
+  /** Move every item in the set to another drive/folder (picker + confirm in the hub). */
+  onBulkMove?: (items: DriveItem[]) => void;
+  /** Move a single item from one drive scope to another (confirm + re-scope handled by hub). */
+  onMoveToScope?: (sourceScopeId: string, destScopeId: string, item: DriveItem) => void;
   /** Upload files dropped from the desktop into the current scope+folder. */
   onUploadFiles?: (files: File[]) => void;
   filterControl?: ReactNode;
@@ -445,6 +449,8 @@ export function DriveBrowser({
   getScopeActions,
   onToggleFavorite,
   onBulkDelete,
+  onBulkMove,
+  onMoveToScope,
   onUploadFiles,
   filterControl,
   newMenu,
@@ -537,10 +543,19 @@ export function DriveBrowser({
     return listing.map((i) => i.id);
   }, [searching, hits, currentScope, scopes, listing]);
 
-  const selectedItems = useMemo(
-    () => listing.filter((i) => selected.has(i.id)),
-    [listing, selected],
-  );
+  // Items backing the current selection. In column view the selectable pool is
+  // the union of items across the open columns; in list/grid it's the listing.
+  const selectedItems = useMemo(() => {
+    if (viewMode === "columns") {
+      const pool = new Map<string, DriveItem>();
+      for (const level of colSel.levels) {
+        for (const it of itemsForLevel(level)) pool.set(it.id, it);
+      }
+      return [...pool.values()].filter((i) => selected.has(i.id));
+    }
+    return listing.filter((i) => selected.has(i.id));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode, colSel, listing, selected]);
 
   // ── List/Grid Selection ────────────────────────────────────────────────────
   function selectOnly(id: string) {
@@ -642,13 +657,22 @@ export function DriveBrowser({
     suppressClickRef.current = true;
     setTimeout(() => (suppressClickRef.current = false), 0);
     const src = e.active.data.current as { item: DriveItem; scopeId: string } | undefined;
-    const dest = e.over?.data.current as { destFolderId: string | null } | undefined;
-    if (!src || !dest || !currentScope) return;
-    if (src.item.type === "folder" && dest.destFolderId !== null) {
+    const dest = e.over?.data.current as { destFolderId?: string | null; destScopeId?: string } | undefined;
+    if (!src || !dest) return;
+    // Cross-drive drop: item dragged onto a scope row in column 0.
+    if (dest.destScopeId && dest.destFolderId === undefined) {
+      if (dest.destScopeId !== src.scopeId) {
+        onMoveToScope?.(src.scopeId, dest.destScopeId, src.item);
+      }
+      return;
+    }
+    // Folder-drop (existing logic): same-drive internal move.
+    if (!currentScope) return;
+    if (src.item.type === "folder" && dest.destFolderId !== null && dest.destFolderId !== undefined) {
       if (folderDescendants(currentScope.items, src.item.id).has(dest.destFolderId)) return;
     }
     if (src.item.parentFolderId === dest.destFolderId) return;
-    onMove(currentScope.id, src.item, dest.destFolderId);
+    onMove(currentScope.id, src.item, dest.destFolderId ?? null);
   }
 
   // ── Drag-to-upload (desktop files) ──────────────────────────────────────
@@ -709,7 +733,32 @@ export function DriveBrowser({
   }
 
   // Click a row inside a column: either drill into folder or highlight leaf.
-  function handleColumnRowClick(levelIdx: number, item: DriveItem, scopeId: string) {
+  // Cmd/Ctrl- or Shift-click multi-selects within that column (like list/grid)
+  // instead of navigating, driving the same bulk bar.
+  function handleColumnRowClick(levelIdx: number, item: DriveItem, scopeId: string, e?: ReactMouseEvent) {
+    if (e && (e.metaKey || e.ctrlKey)) {
+      setSelected((prev) => {
+        const next = new Set(prev);
+        if (next.has(item.id)) next.delete(item.id);
+        else next.add(item.id);
+        return next;
+      });
+      setAnchorId(item.id);
+      return;
+    }
+    if (e && e.shiftKey && anchorId) {
+      const ids = itemsForLevel(colSel.levels[levelIdx]).map((i) => i.id);
+      const a = ids.indexOf(anchorId);
+      const b = ids.indexOf(item.id);
+      if (a !== -1 && b !== -1) {
+        const [lo, hi] = a <= b ? [a, b] : [b, a];
+        setSelected(new Set(ids.slice(lo, hi + 1)));
+        return;
+      }
+    }
+    // Plain click: drop any multi-selection, then navigate/highlight as before.
+    if (selected.size > 0) setSelected(new Set());
+    setAnchorId(item.id);
     if (item.type === "folder") {
       // Drill into folder: truncate anything to the right of this column, open
       // a new column for this folder's children, and update URL.
@@ -898,14 +947,24 @@ export function DriveBrowser({
           {newMenu}
         </div>
 
-        {/* ── Bulk action bar (multi-select, list/grid only) ── */}
-        {showBulk && viewMode !== "columns" && (
+        {/* ── Bulk action bar (multi-select, all views) ── */}
+        {showBulk && (
           <div
             className="flex items-center gap-3 rounded-md border border-accent-coral/40 bg-accent-coral/5 px-3 py-1.5 text-sm"
             data-testid="drive-bulk-bar"
             onClick={(e) => e.stopPropagation()}
           >
             <span className="font-medium text-foreground">{selected.size} selected</span>
+            {onBulkMove && (
+              <button
+                type="button"
+                data-testid="drive-bulk-move"
+                onClick={() => onBulkMove(selectedItems)}
+                className="inline-flex items-center gap-1 text-foreground hover:text-accent-coral"
+              >
+                <FolderInput className="w-3.5 h-3.5" /> Move
+              </button>
+            )}
             {onBulkDelete && (
               <button
                 type="button"
@@ -1035,54 +1094,16 @@ export function DriveBrowser({
                   emptyMessage="No drives available."
                 >
                   {scopes.map((scope) => {
-                    const isCore = scope.id === "core";
-                    const isHiring = scope.id === "hiring";
-                    const isProject =
-                      scope.id !== "mine" && scope.id !== "lab" && !isCore && !isHiring;
-                    const label =
-                      scope.id === "mine"
-                        ? "My Drive"
-                        : scope.id === "lab"
-                          ? "Lab"
-                          : scope.label;
                     const isHighlighted = colSel.highlightedIds[0] === scope.id;
                     return (
-                      <div
+                      <ColumnScopeRow
                         key={scope.id}
-                        data-testid={`drive-scope-${scope.id}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleScopeClick(scope.id);
-                        }}
-                        onDoubleClick={(e) => {
-                          e.stopPropagation();
-                          handleScopeDblClick(scope.id);
-                        }}
-                        className={`group flex items-center gap-2 px-3 py-2 text-sm cursor-default select-none ${
-                          isHighlighted
-                            ? "bg-accent-coral/10 text-accent-coral"
-                            : "hover:bg-muted/50 text-foreground"
-                        }`}
-                      >
-                        {scopeIcon(scope)}
-                        <span className="min-w-0 flex-1 truncate font-medium">{label}</span>
-                        {isCore && (
-                          <span className="shrink-0 text-[10px] uppercase tracking-wide text-accent-coral/70">
-                            Core only
-                          </span>
-                        )}
-                        {isHiring && (
-                          <span className="shrink-0 text-[10px] uppercase tracking-wide text-accent-coral/70">
-                            Hiring team
-                          </span>
-                        )}
-                        {isProject && (
-                          <span className="shrink-0 text-[10px] uppercase tracking-wide text-accent-coral/70">
-                            Project
-                          </span>
-                        )}
-                        <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0 opacity-60" />
-                      </div>
+                        scope={scope}
+                        isHighlighted={isHighlighted}
+                        isDragging={!!activeDrag}
+                        onClick={() => handleScopeClick(scope.id)}
+                        onDoubleClick={() => handleScopeDblClick(scope.id)}
+                      />
                     );
                   })}
                 </MillerColumn>
@@ -1102,7 +1123,6 @@ export function DriveBrowser({
                       emptyMessage="This folder is empty."
                     >
                       {items.map((item) => {
-                        const isFolder = item.type === "folder";
                         const isHighlighted = highlightedId === item.id;
                         const scopeActions = sId ? getScopeActions(sId) : null;
                         return (
@@ -1120,62 +1140,17 @@ export function DriveBrowser({
                             }
                             ariaLabel="Item actions"
                           >
-                            <div
-                              data-testid={`drive-item-${item.type}-${item.id}`}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (sId) handleColumnRowClick(levelIdx, item, sId);
-                              }}
-                              onDoubleClick={(e) => {
-                                e.stopPropagation();
-                                handleColumnRowDblClick(item);
-                              }}
-                              className={`group flex items-center gap-2 px-3 py-2 text-sm cursor-default select-none ${
-                                isHighlighted
-                                  ? "bg-accent-coral/10 text-accent-coral"
-                                  : "hover:bg-muted/50 text-foreground"
-                              }`}
-                            >
-                              {itemIcon(item)}
-                              <span className="min-w-0 flex-1 truncate font-medium">
-                                {item.title || "Untitled"}
-                              </span>
-                              {/* Inline star for favorites */}
-                              {(item.type === "doc" || item.type === "folder") &&
-                                onToggleFavorite && (
-                                  <button
-                                    type="button"
-                                    aria-label={item.favorited ? "Remove from favorites" : "Add to favorites"}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      onToggleFavorite(item);
-                                    }}
-                                    onPointerDown={(e) => e.stopPropagation()}
-                                    onDoubleClick={(e) => e.stopPropagation()}
-                                    className={`shrink-0 rounded p-0.5 transition-opacity ${
-                                      item.favorited
-                                        ? "text-accent-coral opacity-100"
-                                        : "text-muted-foreground opacity-0 hover:text-foreground group-hover:opacity-100"
-                                    }`}
-                                  >
-                                    <Star
-                                      className={`h-3.5 w-3.5 ${item.favorited ? "fill-current" : ""}`}
-                                    />
-                                  </button>
-                                )}
-                              {/* Actions menu */}
-                              {scopeActions && (
-                                <RowActionsMenu
-                                  item={item}
-                                  actions={scopeActions}
-                                  onOpen={() => onOpenItem(item)}
-                                  onToggleFavorite={onToggleFavorite}
-                                />
-                              )}
-                              {isFolder && (
-                                <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0 opacity-60" />
-                              )}
-                            </div>
+                            <ColumnItemRow
+                              item={item}
+                              scopeId={sId}
+                              isHighlighted={isHighlighted}
+                              isSelected={selected.has(item.id)}
+                              scopeActions={scopeActions}
+                              onToggleFavorite={onToggleFavorite}
+                              onClick={(e) => { if (sId) handleColumnRowClick(levelIdx, item, sId, e); }}
+                              onDoubleClick={() => handleColumnRowDblClick(item)}
+                              onOpen={() => onOpenItem(item)}
+                            />
                           </ContextMenu>
                         );
                       })}
@@ -1265,6 +1240,153 @@ export function DriveBrowser({
   );
 }
 
+// ── Column view: droppable scope row (column 0) ──────────────────────────────
+
+function ColumnScopeRow({
+  scope,
+  isHighlighted,
+  isDragging,
+  onClick,
+  onDoubleClick,
+}: {
+  scope: DriveTreeScope;
+  isHighlighted: boolean;
+  isDragging: boolean;
+  onClick: () => void;
+  onDoubleClick: () => void;
+}) {
+  const isCore = scope.id === "core";
+  const isHiring = scope.id === "hiring";
+  const isProject = scope.id !== "mine" && scope.id !== "lab" && !isCore && !isHiring;
+  const label =
+    scope.id === "mine" ? "My Drive" : scope.id === "lab" ? "Lab" : scope.label;
+
+  const drop = useDroppable({
+    id: `scopedrop::${scope.id}`,
+    data: { destScopeId: scope.id },
+    disabled: !isDragging,
+  });
+
+  return (
+    <div
+      ref={drop.setNodeRef}
+      data-testid={`drive-scope-${scope.id}`}
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick(); }}
+      className={`group flex items-center gap-2 px-3 py-2 text-sm cursor-default select-none ${
+        drop.isOver
+          ? "ring-2 ring-accent-coral ring-inset bg-accent-coral/10 text-accent-coral"
+          : isHighlighted
+            ? "bg-accent-coral/10 text-accent-coral"
+            : "hover:bg-muted/50 text-foreground"
+      }`}
+    >
+      {scopeIcon(scope)}
+      <span className="min-w-0 flex-1 truncate font-medium">{label}</span>
+      {isCore && (
+        <span className="shrink-0 text-[10px] uppercase tracking-wide text-accent-coral/70">
+          Core only
+        </span>
+      )}
+      {isHiring && (
+        <span className="shrink-0 text-[10px] uppercase tracking-wide text-accent-coral/70">
+          Hiring team
+        </span>
+      )}
+      {isProject && (
+        <span className="shrink-0 text-[10px] uppercase tracking-wide text-accent-coral/70">
+          Project
+        </span>
+      )}
+      <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0 opacity-60" />
+    </div>
+  );
+}
+
+// ── Column view: draggable item row (columns 1+) ──────────────────────────────
+
+function ColumnItemRow({
+  item,
+  scopeId,
+  isHighlighted,
+  isSelected,
+  scopeActions,
+  onToggleFavorite,
+  onClick,
+  onDoubleClick,
+  onOpen,
+}: {
+  item: DriveItem;
+  scopeId: string | null;
+  isHighlighted: boolean;
+  isSelected: boolean;
+  scopeActions: RowActions | null;
+  onToggleFavorite?: (item: DriveItem) => void;
+  onClick: (e: ReactMouseEvent) => void;
+  onDoubleClick: () => void;
+  onOpen: () => void;
+}) {
+  const isFolder = item.type === "folder";
+  const isManaged = item.type === "agreement" || item.type === "rubric" || item.type === "emailTemplate";
+  const drag = useDraggable({
+    id: `col::${scopeId}::${item.id}`,
+    data: { item, scopeId },
+    disabled: isManaged || !scopeId,
+  });
+
+  return (
+    <div
+      ref={drag.setNodeRef}
+      {...drag.attributes}
+      {...drag.listeners}
+      data-testid={`drive-item-${item.type}-${item.id}`}
+      onClick={(e) => { e.stopPropagation(); onClick(e); }}
+      onDoubleClick={(e) => { e.stopPropagation(); onDoubleClick(); }}
+      className={`group flex items-center gap-2 px-3 py-2 text-sm cursor-default select-none ${
+        drag.isDragging ? "opacity-40" : ""
+      } ${
+        isHighlighted || isSelected
+          ? "bg-accent-coral/10 text-accent-coral"
+          : "hover:bg-muted/50 text-foreground"
+      }`}
+    >
+      {itemIcon(item)}
+      <span className="min-w-0 flex-1 truncate font-medium">
+        {item.title || "Untitled"}
+      </span>
+      {/* Inline star for favorites */}
+      {(item.type === "doc" || item.type === "folder") && onToggleFavorite && (
+        <button
+          type="button"
+          aria-label={item.favorited ? "Remove from favorites" : "Add to favorites"}
+          onClick={(e) => { e.stopPropagation(); onToggleFavorite(item); }}
+          onPointerDown={(e) => e.stopPropagation()}
+          onDoubleClick={(e) => e.stopPropagation()}
+          className={`shrink-0 rounded p-0.5 transition-opacity ${
+            item.favorited
+              ? "text-accent-coral opacity-100"
+              : "text-muted-foreground opacity-0 hover:text-foreground group-hover:opacity-100"
+          }`}
+        >
+          <Star className={`h-3.5 w-3.5 ${item.favorited ? "fill-current" : ""}`} />
+        </button>
+      )}
+      {/* Actions menu */}
+      {scopeActions && (
+        <RowActionsMenu
+          item={item}
+          actions={scopeActions}
+          onOpen={onOpen}
+          onToggleFavorite={onToggleFavorite}
+        />
+      )}
+      {isFolder && (
+        <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0 opacity-60" />
+      )}
+    </div>
+  );
+}
+
 // ── Miller column wrapper ─────────────────────────────────────────────────────
 
 function MillerColumn({
@@ -1289,7 +1411,7 @@ function MillerColumn({
       {isEmpty ? (
         <p className="px-3 py-6 text-center text-xs text-muted-foreground italic">{emptyMessage}</p>
       ) : (
-        <div className="flex flex-col py-1">{children}</div>
+        <div className="flex flex-col divide-y divide-border/50">{children}</div>
       )}
     </div>
   );
