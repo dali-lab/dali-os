@@ -110,24 +110,7 @@ async function main() {
     }),
   ]);
 
-  // ── Challenges ─────────────────────────────────────────────────────────────
-  const [designChallenge, engChallenge, pmChallenge] = await Promise.all([
-    prisma.challenge.upsert({
-      where: { id: "challenge-design" },
-      update: {},
-      create: { id: "challenge-design", name: "Design Challenge" },
-    }),
-    prisma.challenge.upsert({
-      where: { id: "challenge-eng" },
-      update: {},
-      create: { id: "challenge-eng", name: "Engineering Challenge" },
-    }),
-    prisma.challenge.upsert({
-      where: { id: "challenge-pm" },
-      update: {},
-      create: { id: "challenge-pm", name: "Product Challenge" },
-    }),
-  ]);
+  // ── Domain challenge Forms (one Form per domain, immutable FormVersion snapshot) ─
 
   // ── Challenge versions (immutable snapshots) ───────────────────────────────
   const designQuestions = [
@@ -299,60 +282,90 @@ async function main() {
     },
   ];
 
-  const [designCv, engCv, engCv2, pmCv] = await Promise.all([
-    prisma.challengeVersion.upsert({
-      where: { id: "cv-design" },
+  // Each domain challenge is a Form with one FormVersion (immutable snapshot).
+  // Using upsert-by-id so re-seeds are idempotent.
+  const [designChallengeForm, engChallengeForm, engChallengeFormV2, pmChallengeForm] = await Promise.all([
+    prisma.form.upsert({
+      where: { id: "form-challenge-design" },
       update: {},
       create: {
-        id: "cv-design",
-        questions: designQuestions,
-        challengeId: designChallenge.id,
-        domainId: designDomain.id,
+        id: "form-challenge-design",
+        name: "Design Challenge",
         createdById: admin.id,
+        versions: {
+          create: {
+            id: "fv-design-v1",
+            versionNumber: 1,
+            questions: designQuestions,
+            createdById: admin.id,
+          },
+        },
       },
+      include: { versions: true },
     }),
-    prisma.challengeVersion.upsert({
-      where: { id: "cv-eng" },
+    prisma.form.upsert({
+      where: { id: "form-challenge-eng" },
       update: {},
       create: {
-        id: "cv-eng",
-        questions: engQuestions,
-        challengeId: engChallenge.id,
-        domainId: engDomain.id,
+        id: "form-challenge-eng",
+        name: "Engineering Challenge",
         createdById: admin.id,
+        versions: {
+          create: {
+            id: "fv-eng-v1",
+            versionNumber: 1,
+            questions: engQuestions,
+            createdById: admin.id,
+          },
+        },
       },
+      include: { versions: true },
     }),
-    prisma.challengeVersion.upsert({
-      where: { id: "cv-eng-v2" },
+    prisma.form.upsert({
+      where: { id: "form-challenge-eng-v2" },
       update: {},
       create: {
-        id: "cv-eng-v2",
-        questions: engQuestionsV2,
-        challengeId: engChallenge.id,
-        domainId: engDomain.id,
+        id: "form-challenge-eng-v2",
+        name: "Engineering Challenge v2",
         createdById: admin.id,
+        versions: {
+          create: {
+            id: "fv-eng-v2",
+            versionNumber: 1,
+            questions: engQuestionsV2,
+            createdById: admin.id,
+          },
+        },
       },
+      include: { versions: true },
     }),
-    prisma.challengeVersion.upsert({
-      where: { id: "cv-pm" },
+    prisma.form.upsert({
+      where: { id: "form-challenge-pm" },
       update: {},
       create: {
-        id: "cv-pm",
-        questions: pmQuestions,
-        challengeId: pmChallenge.id,
-        domainId: pmDomain.id,
+        id: "form-challenge-pm",
+        name: "Product Challenge",
         createdById: admin.id,
+        versions: {
+          create: {
+            id: "fv-pm-v1",
+            versionNumber: 1,
+            questions: pmQuestions,
+            createdById: admin.id,
+          },
+        },
       },
+      include: { versions: true },
     }),
   ]);
 
-  // ── Application form + version ─────────────────────────────────────────────
-  // ── General application form (as a Challenge with domainId: null) ──────────
-  const generalFormChallenge = await prisma.challenge.upsert({
-    where: { id: "challenge-general-form" },
-    update: {},
-    create: { id: "challenge-general-form", name: "General Application Form" },
-  });
+  // Resolved FormVersion ids (first version of each form)
+  const designCv = designChallengeForm.versions[0]!;
+  const engCv = engChallengeForm.versions[0]!;
+  const engCv2 = engChallengeFormV2.versions[0]!;
+  const pmCv = pmChallengeForm.versions[0]!;
+
+  // ── General application Form + FormVersion ────────────────────────────────
 
   const formQuestions = [
     {
@@ -493,17 +506,25 @@ async function main() {
     },
   ];
 
-  const generalFormVersion = await prisma.challengeVersion.upsert({
-    where: { id: "cv-general-form-v1" },
+  const generalApplicationForm = await prisma.form.upsert({
+    where: { id: "form-general-application" },
     update: {},
     create: {
-      id: "cv-general-form-v1",
-      questions: formQuestions,
-      challengeId: generalFormChallenge.id,
-      domainId: null,
+      id: "form-general-application",
+      name: "General Application Form",
       createdById: admin.id,
+      versions: {
+        create: {
+          id: "fv-general-application-v1",
+          versionNumber: 1,
+          questions: formQuestions,
+          createdById: admin.id,
+        },
+      },
     },
+    include: { versions: true },
   });
+  const generalFormVersion = generalApplicationForm.versions[0]!;
 
   // ── Rubrics ────────────────────────────────────────────────────────────────
 
@@ -612,6 +633,7 @@ async function main() {
       name: "Fall 2026",
       closeDate: new Date("2026-09-30T23:59:59Z"),
       generalRubricVersionId: "rv-general-v1",
+      applicationFormId: generalApplicationForm.id,
       domains: {
         create: [
           { domainId: designDomain.id, rubricVersionId: designRubricVersion.id },
@@ -619,12 +641,11 @@ async function main() {
           { domainId: pmDomain.id, rubricVersionId: pmRubricVersion.id },
         ],
       },
-      challengeVersions: {
+      domainChallengeForms: {
         create: [
-          { challengeVersionId: generalFormVersion.id },
-          { challengeVersionId: designCv.id },
-          { challengeVersionId: engCv.id },
-          { challengeVersionId: pmCv.id },
+          { domainId: designDomain.id, formId: designChallengeForm.id },
+          { domainId: engDomain.id, formId: engChallengeForm.id },
+          { domainId: pmDomain.id, formId: pmChallengeForm.id },
         ],
       },
       statusUpdates: {
@@ -696,7 +717,7 @@ async function main() {
       },
       userId: alice.id,
       applicationCycleId: cycle.id,
-      generalChallengeVersionId: generalFormVersion.id,
+      applicationFormVersionId: generalFormVersion.id,
       statusUpdates: {
         create: [
           { newStatus: "Draft", userId: alice.id, createdAt: ts(-2000) },
@@ -707,7 +728,7 @@ async function main() {
         create: [
           {
             id: "da-alice-eng",
-            challengeVersionId: engCv.id,
+            challengeFormVersionId: engCv.id,
             domainId: engDomain.id,
             answers: {
               "eq-00000000-0000-0000-0000-000000000001": "https://github.com/alice/fullstack-challenge",
@@ -745,7 +766,7 @@ async function main() {
       },
       userId: bob.id,
       applicationCycleId: cycle.id,
-      generalChallengeVersionId: generalFormVersion.id,
+      applicationFormVersionId: generalFormVersion.id,
       statusUpdates: {
         create: [
           { newStatus: "Draft", userId: bob.id, createdAt: ts(-2000) },
@@ -756,7 +777,7 @@ async function main() {
         create: [
           {
             id: "da-bob-design",
-            challengeVersionId: designCv.id,
+            challengeFormVersionId: designCv.id,
             domainId: designDomain.id,
             answers: {
               "dq-00000000-0000-0000-0000-000000000001": "https://www.figma.com/file/abc123/bob-uiux-challenge",
@@ -766,7 +787,7 @@ async function main() {
           },
           {
             id: "da-bob-pm",
-            challengeVersionId: pmCv.id,
+            challengeFormVersionId: pmCv.id,
             domainId: pmDomain.id,
             answers: {
               "pq-00000000-0000-0000-0000-000000000001": "uploads/applications/app-bob/pq-00000000-0000-0000-0000-000000000001/pm-challenge.pdf",
@@ -791,14 +812,14 @@ async function main() {
       },
       userId: carol.id,
       applicationCycleId: cycle.id,
-      generalChallengeVersionId: generalFormVersion.id,
+      applicationFormVersionId: generalFormVersion.id,
       statusUpdates: {
         create: [{ newStatus: "Draft", userId: carol.id }],
       },
       domainApplications: {
         create: [
           {
-            challengeVersionId: engCv.id,
+            challengeFormVersionId: engCv.id,
             domainId: engDomain.id,
             answers: {},
           },
@@ -929,7 +950,7 @@ async function main() {
       },
       userId: diego.id,
       applicationCycleId: cycle.id,
-      generalChallengeVersionId: generalFormVersion.id,
+      applicationFormVersionId: generalFormVersion.id,
       statusUpdates: {
         create: [
           { newStatus: "Draft", userId: diego.id, createdAt: ts(-2000) },
@@ -940,7 +961,7 @@ async function main() {
         create: [
           {
             id: "da-diego-eng",
-            challengeVersionId: engCv.id,
+            challengeFormVersionId: engCv.id,
             domainId: engDomain.id,
             answers: {
               "eq-00000000-0000-0000-0000-000000000001": "https://github.com/diego/fullstack-challenge",
@@ -980,7 +1001,7 @@ async function main() {
       },
       userId: eve.id,
       applicationCycleId: cycle.id,
-      generalChallengeVersionId: generalFormVersion.id,
+      applicationFormVersionId: generalFormVersion.id,
       statusUpdates: {
         create: [
           { newStatus: "Draft", userId: eve.id, createdAt: ts(-2000) },
@@ -991,7 +1012,7 @@ async function main() {
         create: [
           {
             id: "da-eve-design",
-            challengeVersionId: designCv.id,
+            challengeFormVersionId: designCv.id,
             domainId: designDomain.id,
             answers: {
               "dq-00000000-0000-0000-0000-000000000001": "https://www.figma.com/file/eve123/eve-uiux-challenge",
@@ -1029,7 +1050,7 @@ async function main() {
       },
       userId: felix.id,
       applicationCycleId: cycle.id,
-      generalChallengeVersionId: generalFormVersion.id,
+      applicationFormVersionId: generalFormVersion.id,
       statusUpdates: {
         create: [
           { newStatus: "Draft", userId: felix.id, createdAt: ts(-2000) },
@@ -1040,7 +1061,7 @@ async function main() {
         create: [
           {
             id: "da-felix-pm",
-            challengeVersionId: pmCv.id,
+            challengeFormVersionId: pmCv.id,
             domainId: pmDomain.id,
             answers: {
               "pq-00000000-0000-0000-0000-000000000001": "uploads/applications/app-felix/pq-00000000-0000-0000-0000-000000000001/pm-challenge.pdf",
@@ -1075,7 +1096,7 @@ async function main() {
       },
       userId: grace.id,
       applicationCycleId: cycle.id,
-      generalChallengeVersionId: generalFormVersion.id,
+      applicationFormVersionId: generalFormVersion.id,
       statusUpdates: {
         create: [
           { newStatus: "Draft", userId: grace.id, createdAt: ts(-2000) },
@@ -1086,7 +1107,7 @@ async function main() {
         create: [
           {
             id: "da-grace-eng",
-            challengeVersionId: engCv.id,
+            challengeFormVersionId: engCv.id,
             domainId: engDomain.id,
             answers: {
               "eq-00000000-0000-0000-0000-000000000005": "Bash/Terminal: 1\nGit: 0\nC: 0\nC#: 0\nUnity: 0\nJavaScript: 1\nTypeScript: 0\nPython: 1\nRuby (on Rails): 0\nReact.js: 0\nReact Native: 0\nSwift: 0\nFlutter: 0\niOS: 0\nAndroid: 0\nMongoDB: 0\nExpress: 0\nNode.js: 0\nSQL: 0\nIoT: 0\nR: 0\nTidy-Verse: 0\nPandas: 0\nD3: 0\nFigma: 0\nSKlearn: 0\nDeep/Machine Learning: 0\nCloud Data Storage: 0",
@@ -1122,7 +1143,7 @@ async function main() {
       },
       userId: harper.id,
       applicationCycleId: cycle.id,
-      generalChallengeVersionId: generalFormVersion.id,
+      applicationFormVersionId: generalFormVersion.id,
       statusUpdates: {
         create: [
           { newStatus: "Draft", userId: harper.id, createdAt: ts(-2000) },
@@ -1133,7 +1154,7 @@ async function main() {
         create: [
           {
             id: "da-harper-design",
-            challengeVersionId: designCv.id,
+            challengeFormVersionId: designCv.id,
             domainId: designDomain.id,
             answers: {
               "dq-00000000-0000-0000-0000-000000000001": "https://www.figma.com/file/harper123/harper-uiux-challenge",
@@ -1171,7 +1192,7 @@ async function main() {
       },
       userId: ivan.id,
       applicationCycleId: cycle.id,
-      generalChallengeVersionId: generalFormVersion.id,
+      applicationFormVersionId: generalFormVersion.id,
       statusUpdates: {
         create: [
           { newStatus: "Draft", userId: ivan.id, createdAt: ts(-2000) },
@@ -1182,7 +1203,7 @@ async function main() {
         create: [
           {
             id: "da-ivan-eng",
-            challengeVersionId: engCv.id,
+            challengeFormVersionId: engCv.id,
             domainId: engDomain.id,
             answers: {
               "eq-00000000-0000-0000-0000-000000000001": "https://github.com/ivan-k/fullstack-challenge",
@@ -1223,7 +1244,7 @@ async function main() {
       },
       userId: jade.id,
       applicationCycleId: cycle.id,
-      generalChallengeVersionId: generalFormVersion.id,
+      applicationFormVersionId: generalFormVersion.id,
       statusUpdates: {
         create: [
           { newStatus: "Draft", userId: jade.id, createdAt: ts(-2000) },
@@ -1234,7 +1255,7 @@ async function main() {
         create: [
           {
             id: "da-jade-design",
-            challengeVersionId: designCv.id,
+            challengeFormVersionId: designCv.id,
             domainId: designDomain.id,
             answers: {
               "dq-00000000-0000-0000-0000-000000000001": "https://www.figma.com/file/jade123/jade-uiux-challenge",
@@ -1272,7 +1293,7 @@ async function main() {
       },
       userId: kenji.id,
       applicationCycleId: cycle.id,
-      generalChallengeVersionId: generalFormVersion.id,
+      applicationFormVersionId: generalFormVersion.id,
       statusUpdates: {
         create: [
           { newStatus: "Draft", userId: kenji.id, createdAt: ts(-2000) },
@@ -1283,7 +1304,7 @@ async function main() {
         create: [
           {
             id: "da-kenji-eng",
-            challengeVersionId: engCv.id,
+            challengeFormVersionId: engCv.id,
             domainId: engDomain.id,
             answers: {
               "eq-00000000-0000-0000-0000-000000000001": "https://github.com/kenjiy/fullstack-challenge",
@@ -1324,7 +1345,7 @@ async function main() {
       },
       userId: leo.id,
       applicationCycleId: cycle.id,
-      generalChallengeVersionId: generalFormVersion.id,
+      applicationFormVersionId: generalFormVersion.id,
       statusUpdates: {
         create: [
           { newStatus: "Draft", userId: leo.id, createdAt: ts(-2000) },
@@ -1335,7 +1356,7 @@ async function main() {
         create: [
           {
             id: "da-leo-eng",
-            challengeVersionId: engCv.id,
+            challengeFormVersionId: engCv.id,
             domainId: engDomain.id,
             answers: {
               "eq-00000000-0000-0000-0000-000000000001": "https://github.com/leo-b/fullstack-challenge",
@@ -1356,6 +1377,7 @@ async function main() {
     create: {
       id: "cycle-winter-2028",
       name: "Winter 2028",
+      applicationFormId: generalApplicationForm.id,
       domains: {
         create: [
           { domainId: designDomain.id },
@@ -1363,12 +1385,11 @@ async function main() {
           { domainId: pmDomain.id },
         ],
       },
-      challengeVersions: {
+      domainChallengeForms: {
         create: [
-          { challengeVersionId: generalFormVersion.id },
-          { challengeVersionId: designCv.id },
-          { challengeVersionId: engCv2.id },
-          { challengeVersionId: pmCv.id },
+          { domainId: designDomain.id, formId: designChallengeForm.id },
+          { domainId: engDomain.id, formId: engChallengeFormV2.id },
+          { domainId: pmDomain.id, formId: pmChallengeForm.id },
         ],
       },
       statusUpdates: {
@@ -1416,7 +1437,7 @@ async function main() {
       },
       userId: dana.id,
       applicationCycleId: cycle2028.id,
-      generalChallengeVersionId: generalFormVersion.id,
+      applicationFormVersionId: generalFormVersion.id,
       statusUpdates: {
         create: [
           { newStatus: "Draft", userId: dana.id, createdAt: ts(-2000) },
@@ -1426,7 +1447,7 @@ async function main() {
       domainApplications: {
         create: [
           {
-            challengeVersionId: engCv2.id,
+            challengeFormVersionId: engCv2.id,
             domainId: engDomain.id,
             answers: {
               "eq2-00000000-0000-0000-0000-000000000001": "https://github.com/dana/fullstack-challenge",
@@ -1453,6 +1474,7 @@ async function main() {
       name: "Winter 2027",
       closeDate: new Date("2027-02-15T23:59:59Z"),
       generalRubricVersionId: "rv-general-v1",
+      applicationFormId: generalApplicationForm.id,
       domains: {
         create: [
           { domainId: designDomain.id },
@@ -1460,12 +1482,11 @@ async function main() {
           { domainId: pmDomain.id },
         ],
       },
-      challengeVersions: {
+      domainChallengeForms: {
         create: [
-          { challengeVersionId: generalFormVersion.id },
-          { challengeVersionId: designCv.id },
-          { challengeVersionId: engCv.id },
-          { challengeVersionId: pmCv.id },
+          { domainId: designDomain.id, formId: designChallengeForm.id },
+          { domainId: engDomain.id, formId: engChallengeForm.id },
+          { domainId: pmDomain.id, formId: pmChallengeForm.id },
         ],
       },
       statusUpdates: {
@@ -1566,14 +1587,14 @@ async function main() {
       },
       userId: emma.id,
       applicationCycleId: cycleWinter2027.id,
-      generalChallengeVersionId: generalFormVersion.id,
+      applicationFormVersionId: generalFormVersion.id,
       statusUpdates: { create: [
         { newStatus: "Draft", userId: emma.id, createdAt: ts(-3500) },
         { newStatus: "Submitted", userId: emma.id, createdAt: ts(-3000) },
       ] },
       domainApplications: { create: [{
         id: "da-emma-eng",
-        challengeVersionId: engCv.id,
+        challengeFormVersionId: engCv.id,
             domainId: engDomain.id,
         answers: {
           "eq-00000000-0000-0000-0000-000000000001": "https://github.com/emma/fullstack-challenge",
@@ -1610,7 +1631,7 @@ async function main() {
       },
       userId: liam.id,
       applicationCycleId: cycleWinter2027.id,
-      generalChallengeVersionId: generalFormVersion.id,
+      applicationFormVersionId: generalFormVersion.id,
       statusUpdates: { create: [
         { newStatus: "Draft", userId: liam.id, createdAt: ts(-3400) },
         { newStatus: "Submitted", userId: liam.id, createdAt: ts(-2800) },
@@ -1618,7 +1639,7 @@ async function main() {
       domainApplications: { create: [
         {
           id: "da-liam-eng",
-          challengeVersionId: engCv.id,
+          challengeFormVersionId: engCv.id,
             domainId: engDomain.id,
           answers: {
             "eq-00000000-0000-0000-0000-000000000001": "https://github.com/liam/fullstack-challenge",
@@ -1629,7 +1650,7 @@ async function main() {
         },
         {
           id: "da-liam-design",
-          challengeVersionId: designCv.id,
+          challengeFormVersionId: designCv.id,
             domainId: designDomain.id,
           answers: {
             "dq-00000000-0000-0000-0000-000000000001": "https://www.figma.com/file/liam123/liam-uiux-challenge",
@@ -1666,14 +1687,14 @@ async function main() {
       },
       userId: sofia.id,
       applicationCycleId: cycleWinter2027.id,
-      generalChallengeVersionId: generalFormVersion.id,
+      applicationFormVersionId: generalFormVersion.id,
       statusUpdates: { create: [
         { newStatus: "Draft", userId: sofia.id, createdAt: ts(-3300) },
         { newStatus: "Submitted", userId: sofia.id, createdAt: ts(-2700) },
       ] },
       domainApplications: { create: [{
         id: "da-sofia-design",
-        challengeVersionId: designCv.id,
+        challengeFormVersionId: designCv.id,
             domainId: designDomain.id,
         answers: {
           "dq-00000000-0000-0000-0000-000000000001": "https://www.figma.com/file/sofia123/sofia-uiux-challenge",
@@ -1709,14 +1730,14 @@ async function main() {
       },
       userId: noah.id,
       applicationCycleId: cycleWinter2027.id,
-      generalChallengeVersionId: generalFormVersion.id,
+      applicationFormVersionId: generalFormVersion.id,
       statusUpdates: { create: [
         { newStatus: "Draft", userId: noah.id, createdAt: ts(-3200) },
         { newStatus: "Submitted", userId: noah.id, createdAt: ts(-2600) },
       ] },
       domainApplications: { create: [{
         id: "da-noah-pm",
-        challengeVersionId: pmCv.id,
+        challengeFormVersionId: pmCv.id,
             domainId: pmDomain.id,
         answers: {
           "pq-00000000-0000-0000-0000-000000000001": "uploads/applications/app-noah/pq-00000000-0000-0000-0000-000000000001/pm-challenge.pdf",
@@ -1751,14 +1772,14 @@ async function main() {
       },
       userId: olivia.id,
       applicationCycleId: cycleWinter2027.id,
-      generalChallengeVersionId: generalFormVersion.id,
+      applicationFormVersionId: generalFormVersion.id,
       statusUpdates: { create: [
         { newStatus: "Draft", userId: olivia.id, createdAt: ts(-3100) },
         { newStatus: "Submitted", userId: olivia.id, createdAt: ts(-2500) },
       ] },
       domainApplications: { create: [{
         id: "da-olivia-eng",
-        challengeVersionId: engCv.id,
+        challengeFormVersionId: engCv.id,
             domainId: engDomain.id,
         answers: {
           "eq-00000000-0000-0000-0000-000000000001": "https://github.com/olivia/fullstack-challenge",
@@ -1795,7 +1816,7 @@ async function main() {
       },
       userId: ethan.id,
       applicationCycleId: cycleWinter2027.id,
-      generalChallengeVersionId: generalFormVersion.id,
+      applicationFormVersionId: generalFormVersion.id,
       statusUpdates: { create: [
         { newStatus: "Draft", userId: ethan.id, createdAt: ts(-3000) },
         { newStatus: "Submitted", userId: ethan.id, createdAt: ts(-2400) },
@@ -1803,7 +1824,7 @@ async function main() {
       domainApplications: { create: [
         {
           id: "da-ethan-pm",
-          challengeVersionId: pmCv.id,
+          challengeFormVersionId: pmCv.id,
             domainId: pmDomain.id,
           answers: {
             "pq-00000000-0000-0000-0000-000000000001": "uploads/applications/app-ethan/pq-00000000-0000-0000-0000-000000000001/pm-challenge.pdf",
@@ -1811,7 +1832,7 @@ async function main() {
         },
         {
           id: "da-ethan-eng",
-          challengeVersionId: engCv.id,
+          challengeFormVersionId: engCv.id,
             domainId: engDomain.id,
           answers: {
             "eq-00000000-0000-0000-0000-000000000001": "https://github.com/ethan/fullstack-challenge",
@@ -1850,7 +1871,7 @@ async function main() {
       },
       userId: ava.id,
       applicationCycleId: cycleWinter2027.id,
-      generalChallengeVersionId: generalFormVersion.id,
+      applicationFormVersionId: generalFormVersion.id,
       statusUpdates: { create: [
         { newStatus: "Draft", userId: ava.id, createdAt: ts(-2900) },
         { newStatus: "Submitted", userId: ava.id, createdAt: ts(-2300) },
@@ -1858,7 +1879,7 @@ async function main() {
       domainApplications: { create: [
         {
           id: "da-ava-design",
-          challengeVersionId: designCv.id,
+          challengeFormVersionId: designCv.id,
             domainId: designDomain.id,
           answers: {
             "dq-00000000-0000-0000-0000-000000000001": "I follow a double-diamond approach: diverge with research, converge on insights, diverge with ideation, converge on a tested solution. Every decision is backed by user evidence.",
@@ -1868,7 +1889,7 @@ async function main() {
         },
         {
           id: "da-ava-pm",
-          challengeVersionId: pmCv.id,
+          challengeFormVersionId: pmCv.id,
             domainId: pmDomain.id,
           answers: {
             "pq-00000000-0000-0000-0000-000000000001": "uploads/applications/app-ava/pq-00000000-0000-0000-0000-000000000001/pm-challenge.pdf",
@@ -1893,13 +1914,13 @@ async function main() {
       },
       userId: mason.id,
       applicationCycleId: cycleWinter2027.id,
-      generalChallengeVersionId: generalFormVersion.id,
+      applicationFormVersionId: generalFormVersion.id,
       statusUpdates: { create: [
         { newStatus: "Draft", userId: mason.id, createdAt: ts(-2800) },
       ] },
       domainApplications: { create: [{
         id: "da-mason-eng",
-        challengeVersionId: engCv.id,
+        challengeFormVersionId: engCv.id,
             domainId: engDomain.id,
         answers: {},
       }] },

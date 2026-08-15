@@ -12,17 +12,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const da = await prisma.domainApplication.findUnique({
     where: { id: params.id },
     include: {
-      challengeVersion: {
-        select: {
-          questions: true,
-          domain: { select: { id: true, name: true } },
-        },
-      },
+      challengeFormVersion: { select: { questions: true } },
       domain: { select: { id: true, name: true } },
       application: {
         include: {
           user: { select: { firstName: true, lastName: true } },
-          generalChallengeVersion: { select: { questions: true } },
           applicationFormVersion: { select: { questions: true } },
           applicationCycle: { select: { id: true, generalRubricVersionId: true, cycleType: true } },
         },
@@ -70,7 +64,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   );
   if (gate) return gate;
 
-  const domainId = da.challengeVersion?.domain?.id ?? da.domainId ?? null;
+  const domainId = da.domainId ?? null;
   const [domainCycle, generalRubric] = await Promise.all([
     domainId
       ? prisma.domainApplicationCycle.findUnique({
@@ -137,19 +131,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       domainApplication: {
         id: da.id,
         answers: da.answers,
-        domain: da.challengeVersion?.domain ?? da.domain ?? null,
-        challengeQuestions: da.challengeVersion?.questions ?? [],
+        domain: da.domain ?? null,
+        challengeQuestions: da.challengeFormVersion?.questions ?? [],
         interviewPrepNote: da.interviewPrepNote,
       },
       application: {
         id: da.application.id,
         answers: da.application.answers,
-        // Prefer the bound Drive Form's questions; fall back to the legacy
-        // general ChallengeVersion for pre-migration applications.
-        generalQuestions:
-          da.application.applicationFormVersion?.questions ??
-          da.application.generalChallengeVersion?.questions ??
-          [],
+        generalQuestions: da.application.applicationFormVersion?.questions ?? [],
         applicant: da.application.user,
       },
       reviews: da.reviews,

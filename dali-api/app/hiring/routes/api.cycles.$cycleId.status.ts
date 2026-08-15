@@ -79,7 +79,6 @@ export async function action({ request, params }: Route.ActionArgs) {
       include: {
         statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
         domains: true,
-        challengeVersions: true,
       },
     });
 
@@ -94,17 +93,17 @@ export async function action({ request, params }: Route.ActionArgs) {
 
     if (cycle.cycleType === "Standard") {
       const domainIds = new Set(cycle.domains.map((d) => d.domainId));
-      // Check that every domain has at least one challenge version linked
+      // Check that every domain has at least one challenge Form linked.
       if (domainIds.size > 0) {
-        const challengeVersions = await prisma.challengeVersion.findMany({
-          where: { applicationCycles: { some: { applicationCycleId: params.cycleId! } } },
+        const challengeForms = await prisma.cycleDomainForm.findMany({
+          where: { applicationCycleId: params.cycleId! },
           select: { domainId: true },
         });
-        const coveredDomainIds = new Set(challengeVersions.map((cv) => cv.domainId));
+        const coveredDomainIds = new Set(challengeForms.map((cf) => cf.domainId));
         for (const domainId of domainIds) {
           if (!coveredDomainIds.has(domainId)) {
             return Response.json(
-                        { error: "Every domain must have a challenge version linked before opening" },
+                        { error: "Every domain must have a challenge linked before opening" },
                         { status: 400 },
                       );
           }

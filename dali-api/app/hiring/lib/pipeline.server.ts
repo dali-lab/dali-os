@@ -27,6 +27,7 @@ const STATUS_LABELS: Record<AnalyticsStatus, string> = {
   PostInterviewPending: "Post-Interview",
   Withdrawn: "Withdrawn",
   Accepted: "Accepted",
+  AcceptedElsewhere: "Accepted elsewhere",
   Rejected: "Rejected",
   Waitlisted: "Waitlisted",
 };
@@ -39,6 +40,7 @@ const STATUS_ORDER: AnalyticsStatus[] = [
   "InterviewScheduled",
   "PostInterviewPending",
   "Accepted",
+  "AcceptedElsewhere",
   "Waitlisted",
   "Rejected",
   "Withdrawn",
@@ -145,13 +147,13 @@ export async function getPipelineData(
   const domainApplications = await prisma.domainApplication.findMany({
     where: {
       selected: true,
-      challengeVersion: { domainId: { in: queryDomainIds } },
+      domainId: { in: queryDomainIds },
       application: { applicationCycleId: cycleId },
     },
     include: {
       ...domainApplicationStatusInclude,
-      challengeVersion: {
-        select: { domain: { select: { id: true, name: true } } },
+      domain: {
+        select: { id: true, name: true },
       },
       application: {
         include: {
@@ -199,8 +201,11 @@ export async function getPipelineData(
     );
 
     // Override: any DA whose application was never submitted is "InProgress"
-    // for analytics purposes, regardless of cycle status.
-    const status: AnalyticsStatus = !hasSubmitted ? "InProgress" : baseStatus;
+    // for analytics purposes, regardless of cycle status — EXCEPT one closed
+    // because the applicant was placed in another domain, which stays
+    // "Accepted elsewhere" (a real terminal state, not in-progress work).
+    const status: AnalyticsStatus =
+      !hasSubmitted && baseStatus !== "AcceptedElsewhere" ? "InProgress" : baseStatus;
 
     sliceCounts.set(status, (sliceCounts.get(status) ?? 0) + 1);
 
@@ -223,7 +228,7 @@ export async function getPipelineData(
       applicantName: fullName(da.application.user),
       status,
       statusLabel: STATUS_LABELS[status],
-      domain: (da as any).challengeVersion.domain.name,
+      domain: da.domain?.name ?? "",
       reviewers: reviewerNames,
       interviewers: interviewerNames,
       rawStatus: status,

@@ -47,7 +47,6 @@ export default [
     // page with pills. The list views are consolidated here; the detail pages
     // keep their original paths.
     route("hiring/library", "hiring/routes/library.tsx"),
-    route("hiring/challenges/:id", "hiring/routes/challenges.$id.tsx"),
     route("hiring/rubrics/:id", "hiring/routes/rubrics.$id.tsx"),
     route("hiring/emails", "hiring/routes/email-templates.tsx"),
     route("hiring/emails/:id", "hiring/routes/email-templates.$id.tsx"),

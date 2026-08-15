@@ -44,7 +44,7 @@ export async function notifyInterviewAssigned(args: {
           location: true,
           domainApplication: {
             select: {
-              challengeVersion: { select: { domain: { select: { name: true } } } },
+              domain: { select: { name: true } },
               application: {
                 select: {
                   user: { select: { firstName: true, lastName: true } },
@@ -68,7 +68,7 @@ export async function notifyInterviewAssigned(args: {
         .filter(Boolean)
         .join(" ")
         .trim();
-      const domain = a.interview.domainApplication.challengeVersion?.domain?.name ?? null;
+      const domain = a.interview.domainApplication.domain?.name ?? null;
       const where = LOCATION_LABEL[a.interview.location] ?? a.interview.location;
       // The interviewer is a logged-in member — show the start in their own zone.
       const when = formatInstantWithZoneLabel(

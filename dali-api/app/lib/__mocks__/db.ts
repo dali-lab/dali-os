@@ -42,6 +42,7 @@ export const prisma = {
     findMany: vi.fn().mockResolvedValue([]),
     findFirst: vi.fn(),
     count: vi.fn().mockResolvedValue(0),
+    updateMany: vi.fn().mockResolvedValue({ count: 0 }),
   },
   domainApplicationCycle: {
     findUnique: vi.fn(),
@@ -52,6 +53,21 @@ export const prisma = {
     findMany: vi.fn().mockResolvedValue([]),
   },
   cycleInterviewer: {
+    findFirst: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+  },
+  cycleDomainForm: {
+    findFirst: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+    findUnique: vi.fn(),
+    create: vi.fn(),
+    delete: vi.fn(),
+  },
+  staffingCycleFormBinding: {
+    findFirst: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+  },
+  partnerApplicationFormBinding: {
     findFirst: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
   },

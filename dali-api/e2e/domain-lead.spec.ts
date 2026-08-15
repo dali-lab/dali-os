@@ -52,18 +52,6 @@ test.describe('domain lead workflow', () => {
     await expect(frame.getByText('Engineering Challenge')).toBeVisible();
   });
 
-  test('domain lead can reach Rubrics via the hiring pills', async ({ page }) => {
-    await page.goto('/hiring/domain-lead');
-    const frame = domainFrame(page);
-    // The sidebar Library entry is gone — lateral navigation between hiring
-    // tools is the in-page pill row, which navigates within the same iframe.
-    await frame.getByRole('link', { name: 'Library' }).click();
-    // Wait for the Library route to finish loading inside the iframe before
-    // interacting — otherwise the Rubrics tab click can race the iframe's
-    // navigation and land on a not-yet-ready frame.
-    const rubricsTab = frame.getByRole('tab', { name: 'Rubrics' });
-    await expect(rubricsTab).toBeVisible();
-    await rubricsTab.click();
-    await expect(frame.getByRole('heading', { name: 'Evaluation Rubrics' })).toBeVisible();
-  });
+  // (Removed) "reach Rubrics via the hiring pills" — the Library pill was folded
+  // into the Hiring drive; rubrics now live in /drive, not a Library tab.
 });

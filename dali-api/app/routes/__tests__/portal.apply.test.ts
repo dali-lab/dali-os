@@ -42,7 +42,7 @@ const mockPrisma = prisma as unknown as {
     findFirst: ReturnType<typeof vi.fn>;
     create: ReturnType<typeof vi.fn>;
   };
-  challengeVersionApplicationCycle: {
+  cycleDomainForm: {
     findMany: ReturnType<typeof vi.fn>;
   };
   user: { findUnique: ReturnType<typeof vi.fn> };
@@ -102,7 +102,7 @@ beforeEach(() => {
     findFirst: vi.fn().mockResolvedValue(null),
     create: vi.fn().mockResolvedValue({}),
   };
-  (mockPrisma as any).challengeVersionApplicationCycle = {
+  (mockPrisma as any).cycleDomainForm = {
     findMany: vi.fn().mockResolvedValue([]),
   };
   (mockPrisma as any).user = { findUnique: vi.fn().mockResolvedValue(null) };
@@ -141,7 +141,7 @@ function makeSubmitRequest(overrides: {
 describe("POST /portal/apply (submit) word-count validation", () => {
   it("rejects an over-limit textarea with wordCountErrors and writes nothing", async () => {
     mockPrisma.application.findUnique.mockResolvedValue({
-      generalChallengeVersion: { questions: generalQuestions },
+      applicationFormVersion: { questions: generalQuestions },
     });
     mockPrisma.domainApplication.findMany.mockResolvedValue([]);
 
@@ -168,7 +168,7 @@ describe("POST /portal/apply (submit) word-count validation", () => {
 
   it("proceeds when answers are at or under the word limit", async () => {
     mockPrisma.application.findUnique.mockResolvedValue({
-      generalChallengeVersion: { questions: generalQuestions },
+      applicationFormVersion: { questions: generalQuestions },
     });
     mockPrisma.domainApplication.findMany.mockResolvedValue([]);
 
@@ -190,7 +190,7 @@ describe("POST /portal/apply (submit) word-count validation", () => {
 
   it("ignores textarea questions without a maxWords limit", async () => {
     mockPrisma.application.findUnique.mockResolvedValue({
-      generalChallengeVersion: { questions: generalQuestions },
+      applicationFormVersion: { questions: generalQuestions },
     });
     mockPrisma.domainApplication.findMany.mockResolvedValue([]);
 
@@ -212,10 +212,10 @@ describe("POST /portal/apply (submit) word-count validation", () => {
 
   it("catches over-limit answers on domain-specific questions and bails before writes", async () => {
     mockPrisma.application.findUnique.mockResolvedValue({
-      generalChallengeVersion: { questions: generalQuestions },
+      applicationFormVersion: { questions: generalQuestions },
     });
     mockPrisma.domainApplication.findMany.mockResolvedValue([
-      { id: DA_ID, challengeVersion: { questions: domainQuestions } },
+      { id: DA_ID, challengeFormVersion: { questions: domainQuestions } },
     ]);
 
     const res = await action({
@@ -246,13 +246,14 @@ describe("POST /portal/apply (submit) word-count validation", () => {
 describe("POST /portal/apply (submit) required-question validation", () => {
   it("rejects submission when a selected domain has unanswered required questions", async () => {
     mockPrisma.application.findUnique.mockResolvedValue({
-      generalChallengeVersion: { questions: generalQuestions },
+      applicationFormVersion: { questions: generalQuestions },
     });
     mockPrisma.domainApplication.findMany.mockResolvedValue([
       {
         id: DA_ID,
+        domainId: "domain-x",
         selected: true,
-        challengeVersion: { domainId: "domain-x", questions: domainQuestions },
+        challengeFormVersion: { questions: domainQuestions },
       },
     ]);
 
@@ -274,13 +275,14 @@ describe("POST /portal/apply (submit) required-question validation", () => {
 
   it("rejects submission when selected domain is omitted from domainAnswers entirely", async () => {
     mockPrisma.application.findUnique.mockResolvedValue({
-      generalChallengeVersion: { questions: generalQuestions },
+      applicationFormVersion: { questions: generalQuestions },
     });
     mockPrisma.domainApplication.findMany.mockResolvedValue([
       {
         id: DA_ID,
+        domainId: "domain-x",
         selected: true,
-        challengeVersion: { domainId: "domain-x", questions: domainQuestions },
+        challengeFormVersion: { questions: domainQuestions },
       },
     ]);
 
@@ -302,18 +304,26 @@ describe("POST /portal/apply (submit) required-question validation", () => {
 // ─── create-draft / update-domains (multi-challenge support) ────────────────
 
 const CYCLE_ID = "cycle-1";
-const GENERAL_CV_ID = "general-cv";
+const GENERAL_FV_ID = "general-fv";
 const DOMAIN_A = "domain-a";
 const DOMAIN_B = "domain-b";
-const CV_A1 = "cv-a-1";
-const CV_A2 = "cv-a-2";
-const CV_B1 = "cv-b-1";
+// Form IDs for per-domain challenge forms
+const FORM_A = "form-a";
+const FORM_B = "form-b";
+// FormVersion IDs resolved from those forms
+const FV_A1 = "fv-a1";
+const FV_A2 = "fv-a2";
+const FV_B1 = "fv-b1";
+// Opaque picker ids sent by the client (matching the "form:<formId>" convention)
+const CV_A1 = `form:${FORM_A}`;
+const CV_A2 = `form:form-a2`; // second form for domain A
+const CV_B1 = `form:${FORM_B}`;
 
 function makeCreateDraftRequest(selectedDomains: { domainId: string; challengeVersionId: string }[]) {
   const body = new URLSearchParams({
     intent: "create-draft",
     cycleId: CYCLE_ID,
-    generalChallengeVersionId: GENERAL_CV_ID,
+    applicationFormVersionId: GENERAL_FV_ID,
     selectedDomains: JSON.stringify(selectedDomains),
   });
   return new Request("http://localhost/portal/apply", {
@@ -356,7 +366,7 @@ describe("POST /portal/apply (submit) confirmation email", () => {
   it("sends a confirmation email on first submission when a binding exists", async () => {
     mockPrisma.application.findUnique.mockResolvedValue({
       applicationCycleId: CYCLE_ID,
-      generalChallengeVersion: { questions: [] },
+      applicationFormVersion: { questions: [] },
     });
     mockPrisma.domainApplication.findMany.mockResolvedValue([]);
     mockPrisma.applicationStatusUpdate.findFirst.mockResolvedValue(null);
@@ -390,7 +400,7 @@ describe("POST /portal/apply (submit) confirmation email", () => {
   it("does not send on resubmit (existing Submitted status update)", async () => {
     mockPrisma.application.findUnique.mockResolvedValue({
       applicationCycleId: CYCLE_ID,
-      generalChallengeVersion: { questions: [] },
+      applicationFormVersion: { questions: [] },
     });
     mockPrisma.domainApplication.findMany.mockResolvedValue([]);
     mockPrisma.applicationStatusUpdate.findFirst.mockResolvedValue({
@@ -411,7 +421,7 @@ describe("POST /portal/apply (submit) confirmation email", () => {
   it("submits successfully when no ApplicationReceived binding is set", async () => {
     mockPrisma.application.findUnique.mockResolvedValue({
       applicationCycleId: CYCLE_ID,
-      generalChallengeVersion: { questions: [] },
+      applicationFormVersion: { questions: [] },
     });
     mockPrisma.domainApplication.findMany.mockResolvedValue([]);
     mockPrisma.applicationStatusUpdate.findFirst.mockResolvedValue(null);
@@ -431,7 +441,7 @@ describe("POST /portal/apply (submit) confirmation email", () => {
   it("does not block the redirect when sendEmail throws", async () => {
     mockPrisma.application.findUnique.mockResolvedValue({
       applicationCycleId: CYCLE_ID,
-      generalChallengeVersion: { questions: [] },
+      applicationFormVersion: { questions: [] },
     });
     mockPrisma.domainApplication.findMany.mockResolvedValue([]);
     mockPrisma.applicationStatusUpdate.findFirst.mockResolvedValue(null);
@@ -456,17 +466,17 @@ describe("POST /portal/apply (submit) confirmation email", () => {
 
 describe("POST /portal/apply (create-draft) — multi-challenge", () => {
   it("creates one DomainApplication per (domain, picked CV) pair", async () => {
-    mockPrisma.challengeVersionApplicationCycle.findMany.mockResolvedValue([
-      { challengeVersionId: CV_A1, challengeVersion: { domainId: DOMAIN_A } },
-      { challengeVersionId: CV_A2, challengeVersion: { domainId: DOMAIN_A } },
-      { challengeVersionId: CV_B1, challengeVersion: { domainId: DOMAIN_B } },
+    mockPrisma.cycleDomainForm.findMany.mockResolvedValue([
+      { domainId: DOMAIN_A, formId: FORM_A, form: { versions: [{ id: FV_A1 }] } },
+      { domainId: DOMAIN_A, formId: "form-a2", form: { versions: [{ id: FV_A2 }] } },
+      { domainId: DOMAIN_B, formId: FORM_B, form: { versions: [{ id: FV_B1 }] } },
     ]);
     mockPrisma.application.upsert.mockResolvedValue({
       id: APP_ID,
       answers: {},
       domainApplications: [
-        { id: "da-1", domainId: DOMAIN_A, challengeVersionId: CV_A2, challengeVersion: { domainId: DOMAIN_A }, answers: {} },
-        { id: "da-2", domainId: DOMAIN_B, challengeVersionId: CV_B1, challengeVersion: { domainId: DOMAIN_B }, answers: {} },
+        { id: "da-1", domainId: DOMAIN_A, challengeFormVersion: { formId: FORM_A }, answers: {} },
+        { id: "da-2", domainId: DOMAIN_B, challengeFormVersion: { formId: FORM_B }, answers: {} },
       ],
     });
 
@@ -482,20 +492,21 @@ describe("POST /portal/apply (create-draft) — multi-challenge", () => {
     expect(mockPrisma.application.upsert).toHaveBeenCalledTimes(1);
     const callArg = mockPrisma.application.upsert.mock.calls[0][0];
     expect(callArg.create.domainApplications.create).toEqual([
-      { domainId: DOMAIN_A, challengeVersionId: CV_A2, answers: {} },
-      { domainId: DOMAIN_B, challengeVersionId: CV_B1, answers: {} },
+      { domainId: DOMAIN_A, challengeFormVersionId: FV_A2, answers: {} },
+      { domainId: DOMAIN_B, challengeFormVersionId: FV_B1, answers: {} },
     ]);
   });
 
   it("drops selections whose CV is not linked to the cycle", async () => {
-    mockPrisma.challengeVersionApplicationCycle.findMany.mockResolvedValue([
-      { challengeVersionId: CV_A1, challengeVersion: { domainId: DOMAIN_A } },
+    mockPrisma.cycleDomainForm.findMany.mockResolvedValue([
+      { domainId: DOMAIN_A, formId: FORM_A, form: { versions: [{ id: FV_A1 }] } },
+      // DOMAIN_B has no entry — CV_B1 should be dropped
     ]);
     mockPrisma.application.upsert.mockResolvedValue({
       id: APP_ID,
       answers: {},
       domainApplications: [
-        { id: "da-1", domainId: DOMAIN_A, challengeVersionId: CV_A1, challengeVersion: { domainId: DOMAIN_A }, answers: {} },
+        { id: "da-1", domainId: DOMAIN_A, challengeFormVersion: { formId: FORM_A }, answers: {} },
       ],
     });
 
@@ -511,14 +522,14 @@ describe("POST /portal/apply (create-draft) — multi-challenge", () => {
 
     const callArg = mockPrisma.application.upsert.mock.calls[0][0];
     expect(callArg.create.domainApplications.create).toEqual([
-      { domainId: DOMAIN_A, challengeVersionId: CV_A1, answers: {} },
+      { domainId: DOMAIN_A, challengeFormVersionId: FV_A1, answers: {} },
     ]);
   });
 
   it("drops selections whose CV does not match the claimed domain", async () => {
-    mockPrisma.challengeVersionApplicationCycle.findMany.mockResolvedValue([
-      { challengeVersionId: CV_A1, challengeVersion: { domainId: DOMAIN_A } },
-      { challengeVersionId: CV_B1, challengeVersion: { domainId: DOMAIN_B } },
+    mockPrisma.cycleDomainForm.findMany.mockResolvedValue([
+      { domainId: DOMAIN_A, formId: FORM_A, form: { versions: [{ id: FV_A1 }] } },
+      { domainId: DOMAIN_B, formId: FORM_B, form: { versions: [{ id: FV_B1 }] } },
     ]);
     mockPrisma.application.upsert.mockResolvedValue({
       id: APP_ID,
@@ -542,9 +553,9 @@ describe("POST /portal/apply (create-draft) — multi-challenge", () => {
 
 describe("POST /portal/apply (update-domains) — multi-challenge", () => {
   it("creates a new DomainApplication for a newly selected domain", async () => {
-    mockPrisma.challengeVersionApplicationCycle.findMany.mockResolvedValue([
-      { challengeVersionId: CV_A1, challengeVersion: { domainId: DOMAIN_A } },
-      { challengeVersionId: CV_B1, challengeVersion: { domainId: DOMAIN_B } },
+    mockPrisma.cycleDomainForm.findMany.mockResolvedValue([
+      { domainId: DOMAIN_A, formId: FORM_A, form: { versions: [{ id: FV_A1 }] } },
+      { domainId: DOMAIN_B, formId: FORM_B, form: { versions: [{ id: FV_B1 }] } },
     ]);
     mockPrisma.domainApplication.findMany.mockResolvedValue([
       // Existing: domain A only
@@ -552,8 +563,7 @@ describe("POST /portal/apply (update-domains) — multi-challenge", () => {
         id: "da-1",
         applicationId: APP_ID,
         domainId: DOMAIN_A,
-        challengeVersionId: CV_A1,
-        challengeVersion: { domainId: DOMAIN_A },
+        challengeFormVersionId: FV_A1,
         selected: true,
       },
     ]);
@@ -573,22 +583,21 @@ describe("POST /portal/apply (update-domains) — multi-challenge", () => {
     } as any);
 
     expect(mockPrisma.domainApplication.create).toHaveBeenCalledWith({
-      data: { applicationId: APP_ID, domainId: DOMAIN_B, challengeVersionId: CV_B1, answers: {} },
+      data: { applicationId: APP_ID, domainId: DOMAIN_B, challengeFormVersionId: FV_B1, answers: {} },
     });
   });
 
   it("clears answers when the applicant switches the picked challenge for a domain", async () => {
-    mockPrisma.challengeVersionApplicationCycle.findMany.mockResolvedValue([
-      { challengeVersionId: CV_A1, challengeVersion: { domainId: DOMAIN_A } },
-      { challengeVersionId: CV_A2, challengeVersion: { domainId: DOMAIN_A } },
+    mockPrisma.cycleDomainForm.findMany.mockResolvedValue([
+      { domainId: DOMAIN_A, formId: FORM_A, form: { versions: [{ id: FV_A1 }] } },
+      { domainId: DOMAIN_A, formId: "form-a2", form: { versions: [{ id: FV_A2 }] } },
     ]);
     mockPrisma.domainApplication.findMany.mockResolvedValue([
       {
         id: "da-1",
         applicationId: APP_ID,
         domainId: DOMAIN_A,
-        challengeVersionId: CV_A1,
-        challengeVersion: { domainId: DOMAIN_A },
+        challengeFormVersionId: FV_A1,
         selected: true,
       },
     ]);
@@ -608,21 +617,20 @@ describe("POST /portal/apply (update-domains) — multi-challenge", () => {
 
     expect(mockPrisma.domainApplication.update).toHaveBeenCalledWith({
       where: { id: "da-1" },
-      data: { challengeVersionId: CV_A2, answers: {} },
+      data: { challengeFormVersionId: FV_A2, answers: {} },
     });
   });
 
   it("preserves answers when domain is re-selected with the same CV (selected: true only)", async () => {
-    mockPrisma.challengeVersionApplicationCycle.findMany.mockResolvedValue([
-      { challengeVersionId: CV_A1, challengeVersion: { domainId: DOMAIN_A } },
+    mockPrisma.cycleDomainForm.findMany.mockResolvedValue([
+      { domainId: DOMAIN_A, formId: FORM_A, form: { versions: [{ id: FV_A1 }] } },
     ]);
     mockPrisma.domainApplication.findMany.mockResolvedValue([
       {
         id: "da-1",
         applicationId: APP_ID,
         domainId: DOMAIN_A,
-        challengeVersionId: CV_A1,
-        challengeVersion: { domainId: DOMAIN_A },
+        challengeFormVersionId: FV_A1,
         selected: false,
       },
     ]);
@@ -647,25 +655,23 @@ describe("POST /portal/apply (update-domains) — multi-challenge", () => {
   });
 
   it("marks deselected domains as not selected (preserves the row for answer recovery)", async () => {
-    mockPrisma.challengeVersionApplicationCycle.findMany.mockResolvedValue([
-      { challengeVersionId: CV_A1, challengeVersion: { domainId: DOMAIN_A } },
-      { challengeVersionId: CV_B1, challengeVersion: { domainId: DOMAIN_B } },
+    mockPrisma.cycleDomainForm.findMany.mockResolvedValue([
+      { domainId: DOMAIN_A, formId: FORM_A, form: { versions: [{ id: FV_A1 }] } },
+      { domainId: DOMAIN_B, formId: FORM_B, form: { versions: [{ id: FV_B1 }] } },
     ]);
     mockPrisma.domainApplication.findMany.mockResolvedValue([
       {
         id: "da-1",
         applicationId: APP_ID,
         domainId: DOMAIN_A,
-        challengeVersionId: CV_A1,
-        challengeVersion: { domainId: DOMAIN_A },
+        challengeFormVersionId: FV_A1,
         selected: true,
       },
       {
         id: "da-2",
         applicationId: APP_ID,
         domainId: DOMAIN_B,
-        challengeVersionId: CV_B1,
-        challengeVersion: { domainId: DOMAIN_B },
+        challengeFormVersionId: FV_B1,
         selected: true,
       },
     ]);

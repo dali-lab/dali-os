@@ -8,6 +8,7 @@ import { redirectToLogin } from "~/lib/login-next";
 import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
 import { presignAnswers } from "~/hiring/lib/presign";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
+import { safeParseJsonString } from "~/forms/lib/forms-data";
 import { ChevronDown } from "lucide-react";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { Avatar } from "~/components/ui/Avatar";
@@ -44,6 +45,7 @@ const STATUS_BADGE: Record<string, { bg: string; label: string }> = {
   InterviewScheduled: { bg: "bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-700", label: "Interview Scheduled" },
   PostInterviewPending: { bg: "bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-700", label: "Post-Interview" },
   Accepted: { bg: "bg-green-100 text-green-700 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700", label: "Accepted" },
+  AcceptedElsewhere: { bg: "bg-muted text-foreground/70 border-current/30", label: "Accepted elsewhere" },
   Waitlisted: { bg: "bg-yellow-100 text-yellow-700 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-700", label: "Waitlisted" },
 };
 
@@ -86,13 +88,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     where: { id: params.id },
     include: {
       ...domainApplicationStatusInclude,
-      challengeVersion: { include: { domain: true, challenge: true } },
+      challengeFormVersion: { select: { questions: true, intro: true, form: { select: { name: true } } } },
       domain: true,
       application: {
         include: {
           user: true,
           statusUpdates: true,
-          generalChallengeVersion: true,
           applicationFormVersion: true,
           applicationCycle: {
             include: { statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 } },
@@ -130,9 +131,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
 
   if (!da) return redirect("/hiring/domain-lead");
-  // Standard cycles link domain via challengeVersion. Fellowship links it
-  // directly. Use whichever is present.
-  const daDomainId = da.challengeVersion?.domainId ?? da.domainId ?? null;
+  const daDomainId = da.domainId ?? null;
   if (!daDomainId || !leadDomainIds.includes(daDomainId)) return redirect("/hiring/domain-lead");
 
   const confRedirect = await requirePageSignedOrRedirect(
@@ -222,12 +221,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     cycleStatus,
   );
 
-  // Presign file-type answers so reviewers see real download links rather
-  // than raw S3 keys.
+  // Presign file-type answers so reviewers see real download links rather than raw S3 keys.
   const generalQuestions =
-    (da.application.generalChallengeVersion?.questions as unknown as Question[]) ?? [];
+    (da.application.applicationFormVersion?.questions as unknown as Question[]) ?? [];
   const challengeQuestions =
-    (da.challengeVersion?.questions as unknown as Question[]) ?? [];
+    (da.challengeFormVersion?.questions as unknown as Question[]) ?? [];
   const presignedGeneralAnswers = await presignAnswers(
     generalQuestions,
     da.application.answers as Record<string, string>,
@@ -248,11 +246,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   return {
       domainApplication: {
         ...da,
-        // Immutable ChallengeVersion rows: legacy ProseMirror descriptions
-        // convert to block JSON on read (ApplicationViewer expects blocks).
-        challengeVersion: da.challengeVersion
-          ? { ...da.challengeVersion, description: ensureBlocks(da.challengeVersion.description) }
-          : da.challengeVersion,
+        // Per-domain challenge: synthesize from the bound Drive Form.
+        challengeVersion: da.challengeFormVersion
+          ? {
+              questions: da.challengeFormVersion.questions,
+              description: ensureBlocks(safeParseJsonString(da.challengeFormVersion.intro)),
+              domain: da.domain ?? { name: "Domain" },
+              challenge: { name: da.challengeFormVersion.form?.name ?? "Challenge" },
+            }
+          : null,
         answers: presignedChallengeAnswers,
         interviews: interviewsWithNotes,
         reviews: reviewsWithPhotos,
@@ -260,12 +262,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       application: {
         ...da.application,
         answers: presignedGeneralAnswers,
-        generalChallengeVersion: da.application.generalChallengeVersion
+        // Synthesize generalChallengeVersion from the bound Drive Form.
+        generalChallengeVersion: da.application.applicationFormVersion
           ? {
-              ...da.application.generalChallengeVersion,
-              description: ensureBlocks(da.application.generalChallengeVersion.description),
+              questions: da.application.applicationFormVersion.questions,
+              description: ensureBlocks(safeParseJsonString(da.application.applicationFormVersion.intro)),
             }
-          : da.application.generalChallengeVersion,
+          : null,
       },
       inferredStatus,
       criteriaByKey,
@@ -304,7 +307,7 @@ export default function DomainLeadApplicationView() {
               questions: da.challengeVersion.questions ?? [],
               description: da.challengeVersion.description,
               domain: da.challengeVersion.domain ?? { name: "Domain" },
-              challenge: da.challengeVersion.challenge,
+              challenge: da.challengeVersion.challenge ?? null,
             }
           : null,
         domain: da.domain,
@@ -317,7 +320,7 @@ export default function DomainLeadApplicationView() {
       {/* Header */}
       <ApplicantDetailHeader
         name={`${application.user.firstName} ${application.user.lastName}`}
-        domainName={da.challengeVersion.domain?.name}
+        domainName={da.domain?.name ?? da.challengeVersion?.domain?.name}
         cycleName={application.applicationCycle.name}
         statusSlot={
           <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold border ${statusInfo.bg}`}>

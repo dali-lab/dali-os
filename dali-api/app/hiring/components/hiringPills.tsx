@@ -1,5 +1,4 @@
 import {
-  BookOpen,
   ClipboardList,
   Clock,
   Files,
@@ -27,10 +26,9 @@ export function hiringPills(args: {
     | "domain"
     | "cycles"
     | "waitlists"
-    | "onboarding"
-    | "library";
+    | "onboarding";
 }): AreaPill[] {
-  const { isCore, isDomainLead, isAdmin, isInterviewer, active } = args;
+  const { isCore, isDomainLead, isInterviewer, active } = args;
   return [
     { label: "Hub", to: "/hiring", active: active === "hub", icon: LayoutGrid },
     {
@@ -79,16 +77,6 @@ export function hiringPills(args: {
             to: "/hiring/onboarding",
             active: active === "onboarding",
             icon: UserPlus,
-          },
-        ]
-      : []),
-    ...(isCore || isDomainLead || isAdmin
-      ? [
-          {
-            label: "Library",
-            to: "/hiring/library",
-            active: active === "library",
-            icon: BookOpen,
           },
         ]
       : []),

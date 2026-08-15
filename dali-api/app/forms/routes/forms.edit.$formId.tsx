@@ -10,7 +10,7 @@ import {
   runFormsAction,
   type FolderCrumb,
 } from "~/forms/lib/forms-data";
-import { formUsages } from "~/forms/lib/form-usages.server";
+import { formUsages, managingUsage } from "~/forms/lib/form-usages.server";
 import { listAllGroups } from "~/lib/groups";
 import { FormDetail } from "~/forms/components/FormDetail";
 
@@ -58,10 +58,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       // helper): a Core author must be able to target groups they aren't in.
       listAllGroups(),
     ]);
+  // When a feature owns this form's distribution (hiring cycle, education
+  // offering, staffing, partner), the generic publish/audience settings are
+  // hidden — access is governed by that feature, not the Form.
+  const managing = managingUsage(usages);
   return {
     form,
     terms,
     usages,
+    managing,
     crumbs,
     groups: allGroups
       .filter((g) => !g.archived)

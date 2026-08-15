@@ -15,6 +15,7 @@ import { useState, useCallback, useEffect, useRef, useId, useMemo } from "react"
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { canViewForms as checkCanViewForms, getUserRoles } from "~/lib/roles";
+import { prisma } from "~/lib/db";
 import { loader as docsLoader } from "~/routes/documents.hub";
 import { loadDriveScopes } from "~/lib/drive-scopes.server";
 import type { DriveItem } from "~/lib/drive.server";
@@ -45,6 +46,17 @@ export async function loader({ request }: Route.LoaderArgs) {
   // isCore is the gate for agreement authoring. Passed down as canManageAgreements
   // so drive.server.ts doesn't re-derive it (matches the canViewForms pattern).
   const userCanManageAgreements = roles.isCore;
+  // Hiring-drive gate — matches the "hiring" dynamic group (Core + domain leads
+  // + cycle reviewers/interviewers) so the scope shows for exactly the people
+  // the Hiring root is scoped to.
+  const hasHiringAccess =
+    roles.isCore ||
+    roles.isDomainLead ||
+    roles.isInterviewer ||
+    (await prisma.cycleReviewer.findFirst({
+      where: { userId: auth.user.sub },
+      select: { id: true },
+    })) !== null;
 
   const docsResult = await docsLoader({ request } as Parameters<typeof docsLoader>[0]);
   if (docsResult instanceof Response) return docsResult;
@@ -57,6 +69,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     canViewForms: userCanViewForms,
     canManageAgreements: userCanManageAgreements,
     isCore: roles.isCore,
+    hasHiringAccess,
     request,
   });
 
@@ -311,7 +324,7 @@ type ScopeKind = "mine" | "lab" | "project";
 // The Core drive is Lab-workspace pages nested under the Core root folder, so it
 // uses the same endpoints as Lab — its rootFolderId (below) handles the nesting.
 function scopeKindOf(id: string): ScopeKind {
-  return id === "mine" ? "mine" : id === "lab" || id === "core" ? "lab" : "project";
+  return id === "mine" ? "mine" : id === "lab" || id === "core" || id === "hiring" ? "lab" : "project";
 }
 
 // A folder's own id plus every descendant folder id — so "Move to…" never
@@ -817,7 +830,7 @@ export default function DriveHub() {
   const uploadTarget: UploadTarget = useMemo(() => {
     if (!currentScope) return { scope: { kind: "Lab" } };
     if (currentScope.id === "mine") return { scope: { kind: "Member" }, folderPageId: currentFolderId };
-    if (currentScope.id === "lab" || currentScope.id === "core")
+    if (currentScope.id === "lab" || currentScope.id === "core" || currentScope.id === "hiring")
       return { scope: { kind: "Lab" }, folderPageId: currentFolderId ?? currentScope.rootFolderId ?? null };
     return { scope: { kind: "Project", projectId: currentScope.id }, folderPageId: currentFolderId };
   }, [currentScope, currentFolderId]);

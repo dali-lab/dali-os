@@ -60,21 +60,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       // The collab layer keeps this column in sync with the live Yjs doc, so
       // reading it directly is safe. Lead-only on the UI.
       interviewPrepNote: true,
-      domain: { select: { displayName: true } },
-      challengeVersion: {
-        select: {
-          questions: true,
-          description: true,
-          domain: { select: { id: true, name: true, displayName: true } },
-          challenge: { select: { name: true } },
-        },
-      },
+      domain: { select: { id: true, name: true, displayName: true } },
+      challengeFormVersion: { select: { questions: true, intro: true, form: { select: { name: true } } } },
       application: {
         select: {
           id: true,
           answers: true,
           applicationCycleId: true,
-          generalChallengeVersion: { select: { questions: true, description: true } },
           applicationFormVersion: { select: { questions: true, intro: true } },
           applicationCycle: {
             select: {
@@ -125,23 +117,20 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   );
 
   // Presign file answers so the viewer renders download links, not S3 keys.
-  // Prefer the bound Drive Form; fall back to the legacy general ChallengeVersion.
   const generalQuestions =
-    (da.application.applicationFormVersion?.questions as unknown as Question[]) ??
-    (da.application.generalChallengeVersion?.questions as unknown as Question[]) ??
-    [];
+    (da.application.applicationFormVersion?.questions as unknown as Question[]) ?? [];
+  // Per-domain challenge questions from the bound Drive Form.
+  const challengeQuestions =
+    (da.challengeFormVersion?.questions as unknown as Question[]) ?? [];
   const [generalAnswers, domainAnswers] = await Promise.all([
     presignAnswers(generalQuestions, da.application.answers as Record<string, string>),
-    presignAnswers(
-      (da.challengeVersion?.questions as unknown as Question[]) ?? [],
-      da.answers as Record<string, string>,
-    ),
+    presignAnswers(challengeQuestions, da.answers as Record<string, string>),
   ]);
 
   // Question labels for the viewer (general + this domain's challenge).
   const questionLabels: Record<string, string> = {};
   for (const q of generalQuestions) questionLabels[q.key] = q.data.label;
-  for (const q of (da.challengeVersion?.questions as unknown as Question[]) ?? []) {
+  for (const q of challengeQuestions) {
     questionLabels[q.key] = q.data.label;
   }
 
@@ -404,9 +393,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // Shape the application object the way ApplicationViewer expects: a single
   // domainApplication (this one), plus general answers.
   const domainName =
-    da.domain?.displayName ?? da.challengeVersion?.domain?.displayName ?? "Domain";
-  // Immutable ChallengeVersion rows: legacy ProseMirror descriptions convert
-  // to block JSON on read (ApplicationViewer expects blocks).
+    da.domain?.displayName ?? da.domain?.name ?? "Domain";
   const application = {
     answers: generalAnswers,
     generalChallengeVersion: da.application.applicationFormVersion
@@ -416,22 +403,20 @@ export async function loader({ request, params }: Route.LoaderArgs) {
             safeParseJsonString(da.application.applicationFormVersion.intro),
           ),
         }
-      : da.application.generalChallengeVersion
-        ? {
-            questions: da.application.generalChallengeVersion.questions,
-            description: ensureBlocks(da.application.generalChallengeVersion.description),
-          }
-        : null,
+      : null,
     domainApplications: [
       {
         id: da.id,
         answers: domainAnswers,
-        challengeVersion: {
-          questions: da.challengeVersion?.questions ?? [],
-          description: ensureBlocks(da.challengeVersion?.description),
-          domain: { name: da.challengeVersion?.domain?.name ?? domainName },
-          challenge: { name: da.challengeVersion?.challenge?.name ?? "Challenge" },
-        },
+        challengeVersion: da.challengeFormVersion
+          ? {
+              questions: challengeQuestions,
+              description: ensureBlocks(safeParseJsonString(da.challengeFormVersion.intro)),
+              domain: { name: da.domain?.name ?? domainName },
+              challenge: { name: da.challengeFormVersion.form?.name ?? "Challenge" },
+            }
+          : null,
+        domain: da.domain,
       },
     ],
   };
