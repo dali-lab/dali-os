@@ -141,6 +141,19 @@ pub fn run() {
             }
             _ => {}
         })
-        .run(tauri::generate_context!())
-        .expect("error while running DALI OS desktop");
+        .build(tauri::generate_context!())
+        .expect("error while building DALI OS desktop")
+        // macOS sends Reopen (not a window event) when the Dock icon is clicked
+        // with no visible window — after close-to-tray or Hide, nothing brings
+        // the shell back without this, leaving the tray icon as the only way in.
+        .run(|_app, _event| {
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = _event {
+                let _ = _app.show();
+                match _app.state::<AppState>().auth() {
+                    AuthState::Authenticated => window::show_main(_app),
+                    _ => window::show_pairing(_app),
+                }
+            }
+        });
 }
