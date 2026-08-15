@@ -1,13 +1,17 @@
-// DriveBrowser — a Finder / Google-Drive style browser for the unified Drive.
+// DriveBrowser — Miller-column (Finder-style) browser for the unified Drive.
 //
-// Browse one location at a time: the Drive root (the list of drives) or the
-// contents of a single scope+folder. Features: sortable columns + list/grid
-// views, multi-select (shift/⌘-click, ⌘A) with a bulk bar, keyboard navigation,
-// drag-to-upload from the desktop, a right-click context menu, a drag preview,
-// a details pane, breadcrumb overflow collapsing, and an inline favorite star.
+// PRIMARY VIEW: Miller columns — a horizontally-scrolling row of columns.
+//   Column 0 = scope list (My Drive, Lab, Core, Hiring, Projects).
+//   Each scope/folder click opens a new column to the right.
+//   Selecting a leaf shows an action toolbar above the columns.
 //
-// The hub (drive.hub.tsx) owns URL state (?scope=&folder=), loader data, and the
-// per-scope action/upload/favorite handlers; this component is the surface.
+// SECONDARY VIEWS: list / grid (same data, single-folder view, matching the old
+//   single-location browse — toggled via the view buttons in the toolbar row).
+//
+// ALL pre-existing features are preserved:
+//   • Type filter, search, create folder/doc, drag-and-drop internal move,
+//     drag-to-upload from desktop, favorites, rename, move, delete, bulk delete,
+//     context menu, keyboard navigation, details pane, breadcrumb, sort.
 
 import {
   useEffect,
@@ -54,6 +58,10 @@ import {
   PanelRight,
   Upload,
   FolderOpen,
+  Download,
+  Share2,
+  Columns,
+  ClipboardCheck,
 } from "lucide-react";
 import type { DriveItem } from "~/lib/drive.server";
 import type { DriveTreeScope } from "~/lib/drive-scopes.server";
@@ -69,7 +77,7 @@ export type RowActions = {
 
 type SortKey = "name" | "modified" | "size";
 type SortDir = "asc" | "desc";
-type ViewMode = "list" | "grid";
+type ViewMode = "columns" | "list" | "grid";
 
 export type DriveBrowserProps = {
   scopes: DriveTreeScope[];
@@ -108,6 +116,8 @@ function kindLabel(item: DriveItem): string {
       return "File";
     case "form":
       return "Form";
+    case "rubric":
+      return "Rubric";
     default:
       return "Agreement";
   }
@@ -213,6 +223,8 @@ function itemIcon(item: DriveItem, big = false) {
       return <ClipboardList className={`${cls} text-muted-foreground shrink-0`} />;
     case "agreement":
       return <FileSignature className={`${cls} text-muted-foreground shrink-0`} />;
+    case "rubric":
+      return <ClipboardCheck className={`${cls} text-muted-foreground shrink-0`} />;
     default:
       return <PageIcon iconEmoji={item.iconEmoji} />;
   }
@@ -342,6 +354,77 @@ function FavoriteButton({
 
 const GRID_COLUMNS = "minmax(0,1fr) 9rem 5rem 3.75rem";
 
+// ── Miller column types ──────────────────────────────────────────────────────
+
+// Each "level" in the column stack is either the scope root or a folder inside
+// a scope. The column renders that level's children.
+type ColumnLevel =
+  | { kind: "root" }
+  | { kind: "scope"; scopeId: string; folderId: string | null };
+
+// The selected "path" through the column tree: the sequence of levels opened,
+// plus the id of the row highlighted at each level.
+type ColumnSelection = {
+  levels: ColumnLevel[];
+  /** The row id highlighted at each level (parallel to `levels`). */
+  highlightedIds: (string | null)[];
+  /** If a leaf is highlighted, it lives at this level index. */
+  leafLevelIdx: number | null;
+  /** The highlighted leaf item (populated when a leaf row is selected). */
+  selectedLeaf: DriveItem | null;
+};
+
+function initialColumnSelection(
+  currentScopeId: string | null,
+  currentFolderId: string | null,
+  scopes: DriveTreeScope[],
+): ColumnSelection {
+  if (!currentScopeId) {
+    return { levels: [{ kind: "root" }], highlightedIds: [null], leafLevelIdx: null, selectedLeaf: null };
+  }
+  const scope = scopes.find((s) => s.id === currentScopeId);
+  if (!scope) {
+    return { levels: [{ kind: "root" }], highlightedIds: [null], leafLevelIdx: null, selectedLeaf: null };
+  }
+
+  // Build the path of folder crumbs (root → currentFolderId, inclusive).
+  // e.g. navigating to FolderB inside FolderA: crumbs = [{id:folderA}, {id:folderB}]
+  const crumbs = crumbsFor(scope.items, currentFolderId);
+
+  // Column layout:
+  //   Col 0: all scopes              highlighted = scopeId
+  //   Col 1: scope root (folderId=null)  highlighted = crumbs[0].id (or null)
+  //   Col 2: folderId=crumbs[0].id   highlighted = crumbs[1].id (or null)
+  //   ...
+  //   Col k: folderId=crumbs[k-2].id highlighted = crumbs[k-1].id (or null)
+  //   Col N: folderId=currentFolderId highlighted = null  (the "current" column)
+  //
+  // When currentFolderId is null, crumbs is empty, so we only have col 0 + col 1.
+  const levels: ColumnLevel[] = [
+    { kind: "root" },
+    { kind: "scope", scopeId: currentScopeId, folderId: null },
+  ];
+  // col 0 highlights the scope; col 1 highlights crumbs[0] if we're inside a folder
+  const highlightedIds: (string | null)[] = [currentScopeId, crumbs.length > 0 ? crumbs[0].id : null];
+
+  // For each crumb (they are in root→leaf order), open a column showing that
+  // crumb's parent folder's children, and highlight the crumb itself.
+  // crumbs[0] is already highlighted at col 1 (scope root). Starting from
+  // crumbs[1] we need additional columns.
+  for (let i = 1; i < crumbs.length; i++) {
+    levels.push({ kind: "scope", scopeId: currentScopeId, folderId: crumbs[i - 1].id });
+    highlightedIds.push(crumbs[i].id);
+  }
+
+  // The final column shows the contents of currentFolderId (nothing highlighted).
+  if (currentFolderId !== null) {
+    levels.push({ kind: "scope", scopeId: currentScopeId, folderId: currentFolderId });
+    highlightedIds.push(null);
+  }
+
+  return { levels, highlightedIds, leafLevelIdx: null, selectedLeaf: null };
+}
+
 // ── Main component ───────────────────────────────────────────────────────────
 
 export function DriveBrowser({
@@ -366,25 +449,36 @@ export function DriveBrowser({
     [scopes, currentScopeId],
   );
 
+  // ── Legacy list/grid state (for non-column views) ──────────────────────────
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [anchorId, setAnchorId] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: "name", dir: "asc" });
-  const [viewMode, setViewMode] = useState<ViewMode>("list");
+  const [viewMode, setViewMode] = useState<ViewMode>("columns");
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [uploadOver, setUploadOver] = useState(false);
   const [activeDrag, setActiveDrag] = useState<DriveItem | null>(null);
   const dragDepth = useRef(0);
   const listRef = useRef<HTMLDivElement | null>(null);
 
-  // Restore the saved view mode after mount (avoids an SSR hydration mismatch).
+  // ── Miller column state ────────────────────────────────────────────────────
+  const [colSel, setColSel] = useState<ColumnSelection>(() =>
+    initialColumnSelection(currentScopeId, currentFolderId, scopes),
+  );
+  const columnsContainerRef = useRef<HTMLDivElement | null>(null);
+
+  // Restore the saved view mode after mount.
   useEffect(() => {
     try {
-      if (window.localStorage.getItem("dali_drive_view") === "grid") setViewMode("grid");
+      const saved = window.localStorage.getItem("dali_drive_view");
+      if (saved === "grid") setViewMode("grid");
+      else if (saved === "list") setViewMode("list");
+      // default stays "columns"
     } catch {
       /* ignore */
     }
   }, []);
+
   function changeView(v: ViewMode) {
     setViewMode(v);
     try {
@@ -394,7 +488,19 @@ export function DriveBrowser({
     }
   }
 
-  // Reset selection when the location or search changes.
+  // Sync column selection when the URL-driven location changes (e.g. breadcrumb
+  // click, back/forward, programmatic navigate).
+  useEffect(() => {
+    setColSel(initialColumnSelection(currentScopeId, currentFolderId, scopes));
+  }, [currentScopeId, currentFolderId, scopes]);
+
+  // Auto-scroll the columns container to the right after each column is added.
+  useEffect(() => {
+    const el = columnsContainerRef.current;
+    if (el) el.scrollLeft = el.scrollWidth;
+  }, [colSel.levels.length]);
+
+  // Reset list/grid selection when the location or search changes.
   useEffect(() => {
     setSelected(new Set());
     setAnchorId(null);
@@ -420,8 +526,6 @@ export function DriveBrowser({
     return sortItems(kids, sort.key, sort.dir);
   }, [currentScope, currentFolderId, typeFilter, sort]);
 
-  // The ordered ids of whatever rows are visible — drives navigation + range
-  // selection across all three modes (search / root / in-scope).
   const orderedIds = useMemo(() => {
     if (searching) return hits.map((h) => h.item.id);
     if (!currentScope) return scopes.map((s) => s.id);
@@ -433,7 +537,7 @@ export function DriveBrowser({
     [listing, selected],
   );
 
-  // ── Selection ──────────────────────────────────────────────────────────────
+  // ── List/Grid Selection ────────────────────────────────────────────────────
   function selectOnly(id: string) {
     setSelected(new Set([id]));
     setAnchorId(id);
@@ -467,7 +571,7 @@ export function DriveBrowser({
     }
   }
 
-  // ── Open / navigate ──────────────────────────────────────────────────────────
+  // ── Open / navigate (list/grid mode) ─────────────────────────────────────
   function openById(id: string) {
     if (searching) {
       const hit = hits.find((h) => h.item.id === id);
@@ -487,7 +591,7 @@ export function DriveBrowser({
     else onOpenItem(item);
   }
 
-  // ── Keyboard navigation ──────────────────────────────────────────────────────
+  // ── Keyboard navigation (list/grid mode) ──────────────────────────────────
   function onKeyDown(e: ReactKeyboardEvent<HTMLDivElement>) {
     if (orderedIds.length === 0) return;
     const idx = activeId ? orderedIds.indexOf(activeId) : -1;
@@ -503,8 +607,6 @@ export function DriveBrowser({
       e.preventDefault();
       if (activeId) openById(activeId);
     } else if (e.key === "Backspace") {
-      // Up one level: to the parent folder, else the scope root, else the Drive
-      // root. Never fires while typing (the search box stops propagation).
       e.preventDefault();
       if (!currentScope) return;
       if (currentFolderId) {
@@ -525,7 +627,7 @@ export function DriveBrowser({
     }
   }
 
-  // ── dnd-kit (internal move) ──────────────────────────────────────────────────
+  // ── dnd-kit (internal move) ──────────────────────────────────────────────
   function handleDragStart(e: DragStartEvent) {
     const data = e.active.data.current as { item: DriveItem } | undefined;
     setActiveDrag(data?.item ?? null);
@@ -544,7 +646,7 @@ export function DriveBrowser({
     onMove(currentScope.id, src.item, dest.destFolderId);
   }
 
-  // ── Drag-to-upload (desktop files) ───────────────────────────────────────────
+  // ── Drag-to-upload (desktop files) ──────────────────────────────────────
   const canUpload = !!(currentScope && onUploadFiles && !searching);
   function hasFiles(e: React.DragEvent) {
     return Array.from(e.dataTransfer.types || []).includes("Files");
@@ -580,10 +682,116 @@ export function DriveBrowser({
 
   const showBulk = !searching && !!currentScope && selected.size > 1;
 
+  // ── Miller column handlers ─────────────────────────────────────────────────
+
+  // Click a scope row in column 0 → highlight it, open column 1 with scope root.
+  function handleScopeClick(scopeId: string) {
+    onNavigate(scopeId, null);
+    setColSel({
+      levels: [
+        { kind: "root" },
+        { kind: "scope", scopeId, folderId: null },
+      ],
+      highlightedIds: [scopeId, null],
+      leafLevelIdx: null,
+      selectedLeaf: null,
+    });
+  }
+
+  // Double-click scope = navigate there (same as click, already navigated above).
+  function handleScopeDblClick(scopeId: string) {
+    onNavigate(scopeId, null);
+  }
+
+  // Click a row inside a column: either drill into folder or highlight leaf.
+  function handleColumnRowClick(levelIdx: number, item: DriveItem, scopeId: string) {
+    if (item.type === "folder") {
+      // Drill into folder: truncate anything to the right of this column, open
+      // a new column for this folder's children, and update URL.
+      const newFolderId = item.id;
+
+      const truncatedLevels = colSel.levels.slice(0, levelIdx + 1);
+      const truncatedHighlights = colSel.highlightedIds.slice(0, levelIdx + 1);
+      truncatedHighlights[levelIdx] = item.id;
+
+      // Add the new column showing this folder's children.
+      truncatedLevels.push({ kind: "scope", scopeId, folderId: newFolderId });
+      truncatedHighlights.push(null);
+
+      setColSel({
+        levels: truncatedLevels,
+        highlightedIds: truncatedHighlights,
+        leafLevelIdx: null,
+        selectedLeaf: null,
+      });
+      onNavigate(scopeId, newFolderId);
+    } else {
+      // Leaf: highlight in this column, truncate columns to the right, show toolbar.
+      const truncatedLevels = colSel.levels.slice(0, levelIdx + 1);
+      const truncatedHighlights = colSel.highlightedIds.slice(0, levelIdx + 1);
+      truncatedHighlights[levelIdx] = item.id;
+      setColSel({
+        levels: truncatedLevels,
+        highlightedIds: truncatedHighlights,
+        leafLevelIdx: levelIdx,
+        selectedLeaf: item,
+      });
+    }
+  }
+
+  // Double-click a leaf → open it.
+  function handleColumnRowDblClick(item: DriveItem) {
+    if (item.type !== "folder") {
+      onOpenItem(item);
+    }
+  }
+
+  // Compute the scope for a given column level.
+  function scopeForLevel(level: ColumnLevel): DriveTreeScope | null {
+    if (level.kind !== "scope") return null;
+    return scopes.find((s) => s.id === level.scopeId) ?? null;
+  }
+
+  // Items for a column at the given level, filtered + sorted.
+  function itemsForLevel(level: ColumnLevel): DriveItem[] {
+    if (level.kind === "root") return [];
+    const scope = scopeForLevel(level);
+    if (!scope) return [];
+    const folderId = level.folderId;
+    const kids = childrenAt(scope.items, folderId).filter(
+      (it) => typeFilter === "all" || it.type === "folder" || it.type === typeFilter,
+    );
+    return sortItems(kids, sort.key, sort.dir);
+  }
+
+  // Get the scope id for a given column level (for actions).
+  function scopeIdForLevel(level: ColumnLevel): string | null {
+    if (level.kind !== "scope") return null;
+    return level.scopeId;
+  }
+
+  // ── Leaf toolbar actions ───────────────────────────────────────────────────
+  const { selectedLeaf } = colSel;
+  let leafScopeId: string | null = null;
+  if (colSel.leafLevelIdx !== null) {
+    leafScopeId = scopeIdForLevel(colSel.levels[colSel.leafLevelIdx]);
+  }
+  const leafActions = leafScopeId ? getScopeActions(leafScopeId) : null;
+
+  const canLeafRename =
+    selectedLeaf &&
+    (selectedLeaf.type === "folder" || selectedLeaf.type === "doc" || selectedLeaf.type === "file");
+  const canLeafMove = selectedLeaf && selectedLeaf.type !== "agreement";
+  const canLeafDelete =
+    selectedLeaf &&
+    (selectedLeaf.type === "folder" || selectedLeaf.type === "doc" || selectedLeaf.type === "file");
+  // Download: only for files with an href.
+  const canLeafDownload = selectedLeaf && selectedLeaf.type === "file";
+
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div className="flex flex-col gap-3" data-testid="drive-browser" onClick={() => setSelected(new Set())}>
-        {/* Toolbar: breadcrumb · filter · search · view · details · New */}
+        {/* ── Toolbar row: breadcrumb · filter · search · view · details · New ── */}
         <div className="flex items-center gap-3 flex-wrap">
           <Breadcrumb
             currentScope={currentScope}
@@ -621,8 +829,21 @@ export function DriveBrowser({
             )}
           </div>
 
-          {/* View toggle */}
+          {/* View toggle — columns / list / grid */}
           <div className="inline-flex rounded-md border border-border overflow-hidden shrink-0">
+            <button
+              type="button"
+              data-testid="drive-view-columns"
+              aria-label="Column view"
+              aria-pressed={viewMode === "columns"}
+              onClick={(e) => {
+                e.stopPropagation();
+                changeView("columns");
+              }}
+              className={`p-1.5 ${viewMode === "columns" ? "bg-accent-coral/10 text-accent-coral" : "text-muted-foreground hover:bg-muted/50"}`}
+            >
+              <Columns className="w-4 h-4" />
+            </button>
             <button
               type="button"
               data-testid="drive-view-list"
@@ -668,8 +889,8 @@ export function DriveBrowser({
           {newMenu}
         </div>
 
-        {/* Bulk action bar (multi-select) */}
-        {showBulk && (
+        {/* ── Bulk action bar (multi-select, list/grid only) ── */}
+        {showBulk && viewMode !== "columns" && (
           <div
             className="flex items-center gap-3 rounded-md border border-accent-coral/40 bg-accent-coral/5 px-3 py-1.5 text-sm"
             data-testid="drive-bulk-bar"
@@ -695,61 +916,321 @@ export function DriveBrowser({
           </div>
         )}
 
-        {/* Body: listing (+ optional details pane) */}
-        <div className={detailsOpen ? "flex gap-3 items-start" : ""}>
+        {/* ── Column-view leaf toolbar (shown above columns when a leaf is selected) ── */}
+        {viewMode === "columns" && !searching && selectedLeaf && leafActions && (
           <div
-            ref={listRef}
-            tabIndex={0}
-            onKeyDown={onKeyDown}
-            onDragEnter={onFileDragEnter}
-            onDragOver={onFileDragOver}
-            onDragLeave={onFileDragLeave}
-            onDrop={onFileDrop}
-            className="relative flex-1 min-w-0 rounded-lg border border-border bg-card overflow-hidden focus:outline-none focus:ring-1 focus:ring-accent-coral/30"
+            className="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5 text-sm"
+            data-testid="drive-leaf-toolbar"
+            onClick={(e) => e.stopPropagation()}
           >
-            {uploadOver && (
-              <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-lg border-2 border-dashed border-accent-coral bg-accent-coral/10">
-                <span className="flex items-center gap-2 text-sm font-medium text-accent-coral">
-                  <Upload className="w-4 h-4" /> Drop files to upload
-                </span>
-              </div>
-            )}
-
-            {searching ? (
-              <SearchResults
-                hits={hits}
-                selected={selected}
-                onRowClick={handleRowClick}
-                onOpen={openById}
-                getScopeActions={getScopeActions}
-                onToggleFavorite={onToggleFavorite}
-              />
-            ) : !currentScope ? (
-              <ScopeList
-                scopes={scopes}
-                selected={selected}
-                onRowClick={handleRowClick}
-                onOpen={openById}
-              />
-            ) : (
-              <ScopeContents
-                scope={currentScope}
-                listing={listing}
-                viewMode={viewMode}
-                sort={sort}
-                onToggleSort={toggleSort}
-                selected={selected}
-                activeId={activeId}
-                onRowClick={handleRowClick}
-                onOpen={openById}
-                onMove={onMove}
-                actions={getScopeActions(currentScope.id)}
-                onToggleFavorite={onToggleFavorite}
-                dragging={!!activeDrag}
-                suppressClickRef={suppressClickRef}
-              />
-            )}
+            <span className="flex items-center gap-1.5 min-w-0 flex-1">
+              {itemIcon(selectedLeaf)}
+              <span className="font-medium text-foreground truncate">{selectedLeaf.title || "Untitled"}</span>
+              <span className="text-xs text-muted-foreground shrink-0">{kindLabel(selectedLeaf)}</span>
+            </span>
+            <div className="flex items-center gap-1 shrink-0">
+              {canLeafDownload && selectedLeaf.href && (
+                <a
+                  href={selectedLeaf.href}
+                  download
+                  data-testid="drive-leaf-download"
+                  onClick={(e) => e.stopPropagation()}
+                  className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                >
+                  <Download className="w-3.5 h-3.5" /> Download
+                </a>
+              )}
+              {canLeafRename && (
+                <button
+                  type="button"
+                  data-testid="drive-leaf-rename"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    leafActions.onRename(selectedLeaf);
+                  }}
+                  className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                >
+                  <Pencil className="w-3.5 h-3.5" /> Rename
+                </button>
+              )}
+              {canLeafMove && (
+                <button
+                  type="button"
+                  data-testid="drive-leaf-move"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    leafActions.onRequestMove(selectedLeaf);
+                  }}
+                  className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                >
+                  <FolderInput className="w-3.5 h-3.5" /> Move
+                </button>
+              )}
+              {/* Share: navigate to the item so the user can use the share UI there */}
+              {selectedLeaf.href && (
+                <a
+                  href={selectedLeaf.href}
+                  data-testid="drive-leaf-share"
+                  onClick={(e) => e.stopPropagation()}
+                  className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                >
+                  <Share2 className="w-3.5 h-3.5" /> Share
+                </a>
+              )}
+              {canLeafDelete && (
+                <button
+                  type="button"
+                  data-testid="drive-leaf-delete"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    leafActions.onDelete(selectedLeaf);
+                  }}
+                  className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-destructive hover:bg-destructive/10"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Delete
+                </button>
+              )}
+            </div>
           </div>
+        )}
+
+        {/* ── Body ── */}
+        <div className={detailsOpen ? "flex gap-3 items-start" : ""}>
+          {viewMode === "columns" && !searching ? (
+            /* ── MILLER COLUMNS ─────────────────────────────────────────── */
+            <div
+              ref={columnsContainerRef}
+              className="flex-1 min-w-0 rounded-lg border border-border bg-card overflow-x-auto"
+              style={{ height: "calc(100vh - 14rem)" }}
+              onDragEnter={onFileDragEnter}
+              onDragOver={onFileDragOver}
+              onDragLeave={onFileDragLeave}
+              onDrop={onFileDrop}
+              onClick={() =>
+                setColSel((prev) => ({ ...prev, selectedLeaf: null, leafLevelIdx: null }))
+              }
+              data-testid="drive-columns"
+            >
+              {uploadOver && (
+                <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-lg border-2 border-dashed border-accent-coral bg-accent-coral/10">
+                  <span className="flex items-center gap-2 text-sm font-medium text-accent-coral">
+                    <Upload className="w-4 h-4" /> Drop files to upload
+                  </span>
+                </div>
+              )}
+              <div className="flex h-full divide-x divide-border/60">
+                {/* Column 0: scope list */}
+                <MillerColumn
+                  testid="drive-col-root"
+                  isEmpty={scopes.length === 0}
+                  emptyMessage="No drives available."
+                >
+                  {scopes.map((scope) => {
+                    const isCore = scope.id === "core";
+                    const isHiring = scope.id === "hiring";
+                    const isProject =
+                      scope.id !== "mine" && scope.id !== "lab" && !isCore && !isHiring;
+                    const label =
+                      scope.id === "mine"
+                        ? "My Drive"
+                        : scope.id === "lab"
+                          ? "Lab"
+                          : scope.label;
+                    const isHighlighted = colSel.highlightedIds[0] === scope.id;
+                    return (
+                      <div
+                        key={scope.id}
+                        data-testid={`drive-scope-${scope.id}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleScopeClick(scope.id);
+                        }}
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          handleScopeDblClick(scope.id);
+                        }}
+                        className={`group flex items-center gap-2 px-3 py-2 text-sm cursor-default select-none ${
+                          isHighlighted
+                            ? "bg-accent-coral/10 text-accent-coral"
+                            : "hover:bg-muted/50 text-foreground"
+                        }`}
+                      >
+                        {scopeIcon(scope)}
+                        <span className="min-w-0 flex-1 truncate font-medium">{label}</span>
+                        {isCore && (
+                          <span className="shrink-0 text-[10px] uppercase tracking-wide text-accent-coral/70">
+                            Core only
+                          </span>
+                        )}
+                        {isHiring && (
+                          <span className="shrink-0 text-[10px] uppercase tracking-wide text-accent-coral/70">
+                            Hiring team
+                          </span>
+                        )}
+                        {isProject && (
+                          <span className="shrink-0 text-[10px] uppercase tracking-wide text-accent-coral/70">
+                            Project
+                          </span>
+                        )}
+                        <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0 opacity-60" />
+                      </div>
+                    );
+                  })}
+                </MillerColumn>
+
+                {/* Columns 1+: scope/folder contents */}
+                {colSel.levels.slice(1).map((level, relIdx) => {
+                  const levelIdx = relIdx + 1;
+                  const sId = scopeIdForLevel(level);
+                  const items = itemsForLevel(level);
+                  const highlightedId = colSel.highlightedIds[levelIdx] ?? null;
+
+                  return (
+                    <MillerColumn
+                      key={`col-${levelIdx}`}
+                      testid={`drive-col-${levelIdx}`}
+                      isEmpty={items.length === 0}
+                      emptyMessage="This folder is empty."
+                    >
+                      {items.map((item) => {
+                        const isFolder = item.type === "folder";
+                        const isHighlighted = highlightedId === item.id;
+                        const scopeActions = sId ? getScopeActions(sId) : null;
+                        return (
+                          <ContextMenu
+                            key={item.id}
+                            items={
+                              scopeActions
+                                ? itemMenuItems(
+                                    item,
+                                    scopeActions,
+                                    () => onOpenItem(item),
+                                    onToggleFavorite,
+                                  )
+                                : null
+                            }
+                            ariaLabel="Item actions"
+                          >
+                            <div
+                              data-testid={`drive-item-${item.type}-${item.id}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (sId) handleColumnRowClick(levelIdx, item, sId);
+                              }}
+                              onDoubleClick={(e) => {
+                                e.stopPropagation();
+                                handleColumnRowDblClick(item);
+                              }}
+                              className={`group flex items-center gap-2 px-3 py-2 text-sm cursor-default select-none ${
+                                isHighlighted
+                                  ? "bg-accent-coral/10 text-accent-coral"
+                                  : "hover:bg-muted/50 text-foreground"
+                              }`}
+                            >
+                              {itemIcon(item)}
+                              <span className="min-w-0 flex-1 truncate font-medium">
+                                {item.title || "Untitled"}
+                              </span>
+                              {/* Inline star for favorites */}
+                              {(item.type === "doc" || item.type === "folder") &&
+                                onToggleFavorite && (
+                                  <button
+                                    type="button"
+                                    aria-label={item.favorited ? "Remove from favorites" : "Add to favorites"}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onToggleFavorite(item);
+                                    }}
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                    onDoubleClick={(e) => e.stopPropagation()}
+                                    className={`shrink-0 rounded p-0.5 transition-opacity ${
+                                      item.favorited
+                                        ? "text-accent-coral opacity-100"
+                                        : "text-muted-foreground opacity-0 hover:text-foreground group-hover:opacity-100"
+                                    }`}
+                                  >
+                                    <Star
+                                      className={`h-3.5 w-3.5 ${item.favorited ? "fill-current" : ""}`}
+                                    />
+                                  </button>
+                                )}
+                              {/* Actions menu */}
+                              {scopeActions && (
+                                <RowActionsMenu
+                                  item={item}
+                                  actions={scopeActions}
+                                  onOpen={() => onOpenItem(item)}
+                                  onToggleFavorite={onToggleFavorite}
+                                />
+                              )}
+                              {isFolder && (
+                                <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0 opacity-60" />
+                              )}
+                            </div>
+                          </ContextMenu>
+                        );
+                      })}
+                    </MillerColumn>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            /* ── LIST / GRID / SEARCH ──────────────────────────────────── */
+            <div
+              ref={listRef}
+              tabIndex={0}
+              onKeyDown={onKeyDown}
+              onDragEnter={onFileDragEnter}
+              onDragOver={onFileDragOver}
+              onDragLeave={onFileDragLeave}
+              onDrop={onFileDrop}
+              className="relative flex-1 min-w-0 rounded-lg border border-border bg-card overflow-hidden focus:outline-none focus:ring-1 focus:ring-accent-coral/30"
+            >
+              {uploadOver && (
+                <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-lg border-2 border-dashed border-accent-coral bg-accent-coral/10">
+                  <span className="flex items-center gap-2 text-sm font-medium text-accent-coral">
+                    <Upload className="w-4 h-4" /> Drop files to upload
+                  </span>
+                </div>
+              )}
+
+              {searching ? (
+                <SearchResults
+                  hits={hits}
+                  selected={selected}
+                  onRowClick={handleRowClick}
+                  onOpen={openById}
+                  getScopeActions={getScopeActions}
+                  onToggleFavorite={onToggleFavorite}
+                />
+              ) : !currentScope ? (
+                <ScopeList
+                  scopes={scopes}
+                  selected={selected}
+                  onRowClick={handleRowClick}
+                  onOpen={openById}
+                />
+              ) : (
+                <ScopeContents
+                  scope={currentScope}
+                  listing={listing}
+                  viewMode={viewMode === "grid" ? "grid" : "list"}
+                  sort={sort}
+                  onToggleSort={toggleSort}
+                  selected={selected}
+                  activeId={activeId}
+                  onRowClick={handleRowClick}
+                  onOpen={openById}
+                  onMove={onMove}
+                  actions={getScopeActions(currentScope.id)}
+                  onToggleFavorite={onToggleFavorite}
+                  dragging={!!activeDrag}
+                  suppressClickRef={suppressClickRef}
+                />
+              )}
+            </div>
+          )}
 
           {detailsOpen && (
             <DetailsPane
@@ -775,6 +1256,34 @@ export function DriveBrowser({
   );
 }
 
+// ── Miller column wrapper ─────────────────────────────────────────────────────
+
+function MillerColumn({
+  children,
+  testid,
+  isEmpty,
+  emptyMessage,
+}: {
+  children: ReactNode;
+  testid?: string;
+  isEmpty: boolean;
+  emptyMessage: string;
+}) {
+  return (
+    <div
+      data-testid={testid}
+      className="flex flex-col overflow-y-auto shrink-0 w-52"
+      style={{ minWidth: "13rem" }}
+    >
+      {isEmpty ? (
+        <p className="px-3 py-6 text-center text-xs text-muted-foreground italic">{emptyMessage}</p>
+      ) : (
+        <div className="flex flex-col py-1">{children}</div>
+      )}
+    </div>
+  );
+}
+
 // ── Breadcrumb (with overflow collapse) ──────────────────────────────────────
 
 function Breadcrumb({
@@ -788,7 +1297,6 @@ function Breadcrumb({
   onNavigate: (scopeId: string | null, folderId: string | null) => void;
   dragging: boolean;
 }) {
-  // Collapse the middle folder crumbs into a "…" menu when the path is deep.
   const collapse = folderCrumbs.length > 3;
   const hidden = collapse ? folderCrumbs.slice(0, folderCrumbs.length - 2) : [];
   const shown = collapse ? folderCrumbs.slice(folderCrumbs.length - 2) : folderCrumbs;
@@ -901,7 +1409,7 @@ function Crumb({
   );
 }
 
-// ── Root: the list of drives ─────────────────────────────────────────────────
+// ── Root: the list of drives (list/grid view only) ───────────────────────────
 
 function ScopeList({
   scopes,
@@ -965,7 +1473,7 @@ function ScopeContents({
 }: {
   scope: DriveTreeScope;
   listing: DriveItem[];
-  viewMode: ViewMode;
+  viewMode: "list" | "grid";
   sort: { key: SortKey; dir: SortDir };
   onToggleSort: (key: SortKey) => void;
   selected: Set<string>;
