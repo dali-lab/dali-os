@@ -3,4 +3,4 @@
 // (see the /hiring/library default in drive.hub.tsx). Rubrics, agreements and
 // challenge/application forms all live there, so this replaces the old tabbed
 // Library without leaving the Hiring area.
-export { loader, default } from "~/routes/drive.hub";
+export { loader, default, shouldRevalidate } from "~/routes/drive.hub";

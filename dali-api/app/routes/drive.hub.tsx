@@ -1,4 +1,5 @@
 import { redirect, useLoaderData, useSearchParams, useNavigate, useRevalidator, useLocation } from "react-router";
+import type { ShouldRevalidateFunctionArgs } from "react-router";
 import type { Route } from "./+types/drive.hub";
 import {
   FileText,
@@ -27,6 +28,25 @@ import { Menu, Select } from "~/components/ui/floating";
 import { Modal } from "~/components/Modal";
 
 export const meta: Route.MetaFunction = () => [{ title: "Drive · DALI OS" }];
+
+// The loader returns the FULL drive tree (every scope's items) and ignores the
+// scope/folder/type query params — those only drive client-side view state. So
+// navigating between scopes and folders needs no refetch: skip revalidation
+// when only the query string changed on this same route. Manual refreshes after
+// a write (revalidator.revalidate(), which keeps the URL identical) and any
+// non-GET submission still fall through to the default and reload the tree.
+export function shouldRevalidate({
+  currentUrl,
+  nextUrl,
+  formMethod,
+  defaultShouldRevalidate,
+}: ShouldRevalidateFunctionArgs) {
+  if (formMethod && formMethod.toUpperCase() !== "GET") return defaultShouldRevalidate;
+  if (currentUrl.pathname === nextUrl.pathname && currentUrl.search !== nextUrl.search) {
+    return false;
+  }
+  return defaultShouldRevalidate;
+}
 
 // The unified Drive hub, surfaced when the drive-consolidation feature flag is
 // on. Browse is the only main view. Type filter chips (All · Documents · Files ·
