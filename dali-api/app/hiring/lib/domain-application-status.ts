@@ -85,16 +85,24 @@ export function inferDomainApplicationStatus(
     (u) => u.newStatus === "Withdrawn",
   );
 
-  // Step 1: cycle is open and application has not been submitted yet
-  if (cycleStatus === "Open" && !hasSubmitted) {
-    return "ApplicationOpen";
-  }
-
-  // Step 1b: applicant withdrew after submission. Withdrawal is terminal
-  // today (see portal.application.tsx), so this short-circuits before any
-  // decision/interview-derived branches.
+  // Step 1a: applicant withdrew after submission. Withdrawal is terminal
+  // today (see portal.application.tsx) and is the applicant's own action, so it
+  // wins over every derived branch below.
   if (hasWithdrawn) {
     return "Withdrawn";
+  }
+
+  // Step 1b: this DA was administratively closed because the applicant was
+  // accepted into another domain in the same cycle (single placement). Only
+  // ever set on DAs with no Released decision, so it never overrides a real
+  // outcome — it replaces what would otherwise be a stale "Pending".
+  if (domainApplication.closureReason === "AcceptedElsewhere") {
+    return "AcceptedElsewhere";
+  }
+
+  // Step 1c: cycle is open and application has not been submitted yet
+  if (cycleStatus === "Open" && !hasSubmitted) {
+    return "ApplicationOpen";
   }
 
   // Decisions are ordered desc by createdAt, so the first Released entry is the latest.

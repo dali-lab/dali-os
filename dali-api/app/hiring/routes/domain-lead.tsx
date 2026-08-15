@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Form, Link, useLoaderData, useNavigate, useSearchParams, useRevalidator, useSubmit } from "react-router";
+import { Form, Link, useLoaderData, useNavigate, useSearchParams, useRevalidator } from "react-router";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { redirect } from "react-router";
 import type { Route } from "./+types/domain-lead";
@@ -16,11 +16,7 @@ import { getReviewStatus } from "~/hiring/lib/review-status";
 import { buildCriteriaList } from "~/hiring/lib/rubric-criteria";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { ConfidentialityGate } from "~/hiring/components/ConfidentialityGate";
-import { DocEditor } from "~/components/doc";
-import { isEmptyBlocks } from "~/lib/blocks";
 import { Modal } from "~/components/Modal";
-import { ChallengePreviewModal } from "~/hiring/components/ChallengePreviewModal";
-import { Tooltip } from "~/components/ui/IconButton";
 import { useToast } from "~/components/ui/toast";
 import { CycleSelector } from "~/hiring/components/CycleSelector";
 import {
@@ -31,7 +27,9 @@ import {
   type PrePipelinePill,
 } from "~/hiring/lib/decision-pills";
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
-import type { DecisionType } from "~/types";
+import type { DecisionType, Question } from "~/types";
+import { normalizeQuestionBodies } from "~/lib/question-blocks.server";
+import { HiringFormEmbed } from "~/hiring/components/HiringFormEmbed";
 import { formatVersionLabel } from "~/lib/formatVersion";
 import { selectActiveCycleForDomainLead } from "~/hiring/lib/cycle-picker";
 import { STATUS_LABELS, DECISION_LABELS, STATUS_COLORS, DECISION_COLORS } from "~/hiring/lib/labels";
@@ -132,15 +130,27 @@ export async function loader({ request }: Route.LoaderArgs) {
 
       return [await (async (cycle) => {
 
-      // Drive challenge Forms linked to this domain in this cycle.
+      // Drive challenge Forms linked to this domain in this cycle. The latest
+      // version's questions power the inline embed preview (HiringFormEmbed).
       const linkedChallengeFormsRaw = await prisma.cycleDomainForm.findMany({
         where: { applicationCycleId: cycle.id, domainId: assignment.domainId },
-        include: { form: { select: { id: true, name: true } } },
+        include: {
+          form: {
+            select: {
+              id: true,
+              name: true,
+              versions: { orderBy: { versionNumber: "desc" }, take: 1, select: { questions: true } },
+            },
+          },
+        },
       });
       const linkedChallengeForms = linkedChallengeFormsRaw.map((cdf) => ({
         id: cdf.id,
         formId: cdf.formId,
         name: cdf.form.name,
+        questions: normalizeQuestionBodies(
+          (cdf.form.versions[0]?.questions as unknown as Question[]) ?? [],
+        ),
       }));
 
       // isReady lives on DomainApplicationCycle (per domain+cycle, not per challenge version)
@@ -601,9 +611,9 @@ export default function DomainLeadDashboard() {
       {areaPills}
       <h1 className="font-heading text-2xl font-bold text-foreground">Domain Lead Dashboard</h1>
 
-      {domainData.map(({ assignment, cycle, availableCycles, apps, challengeVersionOptions, linkedChallengeVersions, linkedChallengeForms, isChallengeReady, interviews, reviewers: cycleReviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, initialDelibsCount, finalDelibsCount, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews, confidentialityRequired }: any, idx: number) => {
+      {domainData.map(({ assignment, cycle, availableCycles, apps, linkedChallengeForms, isChallengeReady, interviews, reviewers: cycleReviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, initialDelibsCount, finalDelibsCount, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews, confidentialityRequired }: any, idx: number) => {
         const isFellowship = cycle?.cycleType === "Fellowship";
-        const hasLinkedChallenge = (linkedChallengeVersions ?? []).length > 0;
+        const hasLinkedChallenge = (linkedChallengeForms ?? []).length > 0;
         const currentStatus = cycle?.statusUpdates[0]?.newStatus ?? null;
 
         // Compute stats for progress badges
@@ -665,7 +675,7 @@ export default function DomainLeadDashboard() {
                   {currentStatus === "Draft" && !isFellowship && (
                     <Section
                       title="Challenges (setup)"
-                      subtitle="Pick which challenge versions applicants answer."
+                      subtitle="The Drive form applicants answer for this domain — edit it in Drive, preview it inline."
                       badge={
                         isChallengeReady
                           ? <span className="text-xs text-green-700 bg-green-100 border border-green-200 px-2 py-0.5 rounded-full font-medium">Ready</span>
@@ -673,25 +683,16 @@ export default function DomainLeadDashboard() {
                       }
                       defaultOpen={!isChallengeReady}
                     >
-                      <div className="space-y-4">
-                        <DraftSection
-                          cycle={cycle}
-                          domainId={assignment.domainId}
-                          challengeVersionOptions={challengeVersionOptions}
-                          linkedChallengeVersions={linkedChallengeVersions ?? []}
-                          linkedChallengeForms={linkedChallengeForms ?? []}
-                          isChallengeReady={isChallengeReady}
-                        />
-                        <div className="flex items-center gap-3 pt-2 border-t border-border">
-                          <Link to="/hiring/library?tab=challenges" className="text-xs text-blue-600 hover:text-blue-800 font-medium">
-                            {hasLinkedChallenge ? "Manage Challenges →" : "Create Challenge →"}
-                          </Link>
-                        </div>
-                      </div>
+                      <DraftSection
+                        cycle={cycle}
+                        domainId={assignment.domainId}
+                        linkedChallengeForms={linkedChallengeForms ?? []}
+                        isChallengeReady={isChallengeReady}
+                      />
                     </Section>
                   )}
 
-                  {/* Setup — just the domain challenges (read-only after Draft).
+                  {/* Setup — the domain challenge forms (read-only after Draft).
                       Hidden on Fellowship (no challenges). */}
                   {currentStatus !== "Draft" && (currentStatus === "Open" || currentStatus === "UnderReview") && !isFellowship && (
                     <div className="pt-4">
@@ -711,46 +712,22 @@ export default function DomainLeadDashboard() {
                       }
                       defaultOpen={!hasLinkedChallenge}
                     >
-                      <div className="space-y-4">
-                        <div>
-                          <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">
-                            Domain Challenge{(linkedChallengeVersions ?? []).length > 1 ? "s" : ""}
-                          </h4>
-                          {hasLinkedChallenge ? (
-                            <ul className="space-y-1">
-                              {linkedChallengeVersions.map((cv: any) => (
-                                <li key={cv.id} className="flex items-center justify-between">
-                                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                    <CheckCircle className="w-4 h-4 text-green-600" />
-                                    <Link
-                                      to={`/hiring/challenges/${cv.challengeId}?versionId=${cv.id}`}
-                                      className="text-blue-600 hover:text-blue-800"
-                                    >
-                                      {cv.challenge?.name ?? "Linked"}
-                                    </Link>
-                                    {hasApplicationReviews && (
-                                      <span className="text-xs text-gray-400 ml-1">(locked — reviewers have been assigned)</span>
-                                    )}
-                                  </div>
-                                </li>
-                              ))}
-                            </ul>
-                          ) : (
-                            <div className="flex items-center justify-between">
-                              <span className="text-sm text-muted-foreground/70">No challenge linked</span>
-                              <Link to="/hiring/library?tab=challenges" className="text-xs text-blue-600 hover:text-blue-800 font-medium">
-                                Create Challenge →
-                              </Link>
-                            </div>
-                          )}
+                      {hasLinkedChallenge ? (
+                        <div className="space-y-3">
+                          {linkedChallengeForms.map((cf: any) => (
+                            <HiringFormEmbed
+                              key={cf.id}
+                              formId={cf.formId}
+                              name={cf.name}
+                              questions={cf.questions ?? []}
+                            />
+                          ))}
                         </div>
-
-                        <div className="flex items-center gap-3 pt-2 border-t border-gray-100">
-                          <Link to="/hiring/library?tab=challenges" className="text-xs text-blue-600 hover:text-blue-800 font-medium">
-                            All Challenges →
-                          </Link>
-                        </div>
-                      </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground/70 italic">
+                          No challenge form linked for this domain.
+                        </p>
+                      )}
                     </Section>
                     </div>
                   )}
@@ -1250,333 +1227,104 @@ export default function DomainLeadDashboard() {
   );
 }
 
-function DraftSection({ cycle, domainId, challengeVersionOptions, linkedChallengeVersions, linkedChallengeForms, isChallengeReady }: {
+function DraftSection({ cycle, domainId, linkedChallengeForms, isChallengeReady }: {
   cycle: any;
   domainId: string;
-  challengeVersionOptions: any[];
-  linkedChallengeVersions: any[];
   linkedChallengeForms: any[];
   isChallengeReady: boolean;
 }) {
-  const hasLinkedChallenge = linkedChallengeVersions.length > 0 || linkedChallengeForms.length > 0;
-  const totalQuestions = linkedChallengeVersions.reduce(
-    (sum: number, cv: any) => sum + ((cv.questions as any[])?.length ?? 0),
-    0,
-  );
+  const hasLinked = linkedChallengeForms.length > 0;
 
-  // State 3: At least one challenge linked and marked ready — "Challenge Questions Finalized"
-  if (hasLinkedChallenge && isChallengeReady) {
+  // Ready — configuration frozen for applicants, still editable via "Edit challenges".
+  if (hasLinked && isChallengeReady) {
     return (
-      <div className="bg-card border border-border rounded-xl p-8 flex flex-col items-center text-center space-y-6">
-        <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center">
-          <CheckCircle className="w-8 h-8 text-green-600" />
-        </div>
-        <div className="space-y-1">
-          <h3 className="text-xl font-bold text-foreground">Challenge Questions Finalized</h3>
-          <p className="text-muted-foreground text-sm max-w-sm">
-            {linkedChallengeVersions.length === 1
-              ? `Your ${linkedChallengeVersions[0]?.challenge?.name ?? "challenge"} has ${totalQuestions} question${totalQuestions !== 1 ? "s" : ""} configured and is ready for applicants.`
-              : `${linkedChallengeVersions.length} challenges are configured (${totalQuestions} questions total). Applicants will pick one when they apply.`}
-          </p>
-        </div>
-
-        <div className="w-full max-w-sm bg-muted/50 border border-border rounded-xl p-4 text-left space-y-3">
-          <ul className="text-sm text-foreground/80 space-y-1">
-            {linkedChallengeVersions.map((cv: any) => (
-              <li key={cv.id} className="flex items-center justify-between">
-                <Link
-                  to={`/hiring/challenges/${cv.challengeId}?versionId=${cv.id}`}
-                  className="text-blue-600 hover:text-blue-800"
-                >
-                  {cv.challenge?.name ?? "Untitled"}
-                </Link>
-                <span className="text-xs text-muted-foreground">{(cv.questions as any[])?.length ?? 0} questions</span>
-              </li>
-            ))}
-            {linkedChallengeForms.map((cf: any) => (
-              <li key={cf.id} className="flex items-center justify-between">
-                <Link to={`/forms/edit/${cf.formId}`} className="text-blue-600 hover:text-blue-800">
-                  {cf.name}
-                </Link>
-                <span className="text-xs text-muted-foreground">Drive form</span>
-              </li>
-            ))}
-          </ul>
-          <div className="flex items-center gap-1.5 text-green-600 text-sm font-medium pt-1 border-t border-border">
-            <CheckCircle className="w-4 h-4" />
-            Ready for applications
+      <div className="space-y-4">
+        <div className="flex items-start gap-3 bg-green-50 border border-green-100 rounded-xl p-4">
+          <div className="w-9 h-9 rounded-full bg-green-100 flex items-center justify-center shrink-0">
+            <CheckCircle className="w-5 h-5 text-green-600" />
+          </div>
+          <div className="flex-1 space-y-1">
+            <h3 className="font-bold text-green-900">Challenge forms finalized</h3>
+            <p className="text-sm text-green-700">
+              {linkedChallengeForms.length === 1
+                ? "Your challenge form is configured and ready for applicants."
+                : `${linkedChallengeForms.length} challenge forms are configured. Applicants will pick one when they apply.`}
+            </p>
           </div>
         </div>
-
+        <div className="space-y-3">
+          {linkedChallengeForms.map((cf: any) => (
+            <HiringFormEmbed key={cf.id} formId={cf.formId} name={cf.name} questions={cf.questions ?? []} />
+          ))}
+        </div>
         <Form method="post" preventScrollReset>
           <input type="hidden" name="intent" value="unmark-ready" />
           <input type="hidden" name="cycleId" value={cycle.id} />
           <input type="hidden" name="domainId" value={domainId} />
           <button
             type="submit"
-            className="px-4 py-2 text-sm font-medium text-foreground/80 bg-card border border-gray-300 rounded-lg hover:bg-muted/50"
+            className="px-4 py-2 text-sm font-medium text-foreground/80 bg-card border border-border rounded-lg hover:bg-muted/50"
           >
-            Edit Challenges
+            Edit challenges
           </button>
         </Form>
       </div>
     );
   }
 
-  // State 2: Challenges linked but not yet marked ready — "Ready to finalize?"
-  if (hasLinkedChallenge && !isChallengeReady) {
-    return (
-      <div className="space-y-4">
-        <div className="bg-blue-50 border border-blue-100 rounded-xl p-6 space-y-4">
-          <div className="flex gap-3">
-            <div className="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center shrink-0 mt-0.5">
-              <CheckCircle className="w-5 h-5 text-blue-600" />
-            </div>
-            <div className="space-y-1">
-              <h3 className="font-bold text-blue-900">Ready to finalize?</h3>
-              <p className="text-sm text-blue-700 leading-relaxed">
-                Once you mark your challenges as ready, your challenge questions will be locked in and visible to applicants when applications open. You can still return here to make edits before the application deadline.
-              </p>
-            </div>
-          </div>
+  // Setup — add/preview/remove challenge forms, then mark ready.
+  return (
+    <div className="space-y-4">
+      {hasLinked ? (
+        <div className="space-y-3">
+          {linkedChallengeForms.map((cf: any) => (
+            <HiringFormEmbed
+              key={cf.id}
+              formId={cf.formId}
+              name={cf.name}
+              questions={cf.questions ?? []}
+              defaultOpen={linkedChallengeForms.length === 1}
+              remove={{ intent: "remove-challenge-form", fields: { cdfId: cf.id } }}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="bg-card border border-border rounded-lg p-6 text-center space-y-1">
+          <h3 className="font-semibold text-foreground">No challenge form yet</h3>
+          <p className="text-sm text-muted-foreground">
+            Add a Drive form for {cycle.name}. Applicants answer it as this domain&apos;s challenge — author it in the Forms builder, where it lives alongside every other form.
+          </p>
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-border">
+        <Form method="post" preventScrollReset>
+          <input type="hidden" name="intent" value="create-challenge-form" />
+          <input type="hidden" name="cycleId" value={cycle.id} />
+          <input type="hidden" name="domainId" value={domainId} />
+          <button
+            type="submit"
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border border-border bg-card hover:bg-muted/50"
+          >
+            <Plus className="w-4 h-4" />
+            Add challenge form (Drive)
+          </button>
+        </Form>
+        {hasLinked && (
           <Form method="post" preventScrollReset>
             <input type="hidden" name="intent" value="mark-ready" />
             <input type="hidden" name="cycleId" value={cycle.id} />
             <input type="hidden" name="domainId" value={domainId} />
             <button
               type="submit"
-              className="flex items-center gap-2 px-5 py-2.5 bg-accent-coral text-white text-sm font-semibold rounded-lg hover:bg-accent-coral/90"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-accent-coral text-white text-sm font-semibold rounded-lg hover:bg-accent-coral/90"
             >
               <CheckCircle className="w-4 h-4" />
-              Mark Configuration as Ready
+              Mark as ready
             </button>
           </Form>
-        </div>
-
-        <ChallengeSelector
-          cycleId={cycle.id}
-          domainId={domainId}
-          options={challengeVersionOptions}
-          linkedChallengeVersions={linkedChallengeVersions}
-          linkedChallengeForms={linkedChallengeForms}
-        />
+        )}
       </div>
-    );
-  }
-
-  // State 1: No challenge linked yet
-  return (
-    <div className="bg-card border border-border rounded-lg p-6 space-y-4">
-      <div>
-        <h3 className="font-semibold text-foreground">Configure Challenges</h3>
-        <p className="text-sm text-muted-foreground mt-0.5">Add one or more challenge versions for {cycle.name}. Applicants will pick which one to complete when there is more than one.</p>
-      </div>
-      <ChallengeSelector
-        cycleId={cycle.id}
-        domainId={domainId}
-        options={challengeVersionOptions}
-        linkedChallengeVersions={linkedChallengeVersions}
-          linkedChallengeForms={linkedChallengeForms}
-      />
-    </div>
-  );
-}
-
-function ChallengeSelector({ cycleId, domainId, options, linkedChallengeVersions, linkedChallengeForms }: {
-  cycleId: string;
-  domainId: string;
-  options: any[];
-  linkedChallengeVersions: any[];
-  linkedChallengeForms: any[];
-}) {
-  const linkedIds = new Set(linkedChallengeVersions.map((cv: any) => cv.id));
-  const linkedChallengeIds = new Set(linkedChallengeVersions.map((cv: any) => cv.challengeId));
-  const availableOptions = options.filter((cv: any) => !linkedIds.has(cv.id) && !linkedChallengeIds.has(cv.challengeId));
-  const [pickerId, setPickerId] = useState<string>("");
-  const [previewCvId, setPreviewCvId] = useState<string | null>(null);
-  const [pendingRemove, setPendingRemove] = useState<any | null>(null);
-  const submit = useSubmit();
-  const previewCv = previewCvId
-    ? linkedChallengeVersions.find((cv: any) => cv.id === previewCvId)
-    : null;
-
-  return (
-    <div className="space-y-3 pt-1">
-      {linkedChallengeVersions.length > 0 && (
-        <div className="border border-border rounded-md divide-y divide-gray-100">
-          {linkedChallengeVersions.map((cv: any) => {
-            const questions: any[] = (cv.questions as any[]) ?? [];
-            return (
-              <div key={cv.id} className="px-4 py-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1">
-                    <div className="text-sm font-medium">
-                      <Link
-                        to={`/hiring/challenges/${cv.challengeId}?versionId=${cv.id}`}
-                        className="text-blue-600 hover:text-blue-800"
-                      >
-                        {formatVersionLabel({
-                          name: cv.challenge?.name ?? "Untitled",
-                          versionNumber: cv.versionNumber,
-                          createdAt: cv.createdAt,
-                          createdBy: cv.createdBy,
-                        })}
-                      </Link>
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-0.5">
-                      {questions.length} question{questions.length !== 1 ? "s" : ""}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Tooltip label="Preview">
-                      <button
-                        type="button"
-                        onClick={() => setPreviewCvId(cv.id)}
-                        aria-label="Preview"
-                        className="inline-flex items-center justify-center p-1.5 rounded-md text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                      >
-                        <Eye className="w-3.5 h-3.5" />
-                      </button>
-                    </Tooltip>
-                    <button
-                      type="button"
-                      onClick={() => setPendingRemove(cv)}
-                      aria-label={`Remove ${cv.challenge?.name ?? "challenge"}`}
-                      className="text-muted-foreground hover:text-red-600 transition"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-                {!isEmptyBlocks(cv.description) && (
-                  <div className="mt-2 border border-border rounded-md bg-muted/30 px-4 py-3">
-                    <DocEditor
-                      key={cv.id}
-                      features="notes"
-                      density="compact"
-                      editable={false}
-                      initialContent={cv.description}
-                    />
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Drive challenge Forms (additive alongside legacy ChallengeVersions). */}
-      {linkedChallengeForms.length > 0 && (
-        <div className="border border-border rounded-md divide-y divide-gray-100">
-          {linkedChallengeForms.map((cf: any) => (
-            <div key={cf.id} className="px-4 py-3 flex items-center justify-between gap-3">
-              <div className="text-sm font-medium">
-                <Link to={`/forms/edit/${cf.formId}`} className="text-blue-600 hover:text-blue-800">
-                  {cf.name}
-                </Link>
-                <span className="ml-2 text-xs text-muted-foreground">Drive form</span>
-              </div>
-              <Form method="post" preventScrollReset>
-                <input type="hidden" name="intent" value="remove-challenge-form" />
-                <input type="hidden" name="cdfId" value={cf.id} />
-                <button
-                  type="submit"
-                  aria-label={`Remove ${cf.name}`}
-                  className="text-muted-foreground hover:text-red-600 transition"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </Form>
-            </div>
-          ))}
-        </div>
-      )}
-      <Form method="post" preventScrollReset>
-        <input type="hidden" name="intent" value="create-challenge-form" />
-        <input type="hidden" name="cycleId" value={cycleId} />
-        <input type="hidden" name="domainId" value={domainId} />
-        <button type="submit" className="text-sm font-medium text-blue-700 hover:underline">
-          + Add challenge form (Drive)
-        </button>
-      </Form>
-
-      {availableOptions.length > 0 ? (
-        <Form method="post" preventScrollReset className="flex items-end gap-3">
-          <input type="hidden" name="intent" value="add-challenge" />
-          <input type="hidden" name="cycleId" value={cycleId} />
-          <input type="hidden" name="domainId" value={domainId} />
-          <div className="flex-1">
-            <label className="block text-sm font-medium text-foreground/80 mb-1">
-              Add Challenge
-            </label>
-            <Select
-              name="challengeVersionId"
-              value={pickerId}
-              placeholder="Select a challenge…"
-              onChange={(v) => setPickerId(v)}
-              options={availableOptions.map((cv: any) => ({
-                value: cv.id as string,
-                label: formatVersionLabel({
-                  name: cv.challenge?.name ?? "Untitled",
-                  versionNumber: cv.versionNumber,
-                  createdAt: cv.createdAt,
-                  createdBy: cv.createdBy,
-                }),
-              }))}
-              buttonClassName="w-full px-3 py-2 text-sm text-foreground border border-gray-300 rounded-md inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={!pickerId}
-            className="px-3 py-2 text-sm font-medium text-white bg-accent-teal rounded-md hover:bg-accent-teal/90 disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            Add
-          </button>
-        </Form>
-      ) : linkedChallengeVersions.length === 0 ? (
-        <p className="text-sm text-muted-foreground/70">
-          No challenge versions exist for this domain yet.
-        </p>
-      ) : null}
-
-      {previewCv && (
-        <ChallengePreviewModal
-          challengeVersionId={previewCv.id}
-          challengeName={previewCv.challenge?.name ?? "Challenge"}
-          versionLabel={formatVersionLabel({
-            name: previewCv.challenge?.name ?? "Challenge",
-            versionNumber: previewCv.versionNumber,
-            createdAt: previewCv.createdAt,
-            createdBy: previewCv.createdBy,
-          })}
-          description={previewCv.description}
-          questions={(previewCv.questions as any[]) ?? []}
-          onClose={() => setPreviewCvId(null)}
-        />
-      )}
-
-      <ConfirmDialog
-        open={!!pendingRemove}
-        title="Remove this challenge from the cycle?"
-        body={
-          <>
-            <p>Applicants will no longer see <strong>{pendingRemove?.challenge?.name ?? "this challenge"}</strong> when they apply to this domain.</p>
-            <p className="mt-2">If anyone has already started an application referencing it, the remove will be rejected by the server.</p>
-          </>
-        }
-        confirmLabel="Remove"
-        destructive
-        onCancel={() => setPendingRemove(null)}
-        onConfirm={() => {
-          const fd = new FormData();
-          fd.set("intent", "remove-challenge");
-          fd.set("cycleId", cycleId);
-          fd.set("challengeVersionId", pendingRemove.id);
-          submit(fd, { method: "post", preventScrollReset: true });
-          setPendingRemove(null);
-        }}
-      />
     </div>
   );
 }

@@ -48,7 +48,10 @@ const mockPrisma = prisma as unknown as {
     findUnique: ReturnType<typeof vi.fn>;
     create: ReturnType<typeof vi.fn>;
   };
-  domainApplication: { findUnique: ReturnType<typeof vi.fn> };
+  domainApplication: {
+    findUnique: ReturnType<typeof vi.fn>;
+    updateMany: ReturnType<typeof vi.fn>;
+  };
   cycleDecisionEmail: { findUnique: ReturnType<typeof vi.fn> };
   user: { findUnique: ReturnType<typeof vi.fn> };
   gmailIntegration: { findFirst: ReturnType<typeof vi.fn> };
@@ -108,7 +111,10 @@ beforeEach(() => {
   process.env.DALI_APP_ENV = "prod";
   (mockPrisma as any).dALIMember = { findUnique: vi.fn() };
   (mockPrisma as any).decision = { findUnique: vi.fn(), create: vi.fn() };
-  (mockPrisma as any).domainApplication = { findUnique: vi.fn() };
+  (mockPrisma as any).domainApplication = {
+    findUnique: vi.fn(),
+    updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+  };
   (mockPrisma as any).cycleDecisionEmail = { findUnique: vi.fn() };
   (mockPrisma as any).user = { findUnique: vi.fn() };
   (mockPrisma as any).gmailIntegration = { findFirst: vi.fn() };
@@ -363,6 +369,48 @@ describe("POST /api/hiring/decisions/:id/release", () => {
       userId: "applicant-user-id",
       email: "ada@dartmouth.edu",
     });
+  });
+
+  it("on Accepted, closes the applicant's other undecided domains this cycle (single placement)", async () => {
+    setupAuth();
+    setupFinalDecision("Accepted");
+    setupApplicantContext();
+    mockPrisma.cycleDecisionEmail.findUnique.mockResolvedValue({
+      applicationCycleId: CYCLE_ID,
+      decisionType: "Accepted",
+      emailTemplateVersionId: "etv-1",
+      emailTemplateVersion: { id: "etv-1", subject: "Welcome!", body: "Hi {{firstName}}" },
+    });
+
+    const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
+    expect(res.status).toBe(201);
+
+    expect(mockPrisma.domainApplication.updateMany).toHaveBeenCalledOnce();
+    const arg = vi.mocked(mockPrisma.domainApplication.updateMany).mock.calls[0][0];
+    // Only sibling DAs (not this one), still selected, undecided, not already closed.
+    expect(arg.where).toMatchObject({
+      id: { not: "da-1" },
+      selected: true,
+      closureReason: null,
+      decisions: { none: { stage: "Released" } },
+    });
+    expect(arg.data).toMatchObject({ closureReason: "AcceptedElsewhere" });
+  });
+
+  it("does NOT close siblings for a non-Accepted decision", async () => {
+    setupAuth();
+    setupFinalDecision("Rejected");
+    setupApplicantContext();
+    mockPrisma.cycleDecisionEmail.findUnique.mockResolvedValue({
+      applicationCycleId: CYCLE_ID,
+      decisionType: "Rejected",
+      emailTemplateVersionId: "etv-1",
+      emailTemplateVersion: { id: "etv-1", subject: "Update", body: "Hi {{firstName}}" },
+    });
+
+    const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
+    expect(res.status).toBe(201);
+    expect(mockPrisma.domainApplication.updateMany).not.toHaveBeenCalled();
   });
 
   it("folds the provisioned daliEmail into the welcome call", async () => {
