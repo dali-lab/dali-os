@@ -205,19 +205,24 @@ export function EpicSprintManager({
     <div className="flex flex-col gap-4">
       {errorBanner}
 
-      {/* New epic — a modal like the detail view, not inline inputs in the
-          list. On save we immediately reopen as the real detail modal for the
-          created epic (see onSubmit), so sprints/stories can be added right
-          away without hunting for the new row. */}
+      {/* New epic. On save we immediately reopen as the real detail modal for
+          the created epic (see onSubmit), so stories and a description can be
+          added right away. Narrower than the detail modal — there are no story
+          cards to lay out yet. */}
       <Modal
         open={newEpicOpen}
         onClose={() => setNewEpicOpen(false)}
         labelledBy="new-epic-title"
         disableEscape={busy}
-        containerClassName="bg-card rounded-2xl shadow-xl max-w-5xl w-full p-5 sm:p-6 my-auto"
+        containerClassName="bg-card rounded-2xl shadow-xl max-w-xl w-full p-5 sm:p-6 my-auto"
       >
-        <div className="flex items-center justify-between gap-2 mb-4">
-          <h2 id="new-epic-title" className="font-heading text-lg font-semibold text-foreground">
+        {/* Eyebrow rather than a heading: the form's own name field is the
+            prominent title, exactly as in the detail modal. */}
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <h2
+            id="new-epic-title"
+            className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
+          >
             New epic
           </h2>
           <button
@@ -229,9 +234,6 @@ export function EpicSprintManager({
             <X className="w-4 h-4" />
           </button>
         </div>
-        <p className="text-xs text-muted-foreground mb-3">
-          Name it and save — you can add stories and a description next.
-        </p>
         <EpicForm
           busy={busy}
           terms={terms}
@@ -760,14 +762,16 @@ function EpicDetail({
   );
 }
 
+// New-epic form. Deliberately the same shape as the detail modal's header +
+// details grid — name at the top behind the epic dot, then the identical
+// label/value rows — so creating an epic and editing one look like the same
+// screen. It stays a submit form because there's no epic to PATCH into yet.
 function EpicForm({
-  initial,
   busy,
   terms,
   onSubmit,
   onCancel,
 }: {
-  initial?: EditableEpic;
   busy: boolean;
   terms: EpicTermOption[];
   onSubmit: (values: {
@@ -779,15 +783,11 @@ function EpicForm({
   }) => void;
   onCancel: () => void;
 }) {
-  const [title, setTitle] = useState(initial?.title ?? "");
-  const [status, setStatus] = useState(initial?.status ?? "Open");
-  const [targetTermId, setTargetTermId] = useState(initial?.targetTermId ?? "");
-  const [startsAt, setStartsAt] = useState(
-    initial?.startsAt ? dateInputValue(initial.startsAt) : "",
-  );
-  const [endsAt, setEndsAt] = useState(
-    initial?.endsAt ? dateInputValue(initial.endsAt) : "",
-  );
+  const [title, setTitle] = useState("");
+  const [status, setStatus] = useState<EditableEpic["status"]>("Open");
+  const [targetTermId, setTargetTermId] = useState("");
+  const [startsAt, setStartsAt] = useState("");
+  const [endsAt, setEndsAt] = useState("");
 
   return (
     <form
@@ -803,77 +803,81 @@ function EpicForm({
           endsAt: endsAt ? new Date(endsAt).toISOString() : null,
         });
       }}
-      className="flex flex-col gap-2 mb-3"
+      className="flex flex-col gap-4"
     >
-      <div className="flex flex-wrap items-end gap-2">
-        <label className="flex flex-col gap-1 text-xs flex-1 min-w-[200px]">
-          <span className="text-muted-foreground">Title</span>
-          <input
-            autoFocus
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-xs">
-          <span className="text-muted-foreground">Status</span>
-          <Select
-            value={status}
-            onChange={(value) => setStatus(value as EditableEpic["status"])}
-            options={EPIC_STATUSES.map((s) => ({ value: s, label: s }))}
-            buttonClassName="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-          />
-        </label>
-        {/* Optional target term — a planning signal for cross-term epics, not
-            a hard scope. Only offered once the project has terms. */}
-        {terms.length > 0 && (
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="text-muted-foreground">Target term (optional)</span>
+      <div className="flex items-center gap-2">
+        <span
+          aria-hidden
+          className="h-2.5 w-2.5 flex-shrink-0 rounded-full"
+          style={{ background: LEVEL_COLOR.epic }}
+        />
+        <input
+          autoFocus
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="Epic name"
+          aria-label="Epic name"
+          className="w-full font-heading text-lg font-bold text-foreground bg-transparent rounded px-1 -mx-1 py-0.5 placeholder:font-normal placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+        />
+      </div>
+
+      <section className="border-t border-border pt-4">
+        <dl className="grid grid-cols-[7rem_1fr] items-center gap-x-3 gap-y-2 text-xs">
+          <dt className="text-muted-foreground">Status</dt>
+          <dd className="min-w-0">
             <Select
-              value={targetTermId}
-              onChange={(value) => setTargetTermId(value)}
-              placeholder="No target term"
-              options={[
-                { value: "", label: "No target term" },
-                ...terms.map((t) => ({ value: t.id, label: t.code })),
-              ]}
-              buttonClassName="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+              value={status}
+              onChange={(value) => setStatus(value as EditableEpic["status"])}
+              options={EPIC_STATUSES.map((st) => ({ value: st, label: st }))}
+              buttonClassName={EPIC_FIELD}
             />
-          </label>
-        )}
-        {/* Start + End stay paired on one line even when the row wraps. */}
-        <div className="flex items-end gap-2">
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="text-muted-foreground">Start (optional)</span>
+          </dd>
+
+          {terms.length > 0 && (
+            <>
+              <dt className="text-muted-foreground">Target term</dt>
+              <dd className="min-w-0">
+                <Select
+                  value={targetTermId}
+                  onChange={(value) => setTargetTermId(value)}
+                  placeholder="No target term"
+                  options={[
+                    { value: "", label: "No target term" },
+                    ...terms.map((t) => ({ value: t.id, label: t.code })),
+                  ]}
+                  buttonClassName={EPIC_FIELD}
+                />
+              </dd>
+            </>
+          )}
+
+          <dt className="text-muted-foreground">Starts</dt>
+          <dd className="min-w-0">
             <DateField
               mode="date"
               value={startsAt}
               onChange={(value) => setStartsAt(value)}
-              ariaLabel="Start (optional)"
+              ariaLabel="Epic start date"
             />
-          </label>
-          <label className="flex flex-col gap-1 text-xs">
-            <span className="text-muted-foreground">End (optional)</span>
+          </dd>
+
+          <dt className="text-muted-foreground">Ends</dt>
+          <dd className="min-w-0">
             <DateField
               mode="date"
               value={endsAt}
               onChange={(value) => setEndsAt(value)}
-              ariaLabel="End (optional)"
+              ariaLabel="Epic end date"
             />
-          </label>
-        </div>
-      </div>
+          </dd>
+        </dl>
+      </section>
 
       <div className="flex gap-1.5">
-        <Button
-          type="submit"
-          variant="primary"
-          size="sm"
-          disabled={busy}
-        >
-          {/* Creating a new epic hands off to the detail modal to add
-              sprints/stories, so "Next" signals there's more after this. */}
-          {initial ? "Save" : "Next"}
+        {/* Creating hands off to the detail modal to add stories and a
+            description, so "Next" signals there's more after this. */}
+        <Button type="submit" variant="primary" size="sm" disabled={busy || !title.trim()}>
+          Next
         </Button>
         <button
           type="button"
