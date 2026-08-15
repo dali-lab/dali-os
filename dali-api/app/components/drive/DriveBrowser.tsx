@@ -1411,7 +1411,7 @@ function MillerColumn({
       {isEmpty ? (
         <p className="px-3 py-6 text-center text-xs text-muted-foreground italic">{emptyMessage}</p>
       ) : (
-        <div className="flex flex-col py-1">{children}</div>
+        <div className="flex flex-col divide-y divide-border/50">{children}</div>
       )}
     </div>
   );
