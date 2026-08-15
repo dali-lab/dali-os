@@ -5,6 +5,7 @@ import { requireCoreOrDomainLead } from "~/lib/auth";
 import { redirectToLogin } from '~/lib/login-next'
 import { RubricDetail } from '~/hiring/components/RubricDetail'
 import { driveFolderCrumbs } from '~/lib/drive-crumbs.server'
+import { driveRootCrumbs } from '~/lib/drive-crumbs'
 import { PageIcon } from '~/components/PageIcon'
 
 export const meta: Route.MetaFunction = ({ data }) => {
@@ -23,9 +24,8 @@ export const handle = {
     const name = d?.rubric?.name;
     if (!name) return null;
     const scope = d?.driveCrumbs?.scope ?? "lab";
-    const scopeQuery = scope === "lab" ? "" : `?scope=${scope}`;
     return [
-      { label: "Drive", to: `/drive${scopeQuery}` },
+      ...driveRootCrumbs(scope),
       ...(d?.driveCrumbs?.folders ?? []).map((f) => ({
         label: f.title || "Untitled folder",
         to: `/drive?scope=${scope}&folder=${f.id}`,
