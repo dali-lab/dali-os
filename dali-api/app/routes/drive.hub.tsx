@@ -19,6 +19,7 @@ import { canViewForms as checkCanViewForms, getUserRoles } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { loader as docsLoader } from "~/routes/documents.hub";
 import { loadDriveScopes } from "~/lib/drive-scopes.server";
+import type { DriveTreeScope } from "~/lib/drive-scopes.server";
 import type { DriveItem } from "~/lib/drive.server";
 import { DriveBrowser } from "~/components/drive/DriveBrowser";
 import type { RowActions } from "~/components/drive/DriveBrowser";
@@ -347,6 +348,28 @@ function scopeKindOf(id: string): ScopeKind {
   return id === "mine" ? "mine" : id === "lab" || id === "core" || id === "hiring" ? "lab" : "project";
 }
 
+// Who can see items in a scope — shown in the cross-drive move confirmation so
+// the mover knows a move re-scopes visibility.
+function scopeAudience(scopeId: string): string {
+  if (scopeId === "core") return "Core only";
+  if (scopeId === "hiring") return "the hiring team";
+  if (scopeId === "lab") return "everyone in the lab";
+  return "the project team";
+}
+
+// A scope's destination workspace + drive-root parent for a cross-drive move.
+// Lab/Core/Hiring are all Lab-workspace pages (Core/Hiring nest under their
+// scoped root folder); a project scope is its own Project workspace.
+function scopeDest(scope: DriveTreeScope): {
+  workspaceType: "Lab" | "Project";
+  workspaceId: string | null;
+  root: string | null;
+} {
+  return scopeKindOf(scope.id) === "project"
+    ? { workspaceType: "Project", workspaceId: scope.id, root: scope.rootFolderId ?? null }
+    : { workspaceType: "Lab", workspaceId: null, root: scope.rootFolderId ?? null };
+}
+
 // A folder's own id plus every descendant folder id — so "Move to…" never
 // offers a folder as a destination for itself or its own subtree.
 function folderAndDescendants(items: DriveItem[], folderId: string): Set<string> {
@@ -383,7 +406,6 @@ type ScopeActions = {
   remove: (item: DriveItem) => Promise<void>;
   /** Delete request without the confirm/toast — used by bulk delete. */
   deleteItem: (item: DriveItem) => Promise<Response>;
-  requestMove: (item: DriveItem) => Promise<void>;
   performMove: (item: DriveItem, destFolderId: string | null) => Promise<void>;
 };
 
@@ -579,31 +601,7 @@ function makeScopeActions({
     revalidate();
   }
 
-  async function requestMove(item: DriveItem) {
-    const banned =
-      item.type === "folder"
-        ? folderAndDescendants(scope.items, item.id)
-        : new Set([item.id]);
-    const currentParent = item.parentFolderId ?? null;
-    const options = [
-      ...(currentParent !== null ? [{ value: "__root__", label: "Top level" }] : []),
-      ...scope.items
-        .filter((it) => it.type === "folder" && !banned.has(it.id) && it.id !== currentParent)
-        .map((f) => ({ value: f.id, label: f.title || "Untitled folder" })),
-    ];
-    if (options.length === 0) {
-      toast.error("There's nowhere else to move this");
-      return;
-    }
-    const dest = await dialog.choice({
-      title: `Move "${item.title || "Untitled"}"`,
-      options,
-    });
-    if (dest === null) return;
-    await performMove(item, dest === "__root__" ? null : dest);
-  }
-
-  return { createDoc, createFolder, rename, remove, deleteItem, requestMove, performMove };
+  return { createDoc, createFolder, rename, remove, deleteItem, performMove };
 }
 
 // ── New menu (contextual to the current location) ────────────────────────────
@@ -801,20 +799,159 @@ export default function DriveHub() {
     return map;
   }, [driveScopes, effectiveScopeId, currentFolderId, dialog, toast, revalidator]);
 
-  const getScopeActions = useCallback(
-    (scopeId: string): RowActions => {
-      const a = scopeActionsMap.get(scopeId);
-      if (!a) return { onRename: () => {}, onRequestMove: () => {}, onDelete: () => {} };
-      return { onRename: a.rename, onRequestMove: a.requestMove, onDelete: a.remove };
-    },
-    [scopeActionsMap],
-  );
-
   const onMove = useCallback(
     (scopeId: string, item: DriveItem, destFolderId: string | null) => {
       void scopeActionsMap.get(scopeId)?.performMove(item, destFolderId);
     },
     [scopeActionsMap],
+  );
+
+  // ── Cross-drive move: relocate an item to another drive (Lab/Core/Hiring/a
+  // project), optionally into one of its folders. The page-move endpoint
+  // re-scopes visibility automatically (e.g. into Core → Restricted), so we warn
+  // first. Managed types (agreement/rubric/emailTemplate) are filed
+  // automatically and excluded. Files/forms use folderPageId and stay within the
+  // Lab-workspace drives; docs/folders can also cross into projects.
+  const NON_MOVABLE = new Set<DriveItem["type"]>(["agreement", "rubric", "emailTemplate"]);
+  const moveDestinationsFor = useCallback(
+    (item: DriveItem): DriveTreeScope[] =>
+      driveScopes.filter((s) => {
+        if (s.id === "mine" || NON_MOVABLE.has(item.type)) return false;
+        const labWorkspace = scopeKindOf(s.id) !== "project";
+        // Files/forms move by folderPageId (no workspace change), so restrict
+        // them to the Lab-workspace drives. Docs/folders can go anywhere.
+        return item.type === "doc" || item.type === "folder" ? true : labWorkspace;
+      }),
+    [driveScopes],
+  );
+
+  const moveItemToScope = useCallback(
+    async (
+      item: DriveItem,
+      sourceScopeId: string,
+      destScopeId: string,
+      destFolderPageId: string | null,
+      opts?: { skipConfirm?: boolean },
+    ) => {
+      const destScope = driveScopes.find((s) => s.id === destScopeId);
+      if (!destScope) return;
+      const d = scopeDest(destScope);
+      const src = driveScopes.find((s) => s.id === sourceScopeId);
+      const srcWs = src ? scopeDest(src) : { workspaceType: "Lab" as const, workspaceId: null, root: null };
+      const parent = destFolderPageId ?? d.root; // drive top = scoped root (Core/Hiring) or null (Lab/project)
+
+      // No-op if it's already there.
+      if (destScopeId === sourceScopeId && (parent ?? null) === (item.parentFolderId ?? null)) return;
+
+      if (!opts?.skipConfirm && destScopeId !== sourceScopeId) {
+        const ok = await dialog.confirm({
+          title: `Move to ${destScope.label}?`,
+          description: `"${item.title || "Untitled"}" will move to ${destScope.label} and become visible to ${scopeAudience(destScopeId)}.`,
+          confirmLabel: "Move",
+        });
+        if (!ok) return;
+      }
+
+      let res: Response;
+      if (item.type === "doc" || item.type === "folder") {
+        const crossWs = d.workspaceType !== srcWs.workspaceType || d.workspaceId !== srcWs.workspaceId;
+        res = await fetch(`/api/pages/${item.id}/move`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            parentPageId: parent,
+            ...(crossWs ? { workspaceType: d.workspaceType, workspaceId: d.workspaceId } : {}),
+          }),
+        });
+      } else {
+        res = await fetch("/api/drive/move", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ itemType: item.type, itemId: item.id, destFolderPageId: parent }),
+        });
+      }
+      if (res.ok) toast.success("Moved");
+      else toast.error((await errorFrom(res)) ?? "Couldn't move");
+      revalidator.revalidate();
+    },
+    [driveScopes, dialog, toast, revalidator],
+  );
+
+  // Build a grouped destination list (drive → top level + its folders) across
+  // every drive the item may move to, and let the user pick one.
+  const pickMoveDestination = useCallback(
+    async (item: DriveItem, sourceScopeId: string): Promise<{ scopeId: string; folderId: string | null } | null> => {
+      const SEP = "|";
+      const banned =
+        item.type === "folder" ? folderAndDescendants(driveScopes.find((s) => s.id === sourceScopeId)?.items ?? [], item.id) : new Set<string>();
+      const options: { value: string; label: string }[] = [];
+      for (const s of moveDestinationsFor(item)) {
+        const drive = s.id === "lab" ? "Lab" : s.label;
+        const atRoot = s.id === sourceScopeId && (item.parentFolderId ?? null) === (s.rootFolderId ?? null);
+        if (!atRoot) options.push({ value: `${s.id}${SEP}`, label: `${drive} — Top level` });
+        for (const f of s.items) {
+          if (f.type !== "folder" || banned.has(f.id)) continue;
+          if (s.id === sourceScopeId && f.id === (item.parentFolderId ?? null)) continue; // already here
+          options.push({ value: `${s.id}${SEP}${f.id}`, label: `${drive} / ${f.title || "Untitled folder"}` });
+        }
+      }
+      if (options.length === 0) {
+        toast.error("There's nowhere else to move this");
+        return null;
+      }
+      const dest = await dialog.choice({ title: `Move "${item.title || "Untitled"}"`, options });
+      if (dest === null) return null;
+      const [scopeId, folderId] = dest.split(SEP);
+      return { scopeId, folderId: folderId || null };
+    },
+    [driveScopes, moveDestinationsFor, dialog, toast],
+  );
+
+  const requestMoveCrossDrive = useCallback(
+    async (sourceScopeId: string, item: DriveItem) => {
+      const dest = await pickMoveDestination(item, sourceScopeId);
+      if (dest) await moveItemToScope(item, sourceScopeId, dest.scopeId, dest.folderId);
+    },
+    [pickMoveDestination, moveItemToScope],
+  );
+
+  // Bulk move: pick a destination once, then move every selected item there
+  // (confirming the visibility change a single time upfront).
+  const onBulkMove = useCallback(
+    async (items: DriveItem[]) => {
+      const movable = items.filter((i) => !NON_MOVABLE.has(i.type));
+      if (movable.length === 0 || !effectiveScopeId) return;
+      const dest = await pickMoveDestination(movable[0], effectiveScopeId);
+      if (!dest) return;
+      if (dest.scopeId !== effectiveScopeId) {
+        const destScope = driveScopes.find((s) => s.id === dest.scopeId);
+        const ok = await dialog.confirm({
+          title: `Move ${movable.length} item${movable.length === 1 ? "" : "s"}?`,
+          description: `They'll move to ${destScope?.label ?? "the selected drive"} and become visible to ${scopeAudience(dest.scopeId)}.`,
+          confirmLabel: "Move",
+        });
+        if (!ok) return;
+      }
+      for (const it of movable) {
+        await moveItemToScope(it, effectiveScopeId, dest.scopeId, dest.folderId, { skipConfirm: true });
+      }
+    },
+    [pickMoveDestination, moveItemToScope, effectiveScopeId, driveScopes, dialog],
+  );
+
+  const getScopeActions = useCallback(
+    (scopeId: string): RowActions => {
+      const a = scopeActionsMap.get(scopeId);
+      if (!a) return { onRename: () => {}, onRequestMove: () => {}, onDelete: () => {} };
+      return {
+        onRename: a.rename,
+        onRequestMove: (item: DriveItem) => void requestMoveCrossDrive(scopeId, item),
+        onDelete: a.remove,
+      };
+    },
+    [scopeActionsMap, requestMoveCrossDrive],
   );
 
   const onOpenItem = useCallback(
@@ -933,6 +1070,7 @@ export default function DriveHub() {
         getScopeActions={getScopeActions}
         onToggleFavorite={onToggleFavorite}
         onBulkDelete={onBulkDelete}
+        onBulkMove={(items) => void onBulkMove(items)}
         onUploadFiles={currentScope ? uploadFiles : undefined}
         filterControl={filterControl}
         newMenu={newMenuNode}
