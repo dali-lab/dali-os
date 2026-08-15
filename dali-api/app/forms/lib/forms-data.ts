@@ -321,6 +321,7 @@ export const ActionSchema = z.discriminatedUnion("intent", [
     intent: z.literal("create-form"),
     name: z.string().trim().min(1).max(120),
     folderId: z.string().optional(), // "" = top level
+    folderPageId: z.string().optional(), // Drive Page-folder placement; "" or absent = unplaced
   }),
   z.object({
     intent: z.literal("rename-form"),
@@ -437,14 +438,16 @@ export async function runFormsAction(
     case "create-form": {
       const folder = await resolveFolderId(input.folderId);
       if (!folder.ok) return { error: "Folder not found", status: 404 };
-      await prisma.form.create({
+      const created = await prisma.form.create({
         data: {
           name: input.name,
           folderId: folder.value,
+          folderPageId: input.folderPageId || null,
           createdById: userId,
         },
+        select: { id: true },
       });
-      return { ok: true };
+      return { ok: true, formId: created.id };
     }
     case "duplicate-form": {
       const source = await prisma.form.findUnique({
