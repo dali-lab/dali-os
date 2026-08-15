@@ -55,8 +55,11 @@ import { TaskBoard } from "../components/TaskBoard";
 import { ProjectMentorshipTab } from "~/mentorship/components/ProjectMentorshipTab";
 import {
   type TimelineEpic,
+  type TimelineStory,
+  type TimelineTask,
+  type TimelineTerm,
   type EpicStatus,
-  type SprintDependencyEdge,
+  type StoryDependencyEdge,
 } from "../components/EpicsTimeline";
 import {
   EpicSprintManager,
@@ -226,7 +229,17 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       overviewPageId: true,
       prdPageId: true,
       projectTerms: {
-        select: { term: { select: { id: true, code: true, sortKey: true } } },
+        select: {
+          term: {
+            select: {
+              id: true,
+              code: true,
+              sortKey: true,
+              startDate: true,
+              endDate: true,
+            },
+          },
+        },
       },
       termCount: true,
       partners: {
@@ -291,10 +304,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
               title: true,
               notes: true,
               status: true,
+              startsAt: true,
+              endsAt: true,
               successMetric: true,
               acceptanceCriteria: true,
               category: true,
               priority: true,
+              // Edges where this story is the dependent (waits on another).
+              dependencies: { select: { dependsOnStoryId: true } },
             },
           },
         },
@@ -324,8 +341,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           priority: true,
           position: true,
           dueAt: true,
+          startsAt: true,
           epicId: true,
           sprintId: true,
+          storyId: true,
           checklist: true,
           githubIssueNumber: true,
           githubIssueUrl: true,
@@ -489,10 +508,24 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const presenceUser = await getPresenceUser(auth.user.sub, fallbackName);
   const userName = presenceUser?.name ?? fallbackName;
 
-  // Timeline span: prefer the epic's explicit startsAt/endsAt; fall back to
-  // the min/max of its sprint dates when either is unset. When the epic has
-  // sprints, expand the bar to cover the sprint union so the parent epic bar
-  // never disappears while child sprint bars are visible.
+  // ─── Timeline model (epic → story → task) ────────────────────────────────
+  // Every level is nested containment: a story bar sits inside its epic bar, a
+  // task bar inside its story bar. Only epics resolve to a null span (rendered
+  // as unscheduled); stories and tasks always inherit a span from their parent,
+  // so a bar never disappears out from under its children.
+  //
+  // Resolution is deliberately acyclic: epic *base* span (explicit dates, else
+  // the union of its sprint dates) → story span (explicit, else the union of
+  // its self-dated tasks, else the epic base) → task span (own dates, else the
+  // story's) → epic *final* span (base widened to cover its stories).
+  const tasksByStoryId = new Map<string, typeof project.tasks>();
+  for (const t of project.tasks) {
+    if (!t.storyId) continue;
+    const bucket = tasksByStoryId.get(t.storyId);
+    if (bucket) bucket.push(t);
+    else tasksByStoryId.set(t.storyId, [t]);
+  }
+
   const epics: TimelineEpic[] = project.epics.map((e) => {
     const epicSprints = project.sprints
       .filter((s) => s.epicId === e.id)
@@ -507,6 +540,69 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     if (sprintStartMs != null && startMs != null) startMs = Math.min(startMs, sprintStartMs);
     if (sprintEndMs != null && endMs != null) endMs = Math.max(endMs, sprintEndMs);
 
+    const stories: TimelineStory[] = [];
+    for (const st of e.stories) {
+      const storyTasks = tasksByStoryId.get(st.id) ?? [];
+
+      // A task is "self-dated" only when it carries enough to place itself.
+      // dueAt alone is a valid one-ended span (start := due), so a task with a
+      // deadline and no start still anchors its story.
+      const selfDated = storyTasks
+        .map((t) => {
+          const ts = t.startsAt?.getTime() ?? t.dueAt?.getTime() ?? null;
+          const te = t.dueAt?.getTime() ?? t.startsAt?.getTime() ?? null;
+          return ts != null && te != null ? { t, ts, te: Math.max(ts, te) } : null;
+        })
+        .filter((x): x is { t: (typeof storyTasks)[number]; ts: number; te: number } => x !== null);
+
+      let storyStartMs = st.startsAt?.getTime() ?? null;
+      let storyEndMs = st.endsAt?.getTime() ?? null;
+      if (storyStartMs == null && selfDated.length) {
+        storyStartMs = Math.min(...selfDated.map((x) => x.ts));
+      }
+      if (storyEndMs == null && selfDated.length) {
+        storyEndMs = Math.max(...selfDated.map((x) => x.te));
+      }
+      storyStartMs ??= startMs;
+      storyEndMs ??= endMs;
+      // Nothing anywhere up the chain has a date — the story can't be placed.
+      if (storyStartMs == null || storyEndMs == null) continue;
+      if (storyEndMs < storyStartMs) storyEndMs = storyStartMs;
+
+      const sStart = storyStartMs;
+      const sEnd = storyEndMs;
+      stories.push({
+        id: st.id,
+        title: st.title,
+        status: st.status as TimelineStory["status"],
+        startsAt: new Date(sStart).toISOString(),
+        endsAt: new Date(sEnd).toISOString(),
+        tasks: storyTasks.map((t) => {
+          const ts = t.startsAt?.getTime() ?? t.dueAt?.getTime() ?? sStart;
+          const te = t.dueAt?.getTime() ?? t.startsAt?.getTime() ?? sEnd;
+          return {
+            id: t.id,
+            title: t.title,
+            status: t.status as TimelineTask["status"],
+            startsAt: new Date(ts).toISOString(),
+            endsAt: new Date(Math.max(ts, te)).toISOString(),
+            assignees: t.assignees.map((a) => ({
+              id: a.user.id,
+              name: fullName(a.user),
+            })),
+          };
+        }),
+      });
+    }
+
+    // Widen the epic bar to contain every story bar drawn inside it.
+    for (const st of stories) {
+      const ss = Date.parse(st.startsAt);
+      const se = Date.parse(st.endsAt);
+      startMs = startMs == null ? ss : Math.min(startMs, ss);
+      endMs = endMs == null ? se : Math.max(endMs, se);
+    }
+
     return {
       id: e.id,
       title: e.title,
@@ -514,13 +610,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       startsAt: startMs != null ? new Date(startMs).toISOString() : null,
       endsAt: endMs != null ? new Date(endMs).toISOString() : null,
       sprintCount: epicSprints.length,
-      sprints: epicSprints.map((s) => ({
-        id: s.id,
-        name: s.name,
-        status: s.status as TimelineEpic["sprints"][number]["status"],
-        startsAt: s.startsAt.toISOString(),
-        endsAt: s.endsAt.toISOString(),
-      })),
+      stories,
     };
   });
 
@@ -538,6 +628,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       title: s.title,
       notes: s.notes,
       status: s.status as EditableEpic["stories"][number]["status"],
+      startsAt: s.startsAt ? s.startsAt.toISOString() : null,
+      endsAt: s.endsAt ? s.endsAt.toISOString() : null,
+      dependsOn: s.dependencies.map((d) => d.dependsOnStoryId),
       successMetric: s.successMetric,
       acceptanceCriteria: s.acceptanceCriteria,
       category: s.category,
@@ -555,13 +648,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     dependsOn: s.dependencies.map((d) => d.dependsOnSprintId),
   }));
 
-  // Flat directed dependency edges (sprintId waits on dependsOnSprintId), drawn
-  // as arrows on the timeline.
-  const sprintDependencies = project.sprints.flatMap((s) =>
-    s.dependencies.map((d) => ({
-      sprintId: s.id,
-      dependsOnSprintId: d.dependsOnSprintId,
-    })),
+  // Flat directed dependency edges (storyId waits on dependsOnStoryId), drawn
+  // as arrows between story bars on the timeline. Same shape as the sprint
+  // edges above, one tier down.
+  const storyDependencies = project.epics.flatMap((e) =>
+    e.stories.flatMap((st) =>
+      st.dependencies.map((d) => ({
+        storyId: st.id,
+        dependsOnStoryId: d.dependsOnStoryId,
+      })),
+    ),
   );
 
   // Viewer's "last opened" stamp per task, to derive the board's unread dot
@@ -582,8 +678,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     priority: t.priority as Priority,
     position: t.position,
     dueAt: t.dueAt ? t.dueAt.toISOString() : null,
+    startsAt: t.startsAt ? t.startsAt.toISOString() : null,
     epicId: t.epicId,
     sprintId: t.sprintId,
+    storyId: t.storyId,
     checklist: (t.checklist as TaskCardModel["checklist"]) ?? null,
     assignees: t.assignees.map((a) => ({
       id: a.user.id,
@@ -860,6 +958,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         termId: sprintTermId.get(s.id) ?? null,
       })),
     epics: boardEpics,
+    stories: project.epics.flatMap((e) =>
+      e.stories.map((st) => ({ id: st.id, title: st.title, epicId: e.id })),
+    ),
     projectFiles: files.map((f) => ({ id: f.id, title: f.title })),
     terms: boardTerms,
     currentTermId: boardCurrentTermId,
@@ -1056,7 +1157,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     epics,
     editableEpics,
     sprints,
-    sprintDependencies,
+    storyDependencies,
+    // Term spans anchor the timeline's fixed one-week sprint grid and label
+    // its bands (26FA, 26FB, …). Oldest first, the order the grid walks them.
+    timelineTerms: [...plannedTerms]
+      .sort((a, b) => a.sortKey - b.sortKey)
+      .map((t) => ({
+        code: t.code,
+        startsAt: t.startDate.toISOString(),
+        endsAt: t.endDate.toISOString(),
+      })),
     tasks,
     boardOptions,
     taskCountsByEpic,
@@ -1389,7 +1499,8 @@ export default function ProjectDetail() {
     epics,
     editableEpics,
     sprints,
-    sprintDependencies,
+    storyDependencies,
+    timelineTerms,
     tasks,
     boardOptions,
     taskCountsByEpic,
@@ -1424,6 +1535,20 @@ export default function ProjectDetail() {
     isTab(tabParam) && (tabParam !== "mentorship" || canViewMentorshipTab)
       ? tabParam
       : "overview";
+  // A task bar on the planning timeline opens the board's task modal, which
+  // lives on the Tasks tab — so this hops tabs and sets ?task= in one go.
+  const openTaskFromTimeline = (taskId: string) => {
+    closeOpenedDocumentTabs();
+    setSearchParams(
+      (prev) => {
+        prev.set("tab", "tasks");
+        prev.set("task", taskId);
+        return prev;
+      },
+      { replace: true },
+    );
+  };
+
   const setTab = (next: Tab) => {
     if (next === tab) return;
     closeOpenedDocumentTabs();
@@ -1565,12 +1690,14 @@ export default function ProjectDetail() {
           epics={epics}
           editableEpics={editableEpics}
           sprints={sprints}
-          sprintDependencies={sprintDependencies}
+          storyDependencies={storyDependencies}
+          timelineTerms={timelineTerms}
           terms={plannedTerms}
           taskCountsByEpic={taskCountsByEpic}
           canEdit={canEdit}
           collabToken={collabToken}
           userName={userName}
+          onTaskClick={openTaskFromTimeline}
         />
       )}
 
@@ -4166,23 +4293,27 @@ function PlanningTab({
   epics,
   editableEpics,
   sprints,
-  sprintDependencies,
+  storyDependencies,
+  timelineTerms,
   terms,
   taskCountsByEpic,
   canEdit,
   collabToken,
   userName,
+  onTaskClick,
 }: {
   projectId: string;
   epics: TimelineEpic[];
   editableEpics: EditableEpic[];
   sprints: EditableSprint[];
-  sprintDependencies: SprintDependencyEdge[];
+  storyDependencies: StoryDependencyEdge[];
+  timelineTerms: TimelineTerm[];
   terms: { id: string; code: string }[];
   taskCountsByEpic: Record<string, { done: number; total: number }>;
   canEdit: boolean;
   collabToken: string | null;
   userName: string;
+  onTaskClick: (taskId: string) => void;
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
   // Timeline is the default view; the list view is opt-in via ?view=list.
@@ -4211,7 +4342,9 @@ function PlanningTab({
         userName={userName}
         view={timeline ? "timeline" : "list"}
         timelineEpics={epics}
-        sprintDependencies={sprintDependencies}
+        storyDependencies={storyDependencies}
+        timelineTerms={timelineTerms}
+        onTaskClick={onTaskClick}
         viewToggle={
           <div
             className="inline-flex items-center border border-border rounded-md overflow-hidden"

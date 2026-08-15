@@ -1,9 +1,10 @@
 import type { Route } from "./+types/api.stories.$id";
-import { prisma } from "~/lib/db";
+import { prisma, Prisma } from "~/lib/db";
 import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 
-// POST   /api/stories/:id  — edit. Body: { title?, notes?, status? }
+// POST   /api/stories/:id  — edit. Body: { title?, notes?, status?, startsAt?,
+//                            endsAt?, dependsOn? }
 // DELETE /api/stories/:id  — delete the story.
 //
 // Same permission model as epic edit (isCore === Admin || Core).
@@ -31,6 +32,12 @@ type EditBody = {
   title?: string;
   notes?: string | null;
   status?: string;
+  // Date-only strings (YYYY-MM-DD) or null to clear. Stored as UTC midnight so
+  // the timeline's UTC day math lands on the column the user picked.
+  startsAt?: string | null;
+  endsAt?: string | null;
+  // Full replacement set of story ids this story depends on (waits for).
+  dependsOn?: string[];
   successMetric?: string | null;
   acceptanceCriteria?: string | null;
   category?: string | null;
@@ -51,7 +58,21 @@ function isEditBody(x: unknown): x is EditBody {
   if (!isNullableString(o.acceptanceCriteria)) return false;
   if (!isNullableString(o.category)) return false;
   if (!isNullableString(o.priority)) return false;
+  if (!isNullableString(o.startsAt)) return false;
+  if (!isNullableString(o.endsAt)) return false;
+  if (
+    o.dependsOn !== undefined &&
+    (!Array.isArray(o.dependsOn) || o.dependsOn.some((v) => typeof v !== "string"))
+  ) {
+    return false;
+  }
   return true;
+}
+
+// Date-only input → UTC midnight, matching how sprint/epic dates are stored.
+function parseDay(v: string): Date | null {
+  const d = new Date(`${v.slice(0, 10)}T00:00:00.000Z`);
+  return Number.isNaN(d.getTime()) ? null : d;
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -91,6 +112,8 @@ export async function action({ request, params }: Route.ActionArgs) {
     title?: string;
     notes?: string | null;
     status?: StoryStatus;
+    startsAt?: Date | null;
+    endsAt?: Date | null;
     successMetric?: string | null;
     acceptanceCriteria?: string | null;
     category?: string | null;
@@ -128,6 +151,50 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
   }
 
-  await prisma.userStory.update({ where: { id: storyId }, data });
+  for (const key of ["startsAt", "endsAt"] as const) {
+    const raw = body[key];
+    if (raw === undefined) continue;
+    if (raw === null || raw === "") {
+      data[key] = null;
+      continue;
+    }
+    const parsed = parseDay(raw);
+    if (!parsed) {
+      return withCors(request, Response.json({ error: `Invalid ${key}` }, { status: 400 }));
+    }
+    data[key] = parsed;
+  }
+
+  const ops: Prisma.PrismaPromise<unknown>[] = [
+    prisma.userStory.update({ where: { id: storyId }, data }),
+  ];
+
+  // Dependencies are replaced wholesale, mirroring the sprint route: each id
+  // must be another story in the same project. (Cycles aren't blocked — the
+  // arrows are advisory, and the unique index dedupes repeats.)
+  if (body.dependsOn !== undefined) {
+    const ids = [...new Set(body.dependsOn)].filter((x) => x && x !== storyId);
+    if (ids.length > 0) {
+      const valid = await prisma.userStory.count({
+        where: { id: { in: ids }, epic: { projectId: story.epic.projectId } },
+      });
+      if (valid !== ids.length) {
+        return withCors(
+          request,
+          Response.json({ error: "Invalid dependency target" }, { status: 400 }),
+        );
+      }
+    }
+    ops.push(
+      prisma.userStoryDependency.deleteMany({ where: { storyId } }),
+      ...ids.map((depId) =>
+        prisma.userStoryDependency.create({
+          data: { storyId, dependsOnStoryId: depId },
+        }),
+      ),
+    );
+  }
+
+  await prisma.$transaction(ops);
   return withCors(request, Response.json({ ok: true }));
 }

@@ -55,11 +55,14 @@ export type NewTaskValues = {
   status: TaskStatus;
   priority: Priority;
   dueAt: string | null;
+  // Timeline start, as a UTC-midnight day. Null = inherit from the story.
+  startsAt: string | null;
   domainId: string | null;
   assigneeIds: string[];
-  // Null = backlog / no epic.
+  // Null = backlog / no epic / no parent story.
   sprintId: string | null;
   epicId: string | null;
+  storyId: string | null;
   // Not collected in create mode today (the create endpoint doesn't accept a
   // checklist); present so the board's optimistic card mapping can read it.
   checklist?: ChecklistItem[] | null;
@@ -118,6 +121,12 @@ export function TaskModal({
   const [dueDate, setDueDate] = useState<string>(
     task?.dueAt ? dateInputValue(task.dueAt) : "",
   );
+  // Timeline start. Paired with the deadline it gives the task a span on the
+  // planning timeline; left blank the bar inherits its story's span.
+  const [startDate, setStartDate] = useState<string>(
+    task?.startsAt ? dateInputValue(task.startsAt) : "",
+  );
+  const [storyId, setStoryId] = useState<string>(task?.storyId ?? "");
   const [domainId, setDomainId] = useState<string>(task?.domain?.id ?? "");
   const [sprintId, setSprintId] = useState<string>(task?.sprintId ?? "");
   const [epicId, setEpicId] = useState<string>(
@@ -130,12 +139,18 @@ export function TaskModal({
   const epicSprints = options.sprints.filter((s) =>
     epicId ? s.epicId === epicId : s.epicId === null,
   );
+  // Stories always belong to an epic, so with no epic picked there's nothing
+  // to choose from.
+  const epicStories = epicId ? options.stories.filter((s) => s.epicId === epicId) : [];
   function changeEpic(next: string) {
     setEpicId(next);
     const stillValid = options.sprints.some(
       (s) => s.id === sprintId && (next ? s.epicId === next : s.epicId === null),
     );
     if (!stillValid) setSprintId("");
+    if (!options.stories.some((s) => s.id === storyId && s.epicId === next)) {
+      setStoryId("");
+    }
   }
   const [checklist, setChecklist] = useState<ChecklistItem[]>(task?.checklist ?? []);
   const [newItemText, setNewItemText] = useState("");
@@ -203,6 +218,8 @@ export function TaskModal({
     setStatus(task.status);
     setAssigneeIds(task.assignees.map((a) => a.id));
     setDueDate(task.dueAt ? dateInputValue(task.dueAt) : "");
+    setStartDate(task.startsAt ? dateInputValue(task.startsAt) : "");
+    setStoryId(task.storyId ?? "");
     setDomainId(task.domain?.id ?? "");
     setSprintId(task.sprintId ?? "");
     setEpicId(task.epicId ?? "");
@@ -252,6 +269,10 @@ export function TaskModal({
     if (status !== current.status) patch.status = status;
     const nextDueIso = dueDate ? endOfDayIso(dueDate) : null;
     if (nextDueIso !== current.dueAt) patch.dueAt = nextDueIso;
+    // Start is a plain UTC-midnight day, matching epic/sprint/story dates —
+    // the deadline keeps its end-of-day semantics.
+    const nextStartIso = startDate ? `${startDate}T00:00:00.000Z` : null;
+    if (nextStartIso !== current.startsAt) patch.startsAt = nextStartIso;
     const nextDomain =
       domainId === ""
         ? null
@@ -263,6 +284,8 @@ export function TaskModal({
     if (nextSprintId !== current.sprintId) patch.sprintId = nextSprintId;
     const nextEpicId = epicId === "" ? null : epicId;
     if (nextEpicId !== current.epicId) patch.epicId = nextEpicId;
+    const nextStoryId = storyId === "" ? null : storyId;
+    if (nextStoryId !== current.storyId) patch.storyId = nextStoryId;
     const nextChecklist = normalizeChecklist(checklist);
     if (JSON.stringify(nextChecklist) !== JSON.stringify(current.checklist ?? [])) {
       patch.checklist = nextChecklist.length > 0 ? nextChecklist : null;
@@ -347,10 +370,12 @@ export function TaskModal({
         status,
         priority,
         dueAt: dueDate ? endOfDayIso(dueDate) : null,
+        startsAt: startDate ? `${startDate}T00:00:00.000Z` : null,
         domainId: domainId === "" ? null : domainId,
         assigneeIds,
         sprintId: sprintId === "" ? null : sprintId,
         epicId: epicId === "" ? null : epicId,
+        storyId: storyId === "" ? null : storyId,
         github: githubEnabled && githubRepo ? { repo: githubRepo } : null,
       });
       onClose();
@@ -807,6 +832,34 @@ export function TaskModal({
             />
           </PropRow>
 
+          <PropRow label="User story">
+            <Select
+              value={storyId}
+              disabled={!canManage || epicStories.length === 0}
+              onChange={(value) => setStoryId(value)}
+              placeholder={
+                epicStories.length === 0
+                  ? epicId
+                    ? "No stories in this epic"
+                    : "Pick an epic first"
+                  : "None"
+              }
+              options={[
+                {
+                  value: "",
+                  label:
+                    epicStories.length === 0
+                      ? epicId
+                        ? "No stories in this epic"
+                        : "Pick an epic first"
+                      : "None",
+                },
+                ...epicStories.map((s) => ({ value: s.id, label: s.title })),
+              ]}
+              buttonClassName={PROP_CONTROL}
+            />
+          </PropRow>
+
           <PropRow label="Domain">
             <Select
               value={domainId}
@@ -818,6 +871,17 @@ export function TaskModal({
                 ...options.domains.map((d) => ({ value: d.id, label: d.name })),
               ]}
               buttonClassName={PROP_CONTROL}
+            />
+          </PropRow>
+
+          <PropRow label="Starts">
+            <DateField
+              mode="date"
+              value={startDate}
+              disabled={!canManage}
+              onChange={(value) => setStartDate(value)}
+              className="w-full"
+              ariaLabel="Start date"
             />
           </PropRow>
 

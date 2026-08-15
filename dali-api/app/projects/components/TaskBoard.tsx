@@ -389,9 +389,9 @@ export function TaskBoard({
     if (toStatus === "Done" && fromStatus !== "Done") setCelebrate(true);
   }
 
-  // Create from the modal. The POST endpoint applies title/status/dueAt/
-  // sprint/epic; priority/domain/assignees are applied with a follow-up PATCH
-  // via the same optimistic path the card edits use.
+  // Create from the modal. The POST endpoint applies title/status/dates/
+  // sprint/epic/story; priority/domain/assignees are applied with a follow-up
+  // PATCH via the same optimistic path the card edits use.
   async function handleCreate(values: NewTaskValues) {
     setError(null);
     const res = await fetch(`/api/projects/${projectId}/tasks`, {
@@ -403,8 +403,10 @@ export function TaskBoard({
         description: values.description,
         status: values.status,
         dueAt: values.dueAt,
+        startsAt: values.startsAt,
         sprintId: values.sprintId,
         epicId: values.epicId,
+        storyId: values.storyId,
         ...(values.github ? { github: values.github } : {}),
       }),
     });
@@ -434,8 +436,10 @@ export function TaskBoard({
         priority: values.priority,
         position: nextPositionInColumn(buildTaskBoard(cur), values.status),
         dueAt: values.dueAt,
+        startsAt: values.startsAt,
         epicId: values.epicId,
         sprintId: values.sprintId,
+        storyId: values.storyId,
         checklist: values.checklist ?? null,
         assignees,
         domain,

@@ -2841,6 +2841,12 @@ model UserStory {
   status   UserStoryStatus @default(Todo)
   position Int             @default(0)
 
+  // Timeline span. Nullable: stories predate the timeline and are created
+  // before their dates are known. The timeline falls back to the min/max of
+  // the story's tasks, then to the parent epic's span (see projects.$id loader).
+  startsAt DateTime?
+  endsAt   DateTime?
+
   // Product-requirement columns surfaced in the epic's prod-req table (internal
   // + partner views). All optional so existing stories migrate without
   // backfill; category is freeform text, priority is MoSCoW.
@@ -2849,12 +2855,36 @@ model UserStory {
   category           String?
   priority           StoryPriority?
 
-  epic Epic @relation(fields: [epicId], references: [id])
+  epic  Epic   @relation(fields: [epicId], references: [id])
+  tasks Task[]
+
+  // Timeline dependency edges, same two-sided shape as SprintDependency.
+  // `dependencies` are rows where this story is the dependent (stories it
+  // waits on); `blocking` are rows where it is the predecessor.
+  dependencies UserStoryDependency[] @relation("UserStoryDependent")
+  blocking     UserStoryDependency[] @relation("UserStoryBlocker")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([epicId])
+}
+
+// Directed edge: `story` waits on `dependsOnStory`. Both sides are same-epic's
+// project — enforced in the API, not the schema. Drawn as arrows between story
+// bars on the project timeline.
+model UserStoryDependency {
+  id               String @id @default(cuid())
+  storyId          String
+  dependsOnStoryId String
+
+  story          UserStory @relation("UserStoryDependent", fields: [storyId], references: [id], onDelete: Cascade)
+  dependsOnStory UserStory @relation("UserStoryBlocker", fields: [dependsOnStoryId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([storyId, dependsOnStoryId])
+  @@index([dependsOnStoryId])
 }
 
 enum StoryPriority {
@@ -2927,6 +2957,9 @@ model Task {
   sprintId  String?
   // Optional epic linkage for cross-sprint grouping.
   epicId    String?
+  // Optional parent user story. Null = the task hangs directly off the epic
+  // (or nothing). Drives the timeline's task-inside-story nesting.
+  storyId   String?
 
   title            String
   // Plain-text task description, edited in the task modal.
@@ -2935,6 +2968,10 @@ model Task {
   status           TaskStatus @default(Todo)
   priority         Priority   @default(Normal)
   position         Int        @default(0)
+  // Optional timeline start. Pairs with dueAt to give the task a span on the
+  // project timeline; null falls back to the parent story/sprint start.
+  // Purely a planning field — it fires no reminders.
+  startsAt         DateTime?
   // Optional deadline. UTC instant; UI formats in local time. When set,
   // the task-due-reminders job notifies assignees 24h before and at the
   // moment (channels per their preferences; TaskReminder is the idempotency
@@ -2976,6 +3013,7 @@ model Task {
   project   Project        @relation(fields: [projectId], references: [id])
   sprint    Sprint?        @relation(fields: [sprintId], references: [id])
   epic      Epic?          @relation(fields: [epicId], references: [id])
+  story     UserStory?     @relation(fields: [storyId], references: [id])
   domain    Domain?        @relation(fields: [domainId], references: [id])
   assignees TaskAssignee[]
   comments  TaskComment[]
@@ -2990,6 +3028,7 @@ model Task {
 
   @@unique([githubRepo, githubIssueNumber], name: "task_github_issue_unique")
   @@index([projectId, sprintId])
+  @@index([storyId])
 }
 
 enum TaskStatus {

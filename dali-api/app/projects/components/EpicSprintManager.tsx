@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { useRevalidator } from "react-router";
 import { Select } from "~/components/ui/floating";
 import { X, GripVertical, Check, Trash2, Pencil, Maximize2 } from "lucide-react";
@@ -20,7 +27,12 @@ import { DateField } from "~/components/ui/DateField";
 import { useDialog } from "~/components/ui/dialog";
 import { DocEditor } from "~/components/doc";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
-import { EpicsTimeline, type TimelineEpic, type SprintDependencyEdge } from "./EpicsTimeline";
+import {
+  EpicsTimeline,
+  type TimelineEpic,
+  type TimelineTerm,
+  type StoryDependencyEdge,
+} from "./EpicsTimeline";
 
 // MoSCoW priority for a product requirement (story). Null = unset.
 export type StoryPriority = "Must" | "Should" | "Could" | "Wont";
@@ -30,6 +42,13 @@ export type EditableStory = {
   title: string;
   notes: string | null;
   status: "Todo" | "InProgress" | "Done";
+  // Explicit timeline span. Null falls back to the story's tasks, then to the
+  // parent epic — resolved server-side, see the projects.$id loader.
+  startsAt: string | null;
+  endsAt: string | null;
+  // Ids of stories this one waits for, edited in the story form and drawn as
+  // arrows between story bars on the timeline.
+  dependsOn: string[];
   // Product-requirement columns (see the prod-req table view).
   successMetric: string | null;
   acceptanceCriteria: string | null;
@@ -106,8 +125,13 @@ type Props = {
   view?: "list" | "timeline";
   // TimelineEpic shape for the timeline body (only read when view=timeline).
   timelineEpics?: TimelineEpic[];
-  // Sprint dependency edges, drawn as arrows on the timeline.
-  sprintDependencies?: SprintDependencyEdge[];
+  // Story dependency edges, drawn as arrows between story bars on the timeline.
+  storyDependencies?: StoryDependencyEdge[];
+  // Project terms (oldest first) anchoring the timeline's one-week sprint grid.
+  timelineTerms?: TimelineTerm[];
+  // Opens a task from a timeline task bar. Left to the caller because the task
+  // modal lives on the board (?task=), not in this component.
+  onTaskClick?: (taskId: string) => void;
   // The list/timeline view switch, rendered on the toolbar row (right side),
   // with the "Add epic" button on the left of the same line.
   viewToggle?: ReactNode;
@@ -149,7 +173,9 @@ export function EpicSprintManager({
   userName,
   view = "list",
   timelineEpics = [],
-  sprintDependencies = [],
+  storyDependencies = [],
+  timelineTerms = [],
+  onTaskClick,
   viewToggle,
 }: Props) {
   const dialog = useDialog();
@@ -180,6 +206,16 @@ export function EpicSprintManager({
   const [openAddSprint, setOpenAddSprint] = useState(false);
   // Which epics are expanded to show their nested sprints in the list.
   const [expandedEpicIds, setExpandedEpicIds] = useState<Set<string>>(new Set());
+
+  // Flat "depends on" target list for the story form: every story in the
+  // project, labelled with its epic so same-titled stories stay tellable apart.
+  const allStoryOptions = useMemo(
+    () =>
+      epics.flatMap((e) =>
+        e.stories.map((st) => ({ id: st.id, name: `${e.title} · ${st.title}` })),
+      ),
+    [epics],
+  );
 
   function toggleExpanded(epicId: string) {
     setExpandedEpicIds((cur) => {
@@ -352,6 +388,7 @@ export function EpicSprintManager({
             projectId={projectId}
             epic={activeEpic}
             sprints={sprints.filter((s) => s.epicId === activeEpic.id)}
+            storyOptions={allStoryOptions}
             terms={terms}
             canManage={canManage}
             busy={busy}
@@ -370,18 +407,17 @@ export function EpicSprintManager({
 
       {view === "timeline" ? (
         <div className="flex flex-col gap-3">
-          {/* Clicking an epic or sprint bar opens the same detail/edit modal
-              the list view uses (openEpic). */}
+          {/* Clicking an epic or story bar opens the same detail/edit modal
+              the list view uses (openEpic); a task bar defers to the caller,
+              which opens the board's task modal via ?task=. */}
           <EpicsTimeline
             epics={timelineEpics}
             taskCounts={taskCounts}
-            sprintDependencies={sprintDependencies}
+            terms={timelineTerms}
+            storyDependencies={storyDependencies}
             onEpicClick={canManage ? (id) => openEpic(id) : undefined}
-            onSprintClick={
-              canManage
-                ? (epicId, sprintId) => openEpic(epicId, { sprintId })
-                : undefined
-            }
+            onStoryClick={canManage ? (epicId) => openEpic(epicId) : undefined}
+            onTaskClick={onTaskClick}
           />
         </div>
       ) : (
@@ -779,6 +815,7 @@ function EpicDetail({
   projectId,
   epic,
   sprints,
+  storyOptions,
   terms,
   canManage,
   busy,
@@ -795,6 +832,9 @@ function EpicDetail({
   projectId: string;
   epic: EditableEpic;
   sprints: EditableSprint[];
+  // Every story in the project except the one being edited — "depends on"
+  // targets. Cross-epic edges are allowed, same as sprint dependencies.
+  storyOptions: { id: string; name: string }[];
   terms: EpicTermOption[];
   canManage: boolean;
   busy: boolean;
@@ -1150,6 +1190,7 @@ function EpicDetail({
                   <StoryForm
                     busy={busy}
                     initial={story}
+                    storyOptions={storyOptions.filter((o) => o.id !== story.id)}
                     onCancel={() => setEditStoryId(null)}
                     onSubmit={(values) =>
                       run(async () => {
@@ -1517,14 +1558,18 @@ function EpicForm({
 
 // Multi-select popover of other sprints this one depends on. Checkbox list so
 // several can be picked; closes on outside click.
+// Multi-select "waits for" picker, shared by the sprint and story forms.
 function DependsOnField({
   options,
   value,
   onChange,
+  noun,
 }: {
-  options: EditableSprint[];
+  options: { id: string; name: string }[];
   value: string[];
   onChange: (next: string[]) => void;
+  // Singular label for the summary line ("2 sprints", "1 story").
+  noun: string;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
@@ -1547,7 +1592,7 @@ function DependsOnField({
       >
         {value.length === 0
           ? "None"
-          : `${value.length} sprint${value.length === 1 ? "" : "s"}`}
+          : `${value.length} ${noun}${value.length === 1 ? "" : "s"}`}
       </button>
       {open && (
         <div className="absolute z-20 mt-1 max-h-48 w-56 overflow-y-auto rounded-md border border-border bg-card p-1 shadow-brand-2">
@@ -1683,7 +1728,12 @@ function SprintForm({
       {showDeps && (
         <label className="flex flex-col gap-1 text-xs">
           <span className="text-muted-foreground">Depends on</span>
-          <DependsOnField options={depChoices} value={dependsOn} onChange={setDependsOn} />
+          <DependsOnField
+            options={depChoices.map((sp) => ({ id: sp.id, name: sp.name }))}
+            value={dependsOn}
+            onChange={setDependsOn}
+            noun="sprint"
+          />
         </label>
       )}
       </div>
@@ -1728,15 +1778,22 @@ const STORY_STATUSES = ["Todo", "InProgress", "Done"] as const;
 function StoryForm({
   initial,
   busy,
+  storyOptions = [],
   onSubmit,
   onCancel,
 }: {
   initial?: EditableStory;
   busy: boolean;
+  // Other stories in the project, as "depends on" targets. Empty on create —
+  // dependencies are added once the story exists.
+  storyOptions?: { id: string; name: string }[];
   onSubmit: (values: {
     title: string;
     notes: string | null;
     status: string;
+    startsAt: string | null;
+    endsAt: string | null;
+    dependsOn?: string[];
     successMetric: string | null;
     acceptanceCriteria: string | null;
     category: string | null;
@@ -1753,6 +1810,13 @@ function StoryForm({
   );
   const [category, setCategory] = useState(initial?.category ?? "");
   const [priority, setPriority] = useState<StoryPriority | "">(initial?.priority ?? "");
+  const [startsAt, setStartsAt] = useState(
+    initial?.startsAt ? dateInputValue(initial.startsAt) : "",
+  );
+  const [endsAt, setEndsAt] = useState(
+    initial?.endsAt ? dateInputValue(initial.endsAt) : "",
+  );
+  const [dependsOn, setDependsOn] = useState<string[]>(initial?.dependsOn ?? []);
 
   return (
     <form
@@ -1763,6 +1827,11 @@ function StoryForm({
           title,
           notes: clean(notes),
           status,
+          startsAt: startsAt || null,
+          endsAt: endsAt || null,
+          // Only an existing story can point at siblings; the create route
+          // ignores the field entirely.
+          ...(initial ? { dependsOn } : {}),
           successMetric: clean(successMetric),
           acceptanceCriteria: clean(acceptanceCriteria),
           category: clean(category),
@@ -1814,6 +1883,39 @@ function StoryForm({
             buttonClassName="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
           />
         </label>
+      </div>
+      {/* Timeline placement. Left blank, the story inherits its span from its
+          tasks, then from the parent epic — so a bar still renders. */}
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="flex flex-col gap-1 text-xs">
+          <span className="text-muted-foreground">Starts (optional)</span>
+          <DateField
+            mode="date"
+            value={startsAt}
+            onChange={(value) => setStartsAt(value)}
+            ariaLabel="Story start (optional)"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-xs">
+          <span className="text-muted-foreground">Ends (optional)</span>
+          <DateField
+            mode="date"
+            value={endsAt}
+            onChange={(value) => setEndsAt(value)}
+            ariaLabel="Story end (optional)"
+          />
+        </label>
+        {initial && storyOptions.length > 0 && (
+          <label className="flex flex-col gap-1 text-xs">
+            <span className="text-muted-foreground">Depends on</span>
+            <DependsOnField
+              options={storyOptions}
+              value={dependsOn}
+              onChange={setDependsOn}
+              noun="story"
+            />
+          </label>
+        )}
       </div>
       <label className="flex flex-col gap-1 text-xs">
         <span className="text-muted-foreground">Success metric (optional)</span>
