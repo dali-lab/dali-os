@@ -8,7 +8,6 @@ import {
   folderCrumbs,
   loadFormForEdit,
   runFormsAction,
-  type FolderCrumb,
 } from "~/forms/lib/forms-data";
 import { formUsages, managingUsage } from "~/forms/lib/form-usages.server";
 import { listAllGroups } from "~/lib/groups";
@@ -18,18 +17,17 @@ export const meta: Route.MetaFunction = ({ data }) => [
   { title: `${(data as any)?.form?.name ?? "Form"} · Forms · DALI OS` },
 ];
 
-// Expands the id segment into the form's real location — folder ancestry
-// (linked) then the form name — so the trail reads
-// "Forms › <folder> › … › <form name>". The literal "edit" URL segment
-// carries no location and is dropped by Breadcrumbs' DROPPED_SEGMENTS.
+// Drive is the canonical home for forms — declare the full trail rooted there.
+// The old Forms-folder ancestry is dropped since Forms no longer has a
+// standalone area; Drive > <form name> is sufficient.
+// The literal "edit" URL segment carries no location and is dropped by
+// Breadcrumbs' DROPPED_SEGMENTS.
 export const handle = {
-  breadcrumb: (data: unknown) => {
-    const d = data as
-      | { form?: { name: string }; crumbs?: FolderCrumb[] }
-      | undefined;
+  breadcrumbTrail: (data: unknown) => {
+    const d = data as { form?: { name: string } } | undefined;
     if (!d?.form) return null;
     return [
-      ...(d.crumbs ?? []).map((c) => ({ label: c.name, to: `/forms/${c.id}` })),
+      { label: "Drive", to: "/drive" },
       { label: d.form.name },
     ];
   },

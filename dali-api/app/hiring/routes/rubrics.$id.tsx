@@ -11,15 +11,14 @@ export const meta: Route.MetaFunction = ({ data }) => {
 }
 
 export const handle = {
-  // The Library owns rubrics (list at /hiring/library?tab=rubrics); the bare
-  // /hiring/rubrics prefix has no page, so declare the trail back to it.
+  // Rubrics live in Drive (under Hiring Forms); the bare /hiring/rubrics prefix
+  // has no page so declare the full trail rooted at Drive.
   breadcrumbTrail: (data: unknown) => {
     const name = (data as { rubric?: { name: string } } | undefined)?.rubric
       ?.name;
     if (!name) return null;
     return [
-      { label: "Hiring", to: "/hiring" },
-      { label: "Rubrics", to: "/hiring/library?tab=rubrics" },
+      { label: "Drive", to: "/drive" },
       { label: name },
     ];
   },

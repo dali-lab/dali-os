@@ -3,6 +3,7 @@ import {
   Clock,
   Files,
   Globe,
+  HardDrive,
   LayoutGrid,
   Mic,
   RotateCw,
@@ -26,7 +27,8 @@ export function hiringPills(args: {
     | "domain"
     | "cycles"
     | "waitlists"
-    | "onboarding";
+    | "onboarding"
+    | "library";
 }): AreaPill[] {
   const { isCore, isDomainLead, isInterviewer, active } = args;
   return [
@@ -60,6 +62,18 @@ export function hiringPills(args: {
             to: "/hiring/domain-lead",
             active: active === "domain",
             icon: Globe,
+          },
+        ]
+      : []),
+    // Rubrics, agreements and challenge/application forms live in the Hiring
+    // drive; this pill opens it (embedded at /hiring/library).
+    ...(isCore || isDomainLead
+      ? [
+          {
+            label: "Drive",
+            to: "/hiring/library",
+            active: active === "library",
+            icon: HardDrive,
           },
         ]
       : []),

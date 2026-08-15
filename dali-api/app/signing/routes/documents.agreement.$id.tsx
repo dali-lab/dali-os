@@ -11,3 +11,16 @@
 // that loader here is safe — loading /documents/agreement/:id will not redirect.
 
 export { loader, action, default } from "./admin.agreements.$id";
+
+// Override the adminHandle breadcrumb trail (which roots at Admin) so the Drive
+// surface shows "Drive › <agreement name>" instead of the admin trail.
+export const handle = {
+  breadcrumbTrail: (data: unknown) => {
+    const name = (data as { document?: { name?: string } } | undefined)?.document?.name;
+    if (!name) return null;
+    return [
+      { label: "Drive", to: "/drive" },
+      { label: name },
+    ];
+  },
+};
