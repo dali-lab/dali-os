@@ -401,7 +401,10 @@ async function loadFiles(projectIds: string[]): Promise<DriveItem[]> {
  *  omission. */
 async function loadAgreements(): Promise<DriveItem[]> {
   const rows = await prisma.signingDocument.findMany({
-    where: { archivedAt: null },
+    // Placed-only: agreements live under the Core ▸ Agreements area (filed by
+    // ensureCoreDriveRoot). An unplaced row would be a brand-new one awaiting
+    // adoption on the next Core drive visit — don't float it at the Lab root.
+    where: { archivedAt: null, folderPageId: { not: null } },
     orderBy: { createdAt: "desc" },
     select: { id: true, name: true, folderPageId: true, updatedAt: true },
   });
@@ -417,11 +420,10 @@ async function loadAgreements(): Promise<DriveItem[]> {
 }
 
 /** Load rubrics. Only called when the caller passes `canManageAgreements: true`
- *  (= isCore / hiring team) — same gate as agreements, since rubrics are a
- *  hiring-internal artifact. Rubrics with a `folderPageId` are placed inside
- *  that folder; unplaced ones render at the Lab top level.
+ *  (= real isCore) — rubrics are Core-only artifacts that live under the Core
+ *  drive's Rubrics folder. Placed-only (unplaced ones are awaiting adoption).
  *
- *  NO-WIDENING GUARANTEE: rubrics → same Core gate as agreements. */
+ *  NO-WIDENING GUARANTEE: rubrics → Core only, never widened for hiring. */
 async function loadRubrics(): Promise<DriveItem[]> {
   const rows = await prisma.rubric.findMany({
     where: { folderPageId: { not: null } },
@@ -571,9 +573,9 @@ export async function loadDriveScope({
       loadLabPages(userSub, request),
       loadLabFiles(userSub, request),
       canViewForms ? loadForms() : Promise.resolve([] as DriveItem[]),
-      // Agreements and rubrics → Core (canManageAgreements, widened for hiring
-      // team). Email templates → real Core only (canManageEmailTemplates, never
-      // widened). All derived upstream.
+      // Agreements, rubrics, and email templates are all Core-only artifacts
+      // living under the Core drive (Agreements / Rubrics / Templates). All
+      // gated on real Core, derived upstream — never widened for the hiring team.
       canManageAgreements ? loadAgreements() : Promise.resolve([] as DriveItem[]),
       canManageAgreements ? loadRubrics() : Promise.resolve([] as DriveItem[]),
       canManageEmailTemplates ? loadEmailTemplates() : Promise.resolve([] as DriveItem[]),

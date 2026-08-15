@@ -48,6 +48,19 @@ export async function action({ request }: Route.ActionArgs) {
 
   const { itemType, itemId, destFolderPageId } = body;
 
+  // ── Block moves on managed types ─────────────────────────────────────────
+  // Agreements, rubrics, and email templates are auto-filed by other processes;
+  // their Drive placement must not be changed via the move endpoint.
+  if (itemType === "agreement" || itemType === "rubric" || itemType === "emailTemplate") {
+    return withCors(
+      request,
+      Response.json(
+        { error: "This item is filed automatically and can't be moved." },
+        { status: 400 },
+      ),
+    );
+  }
+
   // ── Authorise the caller for the source item ─────────────────────────────
 
   if (itemType === "file") {
