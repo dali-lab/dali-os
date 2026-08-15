@@ -15,6 +15,8 @@ import { CommentsRail } from "~/components/collab/CommentsRail";
 import { FilePreview } from "~/components/FilePreview";
 import { TagPicker } from "~/components/TagPicker";
 import { ProjectIcon } from "~/components/ProjectIcon";
+import { PageIcon } from "~/components/PageIcon";
+import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const t = (data as { title?: string } | undefined)?.title;
@@ -31,13 +33,29 @@ export const handle = {
   // prefix says "Documents" but their home is Projects — declare the full trail.
   breadcrumbTrail: (data: unknown) => {
     const d = data as
-      | { projectId?: string; projectName?: string; projectIconEmoji?: string | null; title?: string }
+      | {
+          projectId?: string
+          projectName?: string
+          projectIconEmoji?: string | null
+          title?: string
+          driveCrumbs?: {
+            scope: string
+            folders: { id: string; title: string; iconEmoji: string | null }[]
+          } | null
+        }
       | undefined;
     if (!d?.title) return null;
-    // Lab files (no project) root at Drive.
+    // Lab files (no project) root at Drive, then walk the folder path.
     if (!d.projectId || !d.projectName) {
+      const scope = d.driveCrumbs?.scope ?? "lab";
+      const scopeQuery = scope === "lab" ? "" : `?scope=${scope}`;
       return [
-        { label: "Drive", to: "/drive" },
+        { label: "Drive", to: `/drive${scopeQuery}` },
+        ...(d.driveCrumbs?.folders ?? []).map((f) => ({
+          label: f.title || "Untitled folder",
+          to: `/drive?scope=${scope}&folder=${f.id}`,
+          icon: <PageIcon iconEmoji={f.iconEmoji} />,
+        })),
         { label: d.title },
       ];
     }
@@ -135,8 +153,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     select: { id: true, label: true, slug: true, color: true },
   });
 
+  // Lab files live in the Drive tree — resolve folder ancestry for the crumb.
+  const driveCrumbs = file.projectId ? null : await driveFolderCrumbs(file.folderPageId);
+
   return {
     fileId: file.id,
+    driveCrumbs,
     projectId: file.projectId ?? null,
     projectName: file.project?.name ?? null,
     projectIconEmoji: file.project?.iconEmoji ?? null,
