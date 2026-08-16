@@ -2072,7 +2072,6 @@ function AddManualBlockForm({ onDone }: { onDone: () => void }) {
         value={repeat}
         onChange={setRepeat}
         anchorLocal={startLocal}
-        idPrefix="add-block"
         labelClassName="text-xs text-muted-foreground"
         fieldClassName="w-full h-9 px-2 text-sm border border-border rounded-md bg-background text-foreground"
       />
@@ -2816,7 +2815,6 @@ function CreateFromDragPopover({
             value={repeat}
             onChange={setRepeat}
             anchorLocal={start}
-            idPrefix="drag"
             labelClassName="block text-sm font-medium text-foreground mb-1"
             fieldClassName="w-full h-9 px-3 text-sm border border-border rounded-md bg-background text-foreground"
           />
@@ -4084,7 +4082,6 @@ function CreateScheduledMeetingForm({
               value={repeat}
               onChange={setRepeat}
               anchorLocal={startLocal}
-              idPrefix="meeting"
               labelClassName={labelClass}
               fieldClassName={fieldClass}
             />

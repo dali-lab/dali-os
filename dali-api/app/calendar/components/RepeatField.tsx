@@ -1,5 +1,6 @@
 import { DateField } from "~/components/ui/DateField";
 import { Select } from "~/components/ui/floating";
+import { cn } from "~/lib/cn";
 
 // The calendar's one recurrence control — used by Create Meeting and by both
 // manual-block popovers. It edits a small structured spec rather than an RRULE
@@ -10,6 +11,13 @@ import { Select } from "~/components/ui/floating";
 // the `rrule` package (app/lib/meeting-occurrences.ts, app/lib/availability.ts)
 // and forwarded verbatim to Google Calendar / ICS, all of which understand
 // INTERVAL, BYDAY, COUNT and UNTIL.
+//
+// Layout: the detail is an inset panel subordinate to the Repeats choice above
+// it, laid out on a fixed label rail so every control starts on the same x
+// instead of ragging against the left edge. The weekday strip is a 7-column
+// grid and the Ends switch is a segmented group — both borrowed from DateField
+// (its calendar grid and its AM/PM toggle), so the two controls read as one
+// family when they sit side by side in a form.
 
 export type RepeatFreq = "none" | "daily" | "weekly" | "monthly";
 
@@ -44,11 +52,11 @@ const FREQ_OPTIONS: { value: RepeatFreq; label: string }[] = [
   { value: "monthly", label: "Monthly" },
 ];
 
-const END_OPTIONS = [
+const END_SEGMENTS: { value: RepeatEnd["type"]; label: string }[] = [
   { value: "never", label: "Never" },
   { value: "on", label: "On date" },
   { value: "after", label: "After" },
-] as const;
+];
 
 const UNIT_LABEL: Record<Exclude<RepeatFreq, "none">, [string, string]> = {
   daily: ["day", "days"],
@@ -59,6 +67,16 @@ const UNIT_LABEL: Record<Exclude<RepeatFreq, "none">, [string, string]> = {
 const RRULE_DAYS = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
 // Two letters so Tuesday and Thursday (and Saturday/Sunday) stay distinguishable.
 const DAY_CHIPS = ["Su", "M", "Tu", "W", "Th", "F", "Sa"];
+const DAY_NAMES = [
+  "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
+];
+
+// The label rail. `leading-8` centres each label against the 32px control in
+// its row without needing per-row alignment.
+const RAIL_LABEL = "text-xs font-medium text-muted-foreground leading-8";
+const PANEL_INPUT =
+  "h-8 w-14 rounded-md border border-border bg-background px-2 text-sm text-foreground tabular-nums focus:outline-none focus:ring-2 focus:ring-accent-coral/40";
+const HINT = "text-xs text-muted-foreground";
 
 const clampInt = (n: number, lo: number, hi: number) =>
   Number.isFinite(n) ? Math.min(hi, Math.max(lo, Math.trunc(n))) : lo;
@@ -103,7 +121,6 @@ export function RepeatField({
   anchorLocal,
   labelClassName,
   fieldClassName,
-  idPrefix,
 }: {
   value: RepeatSpec;
   onChange: (next: RepeatSpec) => void;
@@ -114,9 +131,7 @@ export function RepeatField({
   anchorLocal?: string;
   labelClassName: string;
   fieldClassName: string;
-  idPrefix: string;
 }) {
-  const repeating = value.freq !== "none";
   const [singular, plural] = value.freq === "none" ? ["", ""] : UNIT_LABEL[value.freq];
   const anchorDay = weekdayOf(anchorLocal);
   const anchorDate = anchorLocal?.slice(0, 10);
@@ -147,116 +162,140 @@ export function RepeatField({
   }
 
   return (
-    <div className="flex flex-col gap-2">
-      <div>
-        <label htmlFor={`${idPrefix}-freq`} className={labelClassName}>
-          Repeats
-        </label>
-        <Select
-          value={value.freq}
-          onChange={(v) => pickFreq(v as RepeatFreq)}
-          options={FREQ_OPTIONS}
-          ariaLabel="Repeats"
-          buttonClassName={`${fieldClassName} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
-        />
-      </div>
+    <div>
+      <span className={labelClassName}>Repeats</span>
+      <Select
+        value={value.freq}
+        onChange={(v) => pickFreq(v as RepeatFreq)}
+        options={FREQ_OPTIONS}
+        ariaLabel="Repeats"
+        buttonClassName={cn(
+          fieldClassName,
+          "inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40",
+        )}
+      />
 
-      {repeating && (
-        <>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">Every</span>
-            <input
-              type="number"
-              min={1}
-              max={52}
-              value={value.interval}
-              aria-label={`Repeat every N ${plural}`}
-              onChange={(e) =>
-                onChange({ ...value, interval: clampInt(e.target.valueAsNumber, 1, 52) })
-              }
-              className="h-9 w-16 px-2 text-sm border border-border rounded-md bg-background text-foreground"
-            />
-            <span className="text-xs text-muted-foreground">
-              {value.interval === 1 ? singular : plural}
-            </span>
-          </div>
+      {value.freq !== "none" && (
+        <div className="mt-2 w-fit max-w-full rounded-md border border-border bg-muted/40 p-3">
+          <div className="grid grid-cols-[3rem_minmax(0,20rem)] gap-x-2 gap-y-2">
+            <span className={RAIL_LABEL}>Every</span>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min={1}
+                max={52}
+                value={value.interval}
+                aria-label={`Repeat every N ${plural}`}
+                onChange={(e) =>
+                  onChange({ ...value, interval: clampInt(e.target.valueAsNumber, 1, 52) })
+                }
+                className={PANEL_INPUT}
+              />
+              <span className={cn(HINT, "leading-8")}>
+                {value.interval === 1 ? singular : plural}
+              </span>
+            </div>
 
-          {value.freq === "weekly" && (
-            <div className="flex flex-col gap-1">
-              <span className="text-xs text-muted-foreground">Repeat on</span>
-              <div className="flex flex-wrap gap-1">
-                {DAY_CHIPS.map((chip, day) => {
-                  const on = value.byDay.includes(day);
+            {value.freq === "weekly" && (
+              <>
+                <span className={RAIL_LABEL}>On</span>
+                <div className="flex flex-col gap-1.5 py-1">
+                  {/* Seven equal cells rather than a left-hugging row — the same
+                      shape (and coral selection) as DateField's calendar grid. */}
+                  <div className="grid grid-cols-7 gap-1">
+                    {DAY_CHIPS.map((chip, day) => {
+                      const on = value.byDay.includes(day);
+                      return (
+                        <button
+                          key={day}
+                          type="button"
+                          aria-pressed={on}
+                          aria-label={DAY_NAMES[day]}
+                          onClick={() => toggleDay(day)}
+                          className={cn(
+                            "h-7 rounded text-[11px] font-semibold transition-colors",
+                            on
+                              ? "bg-accent-coral text-white"
+                              : "bg-background text-muted-foreground hover:bg-muted hover:text-foreground",
+                          )}
+                        >
+                          {chip}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {value.byDay.length === 0 && (
+                    <p className={HINT}>Repeats on whatever day it starts.</p>
+                  )}
+                </div>
+              </>
+            )}
+
+            <span className={RAIL_LABEL}>Ends</span>
+            <div className="flex flex-col gap-2">
+              <div
+                className="inline-flex h-8 w-full overflow-hidden rounded-md border border-border bg-background"
+                role="group"
+                aria-label="When the repeat ends"
+              >
+                {END_SEGMENTS.map((seg) => {
+                  const active = value.end.type === seg.value;
                   return (
                     <button
-                      key={day}
+                      key={seg.value}
                       type="button"
-                      aria-pressed={on}
-                      onClick={() => toggleDay(day)}
-                      className={`h-8 min-w-8 px-2 text-xs font-semibold rounded-full border transition-colors ${
-                        on
-                          ? "bg-accent-coral border-accent-coral text-white"
-                          : "border-border text-muted-foreground hover:bg-muted"
-                      }`}
+                      aria-pressed={active}
+                      onClick={() => pickEnd(seg.value)}
+                      className={cn(
+                        "flex-1 border-l border-border text-xs font-medium transition-colors first:border-l-0",
+                        active
+                          ? "bg-accent-coral text-white"
+                          : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                      )}
                     >
-                      {chip}
+                      {seg.label}
                     </button>
                   );
                 })}
               </div>
-              {value.byDay.length === 0 && (
-                <p className="text-xs text-muted-foreground">
-                  No days picked — it repeats on whichever day the series starts.
-                </p>
+
+              {value.end.type === "on" && (
+                <DateField
+                  mode="date"
+                  value={value.end.date}
+                  min={anchorDate || undefined}
+                  onChange={(date) => onChange({ ...value, end: { type: "on", date } })}
+                  className="w-full"
+                  ariaLabel="Repeat end date"
+                />
+              )}
+              {value.end.type === "after" && (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={1}
+                    max={MAX_REPEAT_COUNT}
+                    value={value.end.count}
+                    aria-label="Number of occurrences"
+                    onChange={(e) =>
+                      onChange({
+                        ...value,
+                        end: {
+                          type: "after",
+                          count: clampInt(e.target.valueAsNumber, 1, MAX_REPEAT_COUNT),
+                        },
+                      })
+                    }
+                    className={PANEL_INPUT}
+                  />
+                  <span className={cn(HINT, "leading-8")}>
+                    times · max {MAX_REPEAT_COUNT}
+                  </span>
+                </div>
               )}
             </div>
-          )}
-
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-muted-foreground">Ends</span>
-            <Select
-              value={value.end.type}
-              onChange={(v) => pickEnd(v as RepeatEnd["type"])}
-              options={END_OPTIONS as unknown as { value: string; label: string }[]}
-              ariaLabel="Repeat ends"
-              buttonClassName="h-9 px-2 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-            />
-            {value.end.type === "on" && (
-              <DateField
-                mode="date"
-                value={value.end.date}
-                min={anchorDate || undefined}
-                onChange={(date) => onChange({ ...value, end: { type: "on", date } })}
-                className="w-44"
-                ariaLabel="Repeat end date"
-              />
-            )}
-            {value.end.type === "after" && (
-              <>
-                <input
-                  type="number"
-                  min={1}
-                  max={MAX_REPEAT_COUNT}
-                  value={value.end.count}
-                  aria-label="Number of occurrences"
-                  onChange={(e) =>
-                    onChange({
-                      ...value,
-                      end: {
-                        type: "after",
-                        count: clampInt(e.target.valueAsNumber, 1, MAX_REPEAT_COUNT),
-                      },
-                    })
-                  }
-                  className="h-9 w-16 px-2 text-sm border border-border rounded-md bg-background text-foreground"
-                />
-                <span className="text-xs text-muted-foreground">
-                  times (max {MAX_REPEAT_COUNT})
-                </span>
-              </>
-            )}
           </div>
-        </>
+        </div>
       )}
     </div>
   );
