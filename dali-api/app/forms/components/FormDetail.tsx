@@ -14,6 +14,7 @@ import {
   Eye,
   Loader2,
   Unlink,
+  Trash2,
 } from "lucide-react";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import type { HiringFormLink } from "~/hiring/lib/form-links.server";
@@ -71,10 +72,25 @@ export function FormDetail() {
   const savingIntent = saveFetcher.formData?.get("intent") as
     | "save-draft"
     | "save-version"
+    | "update-version"
     | null;
   const [justSaved, setJustSaved] = useState<null | "draft" | "version">(null);
   const saveError =
     saveFetcher.data && "error" in saveFetcher.data ? saveFetcher.data.error : null;
+
+  // Deleting a not-yet-used version (accidental-versioning cleanup). Guarded by
+  // a confirm dialog; the server re-checks the lock before deleting.
+  const deleteFetcher = useFetcher<{ ok?: boolean; error?: string }>();
+  const confirmSubmit = useConfirmSubmit();
+  const deleteError =
+    deleteFetcher.data && "error" in deleteFetcher.data
+      ? deleteFetcher.data.error
+      : null;
+
+  // Set while editing an existing (unused) version in place, rather than the
+  // draft. Save writes back to this version id (update-version) instead of
+  // appending a new one.
+  const [editingVersionId, setEditingVersionId] = useState<string | null>(null);
 
   const latestVersion = form.versions.length
     ? form.versions[form.versions.length - 1]
@@ -91,6 +107,8 @@ export function FormDetail() {
   const selectedVersion = form.versions.find(
     (v) => v.id === selectedVersionId,
   );
+  const editingVersion =
+    form.versions.find((v) => v.id === editingVersionId) ?? null;
   const nextVersionNumber = form.versions.length + 1;
 
   // Seed the builder: resume the draft if present, else duplicate the version
@@ -116,6 +134,17 @@ export function FormDetail() {
     }
     prevCount.current = form.versions.length;
   }, [form.versions.length]);
+
+  // If the selected version disappears (deleted in place), fall back to the
+  // latest so the right pane doesn't show the empty state while versions exist.
+  useEffect(() => {
+    if (
+      selectedVersionId &&
+      !form.versions.some((v) => v.id === selectedVersionId)
+    ) {
+      setSelectedVersionId(latestVersion?.id ?? null);
+    }
+  }, [form.versions, selectedVersionId, latestVersion?.id]);
 
   // A monotonic key for the builder. Bumped only when we deliberately re-seed
   // (startEditing) so the builder remounts then — NOT on every loader
@@ -158,6 +187,7 @@ export function FormDetail() {
   // source version, the resumable draft, the latest frozen version (so "New
   // version" carries the current questions forward to add to), else blank.
   function startEditing(from?: { questions: Question[]; description: unknown }) {
+    setEditingVersionId(null);
     setSeed(
       from ??
         form.draft ??
@@ -167,6 +197,33 @@ export function FormDetail() {
     );
     setEditKey((k) => k + 1);
     setIsEditing(true);
+  }
+
+  // Edit an existing, not-yet-used version in place. Seeds the builder from
+  // that version and routes Save to update-version (see handleUpdateVersion).
+  function startEditingVersion(version: (typeof form.versions)[number]) {
+    setSelectedVersionId(version.id);
+    setEditingVersionId(version.id);
+    setSeed({ questions: version.questions, description: version.description });
+    setEditKey((k) => k + 1);
+    setIsEditing(true);
+  }
+
+  function handleUpdateVersion({
+    questions,
+    description,
+  }: {
+    questions: Question[];
+    description: unknown;
+  }) {
+    if (!editingVersionId) return;
+    const fd = new FormData();
+    fd.set("intent", "update-version");
+    fd.set("id", form.id);
+    fd.set("versionId", editingVersionId);
+    fd.set("questions", JSON.stringify(questions));
+    fd.set("description", isEmptyBlocks(description) ? "" : JSON.stringify(description));
+    saveFetcher.submit(fd, { method: "post" });
   }
 
   function handleSaveDraft({
@@ -201,7 +258,9 @@ export function FormDetail() {
 
   // Remember the intent of the in-flight save so the post-success flash knows
   // which button to mark (fetcher.formData is gone by the time it's idle).
-  const lastIntentRef = useRef<"save-draft" | "save-version" | null>(null);
+  const lastIntentRef = useRef<
+    "save-draft" | "save-version" | "update-version" | null
+  >(null);
   if (savingIntent) lastIntentRef.current = savingIntent;
 
   // When a save finishes (fetcher leaves "submitting", data ok), flash "Saved"
@@ -215,7 +274,15 @@ export function FormDetail() {
     if (wasSubmitting.current && !submitting) {
       const data = saveFetcher.data;
       if (data && data.ok) {
-        setJustSaved(lastIntentRef.current === "save-version" ? "version" : "draft");
+        const wasDraft = lastIntentRef.current === "save-draft";
+        setJustSaved(wasDraft ? "draft" : "version");
+        // An in-place version edit (update-version) doesn't grow the version
+        // count, so the count effect can't return us to the preview — do it
+        // here once the edit lands.
+        if (lastIntentRef.current === "update-version") {
+          setIsEditing(false);
+          setEditingVersionId(null);
+        }
         const t = setTimeout(() => setJustSaved(null), 2000);
         wasSubmitting.current = submitting;
         return () => clearTimeout(t);
@@ -228,7 +295,7 @@ export function FormDetail() {
   const saveStatus =
     savingIntent === "save-draft"
       ? ("saving-draft" as const)
-      : savingIntent === "save-version"
+      : savingIntent === "save-version" || savingIntent === "update-version"
         ? ("saving-version" as const)
         : justSaved === "draft"
           ? ("saved-draft" as const)
@@ -443,10 +510,59 @@ export function FormDetail() {
                         {version.submissionCount}
                       </span>
                     </Link>
+                    {/* An unused version (no responses, no hiring pin) can be
+                        fixed in place or removed — this is how an accidental
+                        "Save as version" gets corrected without accreting dead
+                        versions. Once used, the version freezes and these
+                        disappear. */}
+                    {!version.locked && (
+                      <div className="mt-2 flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            startEditingVersion(version);
+                          }}
+                          className={buttonClasses(
+                            "secondary",
+                            "sm",
+                            "flex-1 gap-1.5",
+                          )}
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                          Edit
+                        </button>
+                        <deleteFetcher.Form
+                          method="post"
+                          onSubmit={confirmSubmit({
+                            title: `Delete v${version.versionNumber}?`,
+                            description:
+                              "This version has no responses yet. Deleting it can't be undone.",
+                            confirmLabel: "Delete",
+                            tone: "destructive",
+                          })}
+                        >
+                          <input type="hidden" name="intent" value="delete-version" />
+                          <input type="hidden" name="id" value={form.id} />
+                          <input type="hidden" name="versionId" value={version.id} />
+                          <button
+                            type="submit"
+                            onClick={(e) => e.stopPropagation()}
+                            title="Delete version"
+                            className={buttonClasses("secondary", "sm", "gap-1.5")}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </deleteFetcher.Form>
+                      </div>
+                    )}
                   </div>
                 );
               })}
             </div>
+          )}
+          {deleteError && (
+            <p className="text-sm text-destructive">{deleteError}</p>
           )}
         </div>
 
@@ -456,18 +572,33 @@ export function FormDetail() {
             <div className="bg-card rounded-xl border border-border shadow-sm p-6">
               <div className="mb-6 pb-6 border-b border-border">
                 <h2 className="text-lg font-bold text-foreground">
-                  {form.versions.length === 0
-                    ? "Build this form"
-                    : "Edit draft"}
+                  {editingVersion
+                    ? `Editing v${editingVersion.versionNumber}`
+                    : form.versions.length === 0
+                      ? "Build this form"
+                      : "Edit draft"}
                 </h2>
                 <p className="text-sm text-muted-foreground mt-1">
-                  <strong className="font-medium text-foreground">Save</strong>{" "}
-                  keeps an editable draft — it isn't usable yet.{" "}
-                  <strong className="font-medium text-foreground">
-                    Save as version
-                  </strong>{" "}
-                  freezes it as v{nextVersionNumber}; published forms always
-                  serve the latest saved version.
+                  {editingVersion ? (
+                    <>
+                      No responses yet, so you can fix v
+                      {editingVersion.versionNumber} in place.{" "}
+                      <strong className="font-medium text-foreground">
+                        Save changes
+                      </strong>{" "}
+                      updates this version — it won&apos;t create a new one.
+                    </>
+                  ) : (
+                    <>
+                      <strong className="font-medium text-foreground">Save</strong>{" "}
+                      keeps an editable draft — it isn&apos;t usable yet.{" "}
+                      <strong className="font-medium text-foreground">
+                        Save as version
+                      </strong>{" "}
+                      freezes it as v{nextVersionNumber}; published forms always
+                      serve the latest saved version.
+                    </>
+                  )}
                 </p>
               </div>
               <FormBuilderTab
@@ -480,16 +611,22 @@ export function FormDetail() {
                 initialDescription={seed.description}
                 terms={terms}
                 allowCheckbox
-                onSaveDraft={handleSaveDraft}
-                onSave={handleSaveVersion}
-                saveLabel="Save as version"
+                // Version-edit mode has one primary save (update in place) and
+                // no draft — a draft would re-introduce the two-copy state we're
+                // avoiding. Draft editing keeps both buttons.
+                onSaveDraft={editingVersion ? undefined : handleSaveDraft}
+                onSave={editingVersion ? handleUpdateVersion : handleSaveVersion}
+                saveLabel={editingVersion ? "Save changes" : "Save as version"}
                 saveStatus={saveStatus}
                 onPreview={requestPreview}
                 previewPending={previewResolving}
                 onCancel={
-                  form.versions.length === 0 && !hasDraft
+                  !editingVersion && form.versions.length === 0 && !hasDraft
                     ? undefined
-                    : () => setIsEditing(false)
+                    : () => {
+                        setIsEditing(false);
+                        setEditingVersionId(null);
+                      }
                 }
               />
               {saveError && (

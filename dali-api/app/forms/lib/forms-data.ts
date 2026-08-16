@@ -48,6 +48,99 @@ export function isQuestionArray(x: unknown): x is Question[] {
   );
 }
 
+// Parse + validate a version's question set to the same standard "Save as
+// version" enforces (≥1 question, every question labelled, reference sources
+// resolved). Shared by save-version and update-version so an in-place edit is
+// held to exactly the rules a fresh version is. Returns the parsed questions
+// on success, or a ready-to-return error result.
+function validateVersionQuestions(
+  raw: string,
+): { ok: true; questions: Question[] } | { error: string; status: number } {
+  let questions: unknown;
+  try {
+    questions = JSON.parse(raw);
+  } catch {
+    return { error: "Could not parse questions.", status: 400 };
+  }
+  if (!isQuestionArray(questions) || questions.length === 0)
+    return { error: "Add at least one valid question.", status: 400 };
+  for (const q of questions) {
+    if (!q.data.label.trim())
+      return { error: "Every question needs a label.", status: 400 };
+    if (q.type === "reference" && !isReferenceSourceKey(q.data.referenceSource))
+      return {
+        error: `"${q.data.label}" is a reference question but has no valid data source.`,
+        status: 400,
+      };
+    if (
+      q.type === "reference" &&
+      referenceSourceNeedsTerm(q.data.referenceSource) &&
+      !q.data.referenceTermId
+    )
+      return {
+        error: `"${q.data.label}" needs a term selected for its data source.`,
+        status: 400,
+      };
+  }
+  return { ok: true, questions };
+}
+
+// Thrown inside the update/delete-version transaction when the lock re-check
+// finds the version has been used since the editor loaded it, so the tx rolls
+// back and the caller returns a 409 instead of clobbering answered content.
+class VersionLockedError extends Error {}
+
+// A version is LOCKED once its questions have been served in a real response:
+// a FormSubmission, or a hiring Application/DomainApplication that pinned it at
+// draft start. Locked versions are frozen — no in-place edit/delete; changes
+// must append a new version. Unlocked versions (nobody has used them yet) stay
+// editable, which is how an accidental "Save as version" gets corrected.
+export async function isFormVersionLocked(versionId: string): Promise<boolean> {
+  const [submission, pinnedApplication, pinnedChallenge] = await Promise.all([
+    prisma.formSubmission.findFirst({
+      where: { formVersionId: versionId },
+      select: { id: true },
+    }),
+    prisma.application.findFirst({
+      where: { applicationFormVersionId: versionId },
+      select: { id: true },
+    }),
+    prisma.domainApplication.findFirst({
+      where: { challengeFormVersionId: versionId },
+      select: { id: true },
+    }),
+  ]);
+  return Boolean(submission || pinnedApplication || pinnedChallenge);
+}
+
+// Locked state for every version of a form, in one round-trip — feeds the
+// editor loader so each version card knows whether it's still editable. A
+// version id present in the returned set is locked.
+export async function lockedVersionIds(formId: string): Promise<Set<string>> {
+  const [submitted, pinnedApps, pinnedChallenges] = await Promise.all([
+    prisma.formSubmission.findMany({
+      where: { formId },
+      distinct: ["formVersionId"],
+      select: { formVersionId: true },
+    }),
+    prisma.application.findMany({
+      where: { applicationFormVersion: { formId } },
+      distinct: ["applicationFormVersionId"],
+      select: { applicationFormVersionId: true },
+    }),
+    prisma.domainApplication.findMany({
+      where: { challengeFormVersion: { formId } },
+      distinct: ["challengeFormVersionId"],
+      select: { challengeFormVersionId: true },
+    }),
+  ]);
+  const ids = new Set<string>();
+  for (const s of submitted) ids.add(s.formVersionId);
+  for (const a of pinnedApps) if (a.applicationFormVersionId) ids.add(a.applicationFormVersionId);
+  for (const d of pinnedChallenges) if (d.challengeFormVersionId) ids.add(d.challengeFormVersionId);
+  return ids;
+}
+
 export type FormCard = {
   id: string;
   name: string;
@@ -76,10 +169,16 @@ export type FormVersionDetail = {
   id: string;
   versionNumber: number;
   createdAt: string;
+  // Fingerprint of the version's current content — bumps on each in-place
+  // edit. Carried by fillers so a mid-fill edit is caught at submit.
+  updatedAt: string;
   createdByName: string;
   questions: Question[];
   description: unknown;
   submissionCount: number;
+  // False while the version has never been used (no submission, no hiring pin):
+  // it can be edited or deleted in place. True once used — frozen.
+  locked: boolean;
 };
 
 export type FormDetail = {
@@ -109,18 +208,21 @@ export type FormDetail = {
 export async function loadFormForEdit(
   formId: string,
 ): Promise<FormDetail | null> {
-  const form = await prisma.form.findUnique({
-    where: { id: formId },
-    include: {
-      versions: {
-        orderBy: { versionNumber: "asc" },
-        include: {
-          createdBy: { select: { firstName: true, lastName: true } },
-          _count: { select: { submissions: true } },
+  const [form, locked] = await Promise.all([
+    prisma.form.findUnique({
+      where: { id: formId },
+      include: {
+        versions: {
+          orderBy: { versionNumber: "asc" },
+          include: {
+            createdBy: { select: { firstName: true, lastName: true } },
+            _count: { select: { submissions: true } },
+          },
         },
       },
-    },
-  });
+    }),
+    lockedVersionIds(formId),
+  ]);
   if (!form) return null;
   const draftQuestions = form.draftQuestions
     ? (form.draftQuestions as unknown as Question[])
@@ -144,13 +246,14 @@ export async function loadFormForEdit(
       id: v.id,
       versionNumber: v.versionNumber,
       createdAt: v.createdAt.toISOString(),
+      updatedAt: v.updatedAt.toISOString(),
       createdByName: `${v.createdBy.firstName} ${v.createdBy.lastName}`.trim(),
       questions: (v.questions as unknown as Question[]) ?? [],
       // intro holds serialized rich-text JSON: block JSON going forward,
-      // ProseMirror on frozen legacy versions — normalized on read (frozen
-      // versions are immutable, so this conversion runs forever).
+      // ProseMirror on legacy versions — normalized on read.
       description: v.intro ? ensureBlocks(safeParseJsonString(v.intro)) : null,
       submissionCount: v._count.submissions,
+      locked: locked.has(v.id),
     })),
     draft: draftQuestions
       ? {
@@ -350,6 +453,24 @@ export const ActionSchema = z.discriminatedUnion("intent", [
     id: z.string().min(1),
     questions: z.string(), // JSON-encoded Question[]
     description: z.string().optional(), // JSON-encoded ProseMirror doc
+  }),
+  z.object({
+    // Edit a not-yet-used version in place (same content rules as
+    // save-version). Rejected 409 once the version is locked — see
+    // isFormVersionLocked. No new version row, versionNumber unchanged.
+    intent: z.literal("update-version"),
+    id: z.string().min(1),
+    versionId: z.string().min(1),
+    questions: z.string(), // JSON-encoded Question[]
+    description: z.string().optional(), // JSON-encoded ProseMirror doc
+  }),
+  z.object({
+    // Remove a not-yet-used version (accidental-versioning cleanup). Rejected
+    // 409 once locked. Deleting the only version is allowed — the form reverts
+    // to a no-usable-version state, same as before its first save.
+    intent: z.literal("delete-version"),
+    id: z.string().min(1),
+    versionId: z.string().min(1),
   }),
   z.object({
     intent: z.literal("create-folder"),
@@ -570,47 +691,23 @@ export async function runFormsAction(
       });
       if (!exists) return { error: "Not found", status: 404 };
 
-      let questions: unknown;
-      try {
-        questions = JSON.parse(input.questions);
-      } catch {
-        return { error: "Could not parse questions.", status: 400 };
-      }
-      if (!isQuestionArray(questions) || questions.length === 0)
-        return { error: "Add at least one valid question.", status: 400 };
-      for (const q of questions) {
-        if (!q.data.label.trim())
-          return { error: "Every question needs a label.", status: 400 };
-        if (q.type === "reference" && !isReferenceSourceKey(q.data.referenceSource))
-          return {
-            error: `"${q.data.label}" is a reference question but has no valid data source.`,
-            status: 400,
-          };
-        if (
-          q.type === "reference" &&
-          referenceSourceNeedsTerm(q.data.referenceSource) &&
-          !q.data.referenceTermId
-        )
-          return {
-            error: `"${q.data.label}" needs a term selected for its data source.`,
-            status: 400,
-          };
-      }
+      const validated = validateVersionQuestions(input.questions);
+      if (!("ok" in validated)) return validated;
 
       const last = await prisma.formVersion.findFirst({
         where: { formId: input.id },
         orderBy: { versionNumber: "desc" },
         select: { versionNumber: true },
       });
-      // Freeze the working copy into an immutable, fillable version and clear
-      // the draft — the two happen together so the editor never shows a stale
+      // Freeze the working copy into a new fillable version and clear the
+      // draft — the two happen together so the editor never shows a stale
       // draft alongside the version it just became.
       await prisma.$transaction([
         prisma.formVersion.create({
           data: {
             formId: input.id,
             versionNumber: (last?.versionNumber ?? 0) + 1,
-            questions: questions as object,
+            questions: validated.questions as object,
             // Reuse the intro column to store the rich-text description JSON.
             intro: input.description?.trim() || null,
             createdById: userId,
@@ -621,6 +718,73 @@ export async function runFormsAction(
           data: { draftQuestions: Prisma.DbNull, draftIntro: null },
         }),
       ]);
+      return { ok: true };
+    }
+    case "update-version": {
+      const version = await prisma.formVersion.findUnique({
+        where: { id: input.versionId },
+        select: { id: true, formId: true },
+      });
+      if (!version || version.formId !== input.id)
+        return { error: "Version not found", status: 404 };
+
+      const validated = validateVersionQuestions(input.questions);
+      if (!("ok" in validated)) return validated;
+
+      // Re-check the lock inside the write so a response landing between the
+      // editor load and this save can't be overwritten. The update itself is
+      // conditional on still-zero submissions/pins; if the count moved, we bail
+      // rather than clobber a version someone already answered.
+      try {
+        await prisma.$transaction(async (tx) => {
+          if (await isFormVersionLocked(input.versionId)) {
+            throw new VersionLockedError();
+          }
+          await tx.formVersion.update({
+            where: { id: input.versionId },
+            data: {
+              questions: validated.questions as object,
+              intro: input.description?.trim() || null,
+            },
+          });
+        });
+      } catch (e) {
+        if (e instanceof VersionLockedError) {
+          return {
+            error:
+              "This version already has responses and can't be edited — save it as a new version instead.",
+            status: 409,
+          };
+        }
+        throw e;
+      }
+      return { ok: true };
+    }
+    case "delete-version": {
+      const version = await prisma.formVersion.findUnique({
+        where: { id: input.versionId },
+        select: { id: true, formId: true },
+      });
+      if (!version || version.formId !== input.id)
+        return { error: "Version not found", status: 404 };
+
+      try {
+        await prisma.$transaction(async (tx) => {
+          if (await isFormVersionLocked(input.versionId)) {
+            throw new VersionLockedError();
+          }
+          await tx.formVersion.delete({ where: { id: input.versionId } });
+        });
+      } catch (e) {
+        if (e instanceof VersionLockedError) {
+          return {
+            error:
+              "This version already has responses and can't be deleted.",
+            status: 409,
+          };
+        }
+        throw e;
+      }
       return { ok: true };
     }
     case "create-folder": {

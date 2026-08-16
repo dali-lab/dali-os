@@ -51,6 +51,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     open: registrationOpen(offering) && !decided && form !== null,
     myStatus: myApplication?.status ?? null,
     questions: form?.questions ?? [],
+    versionUpdatedAt: form?.versionUpdatedAt,
     // Form intros are stored as ProseMirror JSON until the forms editor
     // migrates; normalize to block JSON for the read-only DocEditor.
     description: ensureBlocks(form?.description ?? null),
@@ -80,6 +81,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     offeringId: params.offeringId!,
     userId: auth.user.sub,
     answers,
+    versionUpdatedAt: (formData.get("versionUpdatedAt") as string) || undefined,
   });
   if ("error" in result)
     return Response.json({ error: result.error }, { status: result.status });
@@ -87,7 +89,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function PortalApplyToOffering() {
-  const { offering, open, myStatus, questions, description, defaultAnswers } =
+  const { offering, open, myStatus, questions, description, defaultAnswers, versionUpdatedAt } =
     useLoaderData<typeof loader>();
 
   return (
@@ -108,6 +110,7 @@ export default function PortalApplyToOffering() {
             questions={questions}
             description={description}
             defaultAnswers={defaultAnswers}
+            versionUpdatedAt={versionUpdatedAt}
             submitLabel={
               myStatus === "Submitted"
                 ? "Update application"
