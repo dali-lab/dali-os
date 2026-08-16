@@ -145,15 +145,16 @@ test.describe('payroll: reconcile', () => {
     expect(download.suggestedFilename()).toMatch(/\.csv$/);
   });
 
-  test('non-admin is redirected to /admin/members', async ({
+  test('non-admin is redirected off the payroll page', async ({
     page,
     loginAs,
   }) => {
-    // jordan.taylor is Core (can reach admin/members) but not Admin, so
-    // the admin-only payroll page bounces them there.
+    // jordan.taylor is Core (can reach the member roles page) but not Admin,
+    // so the admin-only payroll page bounces them there — /admin/members,
+    // which nav-regroup then sends on to its Core home.
     await loginAs({ daliEmail: 'jordan.taylor@dali.dartmouth.edu' });
     await page.goto('/admin/payroll');
-    await expect(page).toHaveURL(/\/admin\/members/);
+    await expect(page).toHaveURL(/\/core\/access\/roles/);
     await expect(page).not.toHaveURL(/\/admin\/payroll/);
   });
 });

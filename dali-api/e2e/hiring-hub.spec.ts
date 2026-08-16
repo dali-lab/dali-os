@@ -1,19 +1,18 @@
 import { test, expect } from './fixtures';
 
-// The /hiring hub: role-aware status cards + the hiring pill row (the
-// sidebar's Hiring entry is childless and lands here).
+// The /hiring hub: role-aware status cards. The tools that used to sit in an
+// in-page pill row here now live under the sidebar's Hiring entry (see
+// nav.spec) — ?embed=1 renders this page without the shell, so there is no
+// lateral navigation on it to assert.
 
 test.describe('hiring hub', () => {
-  test('Core sees the hub with cycle status and lateral pills', async ({
+  test('Core sees the hub with cycle status and the embedded pipeline', async ({
     page,
     loginAs,
   }) => {
     await loginAs({ daliEmail: 'jordan.taylor@dali.dartmouth.edu' });
     await page.goto('/hiring?embed=1');
     await expect(page.getByRole('heading', { name: 'Hiring', exact: true })).toBeVisible();
-    // Pill row reaches the tools.
-    await expect(page.getByRole('link', { name: 'Reviews' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Cycles' })).toBeVisible();
     // Seeded Fall 2026 cycle surfaces in the header line. The embedded
     // pipeline's cycle selector also carries the name, so scope to the
     // header rather than the whole page.

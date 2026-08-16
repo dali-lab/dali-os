@@ -147,37 +147,51 @@ test.describe('project hub share toggle (member)', () => {
     await loginAs({ daliEmail: 'admin@dali.dartmouth.edu' });
   });
 
+  // Each doc row's actions live behind its own "⋯" menu (drive-consolidation,
+  // on for everyone). `following::` picks the actions button of the row the
+  // title belongs to, since a row renders its title before its menu.
+  const docMenu = (page: import('@playwright/test').Page, title: string) =>
+    page
+      .getByRole('button', { name: title, exact: true })
+      .locator('xpath=following::button[@aria-label="Document actions"][1]');
+
   test('overview shows the Partners section and share states', async ({ page }) => {
     await page.goto('/projects/project-tuck-alumni?embed=1');
     await expect(page.getByRole('heading', { name: 'Partners' })).toBeVisible();
     await expect(page.getByText('Pat Tuck (Program Sponsor)')).toBeVisible();
-    // Seeded states: Weekly Partner Update shared, Internal Retro Notes not.
+    // Seeded states: Weekly Partner Update shared, Internal Retro Notes not —
+    // read off each row's menu, which names the action that would flip it.
+    await docMenu(page, 'Weekly Partner Update').click();
     await expect(
-      page.getByRole('button', { name: 'Shared with partner' }),
+      page.getByRole('menuitem', { name: 'Stop sharing with partner' }),
     ).toBeVisible();
+    await page.keyboard.press('Escape');
+
+    await docMenu(page, 'Internal Retro Notes').click();
     await expect(
-      page.getByRole('button', { name: 'Share with partner', exact: true }),
+      page.getByRole('menuitem', { name: 'Share with partner' }),
     ).toBeVisible();
+    await page.keyboard.press('Escape');
   });
 
   test('toggling share flips the badge and back', async ({ page }) => {
     await page.goto('/projects/project-tuck-alumni?embed=1');
-    const shareButton = page.getByRole('button', {
-      name: 'Share with partner',
-      exact: true,
-    });
-    await shareButton.click();
+    await docMenu(page, 'Internal Retro Notes').click();
+    await page.getByRole('menuitem', { name: 'Share with partner' }).click();
     await expect(
-      page.getByRole('button', { name: 'Shared with partner' }),
-    ).toHaveCount(2);
+      page.getByRole('button', { name: 'Internal Retro Notes', exact: true }),
+    ).toBeVisible();
+    await docMenu(page, 'Internal Retro Notes').click();
+    await expect(
+      page.getByRole('menuitem', { name: 'Stop sharing with partner' }),
+    ).toBeVisible();
     // Revert so the test is idempotent against the seed baseline.
-    await page
-      .getByRole('button', { name: 'Shared with partner' })
-      .last()
-      .click();
+    await page.getByRole('menuitem', { name: 'Stop sharing with partner' }).click();
+    await docMenu(page, 'Internal Retro Notes').click();
     await expect(
-      page.getByRole('button', { name: 'Shared with partner' }),
-    ).toHaveCount(1);
+      page.getByRole('menuitem', { name: 'Share with partner' }),
+    ).toBeVisible();
+    await page.keyboard.press('Escape');
   });
 });
 
