@@ -179,8 +179,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const canStaff = roles.canViewStaffing;
 
   // Project templates (Core + `templates` flag): the "Start from template"
-  // options in the create modal.
-  const roles = await getUserRoles(auth.user.sub);
+  // options in the create modal. Reuses the `roles` resolved above.
   const templatesEnabled = canEdit && (await isFeatureEnabled("templates", auth.user.sub, roles, request));
   const projectTemplates = templatesEnabled
     ? await prisma.projectTemplate.findMany({
