@@ -15,9 +15,8 @@ import {
 import { useState, useCallback, useEffect, useRef, useId, useMemo } from "react";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { canViewForms as checkCanViewForms, getUserRoles } from "~/lib/roles";
+import { getUserRoles, currentTerm } from "~/lib/roles";
 import { prisma } from "~/lib/db";
-import { loader as docsLoader } from "~/routes/documents.hub";
 import { loadDriveScopes } from "~/lib/drive-scopes.server";
 import type { DriveTreeScope } from "~/lib/drive-scopes.server";
 import type { DriveItem } from "~/lib/drive.server";
@@ -62,27 +61,45 @@ export async function loader({ request }: Route.LoaderArgs) {
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) return partnerRedirect;
 
-  const roles = await getUserRoles(auth.user.sub);
-  const userCanViewForms = await checkCanViewForms(auth.user.sub);
+  const roles = await getUserRoles(auth.user.sub, request);
   // isCore is the gate for agreement authoring. Passed down as canManageAgreements
   // so drive.server.ts doesn't re-derive it (matches the canViewForms pattern).
+  const userCanViewForms = roles.canViewForms;
   const userCanManageAgreements = roles.isCore;
   // Hiring-drive gate — matches the "hiring" dynamic group (Core + domain leads
   // + cycle reviewers/interviewers) so the scope shows for exactly the people
   // the Hiring root is scoped to.
+  const [hiringReviewer, term] = await Promise.all([
+    roles.isCore || roles.isDomainLead || roles.isInterviewer
+      ? Promise.resolve(null) // already qualifies; skip the DB hit
+      : prisma.cycleReviewer.findFirst({
+          where: { userId: auth.user.sub },
+          select: { id: true },
+        }),
+    currentTerm(request),
+  ]);
   const hasHiringAccess =
-    roles.isCore ||
-    roles.isDomainLead ||
-    roles.isInterviewer ||
-    (await prisma.cycleReviewer.findFirst({
-      where: { userId: auth.user.sub },
-      select: { id: true },
-    })) !== null;
+    roles.isCore || roles.isDomainLead || roles.isInterviewer || hiringReviewer !== null;
 
-  const docsResult = await docsLoader({ request } as Parameters<typeof docsLoader>[0]);
-  if (docsResult instanceof Response) return docsResult;
-
-  const projectWorkspaces = docsResult.workspaces.filter((w) => w.kind === "project");
+  // Load only the project list needed to build Drive scopes — same access
+  // filter as documents.hub: Core sees all projects; others see only projects
+  // they're staffed on, scoped to the current term (matching the default
+  // ?term= behavior when docsLoader is called with a /drive URL).
+  const termId = term?.id ?? null;
+  const rawProjects = await prisma.project.findMany({
+    where: {
+      ...(termId ? { projectTerms: { some: { termId } } } : {}),
+      ...(roles.isCore ? {} : { assignments: { some: { userId: auth.user.sub } } }),
+    },
+    orderBy: [{ status: "asc" }, { name: "asc" }],
+    select: { id: true, name: true, iconEmoji: true },
+  });
+  const projectWorkspaces = rawProjects.map((p) => ({
+    key: p.id,
+    label: p.name,
+    kind: "project" as const,
+    projectIconEmoji: p.iconEmoji,
+  }));
 
   const driveScopes = await loadDriveScopes({
     userSub: auth.user.sub,

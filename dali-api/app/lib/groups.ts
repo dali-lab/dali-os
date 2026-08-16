@@ -276,11 +276,240 @@ async function resolveAllGroups(): Promise<VisibleGroup[]> {
 // directly off the row; Dynamic groups are resolved via dynamicQuery. Use this
 // at consumer sites (e.g. "groups I'm in") so groups stay hidden from
 // non-members. The management page uses listAllGroups instead.
+//
+// Perf optimisation (vs. the old resolveAllGroups().filter() path):
+// Instead of resolving EVERY group's member list (each Dynamic group fires
+// 1–5 DB queries → O(groups × sub-queries) fan-out), we:
+//   1. Fetch all group definitions (one query).
+//   2. Fetch the user's own assignment data in one parallel batch.
+//   3. For each Dynamic group, derive membership from the user's data — no
+//      per-group queries.
+//
+// The resulting set of groups is IDENTICAL to the old approach:
+//   resolveAllGroups() calls the exact same per-kind resolvers; here we
+//   reproduce the same predicate per kind but inverted (is-this-user-in
+//   rather than who-is-in), using the same DB tables and the same fields.
+// The only observable difference is performance.
 export async function listVisibleGroupsForUser(
   userId: string,
+  request?: Request,
 ): Promise<VisibleGroup[]> {
-  const resolved = await resolveAllGroups();
-  return resolved.filter((g) => g.memberIds.includes(userId));
+  // Fetch group definitions + terms in parallel (terms needed for archive state
+  // and for resolving "term:<id>" dynamic queries).
+  const [groups, terms, coreCycleTermIds] = await Promise.all([
+    prisma.groupDefinition.findMany({
+      orderBy: { name: "asc" },
+      select: {
+        id: true,
+        name: true,
+        type: true,
+        dynamicQuery: true,
+        staticMemberIds: true,
+        systemKey: true,
+        archivedAt: true,
+        boundTermIds: true,
+      },
+    }),
+    prisma.term.findMany({ select: { id: true, endDate: true } }),
+    getActiveCoreCycleTermIds(request),
+  ]);
+
+  const termEndById = new Map(terms.map((t) => [t.id, t.endDate]));
+  const now = new Date();
+
+  // Collect all the unique dynamic query kinds and their IDs so we can
+  // build the membership data in a single batch of parallel queries.
+  const termIds = new Set<string>();
+  const projectIds = new Set<string>();
+  const domainIds = new Set<string>();
+  const offeringIds = new Set<string>();
+  let needsCore = false;
+  let needsHiring = false;
+  let needsAlumni = false;
+
+  for (const g of groups) {
+    if (g.type !== "Dynamic" || !g.dynamicQuery) continue;
+    const [kind, id] = g.dynamicQuery.split(":", 2);
+    switch (kind) {
+      case "term":     if (id) termIds.add(id);     break;
+      case "project":  if (id) projectIds.add(id);  break;
+      case "domain":   if (id) domainIds.add(id);   break;
+      case "offering": if (id) offeringIds.add(id); break;
+      case "core":    needsCore = true;    break;
+      case "hiring":  needsHiring = true;  break;
+      case "alumni":  needsAlumni = true;  break;
+    }
+  }
+
+  // One parallel batch for all the user's relevant assignment data.
+  const [
+    userProjectAssignments,
+    userCoreAssignments,
+    userInstructorAssignments,
+    userMentorshipMentee,
+    userMentorshipMentor,
+    userDomainEligibility,
+    userEducationApps,
+    userRow,
+    userDomainLeads,
+    userReviewers,
+    userInterviewers,
+  ] = await Promise.all([
+    termIds.size > 0 || projectIds.size > 0
+      ? prisma.projectAssignment.findMany({
+          where: { userId },
+          select: { termId: true, projectId: true },
+        })
+      : Promise.resolve([] as { termId: string; projectId: string }[]),
+    termIds.size > 0 || needsCore || needsHiring
+      ? prisma.coreAssignment.findMany({
+          where: { userId },
+          select: { termId: true },
+        })
+      : Promise.resolve([] as { termId: string }[]),
+    termIds.size > 0
+      ? prisma.instructorAssignment.findMany({
+          where: { userId },
+          select: { termId: true },
+        })
+      : Promise.resolve([] as { termId: string }[]),
+    termIds.size > 0
+      ? prisma.mentorshipPair.findMany({
+          where: { menteeUserId: userId },
+          select: { termId: true },
+        })
+      : Promise.resolve([] as { termId: string }[]),
+    termIds.size > 0
+      ? prisma.mentorshipPair.findMany({
+          where: { mentorUserId: userId },
+          select: { termId: true },
+        })
+      : Promise.resolve([] as { termId: string }[]),
+    domainIds.size > 0
+      ? prisma.domainEligibility.findMany({
+          where: { userId },
+          select: { domainId: true },
+        })
+      : Promise.resolve([] as { domainId: string }[]),
+    offeringIds.size > 0
+      ? prisma.educationApplication.findMany({
+          where: { applicantUserId: userId, status: "Approved" },
+          select: { offeringId: true },
+        })
+      : Promise.resolve([] as { offeringId: string }[]),
+    needsAlumni || needsHiring
+      ? prisma.user.findUnique({
+          where: { id: userId },
+          // daliMember presence mirrors resolveAlumni's `daliMember: { isNot: null }`
+          // gate — Alumni status alone must not admit a non-DALIMember to the group.
+          select: { membershipStatus: true, daliMember: { select: { userId: true } } },
+        })
+      : Promise.resolve(null),
+    needsHiring
+      ? prisma.domainLeadAssignment.findMany({
+          where: { userId },
+          select: { id: true },
+          take: 1,
+        })
+      : Promise.resolve([] as { id: string }[]),
+    needsHiring
+      ? prisma.cycleReviewer.findMany({
+          where: { userId },
+          select: { id: true },
+          take: 1,
+        })
+      : Promise.resolve([] as { id: string }[]),
+    needsHiring
+      ? prisma.cycleInterviewer.findMany({
+          where: { userId },
+          select: { id: true },
+          take: 1,
+        })
+      : Promise.resolve([] as { id: string }[]),
+  ]);
+
+  // Derive the current term for project group membership (project groups are
+  // current-term-scoped, matching resolveProjectMembers).
+  const currentTermRow = await currentTerm(request);
+
+  // Build lookup sets for O(1) membership tests.
+  const userTermIds = new Set<string>();
+  for (const r of userProjectAssignments)  userTermIds.add(r.termId);
+  for (const r of userCoreAssignments)     userTermIds.add(r.termId);
+  for (const r of userInstructorAssignments) userTermIds.add(r.termId);
+  for (const r of userMentorshipMentee)    userTermIds.add(r.termId);
+  for (const r of userMentorshipMentor)    userTermIds.add(r.termId);
+
+  const userCurrentProjectIds = new Set<string>();
+  if (currentTermRow) {
+    for (const r of userProjectAssignments) {
+      if (r.termId === currentTermRow.id) userCurrentProjectIds.add(r.projectId);
+    }
+  }
+
+  const userDomainIds = new Set(userDomainEligibility.map((r) => r.domainId));
+  const userOfferingIds = new Set(userEducationApps.map((r) => r.offeringId));
+
+  const coreCycleTermIdSet = new Set(coreCycleTermIds);
+  const isInCore = userCoreAssignments.some((r) => coreCycleTermIdSet.has(r.termId));
+  const isAlumni = userRow?.membershipStatus === "Alumni" && userRow.daliMember != null;
+  const isInHiring =
+    isInCore ||
+    userDomainLeads.length > 0 ||
+    userReviewers.length > 0 ||
+    userInterviewers.length > 0;
+
+  // Now resolve each group using the in-memory data — zero additional queries.
+  const result: VisibleGroup[] = [];
+  for (const g of groups) {
+    let isMember: boolean;
+    if (g.type === "Static") {
+      isMember = g.staticMemberIds.includes(userId);
+    } else {
+      if (!g.dynamicQuery) {
+        isMember = false;
+      } else {
+        const [kind, id] = g.dynamicQuery.split(":", 2);
+        switch (kind) {
+          case "term":     isMember = id ? userTermIds.has(id) : false; break;
+          case "project":  isMember = id ? userCurrentProjectIds.has(id) : false; break;
+          case "domain":   isMember = id ? userDomainIds.has(id) : false; break;
+          case "offering": isMember = id ? userOfferingIds.has(id) : false; break;
+          case "core":     isMember = isInCore; break;
+          case "hiring":   isMember = isInHiring; break;
+          case "alumni":   isMember = isAlumni; break;
+          default:         isMember = false; break;
+        }
+      }
+    }
+    if (!isMember) continue;
+
+    // For the member list attached to the group shape (used by the group
+    // picker to show who's in each group), we still need to resolve the full
+    // memberIds. We do that lazily only for groups the user actually belongs
+    // to — which is typically a small subset of all groups.
+    let memberIds: string[];
+    if (g.type === "Static") {
+      memberIds = g.staticMemberIds;
+    } else if (g.dynamicQuery) {
+      memberIds = await resolveDynamicQuery(g.dynamicQuery);
+    } else {
+      memberIds = [];
+    }
+
+    result.push({
+      id: g.id,
+      name: g.name,
+      type: g.type,
+      dynamicQuery: g.dynamicQuery,
+      systemKey: g.systemKey,
+      memberIds,
+      archived: isGroupArchived(g, termEndById, now),
+      archivedAt: g.archivedAt ? g.archivedAt.toISOString() : null,
+      boundTermIds: g.boundTermIds,
+    });
+  }
+  return result;
 }
 
 // Returns every group, unfiltered. For the Groups management page, where a

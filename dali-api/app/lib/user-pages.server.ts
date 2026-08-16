@@ -6,7 +6,7 @@
 // out of your list silently rather than becoming a way back in.
 
 import { prisma } from "~/lib/db";
-import { getPageAccess, type PageShape } from "~/lib/pageAccess.server";
+import { getPageAccessBulk, type PageShape } from "~/lib/pageAccess.server";
 import { isNavbarRoute } from "~/lib/navbar-routes";
 import { isAreaSubtabPath } from "~/lib/nav-areas";
 import { cachedForRequest } from "~/lib/request-cache";
@@ -72,20 +72,14 @@ async function viewable<T extends { page: PageShape }>(
   limit: number,
   request?: Request,
 ): Promise<T[]> {
-  // Access checks are independent per page, so run them concurrently instead of
-  // in a sequential await loop. getPageAccess is ~3-5 Neon round trips each, and
-  // this helper runs in the shell loader on every navigation (sidebar Favorites
-  // + Recent) — the serial loop turned that into dozens of round trips in series
-  // and dominated navigation TTFB. Candidate rows are bounded by READ_MULTIPLIER,
-  // so checking them all in parallel (rather than stopping early at `limit`) is a
-  // small, fixed over-fetch that collapses the latency to one wave. We still keep
-  // the first `limit` viewable rows in their original (recency) order.
-  const canView = await Promise.all(
-    rows.map((row) => getPageAccess(userId, row.page, request).then((a) => a.canView)),
-  );
+  // One batched pageShare query for all candidate pages instead of N per-page
+  // fetches. getPageAccessBulk is semantically identical to calling getPageAccess
+  // per row, but collapses the N round-trips into a single findMany.
+  const pages = rows.map((r) => r.page);
+  const accessMap = await getPageAccessBulk(userId, pages, request);
   const kept: T[] = [];
   for (let i = 0; i < rows.length && kept.length < limit; i++) {
-    if (canView[i]) kept.push(rows[i]);
+    if (accessMap.get(rows[i].page.id)?.canView) kept.push(rows[i]);
   }
   return kept;
 }

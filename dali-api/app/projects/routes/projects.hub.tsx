@@ -12,7 +12,7 @@ import { Select } from "~/components/ui/floating";
 import type { Route } from "./+types/projects.hub";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { isCore, canViewStaffing } from "~/lib/roles";
+import { getUserRoles } from "~/lib/roles";
 import { projectsPills } from "../components/projectsPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
@@ -111,8 +111,11 @@ export async function loader({ request }: Route.LoaderArgs) {
       status: true,
       imageUrl: true,
       // Start term is derived as the earliest term in the set. Fetch ascending
-      // by sortKey and take the first.
+      // by sortKey and take the first row only — Postgres returns one row
+      // rather than the full set.
       projectTerms: {
+        orderBy: { term: { sortKey: "asc" } },
+        take: 1,
         select: { term: { select: { code: true, sortKey: true } } },
       },
       partners: {
@@ -124,9 +127,8 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const rows: ProjectRow[] = await Promise.all(
     projects.map(async (p) => {
-      const startTerm = p.projectTerms
-        .map((pt) => pt.term)
-        .sort((a, b) => a.sortKey - b.sortKey)[0];
+      // projectTerms is already ordered asc by sortKey and limited to 1 row.
+      const startTerm = p.projectTerms[0]?.term;
       return {
         id: p.id,
         name: p.name,
@@ -148,14 +150,15 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const filteringByTerm = !isAll && !!termId;
 
-  const [partnerOrgs, canEdit, canStaff, myAssignments, totalProjects] =
+  // getUserRoles(sub, request) resolves isCore and canViewStaffing in one cached
+  // round-trip — no second hit even though canViewStaffing delegates to isCore.
+  const [roles, partnerOrgs, myAssignments, totalProjects] =
     await timed(request, 'hub.meta', () => Promise.all([
+      getUserRoles(auth.user.sub, request),
       prisma.partnerOrg.findMany({
         orderBy: { name: "asc" },
         select: { id: true, name: true },
       }),
-      isCore(auth.user.sub),
-      canViewStaffing(auth.user.sub),
       // Which projects the viewer has (or had) an assignment on, any term —
       // drives the "My projects" toggle chip.
       prisma.projectAssignment.findMany({
@@ -167,6 +170,8 @@ export async function loader({ request }: Route.LoaderArgs) {
       // projects at all"; with the filter off, rows already is everything.
       filteringByTerm ? prisma.project.count() : Promise.resolve(0),
     ]));
+  const canEdit = roles.isCore;
+  const canStaff = roles.canViewStaffing;
 
   return {
     rows,
@@ -185,7 +190,8 @@ export async function action({ request }: Route.ActionArgs) {
   if (!auth.ok) return redirectToLogin(request);
   const portalRedirect = redirectApplicantToPortal(auth);
   if (portalRedirect) return portalRedirect;
-  if (!(await isCore(auth.user.sub))) {
+  const actionRoles = await getUserRoles(auth.user.sub, request);
+  if (!actionRoles.isCore) {
     return { error: "You don't have permission to create projects." };
   }
 

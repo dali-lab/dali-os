@@ -29,6 +29,7 @@ import { listVisibleGroupsForUser } from "~/lib/groups";
 import {
   canViewForms,
   isCore,
+  currentTerm,
   currentTermMemberWhere,
   getUserRoleInstances,
   resolveRoleRef,
@@ -38,6 +39,7 @@ import { CalendarActionSchema, validateTimeEntryRange } from "~/lib/calendar-sch
 import { syncManualBlockTimeEntry } from "~/lib/time-entry-sync";
 import {
   fetchBusyEvents,
+  getValidAccessTokenForLink,
   listCalendarsForLink,
   subscribeCalendarForLink,
 } from "~/lib/google-calendar";
@@ -299,37 +301,52 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const userId = auth.user.sub;
 
+  // Resolve the current term once and reuse it everywhere in this loader so
+  // the per-request cache in roles.ts eliminates redundant DB reads.
+  const term = await currentTerm(request);
+  const termId = term?.id;
+
   // Participant picker is for scheduling with current lab members — exclude
   // applicants, partners, and alumni who happen to still have a User row.
-  const memberWhere = await currentTermMemberWhere();
+  // Pass the already-resolved termId to avoid a second currentTerm() call.
+  const memberWhere = await currentTermMemberWhere(request);
 
   const [
     settings,
     userRow,
     whRows,
-    blocks,
     links,
     groups,
     users,
     myProjects,
     myRoles,
-    timeEntryRows,
     canSetSelfCheckIn,
     canMarkCoreMeeting,
   ] = await Promise.all([
-      prisma.userAvailabilitySettings.findUnique({ where: { userId } }),
-      prisma.user.findUnique({ where: { id: userId }, select: { timeZone: true } }),
-      prisma.workingHoursDay.findMany({ where: { userId } }),
-      prisma.manualBlock.findMany({
+      prisma.userAvailabilitySettings.findUnique({
         where: { userId },
-        orderBy: { startTime: "asc" },
-        take: 200,
+        select: {
+          timezone: true,
+          defaultEventBufferMin: true,
+        },
+      }),
+      prisma.user.findUnique({ where: { id: userId }, select: { timeZone: true } }),
+      prisma.workingHoursDay.findMany({
+        where: { userId },
+        select: {
+          id: true,
+          dayOfWeek: true,
+          startMinute: true,
+          endMinute: true,
+          location: true,
+          enabled: true,
+        },
       }),
       prisma.userCalendarLink.findMany({
         where: { userId },
         orderBy: { linkedAt: "asc" },
       }),
-      listVisibleGroupsForUser(userId).then((rows) =>
+      listVisibleGroupsForUser(userId, request).then((rows) =>
         rows.map((r) => ({
           id: r.id,
           name: r.name,
@@ -349,29 +366,9 @@ export async function loader({ request }: Route.LoaderArgs) {
         select: { id: true, name: true },
         orderBy: { name: "asc" },
       }),
-      getUserRoleInstances(userId),
-      prisma.timeEntry.findMany({
-        where: { userId },
-        orderBy: { date: "desc" },
-        take: 200,
-        select: {
-          id: true,
-          source: true,
-          scheduledMeetingId: true,
-          manualBlockId: true,
-          assignmentType: true,
-          roleRefId: true,
-          projectId: true,
-          date: true,
-          hours: true,
-          note: true,
-          startTime: true,
-          endTime: true,
-          meeting: { select: { notePage: { select: { id: true } } } },
-        },
-      }),
+      getUserRoleInstances(userId, termId, request),
       // Same gate as Forms: Core, Admin, or Instructor.
-      canViewForms(userId),
+      canViewForms(userId, request),
       isCore(userId, request),
     ]);
 
@@ -433,11 +430,88 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
   const { start: weekStart, end: weekEnd } = weekWindow(timezone, anchor);
 
+  // Rolling lower bound for time entries: keep ~8 weeks back from the visible
+  // week so the timesheet prefill form has ample recent entries to copy from,
+  // even when the user navigates a few weeks into the past or future.
+  const timeEntryLowerBound = new Date(weekStart.getTime() - 8 * 7 * 86_400_000);
+
+  // blocks and timeEntryRows are fetched here (not in the earlier Promise.all)
+  // because they need weekStart for date-window filtering.
+  const [blocks, timeEntryRows] = await Promise.all([
+    prisma.manualBlock.findMany({
+      where: {
+        userId,
+        // Keep ALL recurring blocks (they expand across any week) and only
+        // filter one-off non-recurring blocks to those that end on/after the
+        // visible week start.
+        OR: [
+          { recurrenceRule: { not: null } },
+          { recurrenceRule: null, endTime: { gte: weekStart } },
+        ],
+      },
+      orderBy: { startTime: "asc" },
+      take: 200,
+    }),
+    prisma.timeEntry.findMany({
+      where: {
+        userId,
+        date: { gte: timeEntryLowerBound },
+      },
+      orderBy: { date: "desc" },
+      take: 200,
+      select: {
+        id: true,
+        source: true,
+        scheduledMeetingId: true,
+        manualBlockId: true,
+        assignmentType: true,
+        roleRefId: true,
+        projectId: true,
+        date: true,
+        hours: true,
+        note: true,
+        startTime: true,
+        endTime: true,
+        meeting: { select: { notePage: { select: { id: true } } } },
+      },
+    }),
+  ]);
+
   // Fetch external busy + sub-calendar lists in parallel. Don't fail the page
   // if a single link errors — surface the error on the link card.
+  //
+  // Dedup: each Google link's calendar list (used for both color tinting in
+  // fetchBusyEvents and for the SubCalendar UI) is fetched ONCE per link and
+  // the result is threaded into both consumers, eliminating a second HTTP hit
+  // per Google account.
+  //
+  // Step 1: fetch one valid token per Google link (one DB read each, with
+  // optional refresh), then use each token to fetch the calendar list. Both
+  // results are shared with fetchBusyEvents so the full request makes exactly
+  // one token read and one calendarList HTTP call per linked Google account.
+  const googleLinks = links.filter((l) => l.provider === "Google");
+  const prefetchedTokens = new Map<string, string>();
+  const calendarListResults = await Promise.all(
+    googleLinks.map(async (l) => {
+      try {
+        const token = await getValidAccessTokenForLink(l.id);
+        prefetchedTokens.set(l.id, token);
+        const items = await listCalendarsForLink(l.id, token);
+        return { linkId: l.id, items } as const;
+      } catch {
+        return { linkId: l.id, items: undefined } as const;
+      }
+    }),
+  );
+  // Map of linkId → list (undefined if fetch failed); passed to fetchBusyEvents
+  // so it skips re-fetching the list inside fetchBusyForLink.
+  const prefetchedCalendarLists = new Map(
+    calendarListResults.map(({ linkId, items }) => [linkId, items]),
+  );
+
   let ingestionError: string | null = null;
   const [externalBusyRaw, calendarLinks, inviteRows] = await Promise.all([
-    fetchBusyEvents(userId, weekStart, weekEnd).catch((err) => {
+    fetchBusyEvents(userId, weekStart, weekEnd, prefetchedCalendarLists, prefetchedTokens).catch((err) => {
       ingestionError = err instanceof Error ? err.message : "Failed to fetch external busy";
       return [] as Awaited<ReturnType<typeof fetchBusyEvents>>;
     }),
@@ -455,22 +529,22 @@ export async function loader({ request }: Route.LoaderArgs) {
         if (l.provider !== "Google") {
           return { ...base, subCalendars: null };
         }
-        try {
-          const items = await listCalendarsForLink(l.id);
-          const enabledSet = new Set(l.subCalendarIds);
-          // When subCalendarIds is empty, treat the primary as the only one in use.
-          const subCalendars: SubCalendarDTO[] = items.map((it) => ({
-            id: it.id,
-            summary: it.summary,
-            primary: it.primary === true,
-            color: it.backgroundColor ?? null,
-            enabled:
-              l.subCalendarIds.length === 0 ? it.primary === true : enabledSet.has(it.id),
-          }));
-          return { ...base, subCalendars };
-        } catch {
+        // Use the pre-fetched list rather than making another HTTP call.
+        const items = prefetchedCalendarLists.get(l.id);
+        if (!items) {
           return { ...base, subCalendars: null };
         }
+        const enabledSet = new Set(l.subCalendarIds);
+        // When subCalendarIds is empty, treat the primary as the only one in use.
+        const subCalendars: SubCalendarDTO[] = items.map((it) => ({
+          id: it.id,
+          summary: it.summary,
+          primary: it.primary === true,
+          color: it.backgroundColor ?? null,
+          enabled:
+            l.subCalendarIds.length === 0 ? it.primary === true : enabledSet.has(it.id),
+        }));
+        return { ...base, subCalendars };
       }),
     ),
     // Meetings the viewer was invited to whose selected time lands in this

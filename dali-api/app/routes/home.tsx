@@ -31,7 +31,7 @@ import { FavoriteIcon } from "~/components/FavoriteIcon";
 import { FavoriteStar } from "~/components/FavoriteStar";
 import { FavoriteRouteButton } from "~/components/FavoriteRouteButton";
 import { isNavbarRoute } from "~/lib/navbar-routes";
-import { listCatalog, registrationOpen } from "~/education/lib/offerings.server";
+import { getHomeEducationSummary } from "~/education/lib/offerings.server";
 import { listUpcomingSessionsForUser } from "~/education/lib/schedule.server";
 import { fetchGeneralCalendarEvents } from "~/lib/general-calendar";
 import { getUserRoles } from "~/lib/roles";
@@ -80,8 +80,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   // surface is the real /calendar route rather than a copy of it here: it owns
   // its own loader, action, and sub-tab chrome, so home hands the member over
   // instead of trying to re-host all three.
-  const roles = await getUserRoles(auth.user.sub);
-  const surface = await resolveHomeSurface(auth.user.sub, roles);
+  const roles = await getUserRoles(auth.user.sub, request);
+  const surface = await resolveHomeSurface(auth.user.sub, roles, request);
   if (surface === "calendar") return redirect("/calendar");
   const redesign = surface === "search";
 
@@ -98,7 +98,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     now,
   );
 
-  const [items, tasks, rawEvents, assignedTasks, catalog, upcomingSessions, pages] =
+  const [items, tasks, rawEvents, assignedTasks, educationSummary, upcomingSessions, pages] =
     await Promise.all([
     timed(request, 'home.notifications', () => prisma.notification.findMany({
       // Hide invites whose meeting was Cancelled — they shouldn't appear in the
@@ -133,7 +133,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         rsvp: true,
       },
     })),
-    timed(request, 'home.openTasks', () => listOpenTasks(auth.user.sub)),
+    timed(request, 'home.openTasks', () => listOpenTasks(auth.user.sub, request)),
     // Real events from the public DALI General Calendar (empty when unconfigured
     // or on fetch failure — the panel then shows an empty grid + hint). The
     // redesigned home drops the week panel, so its external fetch goes too.
@@ -160,23 +160,20 @@ export async function loader({ request }: Route.LoaderArgs) {
         project: { select: { name: true, iconEmoji: true } },
       },
     })),
-    // Education for the home card: catalog (enrolled + open-registration +
-    // open-assignment counts) and the viewer's next few sessions.
-    timed(request, 'home.catalog', () => listCatalog(auth.user.sub)),
+    // Education for the home card: count-only summary (no full offering/session/
+    // instructor rows), plus the viewer's next few sessions.
+    timed(request, 'home.educationSummary', () => getHomeEducationSummary(auth.user.sub)),
     timed(request, 'home.sessions', () => listUpcomingSessionsForUser(auth.user.sub, { limit: 3 })),
     // `request` reuses the read the shell's sidebar already kicked off for the
     // same navigation instead of re-running the per-row access checks.
     timed(request, 'home.favorites', () => listFavoritesAndRecents(auth.user.sub, request)),
   ]);
 
-  const enrolledOfferings = catalog.filter((o) => o.myStatus === "Approved");
   const education: EducationSummary = {
-    enrolledCount: enrolledOfferings.length,
-    openAssignments: enrolledOfferings.reduce((s, o) => s + o.openAssignments, 0),
-    openOfferings: catalog.filter((o) => registrationOpen(o)).length,
-    pendingCount: catalog.filter(
-      (o) => o.myStatus === "Submitted" || o.myStatus === "Waitlisted",
-    ).length,
+    enrolledCount: educationSummary.enrolledCount,
+    openAssignments: educationSummary.openAssignments,
+    openOfferings: educationSummary.openOfferings,
+    pendingCount: educationSummary.pendingCount,
     upcoming: upcomingSessions.map((s) => ({
       id: s.id,
       offeringId: s.offeringId,

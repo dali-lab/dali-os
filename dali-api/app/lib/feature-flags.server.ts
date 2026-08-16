@@ -1,4 +1,5 @@
 import { prisma } from "~/lib/db";
+import { cachedForRequest } from "~/lib/request-cache";
 import type { UserRoles } from "~/lib/roles";
 import {
   FEATURE_FLAGS,
@@ -33,14 +34,28 @@ function defaultConfig(def: FeatureFlagDef): FlagConfig {
   };
 }
 
+/**
+ * Fetch all FeatureFlag rows, shared across the layout + route loaders for one
+ * navigation. Without a request (or when caching isn't available), computes
+ * directly.
+ */
+export async function getFeatureFlagRows(request?: Request) {
+  const compute = async () => {
+    const rows = await prisma.featureFlag.findMany();
+    return new Map(rows.map((r) => [r.key, r]));
+  };
+  if (!request) return compute();
+  return cachedForRequest(request, "featureFlagRows", compute);
+}
+
 // Resolve every registered flag for a user in one query. Call once per request
 // (the layout loader already resolves `roles`) and plumb the map to the client.
 export async function resolveFeatureFlags(
   userId: string,
   roles: UserRoles,
+  request?: Request,
 ): Promise<FeatureFlagMap> {
-  const rows = await prisma.featureFlag.findMany();
-  const byKey = new Map(rows.map((r) => [r.key, r]));
+  const byKey = await getFeatureFlagRows(request);
 
   const map = {} as FeatureFlagMap;
   for (const def of FEATURE_FLAGS) {
@@ -65,10 +80,12 @@ export async function isFeatureEnabled(
   key: FeatureFlagKey,
   userId: string,
   roles: UserRoles,
+  request?: Request,
 ): Promise<boolean> {
   const def = FEATURE_FLAGS.find((f) => f.key === key);
   if (!def) return false;
-  const row = await prisma.featureFlag.findUnique({ where: { key } });
+  const byKey = await getFeatureFlagRows(request);
+  const row = byKey.get(key) ?? null;
   const config: FlagConfig = row
     ? {
         enabled: row.enabled,
@@ -87,10 +104,12 @@ export async function resolveFlagVariant(
   key: FeatureFlagKey,
   userId: string,
   roles: UserRoles,
+  request?: Request,
 ): Promise<string | null> {
   const def = DEFS.find((f) => f.key === key);
   if (!def?.variants) return null;
-  const row = await prisma.featureFlag.findUnique({ where: { key } });
+  const byKey = await getFeatureFlagRows(request);
+  const row = byKey.get(key) ?? null;
   const config: FlagConfig = row
     ? {
         enabled: row.enabled,
@@ -109,10 +128,11 @@ export async function resolveFlagVariant(
 export async function resolveHomeSurface(
   userId: string,
   roles: UserRoles,
+  request?: Request,
 ): Promise<HomeSurface> {
-  const chosen = await resolveFlagVariant("home-surface", userId, roles);
+  const chosen = await resolveFlagVariant("home-surface", userId, roles, request);
   if (isHomeSurface(chosen)) return chosen;
-  return (await isFeatureEnabled("sidebar-redesign", userId, roles)) ? "search" : "classic";
+  return (await isFeatureEnabled("sidebar-redesign", userId, roles, request)) ? "search" : "classic";
 }
 
 export type AdminFlagView = {

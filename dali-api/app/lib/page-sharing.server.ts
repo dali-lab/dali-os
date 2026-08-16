@@ -28,7 +28,7 @@ export type ShareRow = {
 // Permission tiers ranked low→high. getPageAccess and the manage gate both
 // compare against this order; keep it the single source of truth so "higher
 // than" never diverges between call sites.
-const PERMISSION_RANK: Record<SharePermission, number> = {
+export const PERMISSION_RANK: Record<SharePermission, number> = {
   View: 0,
   Comment: 1,
   Edit: 2,
