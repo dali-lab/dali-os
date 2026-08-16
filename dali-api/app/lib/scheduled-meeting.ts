@@ -233,12 +233,11 @@ export async function createScheduledMeeting(
   // participants (+ organizer), never the whole lab.
   let notePageId: string | null = null;
   if (input.meetingType) {
-    // Auto-generated note pages are titled with just the meeting date — the
-    // note already lives under its Team/Partner folder (or carries its custom
-    // "Other" label via the meeting itself), so repeating "… meeting note" in
-    // the title is redundant.
     const noteDate = startDate ?? new Date();
-    const title = formatDateShort(noteDate);
+    const dateLabel = formatDateShort(noteDate);
+    // "Other" notes carry their custom label via the meeting itself, so they
+    // stay titled with just the date.
+    let title = dateLabel;
 
     if (input.projectId) {
       // Team/Partner notes nest under their default, undeletable folder;
@@ -251,6 +250,16 @@ export async function createScheduledMeeting(
           input.organizerId,
         );
         parentPageId = folder.id;
+        // Team/Partner notes are named for the project and kind they belong
+        // to, so they stay identifiable once they leave that folder — in
+        // search, in Drive, and on the meeting itself.
+        const project = await prisma.project.findUnique({
+          where: { id: input.projectId },
+          select: { name: true },
+        });
+        if (project) {
+          title = `${project.name} ${input.meetingType} meeting note (${dateLabel})`;
+        }
       }
       const page = await createProjectPage({
         projectId: input.projectId,
