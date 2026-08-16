@@ -145,6 +145,9 @@ export default [
     // replacing the underlying /documents and /forms routes (flag-off users are
     // unaffected).
     route("drive", "routes/drive.hub.tsx"),
+    // Unified Templates gallery (documents, forms, mentor notes, email,
+    // agreements), gated behind the `templates` feature flag.
+    route("drive/templates", "routes/drive.templates.tsx"),
 
     // Documents & files — full-page reusable editor + file viewer. Literal
     // "file" segment precedes the :pageId param so it isn't captured.

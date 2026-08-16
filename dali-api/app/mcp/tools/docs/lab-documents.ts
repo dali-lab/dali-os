@@ -5,6 +5,7 @@
 import { prisma } from "~/lib/db";
 import { isCore, isLabMember } from "~/lib/roles";
 import { createLabPage } from "~/lib/pages";
+import { duplicatePage } from "~/lib/page-copy.server";
 
 // ─── list_lab_documents ───────────────────────────────────────────────────────
 
@@ -95,6 +96,11 @@ export const CREATE_LAB_DOCUMENT_TOOL = {
         description:
           "Nest this document under an existing top-level Lab folder. Omit for a top-level page.",
       },
+      fromTemplatePageId: {
+        type: "string",
+        description:
+          "Optional. Create the document by duplicating this template page's content (a Lab page marked as a template). FreeForm only.",
+      },
     },
     required: ["title"],
     additionalProperties: false,
@@ -102,7 +108,12 @@ export const CREATE_LAB_DOCUMENT_TOOL = {
   requiredScope: "mcp:write" as const,
 };
 
-type CreateInput = { title: string; kind?: "FreeForm" | "Folder"; parentPageId?: string };
+type CreateInput = {
+  title: string;
+  kind?: "FreeForm" | "Folder";
+  parentPageId?: string;
+  fromTemplatePageId?: string;
+};
 
 export async function runCreateLabDocument(callerId: string, input: CreateInput) {
   if (!(await isLabMember(callerId))) {
@@ -113,6 +124,11 @@ export async function runCreateLabDocument(callerId: string, input: CreateInput)
 
   if (kind === "Folder" && input.parentPageId) {
     throw new LabDocumentError("Folders can't be nested inside another folder", 400);
+  }
+  const fromTemplateId =
+    input.fromTemplatePageId && input.fromTemplatePageId !== "" ? input.fromTemplatePageId : null;
+  if (fromTemplateId && kind === "Folder") {
+    throw new LabDocumentError("A folder can't be created from a template", 400);
   }
 
   if (input.parentPageId) {
@@ -140,6 +156,26 @@ export async function runCreateLabDocument(callerId: string, input: CreateInput)
     if (parent.parentPageId !== null) {
       throw new LabDocumentError("Pages only nest one level deep", 400);
     }
+  }
+
+  // From-template: duplicate a Lab template page's content into a new Lab page.
+  if (fromTemplateId) {
+    const template = await prisma.page.findUnique({
+      where: { id: fromTemplateId },
+      select: { isTemplate: true, archivedAt: true },
+    });
+    if (!template || template.archivedAt !== null || !template.isTemplate) {
+      throw new LabDocumentError("Template page not found", 404);
+    }
+    const result = await duplicatePage({
+      sourcePageId: fromTemplateId,
+      createdById: callerId,
+      titleOverride: input.title.trim(),
+      workspaceTypeOverride: "Lab",
+      workspaceIdOverride: null,
+      parentPageIdOverride: input.parentPageId ?? null,
+    });
+    return { id: result.id };
   }
 
   const page = await createLabPage({

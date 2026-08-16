@@ -3873,21 +3873,8 @@ async function main() {
         await seedPage("Internal Retro Notes", false);
       }
 
-      // Templates (idempotent by name): page + mentor-note.
-      const existingPageTpl = await prisma.pageTemplate.findFirst({
-        where: { name: "Project Brief" },
-        select: { id: true },
-      });
-      if (!existingPageTpl) {
-        await prisma.pageTemplate.create({
-          data: {
-            name: "Project Brief",
-            contentDocId: "page-template:project-brief",
-            isDefault: true,
-            workspaceTypes: ["Project"],
-          },
-        });
-      }
+      // Mentor-note template (idempotent by isDefault). Document templates are
+      // ordinary Lab pages flagged isTemplate now, created in-app — not seeded.
       const existingMentorTpl = await prisma.mentorNoteTemplate.findFirst({
         where: { isDefault: true },
         select: { id: true },

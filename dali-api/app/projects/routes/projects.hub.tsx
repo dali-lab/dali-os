@@ -13,6 +13,11 @@ import type { Route } from "./+types/projects.hub";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import {
+  captureProjectTemplate,
+  instantiateProjectTemplate,
+} from "~/lib/project-templates.server";
 import { projectsPills } from "../components/projectsPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
@@ -173,6 +178,17 @@ export async function loader({ request }: Route.LoaderArgs) {
   const canEdit = roles.isCore;
   const canStaff = roles.canViewStaffing;
 
+  // Project templates (Core + `templates` flag): the "Start from template"
+  // options in the create modal.
+  const roles = await getUserRoles(auth.user.sub);
+  const templatesEnabled = canEdit && (await isFeatureEnabled("templates", auth.user.sub, roles, request));
+  const projectTemplates = templatesEnabled
+    ? await prisma.projectTemplate.findMany({
+        orderBy: [{ isDefault: "desc" }, { name: "asc" }],
+        select: { id: true, name: true, iconEmoji: true },
+      })
+    : [];
+
   return {
     rows,
     terms,
@@ -182,6 +198,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     canStaff,
     myProjectIds: myAssignments.map((a) => a.projectId),
     hiddenByTermFilter: filteringByTerm && rows.length === 0 && totalProjects > 0,
+    templatesEnabled,
+    projectTemplates,
   };
 }
 
@@ -196,10 +214,59 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   const form = await request.formData();
+  const intent = (form.get("intent") as string | null) ?? "create";
+
+  // Capture: save an existing project's structure as a template (posted from
+  // the project page's "Save as template" control). Gated by the flag.
+  if (intent === "capture") {
+    if (!(await isFeatureEnabled("templates", auth.user.sub, actionRoles, request))) {
+      return { error: "Templates are not enabled." };
+    }
+    const projectId = (form.get("projectId") as string | null)?.trim() ?? "";
+    const templateName = (form.get("templateName") as string | null)?.trim() ?? "";
+    if (!projectId || !templateName) return { error: "A project and template name are required." };
+    try {
+      await captureProjectTemplate({
+        projectId,
+        name: templateName,
+        description: (form.get("templateDescription") as string | null) ?? null,
+        createdBy: auth.user.sub,
+        includeOverviewPage: form.get("includeOverviewPage") === "on",
+      });
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : "Could not save template." };
+    }
+    return redirect(`/projects/${projectId}`);
+  }
+
   const name = (form.get("name") as string | null)?.trim() ?? "";
   const description = (form.get("description") as string | null)?.trim() ?? "";
   const iconEmoji = (form.get("iconEmoji") as string | null)?.trim() ?? "";
   const status = (form.get("status") as string | null) ?? "Active";
+
+  // Start from template: when the create modal picked a template, build the new
+  // project from its blueprint instead of a blank one.
+  const fromTemplateId = (form.get("fromTemplateId") as string | null)?.trim() ?? "";
+  if (fromTemplateId) {
+    if (!(await isFeatureEnabled("templates", auth.user.sub, actionRoles, request))) {
+      return { error: "Templates are not enabled." };
+    }
+    if (!name) return { error: "A project name is required." };
+    const initialTermId = (form.get("firstTermId") as string | null)?.trim() || null;
+    const partnerOrgId = (form.get("partnerOrgId") as string | null)?.trim() || null;
+    try {
+      const created = await instantiateProjectTemplate({
+        templateId: fromTemplateId,
+        name,
+        createdBy: auth.user.sub,
+        initialTermId,
+        partnerOrgId,
+      });
+      return redirect(`/projects/${created.id}`);
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : "Could not create from template." };
+    }
+  }
   // The create form's term picker seeds the project's first term. The term set
   // is then editable on the detail page; the start term is derived as the
   // earliest member.
@@ -261,6 +328,8 @@ export default function ProjectsListPage() {
     canStaff,
     myProjectIds,
     hiddenByTermFilter,
+    templatesEnabled,
+    projectTemplates,
   } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -351,6 +420,27 @@ export default function ProjectsListPage() {
                 className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
               />
             </label>
+            {templatesEnabled && projectTemplates.length > 0 && (
+              <label className="flex flex-col gap-1 text-xs sm:col-span-2">
+                <span className="text-muted-foreground">Start from template (optional)</span>
+                <Select
+                  name="fromTemplateId"
+                  defaultValue=""
+                  placeholder="Blank project"
+                  options={[
+                    { value: "", label: "Blank project" },
+                    ...projectTemplates.map((t) => ({
+                      value: t.id,
+                      label: `${t.iconEmoji ? `${t.iconEmoji} ` : ""}${t.name}`,
+                    })),
+                  ]}
+                  buttonClassName="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                />
+                <span className="text-[11px] text-muted-foreground">
+                  Copies the template's epics, sprints, and tasks into the new project.
+                </span>
+              </label>
+            )}
             <label className="flex flex-col gap-1 text-xs">
               <span className="text-muted-foreground">Status</span>
               <Select

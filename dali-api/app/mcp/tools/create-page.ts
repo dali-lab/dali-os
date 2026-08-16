@@ -10,6 +10,7 @@ import { markdownToBlocks } from "~/collab/blocknote-server";
 import { replaceCollabDocContent } from "~/collab/write";
 import { pageDocName } from "~/collab/roomName";
 import { pageDepth, MAX_PAGE_DEPTH } from "~/lib/pages";
+import { duplicatePage } from "~/lib/page-copy.server";
 
 const MAX_MARKDOWN_LENGTH = 300_000;
 
@@ -37,6 +38,11 @@ export const CREATE_PAGE_TOOL = {
         description:
           "Optional initial body as Markdown (FreeForm only) — same dialect as set_page_content.",
       },
+      fromTemplatePageId: {
+        type: "string",
+        description:
+          "Optional. Create the document by duplicating this template page's content (a Lab page marked as a template). Mutually exclusive with 'content'; FreeForm only.",
+      },
       iconEmoji: { type: "string", maxLength: 8 },
     },
     required: ["projectId", "title"],
@@ -51,6 +57,7 @@ type Input = {
   kind?: "FreeForm" | "Folder";
   parentPageId?: string;
   content?: string;
+  fromTemplatePageId?: string;
   iconEmoji?: string;
 };
 
@@ -75,6 +82,14 @@ export async function runCreatePage(callerId: string, input: Input) {
   }
   if (kind === "Folder" && input.content !== undefined) {
     throw new CreatePageError("Folders have no body — omit content", 400);
+  }
+  const fromTemplateId =
+    input.fromTemplatePageId && input.fromTemplatePageId !== "" ? input.fromTemplatePageId : null;
+  if (fromTemplateId) {
+    if (kind === "Folder") throw new CreatePageError("A folder can't be created from a template", 400);
+    if (input.content !== undefined) {
+      throw new CreatePageError("Pass either content or fromTemplatePageId, not both", 400);
+    }
   }
 
   const project = await prisma.project.findUnique({
@@ -113,6 +128,27 @@ export async function runCreatePage(callerId: string, input: Input) {
       throw new CreatePageError("Folder is too deeply nested", 400);
     }
     parentPageId = parent.id;
+  }
+
+  // From-template: duplicate a Lab template page's content into this project.
+  // duplicatePage byte-copies the collab doc and re-checks target access.
+  if (fromTemplateId) {
+    const template = await prisma.page.findUnique({
+      where: { id: fromTemplateId },
+      select: { isTemplate: true, archivedAt: true },
+    });
+    if (!template || template.archivedAt !== null || !template.isTemplate) {
+      throw new CreatePageError("Template page not found", 404);
+    }
+    const result = await duplicatePage({
+      sourcePageId: fromTemplateId,
+      createdById: callerId,
+      titleOverride: title,
+      workspaceTypeOverride: "Project",
+      workspaceIdOverride: input.projectId,
+      parentPageIdOverride: parentPageId,
+    });
+    return { id: result.id, kind: "FreeForm" as const, parentPageId };
   }
 
   // Parse before creating so bad markdown doesn't leave an empty page behind.

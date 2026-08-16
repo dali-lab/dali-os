@@ -1,7 +1,7 @@
 // Aggregated templates loader for the Drive "Templates" lens.
 // Normalises five existing template systems into one TemplateItem[] without
 // any new storage.  Access is gated per-kind:
-//   - page        : any lab member (PageTemplate rows are lab-wide)
+//   - page        : any lab member (Lab pages flagged isTemplate)
 //   - form        : canViewForms (Core / Admin / Instructor) — forms with an
 //                   active draft are shown as "in-progress templates"
 //   - mentorNote  : canViewMentorship (Core / lab mentor)
@@ -15,13 +15,20 @@ import { canViewMentorship } from "~/mentorship/lib/visibility";
 
 export type TemplateKind = "page" | "form" | "mentorNote" | "email" | "signing";
 
+// What clicking a template card does. "create" kinds spin off a new artifact
+// from the template; "open" kinds jump to the template's own manager/editor.
+export type TemplateAction = "create" | "open";
+
 export interface TemplateItem {
   id: string;
   kind: TemplateKind;
   name: string;
   description?: string;
-  // Where to go when the viewer clicks "Use". For kinds where a real
-  // create-from-template flow doesn't yet exist we link to the manager.
+  iconEmoji?: string;
+  action: TemplateAction;
+  // Where to go when the viewer clicks the card. For "create" page templates
+  // the gallery posts to /api/page-templates instead of navigating; this is
+  // the fallback link (the template's own page/manager).
   useHref: string;
 }
 
@@ -65,18 +72,28 @@ export async function loadTemplates(userId: string): Promise<TemplatesData> {
 }
 
 async function loadPageTemplates(): Promise<TemplateItem[]> {
-  const rows = await prisma.pageTemplate.findMany({
-    orderBy: { name: "asc" },
-    select: { id: true, name: true, description: true },
+  // Lab-wide document templates: real Page rows flagged isTemplate. These are
+  // the shared starter docs any lab member can spin a new document from.
+  const rows = await prisma.page.findMany({
+    where: {
+      workspaceType: "Lab",
+      workspaceId: null,
+      isTemplate: true,
+      archivedAt: null,
+      kind: "FreeForm",
+    },
+    orderBy: { title: "asc" },
+    select: { id: true, title: true, iconEmoji: true },
   });
   return rows.map((r) => ({
     id: r.id,
     kind: "page" as const,
-    name: r.name,
-    description: r.description ?? undefined,
-    // No dedicated create-from-PageTemplate UI exists today; link to the
-    // Documents hub where the user can browse/pick templates from the picker.
-    useHref: "/documents",
+    name: r.title,
+    iconEmoji: r.iconEmoji ?? undefined,
+    action: "create" as const,
+    // Fallback link (opens the template page). The gallery's "Use" posts to
+    // /api/page-templates to duplicate it into the chosen scope.
+    useHref: `/documents/${r.id}`,
   }));
 }
 
@@ -92,6 +109,7 @@ async function loadFormDraftTemplates(): Promise<TemplateItem[]> {
     id: r.id,
     kind: "form" as const,
     name: r.name,
+    action: "open" as const,
     // "Use" = open the form editor where the user can duplicate it.
     useHref: `/forms/${r.id}`,
   }));
@@ -106,8 +124,9 @@ async function loadMentorNoteTemplates(): Promise<TemplateItem[]> {
     id: r.id,
     kind: "mentorNote" as const,
     name: r.name,
-    // No direct "use this template" URL exists; the template is auto-applied
-    // when a mentor creates a new note. Link to the mentorship hub.
+    action: "open" as const,
+    // The template is auto-applied when a mentor creates a new note; "Use"
+    // opens the mentorship hub where the templates are managed.
     useHref: "/mentorship",
   }));
 }
@@ -121,6 +140,7 @@ async function loadEmailTemplates(): Promise<TemplateItem[]> {
     id: r.id,
     kind: "email" as const,
     name: r.name,
+    action: "open" as const,
     useHref: `/admin/email-templates/${r.id}`,
   }));
 }
@@ -135,6 +155,7 @@ async function loadSigningDocuments(): Promise<TemplateItem[]> {
     id: r.id,
     kind: "signing" as const,
     name: r.name,
+    action: "open" as const,
     useHref: `/admin/agreements/${r.id}`,
   }));
 }
