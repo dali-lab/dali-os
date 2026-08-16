@@ -13,6 +13,7 @@ import { useLocation, useMatches, useSearchParams } from "react-router";
 import { BookOpen } from "lucide-react";
 import type { DocHandle } from "~/components/Breadcrumbs";
 import { useFeatureFlag } from "~/components/FeatureFlags";
+import { hasSubnavRow } from "~/lib/nav-areas";
 
 const PageDocPage = lazy(() =>
   import("./PageDocPage").then((m) => ({ default: m.PageDocPage })),
@@ -135,16 +136,16 @@ export function PageDocOutlet({ children }: { children: ReactNode }) {
   const redesignOpen = useFeatureFlag("sidebar-redesign");
 
   if (open && docKey) {
-    // On pill pages the layout zeroes its own top padding because AreaPillNav
-    // supplies that spacing — but the open guide replaces the outlet, pill nav
-    // included, so nothing is left to space it off the breadcrumb row. Put the
-    // layout's usual padding back for those routes only, so the guide starts
-    // at the same height as ordinary page content either way.
-    const hasAreaPills = !redesignOpen && matches.some(
-      (m) => (m as { handle?: { areaPills?: boolean } }).handle?.areaPills,
-    );
+    // On pages with their own sub-nav row the layout zeroes its top padding
+    // because that row supplies the spacing — but the open guide replaces the
+    // outlet, sub-nav included, so nothing is left to space it off the
+    // breadcrumb row. Ask the same predicate the layout asks (hasSubnavRow, in
+    // nav-areas) and put the padding back exactly when it was zeroed; reading
+    // `areaPills` alone missed `areaSubnav` pages and, under the sidebar
+    // redesign, every page — leaving the guide title flush against the top.
+    const zeroedTopPadding = hasSubnavRow(matches, redesignOpen);
     return (
-      <div className={hasAreaPills ? "pt-4 sm:pt-8 md:pt-12" : undefined}>
+      <div className={zeroedTopPadding ? "pt-4 sm:pt-8 md:pt-12" : undefined}>
         <Suspense
           fallback={
             <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">

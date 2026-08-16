@@ -2,7 +2,6 @@ import {
   Activity,
   BarChart3,
   Clock,
-  FileSignature,
   ClipboardCheck,
   Flag,
   Globe,
@@ -47,7 +46,6 @@ export type AdminCluster = NavCluster;
 export type AdminClusterKey =
   | "people"
   | "communications"
-  | "documents"
   | "finance"
   | "system";
 
@@ -111,23 +109,6 @@ export const ADMIN_CLUSTERS: AdminCluster[] = [
           { key: "email-templates", label: "Templates", to: "/admin/email-templates" },
           { key: "email-senders", label: "Senders", to: "/admin/email-senders" },
         ],
-      },
-    ],
-  },
-  {
-    key: "documents",
-    label: "Documents",
-    description: "Agreements the lab issues and collects signatures on.",
-    icon: FileSignature,
-    hubPath: null,
-    sections: [
-      {
-        key: "agreements",
-        label: "Agreements",
-        to: "/admin/agreements",
-        icon: FileSignature,
-        description:
-          "Author agreements (membership, mentorship, confidentiality), place fields, and track signatories.",
       },
     ],
   },

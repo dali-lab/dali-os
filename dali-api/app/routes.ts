@@ -97,7 +97,6 @@ export default [
     route("core/project-bids/:userId", "core/routes/core.project-bids.$userId.tsx"),
     route("core/level-up", "core/routes/core.level-up.tsx"),
     route("core/level-up/:userId", "core/routes/core.level-up.$userId.tsx"),
-    route("core/access", "core/routes/core.access.tsx"),
     route("core/access/roles", "core/routes/core.access.roles.tsx"),
     route("core/access/domains", "core/routes/core.access.domains.tsx"),
     route("core/attendance", "core/routes/core.attendance.tsx"),
@@ -127,9 +126,6 @@ export default [
       "projects/level-up/:userId",
       "projects/routes/projects.level-up.$userId.tsx",
     ),
-    // Transfer moved here when the Lab Processes area was retired. Literal
-    // segment, so it must precede projects/:id like the ones above.
-    route("projects/transfer", "projects/routes/projects.transfer.tsx"),
     route("projects/:id", "projects/routes/projects.$id.tsx"),
     route(
       "projects/:id/partner-view",
@@ -197,10 +193,8 @@ export default [
     route("mentorship/browse", "mentorship/routes/mentorship.browse.tsx"),
     route("mentorship/notes/:id", "mentorship/routes/mentorship.notes.$id.tsx"),
 
-    // Internal processes. The area hub and JobX are retired; Transfer lives
-    // under Projects now (/projects/transfer) and these two paths are kept so
-    // existing links, favorites, and bookmarks still resolve.
-    route("internal-processes/transfer", "internal-processes/routes/internal-processes.transfer.tsx"),
+    // Internal processes. The area hub and JobX are retired; this path is kept
+    // so existing links, favorites, and bookmarks still resolve.
     route("internal-processes/level-up", "internal-processes/routes/internal-processes.level-up.tsx"),
 
     // Forms. The :folderId form lets a folder card open its own page with

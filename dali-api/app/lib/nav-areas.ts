@@ -1,5 +1,4 @@
 import {
-  ArrowLeftRight,
   ArrowUpCircle,
   Award,
   BookOpen,
@@ -9,6 +8,7 @@ import {
   ClipboardPen,
   Clock,
   Files,
+  FileSignature,
   FileText,
   FolderKanban,
   Gavel,
@@ -106,7 +106,6 @@ export const NAV_AREAS: NavArea[] = [
       { label: "Intent to Work", href: "/projects/intent-to-work", icon: ClipboardPen, gate: (r) => r.canViewStaffing },
       { label: "Project Bids", href: "/projects/project-bids", icon: Gavel, gate: (r) => r.canViewStaffing },
       { label: "Level Up", href: "/projects/level-up", icon: ArrowUpCircle, gate: (r) => r.canViewStaffing },
-      { label: "Transfer", href: "/projects/transfer", icon: ArrowLeftRight },
     ],
   },
   {
@@ -236,7 +235,6 @@ const REGROUPED_AREAS: NavArea[] = [
       { label: "Groups", href: "/members/groups", icon: Users, gate: (r) => r.canViewForms },
       { label: "Partners", href: "/partners", icon: Handshake },
       { label: "Mentorship", href: "/mentorship", icon: Heart, gate: (r) => r.isLabMentor || r.isCore },
-      { label: "Transfer", href: "/projects/transfer", icon: ArrowLeftRight },
     ],
   },
   {
@@ -262,7 +260,12 @@ const REGROUPED_AREAS: NavArea[] = [
       { label: "Intent to Work", href: "/core/intent-to-work", icon: ClipboardPen },
       { label: "Project Bids", href: "/core/project-bids", icon: Gavel },
       { label: "Level Up", href: "/core/level-up", icon: ArrowUpCircle },
+      { label: "Roles & Permissions", href: "/core/access/roles", icon: Shield },
+      { label: "Domains", href: "/core/access/domains", icon: Globe },
       ...coreClusterSubtabs,
+      // Agreements left Admin's Documents cluster; it is lab process, not
+      // system administration. Its URL stays /admin/agreements.
+      { label: "Agreements", href: "/admin/agreements", icon: FileSignature },
       { label: "Attendance", href: "/core/attendance", icon: ClipboardCheck },
     ],
   },

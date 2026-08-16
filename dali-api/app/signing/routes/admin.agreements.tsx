@@ -8,7 +8,7 @@ import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles, isCore } from "~/lib/roles";
-import { adminHandle } from "~/admin/adminNav";
+import { coreHandle } from "~/core/coreNav";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import type {
   SigningDocumentKind,
@@ -18,7 +18,7 @@ import type {
 } from "~/generated/prisma/enums";
 import { SigningDocumentsPage } from "~/signing/components/SigningDocumentsPage";
 
-export const handle = adminHandle("agreements");
+export const handle = coreHandle("agreements");
 
 export const meta: Route.MetaFunction = () => [
   { title: "Agreements · Admin · DALI OS" },

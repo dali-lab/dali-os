@@ -105,7 +105,6 @@ const SEGMENT_LABELS: Record<string, string> = {
   access: 'Access & Permissions',
   roles: 'Roles & Permissions',
   onboarding: 'Onboarding',
-  transfer: 'Transfer',
   jobx: 'JobX',
 
   manage: 'Manage',

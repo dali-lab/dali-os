@@ -269,7 +269,7 @@ export function DateField({
         aria-expanded={open}
         aria-label={ariaLabel}
         onClick={() => setOpen((o) => !o)}
-        className="inline-flex w-full items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground transition-colors hover:bg-muted/40 disabled:opacity-60 disabled:hover:bg-transparent"
+        className="inline-flex h-9 w-full items-center justify-between gap-2 rounded-md border border-border bg-background px-3 text-sm text-foreground transition-colors hover:bg-muted/40 disabled:opacity-60 disabled:hover:bg-transparent"
       >
         <span className={cn("truncate", display ? "" : "text-muted-foreground")}>
           {display ?? placeholder ?? (mode === "time" ? "Pick a time" : "Pick a date")}

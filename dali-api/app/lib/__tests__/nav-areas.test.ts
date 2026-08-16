@@ -181,7 +181,8 @@ describe("Core area", () => {
         "/core/intent-to-work",
         "/core/project-bids",
         "/core/level-up",
-        "/core/access",
+        "/core/access/roles",
+        "/core/access/domains",
         "/core/communications",
         "/core/attendance",
       ]),
@@ -204,8 +205,10 @@ describe("Admin area", () => {
     const labels = admin.subtabs.map((t) => t.label);
     expect(labels).not.toContain("People & Access");
     expect(labels).not.toContain("Communications");
+    // Documents is gone entirely — Agreements, its only page, is a Core sub-tab.
+    expect(labels).not.toContain("Documents");
     expect(labels).toEqual(
-      expect.arrayContaining(["Hub", "Documents", "Finance", "System & Insights"]),
+      expect.arrayContaining(["Hub", "Finance", "System & Insights"]),
     );
   });
 
@@ -221,6 +224,11 @@ describe("areaForPath", () => {
   it("routes /core paths to Core and /projects paths to Projects", () => {
     expect(areaForPath("/core/staffing", REGROUP)?.key).toBe("core");
     expect(areaForPath("/core/access/roles", REGROUP)?.key).toBe("core");
+    // Agreements kept its /admin URL when it moved to Core, so the longest
+    // matching sub-tab href — not the /admin hub prefix — has to win.
+    expect(areaForPath("/admin/agreements", REGROUP)?.key).toBe("core");
+    expect(areaForPath("/admin/agreements/abc123", REGROUP)?.key).toBe("core");
+    expect(areaForPath("/admin/email-senders", REGROUP)?.key).toBe("admin");
     expect(areaForPath("/projects/42", REGROUP)?.key).toBe("projects");
   });
 

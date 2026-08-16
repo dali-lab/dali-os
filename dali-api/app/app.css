@@ -517,13 +517,16 @@ select:not(:disabled) {
 }
 
 /* Sidebar: the active sub-tab's rail wipes in on a section change. */
+/* Only `transform` here — the rail's -50% centring rides on Tailwind v4's
+   separate `translate` property, so repeating it in the keyframe would stack a
+   second -50% for the animation's duration and drop the rail 8px on finish. */
 @keyframes nav-rail {
   from {
-    transform: translateY(-50%) scaleY(0.2);
+    transform: scaleY(0.2);
     opacity: 0;
   }
   to {
-    transform: translateY(-50%) scaleY(1);
+    transform: scaleY(1);
     opacity: 1;
   }
 }

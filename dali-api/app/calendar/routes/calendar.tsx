@@ -51,6 +51,12 @@ import {
 import { getZonedHourFraction, getZonedYMD, resolveUserTimeZone, zonedDayStartUtc } from "~/lib/timezone";
 import { formatPayPeriod, isPayPeriodEnd, payPeriodFor } from "~/lib/pay-period";
 import { timeEntryDayUtc } from "~/calendar/lib/timesheet-day";
+import {
+  NO_REPEAT,
+  RepeatField,
+  repeatSpecToRRule,
+  type RepeatSpec,
+} from "~/calendar/components/RepeatField";
 import type { Route } from "./+types/calendar";
 import { UnderlineTabButtons } from "~/components/AreaPillNav";
 import { Tooltip } from "~/components/ui/IconButton";
@@ -2017,7 +2023,7 @@ function ManualBlocksCard({ blocks, timezone }: { blocks: ManualBlockDTO[]; time
 
 function AddManualBlockForm({ onDone }: { onDone: () => void }) {
   const fetcher = useFetcher();
-  const [repeats, setRepeats] = useState<Repeats>("none");
+  const [repeat, setRepeat] = useState<RepeatSpec>(NO_REPEAT);
   const [startLocal, setStartLocal] = useState("");
   const [endLocal, setEndLocal] = useState("");
   return (
@@ -2062,18 +2068,17 @@ function AddManualBlockForm({ onDone }: { onDone: () => void }) {
           <input type="hidden" name="endTime" value={endLocal ? new Date(endLocal).toISOString() : ""} readOnly />
         </label>
       </div>
-      <label className="text-xs text-muted-foreground flex flex-col gap-1">
-        Repeats
-        <Select
-          value={repeats}
-          onChange={(v) => setRepeats(v as Repeats)}
-          options={REPEATS_OPTIONS}
-          buttonClassName="px-2 py-1 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-        />
-      </label>
+      <RepeatField
+        value={repeat}
+        onChange={setRepeat}
+        anchorLocal={startLocal}
+        idPrefix="add-block"
+        labelClassName="text-xs text-muted-foreground"
+        fieldClassName="w-full h-9 px-2 text-sm border border-border rounded-md bg-background text-foreground"
+      />
       {/* The action reads `recurrenceRule` as an RRULE string; derive it from
           the friendly Repeats choice so non-technical users never see RRULE. */}
-      <input type="hidden" name="recurrenceRule" value={repeatsToRRule(repeats) ?? ""} />
+      <input type="hidden" name="recurrenceRule" value={repeatSpecToRRule(repeat) ?? ""} />
       <div className="flex justify-end gap-2">
         <button
           type="button"
@@ -2484,29 +2489,6 @@ function availabilityTint(frac: number): string {
 /* Schedule view                                                        */
 /* ------------------------------------------------------------------ */
 
-type Repeats = "none" | "daily" | "weekly" | "monthly";
-
-const REPEATS_OPTIONS: { value: Repeats; label: string }[] = [
-  { value: "none", label: "Does not repeat" },
-  { value: "daily", label: "Daily" },
-  { value: "weekly", label: "Weekly" },
-  { value: "monthly", label: "Monthly" },
-];
-
-function repeatsToRRule(r: Repeats): string | null {
-  switch (r) {
-    case "daily":
-      return "FREQ=DAILY";
-    case "weekly":
-      return "FREQ=WEEKLY";
-    case "monthly":
-      return "FREQ=MONTHLY";
-    case "none":
-    default:
-      return null;
-  }
-}
-
 // datetime-local strings: "YYYY-MM-DDTHH:mm" in the user's local timezone.
 function durationMinutesBetween(startLocal: string, endLocal: string): number {
   if (!startLocal || !endLocal) return 30;
@@ -2697,7 +2679,7 @@ function CreateFromDragPopover({
     setStart(startLocal);
     setEnd(endLocal);
   }, [startLocal, endLocal]);
-  const [repeats, setRepeats] = useState<Repeats>("none");
+  const [repeat, setRepeat] = useState<RepeatSpec>(NO_REPEAT);
   const [isWork, setIsWork] = useState(false);
   const [roleKey, setRoleKey] = useState(myRoles.length > 0 ? roleOptionKey(myRoles[0]!) : "");
   const [submitting, setSubmitting] = useState(false);
@@ -2705,7 +2687,7 @@ function CreateFromDragPopover({
 
   const startEndValid =
     !!start && !!end && new Date(end).getTime() > new Date(start).getTime();
-  const isRecurring = repeats !== "none";
+  const isRecurring = repeat.freq !== "none";
   const canSubmit =
     title.trim().length > 0 &&
     startEndValid &&
@@ -2735,7 +2717,7 @@ function CreateFromDragPopover({
       body.set("title", title.trim());
       body.set("startTime", new Date(start).toISOString());
       body.set("endTime", new Date(end).toISOString());
-      const rrule = repeatsToRRule(repeats);
+      const rrule = repeatSpecToRRule(repeat);
       if (rrule) body.set("recurrenceRule", rrule);
       if (isWork && !isRecurring) {
         const role = parseRoleOptionKey(roleKey);
@@ -2830,17 +2812,14 @@ function CreateFromDragPopover({
           </div>
           {!startEndValid && <p className="text-xs text-red-600">End must be after start.</p>}
 
-          <div>
-            <label htmlFor="drag-repeats" className="block text-sm font-medium text-foreground mb-1">
-              Repeats
-            </label>
-            <Select
-              value={repeats}
-              onChange={(v) => setRepeats(v as Repeats)}
-              options={REPEATS_OPTIONS}
-              buttonClassName="w-full px-3 py-2 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-            />
-          </div>
+          <RepeatField
+            value={repeat}
+            onChange={setRepeat}
+            anchorLocal={start}
+            idPrefix="drag"
+            labelClassName="block text-sm font-medium text-foreground mb-1"
+            fieldClassName="w-full h-9 px-3 text-sm border border-border rounded-md bg-background text-foreground"
+          />
 
           {myRoles.length > 0 && !isRecurring && (
             <div>
@@ -3093,7 +3072,7 @@ function TimesheetView({ data }: { data: LoaderData }) {
                 required
                 value={date}
                 onChange={(value) => setDate(value)}
-                className={FIELD_BASE}
+                className="w-full"
                 ariaLabel="Date"
               />
             </label>
@@ -3104,7 +3083,7 @@ function TimesheetView({ data }: { data: LoaderData }) {
                 required
                 value={startTime}
                 onChange={(value) => setStartTime(value)}
-                className={FIELD_BASE}
+                className="w-full"
                 ariaLabel="Start time"
               />
             </label>
@@ -3115,7 +3094,7 @@ function TimesheetView({ data }: { data: LoaderData }) {
                 required
                 value={endTime}
                 onChange={(value) => setEndTime(value)}
-                className={FIELD_BASE}
+                className="w-full"
                 ariaLabel="End time"
               />
             </label>
@@ -3889,7 +3868,7 @@ function CreateScheduledMeetingForm({
   resolvedParticipantIds: string[];
 }) {
   const [title, setTitle] = useState("");
-  const [repeats, setRepeats] = useState<Repeats>("none");
+  const [repeat, setRepeat] = useState<RepeatSpec>(NO_REPEAT);
   const googleLinks = calendarLinks.filter((l) => l.provider === "Google" && l.enabled);
   const [organizerCalendarLinkId, setOrganizerCalendarLinkId] = useState<string>(
     googleLinks[0]?.id ?? "",
@@ -3947,7 +3926,7 @@ function CreateScheduledMeetingForm({
         title: title.trim(),
         durationMinutes: duration,
       };
-      const rrule = repeatsToRRule(repeats);
+      const rrule = repeatSpecToRRule(repeat);
       if (rrule) payload.recurrenceRule = rrule;
       if (startLocal) {
         // datetime-local has no timezone; interpret it in the browser's zone
@@ -4003,7 +3982,7 @@ function CreateScheduledMeetingForm({
           selfCheckIn,
         });
         setTitle("");
-        setRepeats("none");
+        setRepeat(NO_REPEAT);
         onStartLocalChange("");
         onEndLocalChange("");
         onChangeSelectedUserIds([]);
@@ -4101,14 +4080,13 @@ function CreateScheduledMeetingForm({
         {/* Secondary scheduling details — quieter, less visual weight */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 border-t border-border">
           <div className="pt-3">
-            <label htmlFor="meeting-recurrence" className={labelClass}>
-              Repeats
-            </label>
-            <Select
-              value={repeats}
-              onChange={(v) => setRepeats(v as Repeats)}
-              options={REPEATS_OPTIONS}
-              buttonClassName={`${fieldClass} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
+            <RepeatField
+              value={repeat}
+              onChange={setRepeat}
+              anchorLocal={startLocal}
+              idPrefix="meeting"
+              labelClassName={labelClass}
+              fieldClassName={fieldClass}
             />
           </div>
           <div className="pt-3">
