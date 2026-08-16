@@ -36,8 +36,14 @@ export type TaskCardModel = {
   // Stored as a string here so the model serializes cleanly through the
   // loader → client boundary without a Date round-trip.
   dueAt: string | null;
+  // Optional timeline start, paired with dueAt to give the task a span on the
+  // project timeline. Planning-only — it fires no reminders.
+  startsAt: string | null;
   epicId: string | null;
   sprintId: string | null;
+  // Optional parent user story. Drives the timeline's task-inside-story
+  // nesting; null hangs the task directly off its epic/sprint.
+  storyId: string | null;
   // Subtasks checklist (Task.checklist Json). Null when unset; the card shows
   // a done/total chip and the modal owns editing.
   checklist: { text: string; done: boolean }[] | null;
@@ -100,6 +106,9 @@ export type TaskBoardOptions = {
   // modal's sprint/epic pickers. Sprints ordered Active → Planned → Closed.
   sprints: BoardSprint[];
   epics: BoardEpic[];
+  // The project's user stories, for the modal's story picker. Ordered by epic
+  // then position; `epicId` drives the same Epic → child cascade as sprints.
+  stories: { id: string; title: string; epicId: string }[];
   // Live project files for the modal's "attach existing artifact" picker.
   projectFiles: { id: string; title: string }[];
   // Term filter options: the project's planned terms plus any term a sprint

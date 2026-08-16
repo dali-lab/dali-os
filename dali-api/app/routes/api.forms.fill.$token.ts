@@ -21,6 +21,9 @@ import {
 
 const SubmitSchema = z.object({
   versionId: z.string().min(1),
+  // Fingerprint the client captured at load (FormVersion.updatedAt). Optional
+  // for back-compat; when present, a stale version is rejected server-side.
+  versionUpdatedAt: z.string().optional(),
   answers: z.record(z.string(), z.unknown()),
   // Education feedback context from the fill URL. Optional; validated
   // server-side inside submitMemberForm against EducationFormBinding.
@@ -84,6 +87,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     const result = await submitAnonymousForm({
       token: params.token!,
       versionId: body.versionId,
+      versionUpdatedAt: body.versionUpdatedAt,
       answers: body.answers,
       submitterIp: ip === "unknown" ? null : ip,
     });
@@ -95,6 +99,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const result = await submitMemberForm({
     token: params.token!,
     versionId: body.versionId,
+    versionUpdatedAt: body.versionUpdatedAt,
     userId,
     answers: body.answers,
     education: hasEducationContext

@@ -9,7 +9,8 @@ import { fullName } from "~/lib/display";
 
 // POST /api/projects/:id/tasks
 //
-// Create a task on a project. Body: { title, status?, sprintId?, epicId? }.
+// Create a task on a project. Body: { title, status?, sprintId?, epicId?,
+// storyId?, startsAt? }.
 // status defaults to "Todo"; position is appended after the current max in
 // the target column so the new card lands last. Mirrors the project-edit
 // permission model (isCore === Admin || Core).
@@ -20,6 +21,10 @@ type Body = {
   status?: string;
   sprintId?: string | null;
   epicId?: string | null;
+  // Parent user story. Must belong to this project.
+  storyId?: string | null;
+  // Timeline start (planning only — fires no reminders).
+  startsAt?: string | null;
   // ISO timestamp (or null/absent for no deadline).
   dueAt?: string | null;
   // Present = mirror to GH. `repo` must be one of the project's repoUrls
@@ -35,6 +40,8 @@ function isBody(x: unknown): x is Body {
   if (o.status !== undefined && typeof o.status !== "string") return false;
   if (o.sprintId != null && typeof o.sprintId !== "string") return false;
   if (o.epicId != null && typeof o.epicId !== "string") return false;
+  if (o.storyId != null && typeof o.storyId !== "string") return false;
+  if (o.startsAt != null && typeof o.startsAt !== "string") return false;
   if (o.dueAt != null && typeof o.dueAt !== "string") return false;
   if (o.github !== undefined) {
     if (!o.github || typeof o.github !== "object") return false;
@@ -127,6 +134,10 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (dueAt === "invalid") {
     return withCors(request, Response.json({ error: "Invalid dueAt" }, { status: 400 }));
   }
+  const startsAt = parseDueAt(body.startsAt);
+  if (startsAt === "invalid") {
+    return withCors(request, Response.json({ error: "Invalid startsAt" }, { status: 400 }));
+  }
 
   const project = await prisma.project.findUnique({
     where: { id: params.id },
@@ -159,6 +170,18 @@ export async function action({ request, params }: Route.ActionArgs) {
       return withCors(
         request,
         Response.json({ error: "Epic is not part of this project" }, { status: 400 }),
+      );
+    }
+  }
+  if (body.storyId != null) {
+    const story = await prisma.userStory.findUnique({
+      where: { id: body.storyId },
+      select: { epic: { select: { projectId: true } } },
+    });
+    if (!story || story.epic.projectId !== params.id) {
+      return withCors(
+        request,
+        Response.json({ error: "Story is not part of this project" }, { status: 400 }),
       );
     }
   }
@@ -201,7 +224,9 @@ export async function action({ request, params }: Route.ActionArgs) {
       position,
       sprintId: body.sprintId ?? null,
       epicId: body.epicId ?? null,
+      storyId: body.storyId ?? null,
       dueAt,
+      startsAt,
       createdById: auth.user.sub,
     },
     select: { id: true },

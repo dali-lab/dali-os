@@ -23,11 +23,15 @@ export function OfferingApplyForm({
   description,
   defaultAnswers,
   submitLabel,
+  // Fingerprint of the form version being filled; echoed back so the action
+  // can reject a submit against a version edited since page load.
+  versionUpdatedAt,
 }: {
   questions: Question[];
   description: unknown;
   defaultAnswers?: Record<string, string>;
   submitLabel: string;
+  versionUpdatedAt?: string;
 }) {
   const [answers, setAnswers] = useState<Record<string, string>>(
     defaultAnswers ?? {},
@@ -55,6 +59,7 @@ export function OfferingApplyForm({
     }
     const fd = new FormData();
     fd.set("answers", JSON.stringify(answers));
+    if (versionUpdatedAt) fd.set("versionUpdatedAt", versionUpdatedAt);
     submit(fd, { method: "post" });
   }
 

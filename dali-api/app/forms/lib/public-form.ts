@@ -36,6 +36,9 @@ export type PublicForm = {
   formId: string;
   name: string;
   versionId: string;
+  // Fingerprint of the served version's content — the filler echoes it back on
+  // submit so an in-place edit between load and submit is caught server-side.
+  versionUpdatedAt: string;
   description: unknown;
   // `file` questions need an authenticated upload presign, so they're not
   // fillable anonymously — they're returned but flagged unsupported and the
@@ -65,7 +68,7 @@ export async function loadPublicForm(
       versions: {
         orderBy: { versionNumber: "desc" },
         take: 1,
-        select: { id: true, questions: true, intro: true },
+        select: { id: true, questions: true, intro: true, updatedAt: true },
       },
     },
   });
@@ -93,8 +96,9 @@ export async function loadPublicForm(
     formId: form.id,
     name: form.name,
     versionId: version.id,
-    // Frozen versions may hold legacy ProseMirror JSON — convert on read so
-    // fill surfaces only ever see block JSON.
+    versionUpdatedAt: version.updatedAt.toISOString(),
+    // Versions may hold legacy ProseMirror JSON — convert on read so fill
+    // surfaces only ever see block JSON.
     description: ensureBlocks(safeParseJsonString(version.intro)),
     questions: normalizeQuestionBodies(resolved),
   };
@@ -363,6 +367,28 @@ async function resolveSubmitVersion(form: {
   });
 }
 
+// Not-yet-used versions can be edited in place, so a filler's loaded copy can
+// go stale between page load and submit. When the client sends the fingerprint
+// (updatedAt) it captured at load, reject the submit if the version was edited
+// or removed since — recording answers keyed to questions that no longer exist
+// would silently corrupt the response. Programmatic callers omit the
+// fingerprint (they target latest by construction) and skip this check.
+// `loaded` is the version row filtered to the client's versionId (empty if it
+// no longer exists). Returns an error result to return, or null to proceed.
+function staleVersionError(
+  loaded: { updatedAt: Date } | undefined,
+  fingerprint: string | undefined,
+): { error: string; status: number } | null {
+  if (!fingerprint) return null;
+  if (!loaded || loaded.updatedAt.toISOString() !== fingerprint) {
+    return {
+      error: "This form was just updated — reload to continue.",
+      status: 409,
+    };
+  }
+  return null;
+}
+
 // Anonymous (Public-audience) submit: records a plain, unattributed row with
 // the client IP for abuse tracing. Deliberately none of the member-path side
 // effects — no todo closing, no one-response gate (no identity to key on),
@@ -371,6 +397,9 @@ async function resolveSubmitVersion(form: {
 export async function submitAnonymousForm(args: {
   token: string;
   versionId: string;
+  // Fingerprint (FormVersion.updatedAt ISO) captured when the filler loaded the
+  // form; when present, a mismatch means the version was edited underneath them.
+  versionUpdatedAt?: string;
   answers: Record<string, unknown>;
   submitterIp: string | null;
 }): Promise<MemberSubmitResult> {
@@ -382,7 +411,7 @@ export async function submitAnonymousForm(args: {
       audience: true,
       versions: {
         where: { id: args.versionId },
-        select: { id: true, questions: true },
+        select: { id: true, questions: true, updatedAt: true },
       },
     },
   });
@@ -395,6 +424,8 @@ export async function submitAnonymousForm(args: {
   if (form.audience !== "Public") {
     return { error: "This form requires signing in.", status: 403 };
   }
+  const stale = staleVersionError(form.versions[0], args.versionUpdatedAt);
+  if (stale) return stale;
   const version = await resolveSubmitVersion(form);
   if (!version) {
     return { error: "This form has no questions yet.", status: 404 };
@@ -430,6 +461,9 @@ export async function submitAnonymousForm(args: {
 export async function submitMemberForm(args: {
   token: string;
   versionId: string;
+  // Fingerprint (FormVersion.updatedAt ISO) captured when the filler loaded the
+  // form; when present, a mismatch means the version was edited underneath them.
+  versionUpdatedAt?: string;
   userId: string;
   answers: Record<string, unknown>;
   // Education feedback context (session feedback / instructor exit survey),
@@ -446,7 +480,7 @@ export async function submitMemberForm(args: {
       oneResponsePerMember: true,
       versions: {
         where: { id: args.versionId },
-        select: { id: true, questions: true },
+        select: { id: true, questions: true, updatedAt: true },
       },
       // Slot bindings tell us if this form drives a staffing flow. Resolved
       // server-side from the binding table — never trusted from the client.
@@ -471,6 +505,8 @@ export async function submitMemberForm(args: {
       status: 404,
     };
   }
+  const stale = staleVersionError(form.versions[0], args.versionUpdatedAt);
+  if (stale) return stale;
   const version = await resolveSubmitVersion(form);
   if (!version) {
     return { error: "This form has no questions yet.", status: 404 };
