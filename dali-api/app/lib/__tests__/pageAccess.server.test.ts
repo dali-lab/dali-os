@@ -47,8 +47,10 @@ beforeEach(() => {
 });
 
 /** Set the viewer's named-share tier on the page (null = no share). */
-function withShare(permission: string | null) {
-  mockPrisma.pageShare.findMany.mockResolvedValue(permission ? [{ permission }] : []);
+function withShare(permission: string | null, principalId = "viewer") {
+  mockPrisma.pageShare.findMany.mockResolvedValue(
+    permission ? [{ principalType: "User", principalId, permission }] : [],
+  );
 }
 
 function page(overrides: Record<string, unknown> = {}) {
@@ -119,7 +121,7 @@ describe("Member workspace", () => {
   });
 
   it("an Edit share grants edit", async () => {
-    withShare("Edit");
+    withShare("Edit", "editor");
     const result = await getPageAccess("editor", note());
     expect(result).toEqual(full);
   });
@@ -156,7 +158,7 @@ describe("Lab workspace", () => {
 
   it("a View share never downgrades a lab member on an open · Edit doc", async () => {
     vi.mocked(isLabMember).mockResolvedValue(true);
-    withShare("View");
+    withShare("View", "lab-member");
     expect(await getPageAccess("lab-member", everyone())).toEqual(full);
   });
 
@@ -173,7 +175,7 @@ describe("Lab workspace", () => {
 
   it("an Edit share grants edit to a non-creator on an 'Only people you add' doc", async () => {
     vi.mocked(isLabMember).mockResolvedValue(true);
-    withShare("Edit");
+    withShare("Edit", "outsider");
     const result = await getPageAccess("outsider", page({ createdById: "someone-else" }));
     expect(result.canView).toBe(true);
     expect(result.canEdit).toBe(true);
@@ -210,7 +212,7 @@ describe("Project workspace", () => {
   });
 
   it("an Edit share grants edit to an outsider (not a member)", async () => {
-    withShare("Edit");
+    withShare("Edit", "outsider");
     const result = await getPageAccess("outsider", projectPage());
     expect(result.canView).toBe(true);
     expect(result.canEdit).toBe(true);
@@ -272,7 +274,7 @@ describe("EducationOffering workspace", () => {
   });
 
   it("an Edit share grants edit to an outsider", async () => {
-    withShare("Edit");
+    withShare("Edit", "outsider");
     const result = await getPageAccess("outsider", eduPage());
     expect(result.canEdit).toBe(true);
   });

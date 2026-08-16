@@ -1,15 +1,21 @@
 // Merge variables for signing documents — the {{...}} tokens an author can drop
 // into a template body (as `variable` nodes) that resolve to real values at
-// fill/render time. Mirrors the shape of app/hiring/lib/email-variables.ts but
-// stays dependency-free so both the client editor and the server can use it.
-// The DB-backed resolver that fetches term/name lives in app/signing/lib (it
-// calls resolveSigningVariables with the values it looked up).
+// fill/render time. The vocabulary + placeholder grammar live in the shared
+// app/lib/template-variables.ts; this module owns the signing subset and its
+// pure resolver. The DB-backed resolver that fetches term/name lives in
+// app/signing/lib (it calls resolveSigningVariables with what it looked up).
+
+import {
+  TEMPLATE_VARIABLES_REGISTRY,
+  extractPlaceholders,
+  findUnknownPlaceholders,
+} from "~/lib/template-variables";
 
 export const SIGNING_VARIABLE_DESCRIPTIONS = {
-  term: "The current term code, e.g. 26S.",
-  today: "The date the document is signed (Eastern Time).",
-  memberName: "The signer's full name.",
-  supervisorName: "The DALI staff supervisor's name.",
+  term: TEMPLATE_VARIABLES_REGISTRY.term.description,
+  today: TEMPLATE_VARIABLES_REGISTRY.today.description,
+  memberName: TEMPLATE_VARIABLES_REGISTRY.memberName.description,
+  supervisorName: TEMPLATE_VARIABLES_REGISTRY.supervisorName.description,
 } as const;
 
 export type SigningVariableName = keyof typeof SIGNING_VARIABLE_DESCRIPTIONS;
@@ -22,23 +28,13 @@ export function isKnownSigningVariable(name: string): name is SigningVariableNam
   return name in SIGNING_VARIABLE_DESCRIPTIONS;
 }
 
-// Same strict shape as the email interpolator: `{{name}}` with no whitespace,
-// ascii-letter-led identifier.
-const PLACEHOLDER_RE = /\{\{([A-Za-z][A-Za-z0-9_]*)\}\}/g;
-
-export function extractSigningPlaceholders(text: string): string[] {
-  const out: string[] = [];
-  for (const m of text.matchAll(PLACEHOLDER_RE)) out.push(m[1]);
-  return out;
-}
+// Re-export the shared extractor under the signing-specific name so existing
+// importers/tests keep their entry point.
+export const extractSigningPlaceholders = extractPlaceholders;
 
 // Soft lint: unknown tokens (typos / bogus vars). Callers render as warnings.
 export function lintSigningText(text: string): { unknown: string[] } {
-  const unknown = new Set<string>();
-  for (const tok of extractSigningPlaceholders(text)) {
-    if (!isKnownSigningVariable(tok)) unknown.add(tok);
-  }
-  return { unknown: [...unknown] };
+  return { unknown: findUnknownPlaceholders(text, Object.keys(SIGNING_VARIABLE_DESCRIPTIONS)) };
 }
 
 // Inputs the caller has already resolved (term code, signer name, etc.). Kept

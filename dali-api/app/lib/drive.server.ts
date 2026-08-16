@@ -20,7 +20,7 @@
 //     ORGANISATION only — it does not change who can see or fill a form.
 
 import { prisma } from "~/lib/db";
-import { getPageAccess } from "~/lib/pageAccess.server";
+import { getPageAccess, getPageAccessBulk } from "~/lib/pageAccess.server";
 import { canViewFile } from "~/lib/fileAccess.server";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -169,10 +169,13 @@ async function loadLabPages(userSub: string, request?: Request): Promise<DriveIt
     },
   });
 
+  // One batched pageShare query instead of N individual ones.
+  const accessMap = await getPageAccessBulk(userSub, rows, request);
+
   const items: DriveItem[] = [];
   for (const row of rows) {
-    const access = await getPageAccess(userSub, row, request);
-    if (!access.canView) continue;
+    const access = accessMap.get(row.id);
+    if (!access?.canView) continue;
     items.push(
       row.kind === "Folder"
         ? {
@@ -335,17 +338,22 @@ async function loadLabFiles(userSub: string, request?: Request): Promise<DriveIt
       currentVersion: { select: { sizeBytes: true } },
     },
   });
+  // Memoize canViewFile per distinct folderPageId: all files sharing the same
+  // folderPageId see the same ancestor walk result, so we compute it once.
+  const folderAccessCache = new Map<string, Promise<boolean>>();
+  const canViewFolder = (folderId: string): Promise<boolean> => {
+    let p = folderAccessCache.get(folderId);
+    if (!p) {
+      p = canViewFile(userSub, { workspaceType: "Lab", workspaceId: null, folderPageId: folderId }, request);
+      folderAccessCache.set(folderId, p);
+    }
+    return p;
+  };
+
   const out: DriveItem[] = [];
   for (const f of rows) {
     // Fast path: files at the lab root (no folder) skip the access check.
-    if (
-      f.folderPageId &&
-      !(await canViewFile(
-        userSub,
-        { workspaceType: "Lab", workspaceId: null, folderPageId: f.folderPageId },
-        request,
-      ))
-    ) {
+    if (f.folderPageId && !(await canViewFolder(f.folderPageId))) {
       continue;
     }
     out.push({
@@ -467,10 +475,19 @@ async function loadEmailTemplates(): Promise<DriveItem[]> {
 }
 
 /** Load forms. Only called when the viewer passes the `canViewForms` gate.
- *  `folderPageId` sets the tree position; it does not change form visibility. */
-async function loadForms(): Promise<DriveItem[]> {
+ *  `folderPageId` sets the tree position; it does not change form visibility.
+ *
+ *  When `scopeFolderIds` is provided the query is narrowed to forms that are
+ *  either unplaced (folderPageId null) or placed in one of those folders —
+ *  avoiding a full-table scan. Pass all drive folder ids across every scope
+ *  to ensure no placed form is missed. */
+export async function loadForms(scopeFolderIds?: string[]): Promise<DriveItem[]> {
+  const where =
+    scopeFolderIds !== undefined
+      ? { OR: [{ folderPageId: null }, { folderPageId: { in: scopeFolderIds } }] }
+      : {};
   const rows = await prisma.form.findMany({
-    where: {},
+    where,
     orderBy: { updatedAt: "desc" },
     select: {
       id: true,
@@ -531,6 +548,14 @@ export interface LoadDriveScopeOptions {
    * Callers from route loaders should pass their `request` object.
    */
   request?: Request;
+  /**
+   * Pre-fetched form items for this scope, already filtered to forms whose
+   * folderPageId belongs to this scope (or unplaced forms for the Lab scope).
+   * When provided, `loadDriveScope` skips its own `loadForms()` call —
+   * allowing the caller (loadDriveScopes) to fetch all forms in one query and
+   * partition per scope, instead of each scope firing its own full-table scan.
+   */
+  preloadedForms?: DriveItem[];
 }
 
 /**
@@ -553,6 +578,7 @@ export async function loadDriveScope({
   canManageAgreements = false,
   canManageEmailTemplates = false,
   request,
+  preloadedForms,
 }: LoadDriveScopeOptions): Promise<DriveItem[]> {
   if (scope.kind === "Member") {
     // Private drive: the viewer's own personal notes + files, owner-scoped. No
@@ -569,10 +595,9 @@ export async function loadDriveScope({
     // to all lab members (except scoped-folder files, filtered in loadLabFiles).
     // Project-owned files are NOT included here — they appear only in their
     // respective project scope.
-    const [pages, files, forms, agreements, rubrics, emailTemplates] = await Promise.all([
+    const [pages, files, agreements, rubrics, emailTemplates] = await Promise.all([
       loadLabPages(userSub, request),
       loadLabFiles(userSub, request),
-      canViewForms ? loadForms() : Promise.resolve([] as DriveItem[]),
       // Agreements, rubrics, and email templates are all Core-only artifacts
       // living under the Core drive (Agreements / Rubrics / Templates). All
       // gated on real Core, derived upstream — never widened for the hiring team.
@@ -580,6 +605,9 @@ export async function loadDriveScope({
       canManageAgreements ? loadRubrics() : Promise.resolve([] as DriveItem[]),
       canManageEmailTemplates ? loadEmailTemplates() : Promise.resolve([] as DriveItem[]),
     ]);
+    // Use preloaded forms when the caller has already fetched them (avoids a
+    // repeated full-table scan when loadDriveScopes pre-fetches all at once).
+    const forms = preloadedForms ?? (canViewForms ? await loadForms() : []);
     return [...pages, ...files, ...forms, ...agreements, ...rubrics, ...emailTemplates];
   }
 
@@ -589,11 +617,13 @@ export async function loadDriveScope({
   // Verify the project exists (and implicitly that the caller has already gated
   // on project access — we don't re-check membership here; the route loader
   // must enforce it before calling loadDriveScope).
-  const [pages, files, forms] = await Promise.all([
+  const [pages, files] = await Promise.all([
     loadProjectPages(projectId),
     loadFiles([projectId]),
-    canViewForms ? loadForms() : Promise.resolve([] as DriveItem[]),
   ]);
+  // Use preloaded forms when the caller has already fetched them (avoids a
+  // repeated full-table scan when loadDriveScopes pre-fetches all at once).
+  const forms = preloadedForms ?? (canViewForms ? await loadForms() : []);
 
   return [...pages, ...files, ...forms];
 }

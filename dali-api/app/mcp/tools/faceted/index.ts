@@ -8,6 +8,7 @@ import { MANAGE_STORY_TOOL } from "./manage-story";
 import { MANAGE_TIME_ENTRY_TOOL } from "./manage-time-entry";
 import { MANAGE_MANUAL_BLOCK_TOOL } from "./manage-manual-block";
 import { MANAGE_DOCUMENT_SHARING_TOOL } from "./manage-document-sharing";
+import { MANAGE_PROJECT_TEMPLATE_TOOL } from "./manage-project-template";
 
 export const FACETED_TOOLS: McpTool[] = [
   MANAGE_SPRINT_TOOL,
@@ -16,4 +17,5 @@ export const FACETED_TOOLS: McpTool[] = [
   MANAGE_TIME_ENTRY_TOOL,
   MANAGE_MANUAL_BLOCK_TOOL,
   MANAGE_DOCUMENT_SHARING_TOOL,
+  MANAGE_PROJECT_TEMPLATE_TOOL,
 ];

@@ -2856,21 +2856,10 @@ async function main() {
       body: `Hi {{firstName}},\n\nWe are thrilled to offer you a spot in DALI!\n\nAfter a highly competitive review process, we believe you'll be a fantastic addition to our team. Please log in to your application portal to confirm your acceptance.\n\nOnboarding details and next steps will follow shortly. In the meantime, if you have any questions, feel free to reach out to us at applications@dali.dartmouth.edu.\n\nWelcome to the family — we can't wait to work with you!\n\nWarmly,\nThe DALI Team`,
     },
   ]
-  // Legacy single-table templates: still used by ApplicationReceived (auto on
-  // submit) and InterviewInviteMentor (manual batch only). The other 5 types
-  // are no longer auto-keyed by type — they live as named EmailTemplate parents
-  // and bind to a cycle via CycleDecisionEmail.
-  const legacyTypes = ['ApplicationReceived', 'InterviewInviteMentor'] as const
-  for (const legacyType of legacyTypes) {
-    const t = seedTemplates.find((s) => s.type === legacyType)
-    if (!t) continue
-    const existing = await prisma.legacyEmailTemplate.findFirst({ where: { type: legacyType } })
-    if (!existing) {
-      await prisma.legacyEmailTemplate.create({
-        data: { type: legacyType, subject: t.subject, body: t.body, version: 1, createdById: engLead.id },
-      })
-    }
-  }
+  // Every template lives as a named EmailTemplate parent + EmailTemplateVersion
+  // (below); ApplicationReceived / InterviewInviteMentor bind to a cycle via
+  // CycleNotificationEmail, the rest via CycleDecisionEmail. The old type-keyed
+  // LegacyEmailTemplate table has been dropped.
 
   // New rubric-pattern templates: one named parent + one EmailTemplateVersion
   // per legacy type. Deterministic ids match the migration backfill so re-seeding
@@ -3873,21 +3862,8 @@ async function main() {
         await seedPage("Internal Retro Notes", false);
       }
 
-      // Templates (idempotent by name): page + mentor-note.
-      const existingPageTpl = await prisma.pageTemplate.findFirst({
-        where: { name: "Project Brief" },
-        select: { id: true },
-      });
-      if (!existingPageTpl) {
-        await prisma.pageTemplate.create({
-          data: {
-            name: "Project Brief",
-            contentDocId: "page-template:project-brief",
-            isDefault: true,
-            workspaceTypes: ["Project"],
-          },
-        });
-      }
+      // Mentor-note template (idempotent by isDefault). Document templates are
+      // ordinary Lab pages flagged isTemplate now, created in-app — not seeded.
       const existingMentorTpl = await prisma.mentorNoteTemplate.findFirst({
         where: { isDefault: true },
         select: { id: true },

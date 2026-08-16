@@ -59,6 +59,19 @@ const STATUS_COPY: Record<
 };
 
 /**
+ * The built-in decision-email copy for a status — what actually sends when no
+ * template is bound for (offering, status). Exposed so the offering manager can
+ * preview the fallback instead of it being invisible until an applicant gets it.
+ */
+export function builtinDecisionEmail(
+  status: Exclude<EduApplicationStatus, "Submitted">,
+  offeringTitle: string,
+): { subject: string; body: string } {
+  const copy = STATUS_COPY[status];
+  return { subject: copy.title(offeringTitle), body: copy.body(offeringTitle) };
+}
+
+/**
  * In-app notification + (when a template is bound for this status) email for
  * an application status change. Email is best-effort — failures are logged,
  * never thrown; the in-app Notification and the portal status page are the

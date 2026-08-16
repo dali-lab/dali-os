@@ -12,7 +12,12 @@ import { Select } from "~/components/ui/floating";
 import type { Route } from "./+types/projects.hub";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { isCore, canViewStaffing } from "~/lib/roles";
+import { getUserRoles } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import {
+  captureProjectTemplate,
+  instantiateProjectTemplate,
+} from "~/lib/project-templates.server";
 import { projectsPills } from "../components/projectsPills";
 import { AreaPillNav } from "~/components/AreaPillNav";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
@@ -111,8 +116,11 @@ export async function loader({ request }: Route.LoaderArgs) {
       status: true,
       imageUrl: true,
       // Start term is derived as the earliest term in the set. Fetch ascending
-      // by sortKey and take the first.
+      // by sortKey and take the first row only — Postgres returns one row
+      // rather than the full set.
       projectTerms: {
+        orderBy: { term: { sortKey: "asc" } },
+        take: 1,
         select: { term: { select: { code: true, sortKey: true } } },
       },
       partners: {
@@ -124,9 +132,8 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const rows: ProjectRow[] = await Promise.all(
     projects.map(async (p) => {
-      const startTerm = p.projectTerms
-        .map((pt) => pt.term)
-        .sort((a, b) => a.sortKey - b.sortKey)[0];
+      // projectTerms is already ordered asc by sortKey and limited to 1 row.
+      const startTerm = p.projectTerms[0]?.term;
       return {
         id: p.id,
         name: p.name,
@@ -148,14 +155,15 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const filteringByTerm = !isAll && !!termId;
 
-  const [partnerOrgs, canEdit, canStaff, myAssignments, totalProjects] =
+  // getUserRoles(sub, request) resolves isCore and canViewStaffing in one cached
+  // round-trip — no second hit even though canViewStaffing delegates to isCore.
+  const [roles, partnerOrgs, myAssignments, totalProjects] =
     await timed(request, 'hub.meta', () => Promise.all([
+      getUserRoles(auth.user.sub, request),
       prisma.partnerOrg.findMany({
         orderBy: { name: "asc" },
         select: { id: true, name: true },
       }),
-      isCore(auth.user.sub),
-      canViewStaffing(auth.user.sub),
       // Which projects the viewer has (or had) an assignment on, any term —
       // drives the "My projects" toggle chip.
       prisma.projectAssignment.findMany({
@@ -167,6 +175,18 @@ export async function loader({ request }: Route.LoaderArgs) {
       // projects at all"; with the filter off, rows already is everything.
       filteringByTerm ? prisma.project.count() : Promise.resolve(0),
     ]));
+  const canEdit = roles.isCore;
+  const canStaff = roles.canViewStaffing;
+
+  // Project templates (Core + `templates` flag): the "Start from template"
+  // options in the create modal. Reuses the `roles` resolved above.
+  const templatesEnabled = canEdit && (await isFeatureEnabled("templates", auth.user.sub, roles, request));
+  const projectTemplates = templatesEnabled
+    ? await prisma.projectTemplate.findMany({
+        orderBy: [{ isDefault: "desc" }, { name: "asc" }],
+        select: { id: true, name: true, iconEmoji: true },
+      })
+    : [];
 
   return {
     rows,
@@ -177,6 +197,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     canStaff,
     myProjectIds: myAssignments.map((a) => a.projectId),
     hiddenByTermFilter: filteringByTerm && rows.length === 0 && totalProjects > 0,
+    templatesEnabled,
+    projectTemplates,
   };
 }
 
@@ -185,15 +207,65 @@ export async function action({ request }: Route.ActionArgs) {
   if (!auth.ok) return redirectToLogin(request);
   const portalRedirect = redirectApplicantToPortal(auth);
   if (portalRedirect) return portalRedirect;
-  if (!(await isCore(auth.user.sub))) {
+  const actionRoles = await getUserRoles(auth.user.sub, request);
+  if (!actionRoles.isCore) {
     return { error: "You don't have permission to create projects." };
   }
 
   const form = await request.formData();
+  const intent = (form.get("intent") as string | null) ?? "create";
+
+  // Capture: save an existing project's structure as a template (posted from
+  // the project page's "Save as template" control). Gated by the flag.
+  if (intent === "capture") {
+    if (!(await isFeatureEnabled("templates", auth.user.sub, actionRoles, request))) {
+      return { error: "Templates are not enabled." };
+    }
+    const projectId = (form.get("projectId") as string | null)?.trim() ?? "";
+    const templateName = (form.get("templateName") as string | null)?.trim() ?? "";
+    if (!projectId || !templateName) return { error: "A project and template name are required." };
+    try {
+      await captureProjectTemplate({
+        projectId,
+        name: templateName,
+        description: (form.get("templateDescription") as string | null) ?? null,
+        createdBy: auth.user.sub,
+        includeOverviewPage: form.get("includeOverviewPage") === "on",
+      });
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : "Could not save template." };
+    }
+    return redirect(`/projects/${projectId}`);
+  }
+
   const name = (form.get("name") as string | null)?.trim() ?? "";
   const description = (form.get("description") as string | null)?.trim() ?? "";
   const iconEmoji = (form.get("iconEmoji") as string | null)?.trim() ?? "";
   const status = (form.get("status") as string | null) ?? "Active";
+
+  // Start from template: when the create modal picked a template, build the new
+  // project from its blueprint instead of a blank one.
+  const fromTemplateId = (form.get("fromTemplateId") as string | null)?.trim() ?? "";
+  if (fromTemplateId) {
+    if (!(await isFeatureEnabled("templates", auth.user.sub, actionRoles, request))) {
+      return { error: "Templates are not enabled." };
+    }
+    if (!name) return { error: "A project name is required." };
+    const initialTermId = (form.get("firstTermId") as string | null)?.trim() || null;
+    const partnerOrgId = (form.get("partnerOrgId") as string | null)?.trim() || null;
+    try {
+      const created = await instantiateProjectTemplate({
+        templateId: fromTemplateId,
+        name,
+        createdBy: auth.user.sub,
+        initialTermId,
+        partnerOrgId,
+      });
+      return redirect(`/projects/${created.id}`);
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : "Could not create from template." };
+    }
+  }
   // The create form's term picker seeds the project's first term. The term set
   // is then editable on the detail page; the start term is derived as the
   // earliest member.
@@ -255,6 +327,8 @@ export default function ProjectsListPage() {
     canStaff,
     myProjectIds,
     hiddenByTermFilter,
+    templatesEnabled,
+    projectTemplates,
   } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -345,6 +419,27 @@ export default function ProjectsListPage() {
                 className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
               />
             </label>
+            {templatesEnabled && projectTemplates.length > 0 && (
+              <label className="flex flex-col gap-1 text-xs sm:col-span-2">
+                <span className="text-muted-foreground">Start from template (optional)</span>
+                <Select
+                  name="fromTemplateId"
+                  defaultValue=""
+                  placeholder="Blank project"
+                  options={[
+                    { value: "", label: "Blank project" },
+                    ...projectTemplates.map((t) => ({
+                      value: t.id,
+                      label: `${t.iconEmoji ? `${t.iconEmoji} ` : ""}${t.name}`,
+                    })),
+                  ]}
+                  buttonClassName="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                />
+                <span className="text-[11px] text-muted-foreground">
+                  Copies the template's epics, sprints, and tasks into the new project.
+                </span>
+              </label>
+            )}
             <label className="flex flex-col gap-1 text-xs">
               <span className="text-muted-foreground">Status</span>
               <Select

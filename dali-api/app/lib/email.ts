@@ -3,6 +3,7 @@
 // separated paragraphs in <p> tags and converting single newlines to <br/>.
 
 import DOMPurify from "isomorphic-dompurify";
+import { interpolateVars } from "~/lib/template-variables";
 
 export type InterpolationVars = {
   firstName: string;
@@ -15,15 +16,17 @@ export type InterpolationVars = {
 };
 
 export function interpolate(text: string, vars: InterpolationVars): string {
-  // Function form so $& / $1 / $$ in the substituted values aren't treated as backrefs.
-  return text
-    .replace(/\{\{firstName\}\}/g, () => vars.firstName)
-    .replace(/\{\{domain\}\}/g, () => vars.domain ?? "")
-    .replace(/\{\{time\}\}/g, () => vars.time ?? "")
-    .replace(/\{\{location\}\}/g, () => vars.location ?? "")
-    .replace(/\{\{meetingUrl\}\}/g, () => vars.meetingUrl ?? "")
-    .replace(/\{\{originalCloseDate\}\}/g, () => vars.originalCloseDate ?? "")
-    .replace(/\{\{newCloseDate\}\}/g, () => vars.newCloseDate ?? "");
+  // Delegate to the shared interpolator with the email vocabulary mapped to
+  // strings (missing optional vars → "", unknown tokens left as literal text).
+  return interpolateVars(text, {
+    firstName: vars.firstName,
+    domain: vars.domain ?? "",
+    time: vars.time ?? "",
+    location: vars.location ?? "",
+    meetingUrl: vars.meetingUrl ?? "",
+    originalCloseDate: vars.originalCloseDate ?? "",
+    newCloseDate: vars.newCloseDate ?? "",
+  });
 }
 
 // Sanitization is part of the contract: template bodies are user-authored

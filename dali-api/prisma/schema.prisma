@@ -241,7 +241,6 @@ model User {
   decisionsMade                           Decision[]                        @relation("DecisionMadeBy")
   applicationReviewsSubmitted             ApplicationReview[]               @relation("ApplicationReviewSubmittedBy")
   delibsSessionsOpened                    DelibsSession[]
-  legacyEmailTemplatesCreated             LegacyEmailTemplate[]
   emailTemplateVersionsCreated            EmailTemplateVersion[]
 
   // ─── Documents & files ───────────────────────────────────────────────────
@@ -1339,38 +1338,6 @@ model Session {
 }
 
 // ─── Email Templates ────────────────────────────────────────────────────────
-
-// Each value maps to one email template. Decision-related values mirror
-// DecisionType so releasing a Decision can look up its template directly.
-enum EmailTemplateType {
-  ApplicationReceived // confirmation after submission
-  Rejected // generic rejection (pre-interview)
-  RejectedPostInterview // rejection after interview stage
-  InvitedToInterview // applicant interview invite
-  InterviewInviteMentor // internal: reviewer/mentor interview assignment
-  Waitlisted
-  Accepted
-}
-
-// Legacy single-table email templates (PR #112). Retained while
-// ApplicationReceived and InterviewInviteMentor still use the global
-// type-keyed lookup. Decision-related types have moved to the new
-// EmailTemplate / EmailTemplateVersion / CycleDecisionEmail trio below.
-// To be dropped in a follow-up PR after legacy callers are migrated.
-model LegacyEmailTemplate {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-
-  type    EmailTemplateType
-  subject String
-  body    String
-  version Int
-
-  createdById String
-  createdBy   User   @relation(fields: [createdById], references: [id])
-
-  @@index([type, createdAt])
-}
 
 // Named, versioned email template — independent of any cycle. Mirrors
 // Rubric/RubricVersion. The "slot" a template fills (e.g. which DecisionType
@@ -2515,10 +2482,10 @@ model Project {
   status         ProjectStatus @default(Active)
 
   // Auto-created on Project creation: a top-level FreeForm Page in the
-  // Project workspace, seeded from the "Project Brief" PageTemplate. The
-  // workspace's Overview tab renders this page's contentDoc with a
-  // structured project header above. Nullable to allow Project creation in
-  // a transaction before the Page row exists; populated immediately after.
+  // Project workspace. The workspace's Overview tab renders this page's
+  // contentDoc with a structured project header above. Nullable to allow
+  // Project creation in a transaction before the Page row exists; populated
+  // immediately after.
   overviewPageId String? @unique
 
   // Product Requirement Doc — a collab Page, same pattern as overviewPageId
@@ -3112,6 +3079,27 @@ model TaskView {
   user User @relation(fields: [userId], references: [id])
 
   @@unique([taskId, userId])
+}
+
+// A reusable project blueprint: the shape of a project (epics + user stories,
+// sprints with relative day-offsets, and tasks with checklists) captured so a
+// new project can be spun up pre-populated. Standalone (no live FK to any one
+// project) — capture serialises, instantiate rebuilds. The `blueprint` JSON
+// shape is defined + versioned in app/lib/project-templates.server.ts.
+model ProjectTemplate {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+  iconEmoji   String?
+  isDefault   Boolean @default(false)
+  blueprint   Json
+  // Optional Lab/Project page duplicated as the new project's Overview doc.
+  overviewSourcePageId String?
+  // Free-form creator userId (loose, like other template models).
+  createdBy   String?
+  createdAt   DateTime @default(now())
+
+  @@index([isDefault])
 }
 
 // ─── Education ───────────────────────────────────────────────────────────────
@@ -4266,23 +4254,6 @@ enum ScopeKind {
   Private
   Lab
   Group
-}
-
-model PageTemplate {
-  id             String          @id @default(cuid())
-  name           String
-  description    String?
-  // Which workspace types this template is offered for. Empty array =
-  // available everywhere.
-  workspaceTypes WorkspaceType[]
-  // Template body. On Page create from this template, the new page's
-  // contentDoc is initialized from a clone of this doc.
-  contentDocId   String
-  iconEmoji      String?
-  isDefault      Boolean         @default(false)
-  // Free-form creator userId.
-  createdBy      String?
-  createdAt      DateTime        @default(now())
 }
 
 // ─── Mentorship ──────────────────────────────────────────────────────────────

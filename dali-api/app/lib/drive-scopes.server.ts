@@ -2,7 +2,7 @@
 // lens and applies the form-placement de-dup logic so this code never reaches
 // the client bundle (*.server.ts convention enforced by client-bundle-leak test).
 
-import { loadDriveScope } from "~/lib/drive.server";
+import { loadDriveScope, loadForms } from "~/lib/drive.server";
 import type { DriveItem } from "~/lib/drive.server";
 import { ensureCoreDriveRoot, ensureHiringDriveRoot } from "~/lib/pages";
 import { favoritePageIds } from "~/lib/user-pages.server";
@@ -90,14 +90,14 @@ export async function loadDriveScopes({
   hasHiringAccess: boolean;
   request: Request;
 }): Promise<DriveTreeScope[]> {
-  // Provision the Core drive root on first Core visit (idempotent). Only Core
-  // members trigger creation; the folder is Core-scoped so non-Core never see it.
-  const coreRoot = isCore ? await ensureCoreDriveRoot(userSub) : null;
-  // Same for the Hiring drive: hiring-team members trigger creation; the folder
-  // is scoped to the "hiring" group so nobody else sees it.
-  const hiringRoot = hasHiringAccess ? await ensureHiringDriveRoot(userSub) : null;
-  // The viewer's favorited page ids — applied to every scope's items below.
-  const favIds = await favoritePageIds(userSub);
+  // Provision Core and Hiring drive roots in parallel (both are idempotent).
+  // Only the relevant member types trigger creation; non-members receive null.
+  const [coreRoot, hiringRoot, favIds] = await Promise.all([
+    isCore ? ensureCoreDriveRoot(userSub) : Promise.resolve(null),
+    hasHiringAccess ? ensureHiringDriveRoot(userSub) : Promise.resolve(null),
+    // The viewer's favorited page ids — applied to every scope's items below.
+    favoritePageIds(userSub),
+  ]);
   const projectIds = projectWorkspaces.map((w) => w.key);
   const projectNames = new Map(projectWorkspaces.map((w) => [w.key, w.label]));
   const projectEmojis = new Map(
@@ -111,12 +111,14 @@ export async function loadDriveScopes({
   // Rubrics / Templates) and are NEVER widened for the hiring team.
   const labCanViewForms = canViewForms || hasHiringAccess;
 
+  // Phase 1: load pages + files for every scope WITHOUT forms, so we can collect
+  // all drive folder ids in one pass before loading forms.
   const [memberItems, labItems, ...projectItemArrays] = await Promise.all([
     loadDriveScope({ userSub, scope: { kind: "Member" }, request }),
     loadDriveScope({
       userSub,
       scope: { kind: "Lab" },
-      canViewForms: labCanViewForms,
+      canViewForms: false, // forms loaded separately below
       // Agreements, rubrics, email templates → REAL Core only, never widened.
       canManageAgreements: isCore,
       canManageEmailTemplates: isCore,
@@ -126,11 +128,26 @@ export async function loadDriveScopes({
       loadDriveScope({
         userSub,
         scope: { kind: "Project", projectId },
-        canViewForms,
+        canViewForms: false, // forms loaded separately below
         request,
       }),
     ),
   ]);
+
+  // Phase 2: load all forms in ONE query, scoped to folders that exist across
+  // all drives + unplaced forms. Then partition per scope in memory.
+  // This replaces the previous pattern of one full-table scan per scope.
+  const needForms = labCanViewForms || canViewForms;
+  let allForms: DriveItem[] = [];
+  if (needForms) {
+    // Collect every folder id visible across all scopes so the query covers
+    // every possible folderPageId placement.
+    const allFolderIds = [
+      ...labItems.filter((i) => i.type === "folder").map((i) => i.id),
+      ...projectItemArrays.flatMap((arr) => arr.filter((i) => i.type === "folder").map((i) => i.id)),
+    ];
+    allForms = await loadForms(allFolderIds);
+  }
 
   // Split the Core subtree out of the Lab items (Core members only). The Core
   // root + its descendants become their own drive; everything else stays in Lab.
@@ -138,6 +155,7 @@ export async function loadDriveScopes({
   // viewers, so this is a no-op for them.
   let coreItems: DriveItem[] = [];
   let labVisibleItems = labItems;
+  let coreFolderIds = new Set<string>();
   if (coreRoot) {
     const inCore = subtreeIds(labItems, coreRoot.id);
     labVisibleItems = labItems.filter((it) => !inCore.has(it.id));
@@ -147,10 +165,17 @@ export async function loadDriveScopes({
       .map((it) =>
         it.parentFolderId === coreRoot.id ? { ...it, parentFolderId: null } : it,
       );
+    // Collect Core folder ids for form partitioning. Include the core root
+    // itself so forms placed directly at the core root level are routed here.
+    coreFolderIds = new Set([
+      coreRoot.id,
+      ...coreItems.filter((i) => i.type === "folder").map((i) => i.id),
+    ]);
   }
 
   // Same split for the Hiring drive, on the post-Core lab items.
   let hiringItems: DriveItem[] = [];
+  let hiringFolderIds = new Set<string>();
   if (hiringRoot) {
     const inHiring = subtreeIds(labVisibleItems, hiringRoot.id);
     const remaining = labVisibleItems.filter((it) => !inHiring.has(it.id));
@@ -160,6 +185,13 @@ export async function loadDriveScopes({
         it.parentFolderId === hiringRoot.id ? { ...it, parentFolderId: null } : it,
       );
     labVisibleItems = remaining;
+    // Collect Hiring folder ids for form partitioning. Include the hiring root
+    // itself: forms adopted by ensureHiringDriveRoot are placed at rootId
+    // directly (folderPageId = hiringRoot.id), so the root id must be present.
+    hiringFolderIds = new Set([
+      hiringRoot.id,
+      ...hiringItems.filter((i) => i.type === "folder").map((i) => i.id),
+    ]);
   }
 
   // Managed artifact types — agreements, rubrics, email templates — live ONLY
@@ -173,13 +205,10 @@ export async function loadDriveScopes({
       it.type !== "rubric" &&
       it.type !== "emailTemplate",
   );
-  // Forms may live at the Lab top level (they're general Drive citizens), but a
-  // viewer who only got them via hiring access shouldn't see them in Lab.
-  if (!canViewForms) {
-    labVisibleItems = labVisibleItems.filter((it) => it.type !== "form");
-  }
+  // (Forms are no longer in labVisibleItems — they were not loaded in phase 1.
+  //  Form filtering happens below via the allForms partition pass.)
 
-  // Build a folder-id set per scope for the de-dup pass below.
+  // Build a folder-id set per scope for the form de-dup pass below.
   const labFolderIds = new Set(
     labVisibleItems.filter((i) => i.type === "folder").map((i) => i.id),
   );
@@ -187,24 +216,42 @@ export async function loadDriveScopes({
     (arr) => new Set(arr.filter((i) => i.type === "folder").map((i) => i.id)),
   );
 
-  // Keep a form in a scope only if its folderPageId belongs to a folder in
-  // THAT scope. Unplaced forms (folderPageId = null) go to the Lab scope only.
-  function filterScopeForms(
-    items: DriveItem[],
+  // Partition the pre-fetched forms into per-scope lists using the same
+  // placement rule as before: a form belongs to the scope whose folder its
+  // folderPageId resolves to; unplaced forms (folderPageId = null) go to the
+  // Lab scope only. Forms widen: labCanViewForms includes the hiring-team gate;
+  // per-project forms use the un-widened canViewForms.
+  function pickScopeForms(
     scopeFolderIds: Set<string>,
     isLab: boolean,
+    viewerCanSeeForms: boolean,
   ): DriveItem[] {
-    return items.filter((item) => {
-      if (item.type !== "form") return true;
+    if (!viewerCanSeeForms) return [];
+    return allForms.filter((item) => {
       if (item.parentFolderId === null) return isLab;
       return scopeFolderIds.has(item.parentFolderId);
     });
   }
 
-  const filteredLab = filterScopeForms(labVisibleItems, labFolderIds, true);
-  const filteredProjects = projectItemArrays.map((arr, i) =>
-    filterScopeForms(arr, projectFolderIdSets[i], false),
+  // Core and Hiring forms: Core is always viewable only by Core members (who
+  // also have isCore=true → labCanViewForms=true). Hiring: hiring-team members
+  // see forms in the Hiring drive (labCanViewForms covers them).
+  const coreForms = pickScopeForms(coreFolderIds, false, isCore);
+  const hiringForms = pickScopeForms(hiringFolderIds, false, labCanViewForms);
+  // Lab forms gate on the UN-widened canViewForms: a viewer who only reached
+  // forms via hiring access (hasHiringAccess but !canViewForms) must NOT see
+  // them in the Lab scope — they see hiring forms in the Hiring drive instead.
+  // This mirrors the original `if (!canViewForms) drop lab forms` behaviour.
+  const labForms = pickScopeForms(labFolderIds, true, canViewForms);
+  const projectForms = projectItemArrays.map((_, i) =>
+    pickScopeForms(projectFolderIdSets[i], false, canViewForms),
   );
+
+  // Compose final item lists: pages+files from phase 1, forms from phase 2.
+  const finalCoreItems = [...coreItems, ...coreForms];
+  const finalHiringItems = [...hiringItems, ...hiringForms];
+  const filteredLab = [...labVisibleItems, ...labForms];
+  const filteredProjects = projectItemArrays.map((arr, i) => [...arr, ...projectForms[i]]);
 
   return [
     // The viewer's private drive leads — personal notes have no forms to
@@ -215,12 +262,12 @@ export async function loadDriveScopes({
     // (which implies the viewer is Core), even when empty — it's a place to
     // create Core-scoped docs. Creates/moves land inside the Core root folder.
     ...(coreRoot
-      ? [{ id: "core", label: "Core", iconEmoji: null, items: tagFavorites(coreItems, favIds), rootFolderId: coreRoot.id }]
+      ? [{ id: "core", label: "Core", iconEmoji: null, items: tagFavorites(finalCoreItems, favIds), rootFolderId: coreRoot.id }]
       : []),
     // Hiring drive: auto-provisioned, hiring-team-only. Home for hiring Forms,
     // Rubrics, and Confidentiality agreements. Creates/moves land inside it.
     ...(hiringRoot
-      ? [{ id: "hiring", label: "Hiring", iconEmoji: null, items: tagFavorites(hiringItems, favIds), rootFolderId: hiringRoot.id }]
+      ? [{ id: "hiring", label: "Hiring", iconEmoji: null, items: tagFavorites(finalHiringItems, favIds), rootFolderId: hiringRoot.id }]
       : []),
     ...projectIds.map((id, i) => ({
       id,

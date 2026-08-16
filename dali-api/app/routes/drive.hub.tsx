@@ -1,4 +1,4 @@
-import { redirect, useLoaderData, useSearchParams, useNavigate, useRevalidator, useLocation } from "react-router";
+import { redirect, Link, useLoaderData, useSearchParams, useNavigate, useRevalidator, useLocation } from "react-router";
 import type { ShouldRevalidateFunctionArgs } from "react-router";
 import type { Route } from "./+types/drive.hub";
 import {
@@ -15,9 +15,8 @@ import {
 import { useState, useCallback, useEffect, useRef, useId, useMemo } from "react";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { canViewForms as checkCanViewForms, getUserRoles } from "~/lib/roles";
+import { getUserRoles, currentTerm } from "~/lib/roles";
 import { prisma } from "~/lib/db";
-import { loader as docsLoader } from "~/routes/documents.hub";
 import { loadDriveScopes } from "~/lib/drive-scopes.server";
 import type { DriveTreeScope } from "~/lib/drive-scopes.server";
 import type { DriveItem } from "~/lib/drive.server";
@@ -29,6 +28,7 @@ import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
 import { Menu, Select } from "~/components/ui/floating";
 import { Modal } from "~/components/Modal";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 
 export const meta: Route.MetaFunction = () => [{ title: "Drive · DALI OS" }];
 
@@ -54,9 +54,9 @@ export function shouldRevalidate({
 // The unified Drive hub, surfaced when the drive-consolidation feature flag is
 // on. Browse is the only main view. Type filter chips (All · Documents · Files ·
 // Forms) filter the tree. The New ▾ menu includes real upload and from-template
-// flows. Agreements and Templates shelves have been removed: signed agreements
-// stay in Settings → Agreements; templates are now a creation aid in the New
-// menu only.
+// flows. Signed agreements stay in Settings → Agreements. Templates are a
+// creation aid in the New menu, plus a browseable gallery at /drive/templates
+// (surfaced by the Templates toolbar link when the `templates` flag is on).
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
@@ -64,27 +64,45 @@ export async function loader({ request }: Route.LoaderArgs) {
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) return partnerRedirect;
 
-  const roles = await getUserRoles(auth.user.sub);
-  const userCanViewForms = await checkCanViewForms(auth.user.sub);
+  const roles = await getUserRoles(auth.user.sub, request);
   // isCore is the gate for agreement authoring. Passed down as canManageAgreements
   // so drive.server.ts doesn't re-derive it (matches the canViewForms pattern).
+  const userCanViewForms = roles.canViewForms;
   const userCanManageAgreements = roles.isCore;
   // Hiring-drive gate — matches the "hiring" dynamic group (Core + domain leads
   // + cycle reviewers/interviewers) so the scope shows for exactly the people
   // the Hiring root is scoped to.
+  const [hiringReviewer, term] = await Promise.all([
+    roles.isCore || roles.isDomainLead || roles.isInterviewer
+      ? Promise.resolve(null) // already qualifies; skip the DB hit
+      : prisma.cycleReviewer.findFirst({
+          where: { userId: auth.user.sub },
+          select: { id: true },
+        }),
+    currentTerm(request),
+  ]);
   const hasHiringAccess =
-    roles.isCore ||
-    roles.isDomainLead ||
-    roles.isInterviewer ||
-    (await prisma.cycleReviewer.findFirst({
-      where: { userId: auth.user.sub },
-      select: { id: true },
-    })) !== null;
+    roles.isCore || roles.isDomainLead || roles.isInterviewer || hiringReviewer !== null;
 
-  const docsResult = await docsLoader({ request } as Parameters<typeof docsLoader>[0]);
-  if (docsResult instanceof Response) return docsResult;
-
-  const projectWorkspaces = docsResult.workspaces.filter((w) => w.kind === "project");
+  // Load only the project list needed to build Drive scopes — same access
+  // filter as documents.hub: Core sees all projects; others see only projects
+  // they're staffed on, scoped to the current term (matching the default
+  // ?term= behavior when docsLoader is called with a /drive URL).
+  const termId = term?.id ?? null;
+  const rawProjects = await prisma.project.findMany({
+    where: {
+      ...(termId ? { projectTerms: { some: { termId } } } : {}),
+      ...(roles.isCore ? {} : { assignments: { some: { userId: auth.user.sub } } }),
+    },
+    orderBy: [{ status: "asc" }, { name: "asc" }],
+    select: { id: true, name: true, iconEmoji: true },
+  });
+  const projectWorkspaces = rawProjects.map((p) => ({
+    key: p.id,
+    label: p.name,
+    kind: "project" as const,
+    projectIconEmoji: p.iconEmoji,
+  }));
 
   const driveScopes = await loadDriveScopes({
     userSub: auth.user.sub,
@@ -128,12 +146,22 @@ const TYPE_FILTERS: {
 
 // Page templates only — email/signing/mentor template systems stay in their
 // admin homes. Opens as a modal so it doesn't require a submenu.
+// Where a "From template" create lands. Templates themselves are Lab-wide (the
+// shared set), but the new doc is created into whichever scope you're browsing.
+export type TemplateTarget = {
+  targetWorkspaceType: "Lab" | "Project";
+  targetWorkspaceId?: string;
+  targetParentPageId?: string;
+};
+
 function TemplatePicker({
   open,
   onClose,
+  target,
 }: {
   open: boolean;
   onClose: () => void;
+  target: TemplateTarget;
 }) {
   const titleId = useId();
   const [templates, setTemplates] = useState<{ id: string; title: string; iconEmoji: string | null }[]>([]);
@@ -175,7 +203,7 @@ function TemplatePicker({
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ templatePageId: templateId, targetWorkspaceType: "Lab" }),
+        body: JSON.stringify({ templatePageId: templateId, ...target }),
       });
       if (!res.ok) throw new Error("Failed to create from template");
       const { id } = await res.json() as { id: string };
@@ -696,7 +724,7 @@ function NewMenu({
           <span data-testid="drive-new-agreement">New agreement</span>
         </Menu.Item>
       )}
-      {isLab && (
+      {scope.id !== "mine" && (
         <>
           <Menu.Separator />
           <Menu.Item icon={<LayoutTemplate className="w-3.5 h-3.5" />} onSelect={onTemplate}>
@@ -722,6 +750,7 @@ export default function DriveHub() {
   const toast = useToast();
   const revalidator = useRevalidator();
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
+  const templatesEnabled = useFeatureFlag("templates");
   // Search is a client-side filter over already-loaded items, so it lives in
   // local state — keeping it out of the URL avoids a loader revalidation on
   // every keystroke. Scope/folder/type stay in the URL (linkable, back/forward).
@@ -1079,6 +1108,20 @@ export default function DriveHub() {
 
   const currentActions = effectiveScopeId ? scopeActionsMap.get(effectiveScopeId) : undefined;
 
+  // "From template" lands in the scope currently being browsed (project → that
+  // project; Lab/Core/Hiring → the Lab workspace, into the scoped root folder).
+  const templateTarget: TemplateTarget = useMemo(() => {
+    if (!currentScope || scopeKindOf(currentScope.id) !== "project") {
+      const parent = currentFolderId ?? currentScope?.rootFolderId ?? undefined;
+      return { targetWorkspaceType: "Lab", targetParentPageId: parent };
+    }
+    return {
+      targetWorkspaceType: "Project",
+      targetWorkspaceId: currentScope.id,
+      targetParentPageId: currentFolderId ?? undefined,
+    };
+  }, [currentScope, currentFolderId]);
+
   const caps = { canViewForms, canManageAgreements };
   const visibleFilters = TYPE_FILTERS.filter((f) => !f.requiresCap || caps[f.requiresCap]);
 
@@ -1111,6 +1154,23 @@ export default function DriveHub() {
       />
     ) : null;
 
+  // Toolbar actions: the Templates gallery link (flag-gated, shown at every
+  // scope including the root) alongside the scope's New menu.
+  const toolbarActions = (
+    <>
+      {templatesEnabled && (
+        <Link
+          to="/drive/templates"
+          className="shrink-0 inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-foreground hover:bg-muted/40 transition-colors"
+        >
+          <LayoutTemplate className="w-3.5 h-3.5" />
+          Templates
+        </Link>
+      )}
+      {newMenuNode}
+    </>
+  );
+
   return (
     <div className="w-full flex flex-col gap-3 p-4">
       {/* The breadcrumb (with the Drive root) is the sole title — no separate
@@ -1134,7 +1194,7 @@ export default function DriveHub() {
         onMoveToScope={onMoveToScope}
         onUploadFiles={currentScope ? uploadFiles : undefined}
         filterControl={filterControl}
-        newMenu={newMenuNode}
+        newMenu={toolbarActions}
       />
 
       {/* Hidden upload input (driven by the New menu) + template picker modal */}
@@ -1146,7 +1206,11 @@ export default function DriveHub() {
         tabIndex={-1}
         onChange={handleFileChange}
       />
-      <TemplatePicker open={templatePickerOpen} onClose={() => setTemplatePickerOpen(false)} />
+      <TemplatePicker
+        open={templatePickerOpen}
+        onClose={() => setTemplatePickerOpen(false)}
+        target={templateTarget}
+      />
 
       {movePicker && (
         <DestinationPicker

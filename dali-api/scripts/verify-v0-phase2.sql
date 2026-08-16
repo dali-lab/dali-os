@@ -76,7 +76,7 @@ SELECT
   confrelid::regclass::text AS references_table
 FROM pg_constraint
 WHERE contype = 'f'
-  AND conrelid::regclass::text IN ('"CycleReviewer"', '"CycleInterviewer"', '"Decision"', '"ApplicationReview"', '"DelibsSession"', '"LegacyEmailTemplate"', '"EmailTemplateVersion"', '"ConfidentialityAgreementVersion"', '"DomainLeadAssignment"', '"DALIMember"')
+  AND conrelid::regclass::text IN ('"CycleReviewer"', '"CycleInterviewer"', '"Decision"', '"ApplicationReview"', '"DelibsSession"', '"EmailTemplateVersion"', '"ConfidentialityAgreementVersion"', '"DomainLeadAssignment"', '"DALIMember"')
   AND (conname LIKE '%userId%' OR conname LIKE '%madeBy%' OR conname LIKE '%submittedBy%' OR conname LIKE '%openedBy%' OR conname LIKE '%createdBy%')
 ORDER BY conrelid::regclass::text, conname;
 -- Expect: all references_table values = `"User"` (or "Term" for DLA_termId_fkey).
