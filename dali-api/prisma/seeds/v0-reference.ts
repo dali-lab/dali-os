@@ -9,11 +9,11 @@
  *   - 17 Domain rows (with code, displayName, isInternProgram). Backfills
  *     code/displayName on existing Domain rows where missing.
  *   - Term rows: 26W..28F (an 8-quarter window).
- *   - 7 PageTemplate rows (Empty, Project Brief, Sprint Retro, Sprint Goals,
- *     Meeting Notes, Decision Log, Onboarding Doc) — empty contentDoc; the
- *     Page Tree UX track replaces the contentDoc bodies when it ships.
  *   - 1 MentorNoteTemplate row (default) — empty contentDoc; mentorship track
  *     replaces.
+ *
+ * Document ("page") templates are no longer seeded here: they are ordinary Lab
+ * pages flagged isTemplate, created in-app via "Save as template".
  *
  * NOT seeded (out of scope for v0 reference data):
  *   - JobCodeLookup — needs real Dartmouth payroll mapping; the Admin Console
@@ -186,35 +186,6 @@ async function seedTerms() {
   console.log(`✓ Seeded ${REGISTRAR_DATES.length} terms.`);
 }
 
-async function seedPageTemplates() {
-  // Stub collab doc id per template. The Page Tree UX track replaces these
-  // with real CollabDocument rows whose bodies encode the template content.
-  const TEMPLATES = [
-    { name: "Empty", iconEmoji: "📄", isDefault: true },
-    { name: "Project Brief", iconEmoji: "📋", isDefault: false },
-    { name: "Sprint Retro", iconEmoji: "🔁", isDefault: false },
-    { name: "Sprint Goals", iconEmoji: "🎯", isDefault: false },
-    { name: "Meeting Notes", iconEmoji: "📝", isDefault: false },
-    { name: "Decision Log", iconEmoji: "✅", isDefault: false },
-    { name: "Onboarding Doc", iconEmoji: "🚀", isDefault: false },
-  ] as const;
-
-  for (const t of TEMPLATES) {
-    const existing = await prisma.pageTemplate.findFirst({ where: { name: t.name } });
-    if (existing) continue;
-    await prisma.pageTemplate.create({
-      data: {
-        name: t.name,
-        contentDocId: `page-template:${t.name.toLowerCase().replace(/\s+/g, "-")}`,
-        iconEmoji: t.iconEmoji,
-        isDefault: t.isDefault,
-        workspaceTypes: [],
-      },
-    });
-  }
-  console.log(`✓ Seeded ${TEMPLATES.length} page templates (existing rows untouched).`);
-}
-
 async function seedMentorNoteTemplate() {
   const existing = await prisma.mentorNoteTemplate.findFirst({ where: { isDefault: true } });
   if (existing) {
@@ -281,7 +252,6 @@ async function main() {
   console.log("Running v0 reference-data seed against", process.env.DATABASE_URL?.split("@")[1]?.split("/")[0] ?? "(unknown DB)");
   await seedDomains();
   await seedTerms();
-  await seedPageTemplates();
   await seedMentorNoteTemplate();
   await seedDocTags();
   // MCP OAuth clients are no longer seeded — clients register themselves

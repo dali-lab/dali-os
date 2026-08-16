@@ -1677,6 +1677,9 @@ export default function ProjectDetail() {
             actionError={actionData?.error}
           />
           {canEditScope && (
+            <SaveAsTemplateSection projectId={project.id} projectName={project.name} />
+          )}
+          {canEditScope && (
             <DeleteProjectSection projectId={project.id} projectName={project.name} />
           )}
         </Modal>
@@ -2989,6 +2992,50 @@ function OverviewTab({
 // Admin/Core only. Deletion is permanent and the server refuses it once a
 // project has any history, so the affordance stays tucked inside settings and
 // asks for the project name typed back before it fires.
+// Save the project's structure (epics, sprints, tasks, checklists) as a
+// reusable template. Posts to the /projects action (intent=capture). Gated by
+// the `templates` flag. Sibling of the Danger zone in the settings modal.
+function SaveAsTemplateSection({
+  projectId,
+  projectName,
+}: {
+  projectId: string;
+  projectName: string;
+}) {
+  const templatesEnabled = useFeatureFlag("templates");
+  if (!templatesEnabled) return null;
+  return (
+    <section className="mt-6 border-t border-border pt-5">
+      <h3 className="text-sm font-semibold text-foreground">Save as template</h3>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Capture this project's epics, sprints, and tasks (with checklists) as a reusable
+        template. Sprint dates are stored as offsets and rebased when a new project is created
+        from it. Collaborative doc bodies are not copied.
+      </p>
+      <Form method="post" action="/projects" className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end">
+        <input type="hidden" name="intent" value="capture" />
+        <input type="hidden" name="projectId" value={projectId} />
+        <label className="flex flex-1 flex-col gap-1 text-xs">
+          <span className="text-muted-foreground">Template name</span>
+          <input
+            name="templateName"
+            required
+            defaultValue={`${projectName} template`}
+            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+          />
+        </label>
+        <label className="flex items-center gap-1.5 text-xs text-muted-foreground pb-2">
+          <input type="checkbox" name="includeOverviewPage" className="accent-accent-coral" />
+          Include Overview page
+        </label>
+        <button type="submit" className="rounded-md bg-accent-coral px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-coral/90 transition-colors">
+          Save template
+        </button>
+      </Form>
+    </section>
+  );
+}
+
 function DeleteProjectSection({
   projectId,
   projectName,
