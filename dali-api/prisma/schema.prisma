@@ -241,7 +241,6 @@ model User {
   decisionsMade                           Decision[]                        @relation("DecisionMadeBy")
   applicationReviewsSubmitted             ApplicationReview[]               @relation("ApplicationReviewSubmittedBy")
   delibsSessionsOpened                    DelibsSession[]
-  legacyEmailTemplatesCreated             LegacyEmailTemplate[]
   emailTemplateVersionsCreated            EmailTemplateVersion[]
 
   // ─── Documents & files ───────────────────────────────────────────────────
@@ -1339,38 +1338,6 @@ model Session {
 }
 
 // ─── Email Templates ────────────────────────────────────────────────────────
-
-// Each value maps to one email template. Decision-related values mirror
-// DecisionType so releasing a Decision can look up its template directly.
-enum EmailTemplateType {
-  ApplicationReceived // confirmation after submission
-  Rejected // generic rejection (pre-interview)
-  RejectedPostInterview // rejection after interview stage
-  InvitedToInterview // applicant interview invite
-  InterviewInviteMentor // internal: reviewer/mentor interview assignment
-  Waitlisted
-  Accepted
-}
-
-// Legacy single-table email templates (PR #112). Retained while
-// ApplicationReceived and InterviewInviteMentor still use the global
-// type-keyed lookup. Decision-related types have moved to the new
-// EmailTemplate / EmailTemplateVersion / CycleDecisionEmail trio below.
-// To be dropped in a follow-up PR after legacy callers are migrated.
-model LegacyEmailTemplate {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-
-  type    EmailTemplateType
-  subject String
-  body    String
-  version Int
-
-  createdById String
-  createdBy   User   @relation(fields: [createdById], references: [id])
-
-  @@index([type, createdAt])
-}
 
 // Named, versioned email template — independent of any cycle. Mirrors
 // Rubric/RubricVersion. The "slot" a template fills (e.g. which DecisionType
