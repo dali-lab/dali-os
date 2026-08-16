@@ -7,15 +7,24 @@
 
 import type { NotificationType } from "~/generated/prisma/enums";
 import { renderEmail, type InterpolationVars } from "~/lib/email";
+import {
+  TEMPLATE_VARIABLES_REGISTRY,
+  extractPlaceholders,
+} from "~/lib/template-variables";
 
+// Re-export so existing importers/tests keep their entry point.
+export { extractPlaceholders };
+
+// Descriptions for the email vocabulary, sourced from the shared registry so
+// there's one place the copy lives.
 export const TEMPLATE_VARIABLE_DESCRIPTIONS: Record<keyof InterpolationVars, string> = {
-  firstName: "The recipient's first name.",
-  domain: "The DALI domain the application is for (e.g. Engineering).",
-  time: "Interview start time, formatted in Eastern Time.",
-  location: "Interview location (Pod or online).",
-  meetingUrl: "Zoom join URL for online interviews.",
-  originalCloseDate: "The cycle's original close date (pre-extension), formatted in Eastern Time.",
-  newCloseDate: "The cycle's new close date (post-extension), formatted in Eastern Time.",
+  firstName: TEMPLATE_VARIABLES_REGISTRY.firstName.description,
+  domain: TEMPLATE_VARIABLES_REGISTRY.domain.description,
+  time: TEMPLATE_VARIABLES_REGISTRY.time.description,
+  location: TEMPLATE_VARIABLES_REGISTRY.location.description,
+  meetingUrl: TEMPLATE_VARIABLES_REGISTRY.meetingUrl.description,
+  originalCloseDate: TEMPLATE_VARIABLES_REGISTRY.originalCloseDate.description,
+  newCloseDate: TEMPLATE_VARIABLES_REGISTRY.newCloseDate.description,
 };
 
 export type TemplateVariableName = keyof InterpolationVars;
@@ -88,19 +97,6 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlot, readonly TemplateVariableN
   "notification:InterviewReminderApplicant": ["firstName", "domain", "time", "location", "meetingUrl"],
   "notification:InterviewReminderInterviewer": ["firstName", "domain", "time", "location", "meetingUrl"],
 };
-
-// Matches the strict shape the interpolator in app/lib/email.ts handles:
-// `{{name}}` with no whitespace, ascii-letter-led identifier. Whitespace
-// variants like `{{ firstName }}` are intentionally *not* matched here — the
-// interpolator can't substitute them either, and treating them as known would
-// hide a real bug from the lint surface.
-const PLACEHOLDER_RE = /\{\{([A-Za-z][A-Za-z0-9_]*)\}\}/g;
-
-export function extractPlaceholders(text: string): string[] {
-  const out: string[] = [];
-  for (const m of text.matchAll(PLACEHOLDER_RE)) out.push(m[1]);
-  return out;
-}
 
 export interface LintResult {
   unknown: string[];

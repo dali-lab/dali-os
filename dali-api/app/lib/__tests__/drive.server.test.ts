@@ -1,11 +1,21 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
-vi.mock("~/lib/pageAccess.server", () => ({
-  getPageAccess: vi.fn(),
-  // Files use this via canViewFile; default false → unscoped files stay visible.
-  isUnderGoverningScope: vi.fn().mockResolvedValue(false),
-}));
+vi.mock("~/lib/pageAccess.server", () => {
+  const getPageAccess = vi.fn();
+  return {
+    getPageAccess,
+    // Delegates to the getPageAccess mock per page so existing per-page mock
+    // setups drive the batched path unchanged.
+    getPageAccessBulk: vi.fn(async (userId: string, pages: Array<{ id: string }>) => {
+      const m = new Map();
+      for (const p of pages) m.set(p.id, await getPageAccess(userId, p));
+      return m;
+    }),
+    // Files use this via canViewFile; default false → unscoped files stay visible.
+    isUnderGoverningScope: vi.fn().mockResolvedValue(false),
+  };
+});
 
 import { prisma } from "~/lib/db";
 import { getPageAccess } from "~/lib/pageAccess.server";

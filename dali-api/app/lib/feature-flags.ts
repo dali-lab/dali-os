@@ -96,6 +96,12 @@ export const FEATURE_FLAGS = [
       "Collapses the sidebar to Projects / Education / Core / Admin / Hiring, with Drive pinned under Calendar. Core process tooling (staffing, intent to work, bids, level up, access, attendance, communications) moves out of Projects and Admin into a Core area at /core/*, leaving Admin strictly system-level. Needs the new left navigation to take effect.",
   },
   {
+    key: "templates",
+    label: "Templates",
+    description:
+      "Surface the unified Drive Templates gallery (documents, forms, mentor notes, email, and agreement templates in one place) and project templates (save a project's structure as a template and start new projects from it).",
+  },
+  {
     key: "nav-preload",
     label: "Preload favorites & recents",
     description:

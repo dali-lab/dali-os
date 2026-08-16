@@ -263,6 +263,86 @@ async function resolveInstructorPhotos<
   }));
 }
 
+// ─── Lightweight home-card summary ───────────────────────────────────────────
+
+/**
+ * Count-only summary of a user's education activity, for the home card.
+ * Uses groupBy/count/aggregate instead of fetching full offering/session/
+ * instructor rows, so it's much cheaper than listCatalog.
+ */
+export async function getHomeEducationSummary(userId: string): Promise<{
+  enrolledCount: number;
+  openOfferings: number;
+  pendingCount: number;
+  openAssignments: number;
+}> {
+  const now = new Date();
+
+  const [myApps, openOfferingsCount] = await Promise.all([
+    // All the user's applications against currently-Published offerings.
+    prisma.educationApplication.findMany({
+      where: {
+        applicantUserId: userId,
+        offering: { status: "Published" },
+      },
+      select: { offeringId: true, status: true },
+    }),
+    // Published offerings with registration window open right now.
+    prisma.educationOffering.count({
+      where: {
+        status: "Published",
+        registrationOpensAt: { lte: now },
+        registrationClosesAt: { gte: now },
+      },
+    }),
+  ]);
+
+  const enrolledIds = myApps
+    .filter((a) => a.status === "Approved")
+    .map((a) => a.offeringId);
+  const pendingCount = myApps.filter(
+    (a) => a.status === "Submitted" || a.status === "Waitlisted",
+  ).length;
+
+  let openAssignments = 0;
+  if (enrolledIds.length > 0) {
+    // Count assignments that are due in the future and not yet submitted.
+    const [assignmentIds, submittedIds] = await Promise.all([
+      prisma.educationAssignment.findMany({
+        where: {
+          dueAt: { gt: now },
+          OR: [
+            { offeringId: { in: enrolledIds } },
+            { session: { offeringId: { in: enrolledIds } } },
+          ],
+        },
+        select: { id: true },
+      }),
+      prisma.educationSubmission.findMany({
+        where: {
+          studentId: userId,
+          assignment: {
+            OR: [
+              { offeringId: { in: enrolledIds } },
+              { session: { offeringId: { in: enrolledIds } } },
+            ],
+          },
+        },
+        select: { assignmentId: true },
+      }),
+    ]);
+    const submittedSet = new Set(submittedIds.map((s) => s.assignmentId));
+    openAssignments = assignmentIds.filter((a) => !submittedSet.has(a.id)).length;
+  }
+
+  return {
+    enrolledCount: enrolledIds.length,
+    openOfferings: openOfferingsCount,
+    pendingCount,
+    openAssignments,
+  };
+}
+
 // ─── Registration-window helper ──────────────────────────────────────────────
 
 export function registrationOpen(
