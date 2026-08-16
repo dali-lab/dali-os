@@ -25,6 +25,8 @@ import { isNavbarHubPage } from '~/lib/navbar-routes'
 import { hasSubnavRow } from '~/lib/nav-areas'
 import { listFavoritesAndRecents } from '~/lib/user-pages.server'
 import { loadShellUser } from '~/lib/shell-user.server'
+import { guideRequirements } from '~/lib/guide.server'
+import { guideProgress } from '~/lib/guide'
 import { resolveFeatureFlags } from '~/lib/feature-flags.server'
 import { FeatureFlagsProvider } from '~/components/FeatureFlags'
 import { timed } from '~/lib/server-timing'
@@ -160,15 +162,28 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!hasHiringAccess && isLabMember) hasHiringAccess = anyCycleReviewer !== null
   const hasActiveHiringAccess = core || admin || domainLead || liveCycleRole
   const isLabMentorFlag = isLabMember ? core || labMentor : false
-  const hasCalendarLink = (me?.calendarLinks.length ?? 0) > 0
+  // Gated guide steps read their truth from the account, so the guide card gets
+  // the same signals the shell already loaded rather than a second query.
+  const guide = {
+    requirements: guideRequirements(me),
+    clearedIds: me?.daliMember?.guideStepIds ?? [],
+    // Whether this member has been through the guide before. A first-timer gets
+    // the walkthrough from step one; anyone else is only being brought back
+    // because setup is incomplete, so the card opens on what they owe.
+    returning: me?.daliMember?.tourCompletedAt !== null,
+  }
 
-  // Auto-show the launch tour once per USER (server-driven, not browser
-  // localStorage): a member who has finished onboarding but not yet completed
-  // the tour. Established members were backfilled (tourCompletedAt set), so only
-  // the just-onboarded get it. A manual "start tour" button can re-run it later
-  // regardless of this flag.
+  // Show the guide when the member has finished onboarding and either hasn't
+  // dismissed it yet, or still owes a required setup step (photo, timezone,
+  // linked calendar). Dismissing is a snooze rather than an exit while
+  // anything is outstanding — otherwise one click on "Finish later" at the
+  // calendar step escapes the gate permanently, and the required steps aren't
+  // required at all. Once nothing is outstanding, a dismissal ends it for good.
+  const outstanding = guideProgress(guide.clearedIds, guide.requirements)
+    .outstanding.length
   const shouldShowTour =
-    !!me?.daliMember?.onboardedAt && me.daliMember.tourCompletedAt === null
+    !!me?.daliMember?.onboardedAt &&
+    (me.daliMember.tourCompletedAt === null || outstanding > 0)
 
   // Detect iframe context from Sec-Fetch-Dest. Modern browsers (Chrome, Firefox,
   // Safari 16+) set this automatically and it survives server-side redirects,
@@ -202,7 +217,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const __loaderTotal = performance.now() - __loaderStart
   if (__loaderTotal >= 400) console.log(`[perf-total] layout loader ${__loaderTotal.toFixed(0)}ms`)
 
-  return { user: auth.user, photoUrl, hasCalendarLink, shouldShowTour, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, favorites: sidebarPages.favorites, recents: sidebarPages.recents, flags, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone }
+  return { user: auth.user, photoUrl, guide, shouldShowTour, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, favorites: sidebarPages.favorites, recents: sidebarPages.recents, flags, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone }
 }
 
 // Layout data (roles, avatar, hiring access) changes rarely, but default
@@ -231,7 +246,7 @@ export function shouldRevalidate({ formAction, currentUrl, nextUrl, defaultShoul
 }
 
 export default function AppLayoutRoute() {
-  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, favorites, recents, flags, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone } = useLoaderData<typeof loader>()
+  const { user, photoUrl, guide, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, favorites, recents, flags, isEmbedded, tabless, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone } = useLoaderData<typeof loader>()
   const [searchParams] = useSearchParams()
   const location = useLocation()
   const navigationType = useNavigationType()
@@ -455,7 +470,7 @@ export default function AppLayoutRoute() {
           exactly once per document — the embedded branch returns above, so a
           workspace iframe never starts a second round of prefetches. */}
       {(flags['nav-preload'] ?? false) && <NavPreloader favorites={favorites} recents={recents} />}
-      <LaunchWelcome firstName={user.firstName || user.email.split('@')[0]} hasCalendarLink={hasCalendarLink} shouldShowTour={shouldShowTour} tabless={tabless} />
+      <LaunchWelcome firstName={user.firstName || user.email.split('@')[0]} clearedIds={guide.clearedIds} requirements={guide.requirements} returning={guide.returning} shouldShowTour={shouldShowTour} tabless={tabless} />
       <TimeZonePrompt userTimeZone={userTimeZone} userTimeZoneIsExplicit={userTimeZoneIsExplicit} dismissedZone={tzDismissedZone} />
     </FeatureFlagsProvider>
   )

@@ -7,7 +7,7 @@ export const meta: Route.MetaFunction = () => [
 
 export default function HelpCalendarPage() {
   return (
-    <main className="max-w-3xl">
+    <main>
       <h1 className="text-2xl font-semibold">Calendar</h1>
       <p className="mt-2 text-sm text-muted-foreground">
         DALI OS uses your linked Google calendars in two ways: it reads when

@@ -30,7 +30,7 @@ const NAV: Array<[string, string]> = [
 
 export default function HelpShortcutsPage() {
   return (
-    <main className="max-w-3xl">
+    <main>
       <h1 className="text-2xl font-semibold">Keyboard shortcuts</h1>
       <p className="mt-2 text-sm text-muted-foreground">
         On Windows and Linux, use <Kbd>Ctrl</Kbd> wherever <Kbd>⌘</Kbd> is

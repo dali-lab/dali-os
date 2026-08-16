@@ -2,17 +2,19 @@ import { test as base } from '@playwright/test';
 
 type LoginOptions = { netId?: string; daliEmail?: string; personalEmail?: string };
 
-// First-run launch welcome modal (app/components/LaunchWelcome.tsx) renders a
-// full-screen dialog overlay that intercepts pointer events on a fresh
-// localStorage. Mark it seen before any page script runs so it never blocks
-// clicks in tests. Keep this key in sync with DONE_KEY in that component.
-const LAUNCH_WELCOME_SEEN_KEY = 'dalios-launch-welcome-seen-v1';
+// The interactive guide (app/components/LaunchWelcome.tsx) is server-driven: it
+// auto-opens for a member with onboardedAt set who either hasn't dismissed it
+// or still owes a required setup step. Seeded members have no onboardedAt, so
+// it never opens here and there's nothing for the suite to suppress — the
+// guide specs stamp the state they need via clearGuideSetup/satisfyGuideSetup.
+// If a future seed onboards its members, stamp tourCompletedAt on them (and
+// give them a photo, timezone, and calendar link) rather than reaching for
+// browser state.
 
 export const test = base.extend<{ loginAs: (opts: LoginOptions) => Promise<void> }>({
   page: async ({ page, baseURL }, use) => {
-    await page.addInitScript((key) => {
+    await page.addInitScript(() => {
       try {
-        window.localStorage.setItem(key, 'e2e');
         // The Drive suite predates the Miller-columns view and exercises
         // list/grid behaviour (bulk-select, drag-and-drop, dblclick nav). Pin
         // List view so those specs run against the UI they were written for;
@@ -21,7 +23,7 @@ export const test = base.extend<{ loginAs: (opts: LoginOptions) => Promise<void>
       } catch {
         // localStorage unavailable (e.g. about:blank) — ignore.
       }
-    }, LAUNCH_WELCOME_SEEN_KEY);
+    });
     // The suite was written against the tabbed workspace shell (several specs
     // locate content via frameLocator on workspace iframes). Tabless is the
     // app default now, so pin the tabbed opt-in cookie per context. Keep the

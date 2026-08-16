@@ -285,6 +285,17 @@ model DALIMember {
   // don't suddenly get the tour.
   tourCompletedAt DateTime?
 
+  // Step ids the member has cleared, in no particular order. The guide is
+  // resumable: dismissing it keeps this list, so re-opening picks up at the
+  // first unfinished step instead of restarting. Ids (not indexes) so
+  // inserting or reordering steps never silently shifts someone's progress.
+  // Unknown ids are ignored on read, which makes removing a step safe.
+  guideStepIds String[] @default([])
+
+  // First time the member started the guide. Distinguishes "never opened it"
+  // from "opened it and bailed at step 1" for the Help page's resume copy.
+  guideStartedAt DateTime?
+
   userId String @unique
   user   User   @relation(fields: [userId], references: [id])
 }

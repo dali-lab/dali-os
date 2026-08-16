@@ -115,7 +115,7 @@ const SECTIONS: Array<{
 
 export default function GettingStartedPage() {
   return (
-    <main className="max-w-3xl">
+    <main>
       <h1 className="text-2xl font-semibold">Getting started</h1>
       <p className="mt-2 text-sm text-muted-foreground">
         DALI OS is organized by what you're trying to do, not by your role.

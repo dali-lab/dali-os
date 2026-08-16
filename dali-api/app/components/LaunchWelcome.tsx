@@ -1,44 +1,21 @@
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router";
 import {
   PartyPopper,
-  CalendarDays,
-  UserCircle2,
   ArrowRight,
   X as XIcon,
   Check,
-  Search,
-  ListTodo,
-  FolderKanban,
-  UsersRound,
-  GraduationCap,
+  Lock,
 } from "lucide-react";
 import { Modal } from "./Modal";
+import { GUIDE_STEP_VIEWS } from "./guide/steps";
+import {
+  guideProgress,
+  isStepCleared,
+  type GuideRequirements,
+} from "~/lib/guide";
 
-const DONE_KEY = "dalios-launch-welcome-seen-v1";
-const STEP_KEY = "dalios-launch-tour-step-v1";
-
-type Phase = "modal" | "card" | "done";
-
-type TourStep = {
-  icon: React.ReactNode;
-  /** Short eyebrow label shown above the title on the card. */
-  eyebrow: string;
-  /** Step body — either a CTA to click a sidebar item or an info blurb. */
-  cta: React.ReactNode;
-  /** Confirmation shown after the user lands on the matched page. Required
-   *  for click-driven steps; omitted for info-only steps. */
-  arrived?: React.ReactNode;
-  /** True if the iframe-reported URL means this step is satisfied. Omitted
-   *  for info-only steps. */
-  matches?: (pathname: string) => boolean;
-  /** Locates the sidebar element to highlight. Omitted for info-only steps. */
-  findTarget?: () => HTMLElement | null;
-  /** Optional primary action shown alongside Next once the user has arrived
-   *  on the matched page (e.g. "Connect Google Calendar"). Click runs onClick
-   *  but does NOT advance — the user still hits Next to move on. */
-  arrivedAction?: { label: string; onClick: () => void };
-};
+const steps = GUIDE_STEP_VIEWS;
 
 /** Walks up through any iframe ancestors so the rect is in the parent
  *  document's viewport coordinates (used by Spotlight on in-iframe targets). */
@@ -58,204 +35,6 @@ function getRectInParent(el: HTMLElement): DOMRect {
     doc = frame.ownerDocument;
   }
   return rect;
-}
-
-function findInSidebar(predicate: (el: HTMLButtonElement) => boolean): HTMLElement | null {
-  // Look in both desktop sidebar (<aside>) and the mobile nav panel. We can't
-  // use offsetParent to detect hidden containers — the desktop sidebar is
-  // position:fixed, which reports offsetParent === null even when visible.
-  // getBoundingClientRect's size is the reliable signal: display:none → 0×0,
-  // anything actually laid out → non-zero.
-  const containers = Array.from(
-    document.querySelectorAll<HTMLElement>("aside, #mobile-nav-panel"),
-  );
-  for (const c of containers) {
-    const r = c.getBoundingClientRect();
-    if (r.width === 0 || r.height === 0) continue;
-    const buttons = c.querySelectorAll<HTMLButtonElement>("button");
-    for (const btn of buttons) {
-      if (predicate(btn)) return btn;
-    }
-  }
-  return null;
-}
-
-function findByLabel(label: string) {
-  // Sidebar buttons render their label as visible text when expanded and as a
-  // `title` attribute when collapsed. Prefix-match rather than exact-match:
-  // My Tasks appends a count badge to its text ("My Tasks3") and collapsed
-  // titles may carry suffixes ("My Tasks (3)").
-  return findInSidebar((btn) => {
-    if ((btn.textContent || "").trim().startsWith(label)) return true;
-    return (btn.getAttribute("title") || "").startsWith(label);
-  });
-}
-
-// Post-onboarding tour: walk a freshly-onboarded member through the sidebar
-// areas every member has — My Tasks, Calendar, Projects, People, Education,
-// Lab Processes, their profile — closing with the command palette. Role-gated
-// surfaces (Hiring, Forms, Mentorship, Admin) are deliberately excluded: a
-// fresh member doesn't have them yet. Each click-driven step spotlights the
-// sidebar item and advances when the workspace reports the matching URL.
-function buildSteps(opts: { hasCalendarLink: boolean }): TourStep[] {
-  return [
-    {
-      icon: <ListTodo className="w-4 h-4" />,
-      eyebrow: "My Tasks",
-      cta: (
-        <>
-          Open <strong>My Tasks</strong> at the top of the sidebar.
-        </>
-      ),
-      arrived: (
-        <>
-          Anything waiting on you — assigned tasks, forms to fill out, meeting
-          invites to RSVP — lands here. The badge shows how many are open.
-        </>
-      ),
-      matches: (p) => p.startsWith("/notifications"),
-      findTarget: () => findByLabel("My Tasks"),
-    },
-    {
-      icon: <CalendarDays className="w-4 h-4" />,
-      eyebrow: "Calendar",
-      cta: (
-        <>
-          Next, open <strong>Calendar</strong>.
-        </>
-      ),
-      arrived: opts.hasCalendarLink ? (
-        <>
-          Set your availability, schedule meetings with other members, and log
-          hours on your timesheet — all from here.
-        </>
-      ) : (
-        <>
-          Set your availability and schedule meetings with other members here.
-          Connect your <strong>Google Calendar</strong> so the lab can see when
-          you&apos;re free.
-        </>
-      ),
-      matches: (p) => p.startsWith("/calendar"),
-      findTarget: () => findByLabel("Calendar"),
-      arrivedAction: opts.hasCalendarLink
-        ? undefined
-        : {
-            label: "Connect Google Calendar",
-            onClick: () => {
-              window.location.href = "/oauth/calendar/google/start";
-            },
-          },
-    },
-    {
-      icon: <FolderKanban className="w-4 h-4" />,
-      eyebrow: "Projects",
-      cta: (
-        <>
-          Open <strong>Projects</strong>.
-        </>
-      ),
-      arrived: (
-        <>
-          Every lab project lives here — teams, sprints, and tasks. Once
-          you&apos;re staffed, your project&apos;s workspace is where your
-          term&apos;s work happens.
-        </>
-      ),
-      matches: (p) => p.startsWith("/projects"),
-      findTarget: () => findByLabel("Projects"),
-    },
-    {
-      icon: <UsersRound className="w-4 h-4" />,
-      eyebrow: "People",
-      cta: (
-        <>
-          Open <strong>People</strong>.
-        </>
-      ),
-      arrived: (
-        <>
-          The lab directory — look up anyone, see their roles and domains, and
-          find who to ask about what.
-        </>
-      ),
-      // Exact match: /members/<id> pages are profiles, matched by the Profile
-      // step below.
-      matches: (p) => p === "/members",
-      findTarget: () => findByLabel("People"),
-    },
-    {
-      icon: <GraduationCap className="w-4 h-4" />,
-      eyebrow: "Education",
-      cta: (
-        <>
-          Open <strong>Education</strong>.
-        </>
-      ),
-      arrived: (
-        <>
-          Miniseries and workshops — browse the catalog, sign up, and keep
-          track of anything you&apos;re enrolled in.
-        </>
-      ),
-      matches: (p) => p.startsWith("/education"),
-      findTarget: () => findByLabel("Education"),
-    },
-    {
-      icon: <UserCircle2 className="w-4 h-4" />,
-      eyebrow: "Profile",
-      cta: (
-        <>
-          Open your <strong>profile</strong> from the bottom of the sidebar.
-        </>
-      ),
-      arrived: (
-        <>
-          Review your details and add anything that&apos;s missing — you can
-          come back here anytime to edit.
-        </>
-      ),
-      // The /profile route server-redirects to /members/<id>, and the
-      // workspace reports the post-redirect URL — match both.
-      matches: (p) => p.startsWith("/profile") || /^\/members\/[^/]+/.test(p),
-      findTarget: () =>
-        findInSidebar((btn) => btn.getAttribute("aria-label") === "Open profile"),
-    },
-    // Info-only closer (no findTarget/matches → advances on Next): teach the
-    // command palette, which is otherwise easy to miss.
-    {
-      icon: <Search className="w-4 h-4" />,
-      eyebrow: "Search",
-      cta: (
-        <>
-          One more thing: press <strong>⌘K</strong> (<strong>Ctrl&nbsp;K</strong>{" "}
-          on Windows) anytime — or click <strong>Search</strong> at the top of the
-          sidebar — to jump to any person, project, or doc, or run a quick command.
-        </>
-      ),
-    },
-  ];
-}
-
-function readPhase(): Phase {
-  try {
-    if (window.localStorage.getItem(DONE_KEY)) return "done";
-    if (window.localStorage.getItem(STEP_KEY) !== null) return "card";
-  } catch {
-    return "done";
-  }
-  return "modal";
-}
-
-function readStep(maxStep: number): number {
-  try {
-    const raw = window.localStorage.getItem(STEP_KEY);
-    if (raw === null) return 0;
-    const n = parseInt(raw, 10);
-    return Number.isFinite(n) ? Math.max(0, Math.min(maxStep, n)) : 0;
-  } catch {
-    return 0;
-  }
 }
 
 /**
@@ -292,226 +71,381 @@ function useTargetRect(target: HTMLElement | null): DOMRect | null {
   return rect;
 }
 
-/** Pulsing coral ring positioned around an element. No dim. */
-function PulseRing({ target, zIndex }: { target: HTMLElement; zIndex: number }) {
-  const rect = useTargetRect(target);
-  if (!rect) return null;
-  const PAD = 6;
-  return (
-    <div
-      aria-hidden="true"
-      className="pointer-events-none fixed rounded-md launch-tour-pulse"
-      style={{
-        top: rect.top - PAD,
-        left: rect.left - PAD,
-        width: rect.width + PAD * 2,
-        height: rect.height + PAD * 2,
-        zIndex,
-      }}
-    />
-  );
-}
+const PAD = 6;
 
-/** Full spotlight: dims the page everywhere except a cut-out over `target`,
- *  with a pulsing ring on top. */
-function Spotlight({ target }: { target: HTMLElement }) {
-  const rect = useTargetRect(target);
-  if (!rect) return null;
-  const PAD = 6;
-  const box = {
+/** The padded box the spotlight cuts out and the ring draws around. */
+function boxFor(rect: DOMRect) {
+  return {
     top: rect.top - PAD,
     left: rect.left - PAD,
     width: rect.width + PAD * 2,
     height: rect.height + PAD * 2,
   };
+}
+
+/**
+ * Pulsing coral ring positioned around an element. No dim.
+ *
+ * `nudge` restarts the animation when it changes — bumped when the member
+ * clicks somewhere the guide is blocking, so the dead click answers itself by
+ * drawing the eye to the one thing that is clickable.
+ */
+function PulseRing({
+  target,
+  zIndex,
+  nudge = 0,
+}: {
+  target: HTMLElement;
+  zIndex: number;
+  nudge?: number;
+}) {
+  const rect = useTargetRect(target);
+  if (!rect) return null;
+  return (
+    <div
+      key={nudge}
+      aria-hidden="true"
+      className={
+        "pointer-events-none fixed rounded-md " +
+        (nudge > 0 ? "launch-tour-nudge" : "launch-tour-pulse")
+      }
+      style={{ ...boxFor(rect), zIndex }}
+    />
+  );
+}
+
+/**
+ * Full spotlight: dims the page everywhere except a cut-out over `target`,
+ * with a pulsing ring on top, and blocks interaction with everything outside
+ * the cut-out. While a step is pointing at something, the only live surfaces
+ * are that element and the guide card (z-50, above these) — so the member
+ * either does the step or leaves the guide, and can't half-navigate somewhere
+ * the guide isn't tracking.
+ *
+ * The dim and the blocking are separate layers on purpose: one box-shadow
+ * gives a seamless dim, while hit-testing needs four rects around the hole.
+ * Sub-pixel seams between invisible blockers cost nothing; seams in the dim
+ * would show as light lines.
+ */
+function Spotlight({
+  target,
+  onBlockedClick,
+  nudge,
+}: {
+  target: HTMLElement;
+  onBlockedClick: () => void;
+  nudge: number;
+}) {
+  const rect = useTargetRect(target);
+  if (!rect) return null;
+  const box = boxFor(rect);
+  const bottom = box.top + box.height;
+  const right = box.left + box.width;
+  const blocker = "fixed z-40 cursor-not-allowed";
   return (
     <>
-      {/* Cut-out: transparent rect with huge outward box-shadow dims the rest
-          of the page. pointer-events: none so clicks pass through. */}
       <div
         aria-hidden="true"
         className="pointer-events-none fixed z-40 rounded-md"
         style={{ ...box, boxShadow: "0 0 0 9999px rgba(0, 0, 0, 0.55)" }}
       />
-      <PulseRing target={target} zIndex={41} />
+      <div
+        className={blocker}
+        onClick={onBlockedClick}
+        style={{ top: 0, left: 0, right: 0, height: Math.max(0, box.top) }}
+      />
+      <div
+        className={blocker}
+        onClick={onBlockedClick}
+        style={{ top: Math.max(0, bottom), left: 0, right: 0, bottom: 0 }}
+      />
+      <div
+        className={blocker}
+        onClick={onBlockedClick}
+        style={{
+          top: Math.max(0, box.top),
+          left: 0,
+          width: Math.max(0, box.left),
+          height: Math.max(0, box.height),
+        }}
+      />
+      <div
+        className={blocker}
+        onClick={onBlockedClick}
+        style={{
+          top: Math.max(0, box.top),
+          left: Math.max(0, right),
+          right: 0,
+          height: Math.max(0, box.height),
+        }}
+      />
+      <PulseRing target={target} zIndex={41} nudge={nudge} />
     </>
   );
 }
 
+type Phase = "modal" | "card" | "done";
+
+export type GuideCardProps = {
+  firstName: string;
+  /** Step ids the member has already cleared (server state). */
+  clearedIds: string[];
+  /** Which gated steps the member's account already satisfies. */
+  requirements: GuideRequirements;
+  /** Member has been through the guide before — they're being brought back for
+   *  outstanding setup, not walked through the app for the first time. */
+  returning?: boolean;
+  /** Server says: auto-show the guide (onboarded, hasn't dismissed it). */
+  shouldShowTour?: boolean;
+  /** Tabless mode: pages render in this window, so there's no
+   *  `dali:tabNavigated` from an iframe — watch the router location instead. */
+  tabless?: boolean;
+};
+
 export function LaunchWelcome({
   firstName,
-  hasCalendarLink = true,
-  // Server says this member just onboarded and hasn't done the tour yet — show
-  // it once, overriding any browser-localStorage "seen" flag (the tour is now
-  // tracked per USER on the server).
+  clearedIds: initialCleared,
+  requirements: initialRequirements,
+  returning = false,
   shouldShowTour = false,
-  // Tabless mode: pages render in this window, so there's no `dali:tabNavigated`
-  // from an iframe to advance steps — we watch the router location instead.
   tabless = false,
-}: {
-  firstName: string;
-  hasCalendarLink?: boolean;
-  shouldShowTour?: boolean;
-  tabless?: boolean;
-}) {
+}: GuideCardProps) {
   const routerLocation = useLocation();
-  // Steps are stable for a given user within a session; the calendar step
-  // only offers the "connect Google Calendar" action when they haven't
-  // linked one yet.
-  const steps = useRef(buildSteps({ hasCalendarLink })).current;
   const [phase, setPhase] = useState<Phase>("done");
   const [step, setStep] = useState(0);
   const [arrived, setArrived] = useState(false);
+  const [cleared, setCleared] = useState<string[]>(initialCleared);
+  const [requirements, setRequirements] =
+    useState<GuideRequirements>(initialRequirements);
   const [sidebarTarget, setSidebarTarget] = useState<HTMLElement | null>(null);
+  // Bumped on every click the spotlight blocks, to re-flash the ring.
+  const [nudge, setNudge] = useState(0);
   const nextButtonRef = useRef<HTMLButtonElement | null>(null);
   const [nextTarget, setNextTarget] = useState<HTMLElement | null>(null);
   const titleId = useId();
 
-  useEffect(() => {
-    // Auto-show is purely server-driven: only a freshly-onboarded member
-    // (onboardedAt set, tourCompletedAt null) sees the tour automatically.
-    // localStorage no longer triggers it — clearing browser state or opening
-    // incognito won't re-pop the welcome modal for an established member.
-    // localStorage IS still consulted to *resume* a tour mid-flight on reload,
-    // so a freshly-onboarded user who started the tour and then reloaded
-    // continues where they were instead of jumping back to step 0.
-    if (!shouldShowTour) {
-      setPhase("done");
-      return;
-    }
-    const resumed = readPhase();
-    if (resumed === "card") {
-      setPhase("card");
-      setStep(readStep(steps.length));
-    } else {
-      setPhase("modal");
-      setStep(0);
-    }
-  }, [steps.length, shouldShowTour]);
+  const progress = useMemo(
+    () => guideProgress(cleared, requirements),
+    [cleared, requirements],
+  );
 
-  // Manual re-run: a "Start tour" button (next to the DALI OS logo) dispatches
-  // this event. Re-runs the tour regardless of past completion.
-  useEffect(() => {
-    function onStart() {
-      try {
-        window.localStorage.removeItem(DONE_KEY);
-      } catch {
-        // ignore
-      }
-      setStep(0);
+  const isFinal = step >= steps.length;
+  const current = isFinal ? null : steps[step];
+  const gate = current?.requires;
+  // A gated step is satisfied by account state, not by clicking Next — that's
+  // the whole point of gating it.
+  const gateMet = gate ? requirements[gate] : false;
+  const stepDone = isFinal || (gate ? gateMet : current!.matches ? arrived : true);
+
+  const post = useCallback((body: Record<string, string>) => {
+    const form = new FormData();
+    for (const [k, v] of Object.entries(body)) form.append(k, v);
+    return fetch("/api/tour/progress", {
+      method: "POST",
+      body: form,
+      credentials: "include",
+    });
+  }, []);
+
+  const refreshState = useCallback(async () => {
+    try {
+      const res = await fetch("/api/tour/progress", { credentials: "include" });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data?.requirements) setRequirements(data.requirements);
+      if (Array.isArray(data?.clearedIds)) setCleared(data.clearedIds);
+    } catch {
+      // Offline or a transient failure — the next poll picks it up.
+    }
+  }, []);
+
+  // Dismissing silences the guide for the page the member is on, not for good:
+  // while a required step is outstanding the server keeps shouldShowTour true,
+  // and the next navigation brings the guide back at the step they still owe.
+  // Re-reads from the server rather than trusting this card's copy, which stops
+  // being refreshed the moment they dismiss.
+  const snoozed = useRef(false);
+  const reopenIfOwed = useCallback(async () => {
+    if (!snoozed.current) return;
+    snoozed.current = false;
+    try {
+      const res = await fetch("/api/tour/progress", { credentials: "include" });
+      if (!res.ok) return;
+      const data = await res.json();
+      const owed = data?.progress?.outstanding?.[0];
+      if (!owed) return;
+      // Reopen on the step they actually owe, not wherever they left off. It
+      // comes back because setup is incomplete, so it should say so — making
+      // them re-walk the tour to reach the calendar step would punish the
+      // dismissal rather than collect the thing that's missing. Gated steps
+      // also carry no spotlight, so the page they just navigated to stays
+      // usable while the card asks.
+      const at = steps.findIndex((s) => s.id === owed.id);
+      if (at < 0) return;
+      setRequirements(data.requirements);
+      setCleared(data.clearedIds);
+      setStep(at);
       setArrived(false);
-      setPhase("modal");
+      setNudge(0);
+      setPhase("card");
+    } catch {
+      // Offline — the next navigation tries again.
+    }
+  }, []);
+
+  // Auto-show is server-driven, and resumes at the first unfinished step so a
+  // member who bailed halfway doesn't have to walk the whole thing again.
+  //
+  // Fires at most once. The loader hands back a fresh array/object every
+  // render, so an effect that re-ran on their identity would keep re-deciding
+  // the phase — and stomp on a guide the member had just opened by hand.
+  const autoShown = useRef(false);
+  useEffect(() => {
+    if (!shouldShowTour || autoShown.current) return;
+    autoShown.current = true;
+    const resume = guideProgress(initialCleared, initialRequirements);
+    // A returning member is here because setup is incomplete, so open on the
+    // step they owe. Established members were backfilled with no cleared steps,
+    // so resuming by position would drop them at step one — restarting a tour
+    // they never asked for and, since step one spotlights the sidebar, locking
+    // the page they were actually using.
+    const owed = returning ? resume.outstanding[0] : undefined;
+    const at = owed ? steps.findIndex((s) => s.id === owed.id) : -1;
+    const next = at >= 0 ? at : Math.min(resume.resumeIndex, steps.length);
+    setStep(next);
+    setArrived(false);
+    setPhase(next > 0 ? "card" : "modal");
+  }, [shouldShowTour, initialCleared, initialRequirements, returning]);
+
+  // Manual (re)start from the Help page. `detail.restart` means start over from
+  // step one; otherwise pick up where they left off.
+  useEffect(() => {
+    function onStart(e: Event) {
+      const restart = Boolean((e as CustomEvent).detail?.restart);
+      const next = restart
+        ? 0
+        : Math.min(guideProgress(cleared, requirements).resumeIndex, steps.length);
+      setStep(next);
+      setArrived(false);
+      setPhase(restart || next === 0 ? "modal" : "card");
+      // "Start over" resets progress server-side, so re-read rather than
+      // trusting the copy this card is holding.
+      if (restart) void refreshState();
     }
     window.addEventListener("dali:start-tour", onStart);
     return () => window.removeEventListener("dali:start-tour", onStart);
-  }, []);
+  }, [cleared, requirements, refreshState]);
 
-  // Re-resolve the highlight target whenever the active step changes.
-  // Cheap interval because the target may not be present at mount time
-  // (sidebar not laid out yet, calendar iframe still loading, etc.).
-  // Info-only steps (no findTarget) never show a spotlight.
-  //
-  // For steps that have a findTarget but no URL `matches`, there's no
-  // dali:tabNavigated to advance on, so we attach a DOM click listener to the
-  // resolved target instead. Clicking the spotlit element flips the step to
-  // "arrived" the same way a URL change would.
+  // While the member is sitting on a gate they haven't met, watch for them
+  // meeting it. Uploading a photo or linking a calendar happens on another
+  // page (or another tab), so nothing in this window would otherwise tell us.
   useEffect(() => {
-    if (phase !== "card") return;
-    if (step >= steps.length) return;
-    const s = steps[step];
-    const find = s.findTarget;
-    if (!find || arrived) {
+    if (phase !== "card" || !gate || gateMet) return;
+    const id = window.setInterval(refreshState, 4000);
+    window.addEventListener("focus", refreshState);
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener("focus", refreshState);
+    };
+  }, [phase, gate, gateMet, refreshState]);
+
+  // Re-resolve the highlight target whenever the active step changes. Cheap
+  // interval because the target may not be present at mount time (sidebar not
+  // laid out yet, calendar iframe still loading, etc.). Steps with no
+  // findTarget never show a spotlight.
+  useEffect(() => {
+    if (phase !== "card" || isFinal) return;
+    const find = steps[step].findTarget;
+    if (!find || stepDone) {
       setSidebarTarget(null);
       return;
     }
-    const advanceOnClick = !s.matches;
-    let attached: HTMLElement | null = null;
-    function onClick() {
-      setArrived(true);
-    }
     function resolve() {
-      const found = find!();
-      setSidebarTarget(found);
-      if (advanceOnClick && found !== attached) {
-        if (attached) attached.removeEventListener("click", onClick);
-        if (found) found.addEventListener("click", onClick);
-        attached = found;
-      }
+      setSidebarTarget(find!());
     }
     resolve();
     const id = window.setInterval(resolve, 300);
-    return () => {
-      window.clearInterval(id);
-      if (attached) attached.removeEventListener("click", onClick);
-    };
-  }, [phase, step, arrived]);
+    return () => window.clearInterval(id);
+  }, [phase, step, stepDone, isFinal]);
 
-  // Pulse the card's primary action button. For click-driven steps this is
-  // the Next button after the user arrives at the matched page. For info-only
-  // steps (e.g. the ⌘K closer) the primary action is shown immediately, so
-  // pulse it from the start. Refs alone don't trigger re-renders, so we copy the
-  // current DOM node into state once it's in the tree.
+  // Pulse the card's primary action once it's the thing to click: after arrival
+  // on a click-driven step, immediately on info steps, and never on an unmet
+  // gate (there the action button is the thing to click, not Next). Refs alone
+  // don't trigger re-renders, so copy the DOM node into state.
   useEffect(() => {
-    if (phase !== "card") {
+    if (phase !== "card" || isFinal) {
       setNextTarget(null);
       return;
     }
-    if (step >= steps.length) {
-      setNextTarget(null);
-      return;
-    }
-    const s = steps[step];
-    const shouldPulse = s.findTarget ? arrived : true;
-    setNextTarget(shouldPulse ? nextButtonRef.current : null);
-  }, [phase, step, arrived]);
+    setNextTarget(stepDone ? nextButtonRef.current : null);
+  }, [phase, step, stepDone, isFinal]);
 
   // Listen for iframe-reported tab navigation — that's how the workspace
   // signals "the user is now looking at X". Sidebar clicks open iframe tabs,
   // so useLocation on the parent shell never fires.
   const handleUrl = useCallback(
     (url: string) => {
-      if (phase !== "card") return;
-      if (arrived) return;
-      if (step >= steps.length) return;
+      if (phase !== "card" || arrived || isFinal) return;
       const match = steps[step].matches;
-      if (!match) return; // info-only step — URL changes don't advance it
+      if (!match) return; // info or gated step — URL changes don't clear it
       try {
-        const path = new URL(url, window.location.origin).pathname;
-        if (match(path)) setArrived(true);
+        if (match(new URL(url, window.location.origin).pathname)) setArrived(true);
       } catch {
         // Bad URL — ignore.
       }
     },
-    [phase, step, arrived],
+    [phase, step, arrived, isFinal],
   );
 
   useEffect(() => {
     function onMsg(e: MessageEvent) {
       if (e.origin !== window.location.origin) return;
       const d = e.data;
-      if (!d || d.type !== "dali:tabNavigated" || typeof d.url !== "string") return;
+      if (!d) return;
+      // The Help page lives in a workspace iframe, so its "open the guide"
+      // click arrives as a message rather than an event on this window.
+      if (d.type === "dali:start-tour") {
+        window.dispatchEvent(
+          new CustomEvent("dali:start-tour", {
+            detail: { restart: Boolean(d.restart) },
+          }),
+        );
+        return;
+      }
+      if (d.type !== "dali:tabNavigated" || typeof d.url !== "string") return;
+      void reopenIfOwed();
       handleUrl(d.url);
     }
     window.addEventListener("message", onMsg);
     return () => window.removeEventListener("message", onMsg);
-  }, [handleUrl]);
+  }, [handleUrl, reopenIfOwed]);
 
   // Tabless equivalent of the `dali:tabNavigated` bridge above: the page is a
-  // real navigation in this window, so advance the tour off the router location.
+  // real navigation in this window, so clear the step off the router location.
   useEffect(() => {
     if (!tabless) return;
     handleUrl(routerLocation.pathname);
   }, [tabless, routerLocation.pathname, handleUrl]);
 
-  function startTour() {
-    try {
-      window.localStorage.setItem(STEP_KEY, "0");
-    } catch {
-      // ignore
-    }
-    setStep(0);
+  useEffect(() => {
+    if (!tabless) return;
+    void reopenIfOwed();
+  }, [tabless, routerLocation.key, reopenIfOwed]);
+
+  function startGuide() {
+    void post({ intent: "start" });
     setArrived(false);
     setPhase("card");
+  }
+
+  /**
+   * Leave the guide. Progress is kept — the Help page can resume it, and while
+   * a required step is outstanding the next navigation reopens it.
+   */
+  function dismiss() {
+    void post({ intent: "dismiss" });
+    snoozed.current = true;
+    setPhase("done");
   }
 
   function finishAndGoHome() {
@@ -519,48 +453,32 @@ export function LaunchWelcome({
       { type: "dali:openTab", url: "/", label: "Home" },
       window.location.origin,
     );
-    finishTour();
-  }
-
-  function finishTour() {
-    try {
-      window.localStorage.setItem(DONE_KEY, new Date().toISOString());
-      window.localStorage.removeItem(STEP_KEY);
-    } catch {
-      // ignore
-    }
-    // Persist completion per-user so the tour isn't auto-shown again (the
-    // localStorage flag above is just a same-browser fast path). Best-effort.
-    void fetch("/api/tour/complete", { method: "POST", credentials: "include" }).catch(
-      () => {},
-    );
-    setPhase("done");
+    dismiss();
   }
 
   function advance() {
-    const next = step + 1;
-    try {
-      window.localStorage.setItem(STEP_KEY, String(next));
-    } catch {
-      // ignore
-    }
-    setStep(next);
+    const id = steps[step].id;
+    setCleared((prev) => (prev.includes(id) ? prev : [...prev, id]));
+    void post({ intent: "step", stepId: id });
+    setStep(step + 1);
     setArrived(false);
+    setNudge(0);
   }
 
   if (phase === "done") return null;
 
   if (phase === "modal") {
+    const returning = progress.cleared > 0;
     return (
-      <Modal open onClose={finishTour} labelledBy={titleId}>
+      <Modal open onClose={dismiss} labelledBy={titleId}>
         <div className="flex flex-col gap-4">
           <div className="flex items-center justify-end">
             <button
               type="button"
-              onClick={finishTour}
+              onClick={dismiss}
               className="text-xs text-muted-foreground hover:text-foreground"
             >
-              Skip
+              Not now
             </button>
           </div>
           <div>
@@ -572,16 +490,19 @@ export function LaunchWelcome({
             </h2>
             <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
               Hi {firstName}. DALI OS is the home of everything DALI — projects,
-              education, people, and more. Want a quick tour of the main areas?
+              education, people, and more. The guide walks you through the{" "}
+              {steps.length} things worth knowing on day one, and sets up the
+              parts of your account the rest of the lab depends on. It takes
+              about five minutes, and you can stop and pick it up later.
             </p>
           </div>
           <div className="flex items-center justify-end gap-2 pt-2">
             <button
               type="button"
-              onClick={startTour}
+              onClick={startGuide}
               className="inline-flex items-center gap-1.5 rounded-lg bg-accent-coral px-4 py-2 text-sm font-semibold text-white hover:bg-accent-coral/90"
             >
-              Show me around
+              {returning ? "Pick up where I left off" : "Show me around"}
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>
@@ -590,8 +511,7 @@ export function LaunchWelcome({
     );
   }
 
-  const isFinal = step >= steps.length;
-  const current = isFinal ? null : steps[step];
+  const showAction = current?.action && !(gate && gateMet);
 
   return (
     <>
@@ -610,16 +530,38 @@ export function LaunchWelcome({
               0 0 24px 8px rgba(255, 139, 129, 0);
           }
         }
+        @keyframes launch-tour-nudge {
+          0%, 100% { transform: scale(1); }
+          40% { transform: scale(1.07); }
+        }
         .launch-tour-pulse {
           animation: launch-tour-pulse 1.6s ease-in-out infinite;
         }
+        .launch-tour-nudge {
+          animation:
+            launch-tour-pulse 1.6s ease-in-out infinite,
+            launch-tour-nudge 0.45s ease-out 1;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .launch-tour-pulse, .launch-tour-nudge { animation: none; }
+        }
       `}</style>
 
-      {/* Sidebar spotlight before they click. */}
-      {sidebarTarget && !arrived && !isFinal && <Spotlight target={sidebarTarget} />}
+      {/* Sidebar spotlight before they click. Also the interaction lock: while
+          it's up, only the spotlit element and this card respond. Steps with no
+          spotlight (the gated ones) deliberately leave the page live — the
+          member has to reach a settings page to satisfy the gate. */}
+      {sidebarTarget && !stepDone && (
+        <Spotlight
+          target={sidebarTarget}
+          nudge={nudge}
+          onBlockedClick={() => setNudge((n) => n + 1)}
+        />
+      )}
 
-      {/* Next-button ring after they arrive (no dim — card is already prominent). */}
-      {nextTarget && arrived && !isFinal && (
+      {/* Next-button ring once it's the thing to click (no dim — the card is
+          already prominent). */}
+      {nextTarget && stepDone && !isFinal && (
         <PulseRing target={nextTarget} zIndex={60} />
       )}
 
@@ -629,22 +571,20 @@ export function LaunchWelcome({
             <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-accent-coral">
               {isFinal ? (
                 <PartyPopper className="w-4 h-4" />
-              ) : arrived ? (
+              ) : stepDone ? (
                 <Check className="w-4 h-4" />
+              ) : gate ? (
+                <Lock className="w-4 h-4" />
               ) : (
                 current!.icon
               )}
-              {isFinal
-                ? "All set"
-                : arrived
-                  ? "You're here"
-                  : current!.eyebrow}
+              {isFinal ? "All set" : current!.title}
             </span>
             <button
               type="button"
-              onClick={finishTour}
+              onClick={dismiss}
               className="text-muted-foreground hover:text-foreground -mt-1 -mr-1 p-1"
-              aria-label="Dismiss tour"
+              aria-label="Leave the guide"
             >
               <XIcon className="w-4 h-4" />
             </button>
@@ -653,32 +593,40 @@ export function LaunchWelcome({
           <div className="text-sm text-foreground leading-relaxed">
             {isFinal ? (
               <>
-                That&apos;s the tour! <strong>Home</strong> ties it together —
-                your week, open tasks, and lab events. Re-run this anytime from{" "}
-                <strong>Help</strong>.
+                That&apos;s everything. <strong>Home</strong> ties it together —
+                your week, open tasks, and lab events. Everything here is written
+                up under <strong>Help</strong> if you want it again.
               </>
-            ) : arrived ? (
+            ) : stepDone && current!.arrived ? (
               current!.arrived
             ) : (
               current!.cta
             )}
           </div>
 
-          <div className="flex items-center gap-1.5" aria-hidden="true">
-            {steps.map((_, i) => (
-              <span
-                key={i}
-                className={
-                  "h-1 rounded-full flex-1 " +
-                  (i < step || (i === step && arrived) || isFinal
-                    ? "bg-accent-coral"
-                    : "bg-muted-foreground/20")
-                }
-              />
-            ))}
+          <div>
+            <div className="flex items-center gap-1" aria-hidden="true">
+              {steps.map((s, i) => (
+                <span
+                  key={s.id}
+                  className={
+                    "h-1 rounded-full flex-1 " +
+                    (isFinal || isStepCleared(s, cleared, requirements) ||
+                    (i === step && stepDone)
+                      ? "bg-accent-coral"
+                      : "bg-muted-foreground/20")
+                  }
+                />
+              ))}
+            </div>
+            <p className="mt-1.5 text-[11px] text-muted-foreground">
+              {isFinal
+                ? `${progress.total} of ${progress.total} done`
+                : `Step ${step + 1} of ${steps.length}`}
+            </p>
           </div>
 
-          <div className="flex items-center justify-end gap-2 pt-1">
+          <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
             {isFinal ? (
               <button
                 type="button"
@@ -687,43 +635,48 @@ export function LaunchWelcome({
               >
                 Back to home
               </button>
-            ) : arrived ? (
+            ) : (
               <>
-                {current?.arrivedAction && (
+                {!stepDone && (
                   <button
                     type="button"
-                    onClick={current.arrivedAction.onClick}
+                    onClick={dismiss}
+                    className="text-xs text-muted-foreground hover:text-foreground mr-auto"
+                  >
+                    Finish later
+                  </button>
+                )}
+                {showAction && (
+                  <button
+                    type="button"
+                    onClick={current!.action!.onClick}
                     className="inline-flex items-center gap-1.5 rounded-lg border border-accent-coral px-3 py-1.5 text-sm font-semibold text-accent-coral hover:bg-accent-coral/10"
                   >
-                    {current.arrivedAction.label}
+                    {current!.action!.label}
+                  </button>
+                )}
+                {/* Click-driven steps keep an escape hatch for a member who is
+                    already on the page. Gated steps don't get one — the account
+                    state is the only way past. */}
+                {!stepDone && !gate && current!.matches && (
+                  <button
+                    type="button"
+                    onClick={() => setArrived(true)}
+                    className="text-xs text-muted-foreground hover:text-foreground"
+                    title="Skip this step"
+                  >
+                    I&apos;m there
                   </button>
                 )}
                 <button
                   ref={nextButtonRef}
                   type="button"
                   onClick={advance}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-accent-coral px-3 py-1.5 text-sm font-semibold text-white hover:bg-accent-coral/90"
+                  disabled={!stepDone}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-accent-coral px-3 py-1.5 text-sm font-semibold text-white hover:bg-accent-coral/90 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-accent-coral"
                 >
                   Next
                   <ArrowRight className="w-4 h-4" />
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={finishTour}
-                  className="text-xs text-muted-foreground hover:text-foreground"
-                >
-                  Skip tour
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setArrived(true)}
-                  className="text-xs text-muted-foreground hover:text-foreground"
-                  title="Skip this step"
-                >
-                  I&apos;m there
                 </button>
               </>
             )}

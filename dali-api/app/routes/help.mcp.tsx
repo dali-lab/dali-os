@@ -63,7 +63,7 @@ function CopyBlock({ content }: { content: string }) {
 export default function McpHelpPage({ loaderData }: Route.ComponentProps) {
   const { mcpUrl } = loaderData;
   return (
-    <main className="max-w-3xl">
+    <main>
       <h1 className="text-2xl font-semibold">Connect AI to DALI OS</h1>
       <p className="mt-2 text-sm text-muted-foreground">
         DALI OS exposes an MCP server so AI assistants can read your DALI data
