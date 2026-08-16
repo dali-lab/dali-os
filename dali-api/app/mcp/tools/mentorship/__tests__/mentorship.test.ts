@@ -8,6 +8,10 @@ vi.mock("~/lib/roles", async (orig) => {
 vi.mock("~/collab/legacy/pm-to-blocknote", () => ({
   ensureBlocks: (v: unknown) => v ?? [],
 }));
+vi.mock("~/collab/write", () => ({ replaceCollabDocContent: vi.fn() }));
+vi.mock("~/collab/blocknote-server", () => ({
+  markdownToBlocks: vi.fn(async () => [{ type: "paragraph" }]),
+}));
 // Stub the registry so the BY_NAME map side-effect doesn't pull in every
 // tool module. We only need the error classes here.
 vi.mock("~/mcp/registry", () => {
@@ -68,6 +72,8 @@ import {
   runManageMentorNoteTemplate,
   MANAGE_MENTOR_NOTE_TEMPLATE_TOOL,
 } from "~/mcp/tools/mentorship/manage-mentor-note-template";
+import { replaceCollabDocContent } from "~/collab/write";
+import { markdownToBlocks } from "~/collab/blocknote-server";
 
 type MockFn = ReturnType<typeof vi.fn>;
 type ModelMock = Record<string, MockFn>;
@@ -435,6 +441,40 @@ describe("manage_mentor_note_template", () => {
 
     const out = await runManageMentorNoteTemplate(ME, { action: "create", name: "Week Template" });
     expect(out).toMatchObject({ id: TEMPLATE_ID });
+  });
+
+  it("create with content writes the body via collab and mirrors it into contentJson", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) =>
+      fn({
+        mentorNoteTemplate: {
+          updateMany: vi.fn().mockResolvedValue({}),
+          create: vi.fn().mockResolvedValue({ id: TEMPLATE_ID }),
+        },
+      }),
+    );
+    mockPrisma.mentorNoteTemplate.update.mockResolvedValue({});
+
+    const out = await runManageMentorNoteTemplate(ME, {
+      action: "create",
+      name: "Week Template",
+      content: "# Weekly check-in",
+    });
+
+    expect(out).toMatchObject({ id: TEMPLATE_ID });
+    expect(markdownToBlocks).toHaveBeenCalledWith("# Weekly check-in");
+    expect(replaceCollabDocContent).toHaveBeenCalledWith(
+      `mentorNoteTemplate:${TEMPLATE_ID}:body`,
+      [{ type: "paragraph" }],
+      ME,
+    );
+    // Mirrored into the seed column so new notes pick it up.
+    expect(mockPrisma.mentorNoteTemplate.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: TEMPLATE_ID },
+        data: expect.objectContaining({ contentJson: [{ type: "paragraph" }] }),
+      }),
+    );
   });
 
   it("Core can set isDefault on create (clears others in tx)", async () => {
