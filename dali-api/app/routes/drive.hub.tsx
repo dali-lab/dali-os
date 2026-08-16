@@ -22,6 +22,8 @@ import type { DriveTreeScope } from "~/lib/drive-scopes.server";
 import type { DriveItem } from "~/lib/drive.server";
 import { DriveBrowser } from "~/components/drive/DriveBrowser";
 import type { RowActions } from "~/components/drive/DriveBrowser";
+import { DestinationPicker } from "~/components/drive/DestinationPicker";
+import type { PickerDrive, PickerFolder, Destination } from "~/components/drive/DestinationPicker";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
 import { Menu, Select } from "~/components/ui/floating";
@@ -742,6 +744,25 @@ export default function DriveHub() {
   // every keystroke. Scope/folder/type stay in the URL (linkable, back/forward).
   const [search, setSearch] = useState("");
 
+  // "Move to…" destination picker. Opened imperatively by pickMoveDestination,
+  // which returns a promise the bulk/single move flows await; the resolver is
+  // called on confirm (with the chosen destination) or cancel (with null).
+  const [movePicker, setMovePicker] = useState<null | {
+    heading: string;
+    drives: PickerDrive[];
+    folders: PickerFolder[];
+    disabledFolderIds?: Set<string>;
+    disabledDest?: Destination | null;
+    initial?: Destination;
+  }>(null);
+  const movePickerResolve = useRef<((d: Destination | null) => void) | null>(null);
+  const resolveMovePicker = useCallback((dest: Destination | null) => {
+    setMovePicker(null);
+    const resolve = movePickerResolve.current;
+    movePickerResolve.current = null;
+    resolve?.(dest);
+  }, []);
+
   // Location + view state from the URL. No scope/folder = Drive root — except
   // when this same hub is embedded at /hiring/library, where it opens straight
   // into the Hiring drive so the hiring team lands on their artifacts.
@@ -896,39 +917,64 @@ export default function DriveHub() {
     [driveScopes, dialog, toast, revalidator],
   );
 
-  // Build a grouped destination list (drive → top level + its folders) across
-  // every drive the item may move to, and let the user pick one.
+  // Open the hybrid destination picker over every drive the item(s) may move to
+  // and resolve with the chosen destination (or null on cancel). The scope id is
+  // the picker's driveId, so we return it verbatim.
   const pickMoveDestination = useCallback(
-    async (item: DriveItem, sourceScopeId: string): Promise<{ scopeId: string; folderId: string | null } | null> => {
-      const SEP = "|";
+    (item: DriveItem, sourceScopeId: string, heading: string): Promise<{ scopeId: string; folderId: string | null } | null> => {
+      const scopes = moveDestinationsFor(item);
+      if (scopes.length === 0) {
+        toast.error("There's nowhere else to move this");
+        return Promise.resolve(null);
+      }
       const banned =
-        item.type === "folder" ? folderAndDescendants(driveScopes.find((s) => s.id === sourceScopeId)?.items ?? [], item.id) : new Set<string>();
-      const options: { value: string; label: string }[] = [];
-      for (const s of moveDestinationsFor(item)) {
-        const drive = s.id === "lab" ? "Lab" : s.label;
-        const atRoot = s.id === sourceScopeId && (item.parentFolderId ?? null) === (s.rootFolderId ?? null);
-        if (!atRoot) options.push({ value: `${s.id}${SEP}`, label: `${drive} — Top level` });
+        item.type === "folder"
+          ? folderAndDescendants(driveScopes.find((s) => s.id === sourceScopeId)?.items ?? [], item.id)
+          : undefined;
+      const drives: PickerDrive[] = scopes.map((s) => ({
+        id: s.id,
+        label: s.id === "lab" ? "Lab" : s.label,
+        iconEmoji: s.iconEmoji,
+      }));
+      const folders: PickerFolder[] = [];
+      for (const s of scopes) {
+        const rootId = s.rootFolderId ?? null;
         for (const f of s.items) {
-          if (f.type !== "folder" || banned.has(f.id)) continue;
-          if (s.id === sourceScopeId && f.id === (item.parentFolderId ?? null)) continue; // already here
-          options.push({ value: `${s.id}${SEP}${f.id}`, label: `${drive} / ${f.title || "Untitled folder"}` });
+          if (f.type !== "folder") continue;
+          // Normalise a scope's top-level folders (Core/Hiring nest under a root
+          // folder) so parentId === null uniformly means "drive top level".
+          folders.push({
+            id: f.id,
+            driveId: s.id,
+            parentId: (f.parentFolderId ?? null) === rootId ? null : f.parentFolderId,
+            title: f.title,
+            iconEmoji: f.iconEmoji,
+          });
         }
       }
-      if (options.length === 0) {
-        toast.error("There's nowhere else to move this");
-        return null;
-      }
-      const dest = await dialog.choice({ title: `Move "${item.title || "Untitled"}"`, options });
-      if (dest === null) return null;
-      const [scopeId, folderId] = dest.split(SEP);
-      return { scopeId, folderId: folderId || null };
+      const sourceRoot = driveScopes.find((s) => s.id === sourceScopeId)?.rootFolderId ?? null;
+      const currentFolder = (item.parentFolderId ?? null) === sourceRoot ? null : (item.parentFolderId ?? null);
+      const currentDest: Destination = { driveId: sourceScopeId, folderId: currentFolder };
+      return new Promise((resolve) => {
+        movePickerResolve.current = resolve as (d: Destination | null) => void;
+        setMovePicker({
+          heading,
+          drives,
+          folders,
+          disabledFolderIds: banned,
+          disabledDest: currentDest,
+          initial: currentDest,
+        });
+      }).then((dest) =>
+        dest ? { scopeId: (dest as Destination).driveId, folderId: (dest as Destination).folderId } : null,
+      );
     },
-    [driveScopes, moveDestinationsFor, dialog, toast],
+    [driveScopes, moveDestinationsFor, toast],
   );
 
   const requestMoveCrossDrive = useCallback(
     async (sourceScopeId: string, item: DriveItem) => {
-      const dest = await pickMoveDestination(item, sourceScopeId);
+      const dest = await pickMoveDestination(item, sourceScopeId, `Move "${item.title || "Untitled"}"`);
       if (dest) await moveItemToScope(item, sourceScopeId, dest.scopeId, dest.folderId);
     },
     [pickMoveDestination, moveItemToScope],
@@ -940,7 +986,11 @@ export default function DriveHub() {
     async (items: DriveItem[]) => {
       const movable = items.filter((i) => !NON_MOVABLE.has(i.type));
       if (movable.length === 0 || !effectiveScopeId) return;
-      const dest = await pickMoveDestination(movable[0], effectiveScopeId);
+      const dest = await pickMoveDestination(
+        movable[0],
+        effectiveScopeId,
+        `Move ${movable.length} item${movable.length === 1 ? "" : "s"}`,
+      );
       if (!dest) return;
       if (dest.scopeId !== effectiveScopeId) {
         const destScope = driveScopes.find((s) => s.id === dest.scopeId);
@@ -1114,6 +1164,20 @@ export default function DriveHub() {
         onChange={handleFileChange}
       />
       <TemplatePicker open={templatePickerOpen} onClose={() => setTemplatePickerOpen(false)} />
+
+      {movePicker && (
+        <DestinationPicker
+          open
+          heading={movePicker.heading}
+          drives={movePicker.drives}
+          folders={movePicker.folders}
+          disabledFolderIds={movePicker.disabledFolderIds}
+          disabledDest={movePicker.disabledDest}
+          initial={movePicker.initial}
+          onClose={() => resolveMovePicker(null)}
+          onConfirm={(dest) => resolveMovePicker(dest)}
+        />
+      )}
     </div>
   );
 }

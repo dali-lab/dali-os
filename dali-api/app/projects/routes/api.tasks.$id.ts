@@ -23,6 +23,8 @@ type Priority = (typeof PRIORITIES)[number];
 type Body = {
   // ISO timestamp to set, or null to clear the deadline. Absent = no change.
   dueAt?: string | null;
+  // Timeline start (planning only — fires no reminders), or null to clear.
+  startsAt?: string | null;
   // Empty string / null clears the title — rejected (title is required).
   title?: string;
   // Null clears the description.
@@ -34,6 +36,8 @@ type Body = {
   sprintId?: string | null;
   // Null unlinks the epic. Must belong to the task's project.
   epicId?: string | null;
+  // Null unlinks the parent user story. Must belong to the task's project.
+  storyId?: string | null;
   // Full replacement checklist. Null or empty clears; item shape is
   // validated separately (parseChecklistInput).
   checklist?: unknown;
@@ -49,6 +53,12 @@ function isBody(x: unknown): x is Body {
   if (!x || typeof x !== "object") return false;
   const o = x as Record<string, unknown>;
   if (o.dueAt !== undefined && o.dueAt !== null && typeof o.dueAt !== "string") {
+    return false;
+  }
+  if (o.startsAt !== undefined && o.startsAt !== null && typeof o.startsAt !== "string") {
+    return false;
+  }
+  if (o.storyId !== undefined && o.storyId !== null && typeof o.storyId !== "string") {
     return false;
   }
   if (o.title !== undefined && typeof o.title !== "string") return false;
@@ -130,11 +140,14 @@ export async function action({ request, params }: Route.ActionArgs) {
   // because they hit the TaskAssignee join table, not Task itself.
   const data: {
     dueAt?: Date | null;
+    startsAt?: Date | null;
     title?: string;
+    description?: string | null;
     priority?: Priority;
     domainId?: string | null;
     sprintId?: string | null;
     epicId?: string | null;
+    storyId?: string | null;
     checklist?: ChecklistItem[] | typeof Prisma.JsonNull;
   } = {};
   if ("dueAt" in body) {
@@ -144,6 +157,13 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
     data.dueAt = parsed;
   }
+  if ("startsAt" in body) {
+    const parsed = parseDueAt(body.startsAt);
+    if (parsed === "invalid") {
+      return withCors(request, Response.json({ error: "Invalid startsAt" }, { status: 400 }));
+    }
+    data.startsAt = parsed;
+  }
   if ("title" in body) {
     const trimmed = (body.title ?? "").trim();
     if (!trimmed) {
@@ -151,9 +171,13 @@ export async function action({ request, params }: Route.ActionArgs) {
     }
     data.title = trimmed;
   }
-  // Task description is a live collab doc (task:{id}:description); its plaintext
-  // is mirrored to Task.description by the collab store hook, so it is not
-  // accepted here.
+  // Description is plain Markdown on the column, edited in the task modal the
+  // same way the project's own description is. (It used to be a collab doc
+  // that mirrored down to this column, which is why it wasn't accepted here.)
+  if ("description" in body) {
+    const trimmed = body.description?.trim() ?? "";
+    data.description = trimmed === "" ? null : trimmed;
+  }
   if ("priority" in body && body.priority) {
     data.priority = body.priority;
   }
@@ -193,6 +217,22 @@ export async function action({ request, params }: Route.ActionArgs) {
       }
     }
     data.epicId = epicId;
+  }
+  if ("storyId" in body) {
+    const storyId = body.storyId ?? null;
+    if (storyId !== null) {
+      const story = await prisma.userStory.findUnique({
+        where: { id: storyId },
+        select: { epic: { select: { projectId: true } } },
+      });
+      if (!story || story.epic.projectId !== task.projectId) {
+        return withCors(
+          request,
+          Response.json({ error: "Story is not part of this project" }, { status: 400 }),
+        );
+      }
+    }
+    data.storyId = storyId;
   }
   if ("checklist" in body) {
     if (body.checklist === null) {

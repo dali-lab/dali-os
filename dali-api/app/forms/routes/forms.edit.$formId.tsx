@@ -18,6 +18,7 @@ import {
 } from "~/hiring/lib/form-links.server";
 import { listAllGroups } from "~/lib/groups";
 import { FormDetail } from "~/forms/components/FormDetail";
+import { driveRootCrumbs } from "~/lib/drive-crumbs";
 
 export const meta: Route.MetaFunction = ({ data }) => [
   { title: `${(data as any)?.form?.name ?? "Form"} · Forms · DALI OS` },
@@ -36,9 +37,8 @@ export const handle = {
     } | undefined;
     if (!d?.form) return null;
     const scope = d.driveCrumbs?.scope ?? "lab";
-    const scopeQuery = scope === "lab" ? "" : `?scope=${scope}`;
     return [
-      { label: "Drive", to: `/drive${scopeQuery}` },
+      ...driveRootCrumbs(scope),
       ...(d.driveCrumbs?.folders ?? []).map((f) => ({
         label: f.title || "Untitled folder",
         to: `/drive?scope=${scope}&folder=${f.id}`,

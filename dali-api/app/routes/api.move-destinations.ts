@@ -24,10 +24,11 @@ export async function loader({ request }: Route.LoaderArgs) {
   });
   const projectIds = projects.map((p) => p.id);
 
+  // All folders (every depth), so the picker can drill into nested folders. Each
+  // carries its parentPageId — null at a workspace's top level — for tree build.
   const folders = await prisma.page.findMany({
     where: {
       kind: "Folder",
-      parentPageId: null,
       archivedAt: null,
       OR: [
         { workspaceType: "Lab", workspaceId: null },
@@ -37,14 +38,14 @@ export async function loader({ request }: Route.LoaderArgs) {
       ],
     },
     orderBy: { position: "asc" },
-    select: { id: true, title: true, workspaceType: true, workspaceId: true },
+    select: { id: true, title: true, parentPageId: true, workspaceType: true, workspaceId: true },
   });
 
-  const foldersByWs = new Map<string, { id: string; title: string }[]>();
+  const foldersByWs = new Map<string, { id: string; title: string; parentId: string | null }[]>();
   for (const f of folders) {
     const key = f.workspaceType === "Lab" ? "lab" : f.workspaceId!;
     const arr = foldersByWs.get(key) ?? [];
-    arr.push({ id: f.id, title: f.title });
+    arr.push({ id: f.id, title: f.title, parentId: f.parentPageId });
     foldersByWs.set(key, arr);
   }
 

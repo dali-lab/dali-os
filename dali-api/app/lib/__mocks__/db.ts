@@ -101,6 +101,8 @@ export const prisma = {
   },
   application: {
     findUnique: vi.fn(),
+    findFirst: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
   },
   applicationCycleStatusUpdate: {
     findFirst: vi.fn(),
@@ -325,8 +327,12 @@ export const prisma = {
     delete: vi.fn(),
   },
   formVersion: {
+    findUnique: vi.fn(),
     findFirst: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
     create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
   },
   formFolder: {
     findUnique: vi.fn(),

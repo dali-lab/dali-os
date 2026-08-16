@@ -11,6 +11,7 @@
 import type { Route } from "./+types/documents.agreement.$id";
 import { loader as adminLoader } from "./admin.agreements.$id";
 import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
+import { driveRootCrumbs } from "~/lib/drive-crumbs";
 import { PageIcon } from "~/components/PageIcon";
 
 export { action, default } from "./admin.agreements.$id";
@@ -35,9 +36,8 @@ export const handle = {
     const name = d?.document?.name;
     if (!name) return null;
     const scope = d?.driveCrumbs?.scope ?? "lab";
-    const scopeQuery = scope === "lab" ? "" : `?scope=${scope}`;
     return [
-      { label: "Drive", to: `/drive${scopeQuery}` },
+      ...driveRootCrumbs(scope),
       ...(d?.driveCrumbs?.folders ?? []).map((f) => ({
         label: f.title || "Untitled folder",
         to: `/drive?scope=${scope}&folder=${f.id}`,
