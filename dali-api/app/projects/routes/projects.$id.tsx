@@ -2978,24 +2978,25 @@ function OverviewTab({
         </section>
       )}
 
-      {/* Documents — collab-doc pages; rows + Add open the doc as a split-screen
-          tab beside the project (via the TabWorkspace shell). */}
+      {/* Drive — the project's one file surface: collab-doc pages (rows + Add
+          open the doc as a split-screen tab via the TabWorkspace shell) over
+          standalone uploads, which keep their versions, partner sharing, and
+          epic grouping as a subsection rather than a second card. */}
       <DocumentsBlock
         projectId={project.id}
         documents={documents}
         pinnedDocuments={pinnedDocuments}
         canEdit={canEdit}
         hasActivePartner={hasActivePartner}
-      />
-
-      {/* Files — standalone uploads with versions, work files grouped under
-          their linked tasks' epics. Tags are edited in the file editor. */}
-      <FilesBlock
-        projectId={project.id}
-        files={files}
-        epics={fileEpics}
-        canEdit={canEdit}
-        hasActivePartner={hasActivePartner}
+        filesSlot={
+          <FilesBlock
+            projectId={project.id}
+            files={files}
+            epics={fileEpics}
+            canEdit={canEdit}
+            hasActivePartner={hasActivePartner}
+          />
+        }
       />
 
       {/* Recent project-scoped audit activity — editors only (the loader
@@ -3387,12 +3388,15 @@ function DocumentsBlock({
   pinnedDocuments,
   canEdit,
   hasActivePartner,
+  filesSlot,
 }: {
   projectId: string;
   documents: LoaderData["documents"];
   pinnedDocuments: LoaderData["pinnedDocuments"];
   canEdit: boolean;
   hasActivePartner: boolean;
+  /** The project's uploads, rendered inside this block so Drive is one place. */
+  filesSlot?: React.ReactNode;
 }) {
   const dialog = useDialog();
   const revalidator = useRevalidator();
@@ -4099,6 +4103,7 @@ function DocumentsBlock({
           revalidator.revalidate();
         }}
       />
+      {filesSlot}
     </section>
   );
 }
@@ -4224,12 +4229,12 @@ function FilesBlock({
   const grouped = epicGroups.length > 0 || otherWorkFiles.length > 0;
 
   return (
-    <section className="bg-card border border-border rounded-lg p-4">
+    <div className="mt-4 border-t border-border pt-4">
       <input ref={fileInputRef} type="file" className="hidden" onChange={onPick} />
       <div className="flex items-center justify-between mb-3">
-        <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
-          <Paperclip className="w-4 h-4" /> Files
-        </h2>
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-2">
+          <Paperclip className="w-3.5 h-3.5" /> Files
+        </h3>
         {canEdit && (
           <Tooltip label={busy ? "Uploading…" : "Add file"}>
             <button
@@ -4267,7 +4272,7 @@ function FilesBlock({
           {generalFiles.length > 0 && fileGroup("Other files", generalFiles)}
         </div>
       )}
-    </section>
+    </div>
   );
 
   // One group: epic title (or bucket label) over the standard row list.

@@ -176,8 +176,8 @@ export function RepeatField({
       />
 
       {value.freq !== "none" && (
-        <div className="mt-2 w-fit max-w-full rounded-md border border-border bg-muted/40 p-3">
-          <div className="grid grid-cols-[3rem_minmax(0,20rem)] gap-x-2 gap-y-2">
+        <div className="mt-2 rounded-md border border-border bg-muted/40 p-3">
+          <div className="grid grid-cols-[3rem_minmax(0,1fr)] gap-x-2 gap-y-2">
             <span className={RAIL_LABEL}>Every</span>
             <div className="flex items-center gap-2">
               <input
@@ -202,7 +202,7 @@ export function RepeatField({
                 <div className="flex flex-col gap-1.5 py-1">
                   {/* Seven equal cells rather than a left-hugging row — the same
                       shape (and coral selection) as DateField's calendar grid. */}
-                  <div className="grid grid-cols-7 gap-1">
+                  <div className="grid max-w-[26rem] grid-cols-7 gap-1">
                     {DAY_CHIPS.map((chip, day) => {
                       const on = value.byDay.includes(day);
                       return (
@@ -234,7 +234,7 @@ export function RepeatField({
             <span className={RAIL_LABEL}>Ends</span>
             <div className="flex flex-col gap-2">
               <div
-                className="inline-flex h-8 w-full overflow-hidden rounded-md border border-border bg-background"
+                className="inline-flex h-8 w-full max-w-[26rem] overflow-hidden rounded-md border border-border bg-background"
                 role="group"
                 aria-label="When the repeat ends"
               >
@@ -265,7 +265,7 @@ export function RepeatField({
                   value={value.end.date}
                   min={anchorDate || undefined}
                   onChange={(date) => onChange({ ...value, end: { type: "on", date } })}
-                  className="w-full"
+                  className="w-full max-w-[26rem]"
                   ariaLabel="Repeat end date"
                 />
               )}
