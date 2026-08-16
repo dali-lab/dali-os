@@ -1,6 +1,6 @@
 import { redirect } from "react-router";
 import { Link } from "react-router";
-import { CalendarClock, FileText, Flag } from "lucide-react";
+import { CalendarClock, ChevronLeft, FileText, Flag } from "lucide-react";
 import type { Route } from "./+types/core.hub";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -16,12 +16,18 @@ import {
   formatWeekRange,
   type WeekEvent,
 } from "~/components/WeekCalendarPanel";
+import { MonthCalendarPanel } from "~/components/MonthCalendarPanel";
+import type { MonthEvent } from "~/components/MonthCalendarPanel";
 import {
+  generalCalendarMonthEvents,
   generalCalendarWeekEvents,
+  monthDayIndex,
+  resolveMonthWindow,
+  toMonthEvent,
   resolveWeekWindow,
   toWeekEvent,
 } from "~/lib/week-events";
-import { CORE_CLUSTERS, coreHandle } from "~/core/coreNav";
+import { coreHandle } from "~/core/coreNav";
 
 // Core's landing page: the week Core is running, not a menu. The grid merges
 // the meetings scoped to the Core group (each linking to its notes page) with
@@ -45,11 +51,21 @@ export async function loader({ request }: Route.LoaderArgs) {
   const me = await loadShellUser(auth.user.sub, request);
   const timeZone = resolveUserTimeZone(me);
   const now = new Date();
+  // The hub opens on the month. `?week=<n>` is what a day cell links to, and
+  // that is the only thing that switches the grid — so a shared URL keeps
+  // whichever view it was copied from.
+  const isWeekView = new URL(request.url).searchParams.has("week");
   const { weekOffset, weekStart, weekEnd, weekDays } = resolveWeekWindow(
     request,
     timeZone,
     now,
   );
+  const { monthOffset, gridStart, gridEnd, monthDays, monthLabel } =
+    resolveMonthWindow(request, timeZone, now);
+  const dayIndexByKey = monthDayIndex(monthDays);
+  // One window feeds both the calendar fetch and the occurrence expansion.
+  const rangeStart = isWeekView ? weekStart : gridStart;
+  const rangeEnd = isWeekView ? weekEnd : gridEnd;
 
   // What counts as a Core meeting — see coreCalendarMeetingWhere.
   const coreGroup = await prisma.groupDefinition.findUnique({
@@ -80,7 +96,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     }),
     // Never throws: returns [] when the feed is unconfigured, and serves stale
     // data rather than failing when the fetch does.
-    fetchGeneralCalendarEvents(weekStart, weekEnd),
+    fetchGeneralCalendarEvents(rangeStart, rangeEnd),
     // Announcements fan out one Notification row per recipient, so the same
     // deadline appears many times — collapse them below.
     prisma.notification.findMany({
@@ -97,6 +113,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   ]);
 
   const meetingEvents: WeekEvent[] = [];
+  const monthMeetingEvents: MonthEvent[] = [];
   const upcoming: {
     id: string;
     title: string;
@@ -108,8 +125,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     const occurrences = expandOccurrences(
       m,
       m.exceptions,
-      new Date(weekStart.getTime() - OCCURRENCE_GUARD_MS),
-      new Date(weekEnd.getTime() + OCCURRENCE_GUARD_MS),
+      new Date(rangeStart.getTime() - OCCURRENCE_GUARD_MS),
+      new Date(rangeEnd.getTime() + OCCURRENCE_GUARD_MS),
     );
     for (const occ of occurrences) {
       const href = m.notePage ? `/documents/${m.notePage.id}` : null;
@@ -129,6 +146,19 @@ export async function loader({ request }: Route.LoaderArgs) {
         timeZone,
       );
       if (mapped) meetingEvents.push(mapped);
+      const monthMapped = toMonthEvent(
+        {
+          id: `${m.id}:${occ.originalStart.toISOString()}`,
+          kind: "meeting",
+          label: m.title,
+          start: occ.start,
+          // Clicking the chip opens the meeting's notes when it has any.
+          href,
+        },
+        dayIndexByKey,
+        timeZone,
+      );
+      if (monthMapped) monthMeetingEvents.push(monthMapped);
       if (occ.start >= now) {
         upcoming.push({
           id: `${m.id}:${occ.originalStart.toISOString()}`,
@@ -160,9 +190,17 @@ export async function loader({ request }: Route.LoaderArgs) {
   return {
     isAdmin: await isAdmin(auth.user.sub),
     timeZone,
+    isWeekView,
     weekOffset,
     weekDays,
     weekLabel: formatWeekRange(weekStart, timeZone),
+    monthOffset,
+    monthDays,
+    monthLabel,
+    monthEvents: [
+      ...monthMeetingEvents,
+      ...generalCalendarMonthEvents(generalEvents, dayIndexByKey, timeZone),
+    ],
     events: [
       ...meetingEvents,
       ...generalCalendarWeekEvents(generalEvents, weekStart, timeZone),
@@ -173,8 +211,20 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 export default function CoreHub({ loaderData }: Route.ComponentProps) {
-  const { timeZone, weekOffset, weekDays, weekLabel, events, upcoming, deadlines } =
-    loaderData;
+  const {
+    timeZone,
+    isWeekView,
+    weekOffset,
+    weekDays,
+    weekLabel,
+    monthOffset,
+    monthDays,
+    monthLabel,
+    monthEvents,
+    events,
+    upcoming,
+    deadlines,
+  } = loaderData;
 
   const when = (iso: string) =>
     new Intl.DateTimeFormat("en-US", {
@@ -204,16 +254,38 @@ export default function CoreHub({ loaderData }: Route.ComponentProps) {
       </header>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-        <WeekCalendarPanel
-          days={weekDays}
-          events={events}
-          weekOffset={weekOffset}
-          weekLabel={weekLabel}
-          timeZone={timeZone}
-          basePath="/core"
-          sourceLabel="Core meetings + DALI General Calendar"
-          emptyLabel="No Core meetings or lab events this week."
-        />
+        {isWeekView ? (
+          <div className="flex flex-col gap-2">
+            <Link
+              to="/core"
+              prefetch="intent"
+              className="inline-flex w-fit items-center gap-1 text-xs font-medium text-muted-foreground hover:text-accent-coral transition-colors"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" /> Back to month
+            </Link>
+            <WeekCalendarPanel
+              days={weekDays}
+              events={events}
+              weekOffset={weekOffset}
+              weekLabel={weekLabel}
+              timeZone={timeZone}
+              basePath="/core"
+              sourceLabel="Core meetings + DALI General Calendar"
+              emptyLabel="No Core meetings or lab events this week."
+            />
+          </div>
+        ) : (
+          <MonthCalendarPanel
+            days={monthDays}
+            events={monthEvents}
+            monthOffset={monthOffset}
+            monthLabel={monthLabel}
+            timeZone={timeZone}
+            basePath="/core"
+            sourceLabel="Core meetings + DALI General Calendar"
+            emptyLabel="No Core meetings or lab events this month."
+          />
+        )}
 
         <div className="flex flex-col gap-4">
           <section className="bg-card border border-border shadow-brand-1 rounded-lg p-4">
@@ -284,59 +356,6 @@ export default function CoreHub({ loaderData }: Route.ComponentProps) {
         </div>
       </div>
 
-      <section className="flex flex-col gap-3">
-        <h2 className="font-heading font-semibold text-foreground">Core tools</h2>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {CORE_TOOLS.map((t) => (
-            <Link
-              key={t.to}
-              to={t.to}
-              prefetch="intent"
-              className="bg-card border border-border shadow-brand-1 rounded-lg p-4 hover:border-accent-coral/60 hover:shadow-brand-2 transition-all"
-            >
-              <h3 className="font-heading font-semibold text-foreground">
-                {t.label}
-              </h3>
-              <p className="text-sm text-muted-foreground mt-1">{t.description}</p>
-            </Link>
-          ))}
-        </div>
-      </section>
     </div>
   );
 }
-
-// The flat process pages, plus each cluster's entry point pulled straight from
-// CORE_CLUSTERS so the hub can't drift from the sidebar.
-const CORE_TOOLS: { label: string; to: string; description: string }[] = [
-  {
-    label: "Staffing",
-    to: "/core/staffing",
-    description: "Assign members to project roles for the term's staffing cycle.",
-  },
-  {
-    label: "Intent to Work",
-    to: "/core/intent-to-work",
-    description: "Who intends to work this cycle, and on what.",
-  },
-  {
-    label: "Project Bids",
-    to: "/core/project-bids",
-    description: "Which projects each member bid on.",
-  },
-  {
-    label: "Level Up",
-    to: "/core/level-up",
-    description: "Level-up requests and the promotions they ask for.",
-  },
-  ...CORE_CLUSTERS.map((c) => ({
-    label: c.label,
-    to: c.hubPath ?? c.sections[0]!.to,
-    description: c.description,
-  })),
-  {
-    label: "Attendance",
-    to: "/core/attendance",
-    description: "Self check-in events — who was invited and who checked in.",
-  },
-];
