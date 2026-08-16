@@ -1946,9 +1946,6 @@ function DescriptionSegment({
               className="px-2 py-1.5 text-sm font-mono border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
               autoFocus
             />
-            <p className="text-[11px] text-muted-foreground">
-              Supports Markdown — **bold**, headings, lists, links, `code`.
-            </p>
           </Form>
         ) : description ? (
           <Markdown>{description}</Markdown>
