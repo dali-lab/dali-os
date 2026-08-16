@@ -666,18 +666,13 @@ export function TaskModal({
               this was a collab doc were already mirrored to this column as
               plaintext, so they still read fine here. */}
           {canManage ? (
-            <>
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                rows={isCreate ? 3 : 6}
-                placeholder="What does this task involve? (Markdown supported)"
-                className="w-full px-2 py-1.5 text-sm font-mono border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
-              />
-              <p className="text-[11px] normal-case tracking-normal text-muted-foreground">
-                Supports Markdown — **bold**, headings, lists, links, `code`.
-              </p>
-            </>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={isCreate ? 3 : 6}
+              placeholder="What does this task involve? (Markdown supported)"
+              className="w-full px-2 py-1.5 text-sm font-mono border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+            />
           ) : description ? (
             <div className="px-2 py-1.5">
               <Markdown>{description}</Markdown>

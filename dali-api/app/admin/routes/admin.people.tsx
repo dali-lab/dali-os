@@ -19,7 +19,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     request,
     auth.user.sub,
     "/admin/people",
-    "/core/access",
+    "/core/access/roles",
   );
   if (regrouped) return regrouped;
   if (!(await isCore(auth.user.sub))) return redirect("/");

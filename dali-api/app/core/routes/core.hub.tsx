@@ -11,17 +11,15 @@ import { resolveUserTimeZone } from "~/lib/timezone";
 import { fetchGeneralCalendarEvents } from "~/lib/general-calendar";
 import { expandOccurrences } from "~/lib/meeting-occurrences";
 import { coreCalendarMeetingWhere } from "~/core/lib/core-calendar";
+import { MonthCalendarPanel } from "~/components/MonthCalendarPanel";
+import type { MonthEvent } from "~/components/MonthCalendarPanel";
 import {
-  WeekCalendarPanel,
-  formatWeekRange,
-  type WeekEvent,
-} from "~/components/WeekCalendarPanel";
-import {
-  generalCalendarWeekEvents,
-  resolveWeekWindow,
-  toWeekEvent,
+  generalCalendarMonthEvents,
+  monthDayIndex,
+  resolveMonthWindow,
+  toMonthEvent,
 } from "~/lib/week-events";
-import { CORE_CLUSTERS, coreHandle } from "~/core/coreNav";
+import { coreHandle } from "~/core/coreNav";
 
 // Core's landing page: the week Core is running, not a menu. The grid merges
 // the meetings scoped to the Core group (each linking to its notes page) with
@@ -45,11 +43,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   const me = await loadShellUser(auth.user.sub, request);
   const timeZone = resolveUserTimeZone(me);
   const now = new Date();
-  const { weekOffset, weekStart, weekEnd, weekDays } = resolveWeekWindow(
-    request,
-    timeZone,
-    now,
-  );
+  const { monthOffset, gridStart, gridEnd, monthDays, monthLabel } =
+    resolveMonthWindow(request, timeZone, now);
+  const dayIndexByKey = monthDayIndex(monthDays);
 
   // What counts as a Core meeting — see coreCalendarMeetingWhere.
   const coreGroup = await prisma.groupDefinition.findUnique({
@@ -80,7 +76,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     }),
     // Never throws: returns [] when the feed is unconfigured, and serves stale
     // data rather than failing when the fetch does.
-    fetchGeneralCalendarEvents(weekStart, weekEnd),
+    fetchGeneralCalendarEvents(gridStart, gridEnd),
     // Announcements fan out one Notification row per recipient, so the same
     // deadline appears many times — collapse them below.
     prisma.notification.findMany({
@@ -96,7 +92,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     }),
   ]);
 
-  const meetingEvents: WeekEvent[] = [];
+  const monthMeetingEvents: MonthEvent[] = [];
   const upcoming: {
     id: string;
     title: string;
@@ -108,27 +104,24 @@ export async function loader({ request }: Route.LoaderArgs) {
     const occurrences = expandOccurrences(
       m,
       m.exceptions,
-      new Date(weekStart.getTime() - OCCURRENCE_GUARD_MS),
-      new Date(weekEnd.getTime() + OCCURRENCE_GUARD_MS),
+      new Date(gridStart.getTime() - OCCURRENCE_GUARD_MS),
+      new Date(gridEnd.getTime() + OCCURRENCE_GUARD_MS),
     );
     for (const occ of occurrences) {
       const href = m.notePage ? `/documents/${m.notePage.id}` : null;
-      const mapped = toWeekEvent(
+      const monthMapped = toMonthEvent(
         {
           id: `${m.id}:${occ.originalStart.toISOString()}`,
           kind: "meeting",
           label: m.title,
           start: occ.start,
-          end: occ.end,
-          organizer: m.organizer
-            ? `${m.organizer.firstName} ${m.organizer.lastName}`
-            : null,
+          // Clicking the chip opens the meeting's notes when it has any.
           href,
         },
-        weekStart,
+        dayIndexByKey,
         timeZone,
       );
-      if (mapped) meetingEvents.push(mapped);
+      if (monthMapped) monthMeetingEvents.push(monthMapped);
       if (occ.start >= now) {
         upcoming.push({
           id: `${m.id}:${occ.originalStart.toISOString()}`,
@@ -160,12 +153,12 @@ export async function loader({ request }: Route.LoaderArgs) {
   return {
     isAdmin: await isAdmin(auth.user.sub),
     timeZone,
-    weekOffset,
-    weekDays,
-    weekLabel: formatWeekRange(weekStart, timeZone),
-    events: [
-      ...meetingEvents,
-      ...generalCalendarWeekEvents(generalEvents, weekStart, timeZone),
+    monthOffset,
+    monthDays,
+    monthLabel,
+    monthEvents: [
+      ...monthMeetingEvents,
+      ...generalCalendarMonthEvents(generalEvents, dayIndexByKey, timeZone),
     ],
     upcoming: upcoming.slice(0, 5),
     deadlines,
@@ -173,7 +166,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 export default function CoreHub({ loaderData }: Route.ComponentProps) {
-  const { timeZone, weekOffset, weekDays, weekLabel, events, upcoming, deadlines } =
+  const { timeZone, monthOffset, monthDays, monthLabel, monthEvents, upcoming, deadlines } =
     loaderData;
 
   const when = (iso: string) =>
@@ -198,21 +191,20 @@ export default function CoreHub({ loaderData }: Route.ComponentProps) {
       <header>
         <h1 className="font-heading text-2xl font-bold text-foreground">Core</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          The week Core is running — meetings and their notes, lab events, and
+          The month Core is running — meetings and their notes, lab events, and
           what&apos;s coming due.
         </p>
       </header>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-        <WeekCalendarPanel
-          days={weekDays}
-          events={events}
-          weekOffset={weekOffset}
-          weekLabel={weekLabel}
+        <MonthCalendarPanel
+          days={monthDays}
+          events={monthEvents}
+          monthOffset={monthOffset}
+          monthLabel={monthLabel}
           timeZone={timeZone}
           basePath="/core"
           sourceLabel="Core meetings + DALI General Calendar"
-          emptyLabel="No Core meetings or lab events this week."
         />
 
         <div className="flex flex-col gap-4">
@@ -284,59 +276,6 @@ export default function CoreHub({ loaderData }: Route.ComponentProps) {
         </div>
       </div>
 
-      <section className="flex flex-col gap-3">
-        <h2 className="font-heading font-semibold text-foreground">Core tools</h2>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {CORE_TOOLS.map((t) => (
-            <Link
-              key={t.to}
-              to={t.to}
-              prefetch="intent"
-              className="bg-card border border-border shadow-brand-1 rounded-lg p-4 hover:border-accent-coral/60 hover:shadow-brand-2 transition-all"
-            >
-              <h3 className="font-heading font-semibold text-foreground">
-                {t.label}
-              </h3>
-              <p className="text-sm text-muted-foreground mt-1">{t.description}</p>
-            </Link>
-          ))}
-        </div>
-      </section>
     </div>
   );
 }
-
-// The flat process pages, plus each cluster's entry point pulled straight from
-// CORE_CLUSTERS so the hub can't drift from the sidebar.
-const CORE_TOOLS: { label: string; to: string; description: string }[] = [
-  {
-    label: "Staffing",
-    to: "/core/staffing",
-    description: "Assign members to project roles for the term's staffing cycle.",
-  },
-  {
-    label: "Intent to Work",
-    to: "/core/intent-to-work",
-    description: "Who intends to work this cycle, and on what.",
-  },
-  {
-    label: "Project Bids",
-    to: "/core/project-bids",
-    description: "Which projects each member bid on.",
-  },
-  {
-    label: "Level Up",
-    to: "/core/level-up",
-    description: "Level-up requests and the promotions they ask for.",
-  },
-  ...CORE_CLUSTERS.map((c) => ({
-    label: c.label,
-    to: c.hubPath ?? c.sections[0]!.to,
-    description: c.description,
-  })),
-  {
-    label: "Attendance",
-    to: "/core/attendance",
-    description: "Self check-in events — who was invited and who checked in.",
-  },
-];

@@ -1,4 +1,4 @@
-import { ClipboardCheck, Globe, Mail, Megaphone, Shield } from "lucide-react";
+import { ClipboardCheck, Mail, Megaphone } from "lucide-react";
 import { ClusterHub } from "~/components/ClusterHub";
 import {
   clusterTrail,
@@ -17,32 +17,9 @@ import {
 // app/lib/nav-areas.ts. Structure, trail, and card grid mirror Admin's
 // (app/admin/adminNav.tsx) through the shared app/lib/cluster-nav.ts.
 
-export type CoreClusterKey = "access" | "communications";
+export type CoreClusterKey = "communications";
 
 export const CORE_CLUSTERS: NavCluster[] = [
-  {
-    key: "access",
-    label: "Access & Permissions",
-    description: "Who holds which role, and which domains they belong to.",
-    icon: Shield,
-    hubPath: "/core/access",
-    sections: [
-      {
-        key: "roles",
-        label: "Roles & Permissions",
-        to: "/core/access/roles",
-        icon: Shield,
-        description: "Assign Admin, Core, and Domain Lead roles per term.",
-      },
-      {
-        key: "domains",
-        label: "Domains",
-        to: "/core/access/domains",
-        icon: Globe,
-        description: "The lab's domains, who leads them, and member eligibility.",
-      },
-    ],
-  },
   {
     key: "communications",
     label: "Communications",
@@ -74,14 +51,19 @@ export const CORE_CLUSTERS: NavCluster[] = [
   },
 ];
 
-// Attendance sits outside the access cluster (it is an event log, not a
-// permission), so it is a top-level Core sub-tab with a plain trail.
+// Core's flat sub-tabs — every page that is reached straight from the sidebar
+// rather than through a cluster hub, so its trail is just "Core > <page>".
+// Roles and Domains sit here rather than in an Access cluster: a two-page
+// cluster only bought an extra hop between the sidebar and the page.
 const STANDALONE_LABELS: Record<string, string> = {
   attendance: "Attendance",
   staffing: "Staffing",
   "intent-to-work": "Intent to Work",
   "project-bids": "Project Bids",
   "level-up": "Level Up",
+  roles: "Roles & Permissions",
+  domains: "Domains",
+  agreements: "Agreements",
 };
 
 export const CORE_ATTENDANCE_ICON = ClipboardCheck;

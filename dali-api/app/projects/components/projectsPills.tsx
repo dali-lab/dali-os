@@ -1,5 +1,4 @@
 import {
-  ArrowLeftRight,
   ArrowUpCircle,
   ClipboardPen,
   Gavel,
@@ -10,12 +9,12 @@ import type { AreaPill } from "~/components/AreaPillNav";
 
 // The Projects area's surfaces as one flat pill row (the sidebar entry is
 // childless and lands on the Hub). The four staffing surfaces are
-// canViewStaffing-gated — members see Hub / Transfer only. Flat on
+// canViewStaffing-gated — members see the Hub only. Flat on
 // purpose: a second-level row would replace this one on navigation, making
 // the nav appear to vanish.
 export function projectsPills(args: {
   canViewStaffing: boolean;
-  active: "hub" | "staffing" | "intent" | "bids" | "level-up" | "transfer";
+  active: "hub" | "staffing" | "intent" | "bids" | "level-up";
 }): AreaPill[] {
   return [
     { label: "Hub", to: "/projects", active: args.active === "hub", icon: LayoutGrid },
@@ -47,11 +46,5 @@ export function projectsPills(args: {
           },
         ]
       : []),
-    {
-      label: "Transfer",
-      to: "/projects/transfer",
-      active: args.active === "transfer",
-      icon: ArrowLeftRight,
-    },
   ];
 }

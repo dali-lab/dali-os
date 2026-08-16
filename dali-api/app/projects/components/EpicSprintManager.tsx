@@ -578,7 +578,7 @@ function EpicDetail({
               }}
               editable={canEditContent}
               placeholder="What is this epic about?"
-              className="border border-border rounded-md"
+              className="rounded-md border border-border bg-background focus-within:ring-2 focus-within:ring-accent-coral/30"
             />
           </PresenceProvider>
         ) : (
