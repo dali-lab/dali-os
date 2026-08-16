@@ -143,9 +143,7 @@ const dateKey = (d: Date) =>
  * ask an expander for an absurd range.
  *
  * The grid always spans whole Sunday→Saturday rows, so it carries a few days
- * of the neighbouring months (`inMonth: false`). Each cell also knows the
- * `?week=` offset that opens the week it sits in — that is what makes a day
- * click-through to the week view.
+ * of the neighbouring months (`inMonth: false`).
  */
 export function resolveMonthWindow(
   request: Request,
@@ -175,23 +173,14 @@ export function resolveMonthWindow(
   const gridFirst = new Date(Date.UTC(year, month, 1 - leading));
 
   const todayMidnight = new Date(Date.UTC(today.year, today.month - 1, today.day));
-  const thisSunday = new Date(
-    todayMidnight.getTime() - todayMidnight.getUTCDay() * 86_400_000,
-  );
 
   const monthDays: MonthDayDTO[] = Array.from({ length: cells }).map((_, i) => {
     const d = new Date(gridFirst.getTime() + i * 86_400_000);
-    const rowSunday = new Date(
-      gridFirst.getTime() + Math.floor(i / 7) * 7 * 86_400_000,
-    );
     return {
       num: d.getUTCDate(),
       key: dateKey(d),
       inMonth: d.getUTCMonth() === month,
       isToday: d.getTime() === todayMidnight.getTime(),
-      weekOffset: Math.round(
-        (rowSunday.getTime() - thisSunday.getTime()) / (7 * 86_400_000),
-      ),
     };
   });
 

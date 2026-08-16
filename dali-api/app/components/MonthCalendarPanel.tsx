@@ -3,10 +3,9 @@ import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "~/lib/cn";
 
 // Month companion to WeekCalendarPanel. A month can't carry an hour grid, so
-// each day is a list of chips instead of positioned blocks — and the whole
-// cell is one link into that day's week, which is where the hour detail
-// (and the event popovers) live. Paged by `?month=<n>` the same way the week
-// grid is paged by `?week=<n>`.
+// each day is a list of chips instead of positioned blocks. Cells are inert:
+// the only thing that navigates is a meeting chip, which opens its notes.
+// Paged by `?month=<n>` the same way the week grid is paged by `?week=<n>`.
 
 export type MonthDayDTO = {
   /** Day-of-month number. */
@@ -16,8 +15,6 @@ export type MonthDayDTO = {
   isToday: boolean;
   /** False for the leading/trailing days borrowed from neighbouring months. */
   inMonth: boolean;
-  /** The `?week=` offset that opens the week this day sits in. */
-  weekOffset: number;
 };
 
 export type MonthEvent = {
@@ -52,7 +49,6 @@ export function MonthCalendarPanel({
   timeZone,
   basePath = "/",
   sourceLabel = "DALI General Calendar",
-  emptyLabel = "Nothing on the calendar this month.",
 }: {
   days: MonthDayDTO[];
   events: MonthEvent[];
@@ -62,12 +58,9 @@ export function MonthCalendarPanel({
   /** Route the month paging and day links point at. */
   basePath?: string;
   sourceLabel?: string;
-  emptyLabel?: string;
 }) {
   const monthHref = (offset: number) =>
     offset === 0 ? basePath : `${basePath}?month=${offset}`;
-  const weekHref = (offset: number) =>
-    offset === 0 ? `${basePath}?week=0` : `${basePath}?week=${offset}`;
 
   const byDay = new Map<number, MonthEvent[]>();
   for (const ev of events) {
@@ -151,25 +144,13 @@ export function MonthCalendarPanel({
             <div
               key={day.key}
               className={cn(
-                "group relative flex flex-col gap-1 p-1.5",
+                "flex flex-col gap-1 p-1.5",
                 day.inMonth ? "bg-card" : "bg-muted/30",
               )}
             >
-              {/* The cell's own click target sits underneath the chips, so a
-                  meeting chip can link to its note while the rest of the day
-                  still opens the week. Nesting the two would be invalid HTML. */}
-              <Link
-                to={weekHref(day.weekOffset)}
-                prefetch="intent"
-                aria-label={`Open the week of ${day.key}`}
-                className={cn(
-                  "absolute inset-0 z-0 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent-coral",
-                  day.inMonth ? "hover:bg-muted/60" : "hover:bg-muted/50",
-                )}
-              />
               <span
                 className={cn(
-                  "pointer-events-none relative z-10 inline-flex h-5 min-w-5 items-center justify-center self-start rounded-full px-1 text-xs font-semibold tabular-nums",
+                  "inline-flex h-5 min-w-5 items-center justify-center self-start rounded-full px-1 text-xs font-semibold tabular-nums",
                   day.isToday
                     ? "bg-accent-coral text-white"
                     : day.inMonth
@@ -185,11 +166,11 @@ export function MonthCalendarPanel({
                   : `${time(ev.startAt)} · ${ev.label}`;
                 const text = ev.allDay ? ev.label : `${time(ev.startAt)} ${ev.label}`;
                 const chip = cn(
-                  "relative z-10 block truncate rounded px-1 py-0.5 text-[11px] font-medium leading-tight",
+                  "block truncate rounded px-1 py-0.5 text-[11px] font-medium leading-tight",
                   EVENT_FILLS[ev.kind],
                 );
-                // A meeting with a note opens the note; everything else defers
-                // to the cell link behind it.
+                // A meeting with a note is the only thing on the grid that
+                // navigates; the day itself is not a link.
                 return ev.href ? (
                   <Link
                     key={ev.id}
@@ -201,13 +182,13 @@ export function MonthCalendarPanel({
                     {text}
                   </Link>
                 ) : (
-                  <span key={ev.id} title={title} className={cn(chip, "pointer-events-none")}>
+                  <span key={ev.id} title={title} className={chip}>
                     {text}
                   </span>
                 );
               })}
               {hidden > 0 && (
-                <span className="pointer-events-none relative z-10 px-1 text-[11px] font-medium text-muted-foreground group-hover:text-foreground">
+                <span className="px-1 text-[11px] font-medium text-muted-foreground">
                   +{hidden} more
                 </span>
               )}
@@ -216,12 +197,6 @@ export function MonthCalendarPanel({
         })}
       </div>
 
-      {events.length === 0 && (
-        <p className="mt-3 text-sm text-muted-foreground">{emptyLabel}</p>
-      )}
-      <p className="mt-2 text-xs text-muted-foreground">
-        Pick a day to open its week; a meeting with notes opens the notes.
-      </p>
     </section>
   );
 }

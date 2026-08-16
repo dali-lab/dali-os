@@ -51,9 +51,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   const me = await loadShellUser(auth.user.sub, request);
   const timeZone = resolveUserTimeZone(me);
   const now = new Date();
-  // The hub opens on the month. `?week=<n>` is what a day cell links to, and
-  // that is the only thing that switches the grid — so a shared URL keeps
-  // whichever view it was copied from.
+  // The hub opens on the month. `?week=<n>` switches to the week grid — the
+  // month's day cells are inert, so today that URL is reached by hand or by a
+  // saved link, and a shared URL keeps whichever view it was copied from.
   const isWeekView = new URL(request.url).searchParams.has("week");
   const { weekOffset, weekStart, weekEnd, weekDays } = resolveWeekWindow(
     request,
@@ -283,7 +283,6 @@ export default function CoreHub({ loaderData }: Route.ComponentProps) {
             timeZone={timeZone}
             basePath="/core"
             sourceLabel="Core meetings + DALI General Calendar"
-            emptyLabel="No Core meetings or lab events this month."
           />
         )}
 
