@@ -59,10 +59,17 @@ export interface UserRoles {
  * Resolve all role flags for a user with one round of parallel queries.
  * Use this in layout loaders instead of calling individual checks separately.
  */
-export async function getUserRoles(userId: string): Promise<UserRoles> {
+export async function getUserRoles(userId: string, request?: Request): Promise<UserRoles> {
+  if (!request) return computeGetUserRoles(userId, request);
+  return cachedForRequest(request, `getUserRoles:${userId}`, () =>
+    computeGetUserRoles(userId, request),
+  );
+}
+
+async function computeGetUserRoles(userId: string, request?: Request): Promise<UserRoles> {
   const envIds = getAdminUserIdsFromEnv();
 
-  const cycleTermIds = await getActiveCoreCycleTermIds();
+  const cycleTermIds = await getActiveCoreCycleTermIds(request);
 
   const [member, admin, core, domainLead, instructor, interviewer, userRow] = await Promise.all([
     prisma.dALIMember.findUnique({ where: { userId }, select: { id: true } }),
@@ -141,8 +148,9 @@ export interface RoleInstance {
 export async function getUserRoleInstances(
   userId: string,
   termId?: string,
+  request?: Request,
 ): Promise<RoleInstance[]> {
-  const term = termId ? { id: termId } : await currentTerm();
+  const term = termId ? { id: termId } : await currentTerm(request);
 
   const [
     projectAssignments,
@@ -380,12 +388,12 @@ async function computeIsLabMember(userId: string): Promise<boolean> {
 /** Core (or Admin). Pass `request` to memoize per navigation — see `isLabMember`. */
 export async function isCore(userId: string, request?: Request): Promise<boolean> {
   if (request) {
-    return cachedForRequest(request, `isCore:${userId}`, () => computeIsCore(userId));
+    return cachedForRequest(request, `isCore:${userId}`, () => computeIsCore(userId, request));
   }
   return computeIsCore(userId);
 }
 
-async function computeIsCore(userId: string): Promise<boolean> {
+async function computeIsCore(userId: string, request?: Request): Promise<boolean> {
   const envIds = getAdminUserIdsFromEnv();
   if (envIds.includes(userId)) return true;
   const admin = await prisma.adminMembership.findUnique({
@@ -393,7 +401,7 @@ async function computeIsCore(userId: string): Promise<boolean> {
     select: { id: true },
   });
   if (admin !== null) return true;
-  const cycleTermIds = await getActiveCoreCycleTermIds();
+  const cycleTermIds = await getActiveCoreCycleTermIds(request);
   if (cycleTermIds.length === 0) return false;
   const core = await prisma.coreAssignment.findFirst({
     where: { userId, termId: { in: cycleTermIds } },
@@ -440,8 +448,15 @@ export async function isInstructor(userId: string): Promise<boolean> {
  * Forms & Groups gate: Core, Admin, or Instructor. (`isCore` already covers
  * Core + Admin; Instructors are added on top.)
  */
-export async function canViewForms(userId: string): Promise<boolean> {
-  if (await isCore(userId)) return true;
+export async function canViewForms(userId: string, request?: Request): Promise<boolean> {
+  if (!request) return computeCanViewForms(userId, request);
+  return cachedForRequest(request, `canViewForms:${userId}`, () =>
+    computeCanViewForms(userId, request),
+  );
+}
+
+async function computeCanViewForms(userId: string, request?: Request): Promise<boolean> {
+  if (await isCore(userId, request)) return true;
   return isInstructor(userId);
 }
 
@@ -450,8 +465,9 @@ export async function canViewForms(userId: string): Promise<boolean> {
  * Same membership set as `isCore` today — named separately so the staffing
  * access policy can diverge later.
  */
-export async function canViewStaffing(userId: string): Promise<boolean> {
-  return isCore(userId);
+export async function canViewStaffing(userId: string, request?: Request): Promise<boolean> {
+  if (!request) return isCore(userId, request);
+  return cachedForRequest(request, `canViewStaffing:${userId}`, () => isCore(userId, request));
 }
 
 /** DomainLead: has at least one DomainLeadAssignment. */
@@ -544,7 +560,12 @@ export async function requireMember(userId: string) {
  * Returns null only if the Term table is empty (i.e. v0-reference seed
  * hasn't run).
  */
-export async function currentTerm() {
+export async function currentTerm(request?: Request) {
+  if (!request) return computeCurrentTerm();
+  return cachedForRequest(request, "currentTerm", () => computeCurrentTerm());
+}
+
+async function computeCurrentTerm() {
   const now = new Date();
   const active = await prisma.term.findFirst({
     where: { startDate: { lte: now }, endDate: { gte: now } },
@@ -563,7 +584,12 @@ export async function currentTerm() {
  * inter-term gap. No roll-forward to the next upcoming term. Use this when
  * the call site must fail closed between terms (e.g. intern eligibility).
  */
-export async function currentTermStrict() {
+export async function currentTermStrict(request?: Request) {
+  if (!request) return computeCurrentTermStrict();
+  return cachedForRequest(request, "currentTermStrict", () => computeCurrentTermStrict());
+}
+
+async function computeCurrentTermStrict() {
   const now = new Date();
   return prisma.term.findFirst({
     where: { startDate: { lte: now }, endDate: { gte: now } },
@@ -582,8 +608,8 @@ export async function currentTermStrict() {
  * current term at all (empty Term table), the predicate degrades to "any lab
  * member" rather than returning nothing.
  */
-export async function currentTermMemberWhere() {
-  const term = await currentTerm();
+export async function currentTermMemberWhere(request?: Request) {
+  const term = await currentTerm(request);
   if (!term) return { daliMember: { isNot: null } };
   return {
     daliMember: { isNot: null },
@@ -608,8 +634,15 @@ export async function currentTermMemberWhere() {
  * Cycle math lives in `~/lib/core-cycle.ts` and is shared with the
  * add/remove writers so reads + writes can't drift.
  */
-export async function getActiveCoreCycleTermIds(): Promise<string[]> {
-  const term = await currentTerm();
+export async function getActiveCoreCycleTermIds(request?: Request): Promise<string[]> {
+  if (!request) return computeGetActiveCoreCycleTermIds(request);
+  return cachedForRequest(request, "getActiveCoreCycleTermIds", () =>
+    computeGetActiveCoreCycleTermIds(request),
+  );
+}
+
+async function computeGetActiveCoreCycleTermIds(request?: Request): Promise<string[]> {
+  const term = await currentTerm(request);
   if (!term) return [];
   const currentRange = cycleSortKeyRange(term.sortKey);
   // Spring (digit 2) extends the window back one cycle for the handoff.
@@ -630,8 +663,9 @@ export async function getActiveCoreCycleTermIds(): Promise<string[]> {
  * can view the board should also be able to manage it — same membership set as
  * `isCore`, so the board's view + mutate gates align.
  */
-export async function canManageStaffing(userId: string): Promise<boolean> {
-  return isCore(userId);
+export async function canManageStaffing(userId: string, request?: Request): Promise<boolean> {
+  if (!request) return isCore(userId, request);
+  return cachedForRequest(request, `canManageStaffing:${userId}`, () => isCore(userId, request));
 }
 
 // ─── Mentor-collective access ────────────────────────────────────────────────
@@ -657,10 +691,22 @@ export async function canManageStaffing(userId: string): Promise<boolean> {
 export async function isLabMentor(
   userId: string,
   termId?: string,
+  request?: Request,
+): Promise<boolean> {
+  if (!request) return computeIsLabMentor(userId, termId, request);
+  return cachedForRequest(request, `isLabMentor:${userId}:${termId ?? ""}`, () =>
+    computeIsLabMentor(userId, termId, request),
+  );
+}
+
+async function computeIsLabMentor(
+  userId: string,
+  termId?: string,
+  request?: Request,
 ): Promise<boolean> {
   let resolvedTermId = termId;
   if (!resolvedTermId) {
-    const term = await currentTerm();
+    const term = await currentTerm(request);
     if (!term) return false;
     resolvedTermId = term.id;
   }

@@ -20,7 +20,7 @@
 import { prisma } from "~/lib/db";
 import { isCore, isProjectMember, isLabMember } from "~/lib/roles";
 import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
-import { sharePermissionFor, permissionAtLeast } from "~/lib/page-sharing.server";
+import { groupIdsForUser, permissionAtLeast, PERMISSION_RANK } from "~/lib/page-sharing.server";
 import { resolveGroupMembers } from "~/lib/groups";
 import type { SharePermission, LinkAccess, ScopeKind } from "~/generated/prisma/client";
 
@@ -94,19 +94,64 @@ function higher(a: SharePermission | null, b: SharePermission): SharePermission 
 }
 
 /**
+ * Derive the highest share permission for `userSub` from a pre-fetched slice
+ * of PageShare rows (already filtered or unfiltered for this page). Called by
+ * both the single-page and bulk paths so the logic can't diverge.
+ */
+function sharePermissionFromRows(
+  rows: Array<{ principalType: string; principalId: string; permission: SharePermission }>,
+  userSub: string,
+  groupIds: string[],
+): SharePermission | null {
+  const relevant = rows.filter(
+    (r) =>
+      (r.principalType === "User" && r.principalId === userSub) ||
+      (r.principalType === "Group" && groupIds.includes(r.principalId)),
+  );
+  if (relevant.length === 0) return null;
+  return relevant.reduce<SharePermission>(
+    (best, r) => (PERMISSION_RANK[r.permission] > PERMISSION_RANK[best] ? r.permission : best),
+    "View",
+  );
+}
+
+/**
  * Access implied by the additive layers — a named PageShare (per-account or via
  * group) and the document-level General access setting — independent of the
  * page's workspace role rules. Returned as its own access result so the caller
  * ORs it onto the role base. `LabMembers` general access grants to lab members
  * only (not partner/applicant/non-member Dartmouth accounts); `Public` grants a
  * read-only view to any caller that reaches getPageAccess.
+ *
+ * `preloadedShares` — when provided, skips the per-page DB fetch (bulk path).
+ * `preloadedGroupIds` — when provided, skips the groupIdsForUser fetch.
  */
 async function shareAndLinkGrant(
   page: PageShape,
   userSub: string,
   request?: Request,
+  preloadedShares?: Array<{ principalType: string; principalId: string; permission: SharePermission }>,
+  preloadedGroupIds?: string[],
 ): Promise<PageAccessResult> {
-  let level = await sharePermissionFor(page.id, userSub, request);
+  const groupIds = preloadedGroupIds ?? (await groupIdsForUser(userSub, request));
+  const sharesForPage = preloadedShares ?? await (async () => {
+    // Single-page path: fetch the shares for this one page (original behaviour).
+    const rows = await prisma.pageShare.findMany({
+      where: {
+        pageId: page.id,
+        OR: [
+          { principalType: "User", principalId: userSub },
+          ...(groupIds.length
+            ? [{ principalType: "Group" as const, principalId: { in: groupIds } }]
+            : []),
+        ],
+      },
+      select: { principalType: true, principalId: true, permission: true },
+    });
+    return rows;
+  })();
+
+  let level = sharePermissionFromRows(sharesForPage, userSub, groupIds);
   const linkAccess = (page.linkAccess as LinkAccess | null | undefined) ?? "Restricted";
   if (linkAccess === "LabMembers") {
     if (await isLabMember(userSub, request)) {
@@ -270,6 +315,26 @@ export async function getPageAccess(
     page = pageOrId;
   }
 
+  return computePageAccessCore(userSub, page, request);
+}
+
+/**
+ * Core access-computation logic, shared between `getPageAccess` (single page)
+ * and `getPageAccessBulk` (pre-fetched batch). Accepts optional pre-fetched
+ * share rows and groupIds so the bulk path can avoid per-page DB round-trips
+ * while guaranteed to produce identical results.
+ *
+ * `preloadedShares` — when provided, skips the per-page pageShare.findMany
+ *   (bulk path pre-fetches all shares in one query).
+ * `preloadedGroupIds` — when provided, skips the groupIdsForUser fetch.
+ */
+async function computePageAccessCore(
+  userSub: string,
+  page: PageShape,
+  request?: Request,
+  preloadedShares?: Array<{ principalType: string; principalId: string; permission: SharePermission }>,
+  preloadedGroupIds?: string[],
+): Promise<PageAccessResult> {
   // Archived pages: no access at all (collab/comments gate).
   // The route loader has a carve-out for meeting-note pages at the UI level,
   // but the collab socket and comments rail must not open on archived pages.
@@ -279,7 +344,7 @@ export async function getPageAccess(
   // each workspace's role-based base below. They only ever grant more access —
   // never a downgrade — and carry the exact View/Comment/Edit/FullAccess tier,
   // so a "View" share does not confer comment the way role-based viewing does.
-  const extra = await shareAndLinkGrant(page, userSub, request);
+  const extra = await shareAndLinkGrant(page, userSub, request, preloadedShares, preloadedGroupIds);
 
   // ── Member-workspace (personal notes) ────────────────────────────────────
   // Privacy is the whole point. Core gets NO bypass here — only the owner (full)
@@ -311,6 +376,11 @@ export async function getPageAccess(
   // most restrictive base wins. We take only the *nearest* ancestor's scope
   // (the spec says the nearest governing folder shadows further ancestors), so
   // one walk is sufficient.
+  //
+  // The ancestry walk (findGoverningScope) is kept per-page — batching it safely
+  // would require materialising the full parent chain for every page upfront,
+  // which is not straightforward and the common case (no scope set) already
+  // terminates at the root and returns null immediately.
   const pageScopeKind = page.scopeKind as ScopeKind | null | undefined;
   const pageParentPageId = page.parentPageId as string | null | undefined;
 
@@ -392,4 +462,60 @@ export async function getPageAccess(
   // Unknown workspace type — role grants nothing, but a share / General access
   // on the page (if any) still applies.
   return merge(DENIED, extra);
+}
+
+/**
+ * Batch variant of `getPageAccess` — resolves access for a list of pages in
+ * one pageShare.findMany instead of N per-page fetches.
+ *
+ * The result for each page is IDENTICAL to `getPageAccess(userId, page, request)`
+ * — same logic, same boolean semantics. This is access control; the batch
+ * optimisation must never change the outcome.
+ *
+ * The governing-scope ancestry walk (findGoverningScope) remains per-page
+ * because materialising the full parent chain for all pages upfront is not
+ * straightforward and the common case (no scope set) already returns null
+ * immediately — no extra round-trips in practice.
+ */
+export async function getPageAccessBulk(
+  userId: string,
+  pages: PageShape[],
+  request?: Request,
+): Promise<Map<string, PageAccessResult>> {
+  if (pages.length === 0) return new Map();
+
+  const pageIds = pages.map((p) => p.id);
+
+  // One query for all shares across the page list — avoids the N×pageShare.findMany
+  // that getPageAccess would fire when called once per page.
+  const allShareRows = await prisma.pageShare.findMany({
+    where: { pageId: { in: pageIds } },
+    select: { pageId: true, principalType: true, principalId: true, permission: true },
+  });
+
+  // Group by pageId for O(1) per-page lookup below.
+  const sharesByPage = new Map<string, Array<{ principalType: string; principalId: string; permission: SharePermission }>>();
+  for (const row of allShareRows) {
+    let list = sharesByPage.get(row.pageId);
+    if (!list) {
+      list = [];
+      sharesByPage.set(row.pageId, list);
+    }
+    list.push({ principalType: row.principalType, principalId: row.principalId, permission: row.permission });
+  }
+
+  // Resolve groupIds once for this user — memoised by cachedForRequest when
+  // a request is available, so this is effectively free if the caller already
+  // triggered it for another page.
+  const groupIds = await groupIdsForUser(userId, request);
+
+  const result = new Map<string, PageAccessResult>();
+  await Promise.all(
+    pages.map(async (page) => {
+      const sharesForPage = sharesByPage.get(page.id) ?? [];
+      const access = await computePageAccessCore(userId, page, request, sharesForPage, groupIds);
+      result.set(page.id, access);
+    }),
+  );
+  return result;
 }

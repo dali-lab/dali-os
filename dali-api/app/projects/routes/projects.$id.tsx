@@ -44,7 +44,7 @@ import { ProjectIcon } from "~/components/ProjectIcon";
 import { ProjectIconPicker } from "../components/ProjectIconPicker";
 import { Markdown } from "~/components/Markdown";
 import { parseSessionCookie } from "~/lib/cookies";
-import { isCore, isProjectMember, canManageStaffing, currentTerm, isLabMentor } from "~/lib/roles";
+import { getUserRoles, isCore, isProjectMember, canManageStaffing, currentTerm, isLabMentor } from "~/lib/roles";
 import {
   linkProjectPartner,
   unlinkProjectPartner,
@@ -206,7 +206,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const portalRedirect = redirectApplicantToPortal(auth);
   if (portalRedirect) return portalRedirect;
 
-  const project = await prisma.project.findUnique({
+  // ── Stage 1: project row + project-independent queries in parallel ──────────
+  // allDomains, bidDomains, allTerms, and role checks don't need the project
+  // row, so they run alongside it.
+  const [project, roles, allDomains, allTerms] = await Promise.all([
+    prisma.project.findUnique({
     where: { id: params.id },
     select: {
       id: true,
@@ -330,8 +334,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       },
       tasks: {
         // Archived tasks (auto-archived Done/Cancelled) drop off the board.
+        // Safety bound: 1000 tasks is well above any real project; keeps the
+        // payload bounded without splitting the tab (a future client change).
         where: { archivedAt: null },
         orderBy: { createdAt: "asc" },
+        take: 1000,
         select: {
           id: true,
           title: true,
@@ -377,43 +384,198 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         select: { domain: { select: { id: true, displayName: true } } },
       },
     },
-  });
+  }),
+    // Role flags — cached per-request, so later per-flag helpers (isCore etc.)
+    // in the action and downstream helpers don't re-query.
+    getUserRoles(auth.user.sub, request),
+    // Domain editor option list — project-independent.
+    prisma.domain.findMany({
+      where: { active: true },
+      orderBy: { displayName: "asc" },
+      select: { id: true, displayName: true },
+    }),
+    // All terms — ascending (chronological) for sprint→term resolvers;
+    // display lists re-sort to newest-first where needed. Project-independent.
+    prisma.term.findMany({
+      orderBy: { sortKey: "asc" },
+      select: {
+        id: true,
+        code: true,
+        sortKey: true,
+        startDate: true,
+        endDate: true,
+      },
+    }),
+  ]);
+  // ── End Stage 1 ──────────────────────────────────────────────────────────────
+
   if (!project) throw new Response("Not found", { status: 404 });
 
   // After the gate, so a 404 never lands in someone's recents. Detached —
   // a failed bookkeeping write must not cost the reader their project.
   recordRouteVisit(auth.user.sub, `/projects/${project.id}`, project.name, request);
 
-  // Backfill the two default, undeletable meeting-note folders (idempotent —
-  // no-ops once they exist) so every project's Documents block always shows
-  // them, including projects created before this feature existed.
+  // ── Role derivation (Stage 1 already called getUserRoles) ───────────────────
+  // Content edits (name/status, description, details, docs/files, epics/
+  // sprints/tasks) are open to Core/Admin *and* anyone staffed on this project
+  // in any term. Scope/domain settings stay Core/Admin only (canEditScope).
+  const core = roles.isCore;
+  const canEditScope = core;
+  // isProjectMember and isLabMentor need request for cachedForRequest dedup;
+  // they're called here with request so any repeated call inside helpers is free.
+  const [canEdit, canViewScope, canViewMentorshipTab] = await Promise.all([
+    core ? Promise.resolve(true) : isProjectMember(auth.user.sub, params.id, request),
+    // The Scope/challenge settings popup is visible to Core, Admin, or staffing
+    // leads. Editing still requires canEditScope (isCore) — the action enforces that.
+    core ? Promise.resolve(true) : canManageStaffing(auth.user.sub, request),
+    // Mentorship tab is for the mentor collective (lab mentors + Core). Mentees
+    // never see it on the project page.
+    core ? Promise.resolve(true) : isLabMentor(auth.user.sub, undefined, request),
+  ]);
+
+  // ── Stage 2: everything that depends on the project row ──────────────────────
+  // ensureMeetingNotesFolder must complete before pageRows (creates the system
+  // folders that pageRows needs to return), so run them first then fan out.
   await Promise.all([
     ensureMeetingNotesFolder(project.id, "Team", auth.user.sub),
     ensureMeetingNotesFolder(project.id, "Partner", auth.user.sub),
   ]);
 
-  // Project documents — non-archived Pages scoped to this project's
-  // workspace, top-level and one level of children (folders only ever nest
-  // one level deep — see the 2-level cap on Page.parentPageId).
-  const pageRows = await prisma.page.findMany({
-    where: {
-      workspaceType: "Project",
-      workspaceId: project.id,
-      archivedAt: null,
-    },
-    orderBy: { position: "asc" },
-    select: {
-      id: true,
-      title: true,
-      kind: true,
-      parentPageId: true,
-      systemKey: true,
-      partnerVisible: true,
-      publicVisible: true,
-      pinnedAt: true,
-      iconEmoji: true,
-    },
-  });
+  const [
+    pageRows,
+    fileRows,
+    favoriteIds,
+    taskViews,
+    scopeRows,
+    bidDomains,
+    linkablePartnerOrgs,
+    meetingRows,
+    presenceUser,
+    activityRows,
+  ] = await Promise.all([
+    // Project documents — non-archived Pages scoped to this project's
+    // workspace, top-level and one level of children (folders only ever nest
+    // one level deep — see the 2-level cap on Page.parentPageId).
+    prisma.page.findMany({
+      where: {
+        workspaceType: "Project",
+        workspaceId: project.id,
+        archivedAt: null,
+      },
+      orderBy: { position: "asc" },
+      select: {
+        id: true,
+        title: true,
+        kind: true,
+        parentPageId: true,
+        systemKey: true,
+        partnerVisible: true,
+        publicVisible: true,
+        pinnedAt: true,
+        iconEmoji: true,
+      },
+    }),
+    // Project files — standalone uploads with their current version.
+    // Tags are edited in the file/document editor, not on this list.
+    prisma.projectFile.findMany({
+      where: { projectId: project.id, archivedAt: null },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        title: true,
+        partnerVisible: true,
+        currentVersion: { select: { fileName: true, sizeBytes: true } },
+        _count: { select: { versions: true } },
+        // Which epics this file's linked tasks belong to — the Files block
+        // groups work files by epic (derived, not managed; see file-groups.ts).
+        taskLinks: { select: { task: { select: { epicId: true } } } },
+      },
+    }),
+    favoritePageIds(auth.user.sub),
+    // Viewer's "last opened" stamp per task for board unread dots.
+    project.tasks.length
+      ? prisma.taskView.findMany({
+          where: { userId: auth.user.sub, taskId: { in: project.tasks.map((t) => t.id) } },
+          select: { taskId: true, viewedAt: true },
+        })
+      : Promise.resolve([]),
+    // Scope rows for this project (small N — at most |declared| × termCount).
+    prisma.projectDomainScope.findMany({
+      where: { projectId: project.id },
+      select: { domainId: true, termId: true, scope: true },
+    }),
+    // Bid domains — fallback-from-staffing data when declaredDomains is empty.
+    prisma.staffingPreference.findMany({
+      where: { projectId: project.id },
+      select: { domainId: true },
+      distinct: ["domainId"],
+    }),
+    // Orgs not yet linked, for the Core-only link picker.
+    core
+      ? prisma.partnerOrg.findMany({
+          where: { projects: { none: { projectId: project.id } } },
+          orderBy: { name: "asc" },
+          select: { id: true, name: true },
+        })
+      : Promise.resolve([]),
+    // Next upcoming meetings for this project (Overview card). Bounded to 5;
+    // cancelled and unscheduled (selectedAt null) meetings are excluded.
+    prisma.scheduledMeeting.findMany({
+      where: {
+        projectId: project.id,
+        status: { not: "Cancelled" },
+        selectedAt: { gte: new Date() },
+      },
+      orderBy: { selectedAt: "asc" },
+      take: 5,
+      select: { id: true, title: true, selectedAt: true, durationMinutes: true },
+    }),
+    // Presence user (collab editor wiring).
+    getPresenceUser(
+      auth.user.sub,
+      [auth.user.firstName, auth.user.lastName].filter(Boolean).join(" ") || auth.user.email,
+    ),
+    // Recent project-scoped audit activity. AuditLog has no Prisma user
+    // relation (bare userId String?), so we fetch actor names in a second
+    // query. Both are awaited together inside an async IIFE so they still
+    // run concurrently with the rest of Stage 2, and the two sub-queries
+    // are sequential only within the activity fetch itself.
+    canEdit
+      ? (async () => {
+          const rows = await prisma.auditLog.findMany({
+            where: {
+              action: { in: [...PROJECT_ACTIVITY_ACTIONS] },
+              metadata: { path: ["projectId"], equals: project.id },
+            },
+            orderBy: { createdAt: "desc" },
+            take: 10,
+            select: { id: true, action: true, userId: true, createdAt: true },
+          });
+          const actorIds = [...new Set(rows.flatMap((r) => (r.userId ? [r.userId] : [])))];
+          const actors = actorIds.length
+            ? await prisma.user.findMany({
+                where: { id: { in: actorIds } },
+                select: USER_NAME_SELECT,
+              })
+            : [];
+          const actorNameById = new Map(actors.map((u) => [u.id, fullName(u)]));
+          return rows.map((r) => ({
+            id: r.id,
+            action: r.action,
+            actorName: (r.userId ? actorNameById.get(r.userId) : null) ?? UNKNOWN_LABEL,
+            createdAt: r.createdAt.toISOString(),
+          }));
+        })()
+      : Promise.resolve([] as { id: string; action: string; actorName: string; createdAt: string }[]),
+  ]);
+  // ── End Stage 2 ──────────────────────────────────────────────────────────────
+
+  const collabToken = parseSessionCookie(request);
+  const fallbackName =
+    [auth.user.firstName, auth.user.lastName].filter(Boolean).join(" ") ||
+    auth.user.email;
+  const userName = presenceUser?.name ?? fallbackName;
+
   const childrenByParent = new Map<string, typeof pageRows>();
   for (const p of pageRows) {
     if (!p.parentPageId) continue;
@@ -421,7 +583,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     if (list) list.push(p);
     else childrenByParent.set(p.parentPageId, [p]);
   }
-  const favoriteIds = await favoritePageIds(auth.user.sub);
   const toDocumentDto = (d: (typeof pageRows)[number]) => ({
     id: d.id,
     title: d.title,
@@ -452,22 +613,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       children: (childrenByParent.get(p.id) ?? []).map(toDocumentDto),
     }));
 
-  // Project files — standalone uploads with their current version.
-  // Tags are edited in the file/document editor, not on this list.
-  const fileRows = await prisma.projectFile.findMany({
-    where: { projectId: project.id, archivedAt: null },
-    orderBy: { createdAt: "asc" },
-    select: {
-      id: true,
-      title: true,
-      partnerVisible: true,
-      currentVersion: { select: { fileName: true, sizeBytes: true } },
-      _count: { select: { versions: true } },
-      // Which epics this file's linked tasks belong to — the Files block
-      // groups work files by epic (derived, not managed; see file-groups.ts).
-      taskLinks: { select: { task: { select: { epicId: true } } } },
-    },
-  });
   const files = fileRows.map((f) => ({
     id: f.id,
     title: f.title,
@@ -484,28 +629,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       ),
     ],
   }));
-
-  // Content edits (name/status, description, details, docs/files, epics/
-  // sprints/tasks) are open to Core/Admin *and* anyone staffed on this project
-  // in any term. Scope/domain settings stay Core/Admin only (canEditScope).
-  const core = await isCore(auth.user.sub);
-  const canEditScope = core;
-  const canEdit = core || (await isProjectMember(auth.user.sub, params.id));
-  // The Scope/challenge settings popup is visible to Core, Admin, or staffing
-  // leads. Editing still requires canEditScope (isCore) — the action enforces that.
-  const canViewScope = canEditScope || (await canManageStaffing(auth.user.sub));
-  // Mentorship tab is for the mentor collective (lab mentors + Core). Mentees
-  // never see it on the project page.
-  const canViewMentorshipTab = core || (await isLabMentor(auth.user.sub));
-
-  // Collab editor wiring (same as the hiring routes): session cookie is the
-  // WebSocket auth token; userName labels the presence cursor.
-  const collabToken = parseSessionCookie(request);
-  const fallbackName =
-    [auth.user.firstName, auth.user.lastName].filter(Boolean).join(" ") ||
-    auth.user.email;
-  const presenceUser = await getPresenceUser(auth.user.sub, fallbackName);
-  const userName = presenceUser?.name ?? fallbackName;
 
   // ─── Timeline model (epic → story → task) ────────────────────────────────
   // Every level is nested containment: a story bar sits inside its epic bar, a
@@ -659,14 +782,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     ),
   );
 
-  // Viewer's "last opened" stamp per task, to derive the board's unread dot
-  // (a task the viewer has never opened isn't flagged — see TaskCardModel.hasUnread).
-  const taskViews = project.tasks.length
-    ? await prisma.taskView.findMany({
-        where: { userId: auth.user.sub, taskId: { in: project.tasks.map((t) => t.id) } },
-        select: { taskId: true, viewedAt: true },
-      })
-    : [];
+  // Viewer's "last opened" stamp per task — fetched in Stage 2, now indexed.
   const viewedAtByTaskId = new Map(taskViews.map((v) => [v.taskId, v.viewedAt]));
 
   const tasks: TaskCardModel[] = project.tasks.map((t) => ({
@@ -801,34 +917,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     (a, b) => b.term.sortKey - a.term.sortKey,
   );
 
+  // allDomains fetched in Stage 1; bidDomains fetched in Stage 2.
   // Domain editor option list + fallback-from-staffing data. The detail page
   // displays declared domains directly; if none are declared, it falls back
   // to the union of domains seen on this project's bids + assignments so a
   // project that's actively being staffed still shows its domain footprint.
-  const [allDomains, bidDomains, allTerms] = await Promise.all([
-    prisma.domain.findMany({
-      where: { active: true },
-      orderBy: { displayName: "asc" },
-      select: { id: true, displayName: true },
-    }),
-    prisma.staffingPreference.findMany({
-      where: { projectId: project.id },
-      select: { domainId: true },
-      distinct: ["domainId"],
-    }),
-    // Ascending (chronological) for the sprint→term resolvers below; the
-    // display option lists re-sort to newest-first where needed.
-    prisma.term.findMany({
-      orderBy: { sortKey: "asc" },
-      select: {
-        id: true,
-        code: true,
-        sortKey: true,
-        startDate: true,
-        endDate: true,
-      },
-    }),
-  ]);
   const declaredDomains = project.domains.map((d) => ({
     id: d.domain.id,
     name: d.domain.displayName,
@@ -849,7 +942,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // Active-this-term is derived from membership: the project is active iff the
   // current term is in its set. Distinct from the manual status enum
   // (Paused/Archived), which the lead still controls explicitly.
-  const current = await currentTerm();
+  // Thread request so cachedForRequest deduplicates this against any prior
+  // call inside role helpers (isLabMentor etc.) on this same request.
+  const current = await currentTerm(request);
   const isActiveThisTerm =
     current !== null && plannedTerms.some((t) => t.id === current.id);
 
@@ -965,13 +1060,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     currentTermId: boardCurrentTermId,
   };
 
-  // Fetch all scope rows for this project (small N — at most |declared| ×
-  // termCount, both single-digit in practice). Keyed by domainId+termId so
-  // the UI can index in O(1) when building the grid.
-  const scopeRows = await prisma.projectDomainScope.findMany({
-    where: { projectId: project.id },
-    select: { domainId: true, termId: true, scope: true },
-  });
+  // scopeRows fetched in Stage 2. Keyed by domainId+termId so the UI can
+  // index in O(1) when building the grid.
   const scopeByCell = new Map<string, string>();
   for (const r of scopeRows) {
     scopeByCell.set(`${r.domainId}:${r.termId}`, r.scope);
@@ -1029,28 +1119,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
   }));
   const hasActivePartner = partnerships.some((p) => p.active);
-  // Orgs not yet linked, for the Core-only link picker.
-  const linkablePartnerOrgs = core
-    ? await prisma.partnerOrg.findMany({
-        where: { projects: { none: { projectId: project.id } } },
-        orderBy: { name: "asc" },
-        select: { id: true, name: true },
-      })
-    : [];
+  // linkablePartnerOrgs, meetingRows, and activityRows all fetched in Stage 2.
 
-  // Next upcoming meetings for this project (Overview card). Bounded to 5;
-  // cancelled and unscheduled (selectedAt null) meetings are excluded. The
-  // model has no location/URL field — rows link to /calendar instead.
-  const meetingRows = await prisma.scheduledMeeting.findMany({
-    where: {
-      projectId: project.id,
-      status: { not: "Cancelled" },
-      selectedAt: { gte: new Date() },
-    },
-    orderBy: { selectedAt: "asc" },
-    take: 5,
-    select: { id: true, title: true, selectedAt: true, durationMinutes: true },
-  });
   const upcomingMeetings = meetingRows.flatMap((m) =>
     m.selectedAt
       ? [
@@ -1064,41 +1134,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       : [],
   );
 
-  // Recent project-scoped audit activity, editors only. See
-  // PROJECT_ACTIVITY_ACTIONS for why some project events aren't included.
-  let recentActivity: {
-    id: string;
-    action: string;
-    actorName: string;
-    createdAt: string;
-  }[] = [];
-  if (canEdit) {
-    const activityRows = await prisma.auditLog.findMany({
-      where: {
-        action: { in: [...PROJECT_ACTIVITY_ACTIONS] },
-        metadata: { path: ["projectId"], equals: project.id },
-      },
-      orderBy: { createdAt: "desc" },
-      take: 10,
-      select: { id: true, action: true, userId: true, createdAt: true },
-    });
-    const actorIds = [
-      ...new Set(activityRows.flatMap((r) => (r.userId ? [r.userId] : []))),
-    ];
-    const actors = actorIds.length
-      ? await prisma.user.findMany({
-          where: { id: { in: actorIds } },
-          select: USER_NAME_SELECT,
-        })
-      : [];
-    const actorNameById = new Map(actors.map((u) => [u.id, fullName(u)]));
-    recentActivity = activityRows.map((r) => ({
-      id: r.id,
-      action: r.action,
-      actorName: (r.userId ? actorNameById.get(r.userId) : null) ?? UNKNOWN_LABEL,
-      createdAt: r.createdAt.toISOString(),
-    }));
-  }
+  // activityRows is already mapped to the final shape by the async IIFE in Stage 2.
+  const recentActivity = activityRows;
 
   return {
     project: {
@@ -1224,8 +1261,8 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   // Content edits are open to Core/Admin or anyone staffed on the project;
   // scope/domain settings (scopesBulk, domains, terms) stay Core/Admin only.
-  const core = await isCore(auth.user.sub);
-  if (!core && !(await isProjectMember(auth.user.sub, params.id))) {
+  const core = await isCore(auth.user.sub, request);
+  if (!core && !(await isProjectMember(auth.user.sub, params.id, request))) {
     return { error: "You don't have permission to edit this project." };
   }
 

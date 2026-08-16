@@ -12,7 +12,7 @@ import { Select } from "~/components/ui/floating";
 import type { Route } from "./+types/projects.hub";
 import { requireAuth, redirectApplicantToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { isCore, canViewStaffing, getUserRoles } from "~/lib/roles";
+import { getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import {
   captureProjectTemplate,
@@ -116,8 +116,11 @@ export async function loader({ request }: Route.LoaderArgs) {
       status: true,
       imageUrl: true,
       // Start term is derived as the earliest term in the set. Fetch ascending
-      // by sortKey and take the first.
+      // by sortKey and take the first row only — Postgres returns one row
+      // rather than the full set.
       projectTerms: {
+        orderBy: { term: { sortKey: "asc" } },
+        take: 1,
         select: { term: { select: { code: true, sortKey: true } } },
       },
       partners: {
@@ -129,9 +132,8 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const rows: ProjectRow[] = await Promise.all(
     projects.map(async (p) => {
-      const startTerm = p.projectTerms
-        .map((pt) => pt.term)
-        .sort((a, b) => a.sortKey - b.sortKey)[0];
+      // projectTerms is already ordered asc by sortKey and limited to 1 row.
+      const startTerm = p.projectTerms[0]?.term;
       return {
         id: p.id,
         name: p.name,
@@ -153,14 +155,15 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const filteringByTerm = !isAll && !!termId;
 
-  const [partnerOrgs, canEdit, canStaff, myAssignments, totalProjects] =
+  // getUserRoles(sub, request) resolves isCore and canViewStaffing in one cached
+  // round-trip — no second hit even though canViewStaffing delegates to isCore.
+  const [roles, partnerOrgs, myAssignments, totalProjects] =
     await timed(request, 'hub.meta', () => Promise.all([
+      getUserRoles(auth.user.sub, request),
       prisma.partnerOrg.findMany({
         orderBy: { name: "asc" },
         select: { id: true, name: true },
       }),
-      isCore(auth.user.sub),
-      canViewStaffing(auth.user.sub),
       // Which projects the viewer has (or had) an assignment on, any term —
       // drives the "My projects" toggle chip.
       prisma.projectAssignment.findMany({
@@ -172,11 +175,12 @@ export async function loader({ request }: Route.LoaderArgs) {
       // projects at all"; with the filter off, rows already is everything.
       filteringByTerm ? prisma.project.count() : Promise.resolve(0),
     ]));
+  const canEdit = roles.isCore;
+  const canStaff = roles.canViewStaffing;
 
   // Project templates (Core + `templates` flag): the "Start from template"
-  // options in the create modal.
-  const roles = await getUserRoles(auth.user.sub);
-  const templatesEnabled = canEdit && (await isFeatureEnabled("templates", auth.user.sub, roles));
+  // options in the create modal. Reuses the `roles` resolved above.
+  const templatesEnabled = canEdit && (await isFeatureEnabled("templates", auth.user.sub, roles, request));
   const projectTemplates = templatesEnabled
     ? await prisma.projectTemplate.findMany({
         orderBy: [{ isDefault: "desc" }, { name: "asc" }],
@@ -203,7 +207,8 @@ export async function action({ request }: Route.ActionArgs) {
   if (!auth.ok) return redirectToLogin(request);
   const portalRedirect = redirectApplicantToPortal(auth);
   if (portalRedirect) return portalRedirect;
-  if (!(await isCore(auth.user.sub))) {
+  const actionRoles = await getUserRoles(auth.user.sub, request);
+  if (!actionRoles.isCore) {
     return { error: "You don't have permission to create projects." };
   }
 
@@ -213,8 +218,7 @@ export async function action({ request }: Route.ActionArgs) {
   // Capture: save an existing project's structure as a template (posted from
   // the project page's "Save as template" control). Gated by the flag.
   if (intent === "capture") {
-    const roles = await getUserRoles(auth.user.sub);
-    if (!(await isFeatureEnabled("templates", auth.user.sub, roles))) {
+    if (!(await isFeatureEnabled("templates", auth.user.sub, actionRoles, request))) {
       return { error: "Templates are not enabled." };
     }
     const projectId = (form.get("projectId") as string | null)?.trim() ?? "";
@@ -243,8 +247,7 @@ export async function action({ request }: Route.ActionArgs) {
   // project from its blueprint instead of a blank one.
   const fromTemplateId = (form.get("fromTemplateId") as string | null)?.trim() ?? "";
   if (fromTemplateId) {
-    const roles = await getUserRoles(auth.user.sub);
-    if (!(await isFeatureEnabled("templates", auth.user.sub, roles))) {
+    if (!(await isFeatureEnabled("templates", auth.user.sub, actionRoles, request))) {
       return { error: "Templates are not enabled." };
     }
     if (!name) return { error: "A project name is required." };

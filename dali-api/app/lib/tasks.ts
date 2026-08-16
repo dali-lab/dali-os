@@ -187,10 +187,10 @@ const TASK_WHERE = (
 });
 
 /** Count of open tasks for a user. Cheap — used by the sidebar poller. */
-export async function countOpenTasks(userId: string): Promise<number> {
+export async function countOpenTasks(userId: string, request?: Request): Promise<number> {
   const [notifs, applyTasks] = await Promise.all([
     prisma.notification.count({ where: TASK_WHERE(userId) }),
-    getInternalCycleApplyTasks(userId),
+    getInternalCycleApplyTasks(userId, request),
   ]);
   return notifs + applyTasks.length;
 }
@@ -212,9 +212,9 @@ const APPLY_TASK_COPY: Record<InternalCycleType, { draft: string; apply: string 
  * These are not Notification rows — they're derived state, so they persist in
  * the attention banner across reloads until the user submits or withdraws.
  */
-export async function getInternalCycleApplyTasks(userId: string): Promise<Task[]> {
+export async function getInternalCycleApplyTasks(userId: string, request?: Request): Promise<Task[]> {
   const results = await Promise.all(
-    INTERNAL_CYCLE_TYPES.map((t) => getInternalCycleApplyTask(userId, t)),
+    INTERNAL_CYCLE_TYPES.map((t) => getInternalCycleApplyTask(userId, t, request)),
   );
   return results.filter((t): t is Task => t != null);
 }
@@ -222,10 +222,15 @@ export async function getInternalCycleApplyTasks(userId: string): Promise<Task[]
 async function getInternalCycleApplyTask(
   userId: string,
   cycleType: InternalCycleType,
+  request?: Request,
 ): Promise<Task | null> {
   const config = INTERNAL_CYCLES[cycleType];
-  if (!(await config.eligible(userId))) return null;
-  const cycle = await getActiveCycle(cycleType);
+  // Eligible check and active-cycle fetch are independent — run them together.
+  const [eligible, cycle] = await Promise.all([
+    config.eligible(userId),
+    getActiveCycle(cycleType),
+  ]);
+  if (!eligible) return null;
   if (!cycle || cycle.currentStatus !== "Open") return null;
 
   const app = await prisma.application.findFirst({
@@ -254,7 +259,7 @@ async function getInternalCycleApplyTask(
 }
 
 /** Open tasks for a user, newest first, with deadlines resolved. */
-export async function listOpenTasks(userId: string): Promise<Task[]> {
+export async function listOpenTasks(userId: string, request?: Request): Promise<Task[]> {
   const [rows, applyTasks] = await Promise.all([
     prisma.notification.findMany({
       where: TASK_WHERE(userId),
@@ -280,7 +285,7 @@ export async function listOpenTasks(userId: string): Promise<Task[]> {
         form: { select: { published: true, publicToken: true } },
       },
     }),
-    getInternalCycleApplyTasks(userId),
+    getInternalCycleApplyTasks(userId, request),
   ]);
 
   const notifTasks = rows

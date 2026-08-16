@@ -110,6 +110,7 @@ export async function getValidAccessTokenForLink(linkId: string): Promise<string
   return refreshAndPersist(linkId, t.refreshToken);
 }
 
+
 // Convenience for the OAuth callback that has just received tokens from Google.
 export function buildEncryptedTokens(opts: {
   accessToken: string;
@@ -125,8 +126,13 @@ export function buildEncryptedTokens(opts: {
 
 // ─── API calls ─────────────────────────────────────────────────────────────
 
-export async function listCalendarsForLink(linkId: string): Promise<GoogleCalendarListEntry[]> {
-  const token = await getValidAccessTokenForLink(linkId);
+// `prefetchedToken` lets callers that already hold a valid token skip the DB
+// read that `getValidAccessTokenForLink` would otherwise perform.
+export async function listCalendarsForLink(
+  linkId: string,
+  prefetchedToken?: string,
+): Promise<GoogleCalendarListEntry[]> {
+  const token = prefetchedToken ?? await getValidAccessTokenForLink(linkId);
   const res = await fetch("https://www.googleapis.com/calendar/v3/users/me/calendarList", {
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -315,20 +321,32 @@ async function fetchEventsForCalendar(
   return out;
 }
 
+// `prefetchedToken` and `prefetchedColorById` let callers that already hold
+// those values skip the extra DB read + HTTP round-trip that this function
+// would otherwise make. When either is omitted the function falls back to
+// fetching it itself (preserving backward-compatible behavior for call sites
+// that don't have them).
 async function fetchBusyForLink(
   linkId: string,
   subCalendarIds: string[],
   start: Date,
   end: Date,
+  prefetchedToken?: string,
+  prefetchedColorById?: Map<string, string | undefined>,
 ): Promise<BusyEvent[]> {
-  const token = await getValidAccessTokenForLink(linkId);
+  const token = prefetchedToken ?? await getValidAccessTokenForLink(linkId);
   // Map calendarId → backgroundColor so each event can be tinted by its source.
-  let colorById = new Map<string, string | undefined>();
-  try {
-    const list = await listCalendarsForLink(linkId);
-    colorById = new Map(list.map((c) => [c.id, c.backgroundColor]));
-  } catch {
-    // Colour is best-effort; events still render (untinted) without it.
+  let colorById: Map<string, string | undefined>;
+  if (prefetchedColorById) {
+    colorById = prefetchedColorById;
+  } else {
+    colorById = new Map<string, string | undefined>();
+    try {
+      const list = await listCalendarsForLink(linkId, token);
+      colorById = new Map(list.map((c) => [c.id, c.backgroundColor]));
+    } catch {
+      // Colour is best-effort; events still render (untinted) without it.
+    }
   }
   const calendarIds = subCalendarIds.length > 0 ? subCalendarIds : ["primary"];
   const perCalendar = await Promise.all(
@@ -345,11 +363,21 @@ async function fetchBusyForLink(
  * alongside the drop of `User.google*` columns. Users without a
  * UserCalendarLink return an empty array — the calling UI should prompt
  * them to link a calendar in Settings.
+ *
+ * Perf: callers can pass pre-fetched per-link data to avoid duplicate work:
+ * - `prefetchedTokens`: Map<linkId, accessToken> — skips the DB token read.
+ * - `prefetchedCalendarLists`: Map<linkId, items[]> — skips the calendarList
+ *   HTTP call used to build the per-event color map.
+ *
+ * When both are supplied the function performs zero redundant DB reads or
+ * Google API calls beyond the events.list calls themselves.
  */
 export async function fetchBusyEvents(
   userId: string,
   start: Date,
   end: Date,
+  prefetchedCalendarLists?: Map<string, GoogleCalendarListEntry[] | undefined>,
+  prefetchedTokens?: Map<string, string>,
 ): Promise<BusyEvent[]> {
   const links = await prisma.userCalendarLink.findMany({
     where: { userId, provider: "Google", enabled: true },
@@ -359,7 +387,33 @@ export async function fetchBusyEvents(
   const results = await Promise.all(
     links.map(async (l) => {
       try {
-        const events = await fetchBusyForLink(l.id, l.subCalendarIds, start, end);
+        // Use a pre-fetched token if the caller already holds one for this
+        // link; otherwise fetch it (one DB read + optional refresh).
+        const token = prefetchedTokens?.get(l.id) ?? await getValidAccessTokenForLink(l.id);
+
+        // Build the color map: prefer a pre-fetched list from the caller,
+        // then fall back to fetching ourselves (best-effort; untinted on fail).
+        let colorById = new Map<string, string | undefined>();
+        const prefetchedList = prefetchedCalendarLists?.get(l.id);
+        if (prefetchedList) {
+          colorById = new Map(prefetchedList.map((c) => [c.id, c.backgroundColor]));
+        } else {
+          try {
+            const list = await listCalendarsForLink(l.id, token);
+            colorById = new Map(list.map((c) => [c.id, c.backgroundColor]));
+          } catch {
+            // Colour is best-effort; events still render (untinted).
+          }
+        }
+
+        const events = await fetchBusyForLink(
+          l.id,
+          l.subCalendarIds,
+          start,
+          end,
+          token,
+          colorById,
+        );
         await prisma.userCalendarLink.update({
           where: { id: l.id },
           data: { lastSyncedAt: new Date(), syncError: null },
