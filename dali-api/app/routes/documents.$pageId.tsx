@@ -11,6 +11,7 @@ import { isFavorited, recordPageVisit } from "~/lib/user-pages.server";
 import { canManageSharing } from "~/lib/page-share-access.server";
 import { normalizePageTypography } from "~/lib/page-typography";
 import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
+import { driveRootCrumbs } from "~/lib/drive-crumbs";
 import { DocumentEditor } from "~/components/DocumentEditor";
 import { AttendanceChecklist, type AttendanceRow } from "~/components/AttendanceChecklist";
 import { CheckInPanel } from "~/components/CheckInPanel";
@@ -54,9 +55,8 @@ export const handle = {
     // nested docs keep their ancestry (Drive ▸ Folder ▸ … ▸ page).
     if (!d.hubName || !d.hubHref) {
       const scope = d.driveCrumbs?.scope ?? "lab";
-      const scopeQuery = scope === "lab" ? "" : `?scope=${scope}`;
       return [
-        { label: "Drive", to: `/drive${scopeQuery}` },
+        ...driveRootCrumbs(scope),
         ...(d.driveCrumbs?.folders ?? []).map((f) => ({
           label: f.title || "Untitled folder",
           to: `/drive?scope=${scope}&folder=${f.id}`,
@@ -81,6 +81,13 @@ export const handle = {
             <ProjectIcon iconEmoji={d.hubIconEmoji} />
           ),
       },
+      // Nested pages within a project/offering keep their folder ancestry
+      // (hub ▸ Folder ▸ … ▸ page); each ancestor opens in the same doc viewer.
+      ...(d.driveCrumbs?.folders ?? []).map((f) => ({
+        label: f.title || "Untitled folder",
+        to: `/documents/${f.id}`,
+        icon: <PageIcon iconEmoji={f.iconEmoji} />,
+      })),
       // The leaf carries the page's own icon (emoji, or the neutral doc glyph).
       { label: d.title, icon: <PageIcon iconEmoji={d.iconEmoji} /> },
     ];
@@ -202,10 +209,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     }
   }
 
-  // Lab pages live in the Drive tree — resolve their folder ancestry so the
-  // breadcrumb shows Drive ▸ Folder ▸ … ▸ page instead of just Drive ▸ page.
-  const driveCrumbs =
-    page.workspaceType === "Lab" ? await driveFolderCrumbs(page.parentPageId) : null;
+  // Resolve the page's folder ancestry so the breadcrumb shows the full path
+  // (Drive ▸ Folder ▸ … ▸ page for Lab docs; hub ▸ Folder ▸ … ▸ page for
+  // project/offering docs) instead of collapsing to just the parent hub. Only
+  // Lab pages consume the detected scope; project/offering pages use `folders`.
+  const driveCrumbs = await driveFolderCrumbs(page.parentPageId);
 
   let attendance:
     | {
