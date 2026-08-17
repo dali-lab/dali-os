@@ -30,6 +30,8 @@ export const meta: Route.MetaFunction = ({ data }) => {
 // Breadcrumbs' DROPPED_SEGMENTS) and this expands the leaf into the real
 // trail back to the project hub instead.
 export const handle = {
+  docKey: "file.viewer",
+  docTitle: "Files",
   // Project files live under the shared /documents/file/* viewer, so the URL
   // prefix says "Documents" but their home is Projects — declare the full trail.
   breadcrumbTrail: (data: unknown) => {

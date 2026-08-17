@@ -51,6 +51,11 @@ type Handle = {
   // app/components/page-docs/PageDocButton.tsx.
   docKey?: string
   docTitle?: string
+  // Single-route pages whose meaningful context lives in the URL query (e.g. the
+  // unified Drive, keyed on ?scope=) derive the guide key at render time. When a
+  // resolver returns a value it overrides the static docKey/docTitle for the
+  // current location; returning undefined falls back to the static docKey.
+  resolveDocKey?: (params: URLSearchParams) => { key: string; title: string } | undefined
   /** DB-backed detail pages (project, person, partner org) — star sits inline
    *  after the trail, not in the layout header. */
   favoriteRoute?: boolean
@@ -59,7 +64,11 @@ type Handle = {
 // Shared shape so PageDocButton can read the same handle contract. Exported
 // separately from the internal Handle type to keep this module's default export
 // focused on breadcrumbs.
-export type DocHandle = { docKey?: string; docTitle?: string }
+export type DocHandle = {
+  docKey?: string
+  docTitle?: string
+  resolveDocKey?: (params: URLSearchParams) => { key: string; title: string } | undefined
+}
 
 // Static label map for the fixed path segments. Keeps lab vocabulary verbatim
 // (Domain, Delibs, Intent to Work, Project Bids, JobX, Level Up, Core, Hub,
