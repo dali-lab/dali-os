@@ -38,7 +38,6 @@ vi.mock("~/lib/roles", async (orig) => {
   return { ...real, isCore: vi.fn(), canViewForms: vi.fn() };
 });
 vi.mock("~/forms/lib/forms-data", () => ({
-  loadFormsLevel: vi.fn(),
   loadFormForEdit: vi.fn(),
   runFormsAction: vi.fn(),
 }));
@@ -52,21 +51,20 @@ vi.mock("~/forms/lib/answer-rows.server", () => ({
 }));
 
 import { isCore } from "~/lib/roles";
-import { loadFormsLevel, runFormsAction } from "~/forms/lib/forms-data";
+import { runFormsAction } from "~/forms/lib/forms-data";
 import { formAccessMeta, formFillAccess, submitMemberForm } from "~/forms/lib/public-form";
 import { buildResponseGrid } from "~/forms/lib/answer-rows.server";
 import { prisma } from "~/lib/db";
 
 import { LIST_FORMS_TOOL, runListForms } from "../list-forms";
-import { GET_FORMS_FOLDER_TOOL, runGetFormsFolder } from "../get-forms-folder";
 import { GET_FORM_RESPONSES_TOOL, runGetFormResponses } from "../get-form-responses";
 import { SUBMIT_FORM_TOOL, runSubmitForm } from "../submit-form";
 import { MANAGE_FORM_TOOL, runManageForm } from "../manage-form";
-import { MANAGE_FORMS_FOLDER_TOOL, runManageFormsFolder } from "../manage-forms-folder";
 
 const mockPrisma = prisma as unknown as {
   form: {
     findUnique: ReturnType<typeof vi.fn>;
+    findMany: ReturnType<typeof vi.fn>;
   };
   formSubmission: {
     findMany: ReturnType<typeof vi.fn>;
@@ -99,9 +97,6 @@ describe("scopes", () => {
   it("list_forms requires mcp:read", () => {
     expect(LIST_FORMS_TOOL.requiredScope).toBe("mcp:read");
   });
-  it("get_forms_folder requires mcp:read", () => {
-    expect(GET_FORMS_FOLDER_TOOL.requiredScope).toBe("mcp:read");
-  });
   it("get_form_responses requires mcp:read", () => {
     expect(GET_FORM_RESPONSES_TOOL.requiredScope).toBe("mcp:read");
   });
@@ -110,9 +105,6 @@ describe("scopes", () => {
   });
   it("manage_form requires mcp:admin", () => {
     expect(MANAGE_FORM_TOOL.requiredScope).toBe("mcp:admin");
-  });
-  it("manage_forms_folder requires mcp:admin", () => {
-    expect(MANAGE_FORMS_FOLDER_TOOL.requiredScope).toBe("mcp:admin");
   });
 });
 
@@ -124,56 +116,16 @@ describe("list_forms", () => {
     await expect(runListForms(ctx())).rejects.toMatchObject({ name: "McpForbiddenError" });
   });
 
-  it("returns folders and forms for Core member", async () => {
+  it("returns every form with its Drive folder placement for a Core member", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
-    vi.mocked(loadFormsLevel).mockResolvedValue({
-      current: null,
-      crumbs: [],
-      folders: [{ id: "f1", name: "Hiring", parentId: null, formCount: 2, folderCount: 0 }],
-      forms: [{ id: "fm1", name: "Application", folderId: null, versionCount: 1, published: true, publicToken: "tok123", latestVersion: null }],
-      allFolders: [],
-      allForms: [],
-    });
+    mockPrisma.form.findMany.mockResolvedValue([
+      { id: "fm1", name: "Application", folderPageId: "page-1", published: true, publicToken: "tok123", _count: { versions: 1 } },
+      { id: "fm2", name: "Feedback", folderPageId: null, published: false, publicToken: null, _count: { versions: 2 } },
+    ]);
     const result = await runListForms(ctx());
-    expect(loadFormsLevel).toHaveBeenCalledWith(null);
-    expect(result.folders).toHaveLength(1);
-    expect(result.forms).toHaveLength(1);
-    expect(result.folders[0].name).toBe("Hiring");
-  });
-});
-
-// ─── get_forms_folder ─────────────────────────────────────────────────────────
-
-describe("get_forms_folder", () => {
-  it("throws forbidden when not Core", async () => {
-    vi.mocked(isCore).mockResolvedValue(false);
-    await expect(
-      runGetFormsFolder(ctx(), { folderId: "f1" })
-    ).rejects.toMatchObject({ name: "McpForbiddenError" });
-  });
-
-  it("throws not-found when folder does not exist", async () => {
-    vi.mocked(isCore).mockResolvedValue(true);
-    vi.mocked(loadFormsLevel).mockResolvedValue(null);
-    await expect(
-      runGetFormsFolder(ctx(), { folderId: "missing" })
-    ).rejects.toMatchObject({ name: "McpNotFoundError" });
-  });
-
-  it("returns folder contents for Core member", async () => {
-    vi.mocked(isCore).mockResolvedValue(true);
-    vi.mocked(loadFormsLevel).mockResolvedValue({
-      current: { id: "f1", name: "Hiring", parentId: null },
-      crumbs: [],
-      folders: [],
-      forms: [{ id: "fm1", name: "App", folderId: "f1", versionCount: 1, published: false, publicToken: null, latestVersion: null }],
-      allFolders: [],
-      allForms: [],
-    });
-    const result = await runGetFormsFolder(ctx(), { folderId: "f1" });
-    expect(loadFormsLevel).toHaveBeenCalledWith("f1");
-    expect(result.current?.id).toBe("f1");
-    expect(result.forms).toHaveLength(1);
+    expect(result.forms).toHaveLength(2);
+    expect(result.forms[0]).toMatchObject({ id: "fm1", folderPageId: "page-1", versionCount: 1, published: true });
+    expect(result.forms[1]).toMatchObject({ id: "fm2", folderPageId: null, versionCount: 2 });
   });
 });
 
@@ -361,38 +313,5 @@ describe("manage_form", () => {
     await expect(
       runManageForm(ctx(), { action: "delete", formId: "gone" })
     ).rejects.toMatchObject({ name: "McpNotFoundError" });
-  });
-});
-
-// ─── manage_forms_folder ──────────────────────────────────────────────────────
-
-describe("manage_forms_folder", () => {
-  it("throws forbidden when not Core", async () => {
-    vi.mocked(isCore).mockResolvedValue(false);
-    await expect(
-      runManageFormsFolder(ctx(), { action: "create", name: "New Folder" })
-    ).rejects.toMatchObject({ name: "McpForbiddenError" });
-  });
-
-  it("throws invalid for unknown action", async () => {
-    vi.mocked(isCore).mockResolvedValue(true);
-    await expect(
-      runManageFormsFolder(ctx(), { action: "archive" })
-    ).rejects.toMatchObject({ name: "McpInvalidError" });
-  });
-
-  it("calls runFormsAction for create and returns ok", async () => {
-    vi.mocked(isCore).mockResolvedValue(true);
-    vi.mocked(runFormsAction).mockResolvedValue({ ok: true });
-    const result = await runManageFormsFolder(ctx(), { action: "create", name: "Applications" });
-    expect(runFormsAction).toHaveBeenCalled();
-    expect(result).toEqual({ ok: true });
-  });
-
-  it("throws invalid when required args are missing (rename without folderId)", async () => {
-    vi.mocked(isCore).mockResolvedValue(true);
-    await expect(
-      runManageFormsFolder(ctx(), { action: "rename", name: "New Name" }) // folderId missing
-    ).rejects.toMatchObject({ name: "McpInvalidError" });
   });
 });
