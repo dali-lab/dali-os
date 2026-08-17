@@ -714,7 +714,6 @@ export function StaffingBoard({
           <MemberCard
             card={card}
             projectNames={projectNames}
-            domainNames={domainNames}
             onOpenBid={() => setOpenBid({ userId: card.userId, columnKey: card.columnKey })}
             // Remove (×): external-mentor cards remove their placement; on the
             // Unassigned column a roster card's × removes them from the board;
@@ -775,11 +774,7 @@ export function StaffingBoard({
         renderOverlay={(activeId) => {
           const card = activeId ? cardByCardId.get(activeId) ?? null : null;
           return card ? (
-            <MemberCardPreview
-              card={card}
-              projectNames={projectNames}
-              domainNames={domainNames}
-            />
+            <MemberCardPreview card={card} projectNames={projectNames} />
           ) : null;
         }}
       />

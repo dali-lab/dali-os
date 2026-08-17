@@ -1,5 +1,5 @@
 import { prisma } from "~/lib/db";
-import { ensureTeam, addTeamMember, grantTeamRepo, isNotFound } from "~/lib/github";
+import { ensureTeam, addTeamMember, grantTeamRepo, isNotFound, isNo2fa } from "~/lib/github";
 import { normalizeRepo } from "~/projects/lib/github-task-sync";
 import { currentTerm } from "~/lib/roles";
 import { slackErrorMessage } from "~/slack/lib/slack-client";
@@ -128,7 +128,12 @@ export async function syncProjectTeam(
       report.membersEnsured += 1;
       if (state === "pending") report.membersPending += 1;
     } catch (err) {
-      report.memberErrors.push({ handle, message: slackErrorMessage(err) });
+      report.memberErrors.push({
+        handle,
+        message: isNo2fa(err)
+          ? "must enable two-factor auth on GitHub before they can join the org."
+          : slackErrorMessage(err),
+      });
     }
   }
 
