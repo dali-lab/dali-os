@@ -3381,6 +3381,163 @@ function PartnersSection({
   );
 }
 
+// Row-level doc type (folder children and top-level docs are structurally
+// compatible for the row UI).
+type DocRowItem = LoaderData["documents"][number]["children"][number];
+
+// Callbacks + drag state a document row needs. Bundled so the row components
+// can live at module scope: defining them inside DocumentsBlock gave them a new
+// identity on every render, which remounted the whole list and detached any
+// open "⋯" floating menu mid-interaction (Playwright saw "element detached").
+type DocRowCtx = {
+  canEdit: boolean;
+  drag: { id: string; isFolder: boolean } | null;
+  dropTarget: string | "root" | null;
+  setDrag: (d: { id: string; isFolder: boolean } | null) => void;
+  setDropTarget: React.Dispatch<React.SetStateAction<string | "root" | null>>;
+  onDropBefore: (targetId: string, parentId: string | null) => void;
+  toggleFavorite: (id: string, next: boolean) => void;
+  togglePartnerVisible: (id: string, next: boolean) => void;
+  togglePin: (id: string, next: boolean) => void;
+  setMoveDoc: (d: { id: string; title: string } | null) => void;
+  deleteDocument: (id: string, title: string) => void;
+};
+
+// Row "⋯" menu (Drive redesign) — every per-row action (favorite, partner
+// share, pin, move, delete) lives here instead of as loose inline icons.
+function DocRowMenu({ doc, indent, ctx }: { doc: DocRowItem; indent: boolean; ctx: DocRowCtx }) {
+  return (
+    <Menu
+      align="right"
+      ariaLabel="Document actions"
+      trigger={
+        <button
+          type="button"
+          aria-label="Document actions"
+          className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
+        >
+          <MoreHorizontal className="w-4 h-4" />
+        </button>
+      }
+    >
+      {doc.kind !== "Folder" && (
+        <Menu.Item
+          icon={<Star className={`w-3.5 h-3.5 ${doc.favorited ? "fill-current text-accent-coral" : ""}`} />}
+          onSelect={() => ctx.toggleFavorite(doc.id, !doc.favorited)}
+        >
+          {doc.favorited ? "Remove from favorites" : "Add to favorites"}
+        </Menu.Item>
+      )}
+      {ctx.canEdit && (
+        <Menu.Item
+          icon={<Handshake className="w-3.5 h-3.5" />}
+          onSelect={() => ctx.togglePartnerVisible(doc.id, !doc.partnerVisible)}
+        >
+          {doc.partnerVisible ? "Stop sharing with partner" : "Share with partner"}
+        </Menu.Item>
+      )}
+      {ctx.canEdit && !indent && (
+        <Menu.Item
+          icon={<Pin className={`w-3.5 h-3.5 ${doc.pinned ? "fill-current" : ""}`} />}
+          onSelect={() => ctx.togglePin(doc.id, !doc.pinned)}
+        >
+          {doc.pinned ? "Unpin" : "Pin to top"}
+        </Menu.Item>
+      )}
+      {ctx.canEdit && !doc.isSystem && (
+        <Menu.Item
+          icon={<FolderInput className="w-3.5 h-3.5" />}
+          onSelect={() => ctx.setMoveDoc({ id: doc.id, title: doc.title })}
+        >
+          Move to…
+        </Menu.Item>
+      )}
+      {ctx.canEdit && (
+        <>
+          <Menu.Separator />
+          <Menu.Item icon={<Trash2 className="w-3.5 h-3.5" />} onSelect={() => ctx.deleteDocument(doc.id, doc.title)}>
+            Delete
+          </Menu.Item>
+        </>
+      )}
+    </Menu>
+  );
+}
+
+function DocRowInner({ doc, indent, ctx }: { doc: DocRowItem; indent: boolean; ctx: DocRowCtx }) {
+  return (
+    <div className={`group py-2.5 flex items-center justify-between gap-3 text-sm ${indent ? "pl-6" : ""}`}>
+      <button
+        type="button"
+        onClick={() => openDocumentTab(doc.id, doc.title)}
+        className="flex items-center gap-2 min-w-0 text-left font-medium text-foreground hover:text-accent-coral"
+      >
+        <PageIcon iconEmoji={doc.iconEmoji} />
+        <span className="truncate">{doc.title}</span>
+      </button>
+      <div className="flex items-center gap-3 flex-shrink-0">
+        {/* Read-only status badges stay inline; all actions live in "⋯". */}
+        {doc.partnerVisible && (
+          <Tooltip label="Shared with partner">
+            <span className="flex items-center text-accent-teal">
+              <Handshake className="w-3.5 h-3.5" />
+            </span>
+          </Tooltip>
+        )}
+        {doc.publicVisible && (
+          <Tooltip label="Public write-up — rendered on this project's page on dali.website">
+            <span className="flex items-center text-accent-coral">
+              <Globe className="w-3.5 h-3.5" />
+            </span>
+          </Tooltip>
+        )}
+        <DocRowMenu doc={doc} indent={indent} ctx={ctx} />
+      </div>
+    </div>
+  );
+}
+
+function DocRow({
+  doc,
+  indent,
+  parentId,
+  ctx,
+}: {
+  doc: DocRowItem;
+  indent: boolean;
+  parentId: string | null;
+  ctx: DocRowCtx;
+}) {
+  const dragProps = ctx.canEdit
+    ? {
+        draggable: true,
+        onDragStart: (e: React.DragEvent) => {
+          ctx.setDrag({ id: doc.id, isFolder: false });
+          e.dataTransfer.effectAllowed = "move";
+          e.dataTransfer.setData("text/plain", doc.id);
+        },
+        onDragEnd: () => ctx.setDrag(null),
+        onDragOver: (e: React.DragEvent) => {
+          if (!ctx.drag) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          if (ctx.dropTarget !== doc.id) ctx.setDropTarget(doc.id);
+        },
+        onDragLeave: () => ctx.setDropTarget((t) => (t === doc.id ? null : t)),
+        onDrop: (e: React.DragEvent) => {
+          e.preventDefault();
+          e.stopPropagation();
+          ctx.onDropBefore(doc.id, parentId);
+        },
+      }
+    : {};
+  return (
+    <div {...dragProps} className={ctx.drag && ctx.dropTarget === doc.id ? "border-t-2 border-accent-coral" : ""}>
+      <DocRowInner doc={doc} indent={indent} ctx={ctx} />
+    </div>
+  );
+}
+
 function DocumentsBlock({
   projectId,
   documents,
@@ -3624,144 +3781,22 @@ function DocumentsBlock({
     else void moveDocument(drag.id, folderId, null);
   }
 
-  function DocRow({
-    doc,
-    indent,
-    parentId,
-  }: {
-    doc: LoaderData["documents"][number]["children"][number];
-    indent: boolean;
-    parentId: string | null;
-  }) {
-    const dragProps = canEdit
-      ? {
-          draggable: true,
-          onDragStart: (e: React.DragEvent) => {
-            setDrag({ id: doc.id, isFolder: false });
-            e.dataTransfer.effectAllowed = "move";
-            e.dataTransfer.setData("text/plain", doc.id);
-          },
-          onDragEnd: () => setDrag(null),
-          onDragOver: (e: React.DragEvent) => {
-            if (!drag) return;
-            e.preventDefault();
-            e.dataTransfer.dropEffect = "move";
-            if (dropTarget !== doc.id) setDropTarget(doc.id);
-          },
-          onDragLeave: () => setDropTarget((t) => (t === doc.id ? null : t)),
-          onDrop: (e: React.DragEvent) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onDropBefore(doc.id, parentId);
-          },
-        }
-      : {};
-    return (
-      <div {...dragProps} className={drag && dropTarget === doc.id ? "border-t-2 border-accent-coral" : ""}>
-        <DocRowInner doc={doc} indent={indent} />
-      </div>
-    );
-  }
-
-  // Row "⋯" menu (Drive redesign) — every per-row action (favorite, partner
-  // share, pin, move, delete) lives here instead of as loose inline icons.
-  function DocRowMenu({
-    doc,
-    indent,
-  }: {
-    doc: LoaderData["documents"][number]["children"][number];
-    indent: boolean;
-  }) {
-    return (
-      <Menu
-        align="right"
-        ariaLabel="Document actions"
-        trigger={
-          <button
-            type="button"
-            aria-label="Document actions"
-            className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
-          >
-            <MoreHorizontal className="w-4 h-4" />
-          </button>
-        }
-      >
-        {doc.kind !== "Folder" && (
-          <Menu.Item
-            icon={<Star className={`w-3.5 h-3.5 ${doc.favorited ? "fill-current text-accent-coral" : ""}`} />}
-            onSelect={() => void toggleFavorite(doc.id, !doc.favorited)}
-          >
-            {doc.favorited ? "Remove from favorites" : "Add to favorites"}
-          </Menu.Item>
-        )}
-        {canEdit && (
-          <Menu.Item
-            icon={<Handshake className="w-3.5 h-3.5" />}
-            onSelect={() => void togglePartnerVisible(doc.id, !doc.partnerVisible)}
-          >
-            {doc.partnerVisible ? "Stop sharing with partner" : "Share with partner"}
-          </Menu.Item>
-        )}
-        {canEdit && !indent && (
-          <Menu.Item
-            icon={<Pin className={`w-3.5 h-3.5 ${doc.pinned ? "fill-current" : ""}`} />}
-            onSelect={() => void togglePin(doc.id, !doc.pinned)}
-          >
-            {doc.pinned ? "Unpin" : "Pin to top"}
-          </Menu.Item>
-        )}
-        {canEdit && !doc.isSystem && (
-          <Menu.Item
-            icon={<FolderInput className="w-3.5 h-3.5" />}
-            onSelect={() => setMoveDoc({ id: doc.id, title: doc.title })}
-          >
-            Move to…
-          </Menu.Item>
-        )}
-        {canEdit && (
-          <>
-            <Menu.Separator />
-            <Menu.Item icon={<Trash2 className="w-3.5 h-3.5" />} onSelect={() => void deleteDocument(doc.id, doc.title)}>
-              Delete
-            </Menu.Item>
-          </>
-        )}
-      </Menu>
-    );
-  }
-
-  function DocRowInner({ doc, indent }: { doc: LoaderData["documents"][number]["children"][number]; indent: boolean }) {
-    return (
-      <div className={`group py-2.5 flex items-center justify-between gap-3 text-sm ${indent ? "pl-6" : ""}`}>
-        <button
-          type="button"
-          onClick={() => openDocumentTab(doc.id, doc.title)}
-          className="flex items-center gap-2 min-w-0 text-left font-medium text-foreground hover:text-accent-coral"
-        >
-          <PageIcon iconEmoji={doc.iconEmoji} />
-          <span className="truncate">{doc.title}</span>
-        </button>
-        <div className="flex items-center gap-3 flex-shrink-0">
-          {/* Read-only status badges stay inline; all actions live in "⋯". */}
-          {doc.partnerVisible && (
-            <Tooltip label="Shared with partner">
-              <span className="flex items-center text-accent-teal">
-                <Handshake className="w-3.5 h-3.5" />
-              </span>
-            </Tooltip>
-          )}
-          {doc.publicVisible && (
-            <Tooltip label="Public write-up — rendered on this project's page on dali.website">
-              <span className="flex items-center text-accent-coral">
-                <Globe className="w-3.5 h-3.5" />
-              </span>
-            </Tooltip>
-          )}
-          <DocRowMenu doc={doc} indent={indent} />
-        </div>
-      </div>
-    );
-  }
+  // Row callbacks + drag state, bundled for the module-scope row components.
+  // Kept as one object (not spread props) so hoisting the rows didn't balloon
+  // into a dozen individual props at every call site.
+  const rowCtx: DocRowCtx = {
+    canEdit,
+    drag,
+    dropTarget,
+    setDrag,
+    setDropTarget,
+    onDropBefore,
+    toggleFavorite,
+    togglePartnerVisible,
+    togglePin,
+    setMoveDoc,
+    deleteDocument,
+  };
 
   return (
     <section className="bg-card border border-border rounded-lg p-4">
@@ -3841,7 +3876,7 @@ function DocumentsBlock({
           {/* Pinned docs on top — full document rows (share/pin/delete), just
               lifted above the rest. The filled coral pin marks them pinned. */}
           {pinnedDocuments.map((d) => (
-            <DocRow key={d.id} doc={d} indent={false} parentId={null} />
+            <DocRow key={d.id} doc={d} indent={false} parentId={null} ctx={rowCtx} />
           ))}
           {documents.map((doc) =>
             doc.kind === "Folder" ? (
@@ -3942,13 +3977,13 @@ function DocumentsBlock({
                   ) : (
                     <div className="flex flex-col divide-y divide-border">
                       {doc.children.map((child) => (
-                        <DocRow key={child.id} doc={child} indent parentId={doc.id} />
+                        <DocRow key={child.id} doc={child} indent parentId={doc.id} ctx={rowCtx} />
                       ))}
                     </div>
                   ))}
               </div>
             ) : (
-              <DocRow key={doc.id} doc={doc} indent={false} parentId={null} />
+              <DocRow key={doc.id} doc={doc} indent={false} parentId={null} ctx={rowCtx} />
             ),
           )}
         </div>
