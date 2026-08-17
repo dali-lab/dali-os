@@ -13,7 +13,6 @@ import { resolveReferenceOptions } from "~/forms/lib/reference-sources";
 import { safeParseJsonString } from "~/forms/lib/forms-data";
 import type { ApplicationCycleType } from "~/generated/prisma/client";
 
-const HIRING_FOLDER = "Hiring";
 const TEMPLATE_FOLDER = "Hiring Templates";
 const TEMPLATE_NAME = "Internal Application Template";
 
@@ -40,14 +39,31 @@ function defaultQuestions(): Question[] {
   ];
 }
 
+// Find or create the top-level Lab Page folder (kind=Folder) that holds the
+// template form in the Drive. Matches by title so it converges on the mirror
+// Page the form-folder-mirror job created from the old FormFolder of the same
+// name.
 async function ensureFolder(name: string, actorId: string): Promise<string> {
-  const existing = await prisma.formFolder.findFirst({
-    where: { name, parentId: null },
+  const existing = await prisma.page.findFirst({
+    where: {
+      title: name,
+      kind: "Folder",
+      workspaceType: "Lab",
+      parentPageId: null,
+      archivedAt: null,
+    },
     select: { id: true },
   });
   if (existing) return existing.id;
-  const created = await prisma.formFolder.create({
-    data: { name, parentId: null, createdById: actorId },
+  const created = await prisma.page.create({
+    data: {
+      title: name,
+      kind: "Folder",
+      workspaceType: "Lab",
+      workspaceId: null,
+      parentPageId: null,
+      createdById: actorId,
+    },
     select: { id: true },
   });
   return created.id;
@@ -59,9 +75,9 @@ async function ensureFolder(name: string, actorId: string): Promise<string> {
  * changes what future cycles are cloned from.
  */
 export async function ensureHiringTemplate(actorId: string): Promise<string> {
-  const folderId = await ensureFolder(TEMPLATE_FOLDER, actorId);
+  const folderPageId = await ensureFolder(TEMPLATE_FOLDER, actorId);
   const existing = await prisma.form.findFirst({
-    where: { name: TEMPLATE_NAME, folderId },
+    where: { name: TEMPLATE_NAME, folderPageId },
     select: { id: true, versions: { select: { id: true }, take: 1 } },
   });
   if (existing?.versions.length) return existing.id;
@@ -79,7 +95,7 @@ export async function ensureHiringTemplate(actorId: string): Promise<string> {
   const created = await prisma.form.create({
     data: {
       name: TEMPLATE_NAME,
-      folderId,
+      folderPageId,
       createdById: actorId,
       versions: {
         create: {
@@ -129,13 +145,11 @@ export async function createCycleApplicationForm(
   const templateVersion = template?.versions[0];
   const questions = (templateVersion?.questions as unknown as Question[]) ?? defaultQuestions();
 
-  const folderId = await ensureFolder(HIRING_FOLDER, actorId);
   const folderPageId = (await ensureHiringDriveRoot(actorId))?.id ?? null;
   const label = CYCLE_LABEL[cycle.cycleType] ?? "Application";
   const form = await prisma.form.create({
     data: {
       name: `${cycle.name} — ${label} application`,
-      folderId,
       folderPageId,
       createdById: actorId,
       versions: {
@@ -180,12 +194,10 @@ export async function createDomainChallengeForm(
   const templateVersion = template?.versions[0];
   const questions = (templateVersion?.questions as unknown as Question[]) ?? defaultQuestions();
 
-  const folderId = await ensureFolder(HIRING_FOLDER, actorId);
   const folderPageId = (await ensureHiringDriveRoot(actorId))?.id ?? null;
   const form = await prisma.form.create({
     data: {
       name: `${cycle.name} — ${domain.displayName} challenge`,
-      folderId,
       folderPageId,
       createdById: actorId,
       versions: {

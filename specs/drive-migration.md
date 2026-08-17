@@ -98,13 +98,25 @@ then collapse each check site (keep the flag-ON branch, delete the OFF branch):
 
 ---
 
-## Commit 2 — Layer B: retire `FormFolder` / `Form.folderId`
+## Commit 2 — Layer B: retire `FormFolder` / `Form.folderId` — **BUILT** (branch `feat/drive-migration-formfolder`, stacked on Layer A)
 
-**Precondition (gate the migration):** the `form-folder-mirror` job must have run
-in **prod** so every `Form.folderId` has a corresponding `Form.folderPageId`.
-Steps: flip `enabledByDefault: true` in `app/jobs/registry.ts:303` (or operator
-Run-now), let it run in staging → prod, verify `count(Form where folderId != null
-AND folderPageId == null) == 0` before merging the drop.
+**New finding during build:** `FormFolder` wasn't only the old browser's backing —
+**education and hiring create `FormFolder`s at runtime** for their template/
+application forms (`ensureFolder` in `education/lib/application-form.server.ts` +
+`hiring/lib/application-form.server.ts`). Layer B moves those to **Lab Page
+folders** (`kind=Folder`) matched **by title**, so they converge on the mirror
+Page the job created from the same-named `FormFolder`. Per-offering/per-cycle
+forms now place via `folderPageId` (hiring already had a Hiring-drive-root
+`folderPageId`; the redundant `folderId` was dropped).
+
+**⚠ Prod runbook — do this BEFORE merging (gate the migration):**
+1. On the **currently-deployed** code (Layer A / pre-drop), the `form-folder-mirror`
+   job still exists. Enable + Run-now in Admin → Jobs in **prod** so every placed
+   form gets a `folderPageId` (mirror Pages carry `systemKey "formfolder:<id>"`).
+2. Verify `count(Form where folderId != null AND folderPageId == null) == 0`.
+3. Only then merge this commit (which drops `Form.folderId` + `FormFolder` **and**
+   removes the mirror job). Because staging Neon is reseeded each deploy, run the
+   check against **prod** data specifically.
 
 ### 2A. Data + schema migration
 - Backfill guard: ensure no orphaned `folderId`-only forms remain (mirror sets
