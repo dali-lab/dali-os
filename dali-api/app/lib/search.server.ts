@@ -47,10 +47,10 @@ export async function runSearch(opts: {
     searchDocuments(q, like),
     searchProjectFiles(q, like),
     searchApplications(opts.userId, roles, q, like),
-    // Groups, forms & folders — Forms area gate.
+    // Groups & forms — Forms area gate. Form folders are Drive Pages, already
+    // surfaced by searchDocuments.
     roles.canViewForms ? searchGroups(q, like) : NONE,
     roles.canViewForms ? searchForms(q, like) : NONE,
-    roles.canViewForms ? searchFormFolders(q, like) : NONE,
     // Hiring library (reusable artifacts) — Core or Domain Lead, mirroring the
     // library routes. Names aren't sensitive; the routes already gate.
     roles.isCore || roles.isDomainLead ? searchRubrics(q, like) : NONE,
@@ -271,15 +271,6 @@ async function searchForms(q: string, like: Like): Promise<SearchResult[]> {
     take: RAW_TAKE,
   });
   return simpleResults("form", "Form", rows.map((r) => ({ id: r.id, label: r.name })), q);
-}
-
-async function searchFormFolders(q: string, like: Like): Promise<SearchResult[]> {
-  const rows = await prisma.formFolder.findMany({
-    where: { name: like },
-    select: { id: true, name: true },
-    take: RAW_TAKE,
-  });
-  return simpleResults("formFolder", "Folder", rows.map((r) => ({ id: r.id, label: r.name })), q);
 }
 
 async function searchRubrics(q: string, like: Like): Promise<SearchResult[]> {
