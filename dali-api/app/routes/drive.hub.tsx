@@ -32,6 +32,24 @@ import { useFeatureFlag } from "~/components/FeatureFlags";
 
 export const meta: Route.MetaFunction = () => [{ title: "Drive · DALI OS" }];
 
+// Drive is a single route whose meaningful context is the active scope (?scope=),
+// each with different access rules — so the guide is keyed per scope rather than
+// per route. Every project scope collapses to one `drive.project` guide (the
+// default branch) to avoid a near-identical guide per project.
+export const handle = {
+  docKey: "drive.root",
+  docTitle: "Drive",
+  resolveDocKey: (params: URLSearchParams) => {
+    const scope = params.get("scope");
+    if (!scope) return { key: "drive.root", title: "Drive" };
+    if (scope === "mine") return { key: "drive.mine", title: "My Drive" };
+    if (scope === "lab") return { key: "drive.lab", title: "Lab-wide Drive" };
+    if (scope === "core") return { key: "drive.core", title: "Core Drive" };
+    if (scope === "hiring") return { key: "drive.hiring", title: "Hiring Drive" };
+    return { key: "drive.project", title: "Project Drive" };
+  },
+};
+
 // The loader returns the FULL drive tree (every scope's items) and ignores the
 // scope/folder/type query params — those only drive client-side view state. So
 // navigating between scopes and folders needs no refetch: skip revalidation
@@ -51,8 +69,8 @@ export function shouldRevalidate({
   return defaultShouldRevalidate;
 }
 
-// The unified Drive hub, surfaced when the drive-consolidation feature flag is
-// on. Browse is the only main view. Type filter chips (All · Documents · Files ·
+// The unified Drive hub — the app's only document/forms browsing surface.
+// Browse is the only main view. Type filter chips (All · Documents · Files ·
 // Forms) filter the tree. The New ▾ menu includes real upload and from-template
 // flows. Signed agreements stay in Settings → Agreements. Templates are a
 // creation aid in the New menu, plus a browseable gallery at /drive/templates
@@ -533,7 +551,13 @@ function makeScopeActions({
     if (next === item.title) return;
 
     let res: Response;
-    if (item.type === "file") {
+    if (item.type === "form") {
+      const fd = new FormData();
+      fd.set("intent", "rename-form");
+      fd.set("id", item.id);
+      fd.set("name", next);
+      res = await fetch("/api/forms", { method: "POST", body: fd, credentials: "include" });
+    } else if (item.type === "file") {
       res = await fetch(`/api/files/${item.id}`, {
         method: "POST",
         credentials: "include",
@@ -565,6 +589,12 @@ function makeScopeActions({
   // The raw delete request for an item, routed to the right endpoint. No
   // confirm/toast — the single-item `remove` and the hub's bulk delete wrap it.
   async function deleteItem(item: DriveItem): Promise<Response> {
+    if (item.type === "form") {
+      const fd = new FormData();
+      fd.set("intent", "delete-form");
+      fd.set("id", item.id);
+      return fetch("/api/forms", { method: "POST", body: fd, credentials: "include" });
+    }
     if (item.type === "file") {
       return fetch(`/api/files/${item.id}`, { method: "DELETE", credentials: "include" });
     }
@@ -583,7 +613,9 @@ function makeScopeActions({
       description:
         item.type === "folder"
           ? "The folder must be empty first."
-          : "It will be archived and removed from your Drive.",
+          : item.type === "form"
+            ? "This permanently deletes the form and its responses. Forms still in use can't be deleted."
+            : "It will be archived and removed from your Drive.",
       tone: "destructive",
       confirmLabel: "Delete",
     });
@@ -660,28 +692,50 @@ function NewMenu({
 }) {
   const isLab = scope.id === "lab";
   const label = scope.id === "mine" ? "My Drive" : isLab ? "Lab" : scope.label;
+  const dialog = useDialog();
+  const toast = useToast();
 
   // Create a form into the current Drive folder, then navigate to its editor.
+  // Prompts for a name first (like New document/folder).
   async function createForm() {
+    const name = await dialog.prompt({
+      title: "New form",
+      label: "Name",
+      defaultValue: "Untitled form",
+      confirmLabel: "Create",
+      validate: (v) => (v.trim() ? null : "Enter a name"),
+    });
+    if (name === null) return;
     const folderPageId = currentFolderId ?? scope.rootFolderId ?? null;
     const formData = new FormData();
     formData.set("intent", "create-form");
-    formData.set("name", "Untitled form");
+    formData.set("name", name.trim());
     if (folderPageId) formData.set("folderPageId", folderPageId);
-    const res = await fetch("/forms", { method: "POST", body: formData, credentials: "include" });
+    const res = await fetch("/api/forms", { method: "POST", body: formData, credentials: "include" });
     const json = await res.json() as { ok?: boolean; formId?: string };
     if (json.ok && json.formId) {
       window.location.assign(`/forms/edit/${json.formId}`);
+    } else {
+      toast.error("Couldn't create the form");
     }
   }
 
-  // Create an agreement from the Core New menu. The admin create action redirects
-  // to the agreement detail route; we follow it and rewrite the admin path to
-  // the Drive-namespaced one.
+  // Create an agreement from the Core New menu. Prompts for a name (like New
+  // document), then follows the admin create action's redirect, rewriting the
+  // admin path to the Drive-namespaced one. The create action files it into
+  // Core ▸ Agreements ▸ {kind} so its breadcrumb resolves.
   async function createAgreement() {
+    const name = await dialog.prompt({
+      title: "New agreement",
+      label: "Name",
+      defaultValue: "Untitled agreement",
+      confirmLabel: "Create",
+      validate: (v) => (v.trim() ? null : "Enter a name"),
+    });
+    if (name === null) return;
     const formData = new FormData();
     formData.set("intent", "create");
-    formData.set("name", "New Agreement");
+    formData.set("name", name.trim());
     formData.set("kind", "General");
     formData.set("gateScope", "None");
     formData.set("audience", "Manual");

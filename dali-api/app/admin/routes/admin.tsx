@@ -4,7 +4,6 @@ import type { Route } from "./+types/admin";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isAdmin, isCore } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { prisma } from "~/lib/db";
 import { cn } from "~/lib/cn";
 import { ADMIN_CLUSTERS } from "~/admin/adminNav";
@@ -26,27 +25,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     }),
     prisma.scheduledJob.count({ where: { enabled: true, lastStatus: "Error" } }),
   ]);
-  // Hide the "documents" cluster (Agreements) from the Admin hub when
-  // drive-consolidation is on — agreements are authored in the Drive instead.
-  // Build the minimal UserRoles shape isFeatureEnabled expects: flag targeting
-  // for drive-consolidation is role-based (everyone/role/user), so we only need
-  // the booleans that ROLE_TARGETS covers. isAdmin is resolved from the parallel
-  // query above.
-  const driveConsolidation = await isFeatureEnabled("drive-consolidation", auth.user.sub, {
-    isCore: true, // already verified above
-    isAdmin: admin,
-    isLabMember: true,
-    isDomainLead: false,
-    isInstructor: false,
-    isInterviewer: false,
-    isAlumni: false,
-    isStaff: false,
-    canViewForms: true, // irrelevant for flag targeting
-    canViewStaffing: true, // irrelevant for flag targeting
-  });
   return {
     isAdmin: admin,
-    driveConsolidation,
     badges: { announcements, jobs } as Record<string, number>,
   };
 }
@@ -58,11 +38,11 @@ function badgeLabel(key: string, n: number): string {
 }
 
 export default function AdminHub() {
-  const { isAdmin: admin, driveConsolidation, badges } = useLoaderData<typeof loader>();
-  // When drive-consolidation is on, agreements live in the Drive — the
-  // "documents" cluster is removed from the Admin hub to keep one authoring surface.
+  const { isAdmin: admin, badges } = useLoaderData<typeof loader>();
+  // Agreements live in the Drive — the "documents" cluster is removed from the
+  // Admin hub to keep one authoring surface.
   const clusters = ADMIN_CLUSTERS.filter(
-    (c) => (admin || !c.adminOnly) && !(driveConsolidation && c.key === "documents"),
+    (c) => (admin || !c.adminOnly) && c.key !== "documents",
   );
   return (
     <div className="flex flex-col gap-8">

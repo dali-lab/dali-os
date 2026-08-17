@@ -374,10 +374,8 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
   // pinned surfaces (Home / My Tasks / Calendar) it falls back to the last
   // area worked in. Role gating for both the area list and its sub-tabs lives
   // in the nav-areas registry, evaluated against these flags.
-  const driveConsolidation = useFeatureFlag("drive-consolidation")
   const navRegroup = useFeatureFlag("nav-regroup")
   const navFlags = {
-    "drive-consolidation": driveConsolidation,
     "nav-regroup": navRegroup,
   }
   const roleFlags: RoleFlags = {
@@ -1133,7 +1131,6 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
         tabless={tabless}
         focusMode={focusMode}
         roles={roleFlags}
-        flags={{ "drive-consolidation": driveConsolidation }}
         onOpen={openFromPalette}
       />
     </div>

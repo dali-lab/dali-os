@@ -1,8 +1,7 @@
 import { test, expect } from './fixtures';
 import type { Page, Locator } from '@playwright/test';
 
-// E2E tests for the Finder/Google-Drive-style Drive hub (drive-consolidation
-// flag-gated).
+// E2E tests for the Finder/Google-Drive-style Drive hub.
 //
 // Model after the redesign — you browse ONE location at a time:
 //   - Drive root lists the "drives" as folder rows: drive-scope-<id>
@@ -23,8 +22,8 @@ import type { Page, Locator } from '@playwright/test';
 //     click selects, double click opens (folder → navigate in; leaf → editor).
 //   - Row actions menu: drive-item-actions-<id> (Rename / Move to… / Delete).
 //
-// drive-consolidation is on for everyone by registry default, so the Drive is
-// simply the app: no per-user flag row to stamp, and every member has it.
+// The Drive is the app's only document/forms surface — the old /documents and
+// /forms hubs have been removed.
 //
 // ?embed=1: standalone route render (no TabWorkspace iframe shell). Required for
 // dnd-kit drag tests — same pattern as kanban-drag.spec.ts.
@@ -33,7 +32,7 @@ const DRIVE_USER = 'admin@dali.dartmouth.edu';
 
 test.describe.configure({ mode: 'serial' });
 
-test.describe('Drive hub (drive-consolidation flag)', () => {
+test.describe('Drive hub', () => {
   test.beforeEach(async ({ loginAs }) => {
     await loginAs({ daliEmail: DRIVE_USER });
   });
@@ -284,10 +283,16 @@ test.describe('Drive hub (drive-consolidation flag)', () => {
     await page.waitForLoadState('networkidle');
     await page.getByTestId('drive-new-menu-core').click();
     await expect(page.getByTestId('drive-new-agreement')).toBeVisible();
+    await page.getByTestId('drive-new-agreement').click();
+
+    // A naming prompt now precedes creation (consistent with New document).
+    const input = page.locator('[role="dialog"] input[type="text"]');
+    await input.waitFor();
+    await input.fill(`E2E agreement ${Date.now()}`);
 
     await Promise.all([
       page.waitForURL(/\/documents\/agreement\//, { timeout: 10_000 }),
-      page.getByTestId('drive-new-agreement').click(),
+      page.getByRole('button', { name: 'Create' }).click(),
     ]);
     expect(page.url()).toMatch(/\/documents\/agreement\//);
   });

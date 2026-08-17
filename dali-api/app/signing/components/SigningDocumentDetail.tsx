@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Form, Link, useLoaderData } from "react-router";
-import { Menu, Select } from "~/components/ui/floating";
+import { Menu } from "~/components/ui/floating";
 import {
   Plus,
   Clock,
@@ -17,6 +17,7 @@ import {
   DocEditor,
   insertSigningField,
   insertVariable,
+  insertAdminSignature,
   type DocEditorInstance,
 } from "~/components/doc";
 import { useConfirmSubmit } from "~/components/ui/dialog";
@@ -30,10 +31,6 @@ import { ALL_SIGNING_VARIABLES } from "~/lib/signing-variables";
 import { formatDateTime, fullName, UNKNOWN_LABEL } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import type { loader } from "~/signing/routes/admin.agreements.$id";
-
-function asRoles(raw: unknown): string[] {
-  return Array.isArray(raw) ? (raw as string[]) : [];
-}
 
 // Sample values for "Preview as signer" — matches the legacy preview.
 function previewVariables(): Record<string, string> {
@@ -49,25 +46,122 @@ function previewVariables(): Record<string, string> {
   };
 }
 
-// Insert-field controls for authoring, ported from the legacy toolbar's
-// SigningInsertControls: pick the signer role, drop a field for it, or insert
-// a merge variable — all at the caret via the live editor instance.
-function SigningInsertControls({
-  editor,
-  roles,
-}: {
-  editor: DocEditorInstance | null;
-  roles: string[];
-}) {
-  const [role, setRole] = useState(roles[0] ?? "member");
-  // The roles input is live-editable while the controls are mounted — never
-  // insert a role that's no longer in the list.
-  const effectiveRole = roles.includes(role) ? role : (roles[0] ?? "member");
+// The signer fills these; the pre-signed admin signature is placed separately.
+const MEMBER_FIELD_TYPES = SIGNING_FIELD_TYPES.filter(
+  (t) => t !== "adminSignatureField",
+);
 
+type PersonResult = { userId: string; name: string; email: string | null };
+
+// "Admin signature" button: search the directory, pick a signatory, and drop a
+// pre-signed signature field bound to them at the caret. Their name renders in
+// the document immediately; issuance records the counter-signature.
+function AdminSignatureButton({ editor }: { editor: DocEditorInstance | null }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const [results, setResults] = useState<PersonResult[]>([]);
+  const [loading, setLoading] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || q.trim().length < 2) {
+      setResults([]);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/agreements/people?q=${encodeURIComponent(q.trim())}`, {
+          credentials: "include",
+        });
+        const json = (await res.json()) as { results?: PersonResult[] };
+        if (!cancelled) setResults(json.results ?? []);
+      } catch {
+        if (!cancelled) setResults([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [q, open]);
+
+  const pick = (p: PersonResult) => {
+    if (editor) {
+      editor.focus();
+      insertAdminSignature(editor, { userId: p.userId, name: p.name });
+    }
+    setOpen(false);
+    setQ("");
+    setResults([]);
+  };
+
+  return (
+    <div className="relative" ref={containerRef}>
+      <button
+        type="button"
+        disabled={!editor}
+        title="Insert a pre-signed admin signature"
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex items-center gap-1 rounded border border-border bg-card px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/40 disabled:opacity-40"
+      >
+        <PenLine className="w-3 h-3" /> Admin signature
+      </button>
+      {open && (
+        <div className="absolute left-0 z-50 mt-1 w-72 rounded-md border border-border bg-card p-2 shadow-lg">
+          <input
+            autoFocus
+            type="text"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search a signatory by name or email…"
+            className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+          />
+          <div className="mt-2 flex max-h-64 flex-col gap-0.5 overflow-y-auto">
+            {loading && <p className="px-1 py-1 text-xs text-muted-foreground">Searching…</p>}
+            {!loading && q.trim().length >= 2 && results.length === 0 && (
+              <p className="px-1 py-1 text-xs text-muted-foreground">No members found.</p>
+            )}
+            {results.map((p) => (
+              <button
+                key={p.userId}
+                type="button"
+                onClick={() => pick(p)}
+                className="flex flex-col rounded px-2 py-1.5 text-left hover:bg-muted"
+              >
+                <span className="text-sm text-foreground">{p.name}</span>
+                {p.email && <span className="text-[11px] text-muted-foreground">{p.email}</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Insert-field controls for authoring: drop a member field, place a pre-signed
+// admin signature, or insert a merge variable — all at the caret via the live
+// editor instance.
+function SigningInsertControls({ editor }: { editor: DocEditorInstance | null }) {
   const insertField = (type: SigningFieldType) => {
     if (!editor) return;
     editor.focus();
-    insertSigningField(editor, { type, role: effectiveRole });
+    insertSigningField(editor, { type, role: "member" });
   };
 
   const handleVariable = (name: string) => {
@@ -79,19 +173,12 @@ function SigningInsertControls({
   return (
     <div className="flex flex-wrap items-center gap-1 border-b border-border px-2 py-1.5">
       <span className="text-xs font-medium text-muted-foreground mr-1">Insert:</span>
-      <Select
-        value={effectiveRole}
-        onChange={(value) => setRole(value)}
-        ariaLabel="Signer role for inserted fields"
-        options={roles.map((r) => ({ value: r, label: r }))}
-        buttonClassName="rounded border border-border bg-card px-1.5 py-1 text-xs text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-      />
-      {SIGNING_FIELD_TYPES.map((type) => (
+      {MEMBER_FIELD_TYPES.map((type) => (
         <button
           key={type}
           type="button"
           disabled={!editor}
-          title={`Insert ${FIELD_LABEL[type]} field (${effectiveRole})`}
+          title={`Insert ${FIELD_LABEL[type]} field`}
           onMouseDown={(e) => {
             e.preventDefault();
             insertField(type);
@@ -101,6 +188,7 @@ function SigningInsertControls({
           {FIELD_LABEL[type]}
         </button>
       ))}
+      <AdminSignatureButton editor={editor} />
       <Menu
         align="left"
         ariaLabel="Insert merge variable"
@@ -143,23 +231,13 @@ export function SigningDocumentDetail() {
   const selectedVersion =
     document.versions.find((v) => v.id === selectedVersionId) ?? null;
 
-  const prevRoles = asRoles(selectedVersion?.roles);
   // Bodies arrive from the loader as BlockNote block JSON (legacy PM rows are
   // converted on read) — a new version authored from an old one starts from
   // the converted blocks.
   const [draftBody, setDraftBody] = useState<unknown>(selectedVersion?.body ?? []);
-  const [rolesText, setRolesText] = useState(
-    prevRoles.length ? prevRoles.join(", ") : "member, supervisor",
-  );
-
-  const editorRoles = rolesText
-    .split(",")
-    .map((r) => r.trim())
-    .filter(Boolean);
 
   const startCreate = () => {
     setDraftBody(selectedVersion?.body ?? []);
-    setRolesText(prevRoles.length ? prevRoles.join(", ") : "member, supervisor");
     setIsCreating(true);
     setPreviewing(false);
   };
@@ -298,20 +376,7 @@ export function SigningDocumentDetail() {
               <Form method="post" className="space-y-4" onSubmit={() => setIsCreating(false)}>
                 <input type="hidden" name="intent" value="create-version" />
                 <input type="hidden" name="body" value={JSON.stringify(draftBody)} />
-                <label className="block text-sm">
-                  <span className="font-medium text-foreground/80">Signer roles (comma-separated)</span>
-                  <input
-                    type="text"
-                    name="roles"
-                    value={rolesText}
-                    onChange={(e) => setRolesText(e.target.value)}
-                    placeholder="member, supervisor"
-                    className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-accent-coral"
-                  />
-                  <span className="mt-1 block text-xs text-muted-foreground">
-                    The "supervisor" role is the fixed staff counter-signature applied once per binding.
-                  </span>
-                </label>
+                <input type="hidden" name="roles" value="member" />
                 <div>
                   <div className="mb-1 flex items-center justify-between">
                     <label className="block text-sm font-medium text-foreground/80">Body</label>
@@ -338,10 +403,7 @@ export function SigningDocumentDetail() {
                     </div>
                   ) : (
                     <div className="rounded-lg border border-border bg-card">
-                      <SigningInsertControls
-                        editor={editorInstance}
-                        roles={editorRoles.length ? editorRoles : ["member"]}
-                      />
+                      <SigningInsertControls editor={editorInstance} />
                       <DocEditor
                         features="agreement"
                         signing={{ mode: "author" }}
@@ -375,7 +437,7 @@ export function SigningDocumentDetail() {
               <div className="space-y-4">
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-sm text-muted-foreground">
-                    v{selectedVersion.versionNumber} · roles: {asRoles(selectedVersion.roles).join(", ") || "member"}
+                    v{selectedVersion.versionNumber}
                   </p>
                   <div className="flex items-center gap-2">
                     {!selectedVersion.publishedAt && (
@@ -444,31 +506,21 @@ function BindingsPanel() {
       </div>
     );
   }
-  const anyPending = document.bindings.some(
-    (b) => !b.signatures.some((s) => s.roleKey === "supervisor"),
-  );
   return (
     <div className="bg-card rounded-xl border border-border p-6 shadow-sm space-y-4">
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-sm font-semibold text-foreground/80 uppercase tracking-wide">
           In force &amp; signatories
         </h3>
-        {anyPending && (
-          <Form method="post">
-            <input type="hidden" name="intent" value="countersign-all" />
-            <button
-              type="submit"
-              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-md text-white bg-dark-blue hover:opacity-90"
-            >
-              <PenLine className="w-3.5 h-3.5" /> Counter-sign all as supervisor
-            </button>
-          </Form>
-        )}
       </div>
       {document.bindings.map((b) => {
         const context =
           b.cycle?.name ? `cycle: ${b.cycle.name}` : b.term?.code ? `term: ${b.term.code}` : "app-wide";
-        const supervisorSigned = b.signatures.some((s) => s.roleKey === "supervisor");
+        // Pre-signed staff counter-signatures, recorded automatically at issuance
+        // from the admin-signature fields placed in the body.
+        const counterSigners = b.signatures
+          .filter((s) => s.roleKey === "supervisor")
+          .map((s) => s.typedName || fullName(s.signer) || UNKNOWN_LABEL);
         const roster = rosters[b.id];
         return (
           <div key={b.id} className="rounded-lg border border-border p-4">
@@ -476,21 +528,11 @@ function BindingsPanel() {
               <p className="text-sm font-medium text-foreground">
                 {context} · v{b.version.versionNumber}
               </p>
-              {!supervisorSigned && (
-                <Form method="post">
-                  <input type="hidden" name="intent" value="countersign" />
-                  <input type="hidden" name="bindingId" value={b.id} />
-                  <button
-                    type="submit"
-                    className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-md text-white bg-dark-blue hover:opacity-90"
-                  >
-                    <PenLine className="w-3.5 h-3.5" /> Counter-sign as supervisor
-                  </button>
-                </Form>
-              )}
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
-              Supervisor: {supervisorSigned ? "signed ✓" : "pending"}
+              {counterSigners.length > 0
+                ? `Counter-signed by ${counterSigners.join(", ")}`
+                : "No admin signature configured"}
               {roster.outstanding !== null
                 ? ` · ${roster.signed.length} of ${roster.signed.length + roster.outstanding.length} signed`
                 : ` · ${roster.signed.length} signature${roster.signed.length !== 1 ? "s" : ""}`}

@@ -9,7 +9,7 @@ import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles, isCore } from "~/lib/roles";
 import { coreHandle } from "~/core/coreNav";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { ensureCoreDriveRoot } from "~/lib/pages";
 import type {
   SigningDocumentKind,
   SigningGateScope,
@@ -67,16 +67,13 @@ export async function loader({ request }: Route.LoaderArgs) {
   const roles = await getUserRoles(auth.user.sub);
   if (!roles.isCore) return redirect("/");
 
-  // When drive-consolidation is on, the Drive is the only agreement authoring
-  // surface. Redirect the /admin/agreements list to the Drive hub (filter=agreement)
-  // so the URL changes but content is preserved. Path-keyed: only redirect when
-  // the request is at the admin path — the documents/agreement re-export also
-  // calls this loader, and we must not redirect in that case.
+  // The Drive is the only agreement authoring surface. Redirect the
+  // /admin/agreements list to the Drive hub (filter=agreement) so the URL
+  // changes but content is preserved. Path-keyed: only redirect when the request
+  // is at the admin path — the documents/agreement re-export also calls this
+  // loader, and we must not redirect in that case.
   const url = new URL(request.url);
-  if (
-    url.pathname.startsWith("/admin/agreements") &&
-    (await isFeatureEnabled("drive-consolidation", auth.user.sub, roles))
-  ) {
+  if (url.pathname.startsWith("/admin/agreements")) {
     return redirect("/drive?type=agreement");
   }
 
@@ -117,13 +114,13 @@ export async function action({ request }: Route.ActionArgs) {
         cadence: CADENCES.includes(cadence) ? cadence : "Once",
       },
     });
-    // When the flag is on, redirect straight to the Drive-namespaced route so
-    // the browser lands on /documents/agreement/:id rather than the admin URL.
-    // The flag check in the action is safe because actions run server-side.
-    if (await isFeatureEnabled("drive-consolidation", auth.user.sub, await getUserRoles(auth.user.sub))) {
-      return redirect(`/documents/agreement/${doc.id}`);
-    }
-    return redirect(`/admin/agreements/${doc.id}`);
+    // File the new agreement into Core ▸ Agreements ▸ {kind} immediately (it's
+    // created unplaced) so its Drive breadcrumb resolves without waiting for the
+    // next Core-drive visit. Idempotent + best-effort — never block creation.
+    await ensureCoreDriveRoot(auth.user.sub).catch(() => null);
+    // Land on the Drive-namespaced route so the browser opens the agreement in
+    // the Drive rather than the admin URL.
+    return redirect(`/documents/agreement/${doc.id}`);
   }
 
   return null;

@@ -101,13 +101,13 @@ const SECTIONS: Array<{
     ),
   },
   {
-    title: "Forms",
-    to: "/forms",
+    title: "Drive",
+    to: "/drive",
     body: (
       <>
-        A folder tree of forms — feedback, evaluations, staffing inputs,
-        one-off surveys. If someone sends you a form to fill, the link in
-        your task list opens it here.
+        One place for documents, files, and forms, organized by who can see
+        them. If someone sends you a form to fill, the link in your task list
+        opens it directly.
       </>
     ),
   },

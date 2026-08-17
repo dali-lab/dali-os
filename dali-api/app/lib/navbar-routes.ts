@@ -5,8 +5,6 @@
 const NAVBAR_PATHS = new Set([
   "/",
   "/notifications",
-  "/documents",
-  "/forms",
   "/projects",
   "/core",
   "/drive",

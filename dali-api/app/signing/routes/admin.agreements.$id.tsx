@@ -1,6 +1,7 @@
 // Admin → Agreements → detail. Author immutable versions (place fields +
-// variables), publish a version, put a published version in force (bind), have
-// staff apply the fixed supervisor counter-signature, and track signatories.
+// variables, incl. pre-signed admin-signature fields), publish a version, and
+// put a published version in force (bind) — which records the configured staff
+// counter-signatures — and track signatories.
 
 import { redirect } from "react-router";
 import type { Route } from "./+types/admin.agreements.$id";
@@ -9,11 +10,11 @@ import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles, isCore } from "~/lib/roles";
 import { coreHandle } from "~/core/coreNav";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { logAuditEvent } from "~/lib/audit";
 import { fullName } from "~/lib/display";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { resolveAdminScope } from "~/signing/lib/scope.server";
+import { applyAdminSignatures } from "~/signing/lib/presign.server";
 import { notifySignRequest } from "~/signing/lib/notify.server";
 import { AUDIENCE_RESOLVERS } from "~/signing/lib/audiences";
 import { SigningDocumentDetail } from "~/signing/components/SigningDocumentDetail";
@@ -39,15 +40,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const roles = await getUserRoles(auth.user.sub);
   if (!roles.isCore) return redirect("/");
 
-  // When drive-consolidation is on, /admin/agreements/:id redirects to the
-  // Drive-namespaced route. Path-keyed: this loader is also re-exported by
-  // documents.agreement.$id.tsx — only redirect for admin-path requests to
-  // avoid an infinite loop.
+  // /admin/agreements/:id redirects to the Drive-namespaced route. Path-keyed:
+  // this loader is also re-exported by documents.agreement.$id.tsx — only
+  // redirect for admin-path requests to avoid an infinite loop.
   const url = new URL(request.url);
-  if (
-    url.pathname.startsWith("/admin/agreements/") &&
-    (await isFeatureEnabled("drive-consolidation", auth.user.sub, roles))
-  ) {
+  if (url.pathname.startsWith("/admin/agreements/")) {
     return redirect(`/documents/agreement/${params.id}`);
   }
 
@@ -128,14 +125,8 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const formData = await request.formData();
   const intent = formData.get("intent") as string;
-  // When drive-consolidation is on, post-action redirects go to the Drive URL
-  // directly so the user stays on the canonical surface. The admin loader would
-  // redirect anyway, but this avoids the extra hop.
-  const roles = await getUserRoles(auth.user.sub);
-  const driveOn = await isFeatureEnabled("drive-consolidation", auth.user.sub, roles);
-  const back = driveOn
-    ? `/documents/agreement/${params.id}`
-    : `/admin/agreements/${params.id}`;
+  // Post-action redirects go to the Drive URL — the canonical agreement surface.
+  const back = `/documents/agreement/${params.id}`;
 
   if (intent === "create-version") {
     const bodyRaw = formData.get("body") as string;
@@ -193,7 +184,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     const versionId = formData.get("versionId") as string;
     const version = await prisma.signingDocumentVersion.findUnique({
       where: { id: versionId },
-      select: { publishedAt: true },
+      select: { publishedAt: true, body: true },
     });
     if (!version?.publishedAt) return { error: "Publish the version before putting it in force." };
 
@@ -217,6 +208,8 @@ export async function action({ request, params }: Route.ActionArgs) {
       update: { versionId },
       select: { id: true },
     });
+    // Record the pre-signed staff counter-signatures configured in the body.
+    await applyAdminSignatures({ bindingId: bound.id, versionId, body: version.body });
     await logAuditEvent({
       action: "signing.bind",
       userId: auth.user.sub,
@@ -228,102 +221,13 @@ export async function action({ request, params }: Route.ActionArgs) {
     return redirect(back);
   }
 
-  if (intent === "countersign") {
-    const bindingId = formData.get("bindingId") as string;
-    const binding = await prisma.signingBinding.findUnique({
-      where: { id: bindingId },
-      select: { versionId: true },
-    });
-    if (!binding) return { error: "Binding not found" };
-
-    const me = await prisma.user.findUniqueOrThrow({
-      where: { id: auth.user.sub },
-      select: { firstName: true, lastName: true },
-    });
-    const url = new URL(request.url);
-    await prisma.signingSignature.upsert({
-      where: {
-        bindingId_signerUserId_roleKey: {
-          bindingId,
-          signerUserId: auth.user.sub,
-          roleKey: "supervisor",
-        },
-      },
-      create: {
-        bindingId,
-        versionId: binding.versionId,
-        signerUserId: auth.user.sub,
-        roleKey: "supervisor",
-        typedName: fullName(me),
-        ip: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null,
-        userAgent: request.headers.get("user-agent") || null,
-        fieldValues: {},
-      },
-      update: { versionId: binding.versionId, signedAt: new Date(), typedName: fullName(me) },
-    });
-    void url;
-    await logAuditEvent({
-      action: "signing.staff_countersign",
-      userId: auth.user.sub,
-      targetId: params.id,
-      metadata: { bindingId },
-      request,
-    });
-    return redirect(back);
-  }
-
-  if (intent === "countersign-all") {
-    // Apply the fixed staff signature to every in-force binding that doesn't
-    // have one yet, in one click.
-    const me = await prisma.user.findUniqueOrThrow({
-      where: { id: auth.user.sub },
-      select: { firstName: true, lastName: true },
-    });
-    const bindings = await prisma.signingBinding.findMany({
-      where: { documentId: params.id },
-      select: {
-        id: true,
-        versionId: true,
-        signatures: { where: { roleKey: "supervisor" }, select: { id: true } },
-      },
-    });
-    const ip =
-      request.headers.get("fly-client-ip") ||
-      request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-      null;
-    const userAgent = request.headers.get("user-agent") || null;
-    for (const b of bindings) {
-      if (b.signatures.length > 0) continue;
-      await prisma.signingSignature.create({
-        data: {
-          bindingId: b.id,
-          versionId: b.versionId,
-          signerUserId: auth.user.sub,
-          roleKey: "supervisor",
-          typedName: fullName(me),
-          ip,
-          userAgent,
-          fieldValues: {},
-        },
-      });
-    }
-    await logAuditEvent({
-      action: "signing.staff_countersign",
-      userId: auth.user.sub,
-      targetId: params.id,
-      metadata: { bulk: true },
-      request,
-    });
-    return redirect(back);
-  }
-
   if (intent === "archive") {
     await prisma.signingDocument.update({
       where: { id: params.id },
       data: { archivedAt: new Date() },
     });
-    // When flag is on, send the user to the Drive agreements view after archive.
-    return redirect(driveOn ? "/drive?type=agreement" : "/admin/agreements");
+    // Archiving removes the agreement — return to the Drive agreements view.
+    return redirect("/drive?type=agreement");
   }
 
   return null;
