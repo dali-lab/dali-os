@@ -31,6 +31,8 @@ export const meta: Route.MetaFunction = ({ data }) => {
 // Falls back to a plain (unlinked) title for Lab-workspace pages, which have
 // no dedicated hub to link to.
 export const handle = {
+  docKey: "document.editor",
+  docTitle: "Documents",
   // Project/Education pages share the /documents/:pageId viewer, so their URL
   // root reads "Documents" while their real home is Projects/Education — those
   // declare the whole trail here. Lab pages (no workspace) genuinely live under

@@ -29,22 +29,33 @@ type PageDocContextValue = {
 
 const PageDocContext = createContext<PageDocContextValue | null>(null);
 
-function useDocHandleFromMatches(): { docKey?: string; docTitle?: string } {
+function useDocHandleFromMatches(searchParams: URLSearchParams): {
+  docKey?: string;
+  docTitle?: string;
+} {
   const matches = useMatches();
   let docKey: string | undefined;
   let docTitle: string | undefined;
+  let resolve: DocHandle["resolveDocKey"];
   for (const m of matches as { handle?: DocHandle }[]) {
     if (m.handle?.docKey) {
       docKey = m.handle.docKey;
       docTitle = m.handle.docTitle;
+      resolve = m.handle.resolveDocKey;
     }
   }
-  return { docKey, docTitle };
+  // Single-route pages (Drive) derive their guide key from the URL query; the
+  // resolver overrides the static docKey when it returns a value.
+  const derived = resolve?.(searchParams);
+  return {
+    docKey: derived?.key ?? docKey,
+    docTitle: derived?.title ?? docTitle,
+  };
 }
 
 export function PageDocProvider({ children }: { children: ReactNode }) {
-  const { docKey, docTitle } = useDocHandleFromMatches();
   const [searchParams, setSearchParams] = useSearchParams();
+  const { docKey, docTitle } = useDocHandleFromMatches(searchParams);
   const [open, setOpenState] = useState(() => searchParams.get("doc") === "1");
 
   // Deep links (?doc=1) and in-app navigation onto a guided page.

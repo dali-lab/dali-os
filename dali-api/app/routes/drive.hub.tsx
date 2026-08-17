@@ -32,6 +32,24 @@ import { useFeatureFlag } from "~/components/FeatureFlags";
 
 export const meta: Route.MetaFunction = () => [{ title: "Drive · DALI OS" }];
 
+// Drive is a single route whose meaningful context is the active scope (?scope=),
+// each with different access rules — so the guide is keyed per scope rather than
+// per route. Every project scope collapses to one `drive.project` guide (the
+// default branch) to avoid a near-identical guide per project.
+export const handle = {
+  docKey: "drive.root",
+  docTitle: "Drive",
+  resolveDocKey: (params: URLSearchParams) => {
+    const scope = params.get("scope");
+    if (!scope) return { key: "drive.root", title: "Drive" };
+    if (scope === "mine") return { key: "drive.mine", title: "My Drive" };
+    if (scope === "lab") return { key: "drive.lab", title: "Lab-wide Drive" };
+    if (scope === "core") return { key: "drive.core", title: "Core Drive" };
+    if (scope === "hiring") return { key: "drive.hiring", title: "Hiring Drive" };
+    return { key: "drive.project", title: "Project Drive" };
+  },
+};
+
 // The loader returns the FULL drive tree (every scope's items) and ignores the
 // scope/folder/type query params — those only drive client-side view state. So
 // navigating between scopes and folders needs no refetch: skip revalidation
