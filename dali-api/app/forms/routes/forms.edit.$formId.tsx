@@ -30,6 +30,8 @@ export const meta: Route.MetaFunction = ({ data }) => [
 // The literal "edit" URL segment carries no location and is dropped by
 // Breadcrumbs' DROPPED_SEGMENTS.
 export const handle = {
+  docKey: "form.editor",
+  docTitle: "Forms",
   breadcrumbTrail: (data: unknown) => {
     const d = data as {
       form?: { name: string };
