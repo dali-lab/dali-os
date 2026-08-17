@@ -165,7 +165,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // Lab files live in the Drive tree — resolve folder ancestry for the crumb.
   // Resolve folder ancestry for both Lab files (rooted at Drive) and project
   // files (rooted at the project hub) so the breadcrumb shows the full path.
-  const driveCrumbs = await driveFolderCrumbs(file.folderPageId);
+  const driveCrumbs = await driveFolderCrumbs(file.folderPageId, auth.user.sub, request);
 
   return {
     fileId: file.id,
