@@ -20,8 +20,15 @@ export const SIGNING_FIELD_TYPES = [
   "initialField",
   "checkboxField",
   "textField",
+  // Pre-signed staff counter-signature: bound to a configured signatory at
+  // authoring time; renders their name and is never filled by the member.
+  "adminSignatureField",
 ] as const;
 export type SigningFieldType = (typeof SIGNING_FIELD_TYPES)[number];
+
+// The role/roleKey the pre-signed admin signature is recorded under — the
+// fixed staff counter-signature slot, kept out of the member-fill flow.
+export const ADMIN_SIGNATURE_ROLE = "supervisor";
 
 // Every node type this feature adds to the document schema (fields + the
 // merge-variable node).
@@ -38,6 +45,7 @@ export const FIELD_DATA_TYPE: Record<SigningFieldType, string> = {
   initialField: "initial-field",
   checkboxField: "checkbox-field",
   textField: "text-field",
+  adminSignatureField: "admin-signature-field",
 };
 
 // Human labels for the authoring pill + the insert-field controls.
@@ -47,6 +55,7 @@ export const FIELD_LABEL: Record<SigningFieldType, string> = {
   initialField: "Initial",
   checkboxField: "Checkbox",
   textField: "Text",
+  adminSignatureField: "Admin signature",
 };
 
 export const CHECKBOX_CHECKED = "☑"; // ☑
@@ -285,6 +294,58 @@ export function collectSigningFields(body: unknown): SigningFieldRef[] {
   };
   if (body && typeof body === "object") walk(body as PMNodeLike);
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Admin signatories
+
+export interface AdminSignatory {
+  /** The configured signatory's user id (empty string if unset in the builder). */
+  userId: string;
+  /** Their display name, baked into the field at authoring time. */
+  name: string;
+}
+
+/**
+ * Collect the pre-signed admin-signature fields placed in a document body,
+ * de-duplicated by userId. Issuance turns each into a supervisor counter-
+ * signature audit record. Accepts block JSON (array) or legacy ProseMirror JSON.
+ */
+export function collectAdminSignatories(body: unknown): AdminSignatory[] {
+  const byUser = new Map<string, string>();
+
+  const push = (bag: Record<string, unknown> | null | undefined) => {
+    const userId = bag?.signerUserId;
+    if (typeof userId !== "string" || userId === "") return;
+    const name = typeof bag?.value === "string" ? bag.value : "";
+    if (!byUser.has(userId)) byUser.set(userId, name);
+  };
+
+  if (Array.isArray(body)) {
+    const visitInline = (inline: InlineLike) => {
+      if (inline.type === "adminSignatureField") push(inline.props);
+      if (Array.isArray(inline.content)) inline.content.forEach(visitInline);
+    };
+    const visitBlock = (block: BlockLike) => {
+      if (Array.isArray(block.content)) {
+        block.content.forEach(visitInline);
+      } else if (isTableContent(block.content)) {
+        for (const row of block.content.rows ?? []) {
+          for (const cell of row.cells ?? []) cellInlines(cell).forEach(visitInline);
+        }
+      }
+      (block.children ?? []).forEach(visitBlock);
+    };
+    (body as BlockLike[]).forEach(visitBlock);
+  } else if (body && typeof body === "object") {
+    const walk = (node: PMNodeLike) => {
+      if (node.type === "adminSignatureField") push(node.attrs);
+      if (Array.isArray(node.content)) node.content.forEach(walk);
+    };
+    walk(body as PMNodeLike);
+  }
+
+  return [...byUser].map(([userId, name]) => ({ userId, name }));
 }
 
 // ---------------------------------------------------------------------------

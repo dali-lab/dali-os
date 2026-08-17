@@ -9,6 +9,7 @@ import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles, isCore } from "~/lib/roles";
 import { coreHandle } from "~/core/coreNav";
+import { ensureCoreDriveRoot } from "~/lib/pages";
 import type {
   SigningDocumentKind,
   SigningGateScope,
@@ -113,6 +114,10 @@ export async function action({ request }: Route.ActionArgs) {
         cadence: CADENCES.includes(cadence) ? cadence : "Once",
       },
     });
+    // File the new agreement into Core ▸ Agreements ▸ {kind} immediately (it's
+    // created unplaced) so its Drive breadcrumb resolves without waiting for the
+    // next Core-drive visit. Idempotent + best-effort — never block creation.
+    await ensureCoreDriveRoot(auth.user.sub).catch(() => null);
     // Land on the Drive-namespaced route so the browser opens the agreement in
     // the Drive rather than the admin URL.
     return redirect(`/documents/agreement/${doc.id}`);

@@ -42,6 +42,15 @@ function SigningFieldRenderer({ type, ...props }: FieldProps & { type: SigningFi
   const baked = props.value === "" ? undefined : props.value;
 
   if (ctx.mode === "author") {
+    // The pre-signed admin signature reads its configured signatory (baked into
+    // `value`) rather than a role — authors see who will counter-sign.
+    if (type === "adminSignatureField") {
+      return (
+        <span className="signing-field signing-field--author" data-field-id={fieldId}>
+          ⟦{FIELD_LABEL[type]}: {baked ? String(baked) : "unassigned"}⟧
+        </span>
+      );
+    }
     const who = role ? `: ${role}` : "";
     return (
       <span className="signing-field signing-field--author" data-field-id={fieldId}>
@@ -161,6 +170,7 @@ export const signingInlineSpecs = {
   initialField: createFieldSpec("initialField"),
   checkboxField: createFieldSpec("checkboxField"),
   textField: createFieldSpec("textField"),
+  adminSignatureField: createFieldSpec("adminSignatureField"),
   variable: VariableSpec,
 } as const;
 

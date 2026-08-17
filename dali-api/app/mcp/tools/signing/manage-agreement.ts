@@ -1,12 +1,13 @@
 // MCP tool: manage_agreement — Core-only faceted tool for authoring and
 // activating signing documents. Actions mirror the admin route intents:
-// create · rename · publish · activate · countersign.
+// create · rename · publish · activate. Activation records the pre-signed
+// admin-signature counter-signatures placed in the body.
 
 import { prisma } from "~/lib/db";
 import { isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
-import { fullName } from "~/lib/display";
 import { resolveAdminScope } from "~/signing/lib/scope.server";
+import { applyAdminSignatures } from "~/signing/lib/presign.server";
 import { notifySignRequest } from "~/signing/lib/notify.server";
 import {
   requireForAction,
@@ -68,25 +69,21 @@ async function uniqueSlug(base: string): Promise<string> {
 export const MANAGE_AGREEMENT_TOOL = {
   name: "manage_agreement",
   description:
-    "Core-only. Create, rename, publish, activate, or countersign a signing document/agreement. Actions: create · rename · publish · activate · countersign.",
+    "Core-only. Create, rename, publish, or activate a signing document/agreement. Actions: create · rename · publish · activate. Putting a version in force (activate) records the pre-signed admin-signature counter-signatures placed in the body.",
   inputSchema: {
     type: "object" as const,
     properties: {
       action: {
         type: "string",
-        enum: ["create", "rename", "publish", "activate", "countersign"],
+        enum: ["create", "rename", "publish", "activate"],
       },
       documentId: {
         type: "string",
-        description: "Required for rename, publish, activate, countersign.",
+        description: "Required for rename, publish, activate.",
       },
       versionId: {
         type: "string",
         description: "Required for publish, activate.",
-      },
-      bindingId: {
-        type: "string",
-        description: "Required for countersign.",
       },
       name: {
         type: "string",
@@ -123,7 +120,6 @@ type Args = {
   action: string;
   documentId?: string;
   versionId?: string;
-  bindingId?: string;
   name?: string;
   kind?: string;
   gateScope?: string;
@@ -142,7 +138,6 @@ export async function runManageAgreement(ctx: McpCtx, args: Args) {
     rename: ["documentId", "name"],
     publish: ["documentId", "versionId"],
     activate: ["documentId", "versionId"],
-    countersign: ["documentId", "bindingId"],
   });
 
   // ─── create ──────────────────────────────────────────────────────────────
@@ -203,7 +198,7 @@ export async function runManageAgreement(ctx: McpCtx, args: Args) {
   if (args.action === "activate") {
     const version = await prisma.signingDocumentVersion.findUnique({
       where: { id: args.versionId! },
-      select: { publishedAt: true },
+      select: { publishedAt: true, body: true },
     });
     if (!version) throw new McpNotFoundError("Version not found.");
     if (!version.publishedAt) {
@@ -237,6 +232,13 @@ export async function runManageAgreement(ctx: McpCtx, args: Args) {
       select: { id: true },
     });
 
+    // Record the pre-signed staff counter-signatures configured in the body.
+    await applyAdminSignatures({
+      bindingId: bound.id,
+      versionId: args.versionId!,
+      body: version.body,
+    });
+
     await logAuditEvent({
       action: "signing.bind",
       userId: ctx.user.id,
@@ -247,56 +249,6 @@ export async function runManageAgreement(ctx: McpCtx, args: Args) {
     await notifySignRequest(bound.id);
 
     return { ok: true, bindingId: bound.id };
-  }
-
-  // ─── countersign ──────────────────────────────────────────────────────────
-
-  if (args.action === "countersign") {
-    const binding = await prisma.signingBinding.findUnique({
-      where: { id: args.bindingId! },
-      select: { versionId: true },
-    });
-    if (!binding) throw new McpNotFoundError("Binding not found.");
-
-    const me = await prisma.user.findUniqueOrThrow({
-      where: { id: ctx.user.id },
-      select: { firstName: true, lastName: true },
-    });
-
-    await prisma.signingSignature.upsert({
-      where: {
-        bindingId_signerUserId_roleKey: {
-          bindingId: args.bindingId!,
-          signerUserId: ctx.user.id,
-          roleKey: "supervisor",
-        },
-      },
-      create: {
-        bindingId: args.bindingId!,
-        versionId: binding.versionId,
-        signerUserId: ctx.user.id,
-        roleKey: "supervisor",
-        typedName: fullName(me),
-        ip: ctx.request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null,
-        userAgent: ctx.request.headers.get("user-agent") || null,
-        fieldValues: {},
-      },
-      update: {
-        versionId: binding.versionId,
-        signedAt: new Date(),
-        typedName: fullName(me),
-      },
-    });
-
-    await logAuditEvent({
-      action: "signing.staff_countersign",
-      userId: ctx.user.id,
-      targetId: args.documentId!,
-      metadata: { bindingId: args.bindingId },
-      request: ctx.request,
-    });
-
-    return { ok: true };
   }
 
   // requireForAction handles unknown actions — this is unreachable.
