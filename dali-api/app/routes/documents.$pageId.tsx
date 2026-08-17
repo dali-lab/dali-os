@@ -215,7 +215,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // (Drive ▸ Folder ▸ … ▸ page for Lab docs; hub ▸ Folder ▸ … ▸ page for
   // project/offering docs) instead of collapsing to just the parent hub. Only
   // Lab pages consume the detected scope; project/offering pages use `folders`.
-  const driveCrumbs = await driveFolderCrumbs(page.parentPageId);
+  const driveCrumbs = await driveFolderCrumbs(page.parentPageId, auth.user.sub, request);
 
   let attendance:
     | {

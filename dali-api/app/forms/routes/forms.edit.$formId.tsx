@@ -72,7 +72,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       // helper): a Core author must be able to target groups they aren't in.
       listAllGroups(),
       loadFormHiringLinks(params.formId),
-      driveFolderCrumbs(form.folderPageId),
+      driveFolderCrumbs(form.folderPageId, auth.user.sub, request),
     ]);
   // When a feature owns this form's distribution (hiring cycle, education
   // offering, staffing, partner), the generic publish/audience settings are
