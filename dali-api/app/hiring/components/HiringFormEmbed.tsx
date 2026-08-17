@@ -3,6 +3,7 @@ import { Link, Form } from "react-router";
 import { ChevronDown, FileText, Trash2, ArrowUpRight } from "lucide-react";
 import type { Question } from "~/types";
 import { ChallengePreview } from "~/hiring/components/ChallengePreview";
+import { useConfirmSubmit } from "~/components/ui/dialog";
 
 export interface HiringFormEmbedProps {
   /** The bound Drive Form id — links to the Forms builder. */
@@ -12,8 +13,15 @@ export interface HiringFormEmbedProps {
   description?: unknown;
   /** Open the inline preview on first render (used when it's the only form). */
   defaultOpen?: boolean;
-  /** When set, renders a remove control that posts this intent + fields. */
-  remove?: { intent: string; fields: Record<string, string> };
+  /**
+   * When set, renders a remove control that posts this intent + fields behind a
+   * confirm dialog. `confirmDescription` overrides the default warning copy.
+   */
+  remove?: {
+    intent: string;
+    fields: Record<string, string>;
+    confirmDescription?: string;
+  };
 }
 
 /**
@@ -33,6 +41,7 @@ export function HiringFormEmbed({
   remove,
 }: HiringFormEmbedProps) {
   const [open, setOpen] = useState(defaultOpen);
+  const confirmSubmit = useConfirmSubmit();
   const qCount = questions.filter((q) => q.type !== "info").length;
 
   return (
@@ -67,7 +76,18 @@ export function HiringFormEmbed({
             <ArrowUpRight className="w-3.5 h-3.5" />
           </Link>
           {remove && (
-            <Form method="post" preventScrollReset>
+            <Form
+              method="post"
+              preventScrollReset
+              onSubmit={confirmSubmit({
+                title: `Remove ${name}?`,
+                description:
+                  remove.confirmDescription ??
+                  "Applicants will no longer see this form. The form itself stays in Drive — you can re-bind it later.",
+                confirmLabel: "Remove",
+                tone: "destructive",
+              })}
+            >
               <input type="hidden" name="intent" value={remove.intent} />
               {Object.entries(remove.fields).map(([k, v]) => (
                 <input key={k} type="hidden" name={k} value={v} />
