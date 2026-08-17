@@ -121,10 +121,15 @@ export const INTERNAL_CYCLES: Record<InternalCycleType, InternalCycleConfig> = {
     domainStrategy: "single-core-domain",
     decisionChannel: "inApp",
     decisionNotificationEvent: "hiring.core_decision",
-    portalPath: "/core",
+    // The Core hub owns /core; the application portal is at /core/apply. Point
+    // notification links (invite, decision, tasks) straight at the portal so
+    // they resolve in every cycle state. Already-sent /core invite emails still
+    // work: the /core hub redirects eligible members here while the cycle is
+    // Open.
+    portalPath: "/core/apply",
     openInvite: {
       eventType: "hiring.core_invite",
-      link: "/core",
+      link: "/core/apply",
       title: () => "Core application is open",
       body: (name, closeText) => `${name} is accepting Core applications.${closeText}`,
     },
