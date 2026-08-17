@@ -46,10 +46,10 @@
   --shadow-3: 0 4px 8px  rgba(198, 202, 204, 0.80); /* on #C6CACC */
   --shadow-4: 0 4px 10px rgba(94, 99, 102, 0.50);   /* on #404040 */
 
-  /* Sidebar motion. The rail marks the active sub-tab and wipes in on a
+  /* Sidebar motion. The rail marks the active sub-tab and fades in on a
      section change; the area menu fades down as it opens. Both fire once per
      interaction rather than running as ambient motion. */
-  --animate-nav-rail: nav-rail 200ms cubic-bezier(0.2, 0.8, 0.3, 1);
+  --animate-nav-rail: nav-rail 160ms ease-out;
   --animate-area-menu: area-menu 140ms cubic-bezier(0.2, 0.8, 0.3, 1);
 
   /* ── Brand gradients (guide §3.3) ── */
@@ -516,17 +516,16 @@ select:not(:disabled) {
   text-wrap: balance;
 }
 
-/* Sidebar: the active sub-tab's rail wipes in on a section change. */
-/* Only `transform` here — the rail's -50% centring rides on Tailwind v4's
-   separate `translate` property, so repeating it in the keyframe would stack a
-   second -50% for the animation's duration and drop the rail 8px on finish. */
+/* Sidebar: the active sub-tab's rail fades in on a section change. */
+/* Opacity only — no transform, no geometry. A scaled rail gets its own
+   compositing layer for the duration and lands back on a fractional row centre
+   a hair below where it started, which reads as the marker twitching down once
+   the page settles. */
 @keyframes nav-rail {
   from {
-    transform: scaleY(0.2);
     opacity: 0;
   }
   to {
-    transform: scaleY(1);
     opacity: 1;
   }
 }

@@ -70,17 +70,18 @@ const SIDEBAR_COLLAPSED_KEY = 'dali:sidebar:collapsed'
 const LAST_AREA_KEY = 'dali:sidebar:area'
 
 // The active-area switcher is the sidebar's primary navigation control now, so
-// it has to read as a control. Closed it sits in a faint well with a hairline
-// ring — the vocabulary of a select field, not of another nav row; open it
-// brightens and its ring tightens so the trigger and its menu read as one
-// object.
+// it has to read as a control. It borrows the full vocabulary of a select
+// field: a lit well, a ring you can actually see against navy, and a caret
+// fenced off behind its own hairline divider — the one shape nothing else in
+// the sidebar has. Faint versions of this read as a section heading sitting
+// above the sub-tabs, which is exactly the misread we're fixing.
 function areaTriggerClass(open: boolean) {
   return cn(
-    'w-full flex items-center gap-3 px-3 py-2 rounded-md',
+    'w-full flex items-center gap-3 pl-3 pr-2 py-2 rounded-md',
     'text-sm font-heading font-semibold text-white ring-1 transition-colors',
     open
-      ? 'bg-white/[0.14] ring-white/25'
-      : 'bg-white/[0.06] ring-white/10 hover:bg-white/[0.11] hover:ring-white/20',
+      ? 'bg-white/[0.20] ring-white/40'
+      : 'bg-white/[0.12] ring-white/25 hover:bg-white/[0.18] hover:ring-white/40',
   )
 }
 
@@ -128,16 +129,21 @@ function subtabIconClass(active: boolean) {
 
 // The active-sub-tab marker, drawn over the list's guide line so the rule
 // itself lights up coral at your position rather than gaining a second stripe.
+// Centring is done by a full-height flex wrapper, never by a transform: the
+// rail carries no transform at all, so nothing re-rounds its position when the
+// entrance animation ends and it can't drift off the row's midline. The
+// entrance is opacity-only for the same reason.
 function SubtabRail({ collapsed }: { collapsed: boolean }) {
   return (
     <span
       aria-hidden
       className={cn(
-        'absolute top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-full bg-accent-coral',
-        'motion-safe:animate-nav-rail',
+        'pointer-events-none absolute inset-y-0 flex items-center',
         collapsed ? 'left-0' : '-left-[9px]',
       )}
-    />
+    >
+      <span className="h-4 w-[3px] rounded-full bg-accent-coral motion-safe:animate-nav-rail" />
+    </span>
   )
 }
 
@@ -459,6 +465,109 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
   const taskCount = openTasks.length
   const sidebarWidth = collapsed ? 'w-16' : 'w-64'
 
+  // Open tasks used to sit inline under the My Tasks row, so the rest of the
+  // nav slid down every time one arrived. They hang off the row as a hover
+  // flyout instead: fixed-positioned (the scrolling <nav> would clip an
+  // absolute panel) and pinned to the sidebar's right edge, so there's no gap
+  // for the pointer to fall through on the way over. A short close delay covers
+  // the diagonal anyway.
+  const tasksRowRef = useRef<HTMLDivElement | null>(null)
+  const tasksCloseTimer = useRef<number | null>(null)
+  const [tasksFlyout, setTasksFlyout] = useState<{ top: number; left: number } | null>(null)
+
+  const showTasksFlyout = useCallback(() => {
+    if (tasksCloseTimer.current !== null) {
+      window.clearTimeout(tasksCloseTimer.current)
+      tasksCloseTimer.current = null
+    }
+    const rect = tasksRowRef.current?.getBoundingClientRect()
+    // +8 lands the panel on the sidebar's edge (the nav's px-2 gutter).
+    if (rect) setTasksFlyout({ top: rect.top, left: rect.right + 8 })
+  }, [])
+
+  const hideTasksFlyout = useCallback(() => {
+    if (tasksCloseTimer.current !== null) window.clearTimeout(tasksCloseTimer.current)
+    tasksCloseTimer.current = window.setTimeout(() => {
+      tasksCloseTimer.current = null
+      setTasksFlyout(null)
+    }, 140)
+  }, [])
+
+  const closeTasksFlyoutNow = useCallback(() => {
+    if (tasksCloseTimer.current !== null) {
+      window.clearTimeout(tasksCloseTimer.current)
+      tasksCloseTimer.current = null
+    }
+    setTasksFlyout(null)
+  }, [])
+
+  useEffect(() => () => {
+    if (tasksCloseTimer.current !== null) window.clearTimeout(tasksCloseTimer.current)
+  }, [])
+
+  // The anchor row scrolls with the nav, so track it while the panel is up.
+  useEffect(() => {
+    if (!tasksFlyout) return
+    window.addEventListener('scroll', showTasksFlyout, true)
+    window.addEventListener('resize', showTasksFlyout)
+    return () => {
+      window.removeEventListener('scroll', showTasksFlyout, true)
+      window.removeEventListener('resize', showTasksFlyout)
+    }
+  }, [tasksFlyout, showTasksFlyout])
+
+  const taskRowClass =
+    'flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] font-medium text-left transition-colors'
+
+  const renderTaskRow = (t: ReturnType<typeof useOpenTasks>[number]) => {
+    // Meeting invites clear only via RSVP — open My Tasks so
+    // Accept/Maybe/Decline are available (same as Home).
+    if (t.source === 'meeting') {
+      return (
+        <button
+          key={t.id}
+          type="button"
+          title={t.title}
+          {...tabClickProps({ url: '/notifications', label: 'My Tasks' })}
+          onClickCapture={closeTasksFlyoutNow}
+          className={`${taskRowClass} w-full text-white/70 hover:text-white hover:bg-white/10`}
+        >
+          <span className="truncate">{t.title}</span>
+        </button>
+      )
+    }
+    return t.link ? (
+      <button
+        key={t.id}
+        type="button"
+        title={t.title}
+        onClick={() => {
+          closeTasksFlyoutNow()
+          // Tasks are notification rows — POST /read clears the tile + drops
+          // the count once the user acts. Self-clearing tasks (a form to
+          // submit, the onboarding checklist) are the exception: opening the
+          // link isn't acting on them, so they clear only when their own
+          // action completes.
+          if (!t.hasAction) {
+            fetch(`/api/notifications/${t.id}/read`, {
+              method: 'POST',
+              credentials: 'include',
+              keepalive: true,
+            }).then(() => window.dispatchEvent(new Event(TASKS_CHANGED_EVENT)))
+          }
+          openInWorkspace({ url: t.link!, label: t.title })
+        }}
+        className={`${taskRowClass} w-full text-white/70 hover:text-white hover:bg-white/10`}
+      >
+        <span className="truncate">{t.title}</span>
+      </button>
+    ) : (
+      <div key={t.id} title={t.title} className={`${taskRowClass} text-white/45`}>
+        <span className="truncate">{t.title}</span>
+      </div>
+    )
+  }
+
   const sidebarContent = (
     <>
       {/* Brand */}
@@ -548,8 +657,9 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
           const homeActive = path === '/'
           const tasksActive = path.startsWith('/notifications')
           // "My Tasks" opens the dedicated surface (Open + History tabs). With
-          // todos it also sits above one subtab per open todo, each linking to
-          // that todo's own target; the header itself goes to /notifications.
+          // todos, hovering the row also raises a flyout listing them, each
+          // linking to that todo's own target; the row itself always goes to
+          // /notifications, hover or not.
           const headerInner = (
             <>
               <span className="relative flex-shrink-0">
@@ -578,7 +688,7 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
           )
           // dev (#566 era) added an explicit Home nav button; HEAD added the
           // Tasks section (Tasks-nav feature). Keep both: Home on top, then
-          // the Tasks header + per-todo subtabs.
+          // the Tasks row.
           return (
             <>
               <button
@@ -592,7 +702,14 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
                 <Home className="w-4 h-4 flex-shrink-0" />
                 {!collapsed && <span className="truncate">Home</span>}
               </button>
-              <div className="flex flex-col">
+              <div
+                ref={tasksRowRef}
+                className="flex flex-col"
+                onMouseEnter={hasTasks ? showTasksFlyout : undefined}
+                onMouseLeave={hideTasksFlyout}
+                onFocus={hasTasks ? showTasksFlyout : undefined}
+                onBlur={hideTasksFlyout}
+              >
                 <button
                   type="button"
                   title={collapsed ? `My Tasks (${taskCount})` : undefined}
@@ -603,70 +720,33 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
                 >
                   {headerInner}
                 </button>
-
-                {!collapsed && hasTasks && (
-                  <div className="mt-1 mb-1 ml-4 pl-2 border-l border-white/10 flex flex-col gap-0.5">
-                    {openTasks.map((t) => {
-                      const cls =
-                        'flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] font-medium text-left transition-colors'
-                      // Meeting invites clear only via RSVP — open My Tasks so
-                      // Accept/Maybe/Decline are available (same as Home).
-                      if (t.source === 'meeting') {
-                        return (
-                          <button
-                            key={t.id}
-                            type="button"
-                            title={t.title}
-                            {...tabClickProps({ url: '/notifications', label: 'My Tasks' })}
-                            className={`${cls} text-white/55 hover:text-white hover:bg-white/5`}
-                          >
-                            <span className="truncate">{t.title}</span>
-                          </button>
-                        )
-                      }
-                      return t.link ? (
-                        <button
-                          key={t.id}
-                          type="button"
-                          title={t.title}
-                          onClick={() => {
-                            // Tasks are notification rows — POST /read clears
-                            // the tile + drops the count once the user acts.
-                            // Self-clearing tasks (a form to submit, the
-                            // onboarding checklist) are the exception: opening
-                            // the link isn't acting on them, so they clear only
-                            // when their own action completes.
-                            if (!t.hasAction) {
-                              fetch(`/api/notifications/${t.id}/read`, {
-                                method: 'POST',
-                                credentials: 'include',
-                                keepalive: true,
-                              }).then(() =>
-                                window.dispatchEvent(new Event(TASKS_CHANGED_EVENT)),
-                              )
-                            }
-                            openInWorkspace({ url: t.link!, label: t.title })
-                          }}
-                          className={`${cls} text-white/55 hover:text-white hover:bg-white/5`}
-                        >
-                          <span className="truncate">{t.title}</span>
-                        </button>
-                      ) : (
-                        <div
-                          key={t.id}
-                          title={t.title}
-                          className={`${cls} text-white/40`}
-                        >
-                          <span className="truncate">{t.title}</span>
-                        </div>
-                      )
-                    })}
-                    {/* Entry point into the full My Tasks surface — Open list
-                        plus the browsable cleared/history view. */}
+                {/* Open tasks, hung off the My Tasks row. Fixed rather than absolute so
+                    the scrolling <nav> can't clip it; it stays up while the pointer is
+                    inside it and closes as soon as a task is opened. */}
+                {tasksFlyout && taskCount > 0 && (
+                  <div
+                    role="group"
+                    aria-label="Open tasks"
+                    onMouseEnter={showTasksFlyout}
+                    onMouseLeave={hideTasksFlyout}
+                    style={{
+                      top: tasksFlyout.top,
+                      left: tasksFlyout.left,
+                      maxHeight: `calc(100vh - ${Math.round(tasksFlyout.top) + 16}px)`,
+                    }}
+                    className="hidden md:flex fixed z-50 w-64 flex-col overflow-y-auto rounded-md bg-sidebar-bg ring-1 ring-white/20 shadow-xl shadow-black/50 p-1 motion-safe:animate-area-menu"
+                  >
+                    <div className="px-2.5 pt-1 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-white/50">
+                      Open tasks
+                    </div>
+                    {openTasks.map(renderTaskRow)}
+                    {/* Entry point into the full My Tasks surface — Open list plus the
+                        browsable cleared/history view. */}
                     <button
                       type="button"
                       {...tabClickProps({ url: '/notifications?tab=history', label: 'My Tasks' })}
-                      className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[12px] font-medium text-left text-white/40 hover:text-white hover:bg-white/5 transition-colors"
+                      onClickCapture={closeTasksFlyoutNow}
+                      className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[12px] font-medium text-left text-white/45 hover:text-white hover:bg-white/10 transition-colors"
                     >
                       <span className="truncate">See all →</span>
                     </button>
@@ -734,16 +814,28 @@ export function Layout({ user, photoUrl, isCore = false, isAdmin = false, isDoma
                   onClick={() => setAreaMenuOpen((v) => !v)}
                   aria-haspopup="listbox"
                   aria-expanded={areaMenuOpen}
+                  aria-label={`Section: ${activeArea.label}. Switch section`}
+                  title="Switch section"
                   className={areaTriggerClass(areaMenuOpen)}
                 >
-                  <activeArea.icon className="w-4 h-4 flex-shrink-0 text-white/70" />
+                  <activeArea.icon className="w-4 h-4 flex-shrink-0 text-accent-coral" />
                   <span className="truncate">{activeArea.label}</span>
-                  <ChevronsUpDown
+                  {/* The caret gets its own fenced cell, the way a select's
+                      does. A bare glyph floating at the end of the row read as
+                      decoration; behind a divider it reads as the handle. */}
+                  <span
                     className={cn(
-                      'w-3.5 h-3.5 ml-auto flex-shrink-0 transition-colors',
-                      areaMenuOpen ? 'text-white/80' : 'text-white/45',
+                      'ml-auto self-stretch flex items-center pl-2 border-l transition-colors',
+                      areaMenuOpen ? 'border-white/30' : 'border-white/20',
                     )}
-                  />
+                  >
+                    <ChevronsUpDown
+                      className={cn(
+                        'w-4 h-4 flex-shrink-0 transition-colors',
+                        areaMenuOpen ? 'text-white' : 'text-white/75',
+                      )}
+                    />
+                  </span>
                 </button>
                 {areaMenuOpen && (
                   // white/5 over the navy rail lands within a few percent of
