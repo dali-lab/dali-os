@@ -147,9 +147,9 @@ test.describe('project hub share toggle (member)', () => {
     await loginAs({ daliEmail: 'admin@dali.dartmouth.edu' });
   });
 
-  // Each doc row's actions live behind its own "⋯" menu (drive-consolidation,
-  // on for everyone). `following::` picks the actions button of the row the
-  // title belongs to, since a row renders its title before its menu.
+  // Each doc row's actions live behind its own "⋯" menu. `following::` picks the
+  // actions button of the row the title belongs to, since a row renders its
+  // title before its menu.
   const docMenu = (page: import('@playwright/test').Page, title: string) =>
     page
       .getByRole('button', { name: title, exact: true })

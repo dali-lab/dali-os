@@ -22,7 +22,6 @@ import { Tooltip } from "~/components/ui/IconButton";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { EditableSection } from "~/components/EditableSection";
 import { PageIcon } from "~/components/PageIcon";
-import { FavoriteStar } from "~/components/FavoriteStar";
 import { favoritePageIds, recordRouteVisit } from "~/lib/user-pages.server";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { PresenceBar } from "~/components/collab/PresenceBar";
@@ -3400,11 +3399,6 @@ function DocumentsBlock({
 }) {
   const dialog = useDialog();
   const revalidator = useRevalidator();
-  // When the Drive redesign is on, this block reads as a compact "Drive" embed
-  // of the project's folder: renamed heading, an Open-in-Drive link, and row
-  // actions tucked behind a "⋯" menu. Flag-off keeps the current inline layout
-  // (which the partner-portal e2e depends on).
-  const driveUi = useFeatureFlag("drive-consolidation");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   // "Move to…" dialog state — tracks which doc the user wants to move.
@@ -3748,40 +3742,14 @@ function DocumentsBlock({
           <span className="truncate">{doc.title}</span>
         </button>
         <div className="flex items-center gap-3 flex-shrink-0">
-          {driveUi ? (
-            <>
-              {/* Read-only status badges stay inline; all actions live in "⋯". */}
-              {doc.partnerVisible && (
-                <Tooltip label="Shared with partner">
-                  <span className="flex items-center text-accent-teal">
-                    <Handshake className="w-3.5 h-3.5" />
-                  </span>
-                </Tooltip>
-              )}
-              {doc.publicVisible && (
-                <Tooltip label="Public write-up — rendered on this project's page on dali.website">
-                  <span className="flex items-center text-accent-coral">
-                    <Globe className="w-3.5 h-3.5" />
-                  </span>
-                </Tooltip>
-              )}
-              <DocRowMenu doc={doc} indent={indent} />
-            </>
-          ) : (
-            <>
-          {doc.kind !== "Folder" && (
-            <FavoriteStar pageId={doc.id} favorited={doc.favorited} />
-          )}
-          {doc.partnerVisible && !canEdit && (
-            <Tooltip label="Shared with partner — partners on this project can open and edit this page">
+          {/* Read-only status badges stay inline; all actions live in "⋯". */}
+          {doc.partnerVisible && (
+            <Tooltip label="Shared with partner">
               <span className="flex items-center text-accent-teal">
                 <Handshake className="w-3.5 h-3.5" />
               </span>
             </Tooltip>
           )}
-          {/* Read-only marker. Which page is the public write-up is decided on
-              the Public view, so this says which one it is without offering a
-              second way to change it. */}
           {doc.publicVisible && (
             <Tooltip label="Public write-up — rendered on this project's page on dali.website">
               <span className="flex items-center text-accent-coral">
@@ -3789,84 +3757,7 @@ function DocumentsBlock({
               </span>
             </Tooltip>
           )}
-          {/* Shown whenever the viewer can edit, not only once a partner org is
-              linked: teams routinely prepare shared docs before the partner
-              account exists, and gating the control on an active partnership
-              made it vanish from most projects. */}
-          {canEdit && (
-            <Tooltip
-              label={
-                doc.partnerVisible
-                  ? "Shared with partner — click to stop sharing"
-                  : "Share with partner"
-              }
-            >
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void togglePartnerVisible(doc.id, !doc.partnerVisible)}
-                // Accessible name must stay exactly "Shared with partner" /
-                // "Share with partner": it's the toggle's only name now that the
-                // label is icon-only, and it's the contract partner-portal.spec
-                // matches on via getByRole. The tooltip carries the extra hint.
-                aria-label={doc.partnerVisible ? "Shared with partner" : "Share with partner"}
-                className={`flex items-center disabled:opacity-60 ${
-                  doc.partnerVisible
-                    ? "text-accent-teal"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <Handshake className="w-3.5 h-3.5" />
-              </button>
-            </Tooltip>
-          )}
-          {/* Pin is top-level only — nested docs (e.g. under Partner/Team
-              meeting-notes folders) can't be pinned to the top. */}
-          {canEdit && !indent && (
-            <Tooltip label={doc.pinned ? "Pinned — click to unpin" : "Pin to top"}>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void togglePin(doc.id, !doc.pinned)}
-                aria-label={doc.pinned ? "Unpin document" : "Pin document"}
-                aria-pressed={doc.pinned}
-                className={`flex items-center disabled:opacity-60 ${
-                  doc.pinned
-                    ? "text-accent-coral"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <Pin className={`w-3.5 h-3.5 ${doc.pinned ? "fill-current" : ""}`} />
-              </button>
-            </Tooltip>
-          )}
-          {canEdit && !doc.isSystem && (
-            <Tooltip label="Move to…">
-              <button
-                type="button"
-                onClick={() => setMoveDoc({ id: doc.id, title: doc.title })}
-                aria-label="Move document"
-                className="text-muted-foreground hover:text-foreground disabled:opacity-60"
-              >
-                <FolderInput className="w-3.5 h-3.5" />
-              </button>
-            </Tooltip>
-          )}
-          {canEdit && (
-            <Tooltip label="Delete document">
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void deleteDocument(doc.id, doc.title)}
-                aria-label="Delete document"
-                className="text-destructive hover:text-destructive/80 disabled:opacity-60"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
-            </Tooltip>
-          )}
-            </>
-          )}
+          <DocRowMenu doc={doc} indent={indent} />
         </div>
       </div>
     );
@@ -3876,70 +3767,41 @@ function DocumentsBlock({
     <section className="bg-card border border-border rounded-lg p-4">
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
-          <Folder className="w-4 h-4" /> {driveUi ? "Drive" : "Documents"}
+          <Folder className="w-4 h-4" /> Drive
         </h2>
-        {driveUi ? (
-          // Drive redesign: this block is an embed of the project's Drive
-          // folder. An Open-in-Drive link jumps to it in the main Drive; create
-          // actions consolidate into one New ▾ menu.
-          <div className="flex items-center gap-2">
-            <Link
-              to={`/drive?scope=${projectId}`}
-              className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-accent-coral transition-colors"
+        {/* This block is an embed of the project's Drive folder. An
+            Open-in-Drive link jumps to it in the main Drive; create actions
+            consolidate into one New ▾ menu. */}
+        <div className="flex items-center gap-2">
+          <Link
+            to={`/drive?scope=${projectId}`}
+            className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-accent-coral transition-colors"
+          >
+            Open in Drive <ExternalLink className="w-3.5 h-3.5" />
+          </Link>
+          {canEdit && (
+            <Menu
+              align="right"
+              ariaLabel="New in project Drive"
+              trigger={
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground hover:bg-muted/60 transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5" /> New
+                  <ChevronDown className="w-3 h-3 opacity-70" />
+                </button>
+              }
             >
-              Open in Drive <ExternalLink className="w-3.5 h-3.5" />
-            </Link>
-            {canEdit && (
-              <Menu
-                align="right"
-                ariaLabel="New in project Drive"
-                trigger={
-                  <button
-                    type="button"
-                    className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground hover:bg-muted/60 transition-colors"
-                  >
-                    <Plus className="w-3.5 h-3.5" /> New
-                    <ChevronDown className="w-3 h-3 opacity-70" />
-                  </button>
-                }
-              >
-                <Menu.Item icon={<FileText className="w-3.5 h-3.5" />} onSelect={() => void createDocument()}>
-                  New document
-                </Menu.Item>
-                <Menu.Item icon={<FolderPlus className="w-3.5 h-3.5" />} onSelect={() => void createFolder()}>
-                  New folder
-                </Menu.Item>
-              </Menu>
-            )}
-          </div>
-        ) : (
-          canEdit && (
-            <div className="flex items-center gap-2">
-              <Tooltip label="New folder">
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void createFolder()}
-                  aria-label="New folder"
-                  className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-60"
-                >
-                  <FolderPlus className="w-3.5 h-3.5" />
-                </button>
-              </Tooltip>
-              <Tooltip label="Add document">
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void createDocument()}
-                  aria-label="Add document"
-                  className="p-1 rounded text-accent-coral hover:bg-accent-coral/10 disabled:opacity-60"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                </button>
-              </Tooltip>
-            </div>
-          )
-        )}
+              <Menu.Item icon={<FileText className="w-3.5 h-3.5" />} onSelect={() => void createDocument()}>
+                New document
+              </Menu.Item>
+              <Menu.Item icon={<FolderPlus className="w-3.5 h-3.5" />} onSelect={() => void createFolder()}>
+                New folder
+              </Menu.Item>
+            </Menu>
+          )}
+        </div>
       </div>
 
       {error && (

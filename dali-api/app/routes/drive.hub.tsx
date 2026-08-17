@@ -69,8 +69,8 @@ export function shouldRevalidate({
   return defaultShouldRevalidate;
 }
 
-// The unified Drive hub, surfaced when the drive-consolidation feature flag is
-// on. Browse is the only main view. Type filter chips (All · Documents · Files ·
+// The unified Drive hub — the app's only document/forms browsing surface.
+// Browse is the only main view. Type filter chips (All · Documents · Files ·
 // Forms) filter the tree. The New ▾ menu includes real upload and from-template
 // flows. Signed agreements stay in Settings → Agreements. Templates are a
 // creation aid in the New menu, plus a browseable gallery at /drive/templates
@@ -687,7 +687,7 @@ function NewMenu({
     formData.set("intent", "create-form");
     formData.set("name", "Untitled form");
     if (folderPageId) formData.set("folderPageId", folderPageId);
-    const res = await fetch("/forms", { method: "POST", body: formData, credentials: "include" });
+    const res = await fetch("/api/forms", { method: "POST", body: formData, credentials: "include" });
     const json = await res.json() as { ok?: boolean; formId?: string };
     if (json.ok && json.formId) {
       window.location.assign(`/forms/edit/${json.formId}`);

@@ -10,7 +10,6 @@ import { isCore } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { recordRouteVisit } from "~/lib/user-pages.server";
 import { buildResponseGrid } from "~/forms/lib/answer-rows.server";
-import { folderCrumbs, type FolderCrumb } from "~/forms/lib/forms-data";
 import { Modal, ModalHeader } from "~/components/Modal";
 import type { Question } from "~/types";
 
@@ -26,11 +25,10 @@ export const meta: Route.MetaFunction = ({ data }) => [
 export const handle = {
   breadcrumb: (data: unknown) => {
     const d = data as
-      | { formId?: string; formName?: string; crumbs?: FolderCrumb[] }
+      | { formId?: string; formName?: string }
       | undefined;
     if (!d?.formName) return null;
     return [
-      ...(d.crumbs ?? []).map((c) => ({ label: c.name, to: `/forms/${c.id}` })),
       { label: d.formName, to: `/forms/edit/${d.formId}` },
       { label: "Responses" },
     ];
@@ -65,14 +63,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     select: {
       id: true,
       name: true,
-      folderId: true,
       _count: { select: { submissions: true } },
     },
   });
-  if (!form) return redirect("/forms");
+  if (!form) return redirect("/drive?type=form");
   // After the Core gate — the responses view the viewer can open lands in recents.
   recordRouteVisit(auth.user.sub, `/forms/responses/${form.id}`, `${form.name} responses`, request);
-  const crumbs = await folderCrumbs(form.folderId);
 
   // When this form is the bound partner application form, the applications
   // board is the canonical review surface — this page is just the raw view.
@@ -142,7 +138,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   return {
     formId: form.id,
     formName: form.name,
-    crumbs,
     isPartnerApplicationForm: partnerBinding !== null,
     totalCount: form._count.submissions,
     columns: grid.columns,
