@@ -19,6 +19,11 @@ import { loadTemplates, type TemplateItem, type TemplateKind } from "~/lib/drive
 
 export const meta: Route.MetaFunction = () => [{ title: "Templates · DALI OS" }];
 
+export const handle = {
+  docKey: "drive.templates",
+  docTitle: "Templates",
+};
+
 // The unified Drive Templates gallery: every template system (documents, forms,
 // mentor notes, email, agreements) in one browseable place, role-gated per kind
 // by loadTemplates. Gated behind the `templates` feature flag.

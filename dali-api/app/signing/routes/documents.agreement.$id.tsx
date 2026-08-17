@@ -28,6 +28,8 @@ export async function loader(args: Route.LoaderArgs) {
 // Override the adminHandle breadcrumb trail (which roots at Admin) so the Drive
 // surface shows "Drive › Folder › … › <agreement name>" instead of the admin trail.
 export const handle = {
+  docKey: "agreement.author",
+  docTitle: "Agreements",
   breadcrumbTrail: (data: unknown) => {
     const d = data as {
       document?: { name?: string };
