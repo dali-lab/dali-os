@@ -2167,6 +2167,7 @@ model Term {
   budgetNotes           BudgetNote[]
   signingBindings       SigningBinding[]
   timelineWeeks         TimelineWeek[]
+  timelineDomains       TimelineDomain[]
 
   @@index([sortKey])
 }
@@ -2218,13 +2219,30 @@ model TimelineMilestone {
   @@index([weekId])
 }
 
+// The domain vocabulary of one term's timeline — the lanes every week is
+// split into. Seeded from DOMAINS in app/lib/term-timeline.ts, then edited
+// (added to, renamed, recoloured, removed) from the page's edit mode.
+model TimelineDomain {
+  id     String @id @default(cuid())
+  termId String
+  term   Term   @relation(fields: [termId], references: [id], onDelete: Cascade)
+  // What TimelineLane.domainKey points at. "pm"/"design"/"dev"/"data" for the
+  // seeded four, an opaque unique string for domains added later.
+  key      String
+  name     String
+  // Brand hex owning this domain's stripe/dot.
+  color    String
+  position Int
+
+  @@unique([termId, key])
+}
+
 model TimelineLane {
   id     String       @id @default(cuid())
   weekId String
   week   TimelineWeek @relation(fields: [weekId], references: [id], onDelete: Cascade)
-  // One of the DOMAINS keys in app/lib/term-timeline.ts ("pm", "design",
-  // "dev", "data") — the domain vocabulary of this page, not the Domain table
-  // (which is staffing's, and is finer-grained).
+  // TimelineDomain.key within this week's term — the domain vocabulary of this
+  // page, not the Domain table (which is staffing's, and is finer-grained).
   domainKey    String
   role         String
   deliverables String[]
