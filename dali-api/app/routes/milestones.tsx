@@ -4,13 +4,16 @@ import { ChevronLeft, ChevronRight, ImagePlus, Loader2, Plus, X } from "lucide-r
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
-import { isAdmin, isCore } from "~/lib/roles";
+import { isAdmin, isCore, currentTerm } from "~/lib/roles";
 import { cn } from "~/lib/cn";
 import { uploadFileToS3 } from "~/lib/upload-client";
-import { DOMAINS, SWATCHES, type FieldFormat, type FormatMap } from "~/lib/term-timeline";
+import { DOMAIN_COLORS, SWATCHES, type FieldFormat, type FormatMap } from "~/lib/term-timeline";
 import {
+  addDomain,
   loadTimeline,
+  removeDomain,
   resetWeek,
+  type TimelineDomainView,
   type TimelineWeekView,
 } from "~/lib/term-timeline.server";
 import type { Route } from "./+types/milestones";
@@ -151,6 +154,29 @@ export async function action({ request }: Route.ActionArgs) {
       await prisma.timelineMilestone.delete({ where: { id: str("id") } });
       break;
     }
+    case "domain.add": {
+      const term = await currentTerm();
+      if (!term) break;
+      await addDomain(term.id);
+      break;
+    }
+    case "domain.name": {
+      await prisma.timelineDomain.update({
+        where: { id: str("id") },
+        data: { name: str("value") },
+      });
+      break;
+    }
+    case "domain.color": {
+      const color = str("value");
+      if (!DOMAIN_COLORS.includes(color)) break;
+      await prisma.timelineDomain.update({ where: { id: str("id") }, data: { color } });
+      break;
+    }
+    case "domain.remove": {
+      await removeDomain(str("id"));
+      break;
+    }
     case "lane.text": {
       const field = str("field");
       if (!LANE_TEXT_FIELDS.includes(field as (typeof LANE_TEXT_FIELDS)[number])) break;
@@ -201,7 +227,7 @@ function labWideOf(week: TimelineWeekView) {
 }
 
 export default function Milestones() {
-  const { weeks, termLabel, canEdit } = useLoaderData<typeof loader>();
+  const { weeks, domains, termLabel, canEdit } = useLoaderData<typeof loader>();
   const submit = useSubmit();
 
   const [mode, setMode] = useState<Mode>("timeline");
@@ -217,6 +243,12 @@ export default function Milestones() {
     },
     [submit],
   );
+
+  // A filter pointed at a domain that has just been removed would dim every
+  // lane; drop back to showing them all.
+  useEffect(() => {
+    if (filter !== ALL && !domains.some((d) => d.key === filter)) setFilter(ALL);
+  }, [domains, filter]);
 
   // Panels sit side by side in one strip, so the strip would otherwise stand as
   // tall as the longest week and leave dead space under every shorter one.
@@ -286,6 +318,7 @@ export default function Milestones() {
               onClick={() => {
                 setEditing((e) => !e);
                 setFocus(null);
+                setFilter(ALL);
               }}
               className={cn(
                 "rounded-full border px-4 py-2 text-[13px] font-semibold transition-colors",
@@ -299,28 +332,34 @@ export default function Milestones() {
           )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="mr-1 text-xs uppercase tracking-[0.08em] text-muted-foreground">
-            Domains
-          </span>
-          {[{ key: ALL, name: "All domains", color: "#1E5779" }, ...DOMAINS].map((d) => (
-            <button
-              key={d.key}
-              type="button"
-              onClick={() => setFilter(d.key)}
-              aria-pressed={filter === d.key}
-              className={cn(
-                "inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-colors",
-                filter === d.key
-                  ? "border-dark-blue/25 bg-dark-blue/5 text-dark-blue dark:border-white/25 dark:bg-white/10 dark:text-foreground"
-                  : "border-border text-muted-foreground hover:text-foreground",
-              )}
-            >
-              <span className="block h-2 w-2 rounded-[2px]" style={{ background: d.color }} />
-              {d.name}
-            </button>
-          ))}
-        </div>
+        {/* One domain row at a time: filtering while editing only dims the
+            lanes you are there to edit, so edit mode takes the row over. */}
+        {editing ? (
+          <DomainEditor domains={domains} save={save} />
+        ) : (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="mr-1 text-xs uppercase tracking-[0.08em] text-muted-foreground">
+              Domains
+            </span>
+            {[{ key: ALL, name: "All domains", color: "#1E5779" }, ...domains].map((d) => (
+              <button
+                key={d.key}
+                type="button"
+                onClick={() => setFilter(d.key)}
+                aria-pressed={filter === d.key}
+                className={cn(
+                  "inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-colors",
+                  filter === d.key
+                    ? "border-dark-blue/25 bg-dark-blue/5 text-dark-blue dark:border-white/25 dark:bg-white/10 dark:text-foreground"
+                    : "border-border text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <span className="block h-2 w-2 rounded-[2px]" style={{ background: d.color }} />
+                {d.name}
+              </button>
+            ))}
+          </div>
+        )}
 
         <WeekRail weeks={weeks} active={active} onPick={goTo} />
       </header>
@@ -347,6 +386,7 @@ export default function Milestones() {
               <WeekPanel
                 key={w.index}
                 week={w}
+                domains={domains}
                 active={w.index === active}
                 filter={filter}
                 editing={editing}
@@ -357,7 +397,13 @@ export default function Milestones() {
           </div>
         </div>
       ) : (
-        <Overview weeks={weeks} active={active} filter={filter} onPick={goTo} />
+        <Overview
+          weeks={weeks}
+          domains={domains}
+          active={active}
+          filter={filter}
+          onPick={goTo}
+        />
       )}
 
       {editing && (
@@ -448,6 +494,81 @@ function Editable({
     >
       {value}
     </Tag>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Domain editor — the term's lanes themselves, not the content in them. */
+/* Renaming, recolouring or removing one here lands on every week at     */
+/* once, which is why it sits in the header rather than inside a panel.  */
+/* ------------------------------------------------------------------ */
+
+function DomainEditor({
+  domains,
+  save,
+}: {
+  domains: TimelineDomainView[];
+  save: Save;
+}) {
+  const [picking, setPicking] = useState<string | null>(null);
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-dashed border-accent-teal/50 bg-accent-teal/5 p-2.5">
+      <span className="ml-1 mr-1 text-xs uppercase tracking-[0.08em] text-muted-foreground">
+        Edit domains
+      </span>
+      {domains.map((d) => (
+        <span
+          key={d.id}
+          className="relative flex items-center gap-2 rounded-full border border-border bg-card py-1 pl-2.5 pr-2.5"
+        >
+          <button
+            type="button"
+            aria-label={`Colour for ${d.name}`}
+            onClick={() => setPicking((p) => (p === d.id ? null : d.id))}
+            className="block h-4 w-4 flex-none rounded-[3px] ring-1 ring-inset ring-black/10"
+            style={{ background: d.color }}
+          />
+          {picking === d.id && (
+            <span className="absolute left-0 top-full z-30 mt-1.5 flex gap-1.5 rounded-full border border-border bg-popover p-1.5 shadow-brand-2">
+              {DOMAIN_COLORS.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  aria-label={`Use ${c}`}
+                  onClick={() => {
+                    save({ intent: "domain.color", id: d.id, value: c });
+                    setPicking(null);
+                  }}
+                  className="h-5 w-5 rounded-[3px] border-2"
+                  style={{ background: c, borderColor: d.color === c ? "#1E5779" : "transparent" }}
+                />
+              ))}
+            </span>
+          )}
+          <Editable
+            value={d.name}
+            editing
+            className="text-[13px] font-semibold text-dark-blue dark:text-foreground"
+            onCommit={(value) => save({ intent: "domain.name", id: d.id, value })}
+          />
+          <RemoveButton
+            label={`Remove ${d.name}`}
+            onClick={() => {
+              if (!confirm(`Remove ${d.name} from every week of this term?`)) return;
+              save({ intent: "domain.remove", id: d.id });
+            }}
+          />
+        </span>
+      ))}
+      <button
+        type="button"
+        onClick={() => save({ intent: "domain.add" })}
+        className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-accent-teal px-3.5 py-1.5 text-xs font-semibold text-accent-teal"
+      >
+        <Plus className="h-3 w-3" /> domain
+      </button>
+    </div>
   );
 }
 
@@ -555,6 +676,7 @@ function RailArrow({
 
 function WeekPanel({
   week,
+  domains,
   active,
   filter,
   editing,
@@ -562,6 +684,7 @@ function WeekPanel({
   onFocusField,
 }: {
   week: TimelineWeekView;
+  domains: TimelineDomainView[];
   active: boolean;
   filter: Filter;
   editing: boolean;
@@ -716,7 +839,7 @@ function WeekPanel({
 
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {week.lanes.map((lane) => {
-            const domain = DOMAINS.find((d) => d.key === lane.domainKey);
+            const domain = domains.find((d) => d.key === lane.domainKey);
             if (!domain) return null;
             return (
               <article
@@ -1115,11 +1238,13 @@ function FormatToolbar({
 
 function Overview({
   weeks,
+  domains,
   active,
   filter,
   onPick,
 }: {
   weeks: TimelineWeekView[];
+  domains: TimelineDomainView[];
   active: number;
   filter: Filter;
   onPick: (i: number) => void;
@@ -1156,7 +1281,7 @@ function Overview({
           style={columns}
         />
 
-        {DOMAINS.map((d) => (
+        {domains.map((d) => (
           <div
             key={d.key}
             className={cn(

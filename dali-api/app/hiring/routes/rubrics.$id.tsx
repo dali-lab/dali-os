@@ -50,7 +50,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
   })
 
-  const driveCrumbs = await driveFolderCrumbs(rubric.folderPageId)
+  const driveCrumbs = await driveFolderCrumbs(rubric.folderPageId, gate.auth.user.sub, request)
 
   return { rubric, driveCrumbs }
 }

@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { prisma } from "~/lib/db";
 import { currentTerm } from "~/lib/roles";
 import { resolvePhotoUrl } from "~/lib/photo";
@@ -5,7 +7,9 @@ import {
   DEFAULT_TERM_LABEL,
   DEFAULT_WEEKS,
   DOMAINS,
+  DOMAIN_COLORS,
   SEASON_LABELS,
+  defaultLane,
   type FormatMap,
 } from "~/lib/term-timeline";
 
@@ -14,6 +18,13 @@ export type TimelineMilestoneView = {
   name: string;
   detail: string;
   labWide: boolean;
+};
+
+export type TimelineDomainView = {
+  id: string;
+  key: string;
+  name: string;
+  color: string;
 };
 
 export type TimelineLaneView = {
@@ -43,6 +54,8 @@ export type TimelineWeekView = {
 export type Timeline = {
   termId: string | null;
   termLabel: string;
+  /** The term's lanes, in the order every week renders them. */
+  domains: TimelineDomainView[];
   weeks: TimelineWeekView[];
 };
 
@@ -51,7 +64,7 @@ export type Timeline = {
  * race here, so a losing insert hits the (termId, weekIndex) unique index and
  * is treated as "someone else seeded it" rather than an error.
  */
-async function seedTimeline(termId: string): Promise<void> {
+async function seedTimeline(termId: string, domains: TimelineDomainView[]): Promise<void> {
   const existing = await prisma.timelineWeek.findMany({
     where: { termId },
     select: { weekIndex: true },
@@ -78,20 +91,50 @@ async function seedTimeline(termId: string): Promise<void> {
               position,
             })),
           },
-          lanes: {
-            create: DOMAINS.map((d, j) => ({
-              domainKey: d.key,
-              role: week.lanes[j].role,
-              deliverables: week.lanes[j].deliverables,
-              challenge: week.lanes[j].challenge,
-            })),
-          },
+          lanes: { create: domains.map((d) => laneSeed(index, d.key)) },
         },
       });
     } catch (err) {
       if (!isUniqueViolation(err)) throw err;
     }
   }
+}
+
+function laneSeed(weekIndex: number, domainKey: string) {
+  const lane = defaultLane(weekIndex, domainKey);
+  return {
+    domainKey,
+    role: lane.role,
+    deliverables: lane.deliverables,
+    challenge: lane.challenge,
+  };
+}
+
+/**
+ * A term's domain vocabulary, seeded from DOMAINS the first time it is asked
+ * for. Losing a race with a concurrent first open is not an error — whoever
+ * won wrote the same four rows.
+ */
+async function loadDomains(termId: string): Promise<TimelineDomainView[]> {
+  const existing = await prisma.timelineDomain.findMany({
+    where: { termId },
+    orderBy: { position: "asc" },
+    select: { id: true, key: true, name: true, color: true },
+  });
+  if (existing.length > 0) return existing;
+
+  try {
+    await prisma.timelineDomain.createMany({
+      data: DOMAINS.map((d, position) => ({ termId, ...d, position })),
+    });
+  } catch (err) {
+    if (!isUniqueViolation(err)) throw err;
+  }
+  return prisma.timelineDomain.findMany({
+    where: { termId },
+    orderBy: { position: "asc" },
+    select: { id: true, key: true, name: true, color: true },
+  });
 }
 
 function isUniqueViolation(err: unknown): boolean {
@@ -112,6 +155,7 @@ export async function loadTimeline(): Promise<Timeline> {
     return {
       termId: null,
       termLabel: DEFAULT_TERM_LABEL,
+      domains: DOMAINS.map((d) => ({ id: d.key, ...d })),
       weeks: DEFAULT_WEEKS.map((w, index) => ({
         id: null,
         index,
@@ -132,7 +176,8 @@ export async function loadTimeline(): Promise<Timeline> {
     };
   }
 
-  await seedTimeline(term.id);
+  const domains = await loadDomains(term.id);
+  await seedTimeline(term.id, domains);
 
   const rows = await prisma.timelineWeek.findMany({
     where: { termId: term.id },
@@ -160,8 +205,8 @@ export async function loadTimeline(): Promise<Timeline> {
         detail: m.detail,
         labWide: m.labWide,
       })),
-      // Lanes render in DOMAINS order, whatever order the rows came back in.
-      lanes: DOMAINS.flatMap((d) => {
+      // Lanes render in the term's domain order, whatever order they came back in.
+      lanes: domains.flatMap((d) => {
         const lane = w.lanes.find((l) => l.domainKey === d.key);
         return lane
           ? [
@@ -181,6 +226,7 @@ export async function loadTimeline(): Promise<Timeline> {
   return {
     termId: term.id,
     termLabel: `${SEASON_LABELS[term.season] ?? term.season} ${term.year} · Weeks 0–${DEFAULT_WEEKS.length - 1}`,
+    domains,
     weeks,
   };
 }
@@ -189,11 +235,18 @@ export async function loadTimeline(): Promise<Timeline> {
 export async function resetWeek(weekId: string): Promise<void> {
   const week = await prisma.timelineWeek.findUnique({
     where: { id: weekId },
-    select: { weekIndex: true },
+    select: { weekIndex: true, termId: true },
   });
   if (!week) return;
   const defaults = DEFAULT_WEEKS[week.weekIndex];
   if (!defaults) return;
+  // Lanes come back for whatever domains the term has now, not the four the
+  // defaults were written for — a domain added since keeps its lane, blank.
+  const domains = await prisma.timelineDomain.findMany({
+    where: { termId: week.termId },
+    orderBy: { position: "asc" },
+    select: { key: true },
+  });
 
   await prisma.$transaction([
     prisma.timelineMilestone.deleteMany({ where: { weekId } }),
@@ -216,15 +269,56 @@ export async function resetWeek(weekId: string): Promise<void> {
             position,
           })),
         },
-        lanes: {
-          create: DOMAINS.map((d, j) => ({
-            domainKey: d.key,
-            role: defaults.lanes[j].role,
-            deliverables: defaults.lanes[j].deliverables,
-            challenge: defaults.lanes[j].challenge,
-          })),
-        },
+        lanes: { create: domains.map((d) => laneSeed(week.weekIndex, d.key)) },
       },
     }),
+  ]);
+}
+
+/**
+ * Add a lane to the term: one TimelineDomain plus the lane it needs on every
+ * week, so the new column is editable everywhere the moment it appears.
+ */
+export async function addDomain(termId: string): Promise<void> {
+  const existing = await prisma.timelineDomain.findMany({
+    where: { termId },
+    orderBy: { position: "asc" },
+    select: { color: true },
+  });
+  const used = new Set(existing.map((d) => d.color));
+  const color =
+    DOMAIN_COLORS.find((c) => !used.has(c)) ?? DOMAIN_COLORS[existing.length % DOMAIN_COLORS.length];
+  // The seeded four own readable keys ("pm", …); later ones only need to be
+  // unique, since nothing outside the term's own lanes reads them.
+  const key = randomUUID();
+
+  const weeks = await prisma.timelineWeek.findMany({
+    where: { termId },
+    select: { id: true, weekIndex: true },
+  });
+
+  await prisma.$transaction([
+    prisma.timelineDomain.create({
+      data: { termId, key, name: "New domain", color, position: existing.length },
+    }),
+    prisma.timelineLane.createMany({
+      data: weeks.map((w) => ({ weekId: w.id, ...laneSeed(w.weekIndex, key) })),
+    }),
+  ]);
+}
+
+/** Drop a lane from the term, and the per-week lanes that hung off it. */
+export async function removeDomain(domainId: string): Promise<void> {
+  const domain = await prisma.timelineDomain.findUnique({
+    where: { id: domainId },
+    select: { termId: true, key: true },
+  });
+  if (!domain) return;
+
+  await prisma.$transaction([
+    prisma.timelineLane.deleteMany({
+      where: { domainKey: domain.key, week: { termId: domain.termId } },
+    }),
+    prisma.timelineDomain.delete({ where: { id: domainId } }),
   ]);
 }
