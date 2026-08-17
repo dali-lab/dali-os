@@ -1,5 +1,5 @@
 import { prisma } from "~/lib/db";
-import { ensureTeam, addTeamMember } from "~/lib/github";
+import { ensureTeam, addTeamMember, isNo2fa } from "~/lib/github";
 import { inviteToWorkspace } from "~/slack/lib/slack-client";
 import { provisionWorkspaceAccount, type WorkspaceResult } from "~/lib/google-workspace";
 import { syncSlackUserId } from "~/members/lib/slack-sync.server";
@@ -148,7 +148,12 @@ export async function provisionNewMember(args: {
         message: `Added ${user.githubUsername.trim()} to team "${team.slug}".`,
       };
     } catch (err) {
-      result.github = { status: "error", message: errMsg(err) };
+      result.github = {
+        status: "error",
+        message: isNo2fa(err)
+          ? "Member must enable two-factor auth on GitHub before they can join the org."
+          : errMsg(err),
+      };
     }
   }
 

@@ -84,11 +84,11 @@ export type MemberCardModel = {
   // Empty when Unassigned. Clicking a domain chip toggles membership here.
   assignmentDomainIds: string[];
   // Member's top 3 project preferences in rank order. Always shown on the card.
-  // Deduped by (projectId, rank): a member can bid the same project at one rank
-  // in multiple domains (e.g. Evergreen #1 as both Fullstack and UI/UX) — those
-  // collapse to one entry whose `domainIds` lists each bid domain, so the card
-  // shows the project once with its domains rather than repeating the line.
-  topPreferences: { projectId: string; rank: number; domainIds: string[] }[];
+  // Projects only — the bid's domains are deliberately dropped: a bid submitted
+  // against the wrong domain (or none) gets corrected later on the assignment,
+  // so the card's domain chips are the source of truth, not the bid. Deduped by
+  // (projectId, rank) so a project bid at one rank in several domains is one line.
+  topPreferences: { projectId: string; rank: number }[];
   // Mirrors MemberInput.unresolvedBid — the card renders a badge so the member
   // is visibly distinguished from one who simply hasn't been placed yet.
   unresolvedBid: boolean;
@@ -265,25 +265,15 @@ function toCard(
   };
 }
 
-// Top 3 project picks in rank order, deduped by (projectId, rank). When a member
-// bids the same project at the same rank in several domains, the entry's
-// `domainIds` lists each (in first-seen order). The 3-item cap counts distinct
-// (project, rank) entries, not raw preference rows.
-function topPreferences(
-  prefs: Preference[],
-): { projectId: string; rank: number; domainIds: string[] }[] {
-  const byKey = new Map<string, { projectId: string; rank: number; domainIds: string[] }>();
+// Top 3 project picks in rank order, deduped by (projectId, rank) — a member who
+// bids the same project at the same rank in several domains gets one entry. The
+// 3-item cap counts distinct (project, rank) entries, not raw preference rows.
+function topPreferences(prefs: Preference[]): { projectId: string; rank: number }[] {
+  const byKey = new Map<string, { projectId: string; rank: number }>();
   for (const p of [...prefs].sort((a, b) => a.preferenceRank - b.preferenceRank)) {
     const key = `${p.projectId}::${p.preferenceRank}`;
-    const entry = byKey.get(key);
-    if (entry) {
-      if (!entry.domainIds.includes(p.domainId)) entry.domainIds.push(p.domainId);
-    } else {
-      byKey.set(key, {
-        projectId: p.projectId,
-        rank: p.preferenceRank,
-        domainIds: [p.domainId],
-      });
+    if (!byKey.has(key)) {
+      byKey.set(key, { projectId: p.projectId, rank: p.preferenceRank });
     }
   }
   return Array.from(byKey.values()).slice(0, 3);

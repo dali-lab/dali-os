@@ -55,9 +55,9 @@ describe("buildBoard", () => {
     expect(card.topPreferences.map((p) => p.projectId)).toEqual(["p9", "p1"]);
   });
 
-  it("dedupes same-project same-rank bids into one entry listing each domain", () => {
+  it("dedupes same-project same-rank bids into one entry", () => {
     // Gaelle's case: rank-1 bid on "Evergreen" in two domains. The card should
-    // show one #1 Evergreen entry whose domainIds carry both, not two lines.
+    // show one #1 Evergreen line, not one per bid domain.
     const board = buildBoard({
       projectIds: [],
       members: [
@@ -73,8 +73,8 @@ describe("buildBoard", () => {
     });
     const { topPreferences } = board[UNASSIGNED][0];
     expect(topPreferences).toEqual([
-      { projectId: "evergreen", rank: 1, domainIds: ["fullstack", "uiux"] },
-      { projectId: "p2", rank: 2, domainIds: ["fullstack"] },
+      { projectId: "evergreen", rank: 1 },
+      { projectId: "p2", rank: 2 },
     ]);
   });
 

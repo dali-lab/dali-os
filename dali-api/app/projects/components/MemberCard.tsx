@@ -18,7 +18,6 @@ type DomainOption = { id: string; name: string };
 type Props = {
   card: MemberCardModel;
   projectNames: Record<string, string>;
-  domainNames: Record<string, string>;
   onOpenBid: () => void;
   /** Remove a manually-added member from the board. Only passed for managers. */
   onRemove?: () => void;
@@ -60,7 +59,6 @@ type Props = {
 export function MemberCard({
   card,
   projectNames,
-  domainNames,
   onOpenBid,
   onRemove,
   draggable,
@@ -123,7 +121,6 @@ export function MemberCard({
         card={card}
         fullName={fullName}
         projectNames={projectNames}
-        domainNames={domainNames}
         onRemove={onRemove}
         canEditDomains={canEditDomains}
         allDomains={allDomains}
@@ -200,7 +197,6 @@ function MemberCardBody({
   card,
   fullName,
   projectNames,
-  domainNames,
   onRemove,
   canEditDomains,
   allDomains,
@@ -212,7 +208,6 @@ function MemberCardBody({
   card: MemberCardModel;
   fullName: string;
   projectNames: Record<string, string>;
-  domainNames: Record<string, string>;
   onRemove?: () => void;
   canEditDomains?: boolean;
   allDomains?: DomainOption[];
@@ -281,7 +276,7 @@ function MemberCardBody({
         assignmentDomainIds={assignmentDomainIds}
         onToggleAssignmentDomain={onToggleAssignmentDomain}
       />
-      <BidStrip card={card} projectNames={projectNames} domainNames={domainNames} />
+      <BidStrip card={card} projectNames={projectNames} />
     </>
   );
 }
@@ -291,11 +286,9 @@ function MemberCardBody({
 export function MemberCardPreview({
   card,
   projectNames,
-  domainNames,
 }: {
   card: MemberCardModel;
   projectNames: Record<string, string>;
-  domainNames: Record<string, string>;
 }) {
   const fullName = buildFullName(card);
   return (
@@ -304,7 +297,6 @@ export function MemberCardPreview({
         card={card}
         fullName={fullName}
         projectNames={projectNames}
-        domainNames={domainNames}
       />
     </div>
   );
@@ -493,11 +485,9 @@ function DomainLevelChip({
 function BidStrip({
   card,
   projectNames,
-  domainNames,
 }: {
   card: MemberCardModel;
   projectNames: Record<string, string>;
-  domainNames: Record<string, string>;
 }) {
   // Always show the member's top 3 project preferences in rank order,
   // regardless of which column the card is in.
@@ -514,23 +504,14 @@ function BidStrip({
   }
   return (
     <ol className="text-[11px] text-muted-foreground flex flex-col gap-0.5">
-      {card.topPreferences.map((p) => {
-        // A project bid at this rank in multiple domains shows the project once
-        // with its domains appended (e.g. "Evergreen — Fullstack, UI/UX"),
-        // rather than repeating the project line per domain.
-        const domains = p.domainIds
-          .map((id) => domainNames[id])
-          .filter((n): n is string => !!n);
-        return (
-          <li key={`${p.projectId}-${p.rank}`} className="truncate">
-            <span className="font-semibold">#{p.rank}</span>{" "}
-            {projectNames[p.projectId] ?? p.projectId}
-            {domains.length > 0 && (
-              <span className="text-muted-foreground/70"> — {domains.join(", ")}</span>
-            )}
-          </li>
-        );
-      })}
+      {/* Project only: the bid's domain can be stale (submitted wrong, fixed
+          later), so the card's domain chips carry the real domain. */}
+      {card.topPreferences.map((p) => (
+        <li key={`${p.projectId}-${p.rank}`} className="truncate">
+          <span className="font-semibold">#{p.rank}</span>{" "}
+          {projectNames[p.projectId] ?? p.projectId}
+        </li>
+      ))}
     </ol>
   );
 }
