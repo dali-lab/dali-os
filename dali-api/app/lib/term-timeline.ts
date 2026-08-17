@@ -64,6 +64,20 @@ export const SWATCHES: { name: string; color: string }[] = [
   { name: "Grey", color: "#7D8B93" },
 ];
 
+/** Colours a domain stripe can take — the brand palette, plus the greens and
+ *  violets that keep domains added after the first four distinguishable. */
+export const DOMAIN_COLORS: string[] = [
+  "#1E5779",
+  "#00ADAB",
+  "#FFD461",
+  "#FF8B81",
+  "#509C81",
+  "#7D5BA6",
+  "#C97A3F",
+  "#7D8B93",
+];
+
+/** What a term's domain lanes are seeded from; editable per term after that. */
 export const DOMAINS: Domain[] = [
   { key: "pm", name: "Product Mgmt", color: "#1E5779" },
   { key: "design", name: "UI / UX Design", color: "#FFD461" },
@@ -433,3 +447,17 @@ export const DEFAULT_WEEKS: Week[] = [
     ],
   },
 ];
+
+/** The seed lane for a domain in a week, or a blank one for a domain added
+ *  after the term was seeded (nothing in DEFAULT_WEEKS was written for it). */
+export function defaultLane(weekIndex: number, domainKey: string): Lane {
+  const position = DOMAINS.findIndex((d) => d.key === domainKey);
+  const lane = position >= 0 ? DEFAULT_WEEKS[weekIndex]?.lanes[position] : undefined;
+  return lane ?? BLANK_LANE;
+}
+
+export const BLANK_LANE: Lane = {
+  role: "New role",
+  deliverables: ["New deliverable"],
+  challenge: "What tends to go wrong here.",
+};
