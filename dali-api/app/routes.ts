@@ -208,8 +208,11 @@ export default [
     // (member → Core). Authenticated member routes (not under /portal) so
     // members use their existing session rather than the CAS flow built for
     // external applicants. Both render the shared internal-cycle portal.
+    // Core's portal lives at /core/apply, not /core: the nav-regroup Core hub
+    // (core/routes/core.hub.tsx) owns /core, so the hub loader redirects
+    // eligible non-Core members here when a Core cycle is open.
     route("fellowship", "routes/fellowship.tsx"),
-    route("core", "routes/core.tsx"),
+    route("core/apply", "routes/core.tsx"),
     // Legacy path — old notification/task links pointed at /intern-to-full.
     route("intern-to-full", "routes/intern-to-full.legacy.tsx"),
 
