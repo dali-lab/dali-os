@@ -186,7 +186,6 @@ model User {
   staffingCardOrders    StaffingCardOrder[]
   intentToWork          IntentToWork[]
   formsCreated          Form[]
-  formFolders           FormFolder[]
   formVersions          FormVersion[]
   formSubmissions       FormSubmission[]
   formBindingsSet       StaffingCycleFormBinding[]
@@ -3595,31 +3594,10 @@ enum IntentStatus {
 // ─── Generic forms ──────────────────────────────────────────────────────────
 //
 // The Forms page is a generic form builder. Users create Forms, optionally
-// grouped into FormFolders (Form.folderId nullable — null = top level; can be
-// reassigned to move a form in/out of a folder). A form's question set is
-// edited by appending immutable FormVersion rows; members fill out the latest
-// version and their answers are stored as a FormSubmission.
-
-model FormFolder {
-  id        String   @id @default(cuid())
-  name      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Null = top level. Folders nest arbitrarily deep; deleting a parent sets
-  // children back to null (top level) rather than cascading them away.
-  parentId String?
-  parent   FormFolder?  @relation("FormFolderTree", fields: [parentId], references: [id], onDelete: SetNull)
-  children FormFolder[] @relation("FormFolderTree")
-
-  createdById String
-  createdBy   User   @relation(fields: [createdById], references: [id])
-
-  forms Form[]
-
-  @@index([parentId])
-  @@index([createdById])
-}
+// organised into Page folders (Form.folderPageId nullable — null = top level;
+// can be reassigned to move a form in/out of a folder in the Drive). A form's
+// question set is edited by appending immutable FormVersion rows; members fill
+// out the latest version and their answers are stored as a FormSubmission.
 
 // Who may fill a published form via its link. Members = signed-in lab
 // members (the historical behavior and default); SignedIn = any account
@@ -3638,13 +3616,8 @@ model Form {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // Null = top level. Deleting a folder sets this back to null rather than
-  // cascading the forms away.
-  folderId String?
-  folder   FormFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
-
-  // Drive unified tree placement. Null = unplaced (rendered inside FormsBrowser
-  // under the legacy FormFolder tree). When set, must point at a Page of
+  // Drive unified tree placement. Null = unplaced (rendered at the Lab top
+  // level). When set, must point at a Page of
   // kind=Folder. Loose FK — no DB-level constraint — matching the existing
   // Page.workspaceId / ProjectFile.folderPageId convention. Placement is
   // ORGANISATION only and NEVER changes who can see or fill this form: the
@@ -3707,7 +3680,6 @@ model Form {
   hiringCyclesAsApplicationForm       ApplicationCycle[]              @relation("CycleApplicationForm")
   hiringDomainChallenges              CycleDomainForm[]
 
-  @@index([folderId])
   @@index([folderPageId])
   @@index([createdById])
 }

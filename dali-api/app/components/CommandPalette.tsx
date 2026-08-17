@@ -88,7 +88,6 @@ export const TYPE_META: Record<SearchResultType, { icon: LucideIcon; section: st
   document: { icon: FileText, section: "Documents" },
   application: { icon: Briefcase, section: "Applicants" },
   form: { icon: ClipboardList, section: "Forms" },
-  formFolder: { icon: Folder, section: "Forms" },
   challenge: { icon: FileQuestion, section: "Hiring library" },
   rubric: { icon: ClipboardCheck, section: "Hiring library" },
   emailTemplate: { icon: Mail, section: "Hiring library" },
@@ -171,7 +170,6 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles, flags
     const patched = { ...TYPE_META };
     patched.document = { ...patched.document, section: "Drive" };
     patched.form = { ...patched.form, section: "Drive" };
-    patched.formFolder = { ...patched.formFolder, section: "Drive" };
     return patched;
   }, []);
 

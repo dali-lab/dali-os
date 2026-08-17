@@ -85,7 +85,6 @@ import { runStandupPrompts } from "~/jobs/standup-prompts.server";
 import { runTaskAutoArchive } from "~/jobs/task-auto-archive.server";
 import { runMembershipStatusSync } from "~/jobs/membership-status-sync.server";
 import { runSigningIssuance } from "~/jobs/signing-issuance.server";
-import { runFormFolderMirror } from "~/jobs/form-folder-mirror.server";
 
 export const JOBS: JobDefinition[] = [
   {
@@ -299,20 +298,6 @@ export const JOBS: JobDefinition[] = [
       "Re-issues recurring (per-term) agreements each term: for every per-term document already put in force once, materializes the current term's binding and notifies its audience to sign.",
     intervalMinutes: 1440,
     handler: runSigningIssuance,
-  },
-  {
-    // Drive consolidation Wave 3 backfill. Mirrors FormFolder rows into
-    // Page-folder rows (kind=Folder, workspaceType=Lab, systemKey=
-    // "formfolder:<id>") so the unified DriveTree can organise forms using the
-    // same folder structure as FormsBrowser. Seeded DISABLED — an operator
-    // enables it in Admin → Jobs at drive-consolidation rollout time so it does
-    // not touch the /documents hub before the drive-consolidation flag is on.
-    name: "form-folder-mirror",
-    description:
-      "Drive consolidation (Wave 3): mirrors the FormFolder tree into Page-folder rows so forms appear in the unified Drive tree. Enable at rollout time — safe to re-run (idempotent).",
-    intervalMinutes: 1440,
-    enabledByDefault: false,
-    handler: runFormFolderMirror,
   },
 ];
 

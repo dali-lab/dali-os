@@ -34,7 +34,7 @@ describe("runFormsAction duplicate-form", () => {
   it("copies the draft (when present) into a new form's draft and returns its id", async () => {
     mockPrisma.form.findUnique.mockResolvedValue({
       name: "Snack Poll",
-      folderId: "folder-1",
+      folderPageId: "folder-1",
       draftQuestions: DRAFT_QUESTIONS,
       draftIntro: "draft intro",
       versions: [{ questions: VERSION_QUESTIONS, intro: "version intro" }],
@@ -49,7 +49,7 @@ describe("runFormsAction duplicate-form", () => {
     expect(mockPrisma.form.create).toHaveBeenCalledWith({
       data: {
         name: "Copy of Snack Poll",
-        folderId: "folder-1",
+        folderPageId: "folder-1",
         createdById: "user-1",
         draftQuestions: DRAFT_QUESTIONS,
         draftIntro: "draft intro",
@@ -61,7 +61,7 @@ describe("runFormsAction duplicate-form", () => {
   it("falls back to the latest version when there is no draft", async () => {
     mockPrisma.form.findUnique.mockResolvedValue({
       name: "Snack Poll",
-      folderId: null,
+      folderPageId: null,
       draftQuestions: null,
       draftIntro: null,
       versions: [{ questions: VERSION_QUESTIONS, intro: "version intro" }],
@@ -86,7 +86,7 @@ describe("runFormsAction duplicate-form", () => {
   it("copies an empty form as an empty draft", async () => {
     mockPrisma.form.findUnique.mockResolvedValue({
       name: "Blank",
-      folderId: null,
+      folderPageId: null,
       draftQuestions: null,
       draftIntro: null,
       versions: [],
@@ -105,7 +105,7 @@ describe("runFormsAction duplicate-form", () => {
   it("never copies publish/listing/audience state — the copy uses column defaults", async () => {
     mockPrisma.form.findUnique.mockResolvedValue({
       name: "Live Form",
-      folderId: null,
+      folderPageId: null,
       draftQuestions: DRAFT_QUESTIONS,
       draftIntro: null,
       versions: [],

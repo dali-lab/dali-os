@@ -54,14 +54,31 @@ function defaultQuestions(type: OfferingType): Question[] {
   ];
 }
 
+// Find or create the top-level Lab Page folder (kind=Folder) that holds the
+// template forms in the Drive. Matches by title so it converges on the mirror
+// Page the form-folder-mirror job created from the old FormFolder of the same
+// name.
 async function ensureFolder(name: string, actorId: string): Promise<string> {
-  const existing = await prisma.formFolder.findFirst({
-    where: { name, parentId: null },
+  const existing = await prisma.page.findFirst({
+    where: {
+      title: name,
+      kind: "Folder",
+      workspaceType: "Lab",
+      parentPageId: null,
+      archivedAt: null,
+    },
     select: { id: true },
   });
   if (existing) return existing.id;
-  const created = await prisma.formFolder.create({
-    data: { name, parentId: null, createdById: actorId },
+  const created = await prisma.page.create({
+    data: {
+      title: name,
+      kind: "Folder",
+      workspaceType: "Lab",
+      workspaceId: null,
+      parentPageId: null,
+      createdById: actorId,
+    },
     select: { id: true },
   });
   return created.id;
@@ -73,11 +90,11 @@ async function ensureFolder(name: string, actorId: string): Promise<string> {
  * and saving a new version changes what future offerings are cloned from.
  */
 export async function ensureEducationTemplates(actorId: string): Promise<void> {
-  const folderId = await ensureFolder(TEMPLATES_FOLDER, actorId);
+  const folderPageId = await ensureFolder(TEMPLATES_FOLDER, actorId);
   for (const type of ["Miniseries", "Workshop"] as const) {
     const name = TEMPLATE_NAMES[type];
     const existing = await prisma.form.findFirst({
-      where: { name, folderId },
+      where: { name, folderPageId },
       select: { id: true, versions: { select: { id: true }, take: 1 } },
     });
     if (existing?.versions.length) continue;
@@ -95,7 +112,7 @@ export async function ensureEducationTemplates(actorId: string): Promise<void> {
     await prisma.form.create({
       data: {
         name,
-        folderId,
+        folderPageId,
         createdById: actorId,
         versions: {
           create: {
@@ -138,11 +155,11 @@ export async function createOfferingApplicationForm(
   const templateVersion = template?.versions[0];
   const questions = (templateVersion?.questions as unknown as Question[]) ?? defaultQuestions(offering.type);
 
-  const folderId = await ensureFolder(OFFERINGS_FOLDER, actorId);
+  const folderPageId = await ensureFolder(OFFERINGS_FOLDER, actorId);
   const form = await prisma.form.create({
     data: {
       name: `${offering.title} — Application`,
-      folderId,
+      folderPageId,
       createdById: actorId,
       versions: {
         create: {
