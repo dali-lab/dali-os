@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   bakeSigningBody,
   collectSigningFields,
+  collectAdminSignatories,
   isEmptyBody,
   fieldDisplayText,
   variableDisplayText,
@@ -177,6 +178,52 @@ describe("collectSigningFields — legacy ProseMirror JSON", () => {
   it("returns [] for a non-object body", () => {
     expect(collectSigningFields(null)).toEqual([]);
     expect(collectSigningFields("nope")).toEqual([]);
+  });
+});
+
+describe("collectAdminSignatories", () => {
+  it("collects placed admin-signature fields, de-duped by userId, from block JSON", () => {
+    const body: any[] = [
+      {
+        id: "b1",
+        type: "paragraph",
+        props: {},
+        content: [
+          { type: "adminSignatureField", props: { fieldId: "a1", role: "supervisor", value: "Dean Staff", signerUserId: "sup-1" } },
+          { type: "signatureField", props: { fieldId: "sig1", role: "member", value: "" } },
+        ],
+        children: [
+          {
+            id: "b2",
+            type: "paragraph",
+            props: {},
+            content: [
+              { type: "adminSignatureField", props: { fieldId: "a2", role: "supervisor", value: "Dean Staff", signerUserId: "sup-1" } },
+              { type: "adminSignatureField", props: { fieldId: "a3", role: "supervisor", value: "Ops Lead", signerUserId: "sup-2" } },
+            ],
+            children: [],
+          },
+        ],
+      },
+    ];
+    expect(collectAdminSignatories(body)).toEqual([
+      { userId: "sup-1", name: "Dean Staff" },
+      { userId: "sup-2", name: "Ops Lead" },
+    ]);
+  });
+
+  it("ignores fields with no configured signatory and non-object bodies", () => {
+    const body: any[] = [
+      {
+        id: "b1",
+        type: "paragraph",
+        props: {},
+        content: [{ type: "adminSignatureField", props: { fieldId: "a1", role: "supervisor", value: "", signerUserId: "" } }],
+        children: [],
+      },
+    ];
+    expect(collectAdminSignatories(body)).toEqual([]);
+    expect(collectAdminSignatories(null)).toEqual([]);
   });
 });
 

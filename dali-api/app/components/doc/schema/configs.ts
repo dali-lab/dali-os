@@ -76,6 +76,9 @@ export const signingFieldPropSchema = {
   placeholder: { default: "" },
   value: { default: "" },
   required: { default: false },
+  // Only the pre-signed adminSignatureField uses this: the configured
+  // signatory's user id, resolved to a supervisor audit signature at issuance.
+  signerUserId: { default: "" },
 } as const;
 
 export const SIGNING_FIELD_TYPES = [
@@ -84,6 +87,9 @@ export const SIGNING_FIELD_TYPES = [
   "initialField",
   "checkboxField",
   "textField",
+  // Pre-signed staff counter-signature: bound to a configured signatory in the
+  // builder, always read-only (never filled by the member signer).
+  "adminSignatureField",
 ] as const;
 export type SigningFieldType = (typeof SIGNING_FIELD_TYPES)[number];
 

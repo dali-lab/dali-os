@@ -25,7 +25,12 @@ export {
   type SigningContextValue,
   type SigningMode,
 } from "./signing-context";
-export { insertSigningField, insertVariable, type InsertSigningFieldOpts } from "./insert";
+export {
+  insertSigningField,
+  insertVariable,
+  insertAdminSignature,
+  type InsertSigningFieldOpts,
+} from "./insert";
 
 // Schema factory + editor/document types (heavy — client-only imports).
 export {

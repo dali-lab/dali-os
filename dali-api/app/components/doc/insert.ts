@@ -3,7 +3,7 @@
 // pull BlockNote into the caller's chunk (the caller already has a live editor
 // instance to pass in).
 
-import type { SigningFieldType } from "~/lib/signing-fields";
+import { ADMIN_SIGNATURE_ROLE, type SigningFieldType } from "~/lib/signing-fields";
 import type { DocEditorInstance } from "./schema/build";
 
 export interface InsertSigningFieldOpts {
@@ -34,6 +34,7 @@ export function insertSigningField(
         placeholder: opts.placeholder ?? "",
         value: "", // baked value — only set in frozen snapshots
         required: opts.required ?? true,
+        signerUserId: "", // only the pre-signed adminSignatureField uses this
       },
     },
     " ",
@@ -44,4 +45,33 @@ export function insertSigningField(
 /** Insert a merge variable ({{name}}) at the caret. */
 export function insertVariable(editor: DocEditorInstance, name: string): void {
   editor.insertInlineContent([{ type: "variable", props: { name, value: "" } }, " "]);
+}
+
+/**
+ * Insert a pre-signed admin-signature field bound to a configured signatory.
+ * The signatory's name is baked into `value` so it renders immediately (author
+ * preview, member's read-only copy, exports); `signerUserId` drives the
+ * supervisor audit signature created at issuance. Returns the fieldId.
+ */
+export function insertAdminSignature(
+  editor: DocEditorInstance,
+  signatory: { userId: string; name: string },
+): string {
+  const fieldId = crypto.randomUUID();
+  editor.insertInlineContent([
+    {
+      type: "adminSignatureField",
+      props: {
+        fieldId,
+        role: ADMIN_SIGNATURE_ROLE,
+        label: "",
+        placeholder: "",
+        value: signatory.name,
+        required: false,
+        signerUserId: signatory.userId,
+      },
+    },
+    " ",
+  ]);
+  return fieldId;
 }

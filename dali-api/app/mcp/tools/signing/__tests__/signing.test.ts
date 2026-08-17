@@ -541,6 +541,7 @@ describe("manage_agreement", () => {
     vi.mocked(isCore).mockResolvedValue(true);
     mockPrisma.signingDocumentVersion.findUnique.mockResolvedValue({
       publishedAt: new Date("2026-08-01"),
+      body: [],
     });
     mockPrisma.signingDocument.findUnique.mockResolvedValue({ cadence: "Once" });
     vi.mocked(resolveAdminScope).mockResolvedValue({ scopeKey: "app" });
@@ -554,6 +555,52 @@ describe("manage_agreement", () => {
     expect(mockPrisma.signingBinding.upsert).toHaveBeenCalled();
     expect(notifySignRequest).toHaveBeenCalledWith("b-new");
     expect(result).toEqual({ ok: true, bindingId: "b-new" });
+  });
+
+  it("records pre-signed admin signatures placed in the body at activation", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.signingDocumentVersion.findUnique.mockResolvedValue({
+      publishedAt: new Date("2026-08-01"),
+      body: [
+        {
+          id: "p1",
+          type: "paragraph",
+          props: {},
+          content: [
+            {
+              type: "adminSignatureField",
+              props: { fieldId: "a1", role: "supervisor", value: "Dean Staff", signerUserId: "sup-1" },
+            },
+          ],
+          children: [],
+        },
+      ],
+    });
+    mockPrisma.signingDocument.findUnique.mockResolvedValue({ cadence: "Once" });
+    vi.mocked(resolveAdminScope).mockResolvedValue({ scopeKey: "app" });
+    mockPrisma.signingBinding.upsert.mockResolvedValue({ id: "b-new" });
+    mockPrisma.signingSignature.upsert.mockResolvedValue({ id: "sup-sig1" });
+
+    await runManageAgreement(ctx(), {
+      action: "activate",
+      documentId: "d1",
+      versionId: "v1",
+    });
+    expect(mockPrisma.signingSignature.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          bindingId_signerUserId_roleKey: {
+            bindingId: "b-new",
+            signerUserId: "sup-1",
+            roleKey: "supervisor",
+          },
+        },
+        create: expect.objectContaining({
+          roleKey: "supervisor",
+          typedName: "Dean Staff",
+        }),
+      }),
+    );
   });
 
   it("throws invalid when resolveAdminScope returns error", async () => {
@@ -574,47 +621,4 @@ describe("manage_agreement", () => {
     ).rejects.toMatchObject({ name: "McpInvalidError" });
   });
 
-  it("countersigns a binding", async () => {
-    vi.mocked(isCore).mockResolvedValue(true);
-    mockPrisma.signingBinding.findUnique.mockResolvedValue({ versionId: "v1" });
-    mockPrisma.user.findUniqueOrThrow.mockResolvedValue({
-      firstName: "Admin",
-      lastName: "Core",
-    });
-    mockPrisma.signingSignature.upsert.mockResolvedValue({ id: "sup-sig1" });
-
-    const result = await runManageAgreement(ctx(), {
-      action: "countersign",
-      documentId: "d1",
-      bindingId: "b1",
-    });
-    expect(mockPrisma.signingSignature.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
-          bindingId_signerUserId_roleKey: {
-            bindingId: "b1",
-            signerUserId: "u1",
-            roleKey: "supervisor",
-          },
-        },
-        create: expect.objectContaining({
-          roleKey: "supervisor",
-          typedName: "Admin Core",
-        }),
-      }),
-    );
-    expect(result).toEqual({ ok: true });
-  });
-
-  it("throws not-found when countersigning a missing binding", async () => {
-    vi.mocked(isCore).mockResolvedValue(true);
-    mockPrisma.signingBinding.findUnique.mockResolvedValue(null);
-    await expect(
-      runManageAgreement(ctx(), {
-        action: "countersign",
-        documentId: "d1",
-        bindingId: "b-missing",
-      }),
-    ).rejects.toMatchObject({ name: "McpNotFoundError" });
-  });
 });
