@@ -520,6 +520,18 @@ export async function ensureHiringDriveRoot(createdById: string): Promise<{ id: 
   return { id: rootId };
 }
 
+/**
+ * The Hiring ▸ Templates subfolder — home for the hiring application template
+ * Form (the source future cycle/challenge forms are cloned from). Provisioned
+ * lazily the first time a cycle form is created, mirroring the Core drive's
+ * managed subfolders. Idempotent via systemKey. Returns the folder's Page id.
+ */
+export async function ensureHiringTemplatesFolder(createdById: string): Promise<string> {
+  const root = await ensureHiringDriveRoot(createdById);
+  if (!root) throw new Error("Failed to ensure Hiring drive root");
+  return ensureSystemChildFolder("drive:hiring-templates", root.id, "Templates", createdById);
+}
+
 export type MeetingNotesFolderKind = "Team" | "Partner";
 
 const MEETING_NOTES_FOLDER_TITLE: Record<MeetingNotesFolderKind, string> = {
