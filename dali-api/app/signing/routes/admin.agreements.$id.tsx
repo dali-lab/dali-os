@@ -9,7 +9,6 @@ import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles, isCore } from "~/lib/roles";
 import { coreHandle } from "~/core/coreNav";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { logAuditEvent } from "~/lib/audit";
 import { fullName } from "~/lib/display";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
@@ -39,15 +38,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const roles = await getUserRoles(auth.user.sub);
   if (!roles.isCore) return redirect("/");
 
-  // When drive-consolidation is on, /admin/agreements/:id redirects to the
-  // Drive-namespaced route. Path-keyed: this loader is also re-exported by
-  // documents.agreement.$id.tsx — only redirect for admin-path requests to
-  // avoid an infinite loop.
+  // /admin/agreements/:id redirects to the Drive-namespaced route. Path-keyed:
+  // this loader is also re-exported by documents.agreement.$id.tsx — only
+  // redirect for admin-path requests to avoid an infinite loop.
   const url = new URL(request.url);
-  if (
-    url.pathname.startsWith("/admin/agreements/") &&
-    (await isFeatureEnabled("drive-consolidation", auth.user.sub, roles))
-  ) {
+  if (url.pathname.startsWith("/admin/agreements/")) {
     return redirect(`/documents/agreement/${params.id}`);
   }
 
@@ -128,14 +123,8 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const formData = await request.formData();
   const intent = formData.get("intent") as string;
-  // When drive-consolidation is on, post-action redirects go to the Drive URL
-  // directly so the user stays on the canonical surface. The admin loader would
-  // redirect anyway, but this avoids the extra hop.
-  const roles = await getUserRoles(auth.user.sub);
-  const driveOn = await isFeatureEnabled("drive-consolidation", auth.user.sub, roles);
-  const back = driveOn
-    ? `/documents/agreement/${params.id}`
-    : `/admin/agreements/${params.id}`;
+  // Post-action redirects go to the Drive URL — the canonical agreement surface.
+  const back = `/documents/agreement/${params.id}`;
 
   if (intent === "create-version") {
     const bodyRaw = formData.get("body") as string;
@@ -322,8 +311,8 @@ export async function action({ request, params }: Route.ActionArgs) {
       where: { id: params.id },
       data: { archivedAt: new Date() },
     });
-    // When flag is on, send the user to the Drive agreements view after archive.
-    return redirect(driveOn ? "/drive?type=agreement" : "/admin/agreements");
+    // Archiving removes the agreement — return to the Drive agreements view.
+    return redirect("/drive?type=agreement");
   }
 
   return null;

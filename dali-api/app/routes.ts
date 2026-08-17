@@ -136,24 +136,22 @@ export default [
       "projects/routes/projects.$id.public-view.tsx",
     ),
 
-    // Drive — unified Documents + Forms hub, shown when the drive-consolidation
-    // feature flag is on. Presents both lenses at /drive?lens=docs|forms without
-    // replacing the underlying /documents and /forms routes (flag-off users are
-    // unaffected).
+    // Drive — the unified documents + files + forms + agreements hub. This is the
+    // only browsing surface; the old /documents and /forms hubs have been removed
+    // (their editor/viewer deep-link routes remain, below).
     route("drive", "routes/drive.hub.tsx"),
     // Unified Templates gallery (documents, forms, mentor notes, email,
     // agreements), gated behind the `templates` feature flag.
     route("drive/templates", "routes/drive.templates.tsx"),
 
     // Documents & files — full-page reusable editor + file viewer. Literal
-    // "file" segment precedes the :pageId param so it isn't captured.
-    // The bare /documents route is the lab-wide Documents hub (aggregates
-    // lab-wide docs + the viewer's project-hub docs).
-    route("documents", "routes/documents.hub.tsx"),
+    // "file" segment precedes the :pageId param so it isn't captured. Browsing
+    // lives in the unified Drive (/drive); these routes are the deep-link
+    // editor/viewer the Drive opens into.
     route("documents/file/:fileId", "routes/documents.file.$fileId.tsx"),
-    // Agreement authoring in the Drive (drive-consolidation flag). Literal
-    // "agreement" segment must precede :pageId so it isn't captured by that param.
-    // Re-exports the admin implementation — one authoring surface, two URLs.
+    // Agreement authoring in the Drive. Literal "agreement" segment must precede
+    // any :pageId param so it isn't captured. Re-exports the admin implementation
+    // — one authoring surface, two URLs.
     route("documents/agreement/:id", "signing/routes/documents.agreement.$id.tsx"),
     route(
       "documents/agreement/:id/signature/:sigId",
@@ -197,15 +195,13 @@ export default [
     // so existing links, favorites, and bookmarks still resolve.
     route("internal-processes/level-up", "internal-processes/routes/internal-processes.level-up.tsx"),
 
-    // Forms. The :folderId form lets a folder card open its own page with
-    // nested folders + forms; the bare /forms route is the top level.
-    route("forms", "forms/routes/forms.tsx"),
-    // Static `edit`/`responses` segments must precede the :folderId catch so
-    // /forms/edit/* and /forms/responses/* aren't read as folder ids.
+    // Forms. Browsing lives in the unified Drive (/drive); these are the
+    // deep-link editor/responses surfaces plus the action-only mutation
+    // endpoint the Drive and editor POST to.
+    route("api/forms", "routes/api.forms.ts"),
     route("forms/edit/:formId", "forms/routes/forms.edit.$formId.tsx"),
     route("forms/preview-resolve", "forms/routes/forms.preview-resolve.ts"),
     route("forms/responses/:formId", "forms/routes/forms.responses.$formId.tsx"),
-    route("forms/:folderId", "forms/routes/forms.$folderId.tsx"),
 
     // Internal applicant portal — Fellowship (intern → full-time) and Core
     // (member → Core). Authenticated member routes (not under /portal) so

@@ -19,7 +19,7 @@ describe("areaForPath", () => {
     expect(areaForPath("/projects")?.key).toBe("projects");
     expect(areaForPath("/projects/staffing")?.key).toBe("projects");
     expect(areaForPath("/projects/abc123")?.key).toBe("projects");
-    expect(areaForPath("/documents/page-1")?.key).toBe("documents");
+    expect(areaForPath("/drive")?.key).toBe("drive");
   });
 
   it("still resolves an area hub that carries a query string", () => {
@@ -122,8 +122,8 @@ const NOBODY: RoleFlags = {
 };
 const CORE: RoleFlags = { ...NOBODY, isCore: true, canViewForms: true, canViewStaffing: true };
 
-const REGROUP = { "nav-regroup": true, "drive-consolidation": true };
-const LEGACY = { "nav-regroup": false, "drive-consolidation": false };
+const REGROUP = { "nav-regroup": true };
+const LEGACY = { "nav-regroup": false };
 
 describe("area sets", () => {
   it("collapses to five areas under nav-regroup", () => {
@@ -189,13 +189,9 @@ describe("Core area", () => {
     );
   });
 
-  it("only offers Forms while Drive is off", () => {
-    const withDrive = areasFor(REGROUP).find((a) => a.key === "core")!;
-    expect(visibleSubtabs(withDrive, CORE).map((t) => t.href)).not.toContain("/forms");
-
-    const noDrive = areasFor({ "nav-regroup": true, "drive-consolidation": false })
-      .find((a) => a.key === "core")!;
-    expect(visibleSubtabs(noDrive, CORE).map((t) => t.href)).toContain("/forms");
+  it("never offers Forms as a Core sub-tab — forms live in the Drive", () => {
+    const core = areasFor(REGROUP).find((a) => a.key === "core")!;
+    expect(visibleSubtabs(core, CORE).map((t) => t.href)).not.toContain("/forms");
   });
 });
 
@@ -269,11 +265,5 @@ describe("pinnedNavItems", () => {
 
   it("pins Drive once regrouped", () => {
     expect(pinnedNavItems(REGROUP).map((i) => i.href)).toEqual(["/drive"]);
-  });
-
-  it("falls back to Documents when Drive is off", () => {
-    const pinned = pinnedNavItems({ "nav-regroup": true, "drive-consolidation": false });
-    expect(pinned.map((i) => i.href)).toEqual(["/documents"]);
-    expect(pinned[0].label).toBe("Documents");
   });
 });

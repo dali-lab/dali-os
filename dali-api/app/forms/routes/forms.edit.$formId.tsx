@@ -57,7 +57,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!(await isCore(auth.user.sub))) return redirect("/");
 
   const form = await loadFormForEdit(params.formId);
-  if (!form) return redirect("/forms");
+  if (!form) return redirect("/drive?type=form");
   // Terms for term-scoped reference questions (e.g. projects active in a
   // chosen term). Newest first so the most likely choices are at the top.
   const [terms, usages, crumbs, allGroups, hiringLinks, driveCrumbs] =

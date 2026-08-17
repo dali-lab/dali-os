@@ -165,28 +165,22 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles, flags
     };
   }, [open, query]);
 
-  const driveOn = flags["drive-consolidation"] ?? false;
-
-  // When the drive-consolidation flag is on, remap document/form search results
-  // to a unified "Drive" section, and collapse the "Documents" + "Forms" entries
-  // in the section order into a single "Drive" entry.
+  // Document/form search results live under one unified "Drive" section, and the
+  // "Documents" + "Forms" section-order entries collapse into a single "Drive".
   const effectiveMeta = useMemo((): typeof TYPE_META => {
-    if (!driveOn) return TYPE_META;
     const patched = { ...TYPE_META };
     patched.document = { ...patched.document, section: "Drive" };
     patched.form = { ...patched.form, section: "Drive" };
     patched.formFolder = { ...patched.formFolder, section: "Drive" };
     return patched;
-  }, [driveOn]);
+  }, []);
 
   const effectiveSectionOrder = useMemo(
     () =>
-      driveOn
-        ? SECTION_ORDER.map((s) => (s === "Documents" || s === "Forms" ? "Drive" : s)).filter(
-            (s, i, arr) => arr.indexOf(s) === i,
-          )
-        : SECTION_ORDER,
-    [driveOn],
+      SECTION_ORDER.map((s) => (s === "Documents" || s === "Forms" ? "Drive" : s)).filter(
+        (s, i, arr) => arr.indexOf(s) === i,
+      ),
+    [],
   );
 
   // Static "Go to" + "Commands" entries, built from role flags (no round-trip)
@@ -258,18 +252,13 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles, flags
 
     // Admin + Core tools, generated from the same cluster registries their hubs
     // and pill rows use. Gated exactly like the pages: any Core member sees
-    // every cluster except Finance, which is Admin-only. When
-    // drive-consolidation is on, the "documents" cluster is hidden from the
-    // palette (agreements are now authored in the Drive). Under nav-regroup,
-    // adminClustersFor has already handed People & Access and Communications
-    // over to CORE_CLUSTERS, so the two lists never overlap.
+    // every cluster except Finance, which is Admin-only. The "documents" cluster
+    // is hidden from the palette (agreements are authored in the Drive). Under
+    // nav-regroup, adminClustersFor has already handed People & Access and
+    // Communications over to CORE_CLUSTERS, so the two lists never overlap.
     const sectionItems = (prefix: string, clusters: readonly NavCluster[]) =>
       clusters
-        .filter(
-          (c) =>
-            (roles.isAdmin || !c.adminOnly) &&
-            !(flags?.["drive-consolidation"] && c.key === "documents"),
-        )
+        .filter((c) => (roles.isAdmin || !c.adminOnly) && c.key !== "documents")
         .flatMap((c) =>
           c.sections.map((s) => ({
             id: `${prefix}-${s.key}`,

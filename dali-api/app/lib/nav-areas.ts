@@ -139,13 +139,6 @@ export const NAV_AREAS: NavArea[] = [
     ],
   },
   {
-    key: "documents",
-    label: "Documents",
-    icon: FileText,
-    hubPath: "/documents",
-    subtabs: [],
-  },
-  {
     key: "education",
     label: "Education",
     icon: GraduationCap,
@@ -183,14 +176,6 @@ export const NAV_AREAS: NavArea[] = [
       { label: "Onboarding", href: "/hiring/onboarding", icon: UserPlus, gate: (r) => r.isCore },
       { label: "Library", href: "/hiring/library", icon: BookOpen, gate: (r) => r.isCore || r.isDomainLead || r.isAdmin },
     ],
-  },
-  {
-    key: "forms",
-    label: "Forms",
-    icon: ClipboardList,
-    hubPath: "/forms",
-    gate: (r) => r.canViewForms,
-    subtabs: [],
   },
   {
     key: "admin",
@@ -299,17 +284,6 @@ const REGROUPED_AREAS: NavArea[] = [
   },
 ];
 
-// Forms lives inside Drive once drive-consolidation is on, so it only earns a
-// Core sub-tab in the window where nav-regroup ships ahead of Drive. Sub-tab
-// gates see roles, not flags, which is why this is resolved here.
-function coreSubtabsFor(base: SubTab[], flags: Partial<FeatureFlagMap>): SubTab[] {
-  if (flags["drive-consolidation"]) return base;
-  return [
-    ...base,
-    { label: "Forms", href: "/forms", icon: ClipboardList, gate: (r) => r.canViewForms },
-  ];
-}
-
 // Admin's sub-tabs depend on the flag (People & Access + Communications move to
 // Core), so they are resolved per viewer rather than baked into the array.
 function adminSubtabsFor(flags: Partial<FeatureFlagMap>): SubTab[] {
@@ -329,24 +303,18 @@ export function areasFor(flags: Partial<FeatureFlagMap> = {}): NavArea[] {
   if (!flags["nav-regroup"]) return NAV_AREAS;
   return REGROUPED_AREAS.map((a) => {
     if (a.key === "admin") return { ...a, subtabs: adminSubtabsFor(flags) };
-    if (a.key === "core") return { ...a, subtabs: coreSubtabsFor(a.subtabs, flags) };
     return a;
   });
 }
 
 /**
  * The nav items pinned above the area dropdown. Home / My Tasks / Calendar are
- * rendered inline by Layout; this is the tail the flags decide. Drive is only
- * pinned under nav-regroup — with the flag off it stays an area, exactly as it
- * is today. When Drive itself is off, the pinned slot falls back to Documents
- * so the regrouped nav never loses its file surface (Forms is then a Core
- * sub-tab). The two flags are meant to be rolled out together.
+ * rendered inline by Layout; this is the tail the flags decide. Drive is pinned
+ * under nav-regroup; with the flag off it stays an area, exactly as it is today.
  */
 export function pinnedNavItems(flags: Partial<FeatureFlagMap> = {}): SubTab[] {
   if (!flags["nav-regroup"]) return [];
-  return flags["drive-consolidation"]
-    ? [{ label: "Drive", href: "/drive", icon: HardDrive }]
-    : [{ label: "Documents", href: "/documents", icon: FileText }];
+  return [{ label: "Drive", href: "/drive", icon: HardDrive }];
 }
 
 // Both area sets at once. isAreaSubtabPath and the icon map are read from
@@ -473,17 +441,7 @@ export function iconForHref(href: string): LucideIcon | null {
 }
 
 export function visibleAreas(r: RoleFlags, flags: Partial<FeatureFlagMap> = {}): NavArea[] {
-  const driveOn = flags["drive-consolidation"] ?? false;
-  return areasFor(flags).filter((a) => {
-    if (driveOn) {
-      // When Drive is on: hide documents + forms; show drive (always visible to all members)
-      if (a.key === "documents" || a.key === "forms") return false;
-    } else {
-      // When Drive is off: hide drive entry
-      if (a.key === "drive") return false;
-    }
-    return !a.gate || a.gate(r);
-  });
+  return areasFor(flags).filter((a) => !a.gate || a.gate(r));
 }
 
 export function visibleSubtabs(area: NavArea, r: RoleFlags): SubTab[] {

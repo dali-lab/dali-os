@@ -14,8 +14,7 @@ import {
   Handshake,
   Heart,
   Home,
-  ClipboardList,
-  FileText,
+  HardDrive,
   GraduationCap,
   ListTodo,
   HelpCircle,
@@ -26,7 +25,6 @@ import { TabWorkspace, type TabWorkspaceHandle, type OpenTabRequest } from '~/co
 import { useOpenTasks, TASKS_CHANGED_EVENT } from '~/components/NotificationBell'
 import { DesktopBanner } from '~/components/DesktopBanner'
 import { CommandPalette } from '~/components/CommandPalette'
-import { useFeatureFlag } from '~/components/FeatureFlags'
 import { setFocusPreference } from '~/lib/focus-mode'
 
 interface LayoutProps {
@@ -89,7 +87,6 @@ export function LayoutClassic({ user, photoUrl, isCore = false, isAdmin = false,
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const workspaceRef = useRef<TabWorkspaceHandle | null>(null)
 
-  const driveConsolidation = useFeatureFlag("drive-consolidation")
   const [paletteOpen, setPaletteOpen] = useState(false)
   const togglePalette = useCallback(() => setPaletteOpen((v) => !v), [])
   // ⌘/Ctrl+K opens the command palette. In tab mode TabWorkspace owns the
@@ -261,11 +258,10 @@ export function LayoutClassic({ user, photoUrl, isCore = false, isAdmin = false,
     // Hidden from mentees entirely; the routes are gated server-side by
     // canViewMentorship. Mentors only see own-domain notes; Core/Admin see all.
     { key: 'mentorship', label: 'Mentorship', to: '/mentorship', icon: Heart, show: isLabMentor || isCore },
-    { key: 'documents', label: 'Documents', to: '/documents', icon: FileText, show: true },
+    { key: 'drive', label: 'Drive', to: '/drive', icon: HardDrive, show: true },
     { key: 'education', label: 'Education', to: '/education', icon: GraduationCap, show: true },
     { key: 'partners', label: 'Partners', to: '/partners', icon: Handshake, show: true },
     { key: 'hiring', label: 'Hiring', to: '/hiring', icon: Briefcase, show: hasHiringAccess },
-    { key: 'forms', label: 'Forms', to: '/forms', icon: ClipboardList, show: canViewForms },
     { key: 'admin', label: 'Admin', to: '/admin', icon: Settings, show: isCore },
   ].filter((e) => e.show)
 
@@ -735,7 +731,6 @@ export function LayoutClassic({ user, photoUrl, isCore = false, isAdmin = false,
           // The classic sidebar predates the regrouped nav and never renders
           // its areas, so the live-cycle gate has no separate value here.
           hasActiveHiringAccess: hasHiringAccess, isLabMentor, isInstructor }}
-        flags={{ "drive-consolidation": driveConsolidation }}
         onOpen={openFromPalette}
       />
     </div>
