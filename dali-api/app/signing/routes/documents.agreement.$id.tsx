@@ -12,6 +12,7 @@ import type { Route } from "./+types/documents.agreement.$id";
 import { loader as adminLoader } from "./admin.agreements.$id";
 import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
 import { driveRootCrumbs } from "~/lib/drive-crumbs";
+import { requireAuth } from "~/lib/auth";
 import { PageIcon } from "~/components/PageIcon";
 
 export { action, default } from "./admin.agreements.$id";
@@ -21,7 +22,10 @@ export async function loader(args: Route.LoaderArgs) {
   // If the admin loader redirected, pass it through.
   if (result instanceof Response) return result;
   const doc = (result as { document?: { folderPageId?: string | null } }).document;
-  const driveCrumbs = await driveFolderCrumbs(doc?.folderPageId);
+  // adminLoader has already authed this request; requireAuth just reads the sub.
+  const auth = await requireAuth(args.request);
+  const viewerSub = auth.ok ? auth.user.sub : "";
+  const driveCrumbs = await driveFolderCrumbs(doc?.folderPageId, viewerSub, args.request);
   return { ...(result as object), driveCrumbs };
 }
 
