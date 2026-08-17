@@ -1,6 +1,7 @@
 // Admin → Agreements → detail. Author immutable versions (place fields +
-// variables), publish a version, put a published version in force (bind), have
-// staff apply the fixed supervisor counter-signature, and track signatories.
+// variables, incl. pre-signed admin-signature fields), publish a version, and
+// put a published version in force (bind) — which records the configured staff
+// counter-signatures — and track signatories.
 
 import { redirect } from "react-router";
 import type { Route } from "./+types/admin.agreements.$id";
@@ -14,6 +15,7 @@ import { logAuditEvent } from "~/lib/audit";
 import { fullName } from "~/lib/display";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { resolveAdminScope } from "~/signing/lib/scope.server";
+import { applyAdminSignatures } from "~/signing/lib/presign.server";
 import { notifySignRequest } from "~/signing/lib/notify.server";
 import { AUDIENCE_RESOLVERS } from "~/signing/lib/audiences";
 import { SigningDocumentDetail } from "~/signing/components/SigningDocumentDetail";
@@ -193,7 +195,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     const versionId = formData.get("versionId") as string;
     const version = await prisma.signingDocumentVersion.findUnique({
       where: { id: versionId },
-      select: { publishedAt: true },
+      select: { publishedAt: true, body: true },
     });
     if (!version?.publishedAt) return { error: "Publish the version before putting it in force." };
 
@@ -217,6 +219,8 @@ export async function action({ request, params }: Route.ActionArgs) {
       update: { versionId },
       select: { id: true },
     });
+    // Record the pre-signed staff counter-signatures configured in the body.
+    await applyAdminSignatures({ bindingId: bound.id, versionId, body: version.body });
     await logAuditEvent({
       action: "signing.bind",
       userId: auth.user.sub,
@@ -225,95 +229,6 @@ export async function action({ request, params }: Route.ActionArgs) {
       request,
     });
     await notifySignRequest(bound.id);
-    return redirect(back);
-  }
-
-  if (intent === "countersign") {
-    const bindingId = formData.get("bindingId") as string;
-    const binding = await prisma.signingBinding.findUnique({
-      where: { id: bindingId },
-      select: { versionId: true },
-    });
-    if (!binding) return { error: "Binding not found" };
-
-    const me = await prisma.user.findUniqueOrThrow({
-      where: { id: auth.user.sub },
-      select: { firstName: true, lastName: true },
-    });
-    const url = new URL(request.url);
-    await prisma.signingSignature.upsert({
-      where: {
-        bindingId_signerUserId_roleKey: {
-          bindingId,
-          signerUserId: auth.user.sub,
-          roleKey: "supervisor",
-        },
-      },
-      create: {
-        bindingId,
-        versionId: binding.versionId,
-        signerUserId: auth.user.sub,
-        roleKey: "supervisor",
-        typedName: fullName(me),
-        ip: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null,
-        userAgent: request.headers.get("user-agent") || null,
-        fieldValues: {},
-      },
-      update: { versionId: binding.versionId, signedAt: new Date(), typedName: fullName(me) },
-    });
-    void url;
-    await logAuditEvent({
-      action: "signing.staff_countersign",
-      userId: auth.user.sub,
-      targetId: params.id,
-      metadata: { bindingId },
-      request,
-    });
-    return redirect(back);
-  }
-
-  if (intent === "countersign-all") {
-    // Apply the fixed staff signature to every in-force binding that doesn't
-    // have one yet, in one click.
-    const me = await prisma.user.findUniqueOrThrow({
-      where: { id: auth.user.sub },
-      select: { firstName: true, lastName: true },
-    });
-    const bindings = await prisma.signingBinding.findMany({
-      where: { documentId: params.id },
-      select: {
-        id: true,
-        versionId: true,
-        signatures: { where: { roleKey: "supervisor" }, select: { id: true } },
-      },
-    });
-    const ip =
-      request.headers.get("fly-client-ip") ||
-      request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-      null;
-    const userAgent = request.headers.get("user-agent") || null;
-    for (const b of bindings) {
-      if (b.signatures.length > 0) continue;
-      await prisma.signingSignature.create({
-        data: {
-          bindingId: b.id,
-          versionId: b.versionId,
-          signerUserId: auth.user.sub,
-          roleKey: "supervisor",
-          typedName: fullName(me),
-          ip,
-          userAgent,
-          fieldValues: {},
-        },
-      });
-    }
-    await logAuditEvent({
-      action: "signing.staff_countersign",
-      userId: auth.user.sub,
-      targetId: params.id,
-      metadata: { bulk: true },
-      request,
-    });
     return redirect(back);
   }
 

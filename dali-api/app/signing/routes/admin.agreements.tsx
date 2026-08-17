@@ -10,6 +10,7 @@ import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles, isCore } from "~/lib/roles";
 import { coreHandle } from "~/core/coreNav";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { ensureCoreDriveRoot } from "~/lib/pages";
 import type {
   SigningDocumentKind,
   SigningGateScope,
@@ -117,6 +118,10 @@ export async function action({ request }: Route.ActionArgs) {
         cadence: CADENCES.includes(cadence) ? cadence : "Once",
       },
     });
+    // File the new agreement into Core ▸ Agreements ▸ {kind} immediately (it's
+    // created unplaced) so its Drive breadcrumb resolves without waiting for the
+    // next Core-drive visit. Idempotent + best-effort — never block creation.
+    await ensureCoreDriveRoot(auth.user.sub).catch(() => null);
     // When the flag is on, redirect straight to the Drive-namespaced route so
     // the browser lands on /documents/agreement/:id rather than the admin URL.
     // The flag check in the action is safe because actions run server-side.

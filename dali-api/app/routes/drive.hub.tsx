@@ -660,6 +660,7 @@ function NewMenu({
 }) {
   const isLab = scope.id === "lab";
   const label = scope.id === "mine" ? "My Drive" : isLab ? "Lab" : scope.label;
+  const dialog = useDialog();
 
   // Create a form into the current Drive folder, then navigate to its editor.
   async function createForm() {
@@ -675,13 +676,22 @@ function NewMenu({
     }
   }
 
-  // Create an agreement from the Core New menu. The admin create action redirects
-  // to the agreement detail route; we follow it and rewrite the admin path to
-  // the Drive-namespaced one.
+  // Create an agreement from the Core New menu. Prompts for a name (like New
+  // document), then follows the admin create action's redirect, rewriting the
+  // admin path to the Drive-namespaced one. The create action files it into
+  // Core ▸ Agreements ▸ {kind} so its breadcrumb resolves.
   async function createAgreement() {
+    const name = await dialog.prompt({
+      title: "New agreement",
+      label: "Name",
+      defaultValue: "Untitled agreement",
+      confirmLabel: "Create",
+      validate: (v) => (v.trim() ? null : "Enter a name"),
+    });
+    if (name === null) return;
     const formData = new FormData();
     formData.set("intent", "create");
-    formData.set("name", "New Agreement");
+    formData.set("name", name.trim());
     formData.set("kind", "General");
     formData.set("gateScope", "None");
     formData.set("audience", "Manual");
