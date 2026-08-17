@@ -255,9 +255,9 @@ function itemMenuItems(
   onOpen: () => void,
   onToggleFavorite?: (item: DriveItem) => void,
 ): ReactNode {
-  const canRename = item.type === "folder" || item.type === "doc" || item.type === "file";
+  const canRename = item.type === "folder" || item.type === "doc" || item.type === "file" || item.type === "form";
   const canMove = item.type !== "agreement" && item.type !== "rubric" && item.type !== "emailTemplate";
-  const canDelete = item.type === "folder" || item.type === "doc" || item.type === "file";
+  const canDelete = item.type === "folder" || item.type === "doc" || item.type === "file" || item.type === "form";
   const canFavorite = item.type === "doc" || item.type === "folder";
   return (
     <>
@@ -834,7 +834,10 @@ export function DriveBrowser({
 
   const canLeafRename =
     selectedLeaf &&
-    (selectedLeaf.type === "folder" || selectedLeaf.type === "doc" || selectedLeaf.type === "file");
+    (selectedLeaf.type === "folder" ||
+      selectedLeaf.type === "doc" ||
+      selectedLeaf.type === "file" ||
+      selectedLeaf.type === "form");
   const canLeafMove =
     !!selectedLeaf &&
     selectedLeaf.type !== "agreement" &&
@@ -842,7 +845,10 @@ export function DriveBrowser({
     selectedLeaf.type !== "emailTemplate";
   const canLeafDelete =
     selectedLeaf &&
-    (selectedLeaf.type === "folder" || selectedLeaf.type === "doc" || selectedLeaf.type === "file");
+    (selectedLeaf.type === "folder" ||
+      selectedLeaf.type === "doc" ||
+      selectedLeaf.type === "file" ||
+      selectedLeaf.type === "form");
   // Download: only for files with an href.
   const canLeafDownload = selectedLeaf && selectedLeaf.type === "file";
 
