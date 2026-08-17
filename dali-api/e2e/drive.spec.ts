@@ -284,10 +284,16 @@ test.describe('Drive hub (drive-consolidation flag)', () => {
     await page.waitForLoadState('networkidle');
     await page.getByTestId('drive-new-menu-core').click();
     await expect(page.getByTestId('drive-new-agreement')).toBeVisible();
+    await page.getByTestId('drive-new-agreement').click();
+
+    // A naming prompt now precedes creation (consistent with New document).
+    const input = page.locator('[role="dialog"] input[type="text"]');
+    await input.waitFor();
+    await input.fill(`E2E agreement ${Date.now()}`);
 
     await Promise.all([
       page.waitForURL(/\/documents\/agreement\//, { timeout: 10_000 }),
-      page.getByTestId('drive-new-agreement').click(),
+      page.getByRole('button', { name: 'Create' }).click(),
     ]);
     expect(page.url()).toMatch(/\/documents\/agreement\//);
   });
