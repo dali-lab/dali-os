@@ -16,7 +16,7 @@ import {
   SLACK_NOT_CONFIGURED_MESSAGE,
 } from "~/slack/lib/slack-client";
 import { resolveSlackIdsForInvite } from "~/members/lib/slack-sync.server";
-import { ensureTeam, addTeamMember } from "~/lib/github";
+import { ensureTeam, addTeamMember, isNo2fa } from "~/lib/github";
 import {
   workspaceConfigured,
   deriveProjectEmails,
@@ -486,7 +486,9 @@ export async function finalizeStaffing(
             : "_No confirmed members yet._";
         const repoLines = (project.repoUrls ?? []).map((u) => `• ${u}`);
         const text =
-          `*${project.name}* is staffed for ${cycle.name}! :tada:\n\n` +
+          `*Welcome to ${project.name} ${cycle.name}!* Here ${
+            repoLines.length > 0 ? "are your team and repos" : "is your team"
+          } for the term :tada:\n\n` +
           `*Team*\n${teamBlock}` +
           (repoLines.length > 0 ? `\n\n*Repos*\n${repoLines.join("\n")}` : "");
         await postMessage(channelId!, text);
@@ -596,17 +598,28 @@ export async function finalizeStaffing(
           where: { staffingCycleId: cycle.id, projectId: project.id, status: "Confirmed" },
           select: { user: { select: { firstName: true, lastName: true, githubUsername: true } } },
         });
-        const withHandle = new Set<string>();
+        const withHandle = new Map<string, string>();
         const missing: string[] = [];
         for (const r of roster) {
+          const name = `${r.user.firstName} ${r.user.lastName}`.trim();
           const handle = r.user.githubUsername?.trim();
-          if (handle) withHandle.add(handle);
-          else missing.push(`${r.user.firstName} ${r.user.lastName}`);
+          if (handle) withHandle.set(handle, name);
+          else missing.push(name);
         }
         const team = await ensureTeam(slug);
-        for (const username of withHandle) {
-          await addTeamMember(team.slug, username);
+        // Per-member isolation: one member who can't join (no 2FA on their
+        // account, a dead handle) must not strand the rest of the roster.
+        const needs2fa: string[] = [];
+        const failed: string[] = [];
+        for (const [username, name] of withHandle) {
+          try {
+            await addTeamMember(team.slug, username);
+          } catch (err) {
+            if (isNo2fa(err)) needs2fa.push(name);
+            else failed.push(`${name}: ${slackErrorMessage(err)}`);
+          }
         }
+        const added = withHandle.size - needs2fa.length - failed.length;
         if (slug !== project.githubTeamSlug) {
           await prisma.project.update({
             where: { id: project.id },
@@ -614,11 +627,14 @@ export async function finalizeStaffing(
           });
         }
         results.github = {
-          status: "ok",
+          status: failed.length > 0 ? "error" : "ok",
           message: summarize(
             `${team.slug}${team.created ? " (new)" : ""}`,
-            `${withHandle.size} added`,
+            `${added} added`,
             missing.length > 0 && `${missing.length} no GitHub username: ${missing.join(", ")}`,
+            needs2fa.length > 0 &&
+              `${needs2fa.length} must enable two-factor auth on GitHub before they can join: ${needs2fa.join(", ")}`,
+            failed.length > 0 && `${failed.length} failed — ${failed.join("; ")}`,
           ),
         };
       } catch (err) {
