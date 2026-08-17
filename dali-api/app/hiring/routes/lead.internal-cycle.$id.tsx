@@ -659,10 +659,11 @@ function ApplicationFormSection({
         <div className="mb-3 flex items-center gap-3">
           <p className="text-sm text-muted-foreground">No application form bound yet.</p>
           <button
+            disabled={fetcher.state !== "idle"}
             onClick={() => fetcher.submit({ intent: "create-application-form" }, { method: "post" })}
-            className="text-sm font-medium text-blue-700 hover:underline"
+            className="text-sm font-medium text-blue-700 hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            + Create form
+            {fetcher.state !== "idle" ? "Creating…" : "+ Create form"}
           </button>
         </div>
       )}

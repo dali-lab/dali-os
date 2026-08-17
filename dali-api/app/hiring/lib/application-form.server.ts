@@ -7,7 +7,7 @@
 
 import { randomUUID } from "node:crypto";
 import { prisma } from "~/lib/db";
-import { ensureHiringDriveRoot } from "~/lib/pages";
+import { ensureHiringDriveRoot, ensureHiringTemplatesFolder } from "~/lib/pages";
 import type { Question } from "~/types";
 import { resolveReferenceOptions } from "~/forms/lib/reference-sources";
 import { safeParseJsonString } from "~/forms/lib/forms-data";
@@ -39,14 +39,25 @@ function defaultQuestions(): Question[] {
   ];
 }
 
-// Find or create the top-level Lab Page folder (kind=Folder) that holds the
-// template form in the Drive. Matches by title so it converges on the mirror
-// Page the form-folder-mirror job created from the old FormFolder of the same
-// name.
-async function ensureFolder(name: string, actorId: string): Promise<string> {
-  const existing = await prisma.page.findFirst({
+/**
+ * Idempotently create the hiring application template Form, filed in the
+ * Hiring ▸ Templates subfolder (inside the hiring-team-scoped Hiring drive).
+ * Editing it in the Forms UI and saving a new version changes what future
+ * cycles are cloned from.
+ *
+ * Re-homes any template created before this lived in the Hiring drive — earlier
+ * builds placed it in a loose top-level "Hiring Templates" Lab folder, where it
+ * floated in the Lab-wide drive (visible to the whole lab, invisible inside the
+ * Hiring drive). We converge its placement on every call.
+ */
+export async function ensureHiringTemplate(actorId: string): Promise<string> {
+  const folderPageId = await ensureHiringTemplatesFolder(actorId);
+  // The old top-level "Hiring Templates" Lab folder, if a prior build made one.
+  // We match the existing template within either the new or old home so we
+  // re-home it in place rather than creating a duplicate.
+  const legacyFolder = await prisma.page.findFirst({
     where: {
-      title: name,
+      title: TEMPLATE_FOLDER,
       kind: "Folder",
       workspaceType: "Lab",
       parentPageId: null,
@@ -54,32 +65,28 @@ async function ensureFolder(name: string, actorId: string): Promise<string> {
     },
     select: { id: true },
   });
-  if (existing) return existing.id;
-  const created = await prisma.page.create({
-    data: {
-      title: name,
-      kind: "Folder",
-      workspaceType: "Lab",
-      workspaceId: null,
-      parentPageId: null,
-      createdById: actorId,
-    },
-    select: { id: true },
-  });
-  return created.id;
-}
-
-/**
- * Idempotently create the hiring application template Form (in the "Hiring
- * Templates" folder). Editing it in the Forms UI and saving a new version
- * changes what future cycles are cloned from.
- */
-export async function ensureHiringTemplate(actorId: string): Promise<string> {
-  const folderPageId = await ensureFolder(TEMPLATE_FOLDER, actorId);
+  const homeFolderIds = [folderPageId, ...(legacyFolder ? [legacyFolder.id] : [])];
   const existing = await prisma.form.findFirst({
-    where: { name: TEMPLATE_NAME, folderPageId },
-    select: { id: true, versions: { select: { id: true }, take: 1 } },
+    where: { name: TEMPLATE_NAME, folderPageId: { in: homeFolderIds } },
+    select: { id: true, folderPageId: true, versions: { select: { id: true }, take: 1 } },
   });
+  if (existing && existing.folderPageId !== folderPageId) {
+    await prisma.form.update({ where: { id: existing.id }, data: { folderPageId } });
+  }
+  // Retire the now-empty legacy top-level folder so it no longer clutters the
+  // Lab-wide drive. Best-effort and only when it holds nothing else.
+  if (legacyFolder && legacyFolder.id !== folderPageId) {
+    const [childPages, otherForms] = await Promise.all([
+      prisma.page.count({ where: { parentPageId: legacyFolder.id, archivedAt: null } }),
+      prisma.form.count({ where: { folderPageId: legacyFolder.id } }),
+    ]);
+    if (childPages === 0 && otherForms === 0) {
+      await prisma.page.update({
+        where: { id: legacyFolder.id },
+        data: { archivedAt: new Date() },
+      });
+    }
+  }
   if (existing?.versions.length) return existing.id;
   if (existing) {
     await prisma.formVersion.create({

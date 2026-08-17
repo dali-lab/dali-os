@@ -29,6 +29,7 @@ import { Tooltip } from "~/components/ui/IconButton";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
 import { useToast } from "~/components/ui/toast";
+import { useDialog } from "~/components/ui/dialog";
 import { Settings, Users, Calendar, AlertTriangle, Trash2, Plus, CheckCircle, ArrowRight, Circle, ChevronRight, X, LayoutDashboard, Eye, Mail } from 'lucide-react'
 import { formatVersionLabel } from "~/lib/formatVersion";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
@@ -1083,6 +1084,7 @@ function CoverageHeatmap({ coverage }: { coverage: CoverageData | null }) {
 
 export default function HiringLeadCycleDetails() {
   const toast = useToast()
+  const dialog = useDialog()
   const { id: cycleId } = useParams()
   const loaderData = useLoaderData<typeof loader>() as any
   const cycle = loaderData?.cycle
@@ -1169,6 +1171,26 @@ export default function HiringLeadCycleDetails() {
   // ── Decisions state ──
   const [pendingDecisions, setPendingDecisions] = useState<any[]>(loaderData?.finalDecisions ?? [])
   const [releasing, setReleasing] = useState<string | null>(null)
+  const [releasingAll, setReleasingAll] = useState(false)
+
+  // Release a single decision behind a confirm — sends an irreversible email.
+  async function confirmReleaseOne(d: any) {
+    if (releasing === d.id) return
+    if (
+      !(await dialog.confirm({
+        title: `Release this decision to ${d.domainApplication.application.user.firstName}?`,
+        description:
+          "This emails the applicant their decision using the bound template. It can't be undone.",
+        confirmLabel: "Release",
+        tone: "destructive",
+      }))
+    )
+      return
+    setReleasing(d.id)
+    await fetch(`/api/hiring/decisions/${d.id}/release`, { method: 'POST', credentials: 'include' })
+    setPendingDecisions(prev => prev.filter(p => p.id !== d.id))
+    setReleasing(null)
+  }
   const [previewDecisionId, setPreviewDecisionId] = useState<string | null>(null)
   const [decisionDomainFilter, setDecisionDomainFilter] = useState<string>('all')
   const [decisionTypeFilter, setDecisionTypeFilter] = useState<string>('all')
@@ -2863,14 +2885,28 @@ export default function HiringLeadCycleDetails() {
               {pendingDecisions.length > 0 && (
                 <button
                   onClick={async () => {
+                    if (releasingAll) return
                     const ids = releasable.map((d: any) => d.id)
+                    if (ids.length === 0) return
+                    if (
+                      !(await dialog.confirm({
+                        title: `Release ${ids.length} decision${ids.length === 1 ? '' : 's'}?`,
+                        description:
+                          `This emails ${ids.length === 1 ? 'this applicant' : `all ${ids.length} applicants`} their decision right now, using the bound templates. It can't be undone.`,
+                        confirmLabel: `Release ${ids.length}`,
+                        tone: "destructive",
+                      }))
+                    )
+                      return
+                    setReleasingAll(true)
                     for (const id of ids) {
                       await fetch(`/api/hiring/decisions/${id}/release`, { method: 'POST', credentials: 'include' })
                     }
                     const releasedIds = new Set(ids)
                     setPendingDecisions(prev => prev.filter(p => !releasedIds.has(p.id)))
+                    setReleasingAll(false)
                   }}
-                  disabled={releasable.length === 0}
+                  disabled={releasable.length === 0 || releasingAll}
                   title={
                     skipped > 0
                       ? `${skipped} decision${skipped === 1 ? '' : 's'} skipped — no email template bound on the Setup tab`
@@ -2879,8 +2915,10 @@ export default function HiringLeadCycleDetails() {
                   className="px-3 py-1.5 text-sm font-medium rounded-lg bg-green-600 hover:bg-green-700 text-white transition self-start sm:self-auto disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1"
                 >
                   <Mail className="w-3.5 h-3.5" aria-hidden />
-                  {filtersActive ? 'Release Filtered' : 'Release All'} ({releasable.length})
-                  {skipped > 0 && ` — ${skipped} skipped, no template bound`}
+                  {releasingAll
+                    ? 'Releasing…'
+                    : `${filtersActive ? 'Release Filtered' : 'Release All'} (${releasable.length})`}
+                  {!releasingAll && skipped > 0 && ` — ${skipped} skipped, no template bound`}
                 </button>
               )}
             </div>
@@ -2969,13 +3007,8 @@ export default function HiringLeadCycleDetails() {
                           </button>
                         </Tooltip>
                         <button
-                          onClick={async () => {
-                            setReleasing(d.id)
-                            await fetch(`/api/hiring/decisions/${d.id}/release`, { method: 'POST', credentials: 'include' })
-                            setPendingDecisions(prev => prev.filter(p => p.id !== d.id))
-                            setReleasing(null)
-                          }}
-                          disabled={releasing === d.id || !hasBinding}
+                          onClick={() => confirmReleaseOne(d)}
+                          disabled={releasing === d.id || releasingAll || !hasBinding}
                           title={
                             !hasBinding
                               ? `No email template bound to ${d.type} in this cycle. Bind one on the Setup tab → Decision Emails before releasing.`
@@ -3550,15 +3583,16 @@ function ApplicationFormSection({
       ) : (
         <div className="rounded-lg border border-border bg-card p-4">
           <button
+            disabled={fetcher.state !== "idle"}
             onClick={() =>
               fetcher.submit(
                 { intent: "create-application-form" },
                 { method: "post" },
               )
             }
-            className="text-xs font-medium text-blue-700 hover:underline whitespace-nowrap"
+            className="text-xs font-medium text-blue-700 hover:underline whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            + Create form
+            {fetcher.state !== "idle" ? "Creating…" : "+ Create form"}
           </button>
         </div>
       )}
