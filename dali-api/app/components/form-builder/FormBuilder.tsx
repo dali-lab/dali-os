@@ -1,6 +1,6 @@
 import { useState, useEffect, type CSSProperties, type ReactNode } from 'react'
 import { Select } from '~/components/ui/floating'
-import { GripVertical, Plus, Pencil, Trash2, Save, Check, Loader2, Eye } from 'lucide-react'
+import { GripVertical, Plus, Pencil, Trash2, Save, Check, Loader2, Eye, Undo2, Redo2 } from 'lucide-react'
 import {
   DndContext,
   PointerSensor,
@@ -9,7 +9,7 @@ import {
   useSensors,
   type DragEndEvent,
 } from '@dnd-kit/core'
-import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { Question } from '~/types'
 import { DocEditor } from '~/components/doc'
@@ -17,6 +17,8 @@ import { Tooltip } from '~/components/ui/IconButton'
 import { referenceSourceChoices, referenceSourceNeedsTerm } from '~/forms/lib/reference-sources.shared'
 import { Checkbox } from '~/components/ui/Checkbox'
 import { isLayoutOnly } from '~/lib/form-answers'
+import { useSharedArray } from '~/components/collab/useSharedCollection'
+import { formDraftName } from '~/collab/roomName'
 
 const ACCEPT_PRESETS = [
   { label: 'PDF', value: 'application/pdf' },
@@ -146,6 +148,12 @@ interface FormBuilderTabProps {
   // Preview resolution (reference-question option cards) is in flight —
   // spins the Preview button and blocks re-clicks. Ignored if onPreview isn't.
   previewPending?: boolean
+  // Collab substrate. When both are provided the question list is backed by a
+  // Hocuspocus Y.Array room (`form:{formId}:draft`) instead of local state,
+  // giving multiplayer + UndoManager support. Omitted by the hiring challenge
+  // builder (no structured-collab room for that entity).
+  formId?: string
+  collabToken?: string | null
 }
 export function FormBuilderTab({
   initialQuestions = [],
@@ -160,8 +168,70 @@ export function FormBuilderTab({
   terms = [],
   onPreview,
   previewPending = false,
+  formId,
+  collabToken,
 }: FormBuilderTabProps) {
-  const [questions, setQuestions] = useState<Question[]>(initialQuestions)
+  // Local state used when the collab room is unavailable (hiring challenge
+  // builder, version-edit without formId/collabToken). Always declared so the
+  // hook call count is stable. When collab is active we read/write through the
+  // hook instead and this state is unused after mount.
+  const [localQuestions, setLocalQuestions] = useState<Question[]>(initialQuestions)
+
+  // Collab substrate: backed by a Hocuspocus Y.Array room (`form:{id}:draft`)
+  // when formId + collabToken are provided. When the token is null the provider
+  // is never created and `yarray` stays null, so we fall back to localQuestions
+  // below. The hook is always called (stable call count) but only active when
+  // `collabActive` is true.
+  const collabActive = !!(formId && collabToken)
+  const roomName = formId ? formDraftName(formId) : 'noop'
+  const {
+    items: collabQuestions,
+    setItems: collabSetItems,
+    push: collabPush,
+    remove: collabRemove,
+    move: collabMove,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+  } = useSharedArray<Question>(
+    roomName,
+    collabActive ? collabToken : null,
+    'items',
+    initialQuestions,
+  )
+
+  // Unified question list + mutators: route to the collab surface when active,
+  // else to plain React state so the hiring challenge builder keeps working.
+  const questions = collabActive ? collabQuestions : localQuestions
+  const setQuestions = (next: Question[]) => {
+    if (collabActive) collabSetItems(next)
+    else setLocalQuestions(next)
+  }
+  const pushQuestion = (item: Question) => {
+    if (collabActive) collabPush(item)
+    else setLocalQuestions((prev) => [...prev, item])
+  }
+  const removeQuestion = (index: number) => {
+    if (collabActive) {
+      collabRemove(index)
+    } else {
+      setLocalQuestions((prev) => prev.filter((_, i) => i !== index))
+    }
+  }
+  const moveQuestion = (from: number, to: number) => {
+    if (collabActive) {
+      collabMove(from, to)
+    } else {
+      setLocalQuestions((prev) => {
+        const next = [...prev]
+        const [item] = next.splice(from, 1)
+        next.splice(to, 0, item)
+        return next
+      })
+    }
+  }
+
   const [description, setDescription] = useState<unknown>(initialDescription ?? null)
   const [editingKey, setEditingKey] = useState<string | null>(null)
   const [editForm, setEditForm] = useState<Partial<Question>>({})
@@ -182,12 +252,12 @@ export function FormBuilderTab({
     setActiveId(null)
     const { active, over } = event
     if (!over || active.id === over.id) return
-    setQuestions((prev) => {
-      const from = prev.findIndex((q) => q.key === active.id)
-      const to = prev.findIndex((q) => q.key === over.id)
-      if (from === -1 || to === -1) return prev
-      return arrayMove(prev, from, to)
-    })
+    const from = questions.findIndex((q) => q.key === active.id)
+    const to = questions.findIndex((q) => q.key === over.id)
+    if (from === -1 || to === -1) return
+    // moveQuestion commits to the Y.Array (undo-able) instead of arrayMove on
+    // local state; the hook's observer propagates the result back as `items`.
+    moveQuestion(from, to)
   }
   const resetEditState = () => {
     setEditingKey(null)
@@ -214,7 +284,8 @@ export function FormBuilderTab({
     }
   }
   const handleDelete = (key: string) => {
-    setQuestions(questions.filter((q) => q.key !== key))
+    const idx = questions.findIndex((q) => q.key === key)
+    if (idx !== -1) removeQuestion(idx)
     if (editingKey === key) resetEditState()
   }
 
@@ -223,14 +294,11 @@ export function FormBuilderTab({
   // than the question edit buffer.
   const handleAddPageBreak = () => {
     const key = `q-${Date.now()}`
-    setQuestions((prev) => [
-      ...prev,
-      { key, type: 'pageBreak', required: false, data: { label: '', description: '' } },
-    ])
+    pushQuestion({ key, type: 'pageBreak', required: false, data: { label: '', description: '' } })
   }
   const updatePageBreak = (key: string, patch: { label?: string; description?: string }) => {
-    setQuestions((prev) =>
-      prev.map((q) =>
+    setQuestions(
+      questions.map((q) =>
         q.key === key ? { ...q, data: { ...q.data, ...patch } } : q,
       ),
     )
@@ -258,8 +326,8 @@ export function FormBuilderTab({
       referenceSource: editForm.data?.referenceSource,
       referenceTermId: editForm.data?.referenceTermId,
     })
-    setQuestions((prev) =>
-      prev.map((q) => (q.key === editForm.key ? rebuilt : q)),
+    setQuestions(
+      questions.map((q) => (q.key === editForm.key ? rebuilt : q)),
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editForm, optionsText, acceptPresets, acceptCustom, maxWordsEnabled, maxWordsValue])
@@ -280,7 +348,7 @@ export function FormBuilderTab({
       isGeneralForm,
     })
     // Append immediately and open it for inline editing — no staging step.
-    setQuestions((prev) => [...prev, newQuestion])
+    pushQuestion(newQuestion)
     setEditingKey(key)
     setEditForm({ key, type: 'text', required: true, data: { label: '' } })
     setOptionsText('')
@@ -309,7 +377,7 @@ export function FormBuilderTab({
                   },
                 })
               }
-              className="block w-full rounded-md border border-gray-300 bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
+              className="block w-full rounded-md border border-border bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent-coral/30 sm:text-sm p-2"
               placeholder="e.g. What is your major?"
             />
           </div>
@@ -340,7 +408,7 @@ export function FormBuilderTab({
                 { value: 'skills_rating', label: 'Skills Rating' },
                 { value: 'reference', label: 'Reference (from database)' },
               ]}
-              buttonClassName="block w-full rounded-md border border-gray-300 bg-card text-foreground shadow-sm sm:text-sm p-2 inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+              buttonClassName="block w-full rounded-md border border-border bg-card text-foreground shadow-sm sm:text-sm p-2 inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
             />
           </div>
 
@@ -388,7 +456,7 @@ export function FormBuilderTab({
                   },
                 })
               }
-              className="block w-full rounded-md border border-gray-300 bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
+              className="block w-full rounded-md border border-border bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent-coral/30 sm:text-sm p-2"
               placeholder="e.g. Keep it under 200 words."
             />
           </div>
@@ -407,7 +475,7 @@ export function FormBuilderTab({
                 disabled={!maxWordsEnabled}
                 value={maxWordsValue}
                 onChange={(e) => setMaxWordsValue(e.target.value)}
-                className="w-28 rounded-md border border-gray-300 bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2 disabled:bg-muted disabled:text-muted-foreground"
+                className="w-28 rounded-md border border-border bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent-coral/30 sm:text-sm p-2 disabled:bg-muted disabled:text-muted-foreground"
                 placeholder="e.g. 200"
               />
               <span className="text-xs text-muted-foreground">words</span>
@@ -423,7 +491,7 @@ export function FormBuilderTab({
                 rows={4}
                 value={optionsText}
                 onChange={(e) => setOptionsText(e.target.value)}
-                className="block w-full rounded-md border border-gray-300 bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
+                className="block w-full rounded-md border border-border bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent-coral/30 sm:text-sm p-2"
                 placeholder="Option 1&#10;Option 2&#10;Option 3"
               />
             </div>
@@ -431,7 +499,7 @@ export function FormBuilderTab({
 
           {editForm.type === 'skills_rating' && (
             <div className="col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-foreground/80 mb-1">
                 Skills (One per line)
               </label>
               <textarea
@@ -441,7 +509,7 @@ export function FormBuilderTab({
                 className="block w-full rounded-md border border-border bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:border-accent-coral focus:ring-accent-coral sm:text-sm p-2"
                 placeholder="JavaScript&#10;Python&#10;React.js&#10;Figma"
               />
-              <p className="text-xs text-gray-500 mt-1">Applicants will rate each skill from 0-5.</p>
+              <p className="text-xs text-muted-foreground mt-1">Applicants will rate each skill from 0-5.</p>
             </div>
           )}
 
@@ -463,7 +531,7 @@ export function FormBuilderTab({
                 }
                 placeholder="Select a source…"
                 options={referenceSourceChoices().map((s) => ({ value: s.key, label: s.label }))}
-                buttonClassName="block w-full rounded-md border border-gray-300 bg-card text-foreground shadow-sm sm:text-sm p-2 inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                buttonClassName="block w-full rounded-md border border-border bg-card text-foreground shadow-sm sm:text-sm p-2 inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
               />
               <p className="text-xs text-muted-foreground mt-1">
                 Choices are pulled live when the form is filled — e.g. projects
@@ -488,7 +556,7 @@ export function FormBuilderTab({
                     }
                     placeholder="Select a term…"
                     options={terms.map((t) => ({ value: t.id, label: t.code }))}
-                    buttonClassName="block w-full rounded-md border border-gray-300 bg-card text-foreground shadow-sm sm:text-sm p-2 inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                    buttonClassName="block w-full rounded-md border border-border bg-card text-foreground shadow-sm sm:text-sm p-2 inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
                   />
                   <p className="text-xs text-muted-foreground mt-1">
                     Projects whose term set includes this term will be listed.
@@ -500,7 +568,7 @@ export function FormBuilderTab({
 
           {editForm.type === 'file' && (
             <div className="col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-foreground/80 mb-2">
                 Accepted File Types
               </label>
               <div className="flex flex-wrap gap-2 mb-3">
@@ -533,7 +601,7 @@ export function FormBuilderTab({
                 className="block w-full rounded-md border border-border bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:border-accent-coral focus:ring-accent-coral sm:text-sm p-2"
                 placeholder="Additional types, e.g. .f3z, text/plain"
               />
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 Toggle common presets above, or enter extra MIME types / extensions below (comma-separated).
               </p>
             </div>
@@ -580,7 +648,7 @@ export function FormBuilderTab({
           initialContent={initialDescription ?? undefined}
           onChange={setDescription}
           placeholder="Describe this challenge for applicants…"
-          className="rounded-md border border-gray-300 bg-card py-2 focus-within:border-blue-500"
+          className="rounded-md border border-border bg-card py-2 focus-within:border-accent-coral/50"
         />
       </div>
       <div className="space-y-2">
@@ -601,7 +669,7 @@ export function FormBuilderTab({
                   <div className={`rounded-xl ${isDragging ? 'opacity-40' : ''}`}>
                     {q.type === 'pageBreak' ? (
                       <div
-                        className={`flex items-start gap-4 bg-muted/40 p-4 rounded-xl border border-dashed shadow-sm group transition-colors duration-150 ${activeId ? 'border-gray-300' : 'border-border'}`}
+                        className={`flex items-start gap-4 bg-muted/40 p-4 rounded-xl border border-dashed shadow-sm group transition-colors duration-150 ${activeId ? 'border-border/60' : 'border-border'}`}
                       >
                         <div
                           {...dragHandleProps}
@@ -620,14 +688,14 @@ export function FormBuilderTab({
                             type="text"
                             value={q.data.label || ''}
                             onChange={(e) => updatePageBreak(q.key, { label: e.target.value })}
-                            className="block w-full rounded-md border border-gray-300 bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
+                            className="block w-full rounded-md border border-border bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent-coral/30 sm:text-sm p-2"
                             placeholder="Section title (optional)"
                           />
                           <input
                             type="text"
                             value={q.data.description || ''}
                             onChange={(e) => updatePageBreak(q.key, { description: e.target.value })}
-                            className="block w-full rounded-md border border-gray-300 bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
+                            className="block w-full rounded-md border border-border bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent-coral/30 sm:text-sm p-2"
                             placeholder="Subtitle (optional)"
                           />
                         </div>
@@ -645,7 +713,7 @@ export function FormBuilderTab({
                       renderEditForm()
                     ) : (
                       <div
-                        className={`flex items-start gap-4 bg-card p-4 rounded-xl border shadow-sm group transition-colors duration-150 ${activeId ? 'border-gray-300' : 'border-border'}`}
+                        className={`flex items-start gap-4 bg-card p-4 rounded-xl border shadow-sm group transition-colors duration-150 ${activeId ? 'border-border/60' : 'border-border'}`}
                       >
                         <div
                           {...dragHandleProps}
@@ -674,7 +742,7 @@ export function FormBuilderTab({
                               </span>
                             )}
                             {q.type === 'textarea' && q.data.maxWords !== undefined && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-800">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground">
                                 Max {q.data.maxWords} words
                               </span>
                             )}
@@ -694,7 +762,7 @@ export function FormBuilderTab({
                               {q.data.options.map((opt) => (
                                 <span
                                   key={opt}
-                                  className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100"
+                                  className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-muted text-muted-foreground border border-border"
                                 >
                                   {opt}
                                 </span>
@@ -703,14 +771,14 @@ export function FormBuilderTab({
                           )}
 
                           {q.type === 'file' && q.data.accept && (
-                            <p className="text-xs text-gray-500 mt-1">Accepts: {q.data.accept}</p>
+                            <p className="text-xs text-muted-foreground mt-1">Accepts: {q.data.accept}</p>
                           )}
                         </div>
 
                         <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button
                             onClick={() => handleEdit(q)}
-                            className="p-1.5 text-muted-foreground/70 hover:text-blue-600 rounded-md hover:bg-blue-50"
+                            className="p-1.5 text-muted-foreground/70 hover:text-foreground rounded-md hover:bg-muted"
                           >
                             <Pencil className="w-4 h-4" />
                           </button>
@@ -753,12 +821,40 @@ export function FormBuilderTab({
           const busy = saveStatus === 'saving-draft' || saveStatus === 'saving-version'
           return (
             <>
+              {/* Undo / Redo — only shown when backed by the collab room (formId +
+                  collabToken), where the Y.UndoManager provides history. */}
+              {formId && collabToken && (
+                <div className="flex items-center gap-1 mr-auto">
+                  <Tooltip label="Undo (⌘Z)">
+                    <button
+                      type="button"
+                      onClick={undo}
+                      disabled={!canUndo}
+                      aria-label="Undo"
+                      className="inline-flex items-center justify-center p-1.5 rounded-md text-foreground/70 hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <Undo2 className="w-4 h-4" />
+                    </button>
+                  </Tooltip>
+                  <Tooltip label="Redo (⌘⇧Z)">
+                    <button
+                      type="button"
+                      onClick={redo}
+                      disabled={!canRedo}
+                      aria-label="Redo"
+                      className="inline-flex items-center justify-center p-1.5 rounded-md text-foreground/70 hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <Redo2 className="w-4 h-4" />
+                    </button>
+                  </Tooltip>
+                </div>
+              )}
               {onPreview && (
                 <button
                   type="button"
                   onClick={() => onPreview({ questions, description })}
                   disabled={previewPending}
-                  className="inline-flex items-center px-4 py-2 border border-border shadow-sm text-sm font-medium rounded-lg text-foreground/80 bg-card hover:bg-muted/50 mr-auto disabled:opacity-60"
+                  className={`inline-flex items-center px-4 py-2 border border-border shadow-sm text-sm font-medium rounded-lg text-foreground/80 bg-card hover:bg-muted/50 disabled:opacity-60 ${!(formId && collabToken) ? 'mr-auto' : ''}`}
                 >
                   {previewPending ? (
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -796,7 +892,7 @@ export function FormBuilderTab({
                 <button
                   onClick={() => onSave({ questions, description })}
                   disabled={busy}
-                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-green-600 hover:bg-green-700 shadow-sm disabled:opacity-60"
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-accent-coral hover:bg-accent-coral/90 shadow-sm disabled:opacity-60"
                 >
                   {saveStatus === 'saving-version' ? (
                     <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Saving…</>

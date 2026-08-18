@@ -57,7 +57,7 @@ export function SigningDocumentsPage() {
               name="name"
               required
               placeholder="DALI Term Agreement"
-              className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-accent-coral"
+              className="px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
               autoFocus
             />
           </label>
@@ -72,7 +72,7 @@ export function SigningDocumentsPage() {
                 { value: "MentorshipAgreement", label: "Mentorship" },
                 { value: "Confidentiality", label: "Confidentiality" },
               ]}
-              buttonClassName="px-3 py-2 border border-gray-300 rounded-md inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+              buttonClassName="px-3 py-2 border border-border rounded-md inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
             />
           </label>
           <label className="flex flex-col gap-1 text-sm">
@@ -85,7 +85,7 @@ export function SigningDocumentsPage() {
                 { value: "App", label: "Hard-gate the app until signed" },
                 { value: "HiringCycle", label: "Gate hiring data (confidentiality)" },
               ]}
-              buttonClassName="px-3 py-2 border border-gray-300 rounded-md inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+              buttonClassName="px-3 py-2 border border-border rounded-md inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
             />
           </label>
           <label className="flex flex-col gap-1 text-sm">
@@ -99,7 +99,7 @@ export function SigningDocumentsPage() {
                 { value: "Mentors", label: "Mentors" },
                 { value: "HiringParticipants", label: "Hiring participants" },
               ]}
-              buttonClassName="px-3 py-2 border border-gray-300 rounded-md inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+              buttonClassName="px-3 py-2 border border-border rounded-md inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
             />
           </label>
           <label className="flex flex-col gap-1 text-sm">
@@ -112,14 +112,14 @@ export function SigningDocumentsPage() {
                 { value: "PerTerm", label: "Per term (re-sign each term)" },
                 { value: "PerCycle", label: "Per hiring cycle" },
               ]}
-              buttonClassName="px-3 py-2 border border-gray-300 rounded-md inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+              buttonClassName="px-3 py-2 border border-border rounded-md inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
             />
           </label>
           <div className="sm:col-span-2 flex justify-end gap-2">
             <button
               type="button"
               onClick={() => setCreating(false)}
-              className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-gray-300 rounded-md hover:bg-muted/50"
+              className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-border rounded-md hover:bg-muted/50"
             >
               Cancel
             </button>

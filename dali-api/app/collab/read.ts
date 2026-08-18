@@ -76,3 +76,67 @@ export async function readDocAsBlocks(documentName: string): Promise<DocBlock[]>
   }
   return blocks;
 }
+
+// ─── Structured (non-prose) read path ────────────────────────────────────────
+
+/**
+ * Extract structured data from a Y.Doc whose content is stored in Y.Array or
+ * Y.Map types rather than a BlockNote XmlFragment. Applies the binary state
+ * into a **throwaway** Y.Doc (no live-doc side-effects) and serializes each
+ * top-level shared type to plain JS.
+ *
+ * Returns an object keyed by the Y.Doc's shared-type names (e.g. `"items"`,
+ * `"data"`). Each value is a plain-JS array (from Y.Array) or object (from
+ * Y.Map). Types not recognised as Array or Map are omitted.
+ *
+ * Callers that need a specific key (e.g. `result["items"]`) should narrow
+ * after calling — this primitive returns the full map so it stays generic.
+ */
+export function getStructuredData(doc: Y.Doc): Record<string, unknown[] | Record<string, unknown>> {
+  const result: Record<string, unknown[] | Record<string, unknown>> = {};
+  // Y.Doc.share is the internal Map<string, AbstractType> — iterate it to find
+  // all top-level shared types without knowing their names in advance.
+  for (const [key, type] of (doc.share as Map<string, Y.AbstractType<unknown>>).entries()) {
+    if (type instanceof Y.Array) {
+      result[key] = type.toArray().map((item) =>
+        item instanceof Y.Map ? Object.fromEntries(item.entries()) : item,
+      );
+    } else if (type instanceof Y.Map) {
+      result[key] = Object.fromEntries((type as Y.Map<unknown>).entries());
+    }
+    // XmlFragment (prose rooms) and other types are intentionally skipped.
+  }
+  return result;
+}
+
+/**
+ * Load a structured (non-prose) collab document by room name and return its
+ * shared-type contents as plain JS. Missing rows (room never opened) return
+ * an empty object. Reads must not fail.
+ *
+ * Parallel to `readDocAsBlocks` for prose rooms — use this for `form:*:draft`
+ * and `rubric:*:draft` rooms where content lives in a Y.Array, not a
+ * BlockNote XmlFragment.
+ */
+export async function readDocAsJson(
+  documentName: string,
+): Promise<Record<string, unknown[] | Record<string, unknown>>> {
+  const row = await prisma.collabDocument.findUnique({
+    where: { name: documentName },
+    select: { state: true },
+  });
+  if (!row) return {};
+
+  // Throwaway doc — the clone defense from persistence.ts is moot here
+  // (structured reads never touch y-prosemirror), but we still use a fresh
+  // doc to honour the rule: never decode a live Y.Doc server-side.
+  const tmp = new Y.Doc();
+  try {
+    Y.applyUpdate(tmp, new Uint8Array(row.state));
+    return getStructuredData(tmp);
+  } catch {
+    return {};
+  } finally {
+    tmp.destroy();
+  }
+}

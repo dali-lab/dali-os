@@ -12,6 +12,7 @@ import { redirectToLogin } from '~/lib/login-next'
 import { isCore, getUserRoles } from '~/lib/roles'
 import { EmailTemplatesPage } from '~/admin/components/EmailTemplatesPage'
 import { regroupRedirect } from "~/core/lib/regroup-redirect.server"
+import { isFeatureEnabled } from '~/lib/feature-flags.server'
 
 export const handle = adminHandle("email-templates")
 
@@ -31,6 +32,18 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (regrouped) return regrouped
   const roles = await getUserRoles(auth.user.sub)
   if (!roles.isCore) return redirect('/')
+
+  // drive-spaces: the card-grid list is retired; Drive is the browser. Send the
+  // list URL straight to the Drive email-template filter. The per-template
+  // editor (/admin/email-templates/:id) is unaffected.
+  const url = new URL(request.url)
+  const isListUrl =
+    url.pathname === "/admin/email-templates" ||
+    url.pathname === "/core/communications/email"
+  if (isListUrl) {
+    const driveSpaces = await isFeatureEnabled("drive-spaces", auth.user.sub, roles, request)
+    if (driveSpaces) return redirect("/drive?type=emailTemplate")
+  }
 
   const templates = await prisma.emailTemplate.findMany({
     include: {

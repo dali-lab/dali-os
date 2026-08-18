@@ -269,16 +269,12 @@ export async function ensureCoreDriveRoot(createdById: string): Promise<{ id: st
     }
     await adoptAgreementsByKind(kindFolders, hiringRootId);
 
-    const rubricsFolder = await ensureSystemChildFolder(
-      "drive:core-rubrics",
-      rootId,
-      "Rubrics",
-      createdById,
-    );
-    await prisma.rubric.updateMany({
-      where: { OR: strayFilter(hiringRootId) },
-      data: { folderPageId: rubricsFolder },
-    });
+    // Legacy Core ▸ Rubrics: rubrics now live in Hiring ▸ Rubrics. The Hiring
+    // drive's adoptRubricsToHiring re-homes any rows still pointing at the old
+    // Core folder on every Hiring-drive visit. Once the folder is empty we can
+    // safely delete it; until then we leave it alone so existing page refs
+    // (bookmarks, collab links) don't 404.
+    await deleteCoreLegacyRubricsIfEmpty();
   } catch {
     // Best-effort — never block the Core drive.
   }
@@ -490,6 +486,15 @@ export async function ensureHiringDriveRoot(createdById: string): Promise<{ id: 
   // Each query is a no-op once all artifacts are placed, so this is cheap on
   // repeat calls. Best-effort: a failure here doesn't block the root return.
   try {
+    // Idempotent rekey: the old systemKey used a colon separator
+    // ("drive:hiring:rubrics") inconsistent with every other hiring key's
+    // dash style. Migrate in-place so the unique constraint on systemKey
+    // doesn't create a duplicate folder if the old row already exists.
+    await prisma.page.updateMany({
+      where: { systemKey: "drive:hiring:rubrics" },
+      data: { systemKey: "drive:hiring-rubrics" },
+    });
+
     // Forms: updateMany doesn't support to-many relation filters, so we
     // findMany first to get the scalar id list, then updateMany by id.
     const unplacedForms = await prisma.form.findMany({
@@ -509,10 +514,22 @@ export async function ensureHiringDriveRoot(createdById: string): Promise<{ id: 
       });
     }
 
-    // Rubrics, agreements (incl. Confidentiality), and email templates are all
-    // Core-managed artifacts filed under the Core drive (Rubrics / Agreements /
-    // Templates) by ensureCoreDriveRoot — not here. The Hiring drive holds only
-    // the hiring application/challenge Forms.
+    // Rubrics: adopted into Hiring ▸ Rubrics because the nav (nav-areas.ts)
+    // puts rubrics under Hiring ▸ Library. Previously filed under Core ▸
+    // Rubrics; re-home any stray rows so Drive and the nav stay consistent.
+    // Agreements and email templates remain in the Core drive.
+    const rubricsFolder = await ensureSystemChildFolder(
+      "drive:hiring-rubrics",
+      rootId,
+      "Rubrics",
+      createdById,
+    );
+    await adoptRubricsToHiring(rubricsFolder);
+
+    // Education offering application forms: file any unplaced form that is
+    // bound to an EducationOffering (via applicationFormId) into a managed
+    // folder within that offering's workspace. Best-effort, idempotent.
+    await adoptEducationForms(createdById);
   } catch {
     // Adoption is best-effort; don't surface errors to the caller.
   }
@@ -520,16 +537,147 @@ export async function ensureHiringDriveRoot(createdById: string): Promise<{ id: 
   return { id: rootId };
 }
 
+/** Move rubrics from the old Core ▸ Rubrics folder (and any unplaced ones)
+ *  into the new Hiring ▸ Rubrics folder. Only touches rubrics that are either
+ *  unplaced or still in the legacy Core rubrics folder — manual re-files by
+ *  Core members are left alone. Idempotent: once all rows have the Hiring
+ *  folder id the query returns zero rows. */
+async function adoptRubricsToHiring(hiringRubricsFolderId: string): Promise<void> {
+  // Resolve the old Core ▸ Rubrics folder (may not exist on a fresh DB).
+  const coreRubricsPage = await prisma.page.findUnique({
+    where: { systemKey: "drive:core-rubrics" },
+    select: { id: true },
+  });
+  const stray: { folderPageId: string | null }[] = [{ folderPageId: null }];
+  if (coreRubricsPage) stray.push({ folderPageId: coreRubricsPage.id });
+
+  await prisma.rubric.updateMany({
+    where: { OR: stray },
+    data: { folderPageId: hiringRubricsFolderId },
+  });
+}
+
+/** Delete the legacy Core ▸ Rubrics folder (systemKey drive:core-rubrics) if
+ *  it exists, has no child pages, and has no rubrics still pointing at it.
+ *  adoptRubricsToHiring re-homes all rubric rows first, so on a normal run
+ *  this is satisfied immediately and the zombie folder is pruned. If anything
+ *  still references the folder, we leave it alone — safety over cleanup. */
+async function deleteCoreLegacyRubricsIfEmpty(): Promise<void> {
+  const folder = await prisma.page.findUnique({
+    where: { systemKey: "drive:core-rubrics" },
+    select: { id: true },
+  });
+  if (!folder) return; // already gone or never created — nothing to do
+
+  const [childCount, rubricCount] = await Promise.all([
+    prisma.page.count({ where: { parentPageId: folder.id } }),
+    prisma.rubric.count({ where: { folderPageId: folder.id } }),
+  ]);
+
+  if (childCount > 0 || rubricCount > 0) return; // folder still in use
+
+  await prisma.page.delete({ where: { id: folder.id } });
+}
+
+/** File forms bound to an EducationOffering into a managed folder inside
+ *  that offering's workspace Pages. Creates a Folder page in the offering
+ *  workspace on first call (idempotent via systemKey). Only touches forms
+ *  with folderPageId = null — manually placed forms are left where they are.
+ *
+ *  EducationOffering.applicationFormId confirms the wiring exists in schema.
+ *  Best-effort: errors here never block the Hiring drive root return. */
+async function adoptEducationForms(createdById: string): Promise<void> {
+  // Find offerings that have an application form that is unplaced.
+  const offerings = await prisma.educationOffering.findMany({
+    where: {
+      applicationFormId: { not: null },
+      applicationForm: { folderPageId: null },
+    },
+    select: { id: true, title: true, applicationFormId: true },
+  });
+  if (offerings.length === 0) return;
+
+  for (const offering of offerings) {
+    if (!offering.applicationFormId) continue;
+    // Ensure a managed "Forms" folder exists inside this offering's workspace.
+    // The offering workspace is represented as workspaceType=Education,
+    // workspaceId=offering.id pages. We park forms at top-level for now;
+    // a per-offering Drive folder page carries the workspaceType so the
+    // loader can scope to it. Use a lab-level Page under a systemKey so the
+    // folder is stable and findable without a workspace-type query change.
+    const folderSystemKey = `education:${offering.id}:forms-folder`;
+    let folderId: string;
+    const existingFolder = await prisma.page.findUnique({
+      where: { systemKey: folderSystemKey },
+      select: { id: true },
+    });
+    if (existingFolder) {
+      folderId = existingFolder.id;
+    } else {
+      try {
+        const last = await prisma.page.findFirst({
+          where: { workspaceType: "EducationOffering", workspaceId: offering.id, parentPageId: null },
+          orderBy: { position: "desc" },
+          select: { position: true },
+        });
+        const created = await prisma.page.create({
+          data: {
+            workspaceType: "EducationOffering",
+            workspaceId: offering.id,
+            title: "Forms",
+            kind: "Folder",
+            position: last ? last.position + 1 : 0,
+            createdById,
+            systemKey: folderSystemKey,
+          },
+          select: { id: true },
+        });
+        folderId = created.id;
+      } catch {
+        // Race condition — look it up instead.
+        const retry = await prisma.page.findUnique({
+          where: { systemKey: folderSystemKey },
+          select: { id: true },
+        });
+        if (!retry) continue; // give up for this offering
+        folderId = retry.id;
+      }
+    }
+
+    await prisma.form.updateMany({
+      where: { id: offering.applicationFormId, folderPageId: null },
+      data: { folderPageId: folderId },
+    });
+  }
+}
+
 /**
- * The Hiring ▸ Templates subfolder — home for the hiring application template
- * Form (the source future cycle/challenge forms are cloned from). Provisioned
- * lazily the first time a cycle form is created, mirroring the Core drive's
- * managed subfolders. Idempotent via systemKey. Returns the folder's Page id.
+ * The Hiring ▸ Application Templates subfolder — home for the hiring
+ * application template Form (the source future cycle/challenge forms are cloned
+ * from). Named "Application Templates" (not "Templates") to distinguish it from
+ * Core ▸ Templates which holds EMAIL templates. Idempotent via systemKey.
+ * Returns the folder's Page id.
  */
 export async function ensureHiringTemplatesFolder(createdById: string): Promise<string> {
   const root = await ensureHiringDriveRoot(createdById);
   if (!root) throw new Error("Failed to ensure Hiring drive root");
-  return ensureSystemChildFolder("drive:hiring-templates", root.id, "Templates", createdById);
+
+  // Idempotent title fix: if this folder was previously created with the old
+  // "Templates" title (before the rename), update it in-place so the Drive UI
+  // shows the disambiguated name without requiring a new row.
+  const existing = await prisma.page.findUnique({
+    where: { systemKey: "drive:hiring-templates" },
+    select: { id: true, title: true },
+  });
+  if (existing && existing.title === "Templates") {
+    await prisma.page.update({
+      where: { id: existing.id },
+      data: { title: "Application Templates" },
+    });
+    return existing.id;
+  }
+
+  return ensureSystemChildFolder("drive:hiring-templates", root.id, "Application Templates", createdById);
 }
 
 export type MeetingNotesFolderKind = "Team" | "Partner";

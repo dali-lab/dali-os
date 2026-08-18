@@ -298,13 +298,35 @@ function adminSubtabsFor(flags: Partial<FeatureFlagMap>): SubTab[] {
   ];
 }
 
+// When drive-spaces is on the card-grid lists for agreements and email
+// templates are retired; their sidebar entries deep-link directly into the
+// Drive folder. The rest of the area (editors, create action) stays intact.
+function applyDriveSpacesSubstitutions(areas: NavArea[]): NavArea[] {
+  return areas.map((a) => {
+    if (a.key !== "core") return a;
+    return {
+      ...a,
+      subtabs: a.subtabs.map((t) => {
+        // Core ▸ Agreements → Drive filtered to agreements.
+        if (t.href === "/admin/agreements") return { ...t, href: "/drive?type=agreement" };
+        // Core ▸ Communications email templates → Drive filtered to email templates.
+        if (t.href === "/core/communications/email") return { ...t, href: "/drive?type=emailTemplate" };
+        return t;
+      }),
+    };
+  });
+}
+
 /** The area set for one viewer: regrouped when nav-regroup is on, else today's. */
 export function areasFor(flags: Partial<FeatureFlagMap> = {}): NavArea[] {
   if (!flags["nav-regroup"]) return NAV_AREAS;
-  return REGROUPED_AREAS.map((a) => {
+  const base = REGROUPED_AREAS.map((a) => {
     if (a.key === "admin") return { ...a, subtabs: adminSubtabsFor(flags) };
     return a;
   });
+  // drive-spaces: deep-link agreements + email templates directly into Drive.
+  if (flags["drive-spaces"]) return applyDriveSpacesSubstitutions(base);
+  return base;
 }
 
 /**

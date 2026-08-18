@@ -61,7 +61,7 @@ function formatDateShort(iso: string, tz: string) {
 //                         (save-version) and clears the draft. Frozen versions
 //                         are read-only and are what publishing serves.
 export function FormDetail() {
-  const { form, terms, usages, groups, managing, hiringLinks: rawHiringLinks } = useLoaderData<typeof loader>();
+  const { form, terms, usages, groups, managing, hiringLinks: rawHiringLinks, collabToken } = useLoaderData<typeof loader>();
   const hiringLinks: HiringFormLink[] = rawHiringLinks ?? [];
   const tz = useUserTimeZone();
   // A dedicated fetcher for saves so the builder's buttons can reflect
@@ -607,6 +607,11 @@ export function FormDetail() {
                 // in-progress edits. FormBuilderTab reads its initial* props
                 // only on mount.
                 key={editKey}
+                // Version-edit mode (editingVersion) works against the version's
+                // frozen snapshot, not the shared draft room — skip collab so the
+                // room's draft content can't overwrite the chosen version's questions.
+                formId={editingVersion ? undefined : form.id}
+                collabToken={editingVersion ? null : (collabToken ?? null)}
                 initialQuestions={seed.questions}
                 initialDescription={seed.description}
                 terms={terms}

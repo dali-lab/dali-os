@@ -69,6 +69,8 @@ import type { DriveTreeScope } from "~/lib/drive-scopes.server";
 import { PageIcon } from "~/components/PageIcon";
 import { Menu, ContextMenu } from "~/components/ui/floating";
 import { relativeTime } from "~/lib/relative-time";
+import { useFeatureFlag } from "~/components/FeatureFlags";
+import { ProcessLinkPill } from "~/components/drive/ProcessLinkPill";
 
 export type RowActions = {
   onRename: (item: DriveItem) => void;
@@ -84,7 +86,7 @@ export type DriveBrowserProps = {
   scopes: DriveTreeScope[];
   currentScopeId: string | null;
   currentFolderId: string | null;
-  typeFilter: "all" | "doc" | "file" | "form" | "agreement";
+  typeFilter: "all" | "doc" | "file" | "form" | "agreement" | "emailTemplate" | "rubric";
   search: string;
   onSearchChange: (q: string) => void;
   onNavigate: (scopeId: string | null, folderId: string | null) => void;
@@ -244,6 +246,8 @@ function scopeIcon(scope: DriveTreeScope) {
   if (scope.id === "core") return <Shield className="w-4 h-4 text-accent-coral/80 shrink-0" />;
   if (scope.id === "hiring") return <Briefcase className="w-4 h-4 text-accent-coral/80 shrink-0" />;
   if (scope.id === "lab") return <Users className="w-4 h-4 text-muted-foreground shrink-0" />;
+  // Synthetic group scopes use a folder icon (no emoji on the group itself).
+  if (scope.id === "projects" || scope.id === "education") return <Folder className="w-4 h-4 text-accent-coral/80 shrink-0" />;
   if (scope.iconEmoji) return <span className="text-base leading-none shrink-0">{scope.iconEmoji}</span>;
   return <Folder className="w-4 h-4 text-accent-coral/80 shrink-0" />;
 }
@@ -254,10 +258,19 @@ function itemMenuItems(
   actions: RowActions,
   onOpen: () => void,
   onToggleFavorite?: (item: DriveItem) => void,
+  driveSpacesEnabled?: boolean,
 ): ReactNode {
-  const canRename = item.type === "folder" || item.type === "doc" || item.type === "file" || item.type === "form";
-  const canMove = item.type !== "agreement" && item.type !== "rubric" && item.type !== "emailTemplate";
-  const canDelete = item.type === "folder" || item.type === "doc" || item.type === "file" || item.type === "form";
+  // Signal ①: system-managed folders (systemKey set) hide Delete/Rename entirely.
+  // The gate extends the existing type-based canMove gate at lines 258-260.
+  const isSystemManaged = driveSpacesEnabled && item.type === "folder" && !!(item as { systemKey?: string | null }).systemKey;
+  const canRename = !isSystemManaged && (item.type === "folder" || item.type === "doc" || item.type === "file" || item.type === "form");
+  // drive-spaces: email templates are now managed by Drive (rename/move/delete
+  // allowed); agreements and rubrics remain placement-locked.
+  const canMove =
+    item.type !== "agreement" &&
+    item.type !== "rubric" &&
+    (driveSpacesEnabled ? true : item.type !== "emailTemplate");
+  const canDelete = !isSystemManaged && (item.type === "folder" || item.type === "doc" || item.type === "file" || item.type === "form");
   const canFavorite = item.type === "doc" || item.type === "folder";
   return (
     <>
@@ -300,11 +313,13 @@ function RowActionsMenu({
   actions,
   onOpen,
   onToggleFavorite,
+  driveSpacesEnabled,
 }: {
   item: DriveItem;
   actions: RowActions;
   onOpen: () => void;
   onToggleFavorite?: (item: DriveItem) => void;
+  driveSpacesEnabled?: boolean;
 }) {
   return (
     <Menu
@@ -323,7 +338,7 @@ function RowActionsMenu({
         </button>
       }
     >
-      {itemMenuItems(item, actions, onOpen, onToggleFavorite)}
+      {itemMenuItems(item, actions, onOpen, onToggleFavorite, driveSpacesEnabled)}
     </Menu>
   );
 }
@@ -455,6 +470,11 @@ export function DriveBrowser({
   filterControl,
   newMenu,
 }: DriveBrowserProps) {
+  // Gate all three signals behind the drive-spaces flag so flag-OFF renders
+  // identically to today. Each sub-component receives this boolean rather than
+  // calling the hook itself (avoids hooks-in-non-component-function violations).
+  const driveSpacesEnabled = useFeatureFlag("drive-spaces");
+
   const currentScope = useMemo(
     () => scopes.find((s) => s.id === currentScopeId) ?? null,
     [scopes, currentScopeId],
@@ -832,18 +852,27 @@ export function DriveBrowser({
   }
   const leafActions = leafScopeId ? getScopeActions(leafScopeId) : null;
 
+  // Signal ①: system-managed leaf folders hide Delete/Rename in the toolbar too.
+  const leafIsSystemManaged =
+    driveSpacesEnabled &&
+    !!selectedLeaf &&
+    selectedLeaf.type === "folder" &&
+    !!(selectedLeaf as { systemKey?: string | null }).systemKey;
   const canLeafRename =
+    !leafIsSystemManaged &&
     selectedLeaf &&
     (selectedLeaf.type === "folder" ||
       selectedLeaf.type === "doc" ||
       selectedLeaf.type === "file" ||
       selectedLeaf.type === "form");
+  // drive-spaces: email templates are movable in Drive (card-grid list retired).
   const canLeafMove =
     !!selectedLeaf &&
     selectedLeaf.type !== "agreement" &&
     selectedLeaf.type !== "rubric" &&
-    selectedLeaf.type !== "emailTemplate";
+    (driveSpacesEnabled ? true : selectedLeaf.type !== "emailTemplate");
   const canLeafDelete =
+    !leafIsSystemManaged &&
     selectedLeaf &&
     (selectedLeaf.type === "folder" ||
       selectedLeaf.type === "doc" ||
@@ -1109,6 +1138,7 @@ export function DriveBrowser({
                         isDragging={!!activeDrag}
                         onClick={() => handleScopeClick(scope.id)}
                         onDoubleClick={() => handleScopeDblClick(scope.id)}
+                        driveSpacesEnabled={driveSpacesEnabled}
                       />
                     );
                   })}
@@ -1141,6 +1171,7 @@ export function DriveBrowser({
                                     scopeActions,
                                     () => onOpenItem(item),
                                     onToggleFavorite,
+                                    driveSpacesEnabled,
                                   )
                                 : null
                             }
@@ -1156,6 +1187,7 @@ export function DriveBrowser({
                               onClick={(e) => { if (sId) handleColumnRowClick(levelIdx, item, sId, e); }}
                               onDoubleClick={() => handleColumnRowDblClick(item)}
                               onOpen={() => onOpenItem(item)}
+                              driveSpacesEnabled={driveSpacesEnabled}
                             />
                           </ContextMenu>
                         );
@@ -1193,6 +1225,7 @@ export function DriveBrowser({
                   onOpen={openById}
                   getScopeActions={getScopeActions}
                   onToggleFavorite={onToggleFavorite}
+                  driveSpacesEnabled={driveSpacesEnabled}
                 />
               ) : !currentScope ? (
                 <ScopeList
@@ -1200,6 +1233,7 @@ export function DriveBrowser({
                   selected={selected}
                   onRowClick={handleRowClick}
                   onOpen={openById}
+                  driveSpacesEnabled={driveSpacesEnabled}
                 />
               ) : (
                 <ScopeContents
@@ -1217,6 +1251,7 @@ export function DriveBrowser({
                   onToggleFavorite={onToggleFavorite}
                   dragging={!!activeDrag}
                   suppressClickRef={suppressClickRef}
+                  driveSpacesEnabled={driveSpacesEnabled}
                 />
               )}
             </div>
@@ -1254,24 +1289,61 @@ function ColumnScopeRow({
   isDragging,
   onClick,
   onDoubleClick,
+  driveSpacesEnabled,
 }: {
   scope: DriveTreeScope;
   isHighlighted: boolean;
   isDragging: boolean;
   onClick: () => void;
   onDoubleClick: () => void;
+  driveSpacesEnabled?: boolean;
 }) {
   const isCore = scope.id === "core";
   const isHiring = scope.id === "hiring";
-  const isProject = scope.id !== "mine" && scope.id !== "lab" && !isCore && !isHiring;
+  // Synthetic group scopes ("projects"/"education") are not valid drop targets —
+  // dropping on the group row is ambiguous (which project?). Only individual
+  // project folders inside the group accept drops via the normal folder-drop path.
+  const isGroupScope = scope.id === "projects" || scope.id === "education";
+  const isProject = scope.id !== "mine" && scope.id !== "lab" && !isCore && !isHiring && !isGroupScope;
   const label =
     scope.id === "mine" ? "My Drive" : scope.id === "lab" ? "Lab" : scope.label;
 
   const drop = useDroppable({
     id: `scopedrop::${scope.id}`,
     data: { destScopeId: scope.id },
-    disabled: !isDragging,
+    // Disable dropping onto the group scope rows; also disables when not dragging.
+    disabled: !isDragging || isGroupScope,
   });
+
+  // Signal ③: audience chip revealed on hover when the flag is on and the
+  // scope carries a scopeAudience label. Reuses the PageRow opacity-reveal convention.
+  const audienceChip =
+    driveSpacesEnabled && scope.scopeAudience ? (
+      <span className="shrink-0 text-[10px] tracking-wide text-muted-foreground opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+        {scope.scopeAudience}
+      </span>
+    ) : (
+      // Flag OFF: existing always-visible labels (Core only / Hiring team / Project).
+      !driveSpacesEnabled && (
+        <>
+          {isCore && (
+            <span className="shrink-0 text-[10px] uppercase tracking-wide text-accent-coral/70">
+              Core only
+            </span>
+          )}
+          {isHiring && (
+            <span className="shrink-0 text-[10px] uppercase tracking-wide text-accent-coral/70">
+              Hiring team
+            </span>
+          )}
+          {isProject && (
+            <span className="shrink-0 text-[10px] uppercase tracking-wide text-accent-coral/70">
+              Project
+            </span>
+          )}
+        </>
+      )
+    );
 
   return (
     <div
@@ -1289,21 +1361,7 @@ function ColumnScopeRow({
     >
       {scopeIcon(scope)}
       <span className="min-w-0 flex-1 truncate font-medium">{label}</span>
-      {isCore && (
-        <span className="shrink-0 text-[10px] uppercase tracking-wide text-accent-coral/70">
-          Core only
-        </span>
-      )}
-      {isHiring && (
-        <span className="shrink-0 text-[10px] uppercase tracking-wide text-accent-coral/70">
-          Hiring team
-        </span>
-      )}
-      {isProject && (
-        <span className="shrink-0 text-[10px] uppercase tracking-wide text-accent-coral/70">
-          Project
-        </span>
-      )}
+      {audienceChip}
       <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0 opacity-60" />
     </div>
   );
@@ -1321,6 +1379,7 @@ function ColumnItemRow({
   onClick,
   onDoubleClick,
   onOpen,
+  driveSpacesEnabled,
 }: {
   item: DriveItem;
   scopeId: string | null;
@@ -1331,13 +1390,17 @@ function ColumnItemRow({
   onClick: (e: ReactMouseEvent) => void;
   onDoubleClick: () => void;
   onOpen: () => void;
+  driveSpacesEnabled?: boolean;
 }) {
   const isFolder = item.type === "folder";
   const isManaged = item.type === "agreement" || item.type === "rubric" || item.type === "emailTemplate";
+  // Signal ①: system-managed folders (systemKey set) are also non-draggable.
+  const isSystemManaged =
+    driveSpacesEnabled && isFolder && !!(item as { systemKey?: string | null }).systemKey;
   const drag = useDraggable({
     id: `col::${scopeId}::${item.id}`,
     data: { item, scopeId },
-    disabled: isManaged || !scopeId,
+    disabled: isManaged || isSystemManaged || !scopeId,
   });
 
   return (
@@ -1360,6 +1423,17 @@ function ColumnItemRow({
       <span className="min-w-0 flex-1 truncate font-medium">
         {item.title || "Untitled"}
       </span>
+      {/* Signal ②: always-on process linkage pill (flag ON only). */}
+      {driveSpacesEnabled && item.linkedProcess && (
+        <ProcessLinkPill label={item.linkedProcess.label} href={item.linkedProcess.href} />
+      )}
+      {/* Signal ①: "Managed" chip revealed on hover for system-keyed folders (flag ON only).
+          Reuses the PageRow opacity-reveal pattern from home.tsx:797. */}
+      {isSystemManaged && (
+        <span className="shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+          Managed
+        </span>
+      )}
       {/* Inline star for favorites */}
       {(item.type === "doc" || item.type === "folder") && onToggleFavorite && (
         <button
@@ -1384,6 +1458,7 @@ function ColumnItemRow({
           actions={scopeActions}
           onOpen={onOpen}
           onToggleFavorite={onToggleFavorite}
+          driveSpacesEnabled={driveSpacesEnabled}
         />
       )}
       {isFolder && (
@@ -1555,11 +1630,13 @@ function ScopeList({
   selected,
   onRowClick,
   onOpen,
+  driveSpacesEnabled,
 }: {
   scopes: DriveTreeScope[];
   selected: Set<string>;
   onRowClick: (id: string, e: ReactMouseEvent) => void;
   onOpen: (id: string) => void;
+  driveSpacesEnabled?: boolean;
 }) {
   if (scopes.length === 0) return <EmptyLine>Your Drive is empty.</EmptyLine>;
   return (
@@ -1567,7 +1644,8 @@ function ScopeList({
       {scopes.map((scope) => {
         const isCore = scope.id === "core";
         const isHiring = scope.id === "hiring";
-        const isProject = scope.id !== "mine" && scope.id !== "lab" && !isCore && !isHiring;
+        const isGroupScope = scope.id === "projects" || scope.id === "education";
+        const isProject = scope.id !== "mine" && scope.id !== "lab" && !isCore && !isHiring && !isGroupScope;
         const label = scope.id === "mine" ? "My Drive" : scope.id === "lab" ? "Lab" : scope.label;
         return (
           <div
@@ -1581,9 +1659,19 @@ function ScopeList({
           >
             {scopeIcon(scope)}
             <span className="min-w-0 flex-1 truncate font-semibold text-foreground">{label}</span>
-            {isCore && <span className="shrink-0 text-[10px] uppercase tracking-wide text-accent-coral/70">Core only</span>}
-            {isHiring && <span className="shrink-0 text-[10px] uppercase tracking-wide text-accent-coral/70">Hiring team</span>}
-            {isProject && <span className="shrink-0 text-[10px] uppercase tracking-wide text-accent-coral/70">Project</span>}
+            {/* Signal ③: scope audience chip (flag ON) — hover-reveal via group-hover.
+                Flag OFF: keep existing always-visible Core only / Hiring team / Project labels. */}
+            {driveSpacesEnabled && scope.scopeAudience ? (
+              <span className="shrink-0 text-[10px] tracking-wide text-muted-foreground opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                {scope.scopeAudience}
+              </span>
+            ) : !driveSpacesEnabled ? (
+              <>
+                {isCore && <span className="shrink-0 text-[10px] uppercase tracking-wide text-accent-coral/70">Core only</span>}
+                {isHiring && <span className="shrink-0 text-[10px] uppercase tracking-wide text-accent-coral/70">Hiring team</span>}
+                {isProject && <span className="shrink-0 text-[10px] uppercase tracking-wide text-accent-coral/70">Project</span>}
+              </>
+            ) : null}
             <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
           </div>
         );
@@ -1609,6 +1697,7 @@ function ScopeContents({
   onToggleFavorite,
   dragging,
   suppressClickRef,
+  driveSpacesEnabled,
 }: {
   scope: DriveTreeScope;
   listing: DriveItem[];
@@ -1624,6 +1713,7 @@ function ScopeContents({
   onToggleFavorite?: (item: DriveItem) => void;
   dragging: boolean;
   suppressClickRef: React.MutableRefObject<boolean>;
+  driveSpacesEnabled?: boolean;
 }) {
   if (listing.length === 0) return <EmptyLine>This folder is empty. Drop files here to upload.</EmptyLine>;
 
@@ -1642,6 +1732,7 @@ function ScopeContents({
             actions={actions}
             onToggleFavorite={onToggleFavorite}
             suppressClickRef={suppressClickRef}
+            driveSpacesEnabled={driveSpacesEnabled}
           />
         ))}
       </div>
@@ -1673,6 +1764,7 @@ function ScopeContents({
             actions={actions}
             onToggleFavorite={onToggleFavorite}
             suppressClickRef={suppressClickRef}
+            driveSpacesEnabled={driveSpacesEnabled}
           />
         ))}
       </div>
@@ -1721,6 +1813,7 @@ function ListRow({
   actions,
   onToggleFavorite,
   suppressClickRef,
+  driveSpacesEnabled,
 }: {
   item: DriveItem;
   scopeId: string;
@@ -1731,10 +1824,18 @@ function ListRow({
   actions: RowActions;
   onToggleFavorite?: (item: DriveItem) => void;
   suppressClickRef: React.MutableRefObject<boolean>;
+  driveSpacesEnabled?: boolean;
 }) {
   const isFolder = item.type === "folder";
   const isManaged = item.type === "agreement" || item.type === "rubric" || item.type === "emailTemplate";
-  const drag = useDraggable({ id: `${scopeId}::${item.id}`, data: { item, scopeId }, disabled: isManaged });
+  // Signal ①: system-managed folders are also non-draggable.
+  const isSystemManaged =
+    driveSpacesEnabled && isFolder && !!(item as { systemKey?: string | null }).systemKey;
+  const drag = useDraggable({
+    id: `${scopeId}::${item.id}`,
+    data: { item, scopeId },
+    disabled: isManaged || isSystemManaged,
+  });
   const drop = useDroppable({
     id: `${scopeId}::drop::${item.id}`,
     data: { destFolderId: item.id, destScopeId: scopeId },
@@ -1772,18 +1873,37 @@ function ListRow({
       <span className="flex items-center gap-2 min-w-0">
         {itemIcon(item)}
         <span className="truncate font-medium text-foreground">{item.title || "Untitled"}</span>
+        {/* Signal ②: always-on process linkage pill (flag ON only). */}
+        {driveSpacesEnabled && item.linkedProcess && (
+          <ProcessLinkPill label={item.linkedProcess.label} href={item.linkedProcess.href} />
+        )}
+        {/* Signal ①: "Managed" chip revealed on hover for system-keyed folders. */}
+        {isSystemManaged && (
+          <span className="shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+            Managed
+          </span>
+        )}
       </span>
       <span className="text-xs text-muted-foreground tabular-nums truncate">{relativeTime(item.updatedAt as unknown as string)}</span>
       <span className="text-xs text-muted-foreground tabular-nums text-right">{formatSize(item.sizeBytes)}</span>
       <span className="flex items-center justify-end">
         <FavoriteButton item={item} onToggleFavorite={onToggleFavorite} />
-        <RowActionsMenu item={item} actions={actions} onOpen={() => onOpen(item.id)} onToggleFavorite={onToggleFavorite} />
+        <RowActionsMenu
+          item={item}
+          actions={actions}
+          onOpen={() => onOpen(item.id)}
+          onToggleFavorite={onToggleFavorite}
+          driveSpacesEnabled={driveSpacesEnabled}
+        />
       </span>
     </div>
   );
 
   return (
-    <ContextMenu items={itemMenuItems(item, actions, () => onOpen(item.id), onToggleFavorite)} ariaLabel="Item actions">
+    <ContextMenu
+      items={itemMenuItems(item, actions, () => onOpen(item.id), onToggleFavorite, driveSpacesEnabled)}
+      ariaLabel="Item actions"
+    >
       {row}
     </ContextMenu>
   );
@@ -1799,6 +1919,7 @@ function GridTile({
   actions,
   onToggleFavorite,
   suppressClickRef,
+  driveSpacesEnabled,
 }: {
   item: DriveItem;
   scopeId: string;
@@ -1809,10 +1930,18 @@ function GridTile({
   actions: RowActions;
   onToggleFavorite?: (item: DriveItem) => void;
   suppressClickRef: React.MutableRefObject<boolean>;
+  driveSpacesEnabled?: boolean;
 }) {
   const isFolder = item.type === "folder";
   const isManaged = item.type === "agreement" || item.type === "rubric" || item.type === "emailTemplate";
-  const drag = useDraggable({ id: `${scopeId}::${item.id}`, data: { item, scopeId }, disabled: isManaged });
+  // Signal ①: system-managed folders are also non-draggable.
+  const isSystemManaged =
+    driveSpacesEnabled && isFolder && !!(item as { systemKey?: string | null }).systemKey;
+  const drag = useDraggable({
+    id: `${scopeId}::${item.id}`,
+    data: { item, scopeId },
+    disabled: isManaged || isSystemManaged,
+  });
   const drop = useDroppable({
     id: `${scopeId}::drop::${item.id}`,
     data: { destFolderId: item.id, destScopeId: scopeId },
@@ -1846,15 +1975,34 @@ function GridTile({
     >
       <div className="absolute right-1 top-1 flex items-center">
         <FavoriteButton item={item} onToggleFavorite={onToggleFavorite} />
-        <RowActionsMenu item={item} actions={actions} onOpen={() => onOpen(item.id)} onToggleFavorite={onToggleFavorite} />
+        <RowActionsMenu
+          item={item}
+          actions={actions}
+          onOpen={() => onOpen(item.id)}
+          onToggleFavorite={onToggleFavorite}
+          driveSpacesEnabled={driveSpacesEnabled}
+        />
       </div>
       {itemIcon(item, true)}
       <span className="w-full truncate text-xs font-medium text-foreground">{item.title || "Untitled"}</span>
+      {/* Signal ②: always-on process linkage pill (flag ON only). Centered below the title. */}
+      {driveSpacesEnabled && item.linkedProcess && (
+        <ProcessLinkPill label={item.linkedProcess.label} href={item.linkedProcess.href} />
+      )}
+      {/* Signal ①: "Managed" chip on hover for system-keyed folders. */}
+      {isSystemManaged && (
+        <span className="shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+          Managed
+        </span>
+      )}
     </div>
   );
 
   return (
-    <ContextMenu items={itemMenuItems(item, actions, () => onOpen(item.id), onToggleFavorite)} ariaLabel="Item actions">
+    <ContextMenu
+      items={itemMenuItems(item, actions, () => onOpen(item.id), onToggleFavorite, driveSpacesEnabled)}
+      ariaLabel="Item actions"
+    >
       {tile}
     </ContextMenu>
   );
@@ -1869,6 +2017,7 @@ function SearchResults({
   onOpen,
   getScopeActions,
   onToggleFavorite,
+  driveSpacesEnabled,
 }: {
   hits: SearchHit[];
   selected: Set<string>;
@@ -1876,6 +2025,7 @@ function SearchResults({
   onOpen: (id: string) => void;
   getScopeActions: (scopeId: string) => RowActions;
   onToggleFavorite?: (item: DriveItem) => void;
+  driveSpacesEnabled?: boolean;
 }) {
   if (hits.length === 0) return <EmptyLine>No matches.</EmptyLine>;
   return (
@@ -1895,11 +2045,16 @@ function SearchResults({
             <span className="font-medium text-foreground">{hit.item.title || "Untitled"}</span>
             <span className="ml-2 text-xs text-muted-foreground truncate">{hit.path}</span>
           </span>
+          {/* Signal ②: process linkage pill in search results (flag ON only). */}
+          {driveSpacesEnabled && hit.item.linkedProcess && (
+            <ProcessLinkPill label={hit.item.linkedProcess.label} href={hit.item.linkedProcess.href} />
+          )}
           <RowActionsMenu
             item={hit.item}
             actions={getScopeActions(hit.scope.id)}
             onOpen={() => onOpen(hit.item.id)}
             onToggleFavorite={onToggleFavorite}
+            driveSpacesEnabled={driveSpacesEnabled}
           />
         </div>
       ))}

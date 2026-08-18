@@ -5,6 +5,7 @@ import {
   FileText,
   ClipboardList,
   FileSignature,
+  Mail,
   Paperclip,
   FolderOpen,
   Plus,
@@ -19,7 +20,9 @@ import { getUserRoles, currentTerm } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { loadDriveScopes } from "~/lib/drive-scopes.server";
 import type { DriveTreeScope } from "~/lib/drive-scopes.server";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import type { DriveItem } from "~/lib/drive.server";
+import { resolveTermFilter } from "~/lib/terms";
 import { DriveBrowser } from "~/components/drive/DriveBrowser";
 import type { RowActions } from "~/components/drive/DriveBrowser";
 import { DestinationPicker } from "~/components/drive/DestinationPicker";
@@ -29,6 +32,7 @@ import { useToast } from "~/components/ui/toast";
 import { Menu, Select } from "~/components/ui/floating";
 import { Modal } from "~/components/Modal";
 import { useFeatureFlag } from "~/components/FeatureFlags";
+import { TermFilter } from "~/components/TermFilter";
 
 export const meta: Route.MetaFunction = () => [{ title: "Drive · DALI OS" }];
 
@@ -53,9 +57,10 @@ export const handle = {
 // The loader returns the FULL drive tree (every scope's items) and ignores the
 // scope/folder/type query params — those only drive client-side view state. So
 // navigating between scopes and folders needs no refetch: skip revalidation
-// when only the query string changed on this same route. Manual refreshes after
-// a write (revalidator.revalidate(), which keeps the URL identical) and any
-// non-GET submission still fall through to the default and reload the tree.
+// when only the query string changed on this same route — EXCEPT when the
+// `?term=` param changes, which requires a real re-query (term-scoped spaces).
+// Manual refreshes after a write (revalidator.revalidate(), which keeps the URL
+// identical) and any non-GET submission still fall through to the default.
 export function shouldRevalidate({
   currentUrl,
   nextUrl,
@@ -64,6 +69,10 @@ export function shouldRevalidate({
 }: ShouldRevalidateFunctionArgs) {
   if (formMethod && formMethod.toUpperCase() !== "GET") return defaultShouldRevalidate;
   if (currentUrl.pathname === nextUrl.pathname && currentUrl.search !== nextUrl.search) {
+    const prev = currentUrl.searchParams.get("term");
+    const next = nextUrl.searchParams.get("term");
+    // Let term changes through so the loader re-queries with the new filter.
+    if (prev !== next) return defaultShouldRevalidate;
     return false;
   }
   return defaultShouldRevalidate;
@@ -90,26 +99,44 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Hiring-drive gate — matches the "hiring" dynamic group (Core + domain leads
   // + cycle reviewers/interviewers) so the scope shows for exactly the people
   // the Hiring root is scoped to.
-  const [hiringReviewer, term] = await Promise.all([
+  const [hiringReviewer, driveSpacesEnabled] = await Promise.all([
     roles.isCore || roles.isDomainLead || roles.isInterviewer
       ? Promise.resolve(null) // already qualifies; skip the DB hit
       : prisma.cycleReviewer.findFirst({
           where: { userId: auth.user.sub },
           select: { id: true },
         }),
-    currentTerm(request),
+    isFeatureEnabled("drive-spaces", auth.user.sub, roles, request),
   ]);
   const hasHiringAccess =
     roles.isCore || roles.isDomainLead || roles.isInterviewer || hiringReviewer !== null;
 
+  // Term filter: when drive-spaces is on, the Projects and Education spaces are
+  // scoped to the selected term (matching the project hub pattern). My Drive /
+  // General / Core / Hiring are NOT term-filtered. When the flag is off we fall
+  // back to the legacy current-term query with no filter dropdown.
+  const termResult = driveSpacesEnabled
+    ? await resolveTermFilter(request)
+    : null;
+  // termId is null for "all terms" or when the flag is off and no current term exists.
+  const termId = driveSpacesEnabled
+    ? (termResult?.termId ?? null)
+    : null; // flag-off: no term filter (legacy behaviour)
+
+  // When the flag is off we still need to limit to the current term so legacy
+  // behaviour (project list scoped to current term) is preserved.
+  const legacyTermId = !driveSpacesEnabled
+    ? (await currentTerm(request))?.id ?? null
+    : null;
+  const effectiveTermId = driveSpacesEnabled ? termId : legacyTermId;
+
   // Load only the project list needed to build Drive scopes — same access
   // filter as documents.hub: Core sees all projects; others see only projects
-  // they're staffed on, scoped to the current term (matching the default
-  // ?term= behavior when docsLoader is called with a /drive URL).
-  const termId = term?.id ?? null;
+  // they're staffed on. When the flag is on, term filter is applied only when
+  // a specific term is selected (null termId = "all" = no filter).
   const rawProjects = await prisma.project.findMany({
     where: {
-      ...(termId ? { projectTerms: { some: { termId } } } : {}),
+      ...(effectiveTermId ? { projectTerms: { some: { termId: effectiveTermId } } } : {}),
       ...(roles.isCore ? {} : { assignments: { some: { userId: auth.user.sub } } }),
     },
     orderBy: [{ status: "asc" }, { name: "asc" }],
@@ -122,13 +149,57 @@ export async function loader({ request }: Route.LoaderArgs) {
     projectIconEmoji: p.iconEmoji,
   }));
 
+  // Education workspaces: only queried when the drive-spaces flag is on
+  // (Education space is a new addition). Access rule mirrors pageAccess.server:
+  // Core sees all offerings; instructors see offerings in the selected term;
+  // enrolled students (Approved application) see their enrolled offerings.
+  // When "all terms" is selected, no term filter is applied.
+  let educationWorkspaces: { key: string; label: string; kind: "education" }[] = [];
+  if (driveSpacesEnabled) {
+    const approvedOrInstructor = roles.isCore
+      ? // Core sees all offerings (term-filtered when a specific term is chosen).
+        await prisma.educationOffering.findMany({
+          where: termId
+            ? { instructors: { some: { termId } } }
+            : undefined,
+          orderBy: { title: "asc" },
+          select: { id: true, title: true },
+        })
+      : // Non-Core: union of (a) instructor offerings in the selected term and
+        // (b) offerings where the viewer has an Approved application.
+        await prisma.educationOffering.findMany({
+          where: {
+            OR: [
+              {
+                instructors: {
+                  some: {
+                    userId: auth.user.sub,
+                    ...(termId ? { termId } : {}),
+                  },
+                },
+              },
+              { applications: { some: { applicantUserId: auth.user.sub, status: "Approved" } } },
+            ],
+          },
+          orderBy: { title: "asc" },
+          select: { id: true, title: true },
+        });
+    educationWorkspaces = approvedOrInstructor.map((o) => ({
+      key: o.id,
+      label: o.title,
+      kind: "education" as const,
+    }));
+  }
+
   const driveScopes = await loadDriveScopes({
     userSub: auth.user.sub,
     projectWorkspaces,
+    educationWorkspaces,
     canViewForms: userCanViewForms,
     canManageAgreements: userCanManageAgreements,
     isCore: roles.isCore,
     hasHiringAccess,
+    driveSpacesEnabled,
     request,
   });
 
@@ -136,6 +207,9 @@ export async function loader({ request }: Route.LoaderArgs) {
     driveScopes,
     canViewForms: userCanViewForms,
     canManageAgreements: userCanManageAgreements,
+    // Term filter data — only populated when drive-spaces flag is on.
+    terms: termResult?.terms ?? [],
+    selectedTerm: termResult?.selected ?? "",
   };
 }
 
@@ -144,7 +218,7 @@ type DriveScope = LoaderData["driveScopes"][number];
 
 // ── Type filter ────────────────────────────────────────────────────────────────
 
-export type DriveTypeFilter = "all" | "doc" | "file" | "form" | "agreement";
+export type DriveTypeFilter = "all" | "doc" | "file" | "form" | "agreement" | "emailTemplate" | "rubric";
 
 const TYPE_FILTERS: {
   value: DriveTypeFilter;
@@ -158,6 +232,8 @@ const TYPE_FILTERS: {
   { value: "file", label: "Files", icon: <Paperclip className="w-3.5 h-3.5" /> },
   { value: "form", label: "Forms", icon: <ClipboardList className="w-3.5 h-3.5" />, requiresCap: "canViewForms" },
   { value: "agreement", label: "Agreements", icon: <FileSignature className="w-3.5 h-3.5" />, requiresCap: "canManageAgreements" },
+  { value: "emailTemplate", label: "Email Templates", icon: <Mail className="w-3.5 h-3.5" />, requiresCap: "canManageAgreements" },
+  { value: "rubric", label: "Rubrics", icon: <ClipboardList className="w-3.5 h-3.5" />, requiresCap: "canManageAgreements" },
 ];
 
 // ── Template picker ────────────────────────────────────────────────────────────
@@ -389,11 +465,16 @@ function useDriveFileUpload(target: UploadTarget, onComplete: () => void) {
 // One factory keeps the branching in a single place, shared by the New menu and
 // the row "⋯" menu.
 
-type ScopeKind = "mine" | "lab" | "project";
+type ScopeKind = "mine" | "lab" | "project" | "projects-group" | "education-group";
 // The Core drive is Lab-workspace pages nested under the Core root folder, so it
 // uses the same endpoints as Lab — its rootFolderId (below) handles the nesting.
+// "projects" and "education" are the new synthetic parent scopes (flag ON).
 function scopeKindOf(id: string): ScopeKind {
-  return id === "mine" ? "mine" : id === "lab" || id === "core" || id === "hiring" ? "lab" : "project";
+  if (id === "mine") return "mine";
+  if (id === "lab" || id === "core" || id === "hiring") return "lab";
+  if (id === "projects") return "projects-group";
+  if (id === "education") return "education-group";
+  return "project";
 }
 
 // Who can see items in a scope — shown in the cross-drive move confirmation so
@@ -402,20 +483,28 @@ function scopeAudience(scopeId: string): string {
   if (scopeId === "core") return "Core only";
   if (scopeId === "hiring") return "the hiring team";
   if (scopeId === "lab") return "everyone in the lab";
+  // Synthetic group scopes shouldn't appear in move dialogs, but guard anyway.
+  if (scopeId === "projects") return "the project team";
+  if (scopeId === "education") return "enrolled members";
   return "the project team";
 }
 
 // A scope's destination workspace + drive-root parent for a cross-drive move.
 // Lab/Core/Hiring are all Lab-workspace pages (Core/Hiring nest under their
 // scoped root folder); a project scope is its own Project workspace.
+// The synthetic "projects"/"education" group scopes are not valid move destinations
+// (dropping onto them is disabled in DriveBrowser), so they return a safe Lab
+// default rather than throwing — the hub guards against them via moveDestinationsFor.
 function scopeDest(scope: DriveTreeScope): {
   workspaceType: "Lab" | "Project";
   workspaceId: string | null;
   root: string | null;
 } {
-  return scopeKindOf(scope.id) === "project"
-    ? { workspaceType: "Project", workspaceId: scope.id, root: scope.rootFolderId ?? null }
-    : { workspaceType: "Lab", workspaceId: null, root: scope.rootFolderId ?? null };
+  const kind = scopeKindOf(scope.id);
+  if (kind === "project") return { workspaceType: "Project", workspaceId: scope.id, root: scope.rootFolderId ?? null };
+  // projects-group / education-group: safe no-op fallback (never a move target).
+  if (kind === "projects-group" || kind === "education-group") return { workspaceType: "Lab", workspaceId: null, root: null };
+  return { workspaceType: "Lab", workspaceId: null, root: scope.rootFolderId ?? null };
 }
 
 // A folder's own id plus every descendant folder id — so "Move to…" never
@@ -457,6 +546,25 @@ type ScopeActions = {
   performMove: (item: DriveItem, destFolderId: string | null) => Promise<void>;
 };
 
+// Given the "projects" or "education" synthetic group scope, walk up the item
+// tree from folderId to find the synthetic top-level folder (parentFolderId ===
+// null), whose id IS the project/offering id. Returns null if we're at the
+// scope root (no folder selected) — create should be a no-op there.
+function resolveWorkspaceId(items: DriveItem[], folderId: string | null): string | null {
+  if (!folderId) return null;
+  const byId = new Map(items.map((it) => [it.id, it]));
+  let cursor: string | null = folderId;
+  const seen = new Set<string>();
+  while (cursor && !seen.has(cursor)) {
+    seen.add(cursor);
+    const node = byId.get(cursor);
+    if (!node) break;
+    if (node.parentFolderId === null) return node.id; // synthetic top-level = workspace id
+    cursor = node.parentFolderId;
+  }
+  return null;
+}
+
 function makeScopeActions({
   scope,
   currentFolderId,
@@ -492,6 +600,42 @@ function makeScopeActions({
       fd.set("isFolder", pageKind === "Folder" ? "true" : "false");
       if (parentPageId) fd.set("parentPageId", parentPageId);
       const res = await fetch("/api/notes", { method: "POST", body: fd, credentials: "include" });
+      if (!res.ok) return null;
+      return ((await res.json()) as { id: string }).id;
+    }
+    if (kind === "projects-group") {
+      // Resolve the project from the current folder. When parentPageId is a
+      // synthetic project folder id (top-level, parentFolderId=null in scope.items),
+      // that id IS the projectId and we pass parentPageId=null to the project API.
+      // When deeper inside a real sub-folder, walk up to find the synthetic root.
+      const projectId = resolveWorkspaceId(scope.items, parentPageId);
+      if (!projectId) return null; // no-op: at the group root, no project selected
+      // If parentPageId IS the synthetic project folder, the real parentPageId is null.
+      const parentNode = parentPageId ? scope.items.find((it) => it.id === parentPageId) : null;
+      const realParent = parentNode?.parentFolderId === null ? null : parentPageId;
+      const res = await fetch(`/api/projects/${projectId}/documents`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, kind: pageKind, ...(realParent ? { parentPageId: realParent } : {}) }),
+      });
+      if (!res.ok) return null;
+      return ((await res.json()) as { id: string }).id;
+    }
+    if (kind === "education-group") {
+      // Mirror the projects-group branch: resolve the offering, strip the
+      // synthetic top-level node from parentPageId, then POST to the offering
+      // documents endpoint. Instructors and Core only (server-enforced).
+      const offeringId = resolveWorkspaceId(scope.items, parentPageId);
+      if (!offeringId) return null; // no-op: at the group root, no offering selected
+      const parentNode = parentPageId ? scope.items.find((it) => it.id === parentPageId) : null;
+      const realParent = parentNode?.parentFolderId === null ? null : parentPageId;
+      const res = await fetch(`/api/education/${offeringId}/documents`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, kind: pageKind, ...(realParent ? { parentPageId: realParent } : {}) }),
+      });
       if (!res.ok) return null;
       return ((await res.json()) as { id: string }).id;
     }
@@ -642,6 +786,33 @@ function makeScopeActions({
         fd.set("pageId", item.id);
         fd.set("parentPageId", target ?? "");
         res = await fetch("/api/notes", { method: "POST", body: fd, credentials: "include" });
+      } else if (kind === "projects-group" || kind === "education-group") {
+        // Dragging within the synthetic group scope (projects/education). If the
+        // destination is a synthetic top-level folder (the project/offering node
+        // itself, parentFolderId===null), it's a cross-workspace move to that
+        // workspace's root. If it's a real sub-folder inside a project/offering,
+        // it's still a cross-workspace move but with a real parentPageId.
+        const wsId = resolveWorkspaceId(scope.items, target);
+        if (!wsId) {
+          // No workspace resolved (e.g. dropped at the group root) — no-op.
+          toast.error("Select a project or offering to move into");
+          return;
+        }
+        const wsType = kind === "projects-group" ? "Project" : "EducationOffering";
+        // If target IS the synthetic top-level node, the real parentPageId is null
+        // (move to the workspace root). Otherwise target is a real sub-folder.
+        const destNode = target ? scope.items.find((it) => it.id === target) : null;
+        const realParent = destNode?.parentFolderId === null ? null : (target ?? null);
+        res = await fetch(`/api/pages/${item.id}/move`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            parentPageId: realParent,
+            workspaceType: wsType,
+            workspaceId: wsId,
+          }),
+        });
       } else {
         res = await fetch(`/api/pages/${item.id}/move`, {
           method: "POST",
@@ -797,7 +968,7 @@ function NewMenu({
 // ── Hub shell ─────────────────────────────────────────────────────────────────
 
 export default function DriveHub() {
-  const { driveScopes, canViewForms, canManageAgreements } = useLoaderData() as LoaderData;
+  const { driveScopes, canViewForms, canManageAgreements, terms, selectedTerm } = useLoaderData() as LoaderData;
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const dialog = useDialog();
@@ -805,6 +976,7 @@ export default function DriveHub() {
   const revalidator = useRevalidator();
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const templatesEnabled = useFeatureFlag("templates");
+  const driveSpacesEnabled = useFeatureFlag("drive-spaces");
   // Search is a client-side filter over already-loaded items, so it lives in
   // local state — keeping it out of the URL avoids a loader revalidation on
   // every keystroke. Scope/folder/type stay in the URL (linkable, back/forward).
@@ -839,7 +1011,14 @@ export default function DriveHub() {
   const currentFolderId = searchParams.get("folder");
   const rawType = searchParams.get("type") as DriveTypeFilter | null;
   const typeFilter: DriveTypeFilter =
-    rawType === "doc" || rawType === "file" || rawType === "form" || rawType === "agreement" ? rawType : "all";
+    rawType === "doc" ||
+    rawType === "file" ||
+    rawType === "form" ||
+    rawType === "agreement" ||
+    rawType === "emailTemplate" ||
+    rawType === "rubric"
+      ? rawType
+      : "all";
 
   const currentScope = useMemo(
     () => driveScopes.find((s) => s.id === currentScopeId) ?? null,
@@ -916,15 +1095,29 @@ export default function DriveHub() {
   // first. Managed types (agreement/rubric/emailTemplate) are filed
   // automatically and excluded. Files/forms use folderPageId and stay within the
   // Lab-workspace drives; docs/folders can also cross into projects.
-  const NON_MOVABLE = new Set<DriveItem["type"]>(["agreement", "rubric", "emailTemplate"]);
+  // drive-spaces: email templates are now Drive-managed (rename/move/delete
+  // permitted). Agreements and rubrics remain placement-locked (kind-folders).
+  const NON_MOVABLE = new Set<DriveItem["type"]>(
+    driveSpacesEnabled ? ["agreement", "rubric"] : ["agreement", "rubric", "emailTemplate"],
+  );
   const moveDestinationsFor = useCallback(
     (item: DriveItem): DriveTreeScope[] =>
       driveScopes.filter((s) => {
         if (s.id === "mine" || NON_MOVABLE.has(item.type)) return false;
-        const labWorkspace = scopeKindOf(s.id) !== "project";
+        const kind = scopeKindOf(s.id);
         // Files/forms move by folderPageId (no workspace change), so restrict
-        // them to the Lab-workspace drives. Docs/folders can go anywhere.
-        return item.type === "doc" || item.type === "folder" ? true : labWorkspace;
+        // them to the Lab-workspace drives. Docs/folders can also move into
+        // project/offering workspaces.
+        const isDocOrFolder = item.type === "doc" || item.type === "folder";
+        if (!isDocOrFolder) {
+          // Files/forms: Lab workspace only (no project/offering cross-move).
+          return kind !== "project" && kind !== "projects-group" && kind !== "education-group";
+        }
+        // Docs/folders: include the synthetic group scopes so the picker shows
+        // individual project/offering folders as drillable destinations.
+        // The bare group ROOT is exposed as a drive row but the move handler
+        // requires a specific project/offering folder to be selected.
+        return true;
       }),
     [driveScopes],
   );
@@ -939,10 +1132,43 @@ export default function DriveHub() {
     ) => {
       const destScope = driveScopes.find((s) => s.id === destScopeId);
       if (!destScope) return;
-      const d = scopeDest(destScope);
       const src = driveScopes.find((s) => s.id === sourceScopeId);
       const srcWs = src ? scopeDest(src) : { workspaceType: "Lab" as const, workspaceId: null, root: null };
-      const parent = destFolderPageId ?? d.root; // drive top = scoped root (Core/Hiring) or null (Lab/project)
+
+      // For the synthetic group scopes (projects/education), the destFolderPageId
+      // IS the project/offering id when the user picks a synthetic top-level folder.
+      // Resolve the workspace from the picked folder id so the move endpoint
+      // receives the correct workspaceType/workspaceId rather than treating the
+      // project/offering id as a real parentPageId.
+      const destKind = scopeKindOf(destScopeId);
+      let d: { workspaceType: "Lab" | "Project" | "EducationOffering"; workspaceId: string | null; root: string | null };
+      let parent: string | null;
+      if (destKind === "projects-group" || destKind === "education-group") {
+        if (!destFolderPageId) {
+          // Dropped at the bare group root — can't resolve a specific workspace.
+          toast.error("Select a project or offering to move into");
+          return;
+        }
+        // Walk up to the synthetic top-level to get the workspace id, then
+        // determine whether the pick was ON the synthetic root (→ null parent)
+        // or inside a real sub-folder (→ keep real parentPageId).
+        const wsId = resolveWorkspaceId(destScope.items, destFolderPageId);
+        if (!wsId) {
+          toast.error("Select a project or offering to move into");
+          return;
+        }
+        const destNode = destScope.items.find((it) => it.id === destFolderPageId);
+        const realParent = destNode?.parentFolderId === null ? null : destFolderPageId;
+        d = {
+          workspaceType: destKind === "projects-group" ? "Project" : "EducationOffering",
+          workspaceId: wsId,
+          root: null,
+        };
+        parent = realParent;
+      } else {
+        d = scopeDest(destScope) as typeof d;
+        parent = destFolderPageId ?? d.root;
+      }
 
       // No-op if it's already there.
       if (destScopeId === sourceScopeId && (parent ?? null) === (item.parentFolderId ?? null)) return;
@@ -1153,6 +1379,17 @@ export default function DriveHub() {
     if (currentScope.id === "mine") return { scope: { kind: "Member" }, folderPageId: currentFolderId };
     if (currentScope.id === "lab" || currentScope.id === "core" || currentScope.id === "hiring")
       return { scope: { kind: "Lab" }, folderPageId: currentFolderId ?? currentScope.rootFolderId ?? null };
+    if (currentScope.id === "projects" || currentScope.id === "education") {
+      // Resolve the project from the current folder to target the upload correctly.
+      // If we can't resolve (e.g. at the group root), fall back to Lab scope as a
+      // safe no-op (the upload endpoint will reject an invalid folderPageId gracefully).
+      const projectId = resolveWorkspaceId(currentScope.items, currentFolderId);
+      if (!projectId) return { scope: { kind: "Lab" } };
+      // If currentFolderId IS the synthetic project folder, the real parent is null.
+      const node = currentFolderId ? currentScope.items.find((it) => it.id === currentFolderId) : null;
+      const realFolder = node?.parentFolderId === null ? null : currentFolderId;
+      return { scope: { kind: "Project", projectId }, folderPageId: realFolder };
+    }
     return { scope: { kind: "Project", projectId: currentScope.id }, folderPageId: currentFolderId };
   }, [currentScope, currentFolderId]);
   const { inputRef, uploading, uploadError, handleFileChange, uploadFiles } = useDriveFileUpload(
@@ -1164,9 +1401,19 @@ export default function DriveHub() {
 
   // "From template" lands in the scope currently being browsed (project → that
   // project; Lab/Core/Hiring → the Lab workspace, into the scoped root folder).
+  // For the synthetic group scopes, resolve to the project being browsed.
   const templateTarget: TemplateTarget = useMemo(() => {
-    if (!currentScope || scopeKindOf(currentScope.id) !== "project") {
-      const parent = currentFolderId ?? currentScope?.rootFolderId ?? undefined;
+    if (!currentScope) return { targetWorkspaceType: "Lab" };
+    const kind = scopeKindOf(currentScope.id);
+    if (kind === "projects-group") {
+      const projectId = resolveWorkspaceId(currentScope.items, currentFolderId);
+      if (!projectId) return { targetWorkspaceType: "Lab" };
+      const node = currentFolderId ? currentScope.items.find((it) => it.id === currentFolderId) : null;
+      const realParent = node?.parentFolderId === null ? undefined : currentFolderId ?? undefined;
+      return { targetWorkspaceType: "Project", targetWorkspaceId: projectId, targetParentPageId: realParent };
+    }
+    if (kind !== "project") {
+      const parent = currentFolderId ?? currentScope.rootFolderId ?? undefined;
       return { targetWorkspaceType: "Lab", targetParentPageId: parent };
     }
     return {
@@ -1182,7 +1429,12 @@ export default function DriveHub() {
   // Type filter as the site's Select dropdown (matches members/forms filters),
   // collapsing the old chip row into one compact control.
   const filterControl = (
-    <div data-testid="drive-filter">
+    <div data-testid="drive-filter" className="flex items-center gap-2">
+      {/* Term filter: only shown when drive-spaces is on (Projects/Education are
+          term-scoped). My Drive / General / Core / Hiring are not term-filtered. */}
+      {driveSpacesEnabled && terms.length > 0 && (
+        <TermFilter terms={terms} selected={selectedTerm} />
+      )}
       <Select<DriveTypeFilter>
         value={typeFilter}
         onChange={setTypeFilter}

@@ -18,6 +18,9 @@ import { applyAdminSignatures } from "~/signing/lib/presign.server";
 import { notifySignRequest } from "~/signing/lib/notify.server";
 import { AUDIENCE_RESOLVERS } from "~/signing/lib/audiences";
 import { SigningDocumentDetail } from "~/signing/components/SigningDocumentDetail";
+import { parseSessionCookie } from "~/lib/cookies";
+import { signingDraftName } from "~/collab/roomName";
+import { readDocAsBlocks } from "~/collab/read";
 
 export const handle = coreHandle("agreements");
 
@@ -115,7 +118,24 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     versions: document.versions.map((v) => ({ ...v, body: ensureBlocks(v.body) })),
   };
 
-  return { document: document_, isAdmin: roles.isAdmin, rosters };
+  const me = await prisma.user.findUnique({
+    where: { id: auth.user.sub },
+    select: { firstName: true, lastName: true },
+  });
+  const collabToken = parseSessionCookie(request);
+  const collabRoomName = signingDraftName(params.id!);
+  const collabUserName =
+    [me?.firstName, me?.lastName].filter(Boolean).join(" ") || "Core";
+
+  return {
+    document: document_,
+    isAdmin: roles.isAdmin,
+    rosters,
+    collabToken,
+    collabRoomName,
+    collabUserName,
+    currentUserId: auth.user.sub,
+  };
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -129,16 +149,24 @@ export async function action({ request, params }: Route.ActionArgs) {
   const back = `/documents/agreement/${params.id}`;
 
   if (intent === "create-version") {
-    const bodyRaw = formData.get("body") as string;
+    // Snapshot the working draft from the collab room. If the room has never
+    // been written (brand-new document, no CollabDocument row yet), fall back
+    // to a form-posted body for backward-compat with any in-flight request.
+    const roomName = signingDraftName(params.id!);
+    const roomBlocks = await readDocAsBlocks(roomName);
     let body: unknown;
-    try {
-      body = JSON.parse(bodyRaw);
-    } catch {
-      return { error: "Body must be valid JSON" };
+    if (roomBlocks.length > 0) {
+      body = roomBlocks;
+    } else {
+      // Fallback: room empty or not yet persisted — honour the form-posted body.
+      const bodyRaw = formData.get("body") as string | null;
+      try {
+        body = bodyRaw ? JSON.parse(bodyRaw) : [];
+      } catch {
+        body = [];
+      }
+      body = ensureBlocks(body);
     }
-    // New/edited versions store BLOCK JSON: block arrays pass through, a stale
-    // client posting legacy ProseMirror gets converted, junk becomes empty.
-    body = ensureBlocks(body);
     const roles = parseRoles(formData.get("roles") as string | null);
     const last = await prisma.signingDocumentVersion.findFirst({
       where: { documentId: params.id },

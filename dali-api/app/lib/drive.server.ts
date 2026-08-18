@@ -27,11 +27,13 @@ import { canViewFile } from "~/lib/fileAccess.server";
 
 /** Scope definition: `{ kind: "Lab" }` for the lab-wide tree;
  *  `{ kind: "Project", projectId: string }` for a single project;
- *  `{ kind: "Member" }` for the viewer's own private drive (personal notes). */
+ *  `{ kind: "Member" }` for the viewer's own private drive (personal notes);
+ *  `{ kind: "EducationOffering", offeringId: string }` for one offering's workspace. */
 export type DriveScope =
   | { kind: "Lab" }
   | { kind: "Project"; projectId: string }
-  | { kind: "Member" };
+  | { kind: "Member" }
+  | { kind: "EducationOffering"; offeringId: string };
 
 /** Normalised item shape used by the unified tree UI. */
 export type DriveItem =
@@ -48,6 +50,18 @@ export type DriveItem =
       sizeBytes?: number | null;
       /** Whether the viewer has favorited this item (pages only). */
       favorited?: boolean;
+      /**
+       * Signal ①: the `Page.systemKey` of this folder when it is a system-managed
+       * container (e.g. `"drive:core:agreements"`, `"drive:core:templates"`). When
+       * set, the Drive UI hides Delete/Rename and shows a "Managed" hover chip.
+       * Populated in Wave 2 from the Lab page query; null/undefined elsewhere.
+       */
+      systemKey?: string | null;
+      /**
+       * Signal ②: process that owns or binds this item (derived at load time in
+       * Wave 2 — e.g. "Hiring 26F", "Confidentiality"). Unpopulated in Wave 0.
+       */
+      linkedProcess?: { label: string; href: string } | null;
     }
   | {
       type: "doc";
@@ -61,6 +75,11 @@ export type DriveItem =
       sizeBytes?: number | null;
       /** Whether the viewer has favorited this item (pages only). */
       favorited?: boolean;
+      /**
+       * Signal ②: process that owns or binds this item (derived at load time in
+       * Wave 2 — e.g. "Hiring 26F", "Confidentiality"). Unpopulated in Wave 0.
+       */
+      linkedProcess?: { label: string; href: string } | null;
     }
   | {
       type: "file";
@@ -75,6 +94,11 @@ export type DriveItem =
       sizeBytes?: number | null;
       /** Whether the viewer has favorited this item (pages only). */
       favorited?: boolean;
+      /**
+       * Signal ②: process that owns or binds this item (derived at load time in
+       * Wave 2 — e.g. "Hiring 26F", "Confidentiality"). Unpopulated in Wave 0.
+       */
+      linkedProcess?: { label: string; href: string } | null;
     }
   | {
       type: "form";
@@ -89,6 +113,11 @@ export type DriveItem =
       sizeBytes?: number | null;
       /** Whether the viewer has favorited this item (pages only). */
       favorited?: boolean;
+      /**
+       * Signal ②: process that owns or binds this item (derived at load time in
+       * Wave 2 — e.g. "Hiring 26F", "Confidentiality"). Unpopulated in Wave 0.
+       */
+      linkedProcess?: { label: string; href: string } | null;
     }
   | {
       type: "agreement";
@@ -103,6 +132,11 @@ export type DriveItem =
       sizeBytes?: number | null;
       /** Whether the viewer has favorited this item (pages only). */
       favorited?: boolean;
+      /**
+       * Signal ②: process that owns or binds this item (derived at load time in
+       * Wave 2 — e.g. "Hiring 26F", "Confidentiality"). Unpopulated in Wave 0.
+       */
+      linkedProcess?: { label: string; href: string } | null;
     }
   | {
       type: "rubric";
@@ -117,6 +151,11 @@ export type DriveItem =
       sizeBytes?: number | null;
       /** Whether the viewer has favorited this item (pages only). */
       favorited?: boolean;
+      /**
+       * Signal ②: process that owns or binds this item (derived at load time in
+       * Wave 2 — e.g. "Hiring 26F", "Confidentiality"). Unpopulated in Wave 0.
+       */
+      linkedProcess?: { label: string; href: string } | null;
     }
   | {
       type: "emailTemplate";
@@ -131,6 +170,11 @@ export type DriveItem =
       sizeBytes?: number | null;
       /** Whether the viewer has favorited this item (pages only). */
       favorited?: boolean;
+      /**
+       * Signal ②: process that owns or binds this item (derived at load time in
+       * Wave 2 — e.g. "Hiring 26F", "Confidentiality"). Unpopulated in Wave 0.
+       */
+      linkedProcess?: { label: string; href: string } | null;
     };
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
@@ -153,6 +197,8 @@ async function loadLabPages(userSub: string, request?: Request): Promise<DriveIt
       parentPageId: true,
       iconEmoji: true,
       updatedAt: true,
+      // Signal ①: systemKey identifies system-managed folders (Agreements, Templates, etc.)
+      systemKey: true,
       // Fields getPageAccess needs when passed as PageShape
       workspaceType: true,
       workspaceId: true,
@@ -186,6 +232,9 @@ async function loadLabPages(userSub: string, request?: Request): Promise<DriveIt
             iconEmoji: row.iconEmoji,
             updatedAt: row.updatedAt,
             href: `/documents/${row.id}`,
+            // Signal ①: pass systemKey through so the UI can show the Managed chip
+            // and hide destructive actions for system-keyed folders.
+            systemKey: row.systemKey ?? null,
           }
         : {
             type: "doc",
@@ -210,6 +259,53 @@ async function loadProjectPages(projectId: string): Promise<DriveItem[]> {
     where: {
       workspaceType: "Project",
       workspaceId: projectId,
+      archivedAt: null,
+      kind: { in: ["Folder", "FreeForm", "Structured"] },
+    },
+    orderBy: { position: "asc" },
+    select: {
+      id: true,
+      title: true,
+      kind: true,
+      parentPageId: true,
+      iconEmoji: true,
+      updatedAt: true,
+    },
+  });
+
+  return rows.map((row) =>
+    row.kind === "Folder"
+      ? {
+          type: "folder",
+          id: row.id,
+          title: row.title,
+          parentFolderId: row.parentPageId,
+          iconEmoji: row.iconEmoji,
+          updatedAt: row.updatedAt,
+          href: `/documents/${row.id}`,
+        }
+      : {
+          type: "doc",
+          id: row.id,
+          title: row.title,
+          parentFolderId: row.parentPageId,
+          iconEmoji: row.iconEmoji,
+          updatedAt: row.updatedAt,
+          href: `/documents/${row.id}`,
+        },
+  );
+}
+
+/** Load pages (folders + docs) for a single EducationOffering workspace.
+ *  Access is inherited from offering membership: the caller must already have
+ *  verified the viewer is enrolled/instructor/Core before calling this. Every
+ *  page in a visible offering is viewable by that audience — mirrors the project
+ *  scope which trusts the upstream membership gate. */
+async function loadEducationPages(offeringId: string): Promise<DriveItem[]> {
+  const rows = await prisma.page.findMany({
+    where: {
+      workspaceType: "EducationOffering",
+      workspaceId: offeringId,
       archivedAt: null,
       kind: { in: ["Folder", "FreeForm", "Structured"] },
     },
@@ -407,14 +503,20 @@ async function loadFiles(projectIds: string[]): Promise<DriveItem[]> {
  *  responsible for passing `canManageAgreements` only when the viewer isCore;
  *  this function does not re-derive it, so the gate cannot be bypassed by
  *  omission. */
-async function loadAgreements(): Promise<DriveItem[]> {
+async function loadAgreements(
+  // Wave 2: agreements derive their process label from their own `kind` column
+  // rather than the shared linkedProcessMap (their "process" is always the
+  // agreement's semantic role, not a specific cycle). The param is accepted but
+  // unused — kept for API consistency so callers don't need a special branch.
+  _linkedProcessMap?: Map<string, { label: string; href: string }>,
+): Promise<DriveItem[]> {
   const rows = await prisma.signingDocument.findMany({
     // Placed-only: agreements live under the Core ▸ Agreements area (filed by
     // ensureCoreDriveRoot). An unplaced row would be a brand-new one awaiting
     // adoption on the next Core drive visit — don't float it at the Lab root.
     where: { archivedAt: null, folderPageId: { not: null } },
     orderBy: { createdAt: "desc" },
-    select: { id: true, name: true, folderPageId: true, updatedAt: true },
+    select: { id: true, name: true, folderPageId: true, updatedAt: true, kind: true },
   });
   return rows.map((d) => ({
     type: "agreement" as const,
@@ -424,6 +526,8 @@ async function loadAgreements(): Promise<DriveItem[]> {
     iconEmoji: null,
     updatedAt: d.updatedAt,
     href: `/documents/agreement/${d.id}`,
+    // Signal ②: agreements always show their semantic role as the process label.
+    linkedProcess: { label: agreementKindLabel(d.kind), href: `/documents/agreement/${d.id}` },
   }));
 }
 
@@ -432,7 +536,9 @@ async function loadAgreements(): Promise<DriveItem[]> {
  *  drive's Rubrics folder. Placed-only (unplaced ones are awaiting adoption).
  *
  *  NO-WIDENING GUARANTEE: rubrics → Core only, never widened for hiring. */
-async function loadRubrics(): Promise<DriveItem[]> {
+async function loadRubrics(
+  linkedProcessMap?: Map<string, { label: string; href: string }>,
+): Promise<DriveItem[]> {
   const rows = await prisma.rubric.findMany({
     where: { folderPageId: { not: null } },
     orderBy: { updatedAt: "desc" },
@@ -446,6 +552,7 @@ async function loadRubrics(): Promise<DriveItem[]> {
     iconEmoji: null,
     updatedAt: r.updatedAt,
     href: `/hiring/rubrics/${r.id}`,
+    linkedProcess: linkedProcessMap?.get(r.id) ?? null,
   }));
 }
 
@@ -457,7 +564,9 @@ async function loadRubrics(): Promise<DriveItem[]> {
  *
  *  NO-WIDENING GUARANTEE: email templates → Core only. The caller must pass
  *  `canManageEmailTemplates` only when the viewer isCore (never hasHiringAccess). */
-async function loadEmailTemplates(): Promise<DriveItem[]> {
+async function loadEmailTemplates(
+  linkedProcessMap?: Map<string, { label: string; href: string }>,
+): Promise<DriveItem[]> {
   const rows = await prisma.emailTemplate.findMany({
     where: { folderPageId: { not: null } },
     orderBy: { updatedAt: "desc" },
@@ -471,6 +580,7 @@ async function loadEmailTemplates(): Promise<DriveItem[]> {
     iconEmoji: null,
     updatedAt: t.updatedAt,
     href: `/admin/email-templates/${t.id}`,
+    linkedProcess: linkedProcessMap?.get(t.id) ?? null,
   }));
 }
 
@@ -480,8 +590,14 @@ async function loadEmailTemplates(): Promise<DriveItem[]> {
  *  When `scopeFolderIds` is provided the query is narrowed to forms that are
  *  either unplaced (folderPageId null) or placed in one of those folders —
  *  avoiding a full-table scan. Pass all drive folder ids across every scope
- *  to ensure no placed form is missed. */
-export async function loadForms(scopeFolderIds?: string[]): Promise<DriveItem[]> {
+ *  to ensure no placed form is missed.
+ *
+ *  When `linkedProcessMap` is provided (Wave 2, flag ON), each form row gets
+ *  its process linkage annotation. */
+export async function loadForms(
+  scopeFolderIds?: string[],
+  linkedProcessMap?: Map<string, { label: string; href: string }>,
+): Promise<DriveItem[]> {
   const where =
     scopeFolderIds !== undefined
       ? { OR: [{ folderPageId: null }, { folderPageId: { in: scopeFolderIds } }] }
@@ -504,7 +620,149 @@ export async function loadForms(scopeFolderIds?: string[]): Promise<DriveItem[]>
     iconEmoji: null,
     updatedAt: f.updatedAt,
     href: `/forms/edit/${f.id}`,
+    linkedProcess: linkedProcessMap?.get(f.id) ?? null,
   }));
+}
+
+/**
+ * Build a map of item-id → `{ label, href }` for every Drive item that is
+ * process-bound. Called once per Drive load (flag ON) and the result is
+ * passed down into the individual `load*` functions.
+ *
+ * Resolved linkages:
+ *   • forms → hiring cycle (via `ApplicationCycle.applicationFormId`)
+ *   • forms → hiring domain challenge (via `CycleDomainForm`)
+ *   • forms → education offering (via `EducationOffering.applicationFormId`)
+ *   • agreements → their `SigningDocumentKind` label (always-on; kind is enum)
+ *   • email templates → hiring cycle decision/notification binding (first binding wins)
+ *   • email templates → education offering decision binding (first binding wins)
+ *
+ * Rubrics: no process linkage — rubrics are shared across cycles/domains,
+ * so a single back-link would be misleading. Left null.
+ */
+export async function buildLinkedProcessMap(): Promise<Map<string, { label: string; href: string }>> {
+  const map = new Map<string, { label: string; href: string }>();
+
+  // ── Forms: hiring cycles (applicationFormId) ──────────────────────────────
+  const cycleAppForms = await prisma.applicationCycle.findMany({
+    where: { applicationFormId: { not: null } },
+    select: { id: true, name: true, applicationFormId: true },
+  });
+  for (const c of cycleAppForms) {
+    if (c.applicationFormId && !map.has(c.applicationFormId)) {
+      map.set(c.applicationFormId, {
+        label: `Hiring – ${c.name}`,
+        href: `/hiring/lead/cycle/${c.id}`,
+      });
+    }
+  }
+
+  // ── Forms: hiring domain challenges (CycleDomainForm) ────────────────────
+  // Each challenge form is bound to a specific cycle; use the cycle name.
+  const domainForms = await prisma.cycleDomainForm.findMany({
+    select: {
+      formId: true,
+      applicationCycle: { select: { id: true, name: true } },
+    },
+  });
+  for (const df of domainForms) {
+    if (!map.has(df.formId)) {
+      map.set(df.formId, {
+        label: `Hiring – ${df.applicationCycle.name}`,
+        href: `/hiring/lead/cycle/${df.applicationCycle.id}`,
+      });
+    }
+  }
+
+  // ── Forms: education offerings (applicationFormId) ────────────────────────
+  const offeringAppForms = await prisma.educationOffering.findMany({
+    where: { applicationFormId: { not: null } },
+    select: { id: true, title: true, applicationFormId: true },
+  });
+  for (const o of offeringAppForms) {
+    if (o.applicationFormId && !map.has(o.applicationFormId)) {
+      map.set(o.applicationFormId, {
+        label: o.title,
+        href: `/education/manage/${o.id}`,
+      });
+    }
+  }
+
+  // ── Agreements: kind label ─────────────────────────────────────────────────
+  // Agreements carry their kind on the row itself (loaded in loadAgreements).
+  // The label is derived per-row there rather than here — see loadAgreements.
+
+  // ── Email templates: hiring decision bindings ─────────────────────────────
+  const cycleDecisionBindings = await prisma.cycleDecisionEmail.findMany({
+    select: {
+      emailTemplateVersion: { select: { templateId: true } },
+      applicationCycle: { select: { id: true, name: true } },
+    },
+  });
+  for (const b of cycleDecisionBindings) {
+    const tId = b.emailTemplateVersion.templateId;
+    if (!map.has(tId)) {
+      map.set(tId, {
+        label: `Hiring – ${b.applicationCycle.name}`,
+        href: `/hiring/lead/cycle/${b.applicationCycle.id}`,
+      });
+    }
+  }
+
+  // ── Email templates: hiring notification bindings ─────────────────────────
+  const cycleNotifBindings = await prisma.cycleNotificationEmail.findMany({
+    select: {
+      emailTemplateVersion: { select: { templateId: true } },
+      applicationCycle: { select: { id: true, name: true } },
+    },
+  });
+  for (const b of cycleNotifBindings) {
+    const tId = b.emailTemplateVersion.templateId;
+    if (!map.has(tId)) {
+      map.set(tId, {
+        label: `Hiring – ${b.applicationCycle.name}`,
+        href: `/hiring/lead/cycle/${b.applicationCycle.id}`,
+      });
+    }
+  }
+
+  // ── Email templates: education offering decision bindings ─────────────────
+  const eduDecisionBindings = await prisma.educationDecisionEmail.findMany({
+    select: {
+      emailTemplateVersion: { select: { templateId: true } },
+      offering: { select: { id: true, title: true } },
+    },
+  });
+  for (const b of eduDecisionBindings) {
+    const tId = b.emailTemplateVersion.templateId;
+    if (!map.has(tId)) {
+      map.set(tId, {
+        label: b.offering.title,
+        href: `/education/manage/${b.offering.id}`,
+      });
+    }
+  }
+
+  return map;
+}
+
+/**
+ * Derive a `linkedProcess` entry from a `SigningDocumentKind` enum value.
+ * Agreements always have a meaningful kind label; there is no single "cycle"
+ * to link to (confidentiality is bound per-cycle at signing time, not on the
+ * document template itself), so we show the agreement's semantic role instead.
+ */
+export function agreementKindLabel(kind: string): string {
+  switch (kind) {
+    case "MemberAgreement":
+      return "Member onboarding";
+    case "MentorshipAgreement":
+      return "Mentorship";
+    case "Confidentiality":
+      return "Hiring – confidentiality";
+    default:
+      return "General agreement";
+  }
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -556,6 +814,12 @@ export interface LoadDriveScopeOptions {
    * partition per scope, instead of each scope firing its own full-table scan.
    */
   preloadedForms?: DriveItem[];
+  /**
+   * Signal ②: pre-built map of item-id → process linkage, built once per Drive
+   * load by `buildLinkedProcessMap()` when the `drive-spaces` flag is ON.
+   * When omitted (flag OFF or non-managed scopes) no pills are rendered.
+   */
+  linkedProcessMap?: Map<string, { label: string; href: string }>;
 }
 
 /**
@@ -579,6 +843,7 @@ export async function loadDriveScope({
   canManageEmailTemplates = false,
   request,
   preloadedForms,
+  linkedProcessMap,
 }: LoadDriveScopeOptions): Promise<DriveItem[]> {
   if (scope.kind === "Member") {
     // Private drive: the viewer's own personal notes + files, owner-scoped. No
@@ -601,14 +866,22 @@ export async function loadDriveScope({
       // Agreements, rubrics, and email templates are all Core-only artifacts
       // living under the Core drive (Agreements / Rubrics / Templates). All
       // gated on real Core, derived upstream — never widened for the hiring team.
-      canManageAgreements ? loadAgreements() : Promise.resolve([] as DriveItem[]),
-      canManageAgreements ? loadRubrics() : Promise.resolve([] as DriveItem[]),
-      canManageEmailTemplates ? loadEmailTemplates() : Promise.resolve([] as DriveItem[]),
+      canManageAgreements ? loadAgreements(linkedProcessMap) : Promise.resolve([] as DriveItem[]),
+      canManageAgreements ? loadRubrics(linkedProcessMap) : Promise.resolve([] as DriveItem[]),
+      canManageEmailTemplates ? loadEmailTemplates(linkedProcessMap) : Promise.resolve([] as DriveItem[]),
     ]);
     // Use preloaded forms when the caller has already fetched them (avoids a
     // repeated full-table scan when loadDriveScopes pre-fetches all at once).
-    const forms = preloadedForms ?? (canViewForms ? await loadForms() : []);
+    const forms = preloadedForms ?? (canViewForms ? await loadForms(undefined, linkedProcessMap) : []);
     return [...pages, ...files, ...forms, ...agreements, ...rubrics, ...emailTemplates];
+  }
+
+  // EducationOffering scope — pages only; offerings don't own files.
+  if (scope.kind === "EducationOffering") {
+    const { offeringId } = scope;
+    const pages = await loadEducationPages(offeringId);
+    const forms = preloadedForms ?? (canViewForms ? await loadForms(undefined, linkedProcessMap) : []);
+    return [...pages, ...forms];
   }
 
   // Project scope
@@ -623,7 +896,7 @@ export async function loadDriveScope({
   ]);
   // Use preloaded forms when the caller has already fetched them (avoids a
   // repeated full-table scan when loadDriveScopes pre-fetches all at once).
-  const forms = preloadedForms ?? (canViewForms ? await loadForms() : []);
+  const forms = preloadedForms ?? (canViewForms ? await loadForms(undefined, linkedProcessMap) : []);
 
   return [...pages, ...files, ...forms];
 }

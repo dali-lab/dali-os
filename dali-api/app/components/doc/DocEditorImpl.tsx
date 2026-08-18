@@ -135,7 +135,7 @@ function CollabDocInner(
   props: ResolvedProps & { collab: DocCollabConfig; entry: CollabDocEntry },
 ) {
   const { entry } = props;
-  const { userName, userId } = props.collab;
+  const { userName, userId, seedContent } = props.collab;
   const schema = useDocSchema(props.features);
   const dictionary = useDocDictionary(props.placeholder);
   const threadStore = useThreadStore(props.comments);
@@ -202,6 +202,45 @@ function CollabDocInner(
     const um = findCollabUndoManager(editor.prosemirrorState);
     if (um) um.destroy = () => {};
   }, [editor]);
+
+  // One-shot seed: if the caller supplied seedContent (e.g. the latest agreement
+  // version body) and the Y.Doc is empty after the server syncs, write the seed
+  // blocks into the editor so the working draft starts populated rather than
+  // blank. Never fires when the room already has content — protects in-progress
+  // work from being overwritten.
+  const seedApplied = useRef(false);
+  useEffect(() => {
+    if (!seedContent || seedApplied.current) return;
+    const normalized = normalizeInitialContent<DocPartialBlock>(seedContent);
+    if (!normalized || normalized.length === 0) return;
+
+    const tryApply = () => {
+      if (seedApplied.current) return;
+      const fragment = entry.ydoc.getXmlFragment(BLOCKNOTE_FRAGMENT);
+      // Only seed when the room is truly empty — either new (no server row) or
+      // the server returned an empty document.
+      if (fragment.length > 0) {
+        seedApplied.current = true;
+        return;
+      }
+      seedApplied.current = true;
+      // editor.document is the BlockNote view; when empty it holds one
+      // default paragraph block. Replace all with the seed.
+      editor.replaceBlocks(editor.document, normalized as DocPartialBlock[]);
+    };
+
+    if (entry.provider.synced) {
+      // Already synced (fast reconnect / IndexedDB hit).
+      tryApply();
+    } else {
+      entry.provider.on("synced", tryApply);
+      return () => {
+        entry.provider.off("synced", tryApply);
+      };
+    }
+  // editor and entry are stable for the lifetime of this mount (keyed per room).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entry, editor]);
 
   return <DocView {...props} editor={editor} collabEntry={entry} />;
 }

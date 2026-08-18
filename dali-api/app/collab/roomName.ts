@@ -10,6 +10,9 @@
  *   interview:{interviewId}:recommendation
  *   doc:{pageId}:body                  FreeForm Page bodies (DocumentEditor)
  *   presence:{pageId}                  ephemeral, no persistence
+ *   signing:{documentId}:draft         SigningDocument body — prose (BlockNote)
+ *   form:{formId}:draft                Form question list — structured Y.Array
+ *   rubric:{rubricId}:draft            Rubric criteria list — structured Y.Array
  */
 
 export const PRESENCE_ROOM_PREFIX = "presence:";
@@ -26,4 +29,22 @@ export function presenceRoomName(pageId: string): string {
 
 export function isPresenceRoom(name: string): boolean {
   return name.startsWith(PRESENCE_ROOM_PREFIX);
+}
+
+// ─── Drive editor draft rooms ────────────────────────────────────────────────
+
+/** Prose draft room for a SigningDocument body. Rendered by DocEditor with the
+ *  "agreement" feature preset. */
+export function signingDraftName(documentId: string): string {
+  return `signing:${documentId}:draft`;
+}
+
+/** Structured draft room for a Form's working question list (Y.Array). */
+export function formDraftName(formId: string): string {
+  return `form:${formId}:draft`;
+}
+
+/** Structured draft room for a Rubric's criteria list (Y.Array). */
+export function rubricDraftName(rubricId: string): string {
+  return `rubric:${rubricId}:draft`;
 }
