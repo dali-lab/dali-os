@@ -73,6 +73,7 @@ import {
   type TaskStatus,
   type Priority,
 } from "../lib/task-board";
+import { groupFilesByEpic } from "../lib/file-groups";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const p = (data as { project?: { name: string } } | undefined)?.project;
@@ -1676,6 +1677,7 @@ export default function ProjectDetail() {
           documents={documents}
           pinnedDocuments={pinnedDocuments}
           files={files}
+          fileEpics={boardOptions.epics}
           upcomingMeetings={upcomingMeetings}
           recentActivity={recentActivity}
           canEdit={canEdit}
@@ -2799,6 +2801,7 @@ function OverviewTab({
   documents,
   pinnedDocuments,
   files,
+  fileEpics,
   upcomingMeetings,
   recentActivity,
   canEdit,
@@ -2820,6 +2823,7 @@ function OverviewTab({
   documents: LoaderData["documents"];
   pinnedDocuments: LoaderData["pinnedDocuments"];
   files: LoaderData["files"];
+  fileEpics: LoaderData["boardOptions"]["epics"];
   upcomingMeetings: LoaderData["upcomingMeetings"];
   recentActivity: LoaderData["recentActivity"];
   canEdit: boolean;
@@ -2993,6 +2997,7 @@ function OverviewTab({
         documents={documents}
         pinnedDocuments={pinnedDocuments}
         files={files}
+        fileEpics={fileEpics}
         canEdit={canEdit}
         hasActivePartner={hasActivePartner}
       />
@@ -3542,6 +3547,7 @@ function DocumentsBlock({
   documents,
   pinnedDocuments,
   files,
+  fileEpics,
   canEdit,
   hasActivePartner,
 }: {
@@ -3549,6 +3555,7 @@ function DocumentsBlock({
   documents: LoaderData["documents"];
   pinnedDocuments: LoaderData["pinnedDocuments"];
   files: LoaderData["files"];
+  fileEpics: LoaderData["boardOptions"]["epics"];
   canEdit: boolean;
   hasActivePartner: boolean;
 }) {
@@ -3895,6 +3902,9 @@ function DocumentsBlock({
     }
   }
 
+  // "Folders" = the default folder tree; "epics" = files grouped by epic.
+  const [fileView, setFileView] = useState<"folders" | "epics">("folders");
+
   // Derived: files split by folder placement so the tree can render them inline.
   const rootFiles = files.filter((f) => f.folderPageId === null);
   const filesByFolder = new Map<string, LoaderData["files"]>();
@@ -3904,6 +3914,10 @@ function DocumentsBlock({
     if (bucket) bucket.push(f);
     else filesByFolder.set(f.folderPageId, [f]);
   }
+
+  // Epic-grouped view — only computed when the toggle is active or there are
+  // files to group (avoids the import being dead weight on every render).
+  const epicGroups = groupFilesByEpic(files, fileEpics);
 
   function renderFileRow(f: LoaderData["files"][number], indent: boolean) {
     return (
@@ -4000,6 +4014,33 @@ function DocumentsBlock({
             Open-in-Drive link jumps to it in the main Drive; create actions
             consolidate into one New ▾ menu. */}
         <div className="flex items-center gap-2">
+          {/* View toggle — only shown when there are uploaded files to group. */}
+          {files.length > 0 && (
+            <div className="flex items-center rounded-md border border-border text-xs font-medium overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setFileView("folders")}
+                className={`px-2 py-1 transition-colors ${
+                  fileView === "folders"
+                    ? "bg-muted text-foreground"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                }`}
+              >
+                Folders
+              </button>
+              <button
+                type="button"
+                onClick={() => setFileView("epics")}
+                className={`px-2 py-1 transition-colors border-l border-border ${
+                  fileView === "epics"
+                    ? "bg-muted text-foreground"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                }`}
+              >
+                By epic
+              </button>
+            </div>
+          )}
           <Link
             to={`/drive?scope=${projectId}`}
             className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-accent-coral transition-colors"
@@ -4043,6 +4084,49 @@ function DocumentsBlock({
 
       {isEmpty ? (
         <p className="text-sm text-muted-foreground italic">No documents yet.</p>
+      ) : fileView === "epics" ? (
+        /* ── By-epic view: files only, clustered under their linked epic. ── */
+        <div className="flex flex-col gap-4">
+          {epicGroups.epicGroups.map((g) => (
+            <div key={g.id}>
+              <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-1">
+                {g.title}
+                <span className="ml-1.5 normal-case tracking-normal">({g.files.length})</span>
+              </h3>
+              <div className="flex flex-col divide-y divide-border">
+                {g.files.map((f) => renderFileRow(f, false))}
+              </div>
+            </div>
+          ))}
+          {epicGroups.otherWorkFiles.length > 0 && (
+            <div>
+              <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-1">
+                Other work files
+                <span className="ml-1.5 normal-case tracking-normal">({epicGroups.otherWorkFiles.length})</span>
+              </h3>
+              <div className="flex flex-col divide-y divide-border">
+                {epicGroups.otherWorkFiles.map((f) => renderFileRow(f, false))}
+              </div>
+            </div>
+          )}
+          {epicGroups.generalFiles.length > 0 && (
+            <div>
+              <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-1">
+                Other files
+                <span className="ml-1.5 normal-case tracking-normal">({epicGroups.generalFiles.length})</span>
+              </h3>
+              <div className="flex flex-col divide-y divide-border">
+                {epicGroups.generalFiles.map((f) => renderFileRow(f, false))}
+              </div>
+            </div>
+          )}
+          {files.length > 0 &&
+            epicGroups.epicGroups.length === 0 &&
+            epicGroups.otherWorkFiles.length === 0 &&
+            epicGroups.generalFiles.length === 0 && (
+              <p className="text-sm text-muted-foreground italic">No files to group.</p>
+            )}
+        </div>
       ) : (
         <div
           onDragOver={
