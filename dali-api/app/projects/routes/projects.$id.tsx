@@ -13,7 +13,7 @@ import {
   type ShouldRevalidateFunctionArgs,
 } from "react-router";
 import { Select, Menu } from "~/components/ui/floating";
-import { CalendarDays, CalendarX, Check, Globe, Handshake, History, Pencil, Pin, X, Settings, Folder, FolderInput, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink, MoreHorizontal, ExternalLink, Star } from "lucide-react";
+import { CalendarDays, CalendarPlus, CalendarX, Check, Globe, Handshake, History, Pencil, Pin, X, Settings, Folder, FolderInput, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink, MoreHorizontal, ExternalLink, Star } from "lucide-react";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { MoveToDialog } from "~/components/sharing/MoveToDialog";
@@ -1863,9 +1863,18 @@ function ProjectHeader({
             ) : null)}
           </div>
 
-          {canEdit && (
-            <div className="flex items-center gap-1.5 shrink-0">
-              {editing ? (
+          <div className="flex items-center gap-1.5 shrink-0">
+            {!editing && (
+              <Link
+                to={`/calendar?tab=schedule&project=${project.id}`}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md border border-border text-foreground hover:bg-muted/50 transition-colors"
+              >
+                <CalendarPlus className="w-4 h-4" />
+                Schedule meeting
+              </Link>
+            )}
+            {canEdit &&
+              (editing ? (
                 <>
                   <Tooltip label="Cancel">
                     <button
@@ -1906,9 +1915,8 @@ function ProjectHeader({
                     <Pencil className="w-3.5 h-3.5" />
                   </button>
                 </Tooltip>
-              )}
-            </div>
-          )}
+              ))}
+          </div>
         </div>
         {subtitle}
       </div>
