@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
   AddTimeEntrySchema,
+  CalendarActionSchema,
+  SetMeetingCoreSchema,
+  ToggleMeetingTimeEntrySchema,
   UpdateTimeEntrySchema,
   validateTimeEntryRange,
 } from "~/lib/calendar-schemas";
@@ -110,6 +113,38 @@ describe("UpdateTimeEntrySchema", () => {
         assignmentType: null,
         roleRefId: null,
       }).success,
+    ).toBe(false);
+  });
+});
+
+describe("meeting detail-popover toggles", () => {
+  it("parses both toggles through the action union", () => {
+    expect(
+      CalendarActionSchema.safeParse({
+        intent: "toggle-meeting-time-entry",
+        meetingId: "m-1",
+        onTimesheet: true,
+      }).success,
+    ).toBe(true);
+    expect(
+      CalendarActionSchema.safeParse({
+        intent: "set-meeting-core",
+        meetingId: "m-1",
+        isCoreMeeting: false,
+      }).success,
+    ).toBe(true);
+  });
+
+  it("requires a meeting id and an explicit boolean", () => {
+    expect(
+      ToggleMeetingTimeEntrySchema.safeParse({
+        intent: "toggle-meeting-time-entry",
+        meetingId: "",
+        onTimesheet: true,
+      }).success,
+    ).toBe(false);
+    expect(
+      SetMeetingCoreSchema.safeParse({ intent: "set-meeting-core", meetingId: "m-1" }).success,
     ).toBe(false);
   });
 });
