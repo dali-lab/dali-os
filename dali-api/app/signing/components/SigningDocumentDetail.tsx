@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Form, Link, useLoaderData } from "react-router";
+import { Form, Link, useLoaderData, useActionData } from "react-router";
 import { Menu } from "~/components/ui/floating";
 import {
   Plus,
@@ -216,6 +216,7 @@ function SigningInsertControls({ editor }: { editor: DocEditorInstance | null })
 
 export function SigningDocumentDetail() {
   const { document, isAdmin } = useLoaderData<typeof loader>();
+  const actionData = useActionData<{ error?: string }>();
   const tz = useUserTimeZone();
   const confirmSubmit = useConfirmSubmit();
 
@@ -247,6 +248,7 @@ export function SigningDocumentDetail() {
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           {isRenaming ? (
+            <>
             <Form method="post" className="flex items-center gap-2" onSubmit={() => setIsRenaming(false)}>
               <input type="hidden" name="intent" value="rename" />
               <input
@@ -254,7 +256,7 @@ export function SigningDocumentDetail() {
                 name="name"
                 value={draftName}
                 onChange={(e) => setDraftName(e.target.value)}
-                className="px-3 py-2 text-base border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-accent-coral min-w-[18rem]"
+                className="px-3 py-2 text-base border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-accent-coral/30 min-w-[18rem]"
                 autoFocus
               />
               <button type="submit" className="px-3 py-2 text-sm font-medium text-white bg-accent-coral rounded-md hover:bg-accent-coral/90">
@@ -266,11 +268,15 @@ export function SigningDocumentDetail() {
                   setDraftName(document.name);
                   setIsRenaming(false);
                 }}
-                className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-gray-300 rounded-md hover:bg-muted/50"
+                className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-border rounded-md hover:bg-muted/50"
               >
                 Cancel
               </button>
             </Form>
+            {actionData?.error && (
+              <p className="mt-1 text-xs text-red-600">{actionData.error}</p>
+            )}
+            </>
           ) : (
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-bold text-foreground">{document.name}</h1>
@@ -416,11 +422,14 @@ export function SigningDocumentDetail() {
                     </div>
                   )}
                 </div>
+                {actionData?.error && (
+                  <p className="text-xs text-red-600">{actionData.error}</p>
+                )}
                 <div className="flex justify-end gap-2">
                   <button
                     type="button"
                     onClick={() => setIsCreating(false)}
-                    className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-gray-300 rounded-md hover:bg-muted/50"
+                    className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-border rounded-md hover:bg-muted/50"
                   >
                     Cancel
                   </button>

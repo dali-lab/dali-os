@@ -284,6 +284,40 @@ export async function authorizeCollabDoc(
     return submission.studentId === userSub || isInstructor ? allow : deny;
   }
 
+  // signing:{documentId}:draft — prose draft for a SigningDocument body.
+  // Edit gate matches the admin.agreements.$id loader: Core-only.
+  if (entity === "signing") {
+    const doc = await prisma.signingDocument.findUnique({
+      where: { id },
+      select: { id: true, archivedAt: true },
+    });
+    if (!doc || doc.archivedAt !== null) return deny;
+    return (await isCore(userSub)) ? allow : deny;
+  }
+
+  // form:{formId}:draft — structured draft for a Form's question list.
+  // Edit gate matches the forms.edit.$formId loader: Core-only.
+  if (entity === "form") {
+    const form = await prisma.form.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!form) return deny;
+    return (await isCore(userSub)) ? allow : deny;
+  }
+
+  // rubric:{rubricId}:draft — structured draft for a Rubric's criteria list.
+  // Edit gate matches the rubrics.$id loader: requireCoreOrDomainLead.
+  if (entity === "rubric") {
+    const rubric = await prisma.rubric.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!rubric) return deny;
+    const [core, lead] = await Promise.all([isCore(userSub), isDomainLead(userSub)]);
+    return core || lead ? allow : deny;
+  }
+
   // Registry-backed surfaces (mentorship notes/templates, …)
   const source = COLLAB_SOURCES[entity];
   if (source) {

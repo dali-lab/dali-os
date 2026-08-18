@@ -112,7 +112,9 @@ export const DRIVE_SPACES: DriveSpaceDef[] = [
     label: "Core",
     icon: Shield,
     backing: "lab-scoped-root",
-    systemKey: "drive:space:core",
+    // Deferring the rekey to Wave 4 (§15): keep the existing systemKey so no
+    // migration is needed — the registry uses the live value, not "drive:space:core".
+    systemKey: "drive:core-root",
     groupQuery: "core",
     gate: (r) => r.isCore,
   },
@@ -121,7 +123,8 @@ export const DRIVE_SPACES: DriveSpaceDef[] = [
     label: "Hiring",
     icon: Briefcase,
     backing: "lab-scoped-root",
-    systemKey: "drive:space:hiring",
+    // Same rekey deferral: "drive:hiring-root" matches ensureHiringDriveRoot.
+    systemKey: "drive:hiring-root",
     groupQuery: "hiring",
     gate: (r) => r.hasHiringAccess,
   },

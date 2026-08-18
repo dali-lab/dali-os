@@ -27,11 +27,13 @@ import { canViewFile } from "~/lib/fileAccess.server";
 
 /** Scope definition: `{ kind: "Lab" }` for the lab-wide tree;
  *  `{ kind: "Project", projectId: string }` for a single project;
- *  `{ kind: "Member" }` for the viewer's own private drive (personal notes). */
+ *  `{ kind: "Member" }` for the viewer's own private drive (personal notes);
+ *  `{ kind: "EducationOffering", offeringId: string }` for one offering's workspace. */
 export type DriveScope =
   | { kind: "Lab" }
   | { kind: "Project"; projectId: string }
-  | { kind: "Member" };
+  | { kind: "Member" }
+  | { kind: "EducationOffering"; offeringId: string };
 
 /** Normalised item shape used by the unified tree UI. */
 export type DriveItem =
@@ -245,6 +247,53 @@ async function loadProjectPages(projectId: string): Promise<DriveItem[]> {
     where: {
       workspaceType: "Project",
       workspaceId: projectId,
+      archivedAt: null,
+      kind: { in: ["Folder", "FreeForm", "Structured"] },
+    },
+    orderBy: { position: "asc" },
+    select: {
+      id: true,
+      title: true,
+      kind: true,
+      parentPageId: true,
+      iconEmoji: true,
+      updatedAt: true,
+    },
+  });
+
+  return rows.map((row) =>
+    row.kind === "Folder"
+      ? {
+          type: "folder",
+          id: row.id,
+          title: row.title,
+          parentFolderId: row.parentPageId,
+          iconEmoji: row.iconEmoji,
+          updatedAt: row.updatedAt,
+          href: `/documents/${row.id}`,
+        }
+      : {
+          type: "doc",
+          id: row.id,
+          title: row.title,
+          parentFolderId: row.parentPageId,
+          iconEmoji: row.iconEmoji,
+          updatedAt: row.updatedAt,
+          href: `/documents/${row.id}`,
+        },
+  );
+}
+
+/** Load pages (folders + docs) for a single EducationOffering workspace.
+ *  Access is inherited from offering membership: the caller must already have
+ *  verified the viewer is enrolled/instructor/Core before calling this. Every
+ *  page in a visible offering is viewable by that audience — mirrors the project
+ *  scope which trusts the upstream membership gate. */
+async function loadEducationPages(offeringId: string): Promise<DriveItem[]> {
+  const rows = await prisma.page.findMany({
+    where: {
+      workspaceType: "EducationOffering",
+      workspaceId: offeringId,
       archivedAt: null,
       kind: { in: ["Folder", "FreeForm", "Structured"] },
     },
@@ -644,6 +693,14 @@ export async function loadDriveScope({
     // repeated full-table scan when loadDriveScopes pre-fetches all at once).
     const forms = preloadedForms ?? (canViewForms ? await loadForms() : []);
     return [...pages, ...files, ...forms, ...agreements, ...rubrics, ...emailTemplates];
+  }
+
+  // EducationOffering scope — pages only; offerings don't own files.
+  if (scope.kind === "EducationOffering") {
+    const { offeringId } = scope;
+    const pages = await loadEducationPages(offeringId);
+    const forms = preloadedForms ?? (canViewForms ? await loadForms() : []);
+    return [...pages, ...forms];
   }
 
   // Project scope

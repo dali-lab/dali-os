@@ -4,7 +4,7 @@ import type { Server as HocuspocusServer } from "@hocuspocus/server";
 import { prisma } from "~/lib/db";
 import { blocksToPlainText } from "~/components/doc/schema/configs";
 import { isPresenceRoom } from "./roomName";
-import { seedRegistryDoc, syncRegistryDocBack } from "./sources";
+import { isStructuredRoom, seedRegistryDoc, syncRegistryDocBack } from "./sources";
 import {
   BLOCKNOTE_FRAGMENT,
   LEGACY_PM_FRAGMENT,
@@ -12,7 +12,7 @@ import {
   plainTextToBlocks,
 } from "./blocknote-server";
 import { mapPmDocToBlocks } from "./legacy/pm-to-blocknote";
-import { ydocToBlocks } from "./read";
+import { getStructuredData, ydocToBlocks } from "./read";
 
 const SNAPSHOT_MIN_INTERVAL_MS = 30_000;
 
@@ -252,6 +252,21 @@ export interface StoredDocState {
 }
 
 /**
+ * Serialize a structured (Y.Array / Y.Map) room to a compact JSON string for
+ * the CollabDocumentVersion.plainText mirror. getPlainText() returns empty
+ * string for these rooms (no BlockNote fragment), so structured rooms use this
+ * instead. The result is a stable JSON encoding of the shared-type map so the
+ * version preview still renders something human-readable.
+ */
+function getStructuredPlainText(doc: Y.Doc): string {
+  try {
+    return JSON.stringify(getStructuredData(doc));
+  } catch {
+    return "";
+  }
+}
+
+/**
  * Store the Y.Doc binary state into CollabDocument, and sync the plain text
  * back to the source field so existing queries/views remain correct.
  * Returns the encoded state + plain text so callers (e.g. maybeSnapshot) can
@@ -265,7 +280,13 @@ export async function storeDocument(
 
   // Prisma v7 Bytes expects Uint8Array<ArrayBuffer> specifically
   const state = Y.encodeStateAsUpdate(doc) as Uint8Array<ArrayBuffer>;
-  const plainText = getPlainText(doc);
+
+  // Structured rooms (form:*, rubric:*) store Y.Array/Y.Map — getPlainText()
+  // runs through the BlockNote fragment path and returns "" for them. Use the
+  // JSON serialiser instead so the version snapshot plainText mirror is useful.
+  const parsed = parseDocName(name);
+  const structured = parsed ? isStructuredRoom(parsed.entity) : false;
+  const plainText = structured ? getStructuredPlainText(doc) : getPlainText(doc);
 
   // Upsert the Y.Doc binary state
   await prisma.collabDocument.upsert({
@@ -275,7 +296,6 @@ export async function storeDocument(
   });
 
   // Sync plain text back to source field
-  const parsed = parseDocName(name);
   if (!parsed) return { state, plainText };
 
   // Registry-backed surfaces sync full block JSON back to their source column;

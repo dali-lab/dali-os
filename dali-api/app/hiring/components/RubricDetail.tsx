@@ -5,7 +5,6 @@ import {
   Clock,
   UserIcon,
   Trash2,
-  GripVertical,
 } from 'lucide-react'
 import type { loader } from '~/hiring/routes/rubrics.$id'
 import type { RubricCriterion } from '~/types'
@@ -85,13 +84,13 @@ export function RubricDetail() {
             <div className="p-4 border-b border-border bg-muted/50">
               <h3 className="font-bold text-foreground">Version History</h3>
             </div>
-            <div className="divide-y divide-gray-100 max-h-[600px] overflow-y-auto">
+            <div className="divide-y divide-border max-h-[600px] overflow-y-auto">
               {isCreatingVersion && (
-                <button className="w-full text-left p-4 bg-blue-50 border-l-4 border-blue-600">
+                <button className="w-full text-left p-4 bg-accent-coral/5 border-l-4 border-accent-coral">
                   <div className="flex justify-between items-center mb-1">
-                    <span className="font-bold text-blue-900">Drafting New...</span>
+                    <span className="font-bold text-foreground">Drafting New...</span>
                   </div>
-                  <span className="text-xs text-blue-600">Unsaved changes</span>
+                  <span className="text-xs text-accent-coral">Unsaved changes</span>
                 </button>
               )}
               {rubric.versions
@@ -107,7 +106,7 @@ export function RubricDetail() {
                       }}
                       className={`w-full text-left p-4 transition-colors ${
                         !isCreatingVersion && selectedVersionId === version.id
-                          ? 'bg-blue-50 border-l-4 border-blue-600'
+                          ? 'bg-accent-coral/5 border-l-4 border-accent-coral'
                           : 'hover:bg-muted/50 border-l-4 border-transparent'
                       }`}
                     >
@@ -115,7 +114,7 @@ export function RubricDetail() {
                         <span
                           className={`font-bold ${
                             !isCreatingVersion && selectedVersionId === version.id
-                              ? 'text-blue-900'
+                              ? 'text-foreground'
                               : 'text-foreground'
                           }`}
                         >
@@ -177,13 +176,10 @@ export function RubricDetail() {
                         key={c.key}
                         className="bg-card border border-border rounded-lg p-4 flex gap-3 group"
                       >
-                        <div className="text-muted-foreground/70 mt-1">
-                          <GripVertical className="w-4 h-4" />
-                        </div>
                         <div className="flex-1">
                           <div className="flex justify-between items-start">
                             <h4 className="font-bold text-foreground">{c.label}</h4>
-                            <span className="text-xs font-medium bg-blue-50 text-blue-700 px-2 py-1 rounded">
+                            <span className="text-xs font-medium bg-muted text-muted-foreground px-2 py-1 rounded">
                               Max: {c.maxScore}
                             </span>
                           </div>
@@ -200,7 +196,7 @@ export function RubricDetail() {
                       </div>
                     ))}
                     {criteria.length === 0 && (
-                      <div className="text-center py-8 border-2 border-dashed border-gray-300 rounded-lg">
+                      <div className="text-center py-8 border-2 border-dashed border-border rounded-lg">
                         <p className="text-muted-foreground">No criteria added yet.</p>
                       </div>
                     )}
@@ -216,7 +212,7 @@ export function RubricDetail() {
                             placeholder="Label (e.g. Communication)"
                             value={newLabel}
                             onChange={(e) => setNewLabel(e.target.value)}
-                            className="w-full border border-gray-300 rounded-md p-2 text-sm text-foreground bg-card focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full border border-border rounded-md p-2 text-sm text-foreground bg-card focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
                           />
                         </div>
                         <div className="col-span-1">
@@ -227,7 +223,7 @@ export function RubricDetail() {
                             placeholder="Max Score"
                             value={newMaxScore}
                             onChange={(e) => setNewMaxScore(parseInt(e.target.value) || 5)}
-                            className="w-full border border-gray-300 rounded-md p-2 text-sm text-foreground bg-card focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full border border-border rounded-md p-2 text-sm text-foreground bg-card focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
                           />
                         </div>
                       </div>
@@ -237,7 +233,7 @@ export function RubricDetail() {
                         value={newDescription}
                         onChange={(e) => setNewDescription(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && handleAddCriterion()}
-                        className="w-full border border-gray-300 rounded-md p-2 text-sm text-foreground bg-card focus:ring-blue-500 focus:border-blue-500"
+                        className="w-full border border-border rounded-md p-2 text-sm text-foreground bg-card focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
                       />
                       <button
                         onClick={handleAddCriterion}
@@ -286,7 +282,7 @@ export function RubricDetail() {
                     <div key={c.key} className="bg-card border border-border rounded-lg p-4">
                       <div className="flex justify-between items-start">
                         <h4 className="font-bold text-foreground">{c.label}</h4>
-                        <span className="text-xs font-medium bg-blue-50 text-blue-700 px-2 py-1 rounded">
+                        <span className="text-xs font-medium bg-muted text-muted-foreground px-2 py-1 rounded">
                           Max: {c.maxScore}
                         </span>
                       </div>

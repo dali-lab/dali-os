@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Form, useLoaderData } from 'react-router'
+import { Form, useLoaderData, useActionData } from 'react-router'
 import { Plus, Clock, UserIcon, Pencil, AlertTriangle } from 'lucide-react'
 import type { loader } from '~/admin/routes/admin.email-templates.$id'
 import {
@@ -12,17 +12,17 @@ import { useUserTimeZone } from '~/hooks/useUserTimeZone'
 
 function VariableReferencePanel() {
   return (
-    <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2">
-      <p className="text-xs font-medium text-blue-900">Available placeholders</p>
-      <p className="text-xs text-blue-900/80 mt-0.5">
+    <div className="rounded-md border border-border bg-muted/50 px-3 py-2">
+      <p className="text-xs font-medium text-foreground">Available placeholders</p>
+      <p className="text-xs text-muted-foreground mt-0.5">
         Templates are bound to a slot on the cycle Setup tab; not every slot fills every variable. The
         editor warns about unknown placeholders, and the cycle preview flags ones the bound slot won't fill.
       </p>
       <ul className="mt-2 space-y-0.5">
         {ALL_TEMPLATE_VARIABLES.map((name) => (
-          <li key={name} className="text-xs text-blue-900">
-            <code className="font-mono bg-blue-100 px-1 rounded">{`{{${name}}}`}</code>
-            <span className="ml-2 text-blue-900/80">{TEMPLATE_VARIABLE_DESCRIPTIONS[name]}</span>
+          <li key={name} className="text-xs text-foreground">
+            <code className="font-mono bg-muted px-1 rounded">{`{{${name}}}`}</code>
+            <span className="ml-2 text-muted-foreground">{TEMPLATE_VARIABLE_DESCRIPTIONS[name]}</span>
           </li>
         ))}
       </ul>
@@ -51,6 +51,7 @@ function LintWarnings({ unknown, field }: { unknown: string[]; field: string }) 
 
 export function EmailTemplateDetail() {
   const { template } = useLoaderData<typeof loader>()
+  const actionData = useActionData<{ error?: string }>()
   const tz = useUserTimeZone()
 
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(
@@ -79,6 +80,7 @@ export function EmailTemplateDetail() {
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           {isRenaming ? (
+            <>
             <Form method="post" className="flex items-center gap-2" onSubmit={() => setIsRenaming(false)}>
               <input type="hidden" name="intent" value="rename" />
               <input
@@ -86,7 +88,7 @@ export function EmailTemplateDetail() {
                 name="name"
                 value={draftName}
                 onChange={(e) => setDraftName(e.target.value)}
-                className="px-3 py-2 text-base text-foreground border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-[16rem]"
+                className="px-3 py-2 text-base text-foreground border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-accent-coral/30 min-w-[16rem]"
                 autoFocus
               />
               <button
@@ -101,11 +103,15 @@ export function EmailTemplateDetail() {
                   setDraftName(template.name)
                   setIsRenaming(false)
                 }}
-                className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-gray-300 rounded-md hover:bg-muted/50"
+                className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-border rounded-md hover:bg-muted/50"
               >
                 Cancel
               </button>
             </Form>
+            {actionData?.error && (
+              <p className="mt-1 text-xs text-red-600">{actionData.error}</p>
+            )}
+            </>
           ) : (
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-bold text-foreground">{template.name}</h1>
@@ -156,7 +162,7 @@ export function EmailTemplateDetail() {
                 }}
                 className={`w-full text-left rounded-lg border px-3 py-2 transition ${
                   active
-                    ? 'border-blue-500 bg-blue-50 text-blue-900'
+                    ? 'border-accent-coral bg-accent-coral/5 text-foreground'
                     : 'border-border bg-card hover:bg-muted/40 text-foreground'
                 }`}
               >
@@ -188,7 +194,7 @@ export function EmailTemplateDetail() {
                   name="subject"
                   value={draftSubject}
                   onChange={(e) => setDraftSubject(e.target.value)}
-                  className="w-full px-3 py-2 text-sm text-foreground border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 text-sm text-foreground border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
                   required
                 />
                 <LintWarnings unknown={subjectLint.unknown} field="Subject" />
@@ -205,16 +211,19 @@ export function EmailTemplateDetail() {
                   rows={14}
                   value={draftBody}
                   onChange={(e) => setDraftBody(e.target.value)}
-                  className="w-full px-3 py-2 text-sm text-foreground font-mono border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 text-sm text-foreground font-mono border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
                   required
                 />
                 <LintWarnings unknown={bodyLint.unknown} field="Body" />
               </div>
+              {actionData?.error && (
+                <p className="text-xs text-red-600">{actionData.error}</p>
+              )}
               <div className="flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setIsCreatingVersion(false)}
-                  className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-gray-300 rounded-md hover:bg-muted/50"
+                  className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-border rounded-md hover:bg-muted/50"
                 >
                   Cancel
                 </button>

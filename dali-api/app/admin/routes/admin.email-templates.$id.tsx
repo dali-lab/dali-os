@@ -10,6 +10,9 @@ import { redirectToLogin } from '~/lib/login-next'
 import { isCore } from '~/lib/roles'
 import { EmailTemplateDetail } from '~/admin/components/EmailTemplateDetail'
 import { regroupRedirect } from "~/core/lib/regroup-redirect.server"
+import { driveFolderCrumbs } from '~/lib/drive-crumbs.server'
+import { driveRootCrumbs } from '~/lib/drive-crumbs'
+import { PageIcon } from '~/components/PageIcon'
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const name = (data as any)?.template?.name
@@ -17,8 +20,24 @@ export const meta: Route.MetaFunction = ({ data }) => {
 }
 
 export const handle = {
-  breadcrumb: (data: unknown) =>
-    (data as { template?: { name: string } } | undefined)?.template?.name,
+  breadcrumbTrail: (data: unknown) => {
+    const d = data as {
+      template?: { name: string }
+      driveCrumbs?: { scope: string; folders: { id: string; title: string; iconEmoji: string | null }[] } | null
+    } | undefined
+    const name = d?.template?.name
+    if (!name) return null
+    const scope = d?.driveCrumbs?.scope ?? 'core'
+    return [
+      ...driveRootCrumbs(scope),
+      ...(d?.driveCrumbs?.folders ?? []).map((f) => ({
+        label: f.title || 'Untitled folder',
+        to: `/drive?scope=${scope}&folder=${f.id}`,
+        icon: <PageIcon iconEmoji={f.iconEmoji} />,
+      })),
+      { label: name },
+    ]
+  },
 }
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -43,7 +62,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     },
   })
 
-  return { template }
+  const driveCrumbs = await driveFolderCrumbs(template.folderPageId, auth.user.sub, request)
+
+  return { template, driveCrumbs }
 }
 
 export async function action({ request, params }: Route.ActionArgs) {

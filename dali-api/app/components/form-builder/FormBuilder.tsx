@@ -309,7 +309,7 @@ export function FormBuilderTab({
                   },
                 })
               }
-              className="block w-full rounded-md border border-gray-300 bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
+              className="block w-full rounded-md border border-border bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent-coral/30 sm:text-sm p-2"
               placeholder="e.g. What is your major?"
             />
           </div>
@@ -340,7 +340,7 @@ export function FormBuilderTab({
                 { value: 'skills_rating', label: 'Skills Rating' },
                 { value: 'reference', label: 'Reference (from database)' },
               ]}
-              buttonClassName="block w-full rounded-md border border-gray-300 bg-card text-foreground shadow-sm sm:text-sm p-2 inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+              buttonClassName="block w-full rounded-md border border-border bg-card text-foreground shadow-sm sm:text-sm p-2 inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
             />
           </div>
 
@@ -388,7 +388,7 @@ export function FormBuilderTab({
                   },
                 })
               }
-              className="block w-full rounded-md border border-gray-300 bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
+              className="block w-full rounded-md border border-border bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent-coral/30 sm:text-sm p-2"
               placeholder="e.g. Keep it under 200 words."
             />
           </div>
@@ -407,7 +407,7 @@ export function FormBuilderTab({
                 disabled={!maxWordsEnabled}
                 value={maxWordsValue}
                 onChange={(e) => setMaxWordsValue(e.target.value)}
-                className="w-28 rounded-md border border-gray-300 bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2 disabled:bg-muted disabled:text-muted-foreground"
+                className="w-28 rounded-md border border-border bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent-coral/30 sm:text-sm p-2 disabled:bg-muted disabled:text-muted-foreground"
                 placeholder="e.g. 200"
               />
               <span className="text-xs text-muted-foreground">words</span>
@@ -423,7 +423,7 @@ export function FormBuilderTab({
                 rows={4}
                 value={optionsText}
                 onChange={(e) => setOptionsText(e.target.value)}
-                className="block w-full rounded-md border border-gray-300 bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
+                className="block w-full rounded-md border border-border bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent-coral/30 sm:text-sm p-2"
                 placeholder="Option 1&#10;Option 2&#10;Option 3"
               />
             </div>
@@ -431,7 +431,7 @@ export function FormBuilderTab({
 
           {editForm.type === 'skills_rating' && (
             <div className="col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-foreground/80 mb-1">
                 Skills (One per line)
               </label>
               <textarea
@@ -441,7 +441,7 @@ export function FormBuilderTab({
                 className="block w-full rounded-md border border-border bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:border-accent-coral focus:ring-accent-coral sm:text-sm p-2"
                 placeholder="JavaScript&#10;Python&#10;React.js&#10;Figma"
               />
-              <p className="text-xs text-gray-500 mt-1">Applicants will rate each skill from 0-5.</p>
+              <p className="text-xs text-muted-foreground mt-1">Applicants will rate each skill from 0-5.</p>
             </div>
           )}
 
@@ -463,7 +463,7 @@ export function FormBuilderTab({
                 }
                 placeholder="Select a source…"
                 options={referenceSourceChoices().map((s) => ({ value: s.key, label: s.label }))}
-                buttonClassName="block w-full rounded-md border border-gray-300 bg-card text-foreground shadow-sm sm:text-sm p-2 inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                buttonClassName="block w-full rounded-md border border-border bg-card text-foreground shadow-sm sm:text-sm p-2 inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
               />
               <p className="text-xs text-muted-foreground mt-1">
                 Choices are pulled live when the form is filled — e.g. projects
@@ -488,7 +488,7 @@ export function FormBuilderTab({
                     }
                     placeholder="Select a term…"
                     options={terms.map((t) => ({ value: t.id, label: t.code }))}
-                    buttonClassName="block w-full rounded-md border border-gray-300 bg-card text-foreground shadow-sm sm:text-sm p-2 inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                    buttonClassName="block w-full rounded-md border border-border bg-card text-foreground shadow-sm sm:text-sm p-2 inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
                   />
                   <p className="text-xs text-muted-foreground mt-1">
                     Projects whose term set includes this term will be listed.
@@ -500,7 +500,7 @@ export function FormBuilderTab({
 
           {editForm.type === 'file' && (
             <div className="col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-foreground/80 mb-2">
                 Accepted File Types
               </label>
               <div className="flex flex-wrap gap-2 mb-3">
@@ -533,7 +533,7 @@ export function FormBuilderTab({
                 className="block w-full rounded-md border border-border bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:border-accent-coral focus:ring-accent-coral sm:text-sm p-2"
                 placeholder="Additional types, e.g. .f3z, text/plain"
               />
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 Toggle common presets above, or enter extra MIME types / extensions below (comma-separated).
               </p>
             </div>
@@ -580,7 +580,7 @@ export function FormBuilderTab({
           initialContent={initialDescription ?? undefined}
           onChange={setDescription}
           placeholder="Describe this challenge for applicants…"
-          className="rounded-md border border-gray-300 bg-card py-2 focus-within:border-blue-500"
+          className="rounded-md border border-border bg-card py-2 focus-within:border-accent-coral/50"
         />
       </div>
       <div className="space-y-2">
@@ -601,7 +601,7 @@ export function FormBuilderTab({
                   <div className={`rounded-xl ${isDragging ? 'opacity-40' : ''}`}>
                     {q.type === 'pageBreak' ? (
                       <div
-                        className={`flex items-start gap-4 bg-muted/40 p-4 rounded-xl border border-dashed shadow-sm group transition-colors duration-150 ${activeId ? 'border-gray-300' : 'border-border'}`}
+                        className={`flex items-start gap-4 bg-muted/40 p-4 rounded-xl border border-dashed shadow-sm group transition-colors duration-150 ${activeId ? 'border-border/60' : 'border-border'}`}
                       >
                         <div
                           {...dragHandleProps}
@@ -620,14 +620,14 @@ export function FormBuilderTab({
                             type="text"
                             value={q.data.label || ''}
                             onChange={(e) => updatePageBreak(q.key, { label: e.target.value })}
-                            className="block w-full rounded-md border border-gray-300 bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
+                            className="block w-full rounded-md border border-border bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent-coral/30 sm:text-sm p-2"
                             placeholder="Section title (optional)"
                           />
                           <input
                             type="text"
                             value={q.data.description || ''}
                             onChange={(e) => updatePageBreak(q.key, { description: e.target.value })}
-                            className="block w-full rounded-md border border-gray-300 bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
+                            className="block w-full rounded-md border border-border bg-card text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent-coral/30 sm:text-sm p-2"
                             placeholder="Subtitle (optional)"
                           />
                         </div>
@@ -645,7 +645,7 @@ export function FormBuilderTab({
                       renderEditForm()
                     ) : (
                       <div
-                        className={`flex items-start gap-4 bg-card p-4 rounded-xl border shadow-sm group transition-colors duration-150 ${activeId ? 'border-gray-300' : 'border-border'}`}
+                        className={`flex items-start gap-4 bg-card p-4 rounded-xl border shadow-sm group transition-colors duration-150 ${activeId ? 'border-border/60' : 'border-border'}`}
                       >
                         <div
                           {...dragHandleProps}
@@ -674,7 +674,7 @@ export function FormBuilderTab({
                               </span>
                             )}
                             {q.type === 'textarea' && q.data.maxWords !== undefined && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-800">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground">
                                 Max {q.data.maxWords} words
                               </span>
                             )}
@@ -694,7 +694,7 @@ export function FormBuilderTab({
                               {q.data.options.map((opt) => (
                                 <span
                                   key={opt}
-                                  className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100"
+                                  className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-muted text-muted-foreground border border-border"
                                 >
                                   {opt}
                                 </span>
@@ -703,14 +703,14 @@ export function FormBuilderTab({
                           )}
 
                           {q.type === 'file' && q.data.accept && (
-                            <p className="text-xs text-gray-500 mt-1">Accepts: {q.data.accept}</p>
+                            <p className="text-xs text-muted-foreground mt-1">Accepts: {q.data.accept}</p>
                           )}
                         </div>
 
                         <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button
                             onClick={() => handleEdit(q)}
-                            className="p-1.5 text-muted-foreground/70 hover:text-blue-600 rounded-md hover:bg-blue-50"
+                            className="p-1.5 text-muted-foreground/70 hover:text-foreground rounded-md hover:bg-muted"
                           >
                             <Pencil className="w-4 h-4" />
                           </button>
@@ -796,7 +796,7 @@ export function FormBuilderTab({
                 <button
                   onClick={() => onSave({ questions, description })}
                   disabled={busy}
-                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-green-600 hover:bg-green-700 shadow-sm disabled:opacity-60"
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-accent-coral hover:bg-accent-coral/90 shadow-sm disabled:opacity-60"
                 >
                   {saveStatus === 'saving-version' ? (
                     <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Saving…</>

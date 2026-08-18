@@ -19,6 +19,7 @@ import { getUserRoles, currentTerm } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { loadDriveScopes } from "~/lib/drive-scopes.server";
 import type { DriveTreeScope } from "~/lib/drive-scopes.server";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import type { DriveItem } from "~/lib/drive.server";
 import { DriveBrowser } from "~/components/drive/DriveBrowser";
 import type { RowActions } from "~/components/drive/DriveBrowser";
@@ -107,14 +108,17 @@ export async function loader({ request }: Route.LoaderArgs) {
   // they're staffed on, scoped to the current term (matching the default
   // ?term= behavior when docsLoader is called with a /drive URL).
   const termId = term?.id ?? null;
-  const rawProjects = await prisma.project.findMany({
-    where: {
-      ...(termId ? { projectTerms: { some: { termId } } } : {}),
-      ...(roles.isCore ? {} : { assignments: { some: { userId: auth.user.sub } } }),
-    },
-    orderBy: [{ status: "asc" }, { name: "asc" }],
-    select: { id: true, name: true, iconEmoji: true },
-  });
+  const [driveSpacesEnabled, rawProjects] = await Promise.all([
+    isFeatureEnabled("drive-spaces", auth.user.sub, roles, request),
+    prisma.project.findMany({
+      where: {
+        ...(termId ? { projectTerms: { some: { termId } } } : {}),
+        ...(roles.isCore ? {} : { assignments: { some: { userId: auth.user.sub } } }),
+      },
+      orderBy: [{ status: "asc" }, { name: "asc" }],
+      select: { id: true, name: true, iconEmoji: true },
+    }),
+  ]);
   const projectWorkspaces = rawProjects.map((p) => ({
     key: p.id,
     label: p.name,
@@ -122,13 +126,46 @@ export async function loader({ request }: Route.LoaderArgs) {
     projectIconEmoji: p.iconEmoji,
   }));
 
+  // Education workspaces: only queried when the drive-spaces flag is on
+  // (Education space is a new addition). Access rule mirrors pageAccess.server:
+  // Core sees all offerings; instructors see their own; enrolled students
+  // (Approved application) see their enrolled offerings.
+  let educationWorkspaces: { key: string; label: string; kind: "education" }[] = [];
+  if (driveSpacesEnabled) {
+    const approvedOrInstructor = roles.isCore
+      ? // Core sees all offerings regardless of their own enrollment status.
+        await prisma.educationOffering.findMany({
+          orderBy: { title: "asc" },
+          select: { id: true, title: true },
+        })
+      : // Non-Core: union of (a) offerings where the viewer is an instructor and
+        // (b) offerings where the viewer has an Approved application.
+        await prisma.educationOffering.findMany({
+          where: {
+            OR: [
+              { instructors: { some: { userId: auth.user.sub } } },
+              { applications: { some: { applicantUserId: auth.user.sub, status: "Approved" } } },
+            ],
+          },
+          orderBy: { title: "asc" },
+          select: { id: true, title: true },
+        });
+    educationWorkspaces = approvedOrInstructor.map((o) => ({
+      key: o.id,
+      label: o.title,
+      kind: "education" as const,
+    }));
+  }
+
   const driveScopes = await loadDriveScopes({
     userSub: auth.user.sub,
     projectWorkspaces,
+    educationWorkspaces,
     canViewForms: userCanViewForms,
     canManageAgreements: userCanManageAgreements,
     isCore: roles.isCore,
     hasHiringAccess,
+    driveSpacesEnabled,
     request,
   });
 
