@@ -25,7 +25,7 @@ import { requireAuth, forbidden, redirectApplicantToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { fullName } from "~/lib/display";
 import { prisma } from "~/lib/db";
-import { listVisibleGroupsForUser } from "~/lib/groups";
+import { listAllGroups } from "~/lib/groups";
 import {
   canViewForms,
   isCore,
@@ -352,15 +352,22 @@ export async function loader({ request }: Route.LoaderArgs) {
         where: { userId },
         orderBy: { linkedAt: "asc" },
       }),
-      listVisibleGroupsForUser(userId, request).then((rows) =>
-        rows.map((r) => ({
-          id: r.id,
-          name: r.name,
-          memberIds: r.memberIds,
-          projectId: r.dynamicQuery?.startsWith("project:")
-            ? r.dynamicQuery.slice("project:".length)
-            : null,
-        })),
+      // Every active group is schedulable — the picker is intentionally not
+      // limited to groups the organizer belongs to, so staff/Core can schedule
+      // a meeting with any team (and the project hub's "Schedule meeting" button
+      // pre-fills a project's group even for non-members). Group rosters aren't
+      // sensitive here — they're already shown on hubs, the directory, etc.
+      listAllGroups().then((rows) =>
+        rows
+          .filter((r) => !r.archived)
+          .map((r) => ({
+            id: r.id,
+            name: r.name,
+            memberIds: r.memberIds,
+            projectId: r.dynamicQuery?.startsWith("project:")
+              ? r.dynamicQuery.slice("project:".length)
+              : null,
+          })),
       ),
       prisma.user.findMany({
         where: memberWhere,
