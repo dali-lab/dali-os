@@ -1,4 +1,4 @@
-import { Link, useFetcher, useLoaderData, useRevalidator } from "react-router";
+import { Link, useFetcher, useLoaderData, useRevalidator, useSearchParams } from "react-router";
 import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -1256,10 +1256,17 @@ const AVAILABILITY_SIDEBAR_COLLAPSED_KEY = "dali:calendar:availability:sidebar-c
 
 export default function CalendarPage() {
   const data = useLoaderData<typeof loader>() as LoaderData;
+  const [searchParams] = useSearchParams();
   // Persist the active tab in sessionStorage so navigating away and back
   // (or the workspace iframe re-mounting on tab focus) restores where the
   // user left off rather than always snapping back to Availability.
   const [tab, setTab] = useState<Tab>(() => {
+    // A deep link (e.g. a project hub's "Schedule meeting" button) wins over the
+    // remembered tab, so `?tab=schedule` always lands on the scheduler.
+    const urlTab = searchParams.get("tab");
+    if (urlTab === "schedule" || urlTab === "timesheet" || urlTab === "availability") {
+      return urlTab;
+    }
     if (typeof window === "undefined") return "availability";
     try {
       const stored = window.sessionStorage.getItem(CALENDAR_TAB_STORAGE_KEY);
@@ -2869,8 +2876,18 @@ function CreateFromDragPopover({
 }
 
 function ScheduleView({ data }: { data: LoaderData }) {
+  const [searchParams] = useSearchParams();
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
-  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
+  // A deep link from a project hub ("Schedule meeting") pre-selects that
+  // project's team group. It only resolves when the group is one of the
+  // sender's visible groups — the picker couldn't offer it otherwise — so this
+  // silently no-ops for viewers who aren't on the project.
+  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>(() => {
+    const projectParam = searchParams.get("project");
+    if (!projectParam) return [];
+    const g = data.groups.find((grp) => grp.projectId === projectParam);
+    return g ? [g.id] : [];
+  });
   const [startLocal, setStartLocal] = useState<string>("");
   const [endLocal, setEndLocal] = useState<string>("");
 
