@@ -70,15 +70,16 @@ describe("DRIVE_SPACES registry", () => {
     }
   });
 
-  it("core space uses systemKey drive:space:core", () => {
+  // systemKeys match the EXISTING ensure*DriveRoot roots (rekey deferred, spec §15).
+  it("core space uses the existing drive:core-root systemKey", () => {
     const core = DRIVE_SPACES.find((s) => s.key === "core") as DriveSpaceDef;
-    expect(core.systemKey).toBe("drive:space:core");
+    expect(core.systemKey).toBe("drive:core-root");
     expect(core.groupQuery).toBe("core");
   });
 
-  it("hiring space uses systemKey drive:space:hiring", () => {
+  it("hiring space uses the existing drive:hiring-root systemKey", () => {
     const hiring = DRIVE_SPACES.find((s) => s.key === "hiring") as DriveSpaceDef;
-    expect(hiring.systemKey).toBe("drive:space:hiring");
+    expect(hiring.systemKey).toBe("drive:hiring-root");
     expect(hiring.groupQuery).toBe("hiring");
   });
 
