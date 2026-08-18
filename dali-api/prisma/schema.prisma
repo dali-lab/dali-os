@@ -147,6 +147,8 @@ model User {
   oauthSessions                 OAuthSession[]
   sessions                      Session[]
   rubricVersions                RubricVersion[]
+  milestoneSets                 MilestoneSet[]
+  milestoneSetVersions          MilestoneSetVersion[]
   authoredSigningVersions       SigningDocumentVersion[]            @relation("SigningVersionAuthor")
   signingSignatures             SigningSignature[]                  @relation("SigningSigner")
 
@@ -2168,6 +2170,7 @@ model Term {
   signingBindings       SigningBinding[]
   timelineWeeks         TimelineWeek[]
   timelineDomains       TimelineDomain[]
+  milestoneAssignments  ProjectMilestoneAssignment[]
 
   @@index([sortKey])
 }
@@ -2256,6 +2259,97 @@ enum Season {
   S // Spring
   X // Summer
   F // Fall
+}
+
+// ─── Milestone sets (versioned, Drive-authored, project-assigned) ─────────────
+
+// A reusable named milestone set — a week-by-week list of goals a project
+// follows through a term. Generalizes the single lab term timeline
+// (TimelineWeek/TimelineMilestone) into templates Core authors in Drive,
+// versions, and assigns per project. Mirrors Form/FormVersion: a mutable
+// working draft plus immutable version snapshots that freeze once a project
+// pins them. See specs/milestones.md.
+model MilestoneSet {
+  id          String    @id @default(cuid())
+  name        String
+  description String?
+
+  // Unified-Drive tree placement (Page of kind=Folder). Null = unplaced.
+  // Organisation only — never affects who can view/edit. Matches
+  // Form.folderPageId / Rubric.folderPageId.
+  folderPageId String?
+
+  // The one set whose labWide entries overlay EVERY project timeline in
+  // addition to that project's assigned set, so lab events (Technigala, Bug
+  // Hunt) are authored once. Exactly one set carries this per lab; enforced in
+  // the app, not the schema.
+  isLabWide Boolean @default(false)
+
+  archivedAt DateTime?
+
+  createdById String
+  createdBy   User   @relation(fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Editable working copy. The structured collab room milestone:{id}:draft is
+  // the live editing buffer; "Save draft" writes it here. NEVER read by the
+  // timeline — only versions are. Array of
+  //   { id, weekIndex, name, detail, labWide }.
+  draftEntries Json?
+
+  versions MilestoneSetVersion[]
+
+  @@index([folderPageId])
+  @@index([createdById])
+}
+
+// Immutable-once-pinned snapshot of a set's entries. Editable/deletable in
+// place until a ProjectMilestoneAssignment references it (mirrors FormVersion
+// lock-on-use). `entries` is a JSON array of
+//   { id, weekIndex, name, detail, labWide }.
+model MilestoneSetVersion {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  // Bumps on every in-place edit; doubles as the fingerprint threaded through
+  // assignment so a pin can detect the version changed underneath it.
+  updatedAt DateTime @updatedAt @default(now())
+
+  versionNumber Int
+  entries       Json
+
+  setId String
+  set   MilestoneSet @relation(fields: [setId], references: [id], onDelete: Cascade)
+
+  createdById String
+  createdBy   User   @relation(fields: [createdById], references: [id])
+
+  assignments ProjectMilestoneAssignment[]
+
+  @@unique([setId, versionNumber])
+  @@index([setId, versionNumber])
+}
+
+// One milestone pin per project per term. Written at term setup, overridable on
+// the project. Pinning a version locks it (isMilestoneVersionLocked).
+model ProjectMilestoneAssignment {
+  projectId String
+  termId    String
+  versionId String
+
+  // Loose ref (no relation) matching ProjectTemplate.createdBy — a dangling id
+  // just renders as unknown.
+  assignedById String?
+  assignedAt   DateTime @default(now())
+
+  project Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  term    Term                @relation(fields: [termId], references: [id])
+  version MilestoneSetVersion @relation(fields: [versionId], references: [id])
+
+  @@id([projectId, termId])
+  @@index([termId])
+  @@index([versionId])
 }
 
 // ─── Foundational role model ─────────────────────────────────────────────────
@@ -2570,6 +2664,7 @@ model Project {
   sprints           Sprint[]
   epics             Epic[]
   tasks             Task[]
+  milestoneAssignments ProjectMilestoneAssignment[]
   // Declared domains for the project — surfaced on the project detail page
   // and editable by Admin/Core/Hiring Lead. Display-only today; staffing
   // gating off this set is a follow-up.

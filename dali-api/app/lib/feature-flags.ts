@@ -119,6 +119,12 @@ export const FEATURE_FLAGS = [
     description:
       "Drive spaces redesign (nav-mirrored spaces, signals, browser-canonical editors). Default off; flip on for Core first, then everyone.",
   },
+  {
+    key: "milestones-v2",
+    label: "Milestones",
+    description:
+      "Versioned, Drive-authored milestone sets assigned per project each term and rendered on the project timeline (Core ▸ Milestones). Default off; flip on for Core first, then everyone.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];
