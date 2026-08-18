@@ -2,7 +2,7 @@
 // lens and applies the form-placement de-dup logic so this code never reaches
 // the client bundle (*.server.ts convention enforced by client-bundle-leak test).
 
-import { loadDriveScope, loadForms } from "~/lib/drive.server";
+import { loadDriveScope, loadForms, buildLinkedProcessMap } from "~/lib/drive.server";
 import type { DriveItem } from "~/lib/drive.server";
 import { ensureCoreDriveRoot, ensureHiringDriveRoot } from "~/lib/pages";
 import { favoritePageIds } from "~/lib/user-pages.server";
@@ -159,10 +159,12 @@ export async function loadDriveScopes({
   const needsCore = spaces.some((s) => s.key === "core");
   const needsHiring = spaces.some((s) => s.key === "hiring");
 
-  const [coreRoot, hiringRoot, favIds] = await Promise.all([
+  const [coreRoot, hiringRoot, favIds, linkedProcessMap] = await Promise.all([
     needsCore ? ensureCoreDriveRoot(userSub) : Promise.resolve(null),
     needsHiring ? ensureHiringDriveRoot(userSub) : Promise.resolve(null),
     favoritePageIds(userSub),
+    // Signal ②: build process linkages once for the whole load (no per-row queries).
+    buildLinkedProcessMap(),
   ]);
 
   const projectIds = projectWorkspaces.map((w) => w.key);
@@ -187,6 +189,7 @@ export async function loadDriveScopes({
       canManageAgreements: isCore,
       canManageEmailTemplates: isCore,
       request,
+      linkedProcessMap,
     }),
     ...projectIds.map((projectId) =>
       loadDriveScope({
@@ -219,7 +222,8 @@ export async function loadDriveScopes({
       ...projectItemArrays.flatMap((arr) => arr.filter((i) => i.type === "folder").map((i) => i.id)),
       ...educationItemArrays.flatMap((arr) => arr.filter((i) => i.type === "folder").map((i) => i.id)),
     ];
-    allForms = await loadForms(allFolderIds);
+    // Pass linkedProcessMap so each form row gets its process annotation (Signal ②).
+    allForms = await loadForms(allFolderIds, linkedProcessMap);
   }
 
   // Carve out the Core subtree from the Lab load (same logic as legacy).
@@ -310,6 +314,7 @@ export async function loadDriveScopes({
   const filteredEducation = educationItemArrays.map((arr, i) => [...arr, ...educationForms[i]]);
 
   // Build the output by iterating the registry in display order.
+  // Signals ①/③: populate systemManaged + scopeAudience per the space definition.
   const result: DriveTreeScope[] = [];
   for (const space of spaces) {
     switch (space.backing) {
@@ -319,6 +324,8 @@ export async function loadDriveScopes({
           label: "My Drive",
           iconEmoji: null,
           items: tagFavorites(memberItems, favIds),
+          systemManaged: false,
+          scopeAudience: "Private",
         });
         break;
 
@@ -328,6 +335,8 @@ export async function loadDriveScopes({
           label: "Lab-wide",
           iconEmoji: null,
           items: tagFavorites(filteredLab, favIds),
+          systemManaged: false,
+          scopeAudience: "Everyone in the lab",
         });
         break;
 
@@ -339,6 +348,10 @@ export async function loadDriveScopes({
             iconEmoji: null,
             items: tagFavorites(finalCoreItems, favIds),
             rootFolderId: coreRoot.id,
+            // ① Core root is a system-managed scoped root; its destructive actions are hidden.
+            systemManaged: true,
+            // ③ Only Core members can see this space.
+            scopeAudience: "Core only",
           });
         } else if (space.key === "hiring" && hiringRoot) {
           result.push({
@@ -347,6 +360,10 @@ export async function loadDriveScopes({
             iconEmoji: null,
             items: tagFavorites(finalHiringItems, favIds),
             rootFolderId: hiringRoot.id,
+            // ① Hiring root is a system-managed scoped root.
+            systemManaged: true,
+            // ③ Visible to the hiring team (Core + domain leads + reviewers).
+            scopeAudience: "Hiring team",
           });
         }
         break;
@@ -360,6 +377,8 @@ export async function loadDriveScopes({
               label: projectNames.get(id) ?? "Project",
               iconEmoji: projectEmojis.get(id) ?? null,
               items: tagFavorites(filteredProjects[i], favIds),
+              systemManaged: false,
+              scopeAudience: "Project members",
             });
           }
         } else if (space.key === "education") {
@@ -370,6 +389,8 @@ export async function loadDriveScopes({
               label: educationNames.get(id) ?? "Offering",
               iconEmoji: null,
               items: tagFavorites(filteredEducation[i], favIds),
+              systemManaged: false,
+              scopeAudience: "Enrolled members",
             });
           }
         }

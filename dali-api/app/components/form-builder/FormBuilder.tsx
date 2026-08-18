@@ -1,6 +1,6 @@
 import { useState, useEffect, type CSSProperties, type ReactNode } from 'react'
 import { Select } from '~/components/ui/floating'
-import { GripVertical, Plus, Pencil, Trash2, Save, Check, Loader2, Eye } from 'lucide-react'
+import { GripVertical, Plus, Pencil, Trash2, Save, Check, Loader2, Eye, Undo2, Redo2 } from 'lucide-react'
 import {
   DndContext,
   PointerSensor,
@@ -9,7 +9,7 @@ import {
   useSensors,
   type DragEndEvent,
 } from '@dnd-kit/core'
-import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { Question } from '~/types'
 import { DocEditor } from '~/components/doc'
@@ -17,6 +17,8 @@ import { Tooltip } from '~/components/ui/IconButton'
 import { referenceSourceChoices, referenceSourceNeedsTerm } from '~/forms/lib/reference-sources.shared'
 import { Checkbox } from '~/components/ui/Checkbox'
 import { isLayoutOnly } from '~/lib/form-answers'
+import { useSharedArray } from '~/components/collab/useSharedCollection'
+import { formDraftName } from '~/collab/roomName'
 
 const ACCEPT_PRESETS = [
   { label: 'PDF', value: 'application/pdf' },
@@ -146,6 +148,12 @@ interface FormBuilderTabProps {
   // Preview resolution (reference-question option cards) is in flight —
   // spins the Preview button and blocks re-clicks. Ignored if onPreview isn't.
   previewPending?: boolean
+  // Collab substrate. When both are provided the question list is backed by a
+  // Hocuspocus Y.Array room (`form:{formId}:draft`) instead of local state,
+  // giving multiplayer + UndoManager support. Omitted by the hiring challenge
+  // builder (no structured-collab room for that entity).
+  formId?: string
+  collabToken?: string | null
 }
 export function FormBuilderTab({
   initialQuestions = [],
@@ -160,8 +168,70 @@ export function FormBuilderTab({
   terms = [],
   onPreview,
   previewPending = false,
+  formId,
+  collabToken,
 }: FormBuilderTabProps) {
-  const [questions, setQuestions] = useState<Question[]>(initialQuestions)
+  // Local state used when the collab room is unavailable (hiring challenge
+  // builder, version-edit without formId/collabToken). Always declared so the
+  // hook call count is stable. When collab is active we read/write through the
+  // hook instead and this state is unused after mount.
+  const [localQuestions, setLocalQuestions] = useState<Question[]>(initialQuestions)
+
+  // Collab substrate: backed by a Hocuspocus Y.Array room (`form:{id}:draft`)
+  // when formId + collabToken are provided. When the token is null the provider
+  // is never created and `yarray` stays null, so we fall back to localQuestions
+  // below. The hook is always called (stable call count) but only active when
+  // `collabActive` is true.
+  const collabActive = !!(formId && collabToken)
+  const roomName = formId ? formDraftName(formId) : 'noop'
+  const {
+    items: collabQuestions,
+    setItems: collabSetItems,
+    push: collabPush,
+    remove: collabRemove,
+    move: collabMove,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+  } = useSharedArray<Question>(
+    roomName,
+    collabActive ? collabToken : null,
+    'items',
+    initialQuestions,
+  )
+
+  // Unified question list + mutators: route to the collab surface when active,
+  // else to plain React state so the hiring challenge builder keeps working.
+  const questions = collabActive ? collabQuestions : localQuestions
+  const setQuestions = (next: Question[]) => {
+    if (collabActive) collabSetItems(next)
+    else setLocalQuestions(next)
+  }
+  const pushQuestion = (item: Question) => {
+    if (collabActive) collabPush(item)
+    else setLocalQuestions((prev) => [...prev, item])
+  }
+  const removeQuestion = (index: number) => {
+    if (collabActive) {
+      collabRemove(index)
+    } else {
+      setLocalQuestions((prev) => prev.filter((_, i) => i !== index))
+    }
+  }
+  const moveQuestion = (from: number, to: number) => {
+    if (collabActive) {
+      collabMove(from, to)
+    } else {
+      setLocalQuestions((prev) => {
+        const next = [...prev]
+        const [item] = next.splice(from, 1)
+        next.splice(to, 0, item)
+        return next
+      })
+    }
+  }
+
   const [description, setDescription] = useState<unknown>(initialDescription ?? null)
   const [editingKey, setEditingKey] = useState<string | null>(null)
   const [editForm, setEditForm] = useState<Partial<Question>>({})
@@ -182,12 +252,12 @@ export function FormBuilderTab({
     setActiveId(null)
     const { active, over } = event
     if (!over || active.id === over.id) return
-    setQuestions((prev) => {
-      const from = prev.findIndex((q) => q.key === active.id)
-      const to = prev.findIndex((q) => q.key === over.id)
-      if (from === -1 || to === -1) return prev
-      return arrayMove(prev, from, to)
-    })
+    const from = questions.findIndex((q) => q.key === active.id)
+    const to = questions.findIndex((q) => q.key === over.id)
+    if (from === -1 || to === -1) return
+    // moveQuestion commits to the Y.Array (undo-able) instead of arrayMove on
+    // local state; the hook's observer propagates the result back as `items`.
+    moveQuestion(from, to)
   }
   const resetEditState = () => {
     setEditingKey(null)
@@ -214,7 +284,8 @@ export function FormBuilderTab({
     }
   }
   const handleDelete = (key: string) => {
-    setQuestions(questions.filter((q) => q.key !== key))
+    const idx = questions.findIndex((q) => q.key === key)
+    if (idx !== -1) removeQuestion(idx)
     if (editingKey === key) resetEditState()
   }
 
@@ -223,14 +294,11 @@ export function FormBuilderTab({
   // than the question edit buffer.
   const handleAddPageBreak = () => {
     const key = `q-${Date.now()}`
-    setQuestions((prev) => [
-      ...prev,
-      { key, type: 'pageBreak', required: false, data: { label: '', description: '' } },
-    ])
+    pushQuestion({ key, type: 'pageBreak', required: false, data: { label: '', description: '' } })
   }
   const updatePageBreak = (key: string, patch: { label?: string; description?: string }) => {
-    setQuestions((prev) =>
-      prev.map((q) =>
+    setQuestions(
+      questions.map((q) =>
         q.key === key ? { ...q, data: { ...q.data, ...patch } } : q,
       ),
     )
@@ -258,8 +326,8 @@ export function FormBuilderTab({
       referenceSource: editForm.data?.referenceSource,
       referenceTermId: editForm.data?.referenceTermId,
     })
-    setQuestions((prev) =>
-      prev.map((q) => (q.key === editForm.key ? rebuilt : q)),
+    setQuestions(
+      questions.map((q) => (q.key === editForm.key ? rebuilt : q)),
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editForm, optionsText, acceptPresets, acceptCustom, maxWordsEnabled, maxWordsValue])
@@ -280,7 +348,7 @@ export function FormBuilderTab({
       isGeneralForm,
     })
     // Append immediately and open it for inline editing — no staging step.
-    setQuestions((prev) => [...prev, newQuestion])
+    pushQuestion(newQuestion)
     setEditingKey(key)
     setEditForm({ key, type: 'text', required: true, data: { label: '' } })
     setOptionsText('')
@@ -753,12 +821,40 @@ export function FormBuilderTab({
           const busy = saveStatus === 'saving-draft' || saveStatus === 'saving-version'
           return (
             <>
+              {/* Undo / Redo — only shown when backed by the collab room (formId +
+                  collabToken), where the Y.UndoManager provides history. */}
+              {formId && collabToken && (
+                <div className="flex items-center gap-1 mr-auto">
+                  <Tooltip label="Undo (⌘Z)">
+                    <button
+                      type="button"
+                      onClick={undo}
+                      disabled={!canUndo}
+                      aria-label="Undo"
+                      className="inline-flex items-center justify-center p-1.5 rounded-md text-foreground/70 hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <Undo2 className="w-4 h-4" />
+                    </button>
+                  </Tooltip>
+                  <Tooltip label="Redo (⌘⇧Z)">
+                    <button
+                      type="button"
+                      onClick={redo}
+                      disabled={!canRedo}
+                      aria-label="Redo"
+                      className="inline-flex items-center justify-center p-1.5 rounded-md text-foreground/70 hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <Redo2 className="w-4 h-4" />
+                    </button>
+                  </Tooltip>
+                </div>
+              )}
               {onPreview && (
                 <button
                   type="button"
                   onClick={() => onPreview({ questions, description })}
                   disabled={previewPending}
-                  className="inline-flex items-center px-4 py-2 border border-border shadow-sm text-sm font-medium rounded-lg text-foreground/80 bg-card hover:bg-muted/50 mr-auto disabled:opacity-60"
+                  className={`inline-flex items-center px-4 py-2 border border-border shadow-sm text-sm font-medium rounded-lg text-foreground/80 bg-card hover:bg-muted/50 disabled:opacity-60 ${!(formId && collabToken) ? 'mr-auto' : ''}`}
                 >
                   {previewPending ? (
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
