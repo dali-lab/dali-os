@@ -85,6 +85,7 @@ import { runStandupPrompts } from "~/jobs/standup-prompts.server";
 import { runTaskAutoArchive } from "~/jobs/task-auto-archive.server";
 import { runMembershipStatusSync } from "~/jobs/membership-status-sync.server";
 import { runSigningIssuance } from "~/jobs/signing-issuance.server";
+import { runSlackIdentitySync } from "~/jobs/slack-identity-sync.server";
 
 export const JOBS: JobDefinition[] = [
   {
@@ -298,6 +299,23 @@ export const JOBS: JobDefinition[] = [
       "Re-issues recurring (per-term) agreements each term: for every per-term document already put in force once, materializes the current term's binding and notifies its audience to sign.",
     intervalMinutes: 1440,
     handler: runSigningIssuance,
+  },
+  {
+    name: "slack-identity-sync",
+    description:
+      "Resolves Slack user ids for members who joined the workspace after their provisioning step ran, so Hiring → Onboarding reports Slack status from live data instead of a one-shot snapshot. Only fills blanks — never clears a stored id.",
+    intervalMinutes: 720,
+    settings: [
+      {
+        key: "maxApiPerRun",
+        label: "Max Slack lookups per run",
+        unit: "",
+        min: 10,
+        max: 1000,
+        default: 200,
+      },
+    ],
+    handler: runSlackIdentitySync,
   },
 ];
 
