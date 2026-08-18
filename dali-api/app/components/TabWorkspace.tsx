@@ -1,24 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import { X, Maximize2, SplitSquareHorizontal, Loader2, ChevronLeft, ChevronRight, Copy, Pin, PinOff, ChevronDown } from 'lucide-react'
-import {
-  DndContext,
-  DragOverlay,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  useDroppable,
-  type DragStartEvent,
-  type DragEndEvent,
-} from '@dnd-kit/core'
-import {
-  SortableContext,
-  useSortable,
-  horizontalListSortingStrategy,
-} from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
-// Reuse the board's pointer-first collision so hovering a tab resolves to that
-// tab and a pointer in a pane body resolves to the body's drop zone.
-import { pointerFirstCollision } from './board/KanbanBoard'
 
 export interface OpenTabRequest {
   url: string
@@ -357,166 +338,20 @@ interface DragSource {
   tabId: string
 }
 
-// Resolve where a tab dropped ON ANOTHER TAB should land, as an insertion index
-// into the target pane's tabs[]. Pure so it can be unit-tested without a DOM.
-// Same-pane: reproduce @dnd-kit's arrayMove (insert after the over tab when
-// dragging rightwards, before it when dragging leftwards). Cross-pane: insert
-// before the over tab. Dropping a tab on itself yields a no-op index (moveTab
-// short-circuits target.index === fromIdx). Returns null if the tabs are gone.
-export function resolveTabDrop(
-  src: DragSource,
-  over: DragSource,
-  panes: Pane[],
-): { paneId: string; index: number } | null {
-  const targetPane = panes.find((p) => p.id === over.paneId)
-  if (!targetPane) return null
-  const overIdx = targetPane.tabs.findIndex((t) => t.id === over.tabId)
-  if (overIdx < 0) return null
-  if (src.paneId === over.paneId) {
-    const fromIdx = targetPane.tabs.findIndex((t) => t.id === src.tabId)
-    if (fromIdx < 0) return null
-    return { paneId: over.paneId, index: fromIdx < overIdx ? overIdx + 1 : overIdx }
-  }
-  return { paneId: over.paneId, index: overIdx }
-}
-
-// A single tab in the strip, made pointer-draggable via @dnd-kit's useSortable.
-// The 6px sensor activation distance (set on the DndContext) keeps a plain
-// press a click; secondary/middle buttons never start a drag, so activate /
-// close / promote / context-menu all still fire.
-function SortableTab({
-  tab,
-  paneId,
-  isActive,
-  onActivate,
-  onClose,
-  onPromote,
-  onMiddleClose,
-  onContextMenu,
-}: {
-  tab: Tab
+interface DragOver {
   paneId: string
-  isActive: boolean
-  onActivate: () => void
-  onClose: () => void
-  onPromote: () => void
-  onMiddleClose: () => void
-  onContextMenu: (e: React.MouseEvent) => void
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: tab.id,
-    data: { paneId, tabId: tab.id },
-  })
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    width: tab.pinned ? PINNED_TAB_W : TAB_W,
-    opacity: isDragging ? 0.4 : undefined,
-  }
-  return (
-    <button
-      ref={setNodeRef}
-      style={style}
-      {...attributes}
-      {...listeners}
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation()
-        onActivate()
-      }}
-      onDoubleClick={(e) => {
-        e.stopPropagation()
-        onPromote()
-      }}
-      onAuxClick={(e) => {
-        if (e.button !== 1) return
-        e.preventDefault()
-        e.stopPropagation()
-        onMiddleClose()
-      }}
-      onContextMenu={onContextMenu}
-      title={tab.label}
-      className={`group relative flex-none flex items-center gap-2 ${tab.pinned ? 'px-2.5' : 'px-3'} border-r border-border text-xs font-medium whitespace-nowrap transition-colors cursor-grab active:cursor-grabbing ${
-        isActive
-          ? 'bg-card text-foreground'
-          : 'text-muted-foreground hover:text-foreground hover:bg-card/50'
-      }`}
-    >
-      {tab.pinned && (
-        <Pin className="w-3 h-3 shrink-0 text-accent-coral fill-accent-coral pointer-events-none" />
-      )}
-      <span
-        className={`truncate flex-1 text-left pointer-events-none ${tab.ephemeral ? 'italic' : ''}`}
-      >
-        {tab.label}
-      </span>
-      {!tab.pinned && (
-        <span
-          role="button"
-          aria-label={`Close ${tab.label}`}
-          // Stop the pointerdown from reaching the sortable listeners so a
-          // press on × closes rather than starting a tab drag.
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation()
-            onClose()
-          }}
-          className="p-0.5 rounded-sm text-muted-foreground/60 hover:text-foreground hover:bg-muted opacity-60 group-hover:opacity-100"
-        >
-          <X className="w-3 h-3" />
-        </span>
-      )}
-    </button>
-  )
+  /** Index in the target pane's tabs[] where the dragged tab would land. */
+  index: number
 }
 
-// The floating copy under the cursor while a tab is dragged (DragOverlay).
-function TabDragPreview({ tab }: { tab: Tab }) {
-  return (
-    <div
-      style={{ width: tab.pinned ? PINNED_TAB_W : TAB_W }}
-      className="flex items-center gap-2 h-10 px-3 bg-card text-foreground text-xs font-medium whitespace-nowrap border border-border rounded-sm shadow-lg cursor-grabbing"
-    >
-      {tab.pinned && (
-        <Pin className="w-3 h-3 shrink-0 text-accent-coral fill-accent-coral" />
-      )}
-      <span className={`truncate ${tab.ephemeral ? 'italic' : ''}`}>{tab.label}</span>
-    </div>
-  )
-}
+// Drop target when a tab is dragged over a pane's content area (not its tab
+// strip). The cursor's horizontal position selects a zone: the edge bands
+// split the workspace, the middle moves the tab into that pane.
+type PaneDropZone = 'split-left' | 'split-right' | 'center'
 
-// One droppable region, painting a coral wash while hovered.
-function DropZone({ id, className }: { id: string; className: string }) {
-  const { setNodeRef, isOver } = useDroppable({ id })
-  return (
-    <div ref={setNodeRef} className={`relative ${className}`}>
-      {isOver && (
-        <div className="absolute inset-0 bg-accent-coral/20 border-2 border-accent-coral pointer-events-none" />
-      )}
-    </div>
-  )
-}
-
-// Drop targets over a pane's content area, mounted only while a tab is being
-// dragged. Sits above the iframe (which would otherwise swallow the pointer)
-// so the drag survives crossing into the body. A splittable pane (the lone
-// pane with ≥2 tabs) offers edge bands that split the workspace plus a middle
-// that moves the tab into the pane; otherwise it's a single move target.
-function PaneBodyDropZones({ paneId, splittable }: { paneId: string; splittable: boolean }) {
-  if (!splittable) {
-    return (
-      <div className="absolute inset-0 z-10">
-        <DropZone id={`pane-center:${paneId}`} className="w-full h-full" />
-      </div>
-    )
-  }
-  return (
-    <div className="absolute inset-0 z-10 flex">
-      <DropZone id={`split-left:${paneId}`} className="w-1/3 h-full" />
-      <DropZone id={`pane-center:${paneId}`} className="w-1/3 h-full" />
-      <DropZone id={`split-right:${paneId}`} className="w-1/3 h-full" />
-    </div>
-  )
+interface PaneDrop {
+  paneId: string
+  zone: PaneDropZone
 }
 
 export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onOpenPalette }: TabWorkspaceProps) {
@@ -536,12 +371,13 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onOpenPal
     | null
   >(null)
   const hydrated = useRef(false)
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-  )
-  // The tab being dragged, or null. Drives the DragOverlay preview and mounts
-  // the per-pane body drop zones only while a drag is in flight.
-  const [activeDrag, setActiveDrag] = useState<DragSource | null>(null)
+  const dragSourceRef = useRef<DragSource | null>(null)
+  const [dragOver, setDragOver] = useState<DragOver | null>(null)
+  // True while a tab drag is in flight. Used to mount the content-area drop
+  // overlays only during a drag (iframes swallow native drag events, so the
+  // pane body can't receive dragover/drop without an overlay on top).
+  const [isDragging, setIsDragging] = useState(false)
+  const [paneDrop, setPaneDrop] = useState<PaneDrop | null>(null)
   // Tabs whose iframes are kept alive in the DOM. Switching tabs toggles
   // visibility instead of unmounting, so scroll/form/JS state is preserved.
   // Lazy-mount on first activation — avoids slamming the server on hydrate
@@ -1729,51 +1565,8 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onOpenPal
     })
   }
 
-  function handleDragStart(e: DragStartEvent) {
-    const data = e.active.data.current as DragSource | undefined
-    if (data) setActiveDrag(data)
-  }
-
-  function handleDragCancel() {
-    setActiveDrag(null)
-  }
-
-  // Commit a completed tab drag. `over` is either a pane-body drop zone (a
-  // prefixed id like `split-left:<paneId>`) or another tab; resolveTabDrop maps
-  // the tab case to an insertion index. moveTab / dropToSplit own the state.
-  function handleDragEnd(e: DragEndEvent) {
-    setActiveDrag(null)
-    const src = e.active.data.current as DragSource | undefined
-    if (!src || !e.over) return
-    const overId = String(e.over.id)
-    const colon = overId.indexOf(':')
-    if (colon !== -1) {
-      const kind = overId.slice(0, colon)
-      const targetPaneId = overId.slice(colon + 1)
-      if (kind === 'split-left') return dropToSplit(src, 'left')
-      if (kind === 'split-right') return dropToSplit(src, 'right')
-      if (kind === 'pane-center') {
-        const pane = state.panes.find((p) => p.id === targetPaneId)
-        return moveTab(src, { paneId: targetPaneId, index: pane ? pane.tabs.length : 0 })
-      }
-      return
-    }
-    const overData = e.over.data.current as DragSource | undefined
-    if (!overData) return
-    const target = resolveTabDrop(src, overData, state.panes)
-    if (target) moveTab(src, target)
-  }
-
   return (
     <div className="flex-1 flex min-h-0">
-      <DndContext
-        id="tab-workspace"
-        sensors={sensors}
-        collisionDetection={pointerFirstCollision}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-        onDragCancel={handleDragCancel}
-      >
       {state.panes.map((pane, idx) => {
         const isFocused = pane.id === state.focusedPaneId
         const activeTab = pane.tabs.find((t) => t.id === pane.activeTabId) ?? pane.tabs[0]
@@ -1781,50 +1574,126 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onOpenPal
         const { pinned: pinnedTabs, visible: visibleUnpinned, overflow: overflowUnpinned } =
           splitVisibleOverflow(pane.tabs, paneWidths[pane.id] ?? 0)
 
-        // The tabs rendered inline (pins first, then the unpinned that fit);
-        // this exact order is the SortableContext item list. Overflow tabs live
-        // in the +N menu and aren't draggable.
-        const renderedTabs = [...pinnedTabs, ...visibleUnpinned]
-        const renderedTabIds = renderedTabs.map((t) => t.id)
-
-        // Render one tab. Pinned tabs are compact (pin icon + short label, no
-        // close affordance — middle-click or the context menu unpins/closes);
+        // Render one tab button. Pinned tabs are compact (pin icon + short label,
+        // no close affordance — middle-click or the context menu unpins/closes);
         // unpinned tabs keep the hover × . Ephemeral (preview) tabs render italic.
-        const renderTab = (tab: Tab) => (
-          <SortableTab
-            key={tab.id}
-            tab={tab}
-            paneId={pane.id}
-            isActive={tab.id === pane.activeTabId}
-            onActivate={() => {
-              dismissFloatingMenus()
-              setActiveTab(pane.id, tab.id)
-            }}
-            onClose={() => {
-              dismissFloatingMenus()
-              closeTab(pane.id, tab.id)
-            }}
-            onPromote={() => promoteTab(pane.id, tab.id)}
-            onMiddleClose={() => {
-              dismissFloatingMenus()
-              closeTab(pane.id, tab.id)
-            }}
-            onContextMenu={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              // Toggle closed when right-clicking the same tab again — the
-              // open handler's stopPropagation would otherwise leave the
-              // menu stuck (window never sees the event to dismiss it).
-              setContextMenu((prev) =>
-                prev?.paneId === pane.id && prev.tabId === tab.id
-                  ? null
-                  : { paneId: pane.id, tabId: tab.id, x: e.clientX, y: e.clientY },
-              )
-              setHistoryMenu(null)
-              setOverflowMenu(null)
-            }}
-          />
-        )
+        const renderTab = (tab: Tab) => {
+          const arrIdx = pane.tabs.findIndex((t) => t.id === tab.id)
+          const isActive = tab.id === pane.activeTabId
+          const indicatorBefore = dragOver?.paneId === pane.id && dragOver.index === arrIdx
+          const indicatorAfter =
+            dragOver?.paneId === pane.id &&
+            dragOver.index === arrIdx + 1 &&
+            arrIdx === pane.tabs.length - 1
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              draggable
+              onDragStart={(e) => {
+                dragSourceRef.current = { paneId: pane.id, tabId: tab.id }
+                setIsDragging(true)
+                e.dataTransfer.effectAllowed = 'move'
+                try {
+                  e.dataTransfer.setData('text/plain', tab.id)
+                } catch {
+                  // ignore
+                }
+              }}
+              onDragEnd={() => {
+                dragSourceRef.current = null
+                setDragOver(null)
+                setPaneDrop(null)
+                setIsDragging(false)
+              }}
+              onDragOver={(e) => {
+                if (!dragSourceRef.current) return
+                e.preventDefault()
+                e.stopPropagation()
+                e.dataTransfer.dropEffect = 'move'
+                if (paneDrop) setPaneDrop(null)
+                const rect = e.currentTarget.getBoundingClientRect()
+                const midpoint = rect.left + rect.width / 2
+                const insertIdx = e.clientX < midpoint ? arrIdx : arrIdx + 1
+                if (dragOver?.paneId !== pane.id || dragOver.index !== insertIdx) {
+                  setDragOver({ paneId: pane.id, index: insertIdx })
+                }
+              }}
+              onDrop={(e) => {
+                if (!dragSourceRef.current) return
+                e.preventDefault()
+                e.stopPropagation()
+                const src = dragSourceRef.current
+                const tgt = dragOver ?? { paneId: pane.id, index: arrIdx }
+                moveTab(src, tgt)
+                dragSourceRef.current = null
+                setDragOver(null)
+                setPaneDrop(null)
+                setIsDragging(false)
+              }}
+              onClick={(e) => {
+                e.stopPropagation()
+                dismissFloatingMenus()
+                setActiveTab(pane.id, tab.id)
+              }}
+              onDoubleClick={(e) => {
+                e.stopPropagation()
+                promoteTab(pane.id, tab.id)
+              }}
+              onAuxClick={(e) => {
+                if (e.button !== 1) return
+                e.preventDefault()
+                e.stopPropagation()
+                dismissFloatingMenus()
+                closeTab(pane.id, tab.id)
+              }}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                // Toggle closed when right-clicking the same tab again — the
+                // open handler's stopPropagation would otherwise leave the
+                // menu stuck (window never sees the event to dismiss it).
+                setContextMenu((prev) =>
+                  prev?.paneId === pane.id && prev.tabId === tab.id
+                    ? null
+                    : { paneId: pane.id, tabId: tab.id, x: e.clientX, y: e.clientY },
+                )
+                setHistoryMenu(null)
+                setOverflowMenu(null)
+              }}
+              title={tab.label}
+              style={{ width: tab.pinned ? PINNED_TAB_W : TAB_W }}
+              className={`group relative flex-none flex items-center gap-2 ${tab.pinned ? 'px-2.5' : 'px-3'} border-r border-border text-xs font-medium whitespace-nowrap transition-colors ${
+                isActive
+                  ? 'bg-card text-foreground'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-card/50'
+              } ${indicatorBefore ? 'before:absolute before:left-0 before:top-0 before:bottom-0 before:w-0.5 before:bg-accent-coral' : ''} ${indicatorAfter ? 'after:absolute after:right-0 after:top-0 after:bottom-0 after:w-0.5 after:bg-accent-coral' : ''}`}
+            >
+              {tab.pinned && (
+                <Pin className="w-3 h-3 shrink-0 text-accent-coral fill-accent-coral pointer-events-none" />
+              )}
+              <span
+                className={`truncate flex-1 text-left pointer-events-none ${tab.ephemeral ? 'italic' : ''}`}
+              >
+                {tab.label}
+              </span>
+              {!tab.pinned && (
+                <span
+                  role="button"
+                  aria-label={`Close ${tab.label}`}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    dismissFloatingMenus()
+                    closeTab(pane.id, tab.id)
+                  }}
+                  className="p-0.5 rounded-sm text-muted-foreground/60 hover:text-foreground hover:bg-muted opacity-60 group-hover:opacity-100"
+                >
+                  <X className="w-3 h-3" />
+                </span>
+              )}
+            </button>
+          )
+        }
         return (
           <div
             key={pane.id}
@@ -1907,10 +1776,34 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onOpenPal
                 ref={stripRefCb(pane.id)}
                 className="flex flex-1 min-w-0 items-stretch"
               >
-                <div className="flex-1 min-w-0 flex items-stretch overflow-x-auto">
-                  <SortableContext items={renderedTabIds} strategy={horizontalListSortingStrategy}>
-                    {renderedTabs.map(renderTab)}
-                  </SortableContext>
+                <div
+                  className="flex-1 min-w-0 flex items-stretch overflow-x-auto"
+                  onDragOver={(e) => {
+                    // Allow drop on the empty area at the end of the strip.
+                    if (dragSourceRef.current) {
+                      e.preventDefault()
+                      e.dataTransfer.dropEffect = 'move'
+                      if (paneDrop) setPaneDrop(null)
+                      const current = dragOver
+                      if (current?.paneId !== pane.id || current.index !== pane.tabs.length) {
+                        setDragOver({ paneId: pane.id, index: pane.tabs.length })
+                      }
+                    }
+                  }}
+                  onDrop={(e) => {
+                    if (!dragSourceRef.current) return
+                    e.preventDefault()
+                    const src = dragSourceRef.current
+                    const tgt = dragOver ?? { paneId: pane.id, index: pane.tabs.length }
+                    moveTab(src, tgt)
+                    dragSourceRef.current = null
+                    setDragOver(null)
+                    setPaneDrop(null)
+                    setIsDragging(false)
+                  }}
+                >
+                  {pinnedTabs.map(renderTab)}
+                  {visibleUnpinned.map(renderTab)}
                   {pane.tabs.length === 0 && (
                     <div className="px-3 flex items-center text-xs text-muted-foreground/60">
                       No tabs open. Click a section in the sidebar.
@@ -1991,32 +1884,63 @@ export function TabWorkspace({ initialTabs, apiRef, onActiveUrlChange, onOpenPal
                 </div>
               )}
 
-              {/* Drop targets over the pane body, mounted only mid-drag. They
-                  sit above the iframe (which would swallow the pointer) so a
-                  drag survives crossing into the body. A lone pane with ≥2 tabs
-                  offers split bands; otherwise it's a single move target. */}
-              {activeDrag && (
-                <PaneBodyDropZones
-                  paneId={pane.id}
-                  splittable={state.panes.length === 1 && pane.tabs.length >= 2}
-                />
+              {/* Drop-catcher sits above the iframe while a tab is being
+                  dragged. iframes eat native drag events, so the pane body
+                  can only receive dragover/drop through this overlay. */}
+              {isDragging && (
+                <div
+                  className="absolute inset-0 z-10"
+                  onDragOver={(e) => {
+                    if (!dragSourceRef.current) return
+                    e.preventDefault()
+                    e.dataTransfer.dropEffect = 'move'
+                    if (dragOver) setDragOver(null)
+                    let zone: PaneDropZone = 'center'
+                    // Split zones are only meaningful for a lone pane with at
+                    // least two tabs. Once split (two panes — the max), every
+                    // body drop is just a move into the hovered pane.
+                    if (state.panes.length === 1 && pane.tabs.length >= 2) {
+                      const rect = e.currentTarget.getBoundingClientRect()
+                      const x = e.clientX - rect.left
+                      const band = rect.width / 3
+                      if (x < band) zone = 'split-left'
+                      else if (x > rect.width - band) zone = 'split-right'
+                    }
+                    if (paneDrop?.paneId !== pane.id || paneDrop.zone !== zone) {
+                      setPaneDrop({ paneId: pane.id, zone })
+                    }
+                  }}
+                  onDrop={(e) => {
+                    if (!dragSourceRef.current) return
+                    e.preventDefault()
+                    const src = dragSourceRef.current
+                    const zone = paneDrop?.paneId === pane.id ? paneDrop.zone : 'center'
+                    if (zone === 'split-left') dropToSplit(src, 'left')
+                    else if (zone === 'split-right') dropToSplit(src, 'right')
+                    else moveTab(src, { paneId: pane.id, index: pane.tabs.length })
+                    dragSourceRef.current = null
+                    setDragOver(null)
+                    setPaneDrop(null)
+                    setIsDragging(false)
+                  }}
+                >
+                  {paneDrop?.paneId === pane.id && (
+                    <div
+                      className={`absolute inset-y-0 bg-accent-coral/20 border-2 border-accent-coral pointer-events-none ${
+                        paneDrop.zone === 'split-left'
+                          ? 'left-0 w-1/2'
+                          : paneDrop.zone === 'split-right'
+                            ? 'right-0 w-1/2'
+                            : 'inset-x-0'
+                      }`}
+                    />
+                  )}
+                </div>
               )}
             </div>
           </div>
         )
       })}
-
-        <DragOverlay>
-          {activeDrag
-            ? (() => {
-                const dragged = state.panes
-                  .find((p) => p.id === activeDrag.paneId)
-                  ?.tabs.find((t) => t.id === activeDrag.tabId)
-                return dragged ? <TabDragPreview tab={dragged} /> : null
-              })()
-            : null}
-        </DragOverlay>
-      </DndContext>
 
       {/* Invisible backdrop so a click anywhere — including over an iframe —
           dismisses floating tab menus. Menus sit above it at z-50. */}

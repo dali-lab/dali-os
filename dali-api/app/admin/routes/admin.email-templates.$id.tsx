@@ -13,6 +13,9 @@ import { regroupRedirect } from "~/core/lib/regroup-redirect.server"
 import { driveFolderCrumbs } from '~/lib/drive-crumbs.server'
 import { driveRootCrumbs } from '~/lib/drive-crumbs'
 import { PageIcon } from '~/components/PageIcon'
+import { renderEmail } from '~/lib/email'
+import { sendEmail } from '~/lib/gmail'
+import { getApplicationsGmailRefreshToken } from '~/lib/gmail-integration'
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const name = (data as any)?.template?.name
@@ -112,6 +115,37 @@ export async function action({ request, params }: Route.ActionArgs) {
       data: { name },
     })
     return redirect(`/admin/email-templates/${params.id}`)
+  }
+
+  if (intent === 'send-test') {
+    const subject = (formData.get('subject') as string)?.trim()
+    const body = (formData.get('body') as string) ?? ''
+    if (!subject) return { error: 'No version selected to send.' }
+
+    const user = await prisma.user.findUnique({
+      where: { id: auth.user.sub },
+      select: { firstName: true, daliEmail: true },
+    })
+    const toEmail = user?.daliEmail
+    if (!toEmail) return { error: 'Your account has no DALI email address on file.' }
+
+    // Render with sample values so the tester sees realistic output.
+    const sampleVars = {
+      firstName: user.firstName || 'FirstName',
+      domain: 'Product Design',
+      time: 'Friday, Jan 10 at 2:00 PM',
+      location: 'MacLean 132',
+      meetingUrl: 'https://dartmouth.zoom.us/j/example',
+      originalCloseDate: 'January 7',
+      newCloseDate: 'January 14',
+    }
+    const { subject: renderedSubject, html } = renderEmail({ subject, body }, sampleVars)
+
+    const refreshToken = await getApplicationsGmailRefreshToken()
+    if (!refreshToken) return { error: 'Gmail integration not configured.' }
+
+    await sendEmail({ refreshToken, to: toEmail, subject: renderedSubject, html })
+    return { testSent: true as const }
   }
 
   return null

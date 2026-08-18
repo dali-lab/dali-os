@@ -269,16 +269,18 @@ export async function ensureCoreDriveRoot(createdById: string): Promise<{ id: st
     }
     await adoptAgreementsByKind(kindFolders, hiringRootId);
 
-    const rubricsFolder = await ensureSystemChildFolder(
+    // Rubrics now belong in the Hiring drive (nav-areas.ts puts them under
+    // Hiring ▸ Library). Re-home any that were previously filed under the old
+    // Core ▸ Rubrics folder: the adoption in ensureHiringDriveRoot will pick
+    // them up on the next Hiring-drive visit. We still ensure the legacy Core
+    // folder exists so pages referencing it don't break, but no longer file
+    // new rubrics into it.
+    await ensureSystemChildFolder(
       "drive:core-rubrics",
       rootId,
       "Rubrics",
       createdById,
     );
-    await prisma.rubric.updateMany({
-      where: { OR: strayFilter(hiringRootId) },
-      data: { folderPageId: rubricsFolder },
-    });
   } catch {
     // Best-effort — never block the Core drive.
   }
@@ -509,15 +511,119 @@ export async function ensureHiringDriveRoot(createdById: string): Promise<{ id: 
       });
     }
 
-    // Rubrics, agreements (incl. Confidentiality), and email templates are all
-    // Core-managed artifacts filed under the Core drive (Rubrics / Agreements /
-    // Templates) by ensureCoreDriveRoot — not here. The Hiring drive holds only
-    // the hiring application/challenge Forms.
+    // Rubrics: adopted into Hiring ▸ Rubrics because the nav (nav-areas.ts)
+    // puts rubrics under Hiring ▸ Library. Previously filed under Core ▸
+    // Rubrics; re-home any stray rows so Drive and the nav stay consistent.
+    // Agreements and email templates remain in the Core drive.
+    const rubricsFolder = await ensureSystemChildFolder(
+      "drive:hiring:rubrics",
+      rootId,
+      "Rubrics",
+      createdById,
+    );
+    await adoptRubricsToHiring(rubricsFolder);
+
+    // Education offering application forms: file any unplaced form that is
+    // bound to an EducationOffering (via applicationFormId) into a managed
+    // folder within that offering's workspace. Best-effort, idempotent.
+    await adoptEducationForms(createdById);
   } catch {
     // Adoption is best-effort; don't surface errors to the caller.
   }
 
   return { id: rootId };
+}
+
+/** Move rubrics from the old Core ▸ Rubrics folder (and any unplaced ones)
+ *  into the new Hiring ▸ Rubrics folder. Only touches rubrics that are either
+ *  unplaced or still in the legacy Core rubrics folder — manual re-files by
+ *  Core members are left alone. Idempotent: once all rows have the Hiring
+ *  folder id the query returns zero rows. */
+async function adoptRubricsToHiring(hiringRubricsFolderId: string): Promise<void> {
+  // Resolve the old Core ▸ Rubrics folder (may not exist on a fresh DB).
+  const coreRubricsPage = await prisma.page.findUnique({
+    where: { systemKey: "drive:core-rubrics" },
+    select: { id: true },
+  });
+  const stray: { folderPageId: string | null }[] = [{ folderPageId: null }];
+  if (coreRubricsPage) stray.push({ folderPageId: coreRubricsPage.id });
+
+  await prisma.rubric.updateMany({
+    where: { OR: stray },
+    data: { folderPageId: hiringRubricsFolderId },
+  });
+}
+
+/** File forms bound to an EducationOffering into a managed folder inside
+ *  that offering's workspace Pages. Creates a Folder page in the offering
+ *  workspace on first call (idempotent via systemKey). Only touches forms
+ *  with folderPageId = null — manually placed forms are left where they are.
+ *
+ *  EducationOffering.applicationFormId confirms the wiring exists in schema.
+ *  Best-effort: errors here never block the Hiring drive root return. */
+async function adoptEducationForms(createdById: string): Promise<void> {
+  // Find offerings that have an application form that is unplaced.
+  const offerings = await prisma.educationOffering.findMany({
+    where: {
+      applicationFormId: { not: null },
+      applicationForm: { folderPageId: null },
+    },
+    select: { id: true, title: true, applicationFormId: true },
+  });
+  if (offerings.length === 0) return;
+
+  for (const offering of offerings) {
+    if (!offering.applicationFormId) continue;
+    // Ensure a managed "Forms" folder exists inside this offering's workspace.
+    // The offering workspace is represented as workspaceType=Education,
+    // workspaceId=offering.id pages. We park forms at top-level for now;
+    // a per-offering Drive folder page carries the workspaceType so the
+    // loader can scope to it. Use a lab-level Page under a systemKey so the
+    // folder is stable and findable without a workspace-type query change.
+    const folderSystemKey = `education:${offering.id}:forms-folder`;
+    let folderId: string;
+    const existingFolder = await prisma.page.findUnique({
+      where: { systemKey: folderSystemKey },
+      select: { id: true },
+    });
+    if (existingFolder) {
+      folderId = existingFolder.id;
+    } else {
+      try {
+        const last = await prisma.page.findFirst({
+          where: { workspaceType: "EducationOffering", workspaceId: offering.id, parentPageId: null },
+          orderBy: { position: "desc" },
+          select: { position: true },
+        });
+        const created = await prisma.page.create({
+          data: {
+            workspaceType: "EducationOffering",
+            workspaceId: offering.id,
+            title: "Forms",
+            kind: "Folder",
+            position: last ? last.position + 1 : 0,
+            createdById,
+            systemKey: folderSystemKey,
+          },
+          select: { id: true },
+        });
+        folderId = created.id;
+      } catch {
+        // Race condition — look it up instead.
+        const retry = await prisma.page.findUnique({
+          where: { systemKey: folderSystemKey },
+          select: { id: true },
+        });
+        if (!retry) continue; // give up for this offering
+        folderId = retry.id;
+      }
+    }
+
+    await prisma.form.updateMany({
+      where: { id: offering.applicationFormId, folderPageId: null },
+      data: { folderPageId: folderId },
+    });
+  }
 }
 
 /**

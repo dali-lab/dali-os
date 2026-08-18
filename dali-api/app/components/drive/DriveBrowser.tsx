@@ -86,7 +86,7 @@ export type DriveBrowserProps = {
   scopes: DriveTreeScope[];
   currentScopeId: string | null;
   currentFolderId: string | null;
-  typeFilter: "all" | "doc" | "file" | "form" | "agreement";
+  typeFilter: "all" | "doc" | "file" | "form" | "agreement" | "emailTemplate" | "rubric";
   search: string;
   onSearchChange: (q: string) => void;
   onNavigate: (scopeId: string | null, folderId: string | null) => void;
@@ -262,7 +262,12 @@ function itemMenuItems(
   // The gate extends the existing type-based canMove gate at lines 258-260.
   const isSystemManaged = driveSpacesEnabled && item.type === "folder" && !!(item as { systemKey?: string | null }).systemKey;
   const canRename = !isSystemManaged && (item.type === "folder" || item.type === "doc" || item.type === "file" || item.type === "form");
-  const canMove = item.type !== "agreement" && item.type !== "rubric" && item.type !== "emailTemplate";
+  // drive-spaces: email templates are now managed by Drive (rename/move/delete
+  // allowed); agreements and rubrics remain placement-locked.
+  const canMove =
+    item.type !== "agreement" &&
+    item.type !== "rubric" &&
+    (driveSpacesEnabled ? true : item.type !== "emailTemplate");
   const canDelete = !isSystemManaged && (item.type === "folder" || item.type === "doc" || item.type === "file" || item.type === "form");
   const canFavorite = item.type === "doc" || item.type === "folder";
   return (
@@ -858,11 +863,12 @@ export function DriveBrowser({
       selectedLeaf.type === "doc" ||
       selectedLeaf.type === "file" ||
       selectedLeaf.type === "form");
+  // drive-spaces: email templates are movable in Drive (card-grid list retired).
   const canLeafMove =
     !!selectedLeaf &&
     selectedLeaf.type !== "agreement" &&
     selectedLeaf.type !== "rubric" &&
-    selectedLeaf.type !== "emailTemplate";
+    (driveSpacesEnabled ? true : selectedLeaf.type !== "emailTemplate");
   const canLeafDelete =
     !leafIsSystemManaged &&
     selectedLeaf &&

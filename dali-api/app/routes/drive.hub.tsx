@@ -5,6 +5,7 @@ import {
   FileText,
   ClipboardList,
   FileSignature,
+  Mail,
   Paperclip,
   FolderOpen,
   Plus,
@@ -181,7 +182,7 @@ type DriveScope = LoaderData["driveScopes"][number];
 
 // ── Type filter ────────────────────────────────────────────────────────────────
 
-export type DriveTypeFilter = "all" | "doc" | "file" | "form" | "agreement";
+export type DriveTypeFilter = "all" | "doc" | "file" | "form" | "agreement" | "emailTemplate" | "rubric";
 
 const TYPE_FILTERS: {
   value: DriveTypeFilter;
@@ -195,6 +196,8 @@ const TYPE_FILTERS: {
   { value: "file", label: "Files", icon: <Paperclip className="w-3.5 h-3.5" /> },
   { value: "form", label: "Forms", icon: <ClipboardList className="w-3.5 h-3.5" />, requiresCap: "canViewForms" },
   { value: "agreement", label: "Agreements", icon: <FileSignature className="w-3.5 h-3.5" />, requiresCap: "canManageAgreements" },
+  { value: "emailTemplate", label: "Email Templates", icon: <Mail className="w-3.5 h-3.5" />, requiresCap: "canManageAgreements" },
+  { value: "rubric", label: "Rubrics", icon: <ClipboardList className="w-3.5 h-3.5" />, requiresCap: "canManageAgreements" },
 ];
 
 // ── Template picker ────────────────────────────────────────────────────────────
@@ -842,6 +845,7 @@ export default function DriveHub() {
   const revalidator = useRevalidator();
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const templatesEnabled = useFeatureFlag("templates");
+  const driveSpacesEnabled = useFeatureFlag("drive-spaces");
   // Search is a client-side filter over already-loaded items, so it lives in
   // local state — keeping it out of the URL avoids a loader revalidation on
   // every keystroke. Scope/folder/type stay in the URL (linkable, back/forward).
@@ -876,7 +880,14 @@ export default function DriveHub() {
   const currentFolderId = searchParams.get("folder");
   const rawType = searchParams.get("type") as DriveTypeFilter | null;
   const typeFilter: DriveTypeFilter =
-    rawType === "doc" || rawType === "file" || rawType === "form" || rawType === "agreement" ? rawType : "all";
+    rawType === "doc" ||
+    rawType === "file" ||
+    rawType === "form" ||
+    rawType === "agreement" ||
+    rawType === "emailTemplate" ||
+    rawType === "rubric"
+      ? rawType
+      : "all";
 
   const currentScope = useMemo(
     () => driveScopes.find((s) => s.id === currentScopeId) ?? null,
@@ -953,7 +964,11 @@ export default function DriveHub() {
   // first. Managed types (agreement/rubric/emailTemplate) are filed
   // automatically and excluded. Files/forms use folderPageId and stay within the
   // Lab-workspace drives; docs/folders can also cross into projects.
-  const NON_MOVABLE = new Set<DriveItem["type"]>(["agreement", "rubric", "emailTemplate"]);
+  // drive-spaces: email templates are now Drive-managed (rename/move/delete
+  // permitted). Agreements and rubrics remain placement-locked (kind-folders).
+  const NON_MOVABLE = new Set<DriveItem["type"]>(
+    driveSpacesEnabled ? ["agreement", "rubric"] : ["agreement", "rubric", "emailTemplate"],
+  );
   const moveDestinationsFor = useCallback(
     (item: DriveItem): DriveTreeScope[] =>
       driveScopes.filter((s) => {
