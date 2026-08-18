@@ -123,7 +123,11 @@ export function useSharedArray<T extends object>(
 
   const setItems = useCallback((next: T[]) => {
     const yarray = yarrayRef.current;
-    if (!yarray) return;
+    if (!yarray) {
+      // No collab room active — update local state directly.
+      setLocalItems(next);
+      return;
+    }
     yarray.doc!.transact(() => {
       yarray.delete(0, yarray.length);
       for (const item of next) {
@@ -137,19 +141,39 @@ export function useSharedArray<T extends object>(
 
   const push = useCallback((item: T) => {
     const yarray = yarrayRef.current;
-    if (!yarray) return;
+    if (!yarray) {
+      // No collab room active — append to local state directly.
+      setLocalItems((prev) => [...prev, item]);
+      return;
+    }
     const m = new Y.Map<unknown>();
     for (const [k, v] of Object.entries(item)) m.set(k, v);
     yarray.push([m]);
   }, []);
 
   const remove = useCallback((index: number) => {
-    yarrayRef.current?.delete(index, 1);
+    const yarray = yarrayRef.current;
+    if (!yarray) {
+      // No collab room active — remove from local state directly.
+      setLocalItems((prev) => prev.filter((_, i) => i !== index));
+      return;
+    }
+    yarray.delete(index, 1);
   }, []);
 
   const move = useCallback((from: number, to: number) => {
     const yarray = yarrayRef.current;
-    if (!yarray || from === to) return;
+    if (from === to) return;
+    if (!yarray) {
+      // No collab room active — reorder local state directly.
+      setLocalItems((prev) => {
+        const next = [...prev];
+        const [item] = next.splice(from, 1);
+        next.splice(to, 0, item);
+        return next;
+      });
+      return;
+    }
     yarray.doc!.transact(() => {
       const [item] = yarray.slice(from, from + 1);
       yarray.delete(from, 1);

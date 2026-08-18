@@ -246,6 +246,8 @@ function scopeIcon(scope: DriveTreeScope) {
   if (scope.id === "core") return <Shield className="w-4 h-4 text-accent-coral/80 shrink-0" />;
   if (scope.id === "hiring") return <Briefcase className="w-4 h-4 text-accent-coral/80 shrink-0" />;
   if (scope.id === "lab") return <Users className="w-4 h-4 text-muted-foreground shrink-0" />;
+  // Synthetic group scopes use a folder icon (no emoji on the group itself).
+  if (scope.id === "projects" || scope.id === "education") return <Folder className="w-4 h-4 text-accent-coral/80 shrink-0" />;
   if (scope.iconEmoji) return <span className="text-base leading-none shrink-0">{scope.iconEmoji}</span>;
   return <Folder className="w-4 h-4 text-accent-coral/80 shrink-0" />;
 }
@@ -1298,14 +1300,19 @@ function ColumnScopeRow({
 }) {
   const isCore = scope.id === "core";
   const isHiring = scope.id === "hiring";
-  const isProject = scope.id !== "mine" && scope.id !== "lab" && !isCore && !isHiring;
+  // Synthetic group scopes ("projects"/"education") are not valid drop targets —
+  // dropping on the group row is ambiguous (which project?). Only individual
+  // project folders inside the group accept drops via the normal folder-drop path.
+  const isGroupScope = scope.id === "projects" || scope.id === "education";
+  const isProject = scope.id !== "mine" && scope.id !== "lab" && !isCore && !isHiring && !isGroupScope;
   const label =
     scope.id === "mine" ? "My Drive" : scope.id === "lab" ? "Lab" : scope.label;
 
   const drop = useDroppable({
     id: `scopedrop::${scope.id}`,
     data: { destScopeId: scope.id },
-    disabled: !isDragging,
+    // Disable dropping onto the group scope rows; also disables when not dragging.
+    disabled: !isDragging || isGroupScope,
   });
 
   // Signal ③: audience chip revealed on hover when the flag is on and the
@@ -1637,7 +1644,8 @@ function ScopeList({
       {scopes.map((scope) => {
         const isCore = scope.id === "core";
         const isHiring = scope.id === "hiring";
-        const isProject = scope.id !== "mine" && scope.id !== "lab" && !isCore && !isHiring;
+        const isGroupScope = scope.id === "projects" || scope.id === "education";
+        const isProject = scope.id !== "mine" && scope.id !== "lab" && !isCore && !isHiring && !isGroupScope;
         const label = scope.id === "mine" ? "My Drive" : scope.id === "lab" ? "Lab" : scope.label;
         return (
           <div

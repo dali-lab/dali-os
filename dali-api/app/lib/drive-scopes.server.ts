@@ -369,30 +369,95 @@ export async function loadDriveScopes({
         break;
 
       case "workspace-multi":
-        if (space.key === "projects") {
+        if (space.key === "projects" && projectIds.length > 0) {
+          // Build one "Projects" top-level scope whose top-level items are
+          // synthetic folder rows (one per project). Each project's real items
+          // are then reparented so their root-level parentFolderId points at
+          // the synthetic project folder id, letting the browser drill in.
+          const syntheticProjectItems: DriveItem[] = [];
           for (let i = 0; i < projectIds.length; i++) {
-            const id = projectIds[i];
-            result.push({
-              id,
-              label: projectNames.get(id) ?? "Project",
-              iconEmoji: projectEmojis.get(id) ?? null,
-              items: tagFavorites(filteredProjects[i], favIds),
-              systemManaged: false,
-              scopeAudience: "Project members",
-            });
+            const pid = projectIds[i];
+            const projectItems = filteredProjects[i];
+
+            // Synthetic folder row for this project (id = projectId, no parent).
+            syntheticProjectItems.push({
+              type: "folder",
+              id: pid,
+              title: projectNames.get(pid) ?? "Project",
+              iconEmoji: projectEmojis.get(pid) ?? null,
+              parentFolderId: null,
+              href: `/projects/${pid}`,
+              updatedAt: new Date(0),
+              sizeBytes: null,
+              favorited: false,
+              linkedProcess: null,
+              systemKey: null,
+            } as DriveItem);
+
+            // Real items: reparent those whose top-level parentFolderId is null
+            // so they land inside the synthetic project folder. Items already
+            // nested under a real folder keep their real parentFolderId.
+            for (const item of projectItems) {
+              syntheticProjectItems.push(
+                item.parentFolderId === null
+                  ? { ...item, parentFolderId: pid }
+                  : item,
+              );
+            }
           }
-        } else if (space.key === "education") {
+
+          // Add the synthetic project folder ids to the form de-dup sets so
+          // any form placed directly at a project's root (parentFolderId = null
+          // in the raw data, reparented to pid above) still belongs here.
+          // (Forms were already reparented in the loop above, so no extra work
+          // is needed — they arrive with parentFolderId === pid after reparent.)
+
+          result.push({
+            id: "projects",
+            label: "Projects",
+            iconEmoji: null,
+            items: tagFavorites(syntheticProjectItems, favIds),
+            systemManaged: false,
+            scopeAudience: "Project members",
+          });
+        } else if (space.key === "education" && educationIds.length > 0) {
+          // Same pattern: one "Education" scope with per-offering synthetic folders.
+          const syntheticEducationItems: DriveItem[] = [];
           for (let i = 0; i < educationIds.length; i++) {
-            const id = educationIds[i];
-            result.push({
-              id,
-              label: educationNames.get(id) ?? "Offering",
+            const oid = educationIds[i];
+            const offeringItems = filteredEducation[i];
+
+            syntheticEducationItems.push({
+              type: "folder",
+              id: oid,
+              title: educationNames.get(oid) ?? "Offering",
               iconEmoji: null,
-              items: tagFavorites(filteredEducation[i], favIds),
-              systemManaged: false,
-              scopeAudience: "Enrolled members",
-            });
+              parentFolderId: null,
+              href: `/education/${oid}`,
+              updatedAt: new Date(0),
+              sizeBytes: null,
+              favorited: false,
+              linkedProcess: null,
+              systemKey: null,
+            } as DriveItem);
+
+            for (const item of offeringItems) {
+              syntheticEducationItems.push(
+                item.parentFolderId === null
+                  ? { ...item, parentFolderId: oid }
+                  : item,
+              );
+            }
           }
+
+          result.push({
+            id: "education",
+            label: "Education",
+            iconEmoji: null,
+            items: tagFavorites(syntheticEducationItems, favIds),
+            systemManaged: false,
+            scopeAudience: "Enrolled members",
+          });
         }
         break;
 
