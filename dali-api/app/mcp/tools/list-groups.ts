@@ -1,20 +1,14 @@
-// MCP `list_groups` — lab groups visible to the authenticated member.
-// Static groups they're a member of and Dynamic groups whose resolved
-// membership includes them. Requires the `mcp:read` scope.
-//
-// The full `memberIds` roster is only returned to callers who can view rosters
-// on the web (Core / Admin / Instructor — the same `canViewForms` gate that
-// guards the web Groups page). Everyone else gets `memberCount` but not the
-// userId list, so a rank-and-file member can't bulk-enumerate a group's
-// membership through MCP when no equivalent web surface would show it.
+// MCP `list_groups` — every lab group (Static and Dynamic) with its resolved
+// membership. Groups are not member-scoped: any authenticated member can list
+// them and see rosters, matching the web scheduler (which lets anyone schedule
+// a meeting with any team). Requires the `mcp:read` scope.
 
-import { listVisibleGroupsForUser } from "~/lib/groups";
-import { canViewForms } from "~/lib/roles";
+import { listAllGroups } from "~/lib/groups";
 
 export const LIST_GROUPS_TOOL = {
   name: "list_groups",
   description:
-    "List lab groups the authenticated DALI OS member belongs to. Returns each group's id, name, type (Static/Dynamic), and memberCount. The full member userId list (`memberIds`) is included only for Core/Admin/Instructor callers, matching the web Groups page.",
+    "List all lab groups (Static and Dynamic). Returns each group's id, name, type, memberIds, and memberCount. Pair with the free-busy / schedule tools to schedule a meeting with a group's members.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -31,19 +25,17 @@ export const LIST_GROUPS_TOOL = {
 
 type Input = { includeArchived?: boolean };
 
-export async function runListGroups(callerId: string, input: Input) {
+export async function runListGroups(_callerId: string, input: Input) {
   const includeArchived = input.includeArchived ?? false;
-  const canSeeRosters = await canViewForms(callerId);
-  const visible = await listVisibleGroupsForUser(callerId);
-  const groups = visible
+  const all = await listAllGroups();
+  const groups = all
     .filter((g) => includeArchived || !g.archived)
     .map((g) => ({
       id: g.id,
       name: g.name,
       type: g.type,
       systemKey: g.systemKey,
-      // Roster userIds only for Core/Admin/Instructor; others see the count.
-      memberIds: canSeeRosters ? g.memberIds : undefined,
+      memberIds: g.memberIds,
       memberCount: g.memberIds.length,
       archived: g.archived,
     }));
