@@ -18,11 +18,13 @@ vi.mock("~/lib/cors", () => ({
   withCors: (_req: Request, res: Response) => res,
   handlePreflight: () => null,
 }));
+vi.mock("~/education/lib/access.server", () => ({ isOfferingManager: vi.fn() }));
 
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { isCore, isProjectMember, isLabMember } from "~/lib/roles";
 import { canManageSharing } from "~/lib/page-share-access.server";
+import { isOfferingManager } from "~/education/lib/access.server";
 import { logAuditEvent } from "~/lib/audit";
 import { action } from "../api.pages.$id.move";
 
@@ -64,6 +66,7 @@ beforeEach(() => {
   vi.mocked(isCore).mockResolvedValue(false);
   vi.mocked(isProjectMember).mockResolvedValue(false);
   vi.mocked(isLabMember).mockResolvedValue(false);
+  vi.mocked(isOfferingManager).mockResolvedValue(false);
   m.page.findMany.mockResolvedValue([]); // siblings + children default empty
   m.$transaction.mockResolvedValue([]);
 });
@@ -146,10 +149,24 @@ describe("POST /api/pages/:id/move", () => {
     expect(res.status).toBe(400);
   });
 
-  it("rejects an Education/Member destination via the enum (400)", async () => {
+  it("rejects a Member destination via the enum (400)", async () => {
     m.page.findUnique.mockResolvedValue(labPage());
-    const res = await call({ parentPageId: null, workspaceType: "EducationOffering", workspaceId: "off1" });
+    const res = await call({ parentPageId: null, workspaceType: "Member", workspaceId: "u2" });
     expect(res.status).toBe(400);
+  });
+
+  it("403 moving to an EducationOffering the user doesn't manage", async () => {
+    m.page.findUnique.mockResolvedValue(labPage());
+    vi.mocked(isOfferingManager).mockResolvedValue(false);
+    const res = await call({ parentPageId: null, workspaceType: "EducationOffering", workspaceId: "off1" });
+    expect(res.status).toBe(403);
+  });
+
+  it("moves into an EducationOffering the user manages (200)", async () => {
+    m.page.findUnique.mockResolvedValue(labPage());
+    vi.mocked(isOfferingManager).mockResolvedValue(true);
+    const res = await call({ parentPageId: null, workspaceType: "EducationOffering", workspaceId: "off1" });
+    expect(res.status).toBe(200);
   });
 
   it("cascades a folder's children to the new workspace (keeping their parent)", async () => {

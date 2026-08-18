@@ -623,9 +623,21 @@ function makeScopeActions({
       return ((await res.json()) as { id: string }).id;
     }
     if (kind === "education-group") {
-      // Education offerings don't have a document-create API exposed yet;
-      // treat as no-op to avoid routing to an invalid endpoint.
-      return null;
+      // Mirror the projects-group branch: resolve the offering, strip the
+      // synthetic top-level node from parentPageId, then POST to the offering
+      // documents endpoint. Instructors and Core only (server-enforced).
+      const offeringId = resolveWorkspaceId(scope.items, parentPageId);
+      if (!offeringId) return null; // no-op: at the group root, no offering selected
+      const parentNode = parentPageId ? scope.items.find((it) => it.id === parentPageId) : null;
+      const realParent = parentNode?.parentFolderId === null ? null : parentPageId;
+      const res = await fetch(`/api/education/${offeringId}/documents`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, kind: pageKind, ...(realParent ? { parentPageId: realParent } : {}) }),
+      });
+      if (!res.ok) return null;
+      return ((await res.json()) as { id: string }).id;
     }
     const url = kind === "lab" ? "/api/lab-documents" : `/api/projects/${scope.id}/documents`;
     const res = await fetch(url, {
@@ -774,6 +786,33 @@ function makeScopeActions({
         fd.set("pageId", item.id);
         fd.set("parentPageId", target ?? "");
         res = await fetch("/api/notes", { method: "POST", body: fd, credentials: "include" });
+      } else if (kind === "projects-group" || kind === "education-group") {
+        // Dragging within the synthetic group scope (projects/education). If the
+        // destination is a synthetic top-level folder (the project/offering node
+        // itself, parentFolderId===null), it's a cross-workspace move to that
+        // workspace's root. If it's a real sub-folder inside a project/offering,
+        // it's still a cross-workspace move but with a real parentPageId.
+        const wsId = resolveWorkspaceId(scope.items, target);
+        if (!wsId) {
+          // No workspace resolved (e.g. dropped at the group root) — no-op.
+          toast.error("Select a project or offering to move into");
+          return;
+        }
+        const wsType = kind === "projects-group" ? "Project" : "EducationOffering";
+        // If target IS the synthetic top-level node, the real parentPageId is null
+        // (move to the workspace root). Otherwise target is a real sub-folder.
+        const destNode = target ? scope.items.find((it) => it.id === target) : null;
+        const realParent = destNode?.parentFolderId === null ? null : (target ?? null);
+        res = await fetch(`/api/pages/${item.id}/move`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            parentPageId: realParent,
+            workspaceType: wsType,
+            workspaceId: wsId,
+          }),
+        });
       } else {
         res = await fetch(`/api/pages/${item.id}/move`, {
           method: "POST",
@@ -1066,15 +1105,19 @@ export default function DriveHub() {
       driveScopes.filter((s) => {
         if (s.id === "mine" || NON_MOVABLE.has(item.type)) return false;
         const kind = scopeKindOf(s.id);
-        // The synthetic group scopes ("projects"/"education") are not valid
-        // cross-drive move targets — you'd be dropping at the group root, not
-        // into a specific project. Exclude them; individual project content
-        // stays within the "projects" scope via same-scope performMove.
-        if (kind === "projects-group" || kind === "education-group") return false;
-        const labWorkspace = kind !== "project";
         // Files/forms move by folderPageId (no workspace change), so restrict
-        // them to the Lab-workspace drives. Docs/folders can go anywhere.
-        return item.type === "doc" || item.type === "folder" ? true : labWorkspace;
+        // them to the Lab-workspace drives. Docs/folders can also move into
+        // project/offering workspaces.
+        const isDocOrFolder = item.type === "doc" || item.type === "folder";
+        if (!isDocOrFolder) {
+          // Files/forms: Lab workspace only (no project/offering cross-move).
+          return kind !== "project" && kind !== "projects-group" && kind !== "education-group";
+        }
+        // Docs/folders: include the synthetic group scopes so the picker shows
+        // individual project/offering folders as drillable destinations.
+        // The bare group ROOT is exposed as a drive row but the move handler
+        // requires a specific project/offering folder to be selected.
+        return true;
       }),
     [driveScopes],
   );
@@ -1089,10 +1132,43 @@ export default function DriveHub() {
     ) => {
       const destScope = driveScopes.find((s) => s.id === destScopeId);
       if (!destScope) return;
-      const d = scopeDest(destScope);
       const src = driveScopes.find((s) => s.id === sourceScopeId);
       const srcWs = src ? scopeDest(src) : { workspaceType: "Lab" as const, workspaceId: null, root: null };
-      const parent = destFolderPageId ?? d.root; // drive top = scoped root (Core/Hiring) or null (Lab/project)
+
+      // For the synthetic group scopes (projects/education), the destFolderPageId
+      // IS the project/offering id when the user picks a synthetic top-level folder.
+      // Resolve the workspace from the picked folder id so the move endpoint
+      // receives the correct workspaceType/workspaceId rather than treating the
+      // project/offering id as a real parentPageId.
+      const destKind = scopeKindOf(destScopeId);
+      let d: { workspaceType: "Lab" | "Project" | "EducationOffering"; workspaceId: string | null; root: string | null };
+      let parent: string | null;
+      if (destKind === "projects-group" || destKind === "education-group") {
+        if (!destFolderPageId) {
+          // Dropped at the bare group root — can't resolve a specific workspace.
+          toast.error("Select a project or offering to move into");
+          return;
+        }
+        // Walk up to the synthetic top-level to get the workspace id, then
+        // determine whether the pick was ON the synthetic root (→ null parent)
+        // or inside a real sub-folder (→ keep real parentPageId).
+        const wsId = resolveWorkspaceId(destScope.items, destFolderPageId);
+        if (!wsId) {
+          toast.error("Select a project or offering to move into");
+          return;
+        }
+        const destNode = destScope.items.find((it) => it.id === destFolderPageId);
+        const realParent = destNode?.parentFolderId === null ? null : destFolderPageId;
+        d = {
+          workspaceType: destKind === "projects-group" ? "Project" : "EducationOffering",
+          workspaceId: wsId,
+          root: null,
+        };
+        parent = realParent;
+      } else {
+        d = scopeDest(destScope) as typeof d;
+        parent = destFolderPageId ?? d.root;
+      }
 
       // No-op if it's already there.
       if (destScopeId === sourceScopeId && (parent ?? null) === (item.parentFolderId ?? null)) return;
