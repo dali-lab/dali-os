@@ -1,19 +1,8 @@
-import { useEffect, useRef, useState } from "react";
-import { useNavigation } from "react-router";
-import {
-  Bell,
-  CalendarDays,
-  Cable,
-  FileSignature,
-  KeyRound,
-  Palette,
-  PanelTop,
-  Slack,
-  UserCircle2,
-} from "lucide-react";
+import { useEffect, useState } from "react";
+import { Bell, Cable, KeyRound, Palette } from "lucide-react";
 import { useDesktopVersion } from "~/lib/desktop";
-import { SettingsBlock, SettingsLayout } from "~/components/settings/SettingsLayout";
-import { AccountSettingsBlock } from "~/components/settings/AccountSettingsBlock";
+import { UnderlineTabButtons } from "~/components/AreaPillNav";
+import { SettingsBlock } from "~/components/settings/SettingsBlock";
 import { AppearanceSettingsBlock } from "~/components/settings/AppearanceSettingsBlock";
 import { WorkspaceSettingsBlock } from "~/components/settings/WorkspaceSettingsBlock";
 import { CalendarSettingsBlock } from "~/components/settings/CalendarSettingsBlock";
@@ -21,141 +10,94 @@ import { SlackSettingsBlock } from "~/components/settings/SlackSettingsBlock";
 import { SessionsSettingsBlock } from "~/components/settings/SessionsSettingsBlock";
 import { ConnectedAppsSettingsBlock } from "~/components/settings/ConnectedAppsSettingsBlock";
 import { NotificationsSettingsBlock } from "~/components/settings/NotificationsSettingsBlock";
-import { AgreementsSettingsBlock } from "~/components/settings/AgreementsSettingsBlock";
 import type { loadSettingsPageData } from "~/lib/settings-page.server";
 
-const SECTION_IDS = [
-  "account",
-  "appearance",
-  "workspace",
-  "calendar",
-  "slack",
-  "notifications",
-  "agreements",
-  "devices",
-  "connected-apps",
-] as const;
-type SectionId = (typeof SECTION_IDS)[number];
-
-const NAV = [
-  { id: "account", label: "Account", icon: UserCircle2 },
+const TABS = [
   { id: "appearance", label: "Appearance", icon: Palette },
-  { id: "workspace", label: "Workspace", icon: PanelTop },
-  { id: "calendar", label: "Calendar", icon: CalendarDays },
-  { id: "slack", label: "Slack", icon: Slack },
   { id: "notifications", label: "Notifications", icon: Bell },
-  { id: "agreements", label: "Agreements", icon: FileSignature },
-  { id: "devices", label: "Your devices", icon: KeyRound },
-  { id: "connected-apps", label: "Connected apps", icon: Cable },
+  { id: "integrations", label: "Integrations", icon: Cable },
+  { id: "devices", label: "Devices", icon: KeyRound },
 ] as const;
+type TabId = (typeof TABS)[number]["id"];
 
-function sectionFromHash(): SectionId | null {
-  const hash = window.location.hash.slice(1);
-  return (SECTION_IDS as readonly string[]).includes(hash)
-    ? (hash as SectionId)
-    : null;
-}
+// Sections that used to be their own tab now share one. The old hashes stay
+// live — /settings#slack (the settings.slack loader redirect), #devices,
+// #connected-apps and friends still land on the right tab, and on a merged
+// tab we scroll to the block the hash actually named.
+const HASH_TO_TAB: Record<string, TabId> = {
+  appearance: "appearance",
+  workspace: "appearance",
+  notifications: "notifications",
+  calendar: "integrations",
+  slack: "integrations",
+  "connected-apps": "integrations",
+  devices: "devices",
+};
 
 type SettingsData = Awaited<ReturnType<typeof loadSettingsPageData>>;
 
 export function SettingsPage({
   data,
-  actionError,
 }: {
   data: Exclude<SettingsData, Response>;
-  actionError?: string | null;
 }) {
   const desktopVersion = useDesktopVersion();
-  const navigation = useNavigation();
-  const wasSubmitting = useRef(false);
 
-  // One section at a time, Account by default. The hash is the source of
-  // truth so old deep links (/settings#devices, /settings#connected-apps
-  // redirects) and back/forward keep working.
-  const [active, setActive] = useState<SectionId>("account");
+  // One tab at a time, Appearance by default. The hash is the source of truth
+  // so deep links and back/forward keep working; clicking a tab writes it.
+  const [active, setActive] = useState<TabId>("appearance");
   useEffect(() => {
     const sync = () => {
-      const section = sectionFromHash();
-      if (section) setActive(section);
+      const hash = window.location.hash.slice(1);
+      const tab = HASH_TO_TAB[hash];
+      if (!tab) return;
+      setActive(tab);
+      // On a merged tab the hash names a block, not the tab — bring it into view.
+      if (hash !== tab) {
+        requestAnimationFrame(() =>
+          document.getElementById(hash)?.scrollIntoView({ block: "start" }),
+        );
+      }
     };
     sync();
     window.addEventListener("hashchange", sync);
     return () => window.removeEventListener("hashchange", sync);
   }, []);
 
-  useEffect(() => {
-    if (navigation.state === "submitting") {
-      wasSubmitting.current = true;
-      return;
-    }
-    if (navigation.state === "idle" && wasSubmitting.current) {
-      wasSubmitting.current = false;
-      if (
-        !actionError &&
-        typeof window !== "undefined" &&
-        window.parent !== window
-      ) {
-        window.parent.postMessage(
-          { type: "dali:profileUpdated" },
-          window.location.origin,
-        );
-      }
-    }
-  }, [navigation.state, actionError]);
-
   return (
-    <main className="max-w-4xl">
-      <header className="mb-3">
-        <h1 className="text-2xl font-semibold">Settings</h1>
-      </header>
+    <main className="flex flex-col gap-5">
+      <UnderlineTabButtons
+        label="Settings"
+        items={TABS.map(({ id, label, icon }) => ({
+          label,
+          icon,
+          active: active === id,
+          // Writing the hash drives the listener above, so a tab click is a
+          // history entry like the old anchor nav was.
+          onClick: () => {
+            window.location.hash = id;
+          },
+        }))}
+      />
 
-      <SettingsLayout nav={[...NAV]} active={active}>
-        {active === "account" && (
-          <SettingsBlock
-            id="account"
-            title="Account"
-            description="Name, pronouns, emails, photo, class year, and major."
-          >
-            <AccountSettingsBlock profile={data.profile} />
-          </SettingsBlock>
-        )}
-
-        {active === "calendar" && (
-          <SettingsBlock
-            id="calendar"
-            title="Calendar"
-            description="Linked Google accounts and which sub-calendars block your availability."
-          >
-            <CalendarSettingsBlock calendarLinks={data.calendarLinks} />
-          </SettingsBlock>
-        )}
-
-        {active === "workspace" && (
-          <SettingsBlock
-            id="workspace"
-            title="Workspace"
-            description="How pages open, and whether to show the sidebar."
-          >
-            <WorkspaceSettingsBlock hideActivity={data.workspace.hideActivity} />
-          </SettingsBlock>
-        )}
-        {active === "slack" && (
-          <SettingsBlock
-            id="slack"
-            title="Slack"
-            description="Connect Slack so you're added to project channels when staffed."
-          >
-            <SlackSettingsBlock {...data.slack} />
-          </SettingsBlock>
-        )}
+      <div className="flex flex-col gap-4">
         {active === "appearance" && (
-          <SettingsBlock
-            id="appearance"
-            title="Appearance"
-            description="Light mode, dark mode, or match your device."
-          >
-            <AppearanceSettingsBlock />
-          </SettingsBlock>
+          <>
+            <SettingsBlock
+              id="appearance"
+              title="Theme"
+              description="Light mode, dark mode, or match your device."
+            >
+              <AppearanceSettingsBlock />
+            </SettingsBlock>
+            <SettingsBlock
+              id="workspace"
+              title="Workspace"
+              description="How pages open, and whether to show the sidebar."
+            >
+              <WorkspaceSettingsBlock hideActivity={data.workspace.hideActivity} />
+            </SettingsBlock>
+          </>
         )}
 
         {active === "notifications" && (
@@ -168,17 +110,30 @@ export function SettingsPage({
           </SettingsBlock>
         )}
 
-        {active === "agreements" && (
-          <SettingsBlock
-            id="agreements"
-            title="Agreements"
-            description="Lab agreements you've signed, and any still awaiting your signature."
-          >
-            <AgreementsSettingsBlock
-              outstanding={data.agreements.outstanding}
-              signed={data.agreements.signed}
-            />
-          </SettingsBlock>
+        {active === "integrations" && (
+          <>
+            <SettingsBlock
+              id="calendar"
+              title="Calendar"
+              description="Linked Google accounts and which sub-calendars block your availability."
+            >
+              <CalendarSettingsBlock calendarLinks={data.calendarLinks} />
+            </SettingsBlock>
+            <SettingsBlock
+              id="slack"
+              title="Slack"
+              description="Connect Slack so you're added to project channels when staffed."
+            >
+              <SlackSettingsBlock {...data.slack} />
+            </SettingsBlock>
+            <SettingsBlock
+              id="connected-apps"
+              title="Connected apps"
+              description="AI assistants and other apps authorized via MCP."
+            >
+              <ConnectedAppsSettingsBlock grants={data.grants} />
+            </SettingsBlock>
+          </>
         )}
 
         {active === "devices" && (
@@ -194,22 +149,12 @@ export function SettingsPage({
           </SettingsBlock>
         )}
 
-        {active === "connected-apps" && (
-          <SettingsBlock
-            id="connected-apps"
-            title="Connected apps"
-            description="AI assistants and other apps authorized via MCP."
-          >
-            <ConnectedAppsSettingsBlock grants={data.grants} />
-          </SettingsBlock>
+        {desktopVersion && (
+          <p className="mt-6 text-xs text-muted-foreground">
+            DALI OS Desktop v{desktopVersion}
+          </p>
         )}
-      </SettingsLayout>
-
-      {desktopVersion && (
-        <p className="mt-10 text-xs text-muted-foreground">
-          DALI OS Desktop v{desktopVersion}
-        </p>
-      )}
+      </div>
     </main>
   );
 }

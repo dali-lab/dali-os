@@ -116,9 +116,9 @@ export function MemberProfileView({
   // the partner org detail page: an unboxed identity header up top, then each
   // section as its own bordered card. Name/pronouns edit inside Personal's
   // own form (see PersonalSection's showIdentitySummary) rather than a
-  // separate Account card, so there's a single Edit control on this page —
-  // unlike /settings, which has no Personal section and so still renders
-  // AccountSettingsBlock (name/pronouns + major/class year) on its own.
+  // separate Account card, so there's a single Edit control on this page.
+  // This page is the only place identity is edited — /settings used to carry a
+  // duplicate Account tab and no longer does.
   // Notes open in the normal document editor. Inside the TabWorkspace iframe
   // that means asking the shell for a side-by-side pane, same as the project
   // page does for its documents; standalone it's a plain navigation.
