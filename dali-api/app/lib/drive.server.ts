@@ -48,6 +48,11 @@ export type DriveItem =
       sizeBytes?: number | null;
       /** Whether the viewer has favorited this item (pages only). */
       favorited?: boolean;
+      /**
+       * Signal ②: process that owns or binds this item (derived at load time in
+       * Wave 2 — e.g. "Hiring 26F", "Confidentiality"). Unpopulated in Wave 0.
+       */
+      linkedProcess?: { label: string; href: string } | null;
     }
   | {
       type: "doc";
@@ -61,6 +66,11 @@ export type DriveItem =
       sizeBytes?: number | null;
       /** Whether the viewer has favorited this item (pages only). */
       favorited?: boolean;
+      /**
+       * Signal ②: process that owns or binds this item (derived at load time in
+       * Wave 2 — e.g. "Hiring 26F", "Confidentiality"). Unpopulated in Wave 0.
+       */
+      linkedProcess?: { label: string; href: string } | null;
     }
   | {
       type: "file";
@@ -75,6 +85,11 @@ export type DriveItem =
       sizeBytes?: number | null;
       /** Whether the viewer has favorited this item (pages only). */
       favorited?: boolean;
+      /**
+       * Signal ②: process that owns or binds this item (derived at load time in
+       * Wave 2 — e.g. "Hiring 26F", "Confidentiality"). Unpopulated in Wave 0.
+       */
+      linkedProcess?: { label: string; href: string } | null;
     }
   | {
       type: "form";
@@ -89,6 +104,11 @@ export type DriveItem =
       sizeBytes?: number | null;
       /** Whether the viewer has favorited this item (pages only). */
       favorited?: boolean;
+      /**
+       * Signal ②: process that owns or binds this item (derived at load time in
+       * Wave 2 — e.g. "Hiring 26F", "Confidentiality"). Unpopulated in Wave 0.
+       */
+      linkedProcess?: { label: string; href: string } | null;
     }
   | {
       type: "agreement";
@@ -103,6 +123,11 @@ export type DriveItem =
       sizeBytes?: number | null;
       /** Whether the viewer has favorited this item (pages only). */
       favorited?: boolean;
+      /**
+       * Signal ②: process that owns or binds this item (derived at load time in
+       * Wave 2 — e.g. "Hiring 26F", "Confidentiality"). Unpopulated in Wave 0.
+       */
+      linkedProcess?: { label: string; href: string } | null;
     }
   | {
       type: "rubric";
@@ -117,6 +142,11 @@ export type DriveItem =
       sizeBytes?: number | null;
       /** Whether the viewer has favorited this item (pages only). */
       favorited?: boolean;
+      /**
+       * Signal ②: process that owns or binds this item (derived at load time in
+       * Wave 2 — e.g. "Hiring 26F", "Confidentiality"). Unpopulated in Wave 0.
+       */
+      linkedProcess?: { label: string; href: string } | null;
     }
   | {
       type: "emailTemplate";
@@ -131,6 +161,11 @@ export type DriveItem =
       sizeBytes?: number | null;
       /** Whether the viewer has favorited this item (pages only). */
       favorited?: boolean;
+      /**
+       * Signal ②: process that owns or binds this item (derived at load time in
+       * Wave 2 — e.g. "Hiring 26F", "Confidentiality"). Unpopulated in Wave 0.
+       */
+      linkedProcess?: { label: string; href: string } | null;
     };
 
 // ── Internal helpers ──────────────────────────────────────────────────────────

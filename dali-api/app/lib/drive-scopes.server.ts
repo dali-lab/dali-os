@@ -27,6 +27,18 @@ export type DriveTreeScope = {
    *  projects (top level = parentPageId null); set to the Core root folder id
    *  for the Core drive, so creates/moves land inside the scoped folder. */
   rootFolderId?: string | null;
+  /**
+   * Signal ③: human-readable audience label for the space/folder scope chip
+   * (e.g. "Core only", "Hiring team", "Everyone in the lab"). Derived from
+   * `Page.scopeKind` + resolved group audience in Wave 2; unpopulated in Wave 0.
+   */
+  scopeAudience?: string | null;
+  /**
+   * Whether this scope is system-managed (its root folder has a `Page.systemKey`
+   * and cannot be renamed/deleted). Consumed by Signal ① in Wave 2 to render the
+   * "Managed" hover chip and hide destructive actions. Unpopulated in Wave 0.
+   */
+  systemManaged?: boolean;
 };
 
 // Given a flat item list and a root folder id, return the ids of the root plus

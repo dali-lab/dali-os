@@ -113,6 +113,12 @@ export const FEATURE_FLAGS = [
     description:
       "After the shell finishes loading, quietly warm the pages in the sidebar's Favorites and Recent lists so opening one from the nav is instant. Skipped on data-saver and 2g connections.",
   },
+  {
+    key: "drive-spaces",
+    label: "Drive spaces redesign",
+    description:
+      "Drive spaces redesign (nav-mirrored spaces, signals, browser-canonical editors). Default off; flip on for Core first, then everyone.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];
