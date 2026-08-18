@@ -223,6 +223,8 @@ type MeetingInviteDTO = {
   notePageId: string | null;
   organizerName: string | null;
   attendees: EventAttendeeDTO[];
+  /** Drives the detail popover's "Core meeting" checkbox (Core viewers only). */
+  isCoreMeeting: boolean;
 };
 
 /** One invitee row in an event's detail popover, from either source. */
@@ -578,6 +580,7 @@ export async function loader({ request }: Route.LoaderArgs) {
             durationMinutes: true,
             organizerId: true,
             participantUserIds: true,
+            isCoreMeeting: true,
             notePage: { select: { id: true } },
             // Every invitee's RSVP lives on their own MeetingInvite row, so the
             // popover's guest list reads them all, not just the viewer's.
@@ -630,6 +633,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         endIso: end.toISOString(),
         rsvp: n.rsvp,
         notePageId: m.notePage?.id ?? null,
+        isCoreMeeting: m.isCoreMeeting,
         organizerName: userDisplayName(inviteeById.get(m.organizerId)),
         attendees: rosterIds.map((id) => {
           const u = inviteeById.get(id);
@@ -1134,6 +1138,81 @@ export async function action({ request }: Route.ActionArgs) {
       await prisma.timeEntry.delete({ where: { id: input.id } });
       return null;
     }
+
+    case "toggle-meeting-time-entry": {
+      // Only a participant (or the organizer) may log the meeting, and only on
+      // their own timesheet — userId comes from the session, never the form.
+      const meeting = await prisma.scheduledMeeting.findUnique({
+        where: { id: input.meetingId },
+        select: {
+          id: true,
+          status: true,
+          projectId: true,
+          durationMinutes: true,
+          selectedAt: true,
+          createdAt: true,
+          organizerId: true,
+          participantUserIds: true,
+        },
+      });
+      if (!meeting || meeting.status === "Cancelled") {
+        return Response.json({ error: "Not found" }, { status: 404 });
+      }
+      if (meeting.organizerId !== userId && !meeting.participantUserIds.includes(userId)) {
+        return Response.json({ error: "You weren't invited to this meeting" }, { status: 403 });
+      }
+      if (!input.onTimesheet) {
+        await prisma.timeEntry.deleteMany({ where: { scheduledMeetingId: meeting.id, userId } });
+        return null;
+      }
+      if (!meeting.selectedAt) {
+        return Response.json(
+          { error: "This meeting doesn't have a scheduled time yet" },
+          { status: 400 },
+        );
+      }
+      const startTime = meeting.selectedAt;
+      const endTime = new Date(startTime.getTime() + meeting.durationMinutes * 60_000);
+      const hours = meeting.durationMinutes / 60;
+      // Same shape attendance produces (`markMeetingAttendance`), minus the
+      // MeetingAttendance flip — logging your own hours isn't a claim that the
+      // organizer marked you present. The role is left unset: the Timesheet
+      // edit popover is where it gets attributed, as with attendance rows.
+      await prisma.timeEntry.upsert({
+        where: { scheduledMeetingId_userId: { scheduledMeetingId: meeting.id, userId } },
+        create: {
+          userId,
+          source: "Meeting",
+          scheduledMeetingId: meeting.id,
+          projectId: meeting.projectId,
+          date: startTime,
+          hours,
+          startTime,
+          endTime,
+        },
+        update: { projectId: meeting.projectId, date: startTime, hours, startTime, endTime },
+      });
+      return null;
+    }
+
+    case "set-meeting-core": {
+      // The checkbox is hidden for non-Core, but the gate lives here — the
+      // form is a hint, the server decides (same rule as the create route).
+      if (!(await isCore(userId, request))) return forbidden(request);
+      const meeting = await prisma.scheduledMeeting.findUnique({
+        where: { id: input.meetingId },
+        select: { id: true, organizerId: true, participantUserIds: true },
+      });
+      if (!meeting) return Response.json({ error: "Not found" }, { status: 404 });
+      if (meeting.organizerId !== userId && !meeting.participantUserIds.includes(userId)) {
+        return Response.json({ error: "You weren't invited to this meeting" }, { status: 403 });
+      }
+      await prisma.scheduledMeeting.update({
+        where: { id: meeting.id },
+        data: { isCoreMeeting: input.isCoreMeeting },
+      });
+      return null;
+    }
   }
 }
 
@@ -1244,6 +1323,10 @@ function coerceFormToAction(raw: Record<string, FormDataEntryValue>): unknown {
       };
     case "delete-time-entry":
       return { intent, id: get("id") };
+    case "toggle-meeting-time-entry":
+      return { intent, meetingId: get("meetingId"), onTimesheet: asBool(get("onTimesheet")) };
+    case "set-meeting-core":
+      return { intent, meetingId: get("meetingId"), isCoreMeeting: asBool(get("isCoreMeeting")) };
     default:
       return raw;
   }
@@ -2343,6 +2426,12 @@ function AvailabilityWeekGrid({
     }, eventsByDay);
   }
   // Meeting invites: clickable RSVP blocks, styled by response state.
+  // A Meeting-sourced TimeEntry for this meeting is what "Add to timesheet"
+  // toggles, so the popover reads its checked state straight off the loader's
+  // time entries rather than refetching per block.
+  const meetingIdsOnTimesheet = new Set(
+    data.timeEntries.flatMap((t) => (t.scheduledMeetingId ? [t.scheduledMeetingId] : [])),
+  );
   for (const inv of data.meetingInvites) {
     const style = meetingBlockStyle(inv.rsvp);
     placeBlock(inv.startIso, inv.endIso, {
@@ -2353,8 +2442,12 @@ function AvailabilityWeekGrid({
       attendees: inv.attendees,
       meeting: {
         notificationId: inv.notificationId,
+        meetingId: inv.meetingId,
         rsvp: inv.rsvp,
         notePageId: inv.notePageId,
+        onTimesheet: meetingIdsOnTimesheet.has(inv.meetingId),
+        isCoreMeeting: inv.isCoreMeeting,
+        canMarkCoreMeeting: data.canMarkCoreMeeting,
       },
     }, eventsByDay);
   }
@@ -5095,8 +5188,15 @@ type EventBlock = {
    *  so notificationId targets the RSVP endpoint). */
   meeting?: {
     notificationId: string;
+    /** ScheduledMeeting id — target of the timesheet / Core-meeting toggles. */
+    meetingId: string;
     rsvp: "Accepted" | "Declined" | "Tentative" | null;
     notePageId: string | null;
+    /** Whether the viewer already has a TimeEntry for this meeting. */
+    onTimesheet: boolean;
+    isCoreMeeting: boolean;
+    /** Core only — hides the "Core meeting" checkbox for everyone else. */
+    canMarkCoreMeeting: boolean;
   };
 };
 
@@ -5390,6 +5490,71 @@ function readableTextColor(bg: string): string {
   return luma > 0.6 ? "#1e2733" : "#ffffff";
 }
 
+// Per-meeting toggles in the event detail popover: log the meeting on your own
+// timesheet, and (Core only) flag it as a Core meeting. Both write through the
+// calendar route action, so a success revalidates the loader and the Timesheet
+// tab picks the entry up without a reload.
+function MeetingDetailToggles({ meeting }: { meeting: NonNullable<EventBlock["meeting"]> }) {
+  const timesheetFetcher = useFetcher<{ error?: string }>();
+  const coreFetcher = useFetcher<{ error?: string }>();
+
+  // Revalidation lands a beat after the submission, so read the in-flight value
+  // off formData — otherwise the box visibly snaps back before settling.
+  const onTimesheet = timesheetFetcher.formData
+    ? timesheetFetcher.formData.get("onTimesheet") === "true"
+    : meeting.onTimesheet;
+  const isCoreMeeting = coreFetcher.formData
+    ? coreFetcher.formData.get("isCoreMeeting") === "true"
+    : meeting.isCoreMeeting;
+
+  return (
+    <div className="mt-2 flex flex-col gap-2 border-t border-border pt-2">
+      <Checkbox
+        checked={onTimesheet}
+        disabled={timesheetFetcher.state !== "idle"}
+        onChange={(ev) =>
+          timesheetFetcher.submit(
+            {
+              intent: "toggle-meeting-time-entry",
+              meetingId: meeting.meetingId,
+              onTimesheet: String(ev.target.checked),
+            },
+            { method: "post" },
+          )
+        }
+        label="Add to timesheet"
+        description="Logs this meeting's hours on your Timesheet. Pick a role there to attribute them."
+      />
+      {timesheetFetcher.data?.error && (
+        <p className="text-[11px] text-red-600">{timesheetFetcher.data.error}</p>
+      )}
+      {meeting.canMarkCoreMeeting && (
+        <>
+          <Checkbox
+            checked={isCoreMeeting}
+            disabled={coreFetcher.state !== "idle"}
+            onChange={(ev) =>
+              coreFetcher.submit(
+                {
+                  intent: "set-meeting-core",
+                  meetingId: meeting.meetingId,
+                  isCoreMeeting: String(ev.target.checked),
+                },
+                { method: "post" },
+              )
+            }
+            label="Core meeting"
+            description="Shows this meeting on the Core hub's week calendar. Doesn't change who's invited."
+          />
+          {coreFetcher.data?.error && (
+            <p className="text-[11px] text-red-600">{coreFetcher.data.error}</p>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 function WeekGridEvent({ e }: { e: EventBlock }) {
   const [detailOpen, setDetailOpen] = useState(false);
   const [anchorEl, setAnchorEl] = useState<HTMLDivElement | null>(null);
@@ -5517,6 +5682,7 @@ function WeekGridEvent({ e }: { e: EventBlock }) {
                     Open meeting note →
                   </Link>
                 )}
+                <MeetingDetailToggles meeting={e.meeting} />
               </div>
             ) : null
           }
