@@ -271,7 +271,7 @@ function itemMenuItems(
   // Signal ①: system-managed folders (systemKey set) hide Delete/Rename entirely.
   // The gate extends the existing type-based canMove gate at lines 258-260.
   const isSystemManaged = driveSpacesEnabled && item.type === "folder" && !!(item as { systemKey?: string | null }).systemKey;
-  const canRename = !isSystemManaged && (item.type === "folder" || item.type === "doc" || item.type === "file" || item.type === "form");
+  const canRename = !isSystemManaged && (item.type === "folder" || item.type === "doc" || item.type === "file" || item.type === "form" || item.type === "agreement");
   // drive-spaces: email templates are now managed by Drive (rename/move/delete
   // allowed); agreements and rubrics remain placement-locked.
   const canMove =
@@ -875,7 +875,8 @@ export function DriveBrowser({
     (selectedLeaf.type === "folder" ||
       selectedLeaf.type === "doc" ||
       selectedLeaf.type === "file" ||
-      selectedLeaf.type === "form");
+      selectedLeaf.type === "form" ||
+      selectedLeaf.type === "agreement");
   // drive-spaces: email templates are movable in Drive (card-grid list retired).
   const canLeafMove =
     !!selectedLeaf &&
