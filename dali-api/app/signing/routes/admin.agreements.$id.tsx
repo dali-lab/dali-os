@@ -17,6 +17,13 @@ import { resolveAdminScope } from "~/signing/lib/scope.server";
 import { applyAdminSignatures } from "~/signing/lib/presign.server";
 import { notifySignRequest } from "~/signing/lib/notify.server";
 import { AUDIENCE_RESOLVERS } from "~/signing/lib/audiences";
+import { KINDS, SCOPES, AUDIENCES, CADENCES } from "~/signing/lib/document-config";
+import type {
+  SigningDocumentKind,
+  SigningGateScope,
+  SigningAudience,
+  SigningCadence,
+} from "~/generated/prisma/enums";
 import { SigningDocumentDetail } from "~/signing/components/SigningDocumentDetail";
 import { parseSessionCookie } from "~/lib/cookies";
 import { signingDraftName } from "~/collab/roomName";
@@ -205,6 +212,36 @@ export async function action({ request, params }: Route.ActionArgs) {
     const name = (formData.get("name") as string)?.trim();
     if (!name) return { error: "Name is required" };
     await prisma.signingDocument.update({ where: { id: params.id }, data: { name } });
+    return redirect(back);
+  }
+
+  if (intent === "update") {
+    // Edit the config facets — kind / gate scope / audience / cadence. The create
+    // form sets these once; this is the only post-create editor for them.
+    // Validated against the shared allowlists; unknown/absent values are skipped.
+    const kind = formData.get("kind") as SigningDocumentKind;
+    const gateScope = formData.get("gateScope") as SigningGateScope;
+    const audience = formData.get("audience") as SigningAudience;
+    const cadence = formData.get("cadence") as SigningCadence;
+    const data: {
+      kind?: SigningDocumentKind;
+      gateScope?: SigningGateScope;
+      audience?: SigningAudience;
+      cadence?: SigningCadence;
+    } = {};
+    if (KINDS.includes(kind)) data.kind = kind;
+    if (SCOPES.includes(gateScope)) data.gateScope = gateScope;
+    if (AUDIENCES.includes(audience)) data.audience = audience;
+    if (CADENCES.includes(cadence)) data.cadence = cadence;
+    if (Object.keys(data).length === 0) return { error: "No valid changes to save." };
+    await prisma.signingDocument.update({ where: { id: params.id }, data });
+    await logAuditEvent({
+      action: "signing.configure",
+      userId: auth.user.sub,
+      targetId: params.id,
+      metadata: data,
+      request,
+    });
     return redirect(back);
   }
 
