@@ -20,7 +20,8 @@ export const KINDS: SigningDocumentKind[] = [
 export const SCOPES: SigningGateScope[] = ["None", "App", "HiringCycle"];
 export const AUDIENCES: SigningAudience[] = [
   "Manual",
-  "ActiveMembers",
+  "NewMembers",
+  "Members",
   "Mentors",
   "HiringParticipants",
 ];
@@ -45,7 +46,8 @@ export const SCOPE_OPTIONS: ConfigOption[] = [
 
 export const AUDIENCE_OPTIONS: ConfigOption[] = [
   { value: "Manual", label: "Manual (no one auto-required)" },
-  { value: "ActiveMembers", label: "Active members" },
+  { value: "NewMembers", label: "New members (this cycle's hires)" },
+  { value: "Members", label: "Members (returning, not new)" },
   { value: "Mentors", label: "Mentors" },
   { value: "HiringParticipants", label: "Hiring participants" },
 ];
@@ -71,7 +73,8 @@ export const SCOPE_SHORT: Record<string, string> = {
 };
 export const AUDIENCE_SHORT: Record<string, string> = {
   Manual: "Manual",
-  ActiveMembers: "Active members",
+  NewMembers: "New members",
+  Members: "Members",
   Mentors: "Mentors",
   HiringParticipants: "Hiring",
 };

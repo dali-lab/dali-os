@@ -1572,7 +1572,8 @@ enum SigningGateScope {
 
 enum SigningAudience {
   Manual
-  ActiveMembers
+  NewMembers // this cycle's incoming hires (latest General/Fellowship accepts)
+  Members // active members who are not new (the returning cohort)
   Mentors
   HiringParticipants
 }
@@ -1585,7 +1586,9 @@ enum SigningCadence {
   PerCycle // one binding per hiring cycle ("cycle:<id>") — bound from hiring UI
 }
 
-// Immutable snapshot of a SigningDocument. Never update — append a new version.
+// A version of a SigningDocument. Editable/deletable in place while it's still
+// a draft (publishedAt null + no signatures) so repeated saves don't stack junk
+// versions; once published or signed it's frozen — changes append a new version.
 // body is ProseMirror JSON containing the placeable field + variable nodes;
 // roles is the ordered list of signer-role slugs (e.g. ["member","supervisor"]).
 model SigningDocumentVersion {

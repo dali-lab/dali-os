@@ -6,10 +6,13 @@
 
 import { prisma } from "~/lib/db";
 import { currentTerm, isLabMentor } from "~/lib/roles";
+import { isNewMemberCohort } from "~/hiring/lib/new-member-cohort.server";
 import { AUDIENCE_RESOLVERS } from "./audiences";
 
 export interface SignerCohorts {
   isMember: boolean;
+  // A member of the current incoming cohort (latest General/Fellowship hires).
+  isNewMember: boolean;
   isMentor: boolean;
 }
 
@@ -24,10 +27,13 @@ export async function getSignerCohorts(userId: string): Promise<SignerCohorts> {
   ]);
   // Full-time staff are exempt from signing obligations entirely (they also
   // skip the student onboarding flow).
-  if (u?.adminMembership?.isStaff) return { isMember: false, isMentor: false };
+  if (u?.adminMembership?.isStaff) return { isMember: false, isNewMember: false, isMentor: false };
   const isMember = !!member && u?.membershipStatus !== "Alumni";
-  const isMentor = await isLabMentor(userId, term?.id);
-  return { isMember, isMentor };
+  const [isMentor, isNewMember] = await Promise.all([
+    isLabMentor(userId, term?.id),
+    isMember ? isNewMemberCohort(userId) : Promise.resolve(false),
+  ]);
+  return { isMember, isNewMember, isMentor };
 }
 
 export interface OutstandingBinding {

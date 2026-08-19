@@ -86,8 +86,9 @@ export const MANAGE_AGREEMENT_TOOL = {
       },
       audience: {
         type: "string",
-        enum: ["Manual", "ActiveMembers", "Mentors", "HiringParticipants"],
-        description: "Target audience. Set on create (defaults to Manual) or update.",
+        enum: ["Manual", "NewMembers", "Members", "Mentors", "HiringParticipants"],
+        description:
+          "Target audience. NewMembers = this cycle's General/Fellowship hires; Members = returning active members (not new); Mentors = all mentors. Set on create (defaults to Manual) or update.",
       },
       cadence: {
         type: "string",
