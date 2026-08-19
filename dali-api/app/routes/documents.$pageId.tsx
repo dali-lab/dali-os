@@ -1,4 +1,5 @@
 import { redirect, useLoaderData, useSearchParams } from "react-router";
+import { Folder } from "lucide-react";
 import QRCode from "qrcode";
 import type { Route } from "./+types/documents.$pageId";
 import { prisma } from "~/lib/db";
@@ -30,6 +31,21 @@ export const meta: Route.MetaFunction = ({ data }) => {
 // real trail back to the workspace hub — same fix as documents.file.$fileId.
 // Falls back to a plain (unlinked) title for Lab-workspace pages, which have
 // no dedicated hub to link to.
+// Breadcrumb ancestors resolved from the Drive folder chain are always folders,
+// so they get a folder glyph (their emoji when set) — not PageIcon, whose
+// fallback is a document glyph and made folders read as documents in the trail.
+function FolderCrumbIcon({ iconEmoji }: { iconEmoji?: string | null }) {
+  return (
+    <span className="flex w-4 flex-shrink-0 items-center justify-center leading-none" aria-hidden>
+      {iconEmoji ? (
+        <span className="text-sm">{iconEmoji}</span>
+      ) : (
+        <Folder className="h-3.5 w-3.5 text-muted-foreground" />
+      )}
+    </span>
+  );
+}
+
 export const handle = {
   docKey: "document.editor",
   docTitle: "Documents",
@@ -62,7 +78,7 @@ export const handle = {
         ...(d.driveCrumbs?.folders ?? []).map((f) => ({
           label: f.title || "Untitled folder",
           to: `/drive?scope=${scope}&folder=${f.id}`,
-          icon: <PageIcon iconEmoji={f.iconEmoji} />,
+          icon: <FolderCrumbIcon iconEmoji={f.iconEmoji} />,
         })),
         { label: d.title, icon: <PageIcon iconEmoji={d.iconEmoji} /> },
       ];
@@ -71,6 +87,9 @@ export const handle = {
       d.workspaceType === "EducationOffering"
         ? { label: "Education", to: "/education" }
         : { label: "Projects", to: "/projects" };
+    // Folder ancestors within a project/offering open in the Drive (drilled to
+    // that folder), not the doc viewer — a folder is not a document.
+    const driveScope = d.workspaceType === "EducationOffering" ? "education" : "projects";
     return [
       root,
       {
@@ -84,11 +103,11 @@ export const handle = {
           ),
       },
       // Nested pages within a project/offering keep their folder ancestry
-      // (hub ▸ Folder ▸ … ▸ page); each ancestor opens in the same doc viewer.
+      // (hub ▸ Folder ▸ … ▸ page); folders deep-link into the Drive folder view.
       ...(d.driveCrumbs?.folders ?? []).map((f) => ({
         label: f.title || "Untitled folder",
-        to: `/documents/${f.id}`,
-        icon: <PageIcon iconEmoji={f.iconEmoji} />,
+        to: `/drive?scope=${driveScope}&folder=${f.id}`,
+        icon: <FolderCrumbIcon iconEmoji={f.iconEmoji} />,
       })),
       // The leaf carries the page's own icon (emoji, or the neutral doc glyph).
       { label: d.title, icon: <PageIcon iconEmoji={d.iconEmoji} /> },
@@ -108,6 +127,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     select: {
       id: true,
       title: true,
+      kind: true,
       workspaceType: true,
       workspaceId: true,
       parentPageId: true,
@@ -159,6 +179,23 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
   const { canEdit, canComment, canResolve } = access;
   if (!access.canView) throw new Response("Not found", { status: 404 });
+
+  // Folder pages are Drive containers, not documents — the doc viewer would
+  // render them with an editable body and a document breadcrumb. Send folders to
+  // the Drive drilled into that folder, whatever the entry point (breadcrumb
+  // link, bookmark, stale href). The Drive scope is the page's workspace; Lab
+  // folders resolve to lab/core/hiring via the folder chain.
+  if (page.kind === "Folder") {
+    const scope =
+      page.workspaceType === "Project"
+        ? "projects"
+        : page.workspaceType === "EducationOffering"
+          ? "education"
+          : page.workspaceType === "Member"
+            ? "mine"
+            : (await driveFolderCrumbs(page.id, auth.user.sub, request)).scope;
+    return redirect(`/drive?scope=${scope}&folder=${page.id}`);
+  }
 
   // After the gate, so a 404 never lands in someone's recents. Detached — a
   // failed bookkeeping write must not cost the reader their document.
