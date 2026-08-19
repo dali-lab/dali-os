@@ -5,6 +5,7 @@ import type { PMNode } from "./export-html";
 import {
   isSigningFieldType,
   isCheckboxChecked,
+  fieldCaption,
   fieldDisplayText,
   variableDisplayText,
   type SigningFieldType,
@@ -48,13 +49,21 @@ function inlineRuns(content: DocInline[] | undefined, inherited: Partial<Run> = 
       default: {
         if (isSigningFieldType(inline.type)) {
           const type = inline.type as SigningFieldType;
+          const label = typeof inline.props?.label === "string" ? inline.props.label : "";
           // pdfkit core fonts lack ballot-box glyphs, so checkboxes render as
-          // [x]/[ ] like check lists do.
+          // [x]/[ ] like check lists do — followed by their label.
           if (type === "checkboxField") {
-            out.push({ text: isCheckboxChecked(inline.props?.value) ? "[x]" : "[ ]" });
+            const box = isCheckboxChecked(inline.props?.value) ? "[x]" : "[ ]";
+            out.push({ text: label.trim() ? `${box} ${label.trim()}` : box });
           } else {
             const text = fieldDisplayText(type, inline.props?.value);
-            out.push({ text: text || "__________", underline: true });
+            if (text) {
+              out.push({ text, underline: true });
+            } else {
+              // Unfilled field: a blank line + a caption naming its kind.
+              out.push({ text: "__________", underline: true });
+              out.push({ ...inherited, text: ` (${fieldCaption(type, label)})` } as Run);
+            }
           }
         } else if (typeof inline.text === "string") {
           out.push({ ...inherited, text: inline.text } as Run);

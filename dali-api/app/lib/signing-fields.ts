@@ -48,15 +48,25 @@ export const FIELD_DATA_TYPE: Record<SigningFieldType, string> = {
   adminSignatureField: "admin-signature-field",
 };
 
-// Human labels for the authoring pill + the insert-field controls.
+// Human labels for the authoring pill, the insert-field controls, and the
+// captioned placeholder shown for an unfilled field in preview/view/export.
 export const FIELD_LABEL: Record<SigningFieldType, string> = {
   signatureField: "Signature",
   dateField: "Date",
-  initialField: "Initial",
+  initialField: "Initials",
   checkboxField: "Checkbox",
-  textField: "Text",
-  adminSignatureField: "Admin signature",
+  textField: "Text field",
+  adminSignatureField: "Supervisor signature",
 };
+
+// The caption shown next to an unfilled field so preview/view/export read as a
+// typed placeholder ("(Signature)", "(Initials)", …) instead of an anonymous
+// blank line. A field's own author-set `label` wins when present. Shared by the
+// client node view (schema/signing.tsx) and the server export renderers so the
+// three surfaces never drift.
+export function fieldCaption(type: SigningFieldType, label?: unknown): string {
+  return typeof label === "string" && label.trim() ? label.trim() : FIELD_LABEL[type];
+}
 
 export const CHECKBOX_CHECKED = "☑"; // ☑
 export const CHECKBOX_UNCHECKED = "☐"; // ☐

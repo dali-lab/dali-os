@@ -36,13 +36,25 @@ describe("export-html — signing fields + variables", () => {
     expect(blank).not.toContain("Ada");
   });
 
-  it("renders checkbox glyphs", () => {
+  it("renders checkbox glyphs, with the field's label when present", () => {
     expect(
       renderNodes([{ type: "checkboxField", attrs: { fieldId: "c", role: "member", value: true } }]),
     ).toBe("<span>☑</span>");
     expect(
       renderNodes([{ type: "checkboxField", attrs: { fieldId: "c", role: "member", value: false } }]),
     ).toBe("<span>☐</span>");
+    expect(
+      renderNodes([
+        { type: "checkboxField", attrs: { fieldId: "c", role: "member", value: true, label: "I agree" } },
+      ]),
+    ).toBe("<span>☑ I agree</span>");
+  });
+
+  it("captions an unfilled field with its type so it isn't an anonymous line", () => {
+    const blankSig = renderNodes([{ type: "signatureField", attrs: { fieldId: "s", role: "member" } }]);
+    expect(blankSig).toContain("(Signature)");
+    const blankInit = renderNodes([{ type: "initialField", attrs: { fieldId: "i", role: "member" } }]);
+    expect(blankInit).toContain("(Initials)");
   });
 });
 

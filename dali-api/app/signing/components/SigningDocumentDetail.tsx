@@ -46,14 +46,14 @@ import {
 } from "~/signing/lib/document-config";
 import type { loader } from "~/signing/routes/admin.agreements.$id";
 
-// The signer fills these; the pre-signed admin signature is placed separately.
+// The signer fills these; the pre-signed supervisor signature is placed separately.
 const MEMBER_FIELD_TYPES = SIGNING_FIELD_TYPES.filter(
   (t) => t !== "adminSignatureField",
 );
 
 type PersonResult = { userId: string; name: string; email: string | null };
 
-// "Admin signature" button: search the directory, pick a signatory, and drop a
+// "Supervisor signature" button: search the directory, pick a signatory, and drop a
 // pre-signed signature field bound to them at the caret. Their name renders in
 // the document immediately; issuance records the counter-signature.
 function AdminSignatureButton({ editor }: { editor: DocEditorInstance | null }) {
@@ -115,11 +115,11 @@ function AdminSignatureButton({ editor }: { editor: DocEditorInstance | null }) 
       <button
         type="button"
         disabled={!editor}
-        title="Insert a pre-signed admin signature"
+        title="Insert a pre-signed supervisor signature"
         onClick={() => setOpen((v) => !v)}
         className="inline-flex items-center gap-1 rounded border border-border bg-card px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/40 disabled:opacity-40"
       >
-        <PenLine className="w-3 h-3" /> Admin signature
+        <PenLine className="w-3 h-3" /> Supervisor signature
       </button>
       {open && (
         <div className="absolute left-0 z-50 mt-1 w-72 rounded-md border border-border bg-card p-2 shadow-lg">
@@ -494,8 +494,9 @@ export function SigningDocumentDetail() {
                     signing={{ mode: "view", variables: variablePreview }}
                   />
                   <p className="mt-4 text-xs text-muted-foreground italic">
-                    Preview with sample values — signature/date/checkbox fields appear as blank
-                    lines here and become fillable for the signer.
+                    Preview with sample values — variables resolve to the current term and today's
+                    date; signature, initials, text, and checkbox fields show as labeled
+                    placeholders (the date auto-fills) and become fillable for the signer.
                   </p>
                 </div>
               ) : (

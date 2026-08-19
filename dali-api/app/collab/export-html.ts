@@ -8,6 +8,7 @@
 
 import {
   isSigningFieldType,
+  fieldCaption,
   fieldDisplayText,
   variableDisplayText,
   type SigningFieldType,
@@ -27,13 +28,19 @@ export type PMNode = {
 function renderSigningFieldHtml(node: PMNode): string {
   const type = node.type as SigningFieldType;
   const value = node.attrs?.value;
+  const label = node.attrs?.label;
   if (type === "checkboxField") {
-    return `<span>${fieldDisplayText(type, value)}</span>`;
+    const lbl = typeof label === "string" && label.trim() ? ` ${escapeHtml(label.trim())}` : "";
+    return `<span>${fieldDisplayText(type, value)}${lbl}</span>`;
   }
   const text = fieldDisplayText(type, value);
-  return text
-    ? `<span style="border-bottom:1px solid #333;padding:0 4px;font-style:italic;">${escapeHtml(text)}</span>`
-    : `<span style="display:inline-block;min-width:160px;border-bottom:1px solid #333;">&nbsp;</span>`;
+  if (text) {
+    return `<span style="border-bottom:1px solid #333;padding:0 4px;font-style:italic;">${escapeHtml(text)}</span>`;
+  }
+  // Unfilled field: a blank line + a small caption naming its kind, so an
+  // exported blank agreement reads the same as the on-screen preview.
+  const caption = escapeHtml(fieldCaption(type, label));
+  return `<span style="display:inline-block;min-width:160px;border-bottom:1px solid #333;">&nbsp;</span><span style="font-size:0.75em;color:#666;"> (${caption})</span>`;
 }
 
 function escapeHtml(s: string): string {

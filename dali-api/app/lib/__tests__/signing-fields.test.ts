@@ -7,6 +7,8 @@ import {
   fieldDisplayText,
   variableDisplayText,
   isCheckboxChecked,
+  fieldCaption,
+  FIELD_LABEL,
 } from "../signing-fields";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 
@@ -360,5 +362,20 @@ describe("fieldDisplayText / variableDisplayText / isCheckboxChecked", () => {
     expect(isCheckboxChecked("true")).toBe(true);
     expect(isCheckboxChecked(false)).toBe(false);
     expect(isCheckboxChecked(undefined)).toBe(false);
+  });
+});
+
+describe("FIELD_LABEL + fieldCaption", () => {
+  it("uses the renamed labels", () => {
+    expect(FIELD_LABEL.initialField).toBe("Initials");
+    expect(FIELD_LABEL.textField).toBe("Text field");
+    expect(FIELD_LABEL.adminSignatureField).toBe("Supervisor signature");
+  });
+
+  it("captions from the type label, but a field's own label wins", () => {
+    expect(fieldCaption("signatureField")).toBe("Signature");
+    expect(fieldCaption("textField", "Employee ID")).toBe("Employee ID");
+    expect(fieldCaption("textField", "  ")).toBe("Text field");
+    expect(fieldCaption("initialField", 42)).toBe("Initials"); // non-string label ignored
   });
 });
