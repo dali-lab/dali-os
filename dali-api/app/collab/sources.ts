@@ -161,6 +161,27 @@ export const COLLAB_SOURCES: Record<string, CollabSource> = {
       return core || lead;
     },
   },
+
+  // milestone:{setId}:draft — structured Y.Array of milestone entry maps.
+  // Core-only. MilestoneSet.draftEntries is the durable working copy; the room
+  // is the live buffer. Seed + snapshot are handled by the editor's loader /
+  // "Save draft" + "Save version" actions, not here (same as form/rubric).
+  milestone: {
+    structured: true,
+    async seed(_id) {
+      // Entries seed from MilestoneSet.draftEntries (or the latest version) is
+      // handled by the MilestoneSetEditor loader passing initialItems to
+      // useSharedArray — structured rooms cannot use blocksToFragment.
+      return null;
+    },
+    async syncBack(_id, _blocks) {
+      // Structured sync-back (Y.Array → draftEntries / new version) is performed
+      // by the editor's Save actions via the posted entries JSON — not here.
+    },
+    async authorize(userSub) {
+      return isCore(userSub);
+    },
+  },
 };
 
 // Seed a new room's "blocknote" fragment from its source column. Returns true
