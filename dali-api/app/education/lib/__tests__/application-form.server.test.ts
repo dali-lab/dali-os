@@ -1,19 +1,24 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { prisma } from "~/lib/db";
-import { ensureCoreDriveRoot } from "~/lib/pages";
-import { ensureEducationTemplates } from "~/education/lib/application-form.server";
+import { ensureCoreDriveRoot, ensureOfferingFormsFolder } from "~/lib/pages";
+import {
+  ensureEducationTemplates,
+  createOfferingApplicationForm,
+} from "~/education/lib/application-form.server";
 
 vi.mock("~/lib/db", () => ({
   prisma: {
     form: { findFirst: vi.fn(), create: vi.fn(), updateMany: vi.fn(), count: vi.fn() },
     page: { findUnique: vi.fn(), findFirst: vi.fn(), create: vi.fn(), update: vi.fn(), count: vi.fn() },
     formVersion: { create: vi.fn() },
+    educationOffering: { findUnique: vi.fn(), update: vi.fn() },
   },
 }));
 vi.mock("~/lib/pages", () => ({
-  // Provisioning the Core drive is a side effect; stub it so only the folder
-  // lookups matter.
+  // Drive placement is a side effect; stub the roots/folders so only the form
+  // create's folderPageId matters.
   ensureCoreDriveRoot: vi.fn().mockResolvedValue({ id: "core-root" }),
+  ensureOfferingFormsFolder: vi.fn().mockResolvedValue("offering-forms-folder"),
 }));
 vi.mock("~/forms/lib/reference-sources", () => ({
   resolveReferenceOptions: vi.fn().mockResolvedValue([]),
@@ -36,6 +41,7 @@ const mockPrisma = prisma as unknown as {
     update: ReturnType<typeof vi.fn>;
     count: ReturnType<typeof vi.fn>;
   };
+  educationOffering: { findUnique: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
 };
 
 beforeEach(() => {
@@ -98,5 +104,43 @@ describe("ensureEducationTemplates", () => {
     expect(ensureCoreDriveRoot).toHaveBeenCalledWith("actor");
     // No managed folder resolved → ensureFolder creates the loose fallback.
     expect(mockPrisma.page.create).toHaveBeenCalled();
+  });
+});
+
+describe("createOfferingApplicationForm", () => {
+  it("files the new form in the offering's own workspace Forms folder", async () => {
+    mockPrisma.educationOffering.findUnique.mockResolvedValue({
+      id: "off-1",
+      type: "Miniseries",
+      title: "PM Miniseries 26F",
+      applicationFormId: null,
+    });
+    // ensureEducationTemplates: managed folder present, templates already exist.
+    mockPrisma.page.findUnique.mockResolvedValue({ id: "managed-folder" });
+    mockPrisma.form.create.mockResolvedValue({ id: "new-form" });
+
+    const id = await createOfferingApplicationForm("off-1", "actor");
+
+    expect(id).toBe("new-form");
+    expect(ensureOfferingFormsFolder).toHaveBeenCalledWith("off-1", "actor");
+    const created = mockPrisma.form.create.mock.calls[0][0].data;
+    expect(created.folderPageId).toBe("offering-forms-folder");
+    expect(created.name).toContain("PM Miniseries 26F");
+    expect(mockPrisma.educationOffering.update).toHaveBeenCalledWith({
+      where: { id: "off-1" },
+      data: { applicationFormId: "new-form" },
+    });
+  });
+
+  it("is a no-op when the offering already has an application form", async () => {
+    mockPrisma.educationOffering.findUnique.mockResolvedValue({
+      id: "off-1",
+      type: "Workshop",
+      title: "X",
+      applicationFormId: "existing",
+    });
+    await expect(createOfferingApplicationForm("off-1", "actor")).resolves.toBe("existing");
+    expect(mockPrisma.form.create).not.toHaveBeenCalled();
+    expect(ensureOfferingFormsFolder).not.toHaveBeenCalled();
   });
 });
