@@ -83,7 +83,17 @@ function InlineRename({
   }
 
   if (editing) {
-    const inner = (
+    // Notify the parent of the new name and leave edit mode. In the <Form> path
+    // this MUST run from the form's onSubmit — never from the Save button's
+    // onClick. A discrete-event setState in the button's click handler flushes
+    // synchronously and unmounts the <Form> before the browser dispatches the
+    // submit, silently dropping the POST (this is why in-doc rename "did nothing").
+    const commit = () => {
+      onRename?.(draft);
+      setEditing(false);
+    };
+
+    const fields = (isForm: boolean) => (
       <>
         <input
           type="text"
@@ -94,12 +104,9 @@ function InlineRename({
           autoFocus
         />
         <button
-          type="submit"
+          type={isForm ? "submit" : "button"}
           className="px-3 py-2 text-sm font-medium text-white bg-accent-coral rounded-md hover:bg-accent-coral/90"
-          onClick={() => {
-            onRename?.(draft);
-            setEditing(false);
-          }}
+          onClick={isForm ? undefined : commit}
         >
           Save
         </button>
@@ -122,13 +129,13 @@ function InlineRename({
           <Form
             method="post"
             className="flex items-center gap-2"
-            onSubmit={() => setEditing(false)}
+            onSubmit={commit}
           >
             <input type="hidden" name="intent" value={renameIntent} />
-            {inner}
+            {fields(true)}
           </Form>
         ) : (
-          <div className="flex items-center gap-2">{inner}</div>
+          <div className="flex items-center gap-2">{fields(false)}</div>
         )}
         {renameError && (
           <p className="mt-1 text-xs text-red-600">{renameError}</p>
