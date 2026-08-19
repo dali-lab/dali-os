@@ -18,8 +18,12 @@ const SCOPE_LABELS: Record<string, string> = {
 };
 
 export function SigningDocumentsPage() {
-  const { documents, isAdmin } = useLoaderData<typeof loader>();
+  const data = useLoaderData<typeof loader>();
   const [creating, setCreating] = useState(false);
+  // The route serves this legacy card grid only in "list" mode (the console
+  // mode renders AgreementsConsole instead).
+  if (data.mode !== "list") return null;
+  const { documents } = data;
 
   return (
     <div className="space-y-8">

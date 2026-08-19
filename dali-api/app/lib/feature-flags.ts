@@ -119,6 +119,12 @@ export const FEATURE_FLAGS = [
     description:
       "Drive spaces redesign (nav-mirrored spaces, signals, browser-canonical editors). Default off; flip on for Core first, then everyone.",
   },
+  {
+    key: "agreements-console",
+    label: "Agreements console",
+    description:
+      "Replace the Core ▸ Agreements Drive redirect with a compliance console: signing status across every agreement, one-click reminders to outstanding signers, and term-rollover activation. Authoring stays in the Drive. Default off; flip on for Core.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];

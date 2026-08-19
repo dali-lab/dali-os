@@ -12,12 +12,10 @@ import { getUserRoles, isCore, currentTerm } from "~/lib/roles";
 import { nextTermCode } from "~/lib/terms.shared";
 import { coreHandle } from "~/core/coreNav";
 import { logAuditEvent } from "~/lib/audit";
-import { fullName } from "~/lib/display";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
-import { resolveAdminScope } from "~/signing/lib/scope.server";
-import { applyAdminSignatures } from "~/signing/lib/presign.server";
-import { notifySignRequest } from "~/signing/lib/notify.server";
+import { activateVersion } from "~/signing/lib/activate.server";
 import { AUDIENCE_RESOLVERS } from "~/signing/lib/audiences";
+import { computeRoster, type BindingRoster } from "~/signing/lib/roster.server";
 import { KINDS, SCOPES, AUDIENCES, CADENCES } from "~/signing/lib/document-config";
 import type {
   SigningDocumentKind,
@@ -84,39 +82,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // Signatory roster per binding: who has signed (linkable to their completed
   // copy) and — when the audience is enumerable — who hasn't. The audience
   // registry resolves the member set per binding (Mentors keys off the binding's
-  // term); non-enumerable audiences show the signed list only.
-  type Person = { id: string; firstName: string; lastName: string };
-  const rosterFor = (
-    audience: Person[] | null,
-    b: (typeof document.bindings)[number],
-  ) => {
-    const memberSigs = b.signatures.filter(
-      (s) => s.roleKey === "member" && s.versionId === b.versionId,
-    );
-    const signedIds = new Set(memberSigs.map((s) => s.signerUserId));
-    const signed = memberSigs
-      .map((s) => ({ name: s.typedName || fullName(s.signer) || "Unknown", signatureId: s.id }))
-      .sort((a, z) => a.name.localeCompare(z.name));
-    const outstanding = audience
-      ? audience
-          .filter((u) => !signedIds.has(u.id))
-          .map((u) => `${u.firstName} ${u.lastName}`.trim())
-          .sort()
-      : null;
-    return { signed, outstanding };
-  };
-
-  const rosters: Record<
-    string,
-    { signed: { name: string; signatureId: string }[]; outstanding: string[] | null }
-  > = {};
-
+  // term); non-enumerable audiences show the signed list only. computeRoster is
+  // shared with the agreements console so the two stay in lockstep.
+  const rosters: Record<string, BindingRoster> = {};
   const resolver = AUDIENCE_RESOLVERS[document.audience];
   for (const b of document.bindings) {
     const audience = resolver.enumerable
       ? await resolver.listMembers({ termId: b.termId ?? undefined })
       : null;
-    rosters[b.id] = rosterFor(audience, b);
+    rosters[b.id] = computeRoster(audience, b);
   }
 
   // Convert-on-read: pre-migration version bodies are legacy ProseMirror JSON;
@@ -324,42 +298,13 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   if (intent === "activate") {
     const versionId = formData.get("versionId") as string;
-    const version = await prisma.signingDocumentVersion.findUnique({
-      where: { id: versionId },
-      select: { publishedAt: true, body: true },
-    });
-    if (!version?.publishedAt) return { error: "Publish the version before putting it in force." };
-
-    const doc = await prisma.signingDocument.findUniqueOrThrow({
-      where: { id: params.id },
-      select: { cadence: true },
-    });
-    const scope = await resolveAdminScope(doc);
-    if ("error" in scope) return { error: scope.error };
-
-    // One binding per (document, scopeKey): re-activating swaps the version.
-    const bound = await prisma.signingBinding.upsert({
-      where: { documentId_scopeKey: { documentId: params.id!, scopeKey: scope.scopeKey } },
-      create: {
-        documentId: params.id!,
-        versionId,
-        scopeKey: scope.scopeKey,
-        termId: scope.termId ?? null,
-        cycleId: scope.cycleId ?? null,
-      },
-      update: { versionId },
-      select: { id: true },
-    });
-    // Record the pre-signed staff counter-signatures configured in the body.
-    await applyAdminSignatures({ bindingId: bound.id, versionId, body: version.body });
-    await logAuditEvent({
-      action: "signing.bind",
+    const result = await activateVersion({
+      documentId: params.id!,
+      versionId,
       userId: auth.user.sub,
-      targetId: params.id,
-      metadata: { versionId, scopeKey: scope.scopeKey },
       request,
     });
-    await notifySignRequest(bound.id);
+    if ("error" in result) return { error: result.error };
     return redirect(back);
   }
 
