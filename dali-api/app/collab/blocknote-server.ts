@@ -31,6 +31,7 @@ import {
   variableConfig,
 } from "~/components/doc/schema/configs";
 import {
+  fieldCaption,
   fieldDisplayText,
   variableDisplayText,
   type SigningFieldType,
@@ -106,9 +107,17 @@ const signingFieldSpecs = Object.fromEntries(
     createInlineContentSpec(config, {
       render: (ic) => {
         const dom = document.createElement("span");
-        const text = fieldDisplayText(config.type as SigningFieldType, ic.props.value);
-        // An unfilled non-checkbox field exports as a signature line.
-        dom.textContent = text || "__________";
+        const type = config.type as SigningFieldType;
+        const label = typeof ic.props.label === "string" ? ic.props.label.trim() : "";
+        const text = fieldDisplayText(type, ic.props.value);
+        // Checkbox: glyph + its label. Non-checkbox: the captured value, else a
+        // signature line captioned with the field's kind ("(Signature)", …).
+        dom.textContent =
+          type === "checkboxField"
+            ? label
+              ? `${text} ${label}`
+              : text
+            : text || `__________ (${fieldCaption(type, label)})`;
         return { dom };
       },
     }),

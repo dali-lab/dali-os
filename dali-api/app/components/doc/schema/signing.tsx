@@ -14,6 +14,7 @@ import { createReactInlineContentSpec } from "@blocknote/react";
 import { useContext } from "react";
 import {
   FIELD_LABEL,
+  fieldCaption,
   fieldDisplayText,
   isCheckboxChecked,
   variableDisplayText,
@@ -42,21 +43,23 @@ function SigningFieldRenderer({ type, ...props }: FieldProps & { type: SigningFi
   const baked = props.value === "" ? undefined : props.value;
 
   if (ctx.mode === "author") {
-    // The pre-signed admin signature reads its configured signatory (baked into
-    // `value`) rather than a role — authors see who will counter-sign.
+    // The pre-signed supervisor signature reads its configured signatory (baked
+    // into `value`) rather than a role — authors see who will counter-sign.
     if (type === "adminSignatureField") {
       return (
         <span className="signing-field signing-field--author" data-field-id={fieldId}>
-          ⟦{FIELD_LABEL[type]}: {baked ? String(baked) : "unassigned"}⟧
+          {FIELD_LABEL[type]}: {baked ? String(baked) : "unassigned"}
         </span>
       );
     }
-    const who = role ? `: ${role}` : "";
+    // Role suffix only when it isn't the default single signer ("member") — so a
+    // plain member field reads "Signature*" instead of the noisier "Signature: member".
+    const who = role && role !== "member" ? `: ${role}` : "";
     return (
       <span className="signing-field signing-field--author" data-field-id={fieldId}>
-        ⟦{label || FIELD_LABEL[type]}
+        {label || FIELD_LABEL[type]}
         {who}
-        {required ? "*" : ""}⟧
+        {required ? "*" : ""}
       </span>
     );
   }
@@ -105,15 +108,32 @@ function SigningFieldRenderer({ type, ...props }: FieldProps & { type: SigningFi
     );
   }
 
-  // view mode, or another role's field in fill mode: read-only value or a
-  // blank signature line.
+  // view mode (incl. the author's "Preview as signer"), or another role's field
+  // while someone else fills. Render a faithful, typed placeholder that mirrors
+  // what the signer sees — never an anonymous blank line.
   const text = fieldDisplayText(type, seeded ?? baked);
   if (type === "checkboxField") {
+    // Box PLUS its label — a lone box hid "what am I agreeing to" in preview.
     return (
       <span className="signing-field signing-field--readonly" data-field-id={fieldId}>
-        {text}
+        <span className="signing-field__box">{text}</span>
+        {label ? <span className="signing-field__label"> {label}</span> : null}
       </span>
     );
+  }
+  // Date auto-fills to the resolved sign date even in preview, mirroring fill.
+  if (type === "dateField") {
+    const dv = seeded ?? baked ?? ctx.variables?.today ?? "";
+    if (dv) {
+      return (
+        <span
+          className="signing-field signing-field--readonly signing-field__value"
+          data-field-id={fieldId}
+        >
+          {String(dv)}
+        </span>
+      );
+    }
   }
   if (text) {
     return (
@@ -125,9 +145,14 @@ function SigningFieldRenderer({ type, ...props }: FieldProps & { type: SigningFi
       </span>
     );
   }
+  // Unfilled field → a typed, captioned placeholder line so its kind is clear
+  // (a signature line reads "(Signature)", initials "(Initials)", etc.).
+  const caption =
+    type === "adminSignatureField" ? `${FIELD_LABEL[type]} — unassigned` : fieldCaption(type, label);
   return (
-    <span className="signing-field signing-field--readonly" data-field-id={fieldId}>
-      <span className="signing-field__line">{" ".repeat(10)}</span>
+    <span className="signing-field signing-field--placeholder" data-field-id={fieldId} title={caption}>
+      <span className={`signing-field__line signing-field__line--${type}`} />
+      <span className="signing-field__caption"> ({caption})</span>
     </span>
   );
 }

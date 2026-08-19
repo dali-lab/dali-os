@@ -640,6 +640,41 @@ select:not(:disabled) {
   font-size: 0.9em;
   color: var(--color-muted-foreground);
 }
+/* Read-only checkbox: the glyph + its label (preview + signed copy). */
+.signing-field__box {
+  font-size: 1.05em;
+}
+.signing-field__label {
+  font-size: 0.95em;
+}
+/* Typed placeholder for an unfilled field — a line sized to its kind followed by
+   a small muted caption ("(Signature)", "(Initials)", …) so preview/view never
+   shows an anonymous blank line. */
+.signing-field--placeholder {
+  color: var(--color-muted-foreground);
+}
+.signing-field--placeholder .signing-field__line {
+  min-width: 8rem;
+  margin-right: 0.15rem;
+}
+.signing-field__line--signatureField,
+.signing-field__line--adminSignatureField {
+  min-width: 12rem;
+}
+.signing-field__line--initialField {
+  min-width: 3.5rem;
+}
+.signing-field__line--dateField {
+  min-width: 8rem;
+}
+.signing-field__line--textField {
+  min-width: 10rem;
+}
+.signing-field__caption {
+  font-size: 0.72em;
+  font-style: normal;
+  color: var(--color-muted-foreground);
+}
 
 /* Brand elevation utilities (paired with neutral surfaces, guide §3.2/§6) */
 .shadow-brand-1 { box-shadow: var(--shadow-1); }
