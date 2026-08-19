@@ -151,3 +151,100 @@ export async function ensureLabMilestoneSet(createdById: string) {
     },
   });
 }
+
+// ─── Per-project assignment ───────────────────────────────────────────────────
+
+/** Sets offered in the assignment dropdown, each resolved to its latest version
+ *  (the one a pin will freeze). A set with no versions yet can't be assigned. */
+export async function assignableSets() {
+  const sets = await prisma.milestoneSet.findMany({
+    where: { archivedAt: null },
+    orderBy: [{ isLabWide: "desc" }, { name: "asc" }],
+    include: {
+      versions: {
+        orderBy: { versionNumber: "desc" },
+        take: 1,
+        select: { id: true, versionNumber: true },
+      },
+    },
+  });
+  return sets.map((s) => ({
+    id: s.id,
+    name: s.name,
+    isLabWide: s.isLabWide,
+    latestVersionId: s.versions[0]?.id ?? null,
+    latestVersionNumber: s.versions[0]?.versionNumber ?? null,
+  }));
+}
+
+/** The term's active projects with their current milestone pin (if any). */
+export async function termProjectsWithAssignment(termId: string) {
+  const projects = await prisma.project.findMany({
+    where: { status: "Active", projectTerms: { some: { termId } } },
+    orderBy: { name: "asc" },
+    select: {
+      id: true,
+      name: true,
+      iconEmoji: true,
+      milestoneAssignments: {
+        where: { termId },
+        select: {
+          version: {
+            select: { versionNumber: true, setId: true, set: { select: { name: true } } },
+          },
+        },
+      },
+    },
+  });
+  return projects.map((p) => {
+    const a = p.milestoneAssignments[0];
+    return {
+      id: p.id,
+      name: p.name,
+      iconEmoji: p.iconEmoji,
+      assignedSetId: a?.version.setId ?? null,
+      assignedSetName: a?.version.set.name ?? null,
+      assignedVersionNumber: a?.version.versionNumber ?? null,
+    };
+  });
+}
+
+/** Pin a set's LATEST version to a project for a term (upsert). No-op if the set
+ *  has no versions. Pinning locks that version (isMilestoneVersionLocked). */
+export async function assignMilestoneSet(opts: {
+  projectId: string;
+  termId: string;
+  setId: string;
+  assignedById: string;
+}): Promise<void> {
+  const latest = await prisma.milestoneSetVersion.findFirst({
+    where: { setId: opts.setId },
+    orderBy: { versionNumber: "desc" },
+    select: { id: true },
+  });
+  if (!latest) return;
+  await prisma.projectMilestoneAssignment.upsert({
+    where: { projectId_termId: { projectId: opts.projectId, termId: opts.termId } },
+    create: {
+      projectId: opts.projectId,
+      termId: opts.termId,
+      versionId: latest.id,
+      assignedById: opts.assignedById,
+    },
+    update: {
+      versionId: latest.id,
+      assignedById: opts.assignedById,
+      assignedAt: new Date(),
+    },
+  });
+}
+
+/** Remove a project's milestone pin for a term. */
+export async function unassignMilestoneSet(opts: {
+  projectId: string;
+  termId: string;
+}): Promise<void> {
+  await prisma.projectMilestoneAssignment.deleteMany({
+    where: { projectId: opts.projectId, termId: opts.termId },
+  });
+}

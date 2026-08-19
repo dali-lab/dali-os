@@ -5,6 +5,7 @@ import { requireCore } from "~/lib/auth";
 import { getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { coreHandle } from "~/core/coreNav";
+import { MilestonesSubnav } from "~/core/components/MilestonesSubnav";
 import {
   ensureLabMilestoneSet,
   listMilestoneSets,
@@ -81,6 +82,8 @@ export default function CoreMilestones() {
           project&apos;s timeline.
         </p>
       </header>
+
+      <MilestonesSubnav active="sets" />
 
       <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
         <h2 className="text-sm font-semibold text-foreground/80">New set</h2>

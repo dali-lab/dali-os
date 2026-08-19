@@ -101,6 +101,7 @@ export default [
     route("core/access/roles", "core/routes/core.access.roles.tsx"),
     route("core/access/domains", "core/routes/core.access.domains.tsx"),
     route("core/milestones", "core/routes/core.milestones.tsx"),
+    route("core/milestones/assign", "core/routes/core.milestones.assign.tsx"),
     route("core/milestones/:id", "core/routes/core.milestones.$id.tsx"),
     route("core/attendance", "core/routes/core.attendance.tsx"),
     route("core/communications", "core/routes/core.communications.tsx"),
