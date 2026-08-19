@@ -592,75 +592,98 @@ async function deleteCoreLegacyRubricsIfEmpty(): Promise<void> {
   await prisma.page.delete({ where: { id: folder.id } });
 }
 
-/** File forms bound to an EducationOffering into a managed folder inside
- *  that offering's workspace Pages. Creates a Folder page in the offering
- *  workspace on first call (idempotent via systemKey). Only touches forms
- *  with folderPageId = null — manually placed forms are left where they are.
- *
- *  EducationOffering.applicationFormId confirms the wiring exists in schema.
- *  Best-effort: errors here never block the Hiring drive root return. */
+/** Idempotently ensure the managed "Forms" folder inside an EducationOffering's
+ *  workspace (systemKey education:<offeringId>:forms-folder) and return its id.
+ *  This is the home for the offering's application form, so it lives WITH its
+ *  offering (under the Education space) rather than a shared lab folder. The
+ *  offering workspace is represented as workspaceType=EducationOffering pages. */
+export async function ensureOfferingFormsFolder(
+  offeringId: string,
+  createdById: string,
+): Promise<string> {
+  const systemKey = `education:${offeringId}:forms-folder`;
+  const existing = await prisma.page.findUnique({ where: { systemKey }, select: { id: true } });
+  if (existing) return existing.id;
+  try {
+    const last = await prisma.page.findFirst({
+      where: { workspaceType: "EducationOffering", workspaceId: offeringId, parentPageId: null },
+      orderBy: { position: "desc" },
+      select: { position: true },
+    });
+    const created = await prisma.page.create({
+      data: {
+        workspaceType: "EducationOffering",
+        workspaceId: offeringId,
+        title: "Forms",
+        kind: "Folder",
+        position: last ? last.position + 1 : 0,
+        createdById,
+        systemKey,
+      },
+      select: { id: true },
+    });
+    return created.id;
+  } catch {
+    const retry = await prisma.page.findUnique({ where: { systemKey }, select: { id: true } });
+    if (retry) return retry.id;
+    throw new Error(`Failed to ensure offering forms folder ${systemKey}`);
+  }
+}
+
+/** Re-home EducationOffering application forms into each offering's own
+ *  workspace "Forms" folder (ensureOfferingFormsFolder) — both never-placed
+ *  forms and any still sitting in the legacy loose top-level "Education" Lab
+ *  folder (a FormFolder→Page mirror older builds filed them into). Archives that
+ *  legacy folder once it's empty so it stops floating in the General drive next
+ *  to the Education space. Idempotent; best-effort — errors here never block the
+ *  Hiring drive root return. */
 async function adoptEducationForms(createdById: string): Promise<void> {
-  // Find offerings that have an application form that is unplaced.
-  const offerings = await prisma.educationOffering.findMany({
+  // The legacy loose "Education" folder (identified by its FormFolder-mirror
+  // systemKey so a user-created "Education" folder is never touched).
+  const looseFolder = await prisma.page.findFirst({
     where: {
-      applicationFormId: { not: null },
-      applicationForm: { folderPageId: null },
+      title: "Education",
+      kind: "Folder",
+      workspaceType: "Lab",
+      parentPageId: null,
+      archivedAt: null,
+      systemKey: { startsWith: "formfolder:" },
     },
-    select: { id: true, title: true, applicationFormId: true },
+    select: { id: true },
   });
-  if (offerings.length === 0) return;
+  const looseId = looseFolder?.id ?? null;
+
+  // Offerings whose application form is unplaced or still in the loose folder.
+  const strayForm = looseId
+    ? { OR: [{ folderPageId: null }, { folderPageId: looseId }] }
+    : { folderPageId: null };
+  const offerings = await prisma.educationOffering.findMany({
+    where: { applicationFormId: { not: null }, applicationForm: strayForm },
+    select: { id: true, applicationFormId: true },
+  });
 
   for (const offering of offerings) {
     if (!offering.applicationFormId) continue;
-    // Ensure a managed "Forms" folder exists inside this offering's workspace.
-    // The offering workspace is represented as workspaceType=Education,
-    // workspaceId=offering.id pages. We park forms at top-level for now;
-    // a per-offering Drive folder page carries the workspaceType so the
-    // loader can scope to it. Use a lab-level Page under a systemKey so the
-    // folder is stable and findable without a workspace-type query change.
-    const folderSystemKey = `education:${offering.id}:forms-folder`;
-    let folderId: string;
-    const existingFolder = await prisma.page.findUnique({
-      where: { systemKey: folderSystemKey },
-      select: { id: true },
-    });
-    if (existingFolder) {
-      folderId = existingFolder.id;
-    } else {
-      try {
-        const last = await prisma.page.findFirst({
-          where: { workspaceType: "EducationOffering", workspaceId: offering.id, parentPageId: null },
-          orderBy: { position: "desc" },
-          select: { position: true },
-        });
-        const created = await prisma.page.create({
-          data: {
-            workspaceType: "EducationOffering",
-            workspaceId: offering.id,
-            title: "Forms",
-            kind: "Folder",
-            position: last ? last.position + 1 : 0,
-            createdById,
-            systemKey: folderSystemKey,
-          },
-          select: { id: true },
-        });
-        folderId = created.id;
-      } catch {
-        // Race condition — look it up instead.
-        const retry = await prisma.page.findUnique({
-          where: { systemKey: folderSystemKey },
-          select: { id: true },
-        });
-        if (!retry) continue; // give up for this offering
-        folderId = retry.id;
-      }
+    try {
+      const folderId = await ensureOfferingFormsFolder(offering.id, createdById);
+      await prisma.form.updateMany({
+        where: { id: offering.applicationFormId, ...strayForm },
+        data: { folderPageId: folderId },
+      });
+    } catch {
+      // Best-effort per offering — skip on race/failure.
     }
+  }
 
-    await prisma.form.updateMany({
-      where: { id: offering.applicationFormId, folderPageId: null },
-      data: { folderPageId: folderId },
-    });
+  // Archive the legacy loose folder once nothing else is filed in it.
+  if (looseId) {
+    const [childPages, remainingForms] = await Promise.all([
+      prisma.page.count({ where: { parentPageId: looseId, archivedAt: null } }),
+      prisma.form.count({ where: { folderPageId: looseId } }),
+    ]);
+    if (childPages === 0 && remainingForms === 0) {
+      await prisma.page.update({ where: { id: looseId }, data: { archivedAt: new Date() } });
+    }
   }
 }
 

@@ -6,14 +6,13 @@
 
 import { randomUUID } from "node:crypto";
 import { prisma } from "~/lib/db";
-import { ensureCoreDriveRoot } from "~/lib/pages";
+import { ensureCoreDriveRoot, ensureOfferingFormsFolder } from "~/lib/pages";
 import type { Question } from "~/types";
 import { resolveReferenceOptions } from "~/forms/lib/reference-sources";
 import { safeParseJsonString } from "~/forms/lib/forms-data";
 import type { OfferingType } from "~/generated/prisma/client";
 
 const TEMPLATES_FOLDER = "Education Templates";
-const OFFERINGS_FOLDER = "Education";
 // Managed home for the template forms: Core ▸ Templates ▸ Education, created by
 // ensureCoreDriveRoot. Keeping them inside the Core scope (mirroring hiring's
 // Application Templates folder) stops them floating loose in the Lab-wide drive.
@@ -211,7 +210,7 @@ export async function createOfferingApplicationForm(
   const templateVersion = template?.versions[0];
   const questions = (templateVersion?.questions as unknown as Question[]) ?? defaultQuestions(offering.type);
 
-  const folderPageId = await ensureFolder(OFFERINGS_FOLDER, actorId);
+  const folderPageId = await ensureOfferingFormsFolder(offering.id, actorId);
   const form = await prisma.form.create({
     data: {
       name: `${offering.title} — Application`,
