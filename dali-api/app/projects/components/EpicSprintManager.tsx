@@ -17,6 +17,7 @@ import {
   type TimelineTerm,
   type StoryDependencyEdge,
 } from "./EpicsTimeline";
+import type { TimelineMilestoneMarker } from "~/lib/milestones";
 
 // MoSCoW priority for a product requirement (story). Null = unset.
 export type StoryPriority = "Must" | "Should" | "Could" | "Wont";
@@ -112,6 +113,8 @@ type Props = {
   storyDependencies?: StoryDependencyEdge[];
   // Project terms (oldest first) anchoring the timeline's one-week sprint grid.
   timelineTerms?: TimelineTerm[];
+  // Milestone markers (already date-resolved) for the timeline's milestone lane.
+  timelineMilestones?: TimelineMilestoneMarker[];
   // Opens a task from a timeline task bar. Left to the caller because the task
   // modal lives on the board (?task=), not in this component.
   onTaskClick?: (taskId: string) => void;
@@ -153,6 +156,7 @@ export function EpicSprintManager({
   timelineEpics = [],
   storyDependencies = [],
   timelineTerms = [],
+  timelineMilestones = [],
   onTaskClick,
 }: Props) {
   const revalidator = useRevalidator();
@@ -288,6 +292,7 @@ export function EpicSprintManager({
         taskCounts={taskCounts}
         terms={timelineTerms}
         storyDependencies={storyDependencies}
+        milestones={timelineMilestones}
         actions={
           canManage ? (
             <Button variant="secondary" size="sm" onClick={() => setNewEpicOpen(true)}>

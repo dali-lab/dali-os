@@ -14,9 +14,11 @@ import {
   dayOffset,
   daySpan,
   localTodayUtcDay,
+  SPRINT_DAYS,
   sprintBands as computeSprintBands,
   utcDayOf,
 } from "../lib/timeline-days";
+import type { TimelineMilestoneMarker } from "~/lib/milestones";
 
 export type EpicStatus = "Backlog" | "Open" | "InProgress" | "Done" | "Cancelled";
 export type SprintStatus = "Planned" | "Active" | "Closed";
@@ -74,6 +76,9 @@ type Level = "epic" | "story" | "task";
 const PX_PER_DAY = 42;
 const HEADER_ROW_H = 34;
 const HEADER_ROWS = 3; // month, day number, sprint band
+// Milestone lane sits just below the sprint-band header when a project has
+// milestones; zero-height (absent) otherwise so ordinary timelines are unchanged.
+const MILESTONE_LANE_H = 30;
 const BODY_TOP_PAD = 14; // clear gap below the sprint band before bars start
 const BODY_BOTTOM_PAD = 20;
 
@@ -346,6 +351,7 @@ export function EpicsTimeline({
   taskCounts,
   terms = [],
   storyDependencies = [],
+  milestones = [],
   actions,
   onEpicClick,
   onStoryClick,
@@ -362,6 +368,10 @@ export function EpicsTimeline({
   // arrows between story bars. Edges whose endpoints aren't currently laid out
   // (epic scrolled out of view, or story level hidden) are skipped.
   storyDependencies?: StoryDependencyEdge[];
+  // Milestones already resolved to calendar dates (termStart + week·7d),
+  // rendered as a lane below the sprint-band header. Lab-wide events are
+  // flagged coral. Empty => no lane (ordinary timeline is unchanged).
+  milestones?: TimelineMilestoneMarker[];
   // Rendered flush right on the level-toggle row, so the page's primary action
   // shares a line with the legend instead of taking a toolbar of its own.
   actions?: ReactNode;
@@ -391,6 +401,8 @@ export function EpicsTimeline({
         }
       }
     }
+    // Keep milestone markers inside the drawn range so none is clipped.
+    for (const m of milestones) times.push(utcDayOf(m.dateIso));
     if (times.length === 0) return null;
 
     const lo = new Date(Math.min(...times));
@@ -401,7 +413,30 @@ export function EpicsTimeline({
     const max = Date.UTC(hi.getUTCFullYear(), hi.getUTCMonth() + 2, 1);
     const days = Math.max(Math.round((max - min) / DAY), 1);
     return { min, max, days, width: days * PX_PER_DAY };
-  }, [epics]);
+  }, [epics, milestones]);
+
+  // Reserve a lane below the header only when there are milestones to show.
+  const laneH = milestones.length > 0 ? MILESTONE_LANE_H : 0;
+
+  // One pill per week (markers sharing a week are collapsed so they never
+  // overlap); coral when the week carries a lab-wide event.
+  const milestoneLane = useMemo(() => {
+    if (!bounds || milestones.length === 0) return [];
+    const byWeek = new Map<string, TimelineMilestoneMarker[]>();
+    for (const m of milestones) {
+      const arr = byWeek.get(m.dateIso) ?? [];
+      arr.push(m);
+      byWeek.set(m.dateIso, arr);
+    }
+    return Array.from(byWeek.entries()).map(([dateIso, group]) => ({
+      dateIso,
+      left: dayOffset(dateIso, bounds.min) * PX_PER_DAY,
+      labWide: group.some((g) => g.labWide),
+      label: group[0]!.name,
+      extra: group.length - 1,
+      title: group.map((g) => (g.detail ? `${g.name} — ${g.detail}` : g.name)).join("\n"),
+    }));
+  }, [bounds, milestones]);
 
   const days = useMemo(() => {
     if (!bounds) return [];
@@ -548,7 +583,7 @@ export function EpicsTimeline({
       );
     }
 
-    let cursor = HEADER_ROWS * HEADER_ROW_H + BODY_TOP_PAD;
+    let cursor = HEADER_ROWS * HEADER_ROW_H + laneH + BODY_TOP_PAD;
     for (const e of visible) {
       const eh = epicH.get(e.id)!;
       epicBars.push({
@@ -599,10 +634,10 @@ export function EpicsTimeline({
     const height =
       visible.length > 0
         ? cursor - EPIC_GAP + BODY_BOTTOM_PAD
-        : HEADER_ROWS * HEADER_ROW_H + BODY_TOP_PAD + 40;
+        : HEADER_ROWS * HEADER_ROW_H + laneH + BODY_TOP_PAD + 40;
 
     return { epicBars, storyBars, taskBars, storyRects, height };
-  }, [epics, bounds, view]);
+  }, [epics, bounds, view, laneH]);
 
   // The scroll box only resizes once scrolling settles: resizing it mid-scroll
   // is what makes the horizontal scrollbar jump around under the cursor.
@@ -747,10 +782,11 @@ export function EpicsTimeline({
                   )}
                 </div>
 
-                {/* Sticky three-row header: month / day / sprint band. */}
+                {/* Sticky header: month / day / sprint band, plus a milestone
+                    lane when the project has milestones. */}
                 <div
                   className="sticky top-0 z-30"
-                  style={{ height: HEADER_ROWS * HEADER_ROW_H }}
+                  style={{ height: HEADER_ROWS * HEADER_ROW_H + laneH }}
                 >
                   <div
                     className="relative bg-card border-b border-border"
@@ -812,6 +848,37 @@ export function EpicsTimeline({
                       </div>
                     ))}
                   </div>
+
+                  {/* Milestone lane: one pill per week, aligned to the sprint
+                      band. Coral marks a week carrying a lab-wide event. */}
+                  {laneH > 0 && (
+                    <div
+                      className="relative border-b border-border bg-card"
+                      style={{ height: laneH }}
+                    >
+                      {milestoneLane.map((m) => (
+                        <div
+                          key={m.dateIso}
+                          title={m.title}
+                          className={`absolute top-1 flex items-center gap-1 overflow-hidden rounded px-1.5 text-[11px] font-semibold ${
+                            m.labWide
+                              ? "bg-accent-coral/15 text-accent-coral"
+                              : "bg-accent-teal/15 text-accent-teal"
+                          }`}
+                          style={{
+                            left: m.left + 2,
+                            maxWidth: SPRINT_DAYS * PX_PER_DAY - 4,
+                            height: laneH - 8,
+                          }}
+                        >
+                          <span className="truncate">{m.label}</span>
+                          {m.extra > 0 && (
+                            <span className="flex-shrink-0 opacity-70">+{m.extra}</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {/* Dependency arrows between story bars. z-20 lifts them above

@@ -7,7 +7,12 @@
 import { Prisma } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db";
 import { loadTimeline } from "~/lib/term-timeline.server";
-import { coerceEntries, type MilestoneEntry } from "~/lib/milestones";
+import {
+  coerceEntries,
+  entriesToMarkers,
+  type MilestoneEntry,
+  type TimelineMilestoneMarker,
+} from "~/lib/milestones";
 
 const LAB_DEFAULT_SET_NAME = "Lab default";
 
@@ -247,4 +252,60 @@ export async function unassignMilestoneSet(opts: {
   await prisma.projectMilestoneAssignment.deleteMany({
     where: { projectId: opts.projectId, termId: opts.termId },
   });
+}
+
+// ─── Timeline rendering ───────────────────────────────────────────────────────
+
+/**
+ * The milestone markers to draw on a project's timeline: for every term the
+ * project runs in, its assigned set's entries anchored to that term's start,
+ * plus the lab-wide set's events overlaid (unless the assigned set IS the lab
+ * set, which already carries them). Empty when nothing is assigned and there is
+ * no lab set.
+ */
+export async function projectTimelineMilestones(
+  projectId: string,
+): Promise<TimelineMilestoneMarker[]> {
+  const [projectTerms, assignments, labSet] = await Promise.all([
+    prisma.projectTerm.findMany({
+      where: { projectId },
+      select: { termId: true, term: { select: { startDate: true } } },
+    }),
+    prisma.projectMilestoneAssignment.findMany({
+      where: { projectId },
+      select: { termId: true, version: { select: { setId: true, entries: true } } },
+    }),
+    prisma.milestoneSet.findFirst({
+      where: { isLabWide: true },
+      select: {
+        id: true,
+        versions: { orderBy: { versionNumber: "desc" }, take: 1, select: { entries: true } },
+      },
+    }),
+  ]);
+
+  const assignmentByTerm = new Map(assignments.map((a) => [a.termId, a]));
+  const labEntries = labSet?.versions[0] ? coerceEntries(labSet.versions[0].entries) : [];
+
+  const markers: TimelineMilestoneMarker[] = [];
+  for (const pt of projectTerms) {
+    const termStartIso = pt.term.startDate.toISOString();
+    const assignment = assignmentByTerm.get(pt.termId);
+    if (assignment) {
+      markers.push(
+        ...entriesToMarkers(coerceEntries(assignment.version.entries), termStartIso, {
+          keyPrefix: `a-${pt.termId}-`,
+        }),
+      );
+    }
+    if (labEntries.length > 0 && assignment?.version.setId !== labSet?.id) {
+      markers.push(
+        ...entriesToMarkers(labEntries, termStartIso, {
+          labWideOnly: true,
+          keyPrefix: `lab-${pt.termId}-`,
+        }),
+      );
+    }
+  }
+  return markers;
 }
