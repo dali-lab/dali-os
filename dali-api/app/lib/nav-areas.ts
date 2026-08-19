@@ -15,6 +15,7 @@ import {
   Globe,
   GraduationCap,
   Handshake,
+  Milestone,
   HardDrive,
   Heart,
   Kanban,
@@ -322,6 +323,15 @@ export function areasFor(flags: Partial<FeatureFlagMap> = {}): NavArea[] {
   if (!flags["nav-regroup"]) return NAV_AREAS;
   const base = REGROUPED_AREAS.map((a) => {
     if (a.key === "admin") return { ...a, subtabs: adminSubtabsFor(flags) };
+    // milestones-v2: surface the milestone-sets manager as a Core sub-tab,
+    // slotted after Domains.
+    if (a.key === "core" && flags["milestones-v2"]) {
+      const subtabs = [...a.subtabs];
+      const at = subtabs.findIndex((s) => s.href === "/core/access/domains");
+      const item: SubTab = { label: "Milestones", href: "/core/milestones", icon: Milestone };
+      subtabs.splice(at >= 0 ? at + 1 : subtabs.length, 0, item);
+      return { ...a, subtabs };
+    }
     return a;
   });
   // drive-spaces: deep-link agreements + email templates directly into Drive.

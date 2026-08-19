@@ -84,6 +84,7 @@ import { SIGNING_TOOLS } from "./tools/signing";
 import { FORMS_TOOLS } from "./tools/forms";
 import { ADMIN_TOOLS } from "./tools/admin";
 import { PROJECTS_EXTRA_TOOLS } from "./tools/projects-extra";
+import { MILESTONES_TOOLS } from "./tools/milestones";
 import { FACETED_TOOLS } from "./tools/faceted";
 
 export const REGISTRY_TOOLS: McpTool[] = [
@@ -97,6 +98,7 @@ export const REGISTRY_TOOLS: McpTool[] = [
   ...FORMS_TOOLS,
   ...ADMIN_TOOLS,
   ...PROJECTS_EXTRA_TOOLS,
+  ...MILESTONES_TOOLS,
   ...FACETED_TOOLS,
 ];
 

@@ -82,6 +82,23 @@ export async function createMilestoneSet(opts: {
   });
 }
 
+/** Rename / redescribe / archive a set. Undefined fields are left untouched. */
+export async function updateMilestoneSet(
+  setId: string,
+  patch: { name?: string; description?: string | null; archived?: boolean },
+): Promise<void> {
+  await prisma.milestoneSet.update({
+    where: { id: setId },
+    data: {
+      ...(patch.name !== undefined ? { name: patch.name } : {}),
+      ...(patch.description !== undefined ? { description: patch.description } : {}),
+      ...(patch.archived !== undefined
+        ? { archivedAt: patch.archived ? new Date() : null }
+        : {}),
+    },
+  });
+}
+
 /** Persist the working copy without cutting a version (like Form "Save draft"). */
 export async function saveMilestoneDraft(setId: string, entries: MilestoneEntry[]): Promise<void> {
   await prisma.milestoneSet.update({
@@ -96,7 +113,7 @@ export async function saveMilestoneVersion(
   setId: string,
   entries: MilestoneEntry[],
   createdById: string,
-): Promise<void> {
+): Promise<{ versionId: string; versionNumber: number }> {
   const clean = coerceEntries(entries);
   const last = await prisma.milestoneSetVersion.findFirst({
     where: { setId },
@@ -104,7 +121,7 @@ export async function saveMilestoneVersion(
     select: { versionNumber: true },
   });
   const versionNumber = (last?.versionNumber ?? 0) + 1;
-  await prisma.$transaction([
+  const [version] = await prisma.$transaction([
     prisma.milestoneSetVersion.create({
       data: {
         setId,
@@ -112,12 +129,14 @@ export async function saveMilestoneVersion(
         entries: clean as unknown as Prisma.InputJsonValue,
         createdById,
       },
+      select: { id: true, versionNumber: true },
     }),
     prisma.milestoneSet.update({
       where: { id: setId },
       data: { draftEntries: Prisma.DbNull },
     }),
   ]);
+  return { versionId: version.id, versionNumber: version.versionNumber };
 }
 
 // ─── Lazy Lab-set seed ────────────────────────────────────────────────────────
