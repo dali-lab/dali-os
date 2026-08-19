@@ -55,3 +55,28 @@ export const CADENCE_OPTIONS: ConfigOption[] = [
   { value: "PerTerm", label: "Per term (re-sign each term)" },
   { value: "PerCycle", label: "Per hiring cycle" },
 ];
+
+// Compact labels for the config pills (the dropdown items use the fuller
+// *_OPTIONS labels above).
+export const KIND_SHORT: Record<string, string> = {
+  General: "General",
+  MemberAgreement: "Membership",
+  MentorshipAgreement: "Mentorship",
+  Confidentiality: "Confidentiality",
+};
+export const SCOPE_SHORT: Record<string, string> = {
+  None: "Not enforced",
+  App: "App gate",
+  HiringCycle: "Hiring gate",
+};
+export const AUDIENCE_SHORT: Record<string, string> = {
+  Manual: "Manual",
+  ActiveMembers: "Active members",
+  Mentors: "Mentors",
+  HiringParticipants: "Hiring",
+};
+export const CADENCE_SHORT: Record<string, string> = {
+  Once: "Once",
+  PerTerm: "Per term",
+  PerCycle: "Per cycle",
+};
