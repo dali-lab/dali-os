@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Form, Link, useLoaderData, useActionData } from "react-router";
+import { Form, Link, useLoaderData, useActionData, useSubmit } from "react-router";
 import { Menu } from "~/components/ui/floating";
 import {
   Plus,
@@ -19,7 +19,7 @@ import {
   insertAdminSignature,
   type DocEditorInstance,
 } from "~/components/doc";
-import { useConfirmSubmit } from "~/components/ui/dialog";
+import { useConfirmSubmit, useDialog } from "~/components/ui/dialog";
 import {
   ManagedEditorShell,
   RestoreVersionButton,
@@ -33,6 +33,16 @@ import {
 import { ALL_SIGNING_VARIABLES } from "~/lib/signing-variables";
 import { formatDateTime, fullName, UNKNOWN_LABEL } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
+import {
+  KIND_OPTIONS,
+  SCOPE_OPTIONS,
+  AUDIENCE_OPTIONS,
+  CADENCE_OPTIONS,
+  KIND_SHORT,
+  SCOPE_SHORT,
+  AUDIENCE_SHORT,
+  CADENCE_SHORT,
+} from "~/signing/lib/document-config";
 import type { loader } from "~/signing/routes/admin.agreements.$id";
 
 // Sample values for "Preview as signer" — matches the legacy preview.
@@ -223,6 +233,9 @@ export function SigningDocumentDetail() {
   const actionData = useActionData<{ error?: string }>();
   const tz = useUserTimeZone();
   const confirmSubmit = useConfirmSubmit();
+  const submit = useSubmit();
+  const dialog = useDialog();
+  const boundCount = document.bindings.length;
 
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(
     document.versions[0]?.id ?? null,
@@ -333,12 +346,59 @@ export function SigningDocumentDetail() {
     </>
   );
 
-  // Meta badges
+  // Apply a single config facet chosen from a pill dropdown. When bindings are
+  // already in force, confirm first — the change re-scopes who must sign
+  // immediately. On success the action redirects back here and the loader
+  // reruns, so the pill reflects the new value.
+  async function changeConfig(
+    field: "kind" | "gateScope" | "audience" | "cadence",
+    value: string,
+  ) {
+    if (value === document[field]) return;
+    if (boundCount > 0) {
+      const ok = await dialog.confirm({
+        title: "Re-scope this live agreement?",
+        description: `This agreement has ${boundCount} binding${
+          boundCount !== 1 ? "s" : ""
+        } in force — changing this takes effect immediately for everyone in the new audience.`,
+        confirmLabel: "Change",
+      });
+      if (!ok) return;
+    }
+    submit({ intent: "update", [field]: value }, { method: "post" });
+  }
+
+  // Editable config pills (kind / enforcement / audience / cadence) + read-only slug.
   const metaBadges = (
     <>
-      <span className="rounded bg-muted px-2 py-0.5">{document.kind}</span>
-      <span className="rounded bg-muted px-2 py-0.5">scope: {document.gateScope}</span>
-      <span className="rounded bg-muted px-2 py-0.5">audience: {document.audience}</span>
+      <ConfigPill
+        label="Kind"
+        value={KIND_SHORT[document.kind] ?? document.kind}
+        selected={document.kind}
+        options={KIND_OPTIONS}
+        onSelect={(v) => changeConfig("kind", v)}
+      />
+      <ConfigPill
+        label="Enforcement"
+        value={SCOPE_SHORT[document.gateScope] ?? document.gateScope}
+        selected={document.gateScope}
+        options={SCOPE_OPTIONS}
+        onSelect={(v) => changeConfig("gateScope", v)}
+      />
+      <ConfigPill
+        label="Audience"
+        value={AUDIENCE_SHORT[document.audience] ?? document.audience}
+        selected={document.audience}
+        options={AUDIENCE_OPTIONS}
+        onSelect={(v) => changeConfig("audience", v)}
+      />
+      <ConfigPill
+        label="Cadence"
+        value={CADENCE_SHORT[document.cadence] ?? document.cadence}
+        selected={document.cadence}
+        options={CADENCE_OPTIONS}
+        onSelect={(v) => changeConfig("cadence", v)}
+      />
       <span className="rounded bg-muted px-2 py-0.5">slug: {document.slug}</span>
     </>
   );
@@ -526,6 +586,47 @@ export function SigningDocumentDetail() {
         )}
       </div>
     </ManagedEditorShell>
+  );
+}
+
+// One editable config pill: a compact "Label: value ▾" chip whose dropdown
+// applies a new value via onSelect. Replaces the old read-only meta badges and
+// the Settings box — editing happens inline on the top-level pills.
+function ConfigPill({
+  label,
+  value,
+  selected,
+  options,
+  onSelect,
+}: {
+  label: string;
+  value: string;
+  selected: string;
+  options: { value: string; label: string }[];
+  onSelect: (value: string) => void;
+}) {
+  return (
+    <Menu
+      align="left"
+      ariaLabel={label}
+      trigger={
+        <button
+          type="button"
+          title={`Change ${label.toLowerCase()}`}
+          className="rounded bg-muted px-2 py-0.5 inline-flex items-center gap-1 transition-colors hover:bg-muted/70"
+        >
+          <span className="text-muted-foreground">{label}:</span>
+          <span className="text-foreground">{value}</span>
+          <ChevronDown className="w-3 h-3 opacity-60" />
+        </button>
+      }
+    >
+      {options.map((o) => (
+        <Menu.Item key={o.value} onSelect={() => onSelect(o.value)}>
+          {o.value === selected ? `✓ ${o.label}` : o.label}
+        </Menu.Item>
+      ))}
+    </Menu>
   );
 }
 

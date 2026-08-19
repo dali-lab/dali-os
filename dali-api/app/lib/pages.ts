@@ -245,7 +245,7 @@ export async function ensureCoreDriveRoot(createdById: string): Promise<{ id: st
   }
 
   // ── 3. Ensure "Agreements" + "Rubrics" areas + adopt into them ───────────
-  // Agreements (by kind) and rubrics are Core-managed and confined to these
+  // Agreements and rubrics are Core-managed and confined to these
   // areas, so they never float loose in the Lab drive. Both were previously
   // filed under the Hiring root — re-home any stragglers found there too, so
   // existing data migrates to the Core drive.
@@ -263,11 +263,11 @@ export async function ensureCoreDriveRoot(createdById: string): Promise<{ id: st
       "Agreements",
       createdById,
     );
-    const kindFolders: Record<string, string> = {};
-    for (const { key, kind, title } of AGREEMENT_KIND_FOLDERS) {
-      kindFolders[kind] = await ensureSystemChildFolder(key, agreementsRoot, title, createdById);
-    }
-    await adoptAgreementsByKind(kindFolders, hiringRootId);
+    // Agreements live flat in this one folder. Migrate off the legacy per-kind
+    // subfolders (re-home their docs, then delete the emptied folders), then
+    // file any unplaced/stray agreements here.
+    await flattenLegacyKindFolders(agreementsRoot);
+    await adoptAgreements(agreementsRoot, hiringRootId);
 
     // Legacy Core ▸ Rubrics: rubrics now live in Hiring ▸ Rubrics. The Hiring
     // drive's adoptRubricsToHiring re-homes any rows still pointing at the old
@@ -289,14 +289,15 @@ function strayFilter(hiringRootId: string | null): { folderPageId: string | null
   return hiringRootId ? [{ folderPageId: null }, { folderPageId: hiringRootId }] : [{ folderPageId: null }];
 }
 
-// The Core ▸ Agreements subfolders, one per SigningDocumentKind. Unplaced
-// signing docs are filed into the folder matching their kind.
-const AGREEMENT_KIND_FOLDERS = [
-  { key: "drive:core-agreements-general", kind: "General", title: "General" },
-  { key: "drive:core-agreements-member", kind: "MemberAgreement", title: "Member" },
-  { key: "drive:core-agreements-mentorship", kind: "MentorshipAgreement", title: "Mentorship" },
-  { key: "drive:core-agreements-confidentiality", kind: "Confidentiality", title: "Confidentiality" },
-] as const;
+// Legacy Core ▸ Agreements per-kind subfolders (removed 2026-08 — agreements now
+// live flat in the single Agreements folder). ensureCoreDriveRoot re-homes any
+// docs still filed here and deletes these folders on the next Core-drive visit.
+const LEGACY_AGREEMENT_KIND_FOLDER_KEYS = [
+  "drive:core-agreements-general",
+  "drive:core-agreements-member",
+  "drive:core-agreements-mentorship",
+  "drive:core-agreements-confidentiality",
+];
 
 /** Idempotently ensure a system-keyed child Folder page under `parentPageId`.
  *  No explicit scope — it inherits access from its ancestor scoped root. */
@@ -395,23 +396,35 @@ async function adoptEmailTemplatesByBinding(folders: {
   );
 }
 
-/** File signing documents into the Agreements area by their kind. Touches
- *  unplaced rows plus any previously filed under the old Hiring root
- *  (Confidentiality agreements) — see strayFilter — so placed agreements a Core
- *  user moved deliberately stay put. */
-async function adoptAgreementsByKind(
-  kindFolders: Record<string, string>,
+/** File signing documents into the single Agreements folder. Touches unplaced
+ *  rows plus any previously filed under the old Hiring root (Confidentiality
+ *  agreements) — see strayFilter — so placed agreements a Core user moved
+ *  deliberately stay put. */
+async function adoptAgreements(
+  agreementsRoot: string,
   hiringRootId: string | null,
 ): Promise<void> {
-  const stray = strayFilter(hiringRootId);
-  await Promise.all(
-    Object.entries(kindFolders).map(([kind, folderPageId]) =>
-      prisma.signingDocument.updateMany({
-        where: { kind: kind as never, OR: stray },
-        data: { folderPageId },
-      }),
-    ),
-  );
+  await prisma.signingDocument.updateMany({
+    where: { OR: strayFilter(hiringRootId) },
+    data: { folderPageId: agreementsRoot },
+  });
+}
+
+/** One-time flatten: re-home agreements out of the legacy per-kind subfolders
+ *  into the single Agreements folder, then delete the emptied kind folders.
+ *  Idempotent — a no-op once the legacy folders are gone. */
+async function flattenLegacyKindFolders(agreementsRoot: string): Promise<void> {
+  const legacy = await prisma.page.findMany({
+    where: { systemKey: { in: LEGACY_AGREEMENT_KIND_FOLDER_KEYS } },
+    select: { id: true },
+  });
+  if (legacy.length === 0) return;
+  const ids = legacy.map((p) => p.id);
+  await prisma.signingDocument.updateMany({
+    where: { folderPageId: { in: ids } },
+    data: { folderPageId: agreementsRoot },
+  });
+  await prisma.page.deleteMany({ where: { id: { in: ids } } });
 }
 
 /**
