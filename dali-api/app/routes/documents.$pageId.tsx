@@ -1,5 +1,4 @@
 import { redirect, useLoaderData, useSearchParams } from "react-router";
-import { Folder } from "lucide-react";
 import QRCode from "qrcode";
 import type { Route } from "./+types/documents.$pageId";
 import { prisma } from "~/lib/db";
@@ -18,6 +17,7 @@ import { AttendanceChecklist, type AttendanceRow } from "~/components/Attendance
 import { CheckInPanel } from "~/components/CheckInPanel";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import { PageIcon } from "~/components/PageIcon";
+import { FolderIcon } from "~/components/FolderIcon";
 import { redirectToLogin } from "~/lib/login-next";
 
 export const meta: Route.MetaFunction = ({ data }) => {
@@ -31,21 +31,6 @@ export const meta: Route.MetaFunction = ({ data }) => {
 // real trail back to the workspace hub — same fix as documents.file.$fileId.
 // Falls back to a plain (unlinked) title for Lab-workspace pages, which have
 // no dedicated hub to link to.
-// Breadcrumb ancestors resolved from the Drive folder chain are always folders,
-// so they get a folder glyph (their emoji when set) — not PageIcon, whose
-// fallback is a document glyph and made folders read as documents in the trail.
-function FolderCrumbIcon({ iconEmoji }: { iconEmoji?: string | null }) {
-  return (
-    <span className="flex w-4 flex-shrink-0 items-center justify-center leading-none" aria-hidden>
-      {iconEmoji ? (
-        <span className="text-sm">{iconEmoji}</span>
-      ) : (
-        <Folder className="h-3.5 w-3.5 text-muted-foreground" />
-      )}
-    </span>
-  );
-}
-
 export const handle = {
   docKey: "document.editor",
   docTitle: "Documents",
@@ -78,7 +63,7 @@ export const handle = {
         ...(d.driveCrumbs?.folders ?? []).map((f) => ({
           label: f.title || "Untitled folder",
           to: `/drive?scope=${scope}&folder=${f.id}`,
-          icon: <FolderCrumbIcon iconEmoji={f.iconEmoji} />,
+          icon: <FolderIcon iconEmoji={f.iconEmoji} />,
         })),
         { label: d.title, icon: <PageIcon iconEmoji={d.iconEmoji} /> },
       ];
@@ -107,7 +92,7 @@ export const handle = {
       ...(d.driveCrumbs?.folders ?? []).map((f) => ({
         label: f.title || "Untitled folder",
         to: `/drive?scope=${driveScope}&folder=${f.id}`,
-        icon: <FolderCrumbIcon iconEmoji={f.iconEmoji} />,
+        icon: <FolderIcon iconEmoji={f.iconEmoji} />,
       })),
       // The leaf carries the page's own icon (emoji, or the neutral doc glyph).
       { label: d.title, icon: <PageIcon iconEmoji={d.iconEmoji} /> },
