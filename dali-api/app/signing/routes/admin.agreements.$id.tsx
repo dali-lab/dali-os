@@ -8,7 +8,8 @@ import type { Route } from "./+types/admin.agreements.$id";
 import { prisma } from "~/lib/db";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { getUserRoles, isCore } from "~/lib/roles";
+import { getUserRoles, isCore, currentTerm } from "~/lib/roles";
+import { nextTermCode } from "~/lib/terms.shared";
 import { coreHandle } from "~/core/coreNav";
 import { logAuditEvent } from "~/lib/audit";
 import { fullName } from "~/lib/display";
@@ -125,10 +126,34 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     versions: document.versions.map((v) => ({ ...v, body: ensureBlocks(v.body) })),
   };
 
+  // Versions that already carry a member/admin signature are frozen even if
+  // (defensively) still unpublished — the client uses this to gate Edit/Delete.
+  const lockedVersionIds = [
+    ...new Set(document.bindings.flatMap((b) => b.signatures.map((s) => s.versionId))),
+  ];
+
   const me = await prisma.user.findUnique({
     where: { id: auth.user.sub },
     select: { firstName: true, lastName: true },
   });
+
+  // Sample values for the author's "Preview as signer" + the "+ Variable" menu
+  // hints — resolved from the real current term so {{term}}/{{upcomingTerm}}
+  // show what a signer would actually see, not a placeholder.
+  const termNow = await currentTerm(request);
+  const variablePreview: Record<string, string> = {
+    term: termNow?.code ?? "",
+    upcomingTerm: termNow?.code ? nextTermCode(termNow.code) : "",
+    today: new Date().toLocaleDateString("en-US", {
+      timeZone: "America/New_York",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    }),
+    memberName: "Jane Member",
+    supervisorName: "DALI Staff",
+  };
+
   const collabToken = parseSessionCookie(request);
   const collabRoomName = signingDraftName(params.id!);
   const collabUserName =
@@ -138,6 +163,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     document: document_,
     isAdmin: roles.isAdmin,
     rosters,
+    lockedVersionIds,
+    variablePreview,
     collabToken,
     collabRoomName,
     collabUserName,
@@ -155,7 +182,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   // Post-action redirects go to the Drive URL — the canonical agreement surface.
   const back = `/documents/agreement/${params.id}`;
 
-  if (intent === "create-version") {
+  if (intent === "save-version") {
     // Snapshot the working draft from the collab room. If the room has never
     // been written (brand-new document, no CollabDocument row yet), fall back
     // to a form-posted body for backward-compat with any in-flight request.
@@ -175,19 +202,69 @@ export async function action({ request, params }: Route.ActionArgs) {
       body = ensureBlocks(body);
     }
     const roles = parseRoles(formData.get("roles") as string | null);
+    // Update-in-place when the newest version is still an editable draft
+    // (unpublished + unsigned) so repeated saves don't stack junk versions;
+    // otherwise append a fresh version. Publishing (or a signature) freezes a
+    // version, and the next save then starts a new draft.
     const last = await prisma.signingDocumentVersion.findFirst({
       where: { documentId: params.id },
       orderBy: { versionNumber: "desc" },
-      select: { versionNumber: true },
-    });
-    await prisma.signingDocumentVersion.create({
-      data: {
-        documentId: params.id!,
-        versionNumber: (last?.versionNumber ?? 0) + 1,
-        body: body as object,
-        roles,
-        createdById: auth.user.sub,
+      select: {
+        id: true,
+        versionNumber: true,
+        publishedAt: true,
+        _count: { select: { signatures: true } },
       },
+    });
+    if (last && !last.publishedAt && last._count.signatures === 0) {
+      await prisma.signingDocumentVersion.update({
+        where: { id: last.id },
+        data: { body: body as object, roles, createdById: auth.user.sub },
+      });
+      await logAuditEvent({
+        action: "signing.version.update",
+        userId: auth.user.sub,
+        targetId: params.id,
+        metadata: { versionId: last.id },
+        request,
+      });
+    } else {
+      await prisma.signingDocumentVersion.create({
+        data: {
+          documentId: params.id!,
+          versionNumber: (last?.versionNumber ?? 0) + 1,
+          body: body as object,
+          roles,
+          createdById: auth.user.sub,
+        },
+      });
+    }
+    return redirect(back);
+  }
+
+  if (intent === "delete-version") {
+    // Drafts (unpublished, unsigned, not in force) are disposable — deleting
+    // them lets an author clear junk versions. Frozen versions are protected.
+    const versionId = formData.get("versionId") as string;
+    const version = await prisma.signingDocumentVersion.findUnique({
+      where: { id: versionId },
+      select: {
+        documentId: true,
+        publishedAt: true,
+        _count: { select: { signatures: true, bindings: true } },
+      },
+    });
+    if (!version || version.documentId !== params.id) return { error: "Version not found." };
+    if (version.publishedAt || version._count.signatures > 0 || version._count.bindings > 0) {
+      return { error: "This version is published or in use and can't be deleted." };
+    }
+    await prisma.signingDocumentVersion.delete({ where: { id: versionId } });
+    await logAuditEvent({
+      action: "signing.version.delete",
+      userId: auth.user.sub,
+      targetId: params.id,
+      metadata: { versionId },
+      request,
     });
     return redirect(back);
   }

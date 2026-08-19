@@ -92,10 +92,11 @@ export function SigningDocumentsPage() {
             <span className="font-medium text-foreground/80">Audience</span>
             <Select
               name="audience"
-              defaultValue="ActiveMembers"
+              defaultValue="Members"
               options={[
                 { value: "Manual", label: "Manual" },
-                { value: "ActiveMembers", label: "Active members" },
+                { value: "NewMembers", label: "New members" },
+                { value: "Members", label: "Members (returning)" },
                 { value: "Mentors", label: "Mentors" },
                 { value: "HiringParticipants", label: "Hiring participants" },
               ]}

@@ -37,6 +37,11 @@ export const TEMPLATE_VARIABLES_REGISTRY = {
   },
   // ── Signing documents ───────────────────────────────────────────────────
   term: { description: "The current term code, e.g. 26S.", contexts: ["signing"] },
+  upcomingTerm: {
+    description:
+      "The term after the current one, e.g. 26F. Use for agreements sent near the end of the prior term (hiring paperwork, etc.).",
+    contexts: ["signing"],
+  },
   today: { description: "The date the document is signed (Eastern Time).", contexts: ["signing"] },
   memberName: { description: "The signer's full name.", contexts: ["signing"] },
   supervisorName: { description: "The DALI staff supervisor's name.", contexts: ["signing"] },

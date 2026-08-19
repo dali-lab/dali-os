@@ -68,6 +68,8 @@ export const AUDIT_ACTIONS = [
   "signing.publish",
   "signing.bind",
   "signing.configure",
+  "signing.version.update",
+  "signing.version.delete",
   "mcp.tool_called",
   "mcp.resource_read",
   "mcp.prompt_rendered",

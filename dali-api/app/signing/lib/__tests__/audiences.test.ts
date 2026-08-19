@@ -1,8 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db");
+vi.mock("~/hiring/lib/new-member-cohort.server", () => ({
+  getNewMemberCohortIds: vi.fn(),
+}));
 
 import { prisma } from "~/lib/db";
+import { getNewMemberCohortIds } from "~/hiring/lib/new-member-cohort.server";
 import { AUDIENCE_RESOLVERS } from "~/signing/lib/audiences";
 
 const mockPrisma = prisma as unknown as Record<
@@ -15,21 +19,34 @@ beforeEach(() => {
 });
 
 describe("AUDIENCE_RESOLVERS.includes", () => {
-  it("ActiveMembers keys off isMember; Mentors keys off isMentor", () => {
-    const both = { isMember: true, isMentor: true };
-    const neither = { isMember: false, isMentor: false };
-    expect(AUDIENCE_RESOLVERS.ActiveMembers.includes({ isMember: true, isMentor: false })).toBe(true);
-    expect(AUDIENCE_RESOLVERS.ActiveMembers.includes(neither)).toBe(false);
-    expect(AUDIENCE_RESOLVERS.Mentors.includes({ isMember: false, isMentor: true })).toBe(true);
-    expect(AUDIENCE_RESOLVERS.Mentors.includes(neither)).toBe(false);
-    expect(AUDIENCE_RESOLVERS.Manual.includes(both)).toBe(false);
-    expect(AUDIENCE_RESOLVERS.HiringParticipants.includes(both)).toBe(false);
+  it("splits members into new vs returning; Mentors keys off isMentor", () => {
+    const newMember = { isMember: true, isNewMember: true, isMentor: false };
+    const returning = { isMember: true, isNewMember: false, isMentor: false };
+    const neither = { isMember: false, isNewMember: false, isMentor: false };
+
+    expect(AUDIENCE_RESOLVERS.NewMembers.includes(newMember)).toBe(true);
+    expect(AUDIENCE_RESOLVERS.NewMembers.includes(returning)).toBe(false);
+    expect(AUDIENCE_RESOLVERS.NewMembers.includes(neither)).toBe(false);
+
+    expect(AUDIENCE_RESOLVERS.Members.includes(returning)).toBe(true);
+    expect(AUDIENCE_RESOLVERS.Members.includes(newMember)).toBe(false);
+    expect(AUDIENCE_RESOLVERS.Members.includes(neither)).toBe(false);
+
+    // A mentor is a returning member → in Members AND Mentors (gets both).
+    const mentor = { isMember: true, isNewMember: false, isMentor: true };
+    expect(AUDIENCE_RESOLVERS.Members.includes(mentor)).toBe(true);
+    expect(AUDIENCE_RESOLVERS.Mentors.includes(mentor)).toBe(true);
+    expect(AUDIENCE_RESOLVERS.Mentors.includes(returning)).toBe(false);
+
+    expect(AUDIENCE_RESOLVERS.Manual.includes(mentor)).toBe(false);
+    expect(AUDIENCE_RESOLVERS.HiringParticipants.includes(mentor)).toBe(false);
   });
 });
 
 describe("AUDIENCE_RESOLVERS.enumerable", () => {
   it("only the member/mentor audiences are enumerable", () => {
-    expect(AUDIENCE_RESOLVERS.ActiveMembers.enumerable).toBe(true);
+    expect(AUDIENCE_RESOLVERS.NewMembers.enumerable).toBe(true);
+    expect(AUDIENCE_RESOLVERS.Members.enumerable).toBe(true);
     expect(AUDIENCE_RESOLVERS.Mentors.enumerable).toBe(true);
     expect(AUDIENCE_RESOLVERS.Manual.enumerable).toBe(false);
     expect(AUDIENCE_RESOLVERS.HiringParticipants.enumerable).toBe(false);
@@ -37,15 +54,26 @@ describe("AUDIENCE_RESOLVERS.enumerable", () => {
 });
 
 describe("AUDIENCE_RESOLVERS.listMembers", () => {
-  it("ActiveMembers returns the active non-staff member set", async () => {
-    mockPrisma.dALIMember.findMany.mockResolvedValue([
-      { user: { id: "u1", firstName: "Ada", lastName: "L" } },
-      { user: { id: "u2", firstName: "Bo", lastName: "K" } },
-    ]);
-    const people = await AUDIENCE_RESOLVERS.ActiveMembers.listMembers({});
+  const active = [
+    { user: { id: "u1", firstName: "Ada", lastName: "L" } },
+    { user: { id: "u2", firstName: "Bo", lastName: "K" } },
+    { user: { id: "u3", firstName: "Cy", lastName: "R" } },
+  ];
+
+  it("NewMembers is the active members in the incoming cohort", async () => {
+    mockPrisma.dALIMember.findMany.mockResolvedValue(active);
+    vi.mocked(getNewMemberCohortIds).mockResolvedValue(new Set(["u1"]));
+    const people = await AUDIENCE_RESOLVERS.NewMembers.listMembers({});
+    expect(people).toEqual([{ id: "u1", firstName: "Ada", lastName: "L" }]);
+  });
+
+  it("Members is the active members NOT in the incoming cohort", async () => {
+    mockPrisma.dALIMember.findMany.mockResolvedValue(active);
+    vi.mocked(getNewMemberCohortIds).mockResolvedValue(new Set(["u1"]));
+    const people = await AUDIENCE_RESOLVERS.Members.listMembers({});
     expect(people).toEqual([
-      { id: "u1", firstName: "Ada", lastName: "L" },
       { id: "u2", firstName: "Bo", lastName: "K" },
+      { id: "u3", firstName: "Cy", lastName: "R" },
     ]);
   });
 

@@ -106,7 +106,8 @@ vi.mock("~/signing/lib/sign.server", () => ({
 
 vi.mock("~/signing/lib/audiences", () => ({
   AUDIENCE_RESOLVERS: {
-    ActiveMembers: { includes: vi.fn().mockReturnValue(true) },
+    NewMembers: { includes: vi.fn().mockReturnValue(false) },
+    Members: { includes: vi.fn().mockReturnValue(true) },
     Mentors: { includes: vi.fn().mockReturnValue(false) },
     Manual: { includes: vi.fn().mockReturnValue(false) },
     HiringParticipants: { includes: vi.fn().mockReturnValue(false) },
@@ -367,6 +368,7 @@ describe("sign_document", () => {
     });
     vi.mocked(getSignerCohorts).mockResolvedValue({
       isMember: true,
+      isNewMember: false,
       isMentor: false,
     });
     // Mentors resolver returns false for non-mentors.
@@ -378,13 +380,14 @@ describe("sign_document", () => {
 
   it("signs the document and returns ok", async () => {
     mockPrisma.signingBinding.findUnique.mockResolvedValue({
-      document: { audience: "ActiveMembers" },
+      document: { audience: "Members" },
     });
     vi.mocked(getSignerCohorts).mockResolvedValue({
       isMember: true,
+      isNewMember: false,
       isMentor: false,
     });
-    vi.mocked(AUDIENCE_RESOLVERS.ActiveMembers.includes).mockReturnValue(true);
+    vi.mocked(AUDIENCE_RESOLVERS.Members.includes).mockReturnValue(true);
     vi.mocked(recordSignature).mockResolvedValue({ ok: true });
 
     const result = await runSignDocument(ctx(), {
@@ -403,13 +406,14 @@ describe("sign_document", () => {
 
   it("throws invalid when recordSignature returns an error", async () => {
     mockPrisma.signingBinding.findUnique.mockResolvedValue({
-      document: { audience: "ActiveMembers" },
+      document: { audience: "Members" },
     });
     vi.mocked(getSignerCohorts).mockResolvedValue({
       isMember: true,
+      isNewMember: false,
       isMentor: false,
     });
-    vi.mocked(AUDIENCE_RESOLVERS.ActiveMembers.includes).mockReturnValue(true);
+    vi.mocked(AUDIENCE_RESOLVERS.Members.includes).mockReturnValue(true);
     vi.mocked(recordSignature).mockResolvedValue({
       ok: false,
       error: "Please complete all required fields before signing.",
@@ -471,7 +475,7 @@ describe("manage_agreement", () => {
       name: "Membership Agreement",
       kind: "MemberAgreement",
       gateScope: "App",
-      audience: "ActiveMembers",
+      audience: "Members",
       cadence: "PerTerm",
     });
     expect(mockPrisma.signingDocument.create).toHaveBeenCalledWith(
@@ -479,7 +483,7 @@ describe("manage_agreement", () => {
         data: expect.objectContaining({
           kind: "MemberAgreement",
           gateScope: "App",
-          audience: "ActiveMembers",
+          audience: "Members",
           cadence: "PerTerm",
         }),
       }),

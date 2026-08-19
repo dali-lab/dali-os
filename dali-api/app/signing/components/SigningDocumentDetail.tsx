@@ -11,6 +11,7 @@ import {
   Zap,
   Archive,
   PenLine,
+  Trash2,
 } from "lucide-react";
 import {
   DocEditor,
@@ -44,20 +45,6 @@ import {
   CADENCE_SHORT,
 } from "~/signing/lib/document-config";
 import type { loader } from "~/signing/routes/admin.agreements.$id";
-
-// Sample values for "Preview as signer" — matches the legacy preview.
-function previewVariables(): Record<string, string> {
-  return {
-    term: "26S",
-    today: new Date().toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    }),
-    memberName: "Jane Member",
-    supervisorName: "DALI Staff",
-  };
-}
 
 // The signer fills these; the pre-signed admin signature is placed separately.
 const MEMBER_FIELD_TYPES = SIGNING_FIELD_TYPES.filter(
@@ -170,7 +157,13 @@ function AdminSignatureButton({ editor }: { editor: DocEditorInstance | null }) 
 // Insert-field controls for authoring: drop a member field, place a pre-signed
 // admin signature, or insert a merge variable — all at the caret via the live
 // editor instance.
-function SigningInsertControls({ editor }: { editor: DocEditorInstance | null }) {
+function SigningInsertControls({
+  editor,
+  examples,
+}: {
+  editor: DocEditorInstance | null;
+  examples: Record<string, string>;
+}) {
   const insertField = (type: SigningFieldType) => {
     if (!editor) return;
     editor.focus();
@@ -219,7 +212,10 @@ function SigningInsertControls({ editor }: { editor: DocEditorInstance | null })
       >
         {ALL_SIGNING_VARIABLES.map((v) => (
           <Menu.Item key={v} onSelect={() => handleVariable(v)}>
-            {`{{${v}}}`}
+            <span className="font-mono">{`{{${v}}}`}</span>
+            {examples[v] ? (
+              <span className="ml-2 text-muted-foreground">→ {examples[v]}</span>
+            ) : null}
           </Menu.Item>
         ))}
       </Menu>
@@ -228,7 +224,7 @@ function SigningInsertControls({ editor }: { editor: DocEditorInstance | null })
 }
 
 export function SigningDocumentDetail() {
-  const { document, collabToken, collabRoomName, collabUserName, currentUserId } =
+  const { document, variablePreview, lockedVersionIds, collabToken, collabRoomName, collabUserName, currentUserId } =
     useLoaderData<typeof loader>();
   const actionData = useActionData<{ error?: string }>();
   const tz = useUserTimeZone();
@@ -236,6 +232,15 @@ export function SigningDocumentDetail() {
   const submit = useSubmit();
   const dialog = useDialog();
   const boundCount = document.bindings.length;
+
+  // A version is editable/deletable in place while it's an unpublished draft
+  // with no signatures. The newest such version is the live working draft the
+  // collab room maps to; saving updates it rather than stacking a new version.
+  const isEditableDraft = (v: { id: string; publishedAt: string | Date | null }) =>
+    !v.publishedAt && !lockedVersionIds.includes(v.id);
+  const tailDraftEditable = document.versions[0]
+    ? isEditableDraft(document.versions[0])
+    : false;
 
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(
     document.versions[0]?.id ?? null,
@@ -412,8 +417,12 @@ export function SigningDocumentDetail() {
           onClick={startCreate}
           className="inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg text-white bg-accent-coral hover:bg-accent-coral/90 shadow-sm"
         >
-          <Plus className="w-4 h-4 mr-2" />
-          New Version
+          {tailDraftEditable ? (
+            <PenLine className="w-4 h-4 mr-2" />
+          ) : (
+            <Plus className="w-4 h-4 mr-2" />
+          )}
+          {tailDraftEditable ? "Edit draft" : "New Version"}
         </button>
       )}
       <Form
@@ -453,10 +462,11 @@ export function SigningDocumentDetail() {
     >
       <div className="bg-card rounded-xl border border-border p-6 shadow-sm">
         {isCreating ? (
-          // "New Version" draft — the collab room is the live body buffer.
-          // Save Version snapshots the room server-side; we don't post body.
+          // Draft editor — the collab room is the live body buffer. Save snapshots
+          // the room server-side (no body post): it updates the tail draft in
+          // place when one is still editable, else appends a new version.
           <Form method="post" className="space-y-4" onSubmit={() => setIsCreating(false)}>
-            <input type="hidden" name="intent" value="create-version" />
+            <input type="hidden" name="intent" value="save-version" />
             <input type="hidden" name="roles" value="member" />
             <div>
               <div className="mb-1 flex items-center justify-between">
@@ -481,7 +491,7 @@ export function SigningDocumentDetail() {
                         ? editorInstance.document
                         : (selectedVersion?.body ?? [])
                     }
-                    signing={{ mode: "view", variables: previewVariables() }}
+                    signing={{ mode: "view", variables: variablePreview }}
                   />
                   <p className="mt-4 text-xs text-muted-foreground italic">
                     Preview with sample values — signature/date/checkbox fields appear as blank
@@ -490,7 +500,7 @@ export function SigningDocumentDetail() {
                 </div>
               ) : (
                 <div className="rounded-lg border border-border bg-card">
-                  <SigningInsertControls editor={editorInstance} />
+                  <SigningInsertControls editor={editorInstance} examples={variablePreview} />
                   {collabConfig ? (
                     // Collab mode: the Y.Doc is the source of truth.
                     // Room is seeded from latestVersionBody on first open (see
@@ -528,7 +538,7 @@ export function SigningDocumentDetail() {
                 type="submit"
                 className="px-3 py-2 text-sm font-medium text-white bg-accent-coral rounded-md hover:bg-accent-coral/90 disabled:opacity-50"
               >
-                Save Version
+                {tailDraftEditable ? "Save draft" : "Save Version"}
               </button>
             </div>
           </Form>
@@ -561,6 +571,27 @@ export function SigningDocumentDetail() {
                       title="Put this version in force"
                     >
                       <Zap className="w-4 h-4" /> Put in force
+                    </button>
+                  </Form>
+                )}
+                {isEditableDraft(selectedVersion) && (
+                  <Form
+                    method="post"
+                    onSubmit={confirmSubmit({
+                      title: "Delete this draft version?",
+                      description: "This draft has never been published or signed, so it can be removed.",
+                      tone: "destructive",
+                      confirmLabel: "Delete",
+                    })}
+                  >
+                    <input type="hidden" name="intent" value="delete-version" />
+                    <input type="hidden" name="versionId" value={selectedVersion.id} />
+                    <button
+                      type="submit"
+                      className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium rounded-md text-foreground/70 bg-card border border-border hover:bg-muted/50"
+                      title="Delete this draft"
+                    >
+                      <Trash2 className="w-4 h-4" /> Delete
                     </button>
                   </Form>
                 )}

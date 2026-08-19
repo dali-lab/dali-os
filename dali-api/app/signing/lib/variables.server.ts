@@ -3,6 +3,7 @@
 
 import { prisma } from "~/lib/db";
 import { currentTerm } from "~/lib/roles";
+import { nextTermCode } from "~/lib/terms.shared";
 import { fullName } from "~/lib/display";
 import { resolveSigningVariables, type SigningVariableName } from "~/lib/signing-variables";
 
@@ -25,6 +26,7 @@ export async function resolveSigningVariablesForSigner(
   });
   return resolveSigningVariables({
     term: term?.code ?? "",
+    upcomingTerm: term?.code ? nextTermCode(term.code) : "",
     today,
     memberName: user ? fullName(user) : "",
     supervisorName: opts.supervisorName ?? "",
