@@ -621,4 +621,72 @@ describe("manage_agreement", () => {
     ).rejects.toMatchObject({ name: "McpInvalidError" });
   });
 
+  it("updates config facets on an existing document", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.signingDocument.findUnique.mockResolvedValue({ id: "d1" });
+    mockPrisma.signingDocument.update.mockResolvedValue({ id: "d1" });
+
+    const result = await runManageAgreement(ctx(), {
+      action: "update",
+      documentId: "d1",
+      gateScope: "App",
+      audience: "Mentors",
+      cadence: "PerTerm",
+    });
+    expect(mockPrisma.signingDocument.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "d1" },
+        data: { gateScope: "App", audience: "Mentors", cadence: "PerTerm" },
+      }),
+    );
+    expect(result).toEqual({ ok: true });
+  });
+
+  it("updates the kind on an existing document", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.signingDocument.findUnique.mockResolvedValue({ id: "d1" });
+    mockPrisma.signingDocument.update.mockResolvedValue({ id: "d1" });
+
+    await runManageAgreement(ctx(), {
+      action: "update",
+      documentId: "d1",
+      kind: "MentorshipAgreement",
+    });
+    expect(mockPrisma.signingDocument.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "d1" },
+        data: { kind: "MentorshipAgreement" },
+      }),
+    );
+  });
+
+  it("throws invalid when update supplies no facets", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    await expect(
+      runManageAgreement(ctx(), { action: "update", documentId: "d1" }),
+    ).rejects.toMatchObject({ name: "McpInvalidError" });
+  });
+
+  it("throws invalid for an unknown enum value on update", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    await expect(
+      runManageAgreement(ctx(), {
+        action: "update",
+        documentId: "d1",
+        audience: "Everyone",
+      }),
+    ).rejects.toMatchObject({ name: "McpInvalidError" });
+  });
+
+  it("throws not-found when updating a missing document", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.signingDocument.findUnique.mockResolvedValue(null);
+    await expect(
+      runManageAgreement(ctx(), {
+        action: "update",
+        documentId: "gone",
+        audience: "Mentors",
+      }),
+    ).rejects.toMatchObject({ name: "McpNotFoundError" });
+  });
 });

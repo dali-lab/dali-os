@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Form, Link, useLoaderData, useActionData } from "react-router";
-import { Menu } from "~/components/ui/floating";
+import { Menu, Select } from "~/components/ui/floating";
 import {
   Plus,
   Clock,
@@ -11,6 +11,7 @@ import {
   Zap,
   Archive,
   PenLine,
+  SlidersHorizontal,
 } from "lucide-react";
 import {
   DocEditor,
@@ -33,6 +34,12 @@ import {
 import { ALL_SIGNING_VARIABLES } from "~/lib/signing-variables";
 import { formatDateTime, fullName, UNKNOWN_LABEL } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
+import {
+  KIND_OPTIONS,
+  SCOPE_OPTIONS,
+  AUDIENCE_OPTIONS,
+  CADENCE_OPTIONS,
+} from "~/signing/lib/document-config";
 import type { loader } from "~/signing/routes/admin.agreements.$id";
 
 // Sample values for "Preview as signer" — matches the legacy preview.
@@ -389,7 +396,12 @@ export function SigningDocumentDetail() {
       headerActions={headerActions}
       versionSidebar={versionSidebar}
       isDrafting={isCreating}
-      footer={<BindingsPanel />}
+      footer={
+        <div className="space-y-6">
+          <AgreementSettingsPanel />
+          <BindingsPanel />
+        </div>
+      }
     >
       <div className="bg-card rounded-xl border border-border p-6 shadow-sm">
         {isCreating ? (
@@ -526,6 +538,122 @@ export function SigningDocumentDetail() {
         )}
       </div>
     </ManagedEditorShell>
+  );
+}
+
+const SETTINGS_SELECT_CLASS =
+  "px-3 py-2 border border-border rounded-md inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40";
+
+// Edit the config facets (kind / gate scope / audience / cadence) — the only
+// post-create editor for the fields the create form sets once. Collapsed to a
+// one-line summary; "Edit" reveals the selects. When bindings are already in
+// force, saving confirms first (the change re-scopes who must sign immediately).
+function AgreementSettingsPanel() {
+  const { document } = useLoaderData<typeof loader>();
+  const actionData = useActionData<{ error?: string }>();
+  const confirmSubmit = useConfirmSubmit();
+  const [editing, setEditing] = useState(false);
+  const bound = document.bindings.length;
+
+  return (
+    <div className="bg-card rounded-xl border border-border p-6 shadow-sm">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold text-foreground/80 uppercase tracking-wide inline-flex items-center gap-2">
+          <SlidersHorizontal className="w-4 h-4" /> Settings
+        </h3>
+        <button
+          type="button"
+          onClick={() => setEditing((v) => !v)}
+          className="text-xs font-medium text-accent-coral hover:underline"
+        >
+          {editing ? "Cancel" : "Edit"}
+        </button>
+      </div>
+
+      {!editing ? (
+        <p className="mt-2 text-sm text-muted-foreground">
+          Kind <span className="text-foreground">{document.kind}</span> · Enforcement{" "}
+          <span className="text-foreground">{document.gateScope}</span> · Audience{" "}
+          <span className="text-foreground">{document.audience}</span> · Cadence{" "}
+          <span className="text-foreground">{document.cadence}</span>
+        </p>
+      ) : (
+        <Form
+          method="post"
+          className="mt-3 grid gap-3 sm:grid-cols-2"
+          onSubmit={
+            bound > 0
+              ? confirmSubmit({
+                  title: "Re-scope this live agreement?",
+                  description: `This agreement has ${bound} binding${
+                    bound !== 1 ? "s" : ""
+                  } in force. Changing who must sign or how it's enforced takes effect immediately for everyone in the new audience.`,
+                  confirmLabel: "Save changes",
+                })
+              : undefined
+          }
+        >
+          <input type="hidden" name="intent" value="update" />
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="font-medium text-foreground/80">Kind</span>
+            <Select
+              name="kind"
+              ariaLabel="Kind"
+              defaultValue={document.kind}
+              options={KIND_OPTIONS}
+              buttonClassName={SETTINGS_SELECT_CLASS}
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="font-medium text-foreground/80">Enforcement</span>
+            <Select
+              name="gateScope"
+              ariaLabel="Enforcement"
+              defaultValue={document.gateScope}
+              options={SCOPE_OPTIONS}
+              buttonClassName={SETTINGS_SELECT_CLASS}
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="font-medium text-foreground/80">Audience</span>
+            <Select
+              name="audience"
+              ariaLabel="Audience"
+              defaultValue={document.audience}
+              options={AUDIENCE_OPTIONS}
+              buttonClassName={SETTINGS_SELECT_CLASS}
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="font-medium text-foreground/80">Cadence</span>
+            <Select
+              name="cadence"
+              ariaLabel="Cadence"
+              defaultValue={document.cadence}
+              options={CADENCE_OPTIONS}
+              buttonClassName={SETTINGS_SELECT_CLASS}
+            />
+          </label>
+          {bound > 0 && (
+            <p className="sm:col-span-2 text-xs text-amber-700">
+              {bound} binding{bound !== 1 ? "s" : ""} in force — changes re-scope who must
+              sign, effective immediately.
+            </p>
+          )}
+          {actionData?.error && (
+            <p className="sm:col-span-2 text-xs text-red-600">{actionData.error}</p>
+          )}
+          <div className="sm:col-span-2 flex justify-end">
+            <button
+              type="submit"
+              className="px-3 py-2 text-sm font-medium text-white bg-accent-coral rounded-md hover:bg-accent-coral/90"
+            >
+              Save settings
+            </button>
+          </div>
+        </Form>
+      )}
+    </div>
   );
 }
 

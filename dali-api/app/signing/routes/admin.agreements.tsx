@@ -17,27 +17,13 @@ import type {
   SigningCadence,
 } from "~/generated/prisma/enums";
 import { SigningDocumentsPage } from "~/signing/components/SigningDocumentsPage";
+import { KINDS, SCOPES, AUDIENCES, CADENCES } from "~/signing/lib/document-config";
 
 export const handle = coreHandle("agreements");
 
 export const meta: Route.MetaFunction = () => [
   { title: "Agreements · Admin · DALI OS" },
 ];
-
-const KINDS: SigningDocumentKind[] = [
-  "General",
-  "MemberAgreement",
-  "MentorshipAgreement",
-  "Confidentiality",
-];
-const SCOPES: SigningGateScope[] = ["None", "App", "HiringCycle"];
-const AUDIENCES: SigningAudience[] = [
-  "Manual",
-  "ActiveMembers",
-  "Mentors",
-  "HiringParticipants",
-];
-const CADENCES: SigningCadence[] = ["Once", "PerTerm", "PerCycle"];
 
 function slugify(s: string): string {
   return (
