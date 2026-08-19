@@ -225,7 +225,15 @@ function itemIcon(item: DriveItem, big = false) {
   const cls = big ? "w-8 h-8" : "w-4 h-4";
   switch (item.type) {
     case "folder":
-      return <Folder className={`${cls} text-accent-coral/80 shrink-0`} />;
+      // Folders that mirror an entity (project/offering) or that the user gave a
+      // custom emoji carry `iconEmoji` — show it instead of the generic glyph.
+      return item.iconEmoji ? (
+        <span className={`${cls} flex items-center justify-center leading-none shrink-0 ${big ? "text-2xl" : "text-sm"}`}>
+          {item.iconEmoji}
+        </span>
+      ) : (
+        <Folder className={`${cls} text-accent-coral/80 shrink-0`} />
+      );
     case "file":
       return <Paperclip className={`${cls} text-muted-foreground shrink-0`} />;
     case "form":
@@ -813,7 +821,10 @@ export function DriveBrowser({
     }
   }
 
-  // Double-click a leaf → open it.
+  // Double-click a leaf → open it. Folders are opened via onOpenItem too, which
+  // drills into them (see the route's onOpenItem); guarding here is unnecessary
+  // but harmless — a double-click on a folder in columns already drilled on the
+  // preceding single click.
   function handleColumnRowDblClick(item: DriveItem) {
     if (item.type !== "folder") {
       onOpenItem(item);

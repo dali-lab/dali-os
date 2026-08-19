@@ -15,7 +15,7 @@ import { CommentsRail } from "~/components/collab/CommentsRail";
 import { FilePreview } from "~/components/FilePreview";
 import { TagPicker } from "~/components/TagPicker";
 import { ProjectIcon } from "~/components/ProjectIcon";
-import { PageIcon } from "~/components/PageIcon";
+import { FolderIcon } from "~/components/FolderIcon";
 import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
 import { driveRootCrumbs } from "~/lib/drive-crumbs";
 
@@ -56,7 +56,7 @@ export const handle = {
         ...(d.driveCrumbs?.folders ?? []).map((f) => ({
           label: f.title || "Untitled folder",
           to: `/drive?scope=${scope}&folder=${f.id}`,
-          icon: <PageIcon iconEmoji={f.iconEmoji} />,
+          icon: <FolderIcon iconEmoji={f.iconEmoji} />,
         })),
         { label: d.title },
       ];
@@ -69,11 +69,11 @@ export const handle = {
         icon: <ProjectIcon iconEmoji={d.projectIconEmoji} />,
       },
       // Keep the file's folder ancestry within the project (hub ▸ Folder ▸ …
-      // ▸ file); each ancestor folder page opens in the doc viewer.
+      // ▸ file); folders deep-link into the Drive folder view, not the doc viewer.
       ...(d.driveCrumbs?.folders ?? []).map((f) => ({
         label: f.title || "Untitled folder",
-        to: `/documents/${f.id}`,
-        icon: <PageIcon iconEmoji={f.iconEmoji} />,
+        to: `/drive?scope=projects&folder=${f.id}`,
+        icon: <FolderIcon iconEmoji={f.iconEmoji} />,
       })),
       { label: d.title },
     ];
