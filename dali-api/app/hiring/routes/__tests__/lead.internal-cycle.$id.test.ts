@@ -23,6 +23,15 @@ beforeEach(() => {
   mockPrisma.applicationCycle = {
     update: vi.fn().mockResolvedValue({}),
   };
+  mockPrisma.signingBinding = {
+    findFirst: vi.fn().mockResolvedValue(null),
+    create: vi.fn().mockResolvedValue({}),
+    update: vi.fn().mockResolvedValue({}),
+    delete: vi.fn().mockResolvedValue({}),
+  };
+  mockPrisma.signingDocumentVersion = {
+    findUnique: vi.fn().mockResolvedValue({ documentId: "doc-1" }),
+  };
 
   vi.mocked(requireAuth).mockResolvedValue({
     ok: true,
@@ -76,5 +85,77 @@ describe("lead.internal-cycle.$id action — set-close-date", () => {
     expect(mockPrisma.applicationCycle.update).toHaveBeenCalledTimes(1);
     const updateArgs = mockPrisma.applicationCycle.update.mock.calls[0][0];
     expect(updateArgs.data.closeDate).toBeNull();
+  });
+});
+
+describe("lead.internal-cycle.$id action — set-confidentiality-agreement", () => {
+  it("returns 403 when caller is not core", async () => {
+    vi.mocked(isCore).mockResolvedValueOnce(false);
+    const res = await callAction({
+      intent: "set-confidentiality-agreement",
+      confidentialityAgreementVersionId: "ver-1",
+    });
+    expect((res as Response).status).toBe(403);
+    expect(mockPrisma.signingBinding.create).not.toHaveBeenCalled();
+  });
+
+  it("creates a binding scoped to the cycle when none exists", async () => {
+    mockPrisma.signingBinding.findFirst.mockResolvedValueOnce(null);
+    await callAction({
+      intent: "set-confidentiality-agreement",
+      confidentialityAgreementVersionId: "ver-1",
+    });
+
+    expect(mockPrisma.signingBinding.create).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.signingBinding.create.mock.calls[0][0].data).toEqual({
+      documentId: "doc-1",
+      versionId: "ver-1",
+      scopeKey: `cycle:${CYCLE_ID}`,
+      cycleId: CYCLE_ID,
+    });
+    expect(mockPrisma.signingBinding.update).not.toHaveBeenCalled();
+  });
+
+  it("updates the existing binding in place on a rebind", async () => {
+    mockPrisma.signingBinding.findFirst.mockResolvedValueOnce({ id: "bind-1" });
+    await callAction({
+      intent: "set-confidentiality-agreement",
+      confidentialityAgreementVersionId: "ver-2",
+    });
+
+    expect(mockPrisma.signingBinding.update).toHaveBeenCalledTimes(1);
+    const updateArgs = mockPrisma.signingBinding.update.mock.calls[0][0];
+    expect(updateArgs.where).toEqual({ id: "bind-1" });
+    expect(updateArgs.data).toEqual({
+      versionId: "ver-2",
+      documentId: "doc-1",
+      scopeKey: `cycle:${CYCLE_ID}`,
+    });
+    expect(mockPrisma.signingBinding.create).not.toHaveBeenCalled();
+  });
+
+  it("deletes the binding when the picker is cleared", async () => {
+    mockPrisma.signingBinding.findFirst.mockResolvedValueOnce({ id: "bind-1" });
+    await callAction({
+      intent: "set-confidentiality-agreement",
+      confidentialityAgreementVersionId: "",
+    });
+
+    expect(mockPrisma.signingBinding.delete).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.signingBinding.delete.mock.calls[0][0]).toEqual({
+      where: { id: "bind-1" },
+    });
+    expect(mockPrisma.signingDocumentVersion.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("no-ops when clearing an already-unbound cycle", async () => {
+    mockPrisma.signingBinding.findFirst.mockResolvedValueOnce(null);
+    await callAction({
+      intent: "set-confidentiality-agreement",
+      confidentialityAgreementVersionId: "",
+    });
+
+    expect(mockPrisma.signingBinding.delete).not.toHaveBeenCalled();
+    expect(mockPrisma.signingBinding.create).not.toHaveBeenCalled();
   });
 });
