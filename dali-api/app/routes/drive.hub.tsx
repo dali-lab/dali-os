@@ -1325,9 +1325,19 @@ export default function DriveHub() {
 
   const onOpenItem = useCallback(
     (item: DriveItem) => {
+      // Opening a folder drills into it within the Drive. Folders still carry a
+      // `/documents/<id>` href (for move/share plumbing), so following it here
+      // would render the folder Page as a document — the "managed folder opens
+      // as a document" bug. Resolve the folder's owning scope and navigate the
+      // Drive instead; the columns/breadcrumb state re-syncs from the URL.
+      if (item.type === "folder") {
+        const owner = driveScopes.find((s) => s.items.some((it) => it.id === item.id));
+        onNavigate(owner?.id ?? effectiveScopeId, item.id);
+        return;
+      }
       navigate(item.href);
     },
-    [navigate],
+    [navigate, driveScopes, onNavigate, effectiveScopeId],
   );
 
   // Toggle the viewer's personal favorite on a page item (doc/folder).
