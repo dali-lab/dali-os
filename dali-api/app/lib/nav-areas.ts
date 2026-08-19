@@ -301,14 +301,19 @@ function adminSubtabsFor(flags: Partial<FeatureFlagMap>): SubTab[] {
 // When drive-spaces is on the card-grid lists for agreements and email
 // templates are retired; their sidebar entries deep-link directly into the
 // Drive folder. The rest of the area (editors, create action) stays intact.
-function applyDriveSpacesSubstitutions(areas: NavArea[]): NavArea[] {
+function applyDriveSpacesSubstitutions(
+  areas: NavArea[],
+  agreementsConsole: boolean,
+): NavArea[] {
   return areas.map((a) => {
     if (a.key !== "core") return a;
     return {
       ...a,
       subtabs: a.subtabs.map((t) => {
-        // Core ▸ Agreements → Drive filtered to agreements.
-        if (t.href === "/admin/agreements") return { ...t, href: "/drive?type=agreement" };
+        // Core ▸ Agreements → Drive filtered to agreements, unless the console
+        // flag keeps the dedicated /admin/agreements compliance page.
+        if (t.href === "/admin/agreements")
+          return agreementsConsole ? t : { ...t, href: "/drive?type=agreement" };
         // Core ▸ Communications email templates → Drive filtered to email templates.
         if (t.href === "/core/communications/email") return { ...t, href: "/drive?type=emailTemplate" };
         return t;
@@ -324,8 +329,10 @@ export function areasFor(flags: Partial<FeatureFlagMap> = {}): NavArea[] {
     if (a.key === "admin") return { ...a, subtabs: adminSubtabsFor(flags) };
     return a;
   });
-  // drive-spaces: deep-link agreements + email templates directly into Drive.
-  if (flags["drive-spaces"]) return applyDriveSpacesSubstitutions(base);
+  // drive-spaces: deep-link agreements + email templates directly into Drive
+  // (agreements stays on its console page when that flag is on).
+  if (flags["drive-spaces"])
+    return applyDriveSpacesSubstitutions(base, !!flags["agreements-console"]);
   return base;
 }
 

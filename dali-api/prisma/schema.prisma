@@ -1635,6 +1635,11 @@ model SigningBinding {
   termId   String? // set for termly (mentorship) scope
   term     Term?             @relation(fields: [termId], references: [id])
 
+  // Last time a Core member nudged this binding's outstanding signers from the
+  // agreements console. Throttles reminders (≤ once/24h) and surfaces "reminded
+  // N ago" in the UI. Null = never reminded.
+  lastRemindedAt DateTime?
+
   signatures SigningSignature[]
 
   @@unique([documentId, scopeKey])
