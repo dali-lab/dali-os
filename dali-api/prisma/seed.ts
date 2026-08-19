@@ -4106,6 +4106,12 @@ async function main() {
   // Default system-managed user groups: one per Term/Project/Domain + Core.
   // Idempotent; safe to re-run.
   await syncDefaultGroups();
+
+  // Re-run now that the Core group exists (and thus the Core drive can be
+  // provisioned): converges the education templates into the managed
+  // Core ▸ Templates ▸ Education folder and archives the loose legacy folder the
+  // earlier call created before syncDefaultGroups.
+  await ensureEducationTemplates(admin.id);
 }
 
 main()

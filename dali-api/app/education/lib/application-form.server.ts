@@ -6,6 +6,7 @@
 
 import { randomUUID } from "node:crypto";
 import { prisma } from "~/lib/db";
+import { ensureCoreDriveRoot } from "~/lib/pages";
 import type { Question } from "~/types";
 import { resolveReferenceOptions } from "~/forms/lib/reference-sources";
 import { safeParseJsonString } from "~/forms/lib/forms-data";
@@ -13,6 +14,10 @@ import type { OfferingType } from "~/generated/prisma/client";
 
 const TEMPLATES_FOLDER = "Education Templates";
 const OFFERINGS_FOLDER = "Education";
+// Managed home for the template forms: Core ▸ Templates ▸ Education, created by
+// ensureCoreDriveRoot. Keeping them inside the Core scope (mirroring hiring's
+// Application Templates folder) stops them floating loose in the Lab-wide drive.
+const CORE_TEMPLATES_EDUCATION_KEY = "drive:core-templates-education";
 
 const TEMPLATE_NAMES: Record<OfferingType, string> = {
   Miniseries: "Miniseries Application Template",
@@ -84,13 +89,64 @@ async function ensureFolder(name: string, actorId: string): Promise<string> {
   return created.id;
 }
 
+// Resolve the managed Core ▸ Templates ▸ Education folder. Cheap in the common
+// case (a single findUnique once the Core drive is provisioned); only the very
+// first call provisions it. Falls back to a loose top-level "Education
+// Templates" folder if the Core drive can't be created yet (e.g. the Core group
+// isn't seeded) — a later call re-homes anything left there.
+async function ensureTemplatesFolder(actorId: string): Promise<string> {
+  const existing = await prisma.page.findUnique({
+    where: { systemKey: CORE_TEMPLATES_EDUCATION_KEY },
+    select: { id: true },
+  });
+  if (existing) return existing.id;
+  await ensureCoreDriveRoot(actorId);
+  const managed = await prisma.page.findUnique({
+    where: { systemKey: CORE_TEMPLATES_EDUCATION_KEY },
+    select: { id: true },
+  });
+  return managed?.id ?? ensureFolder(TEMPLATES_FOLDER, actorId);
+}
+
+// One-time re-home: move template forms out of the legacy loose "Education
+// Templates" folder into the managed folder, then archive the emptied legacy
+// folder. Idempotent — a no-op once the legacy folder is gone or its templates
+// already live in the managed folder. Runs on every ensureEducationTemplates
+// call, so an existing prod/staging drive converges on the next education action.
+async function rehomeLegacyEducationTemplates(managedFolderId: string): Promise<void> {
+  const legacy = await prisma.page.findFirst({
+    where: {
+      title: TEMPLATES_FOLDER,
+      kind: "Folder",
+      workspaceType: "Lab",
+      parentPageId: null,
+      archivedAt: null,
+    },
+    select: { id: true },
+  });
+  if (!legacy || legacy.id === managedFolderId) return;
+  await prisma.form.updateMany({
+    where: { folderPageId: legacy.id, name: { in: Object.values(TEMPLATE_NAMES) } },
+    data: { folderPageId: managedFolderId },
+  });
+  const [childPages, otherForms] = await Promise.all([
+    prisma.page.count({ where: { parentPageId: legacy.id, archivedAt: null } }),
+    prisma.form.count({ where: { folderPageId: legacy.id } }),
+  ]);
+  if (childPages === 0 && otherForms === 0) {
+    await prisma.page.update({ where: { id: legacy.id }, data: { archivedAt: new Date() } });
+  }
+}
+
 /**
  * Idempotently create the education template forms (one per offering type)
- * inside the "Education Templates" folder. Editing a template in the Forms UI
- * and saving a new version changes what future offerings are cloned from.
+ * inside the managed Core ▸ Templates ▸ Education folder. Editing a template in
+ * the Forms UI and saving a new version changes what future offerings are
+ * cloned from.
  */
 export async function ensureEducationTemplates(actorId: string): Promise<void> {
-  const folderPageId = await ensureFolder(TEMPLATES_FOLDER, actorId);
+  const folderPageId = await ensureTemplatesFolder(actorId);
+  await rehomeLegacyEducationTemplates(folderPageId);
   for (const type of ["Miniseries", "Workshop"] as const) {
     const name = TEMPLATE_NAMES[type];
     const existing = await prisma.form.findFirst({
