@@ -708,6 +708,17 @@ function makeScopeActions({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ intent: "rename", title: next }),
       });
+    } else if (item.type === "agreement") {
+      // Agreements have no Page row — rename via the agreement route's own
+      // action (the same intent the in-doc rename posts), not /api/documents.
+      const fd = new FormData();
+      fd.set("intent", "rename");
+      fd.set("name", next);
+      res = await fetch(`/documents/agreement/${item.id}`, {
+        method: "POST",
+        body: fd,
+        credentials: "include",
+      });
     } else if (kind === "mine") {
       const fd = new FormData();
       fd.set("intent", "update");
