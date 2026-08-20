@@ -62,8 +62,11 @@ export function sanitizeRichEmailHtml(html: string): string {
   return clean.replace(/<a\b/gi, '<a target="_blank" rel="noopener noreferrer nofollow"');
 }
 
+// Remove all tags, keeping text content. DOMPurify (not a hand-rolled regex) so
+// there's no partial-tag bypass — callers decodeEntities() the result, which
+// also undoes DOMPurify's re-encoding of text-node & < >.
 function stripTags(s: string): string {
-  return s.replace(/<[^>]+>/g, "");
+  return DOMPurify.sanitize(s, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] });
 }
 
 // Decode the entities our own serializers emit. &amp; is decoded LAST so an
