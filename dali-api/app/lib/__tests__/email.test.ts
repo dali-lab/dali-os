@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { interpolate, bodyToHtml, renderEmail } from "~/lib/email";
+import {
+  interpolate,
+  bodyToHtml,
+  renderEmail,
+  sanitizeRichEmailHtml,
+  htmlToPlainText,
+} from "~/lib/email";
 
 describe("interpolate", () => {
   it("replaces every {{firstName}} occurrence", () => {

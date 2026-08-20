@@ -36,6 +36,7 @@ import {
   variableDisplayText,
   type SigningFieldType,
 } from "~/lib/signing-fields";
+import { sanitizeRichEmailHtml, htmlToPlainText } from "~/lib/email";
 
 export { BLOCKNOTE_FRAGMENT, LEGACY_PM_FRAGMENT } from "~/components/doc/schema/configs";
 
@@ -193,6 +194,16 @@ function serialized<T>(fn: () => Promise<T>): Promise<T> {
 export function blocksToHtml(blocks: DocBlock[]): Promise<string> {
   if (blocks.length === 0) return Promise.resolve("");
   return serialized(() => getServerEditor().blocksToHTMLLossy(blocks as any));
+}
+
+/** Announcement body → { html, text }: email-safe sanitized HTML for the email
+ * channel plus a plain-text mirror for the in-app feed and Slack DM. One
+ * conversion, shared by instant and scheduled sends. */
+export async function renderAnnouncementBody(
+  blocks: DocBlock[],
+): Promise<{ html: string; text: string }> {
+  const html = sanitizeRichEmailHtml(await blocksToHtml(blocks));
+  return { html, text: htmlToPlainText(html) };
 }
 
 /** Blocks → Markdown. Custom inline nodes serialize as their plain-text form

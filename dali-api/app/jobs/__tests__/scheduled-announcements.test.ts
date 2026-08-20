@@ -21,11 +21,13 @@ function row(overrides: Record<string, unknown> = {}) {
     createdByUserId: "core-1",
     title: "Lab meeting moved",
     body: null,
+    bodyHtml: null,
     link: null,
     kind: "SystemAnnouncement",
     isTodo: true,
     dueAt: null,
     formId: null,
+    ccDartmouth: false,
     allMembers: true,
     groupIds: [],
     userIds: [],
@@ -68,6 +70,25 @@ describe("runScheduledAnnouncements", () => {
       data: { sentCount: 12, lastError: null },
     });
     expect(result.items).toBe(1);
+  });
+
+  it("passes the stored rich-text bodyHtml through to the fan-out", async () => {
+    mockPrisma.scheduledAnnouncement.findMany.mockResolvedValue([
+      row({ body: "Read this (https://x.com)", bodyHtml: '<p>Read <a href="https://x.com">this</a></p>' }),
+    ]);
+    await runScheduledAnnouncements({ now: NOW, lastSuccessAt: null, settings: {} });
+    expect(mockSend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: "Read this (https://x.com)",
+        bodyHtml: '<p>Read <a href="https://x.com">this</a></p>',
+      }),
+    );
+  });
+
+  it("replays the stored ccDartmouth flag through the fan-out", async () => {
+    mockPrisma.scheduledAnnouncement.findMany.mockResolvedValue([row({ ccDartmouth: true })]);
+    await runScheduledAnnouncements({ now: NOW, lastSuccessAt: null, settings: {} });
+    expect(mockSend).toHaveBeenCalledWith(expect.objectContaining({ ccDartmouth: true }));
   });
 
   it("skips rows lost to a concurrent claim or cancel (no double fan-out)", async () => {

@@ -13,11 +13,15 @@ export type AnnouncementInput = {
   createdByUserId: string;
   title: string;
   body?: string | null;
+  bodyHtml?: string | null;
   link?: string | null;
   kind?: NotificationKind | null;
   isTodo?: boolean | null;
   dueAt?: Date | null;
   formId?: string | null;
+  // Also deliver the announcement email to each recipient's Dartmouth address
+  // (composer toggle). Email channel only — in-app/Slack are unaffected.
+  ccDartmouth?: boolean | null;
   allMembers: boolean;
   groupIds: string[];
   userIds: string[];
@@ -54,10 +58,11 @@ export async function sendAnnouncement(input: AnnouncementInput): Promise<Announ
   // An attached form must be fillable at send time (possibly by people
   // outside dali-api), so re-validate published here — the composer also
   // checks at schedule time, but a form can be unpublished in between.
+  let formLink: string | null = null;
   if (input.formId) {
     const form = await prisma.form.findUnique({
       where: { id: input.formId },
-      select: { id: true, published: true },
+      select: { id: true, published: true, publicToken: true },
     });
     if (!form) return { ok: false, error: "Attached form not found", status: 404 };
     if (!form.published) {
@@ -67,6 +72,10 @@ export async function sendAnnouncement(input: AnnouncementInput): Promise<Announ
         status: 400,
       };
     }
+    // Give the email/Slack channels a way to reach the form — the same authed
+    // fill route the in-app Task links to (app/lib/tasks.ts). In-app derives
+    // its own link from formId, so this only affects the outbound channels.
+    if (form.publicToken) formLink = `/forms/fill/${form.publicToken}`;
   }
 
   const result = await notify({
@@ -76,11 +85,14 @@ export async function sendAnnouncement(input: AnnouncementInput): Promise<Announ
       kind: input.kind ?? "General",
       title: input.title,
       body: input.body ?? null,
-      link: input.link ?? null,
+      bodyHtml: input.bodyHtml ?? null,
+      link: input.link ?? formLink,
+      linkLabel: !input.link && formLink ? "Open the form" : null,
       sourceGroupId,
       isTodo: input.isTodo ?? false,
       dueAt: input.dueAt ?? null,
       formId: input.formId ?? null,
+      ccDartmouth: input.ccDartmouth ?? false,
     },
     recipients: recipientIds.map((userId) => ({ userId })),
   });

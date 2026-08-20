@@ -4419,6 +4419,9 @@ model ScheduledAnnouncement {
 
   title  String
   body   String?
+  // Sanitized rich-text HTML for the email channel (rendered later, at fire
+  // time). In-app/Slack use the plain-text `body` mirror. Null → plain body.
+  bodyHtml String?
   link   String?
   kind   NotificationKind @default(General)
   isTodo Boolean          @default(false)
@@ -4426,6 +4429,9 @@ model ScheduledAnnouncement {
   // Deliberately not an FK: the payload is a deferred request, re-validated
   // at fire time — deleting a form must not cascade the pending announcement.
   formId String?
+  // Also email each recipient's Dartmouth address at fire time (composer
+  // toggle). Email channel only.
+  ccDartmouth Boolean @default(false)
 
   allMembers Boolean  @default(false)
   groupIds   String[] @default([])
