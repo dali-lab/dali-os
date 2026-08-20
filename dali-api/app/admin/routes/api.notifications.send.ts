@@ -6,6 +6,7 @@ import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import { sendAnnouncement } from "~/lib/announcements.server";
+import { renderAnnouncementBody } from "~/collab/blocknote-server";
 
 const KindEnum = z.enum([
   "General",
@@ -25,12 +26,17 @@ const KindEnum = z.enum([
 const SendSchema = z.object({
   title: z.string().trim().min(1).max(200),
   body: z.string().max(2000).optional(),
+  // Rich body authored in the composer's DocEditor. When present it supersedes
+  // `body`: the server converts it once to a plain-text mirror + email-safe HTML.
+  bodyBlocks: z.array(z.any()).max(500).optional(),
   link: z.string().url().max(500).optional(),
   kind: KindEnum.optional(),
   isTodo: z.boolean().optional(),
   dueAt: z.string().datetime().optional(),
   formId: z.string().min(1).optional(),
   sendAt: z.string().datetime().optional(),
+  // Also email each recipient's Dartmouth address (in addition to DALI).
+  ccDartmouth: z.boolean().optional(),
 
   // Audience (mix freely; union is the recipient set).
   allMembers: z.boolean().optional(),
@@ -58,6 +64,31 @@ export async function action({ request }: Route.ActionArgs) {
   const userIds = body.userIds ?? [];
   const dueAt = body.dueAt ? new Date(body.dueAt) : null;
 
+  // Resolve the message body once for both the instant and scheduled paths:
+  // a rich `bodyBlocks` payload becomes a plain-text mirror (in-app/Slack) plus
+  // sanitized email HTML; a whitespace-only result is treated as no body.
+  let bodyText: string | null = body.body ?? null;
+  let bodyHtml: string | null = null;
+  if (body.bodyBlocks && body.bodyBlocks.length > 0) {
+    if (JSON.stringify(body.bodyBlocks).length > 100_000) {
+      return withCors(request, Response.json({ error: "Message body too large." }, { status: 400 }));
+    }
+    try {
+      const rendered = await renderAnnouncementBody(
+        body.bodyBlocks as Parameters<typeof renderAnnouncementBody>[0],
+      );
+      const hasContent = rendered.text.trim().length > 0;
+      bodyText = hasContent ? rendered.text : null;
+      bodyHtml = hasContent ? rendered.html : null;
+    } catch (err) {
+      console.error("[announcements] body render failed:", err);
+      return withCors(
+        request,
+        Response.json({ error: "Couldn't render the message body." }, { status: 400 }),
+      );
+    }
+  }
+
   // Schedule instead of send when sendAt is in the future.
   const sendAt = body.sendAt ? new Date(body.sendAt) : null;
   if (sendAt && sendAt.getTime() > Date.now()) {
@@ -83,12 +114,14 @@ export async function action({ request }: Route.ActionArgs) {
       data: {
         createdByUserId: auth.user.sub,
         title: body.title,
-        body: body.body ?? null,
+        body: bodyText,
+        bodyHtml,
         link: body.link ?? null,
         kind: body.kind ?? "General",
         isTodo: body.isTodo ?? false,
         dueAt,
         formId: body.formId ?? null,
+        ccDartmouth: body.ccDartmouth ?? false,
         allMembers: body.allMembers ?? false,
         groupIds,
         userIds,
@@ -105,12 +138,14 @@ export async function action({ request }: Route.ActionArgs) {
   const result = await sendAnnouncement({
     createdByUserId: auth.user.sub,
     title: body.title,
-    body: body.body ?? null,
+    body: bodyText,
+    bodyHtml,
     link: body.link ?? null,
     kind: body.kind ?? "General",
     isTodo: body.isTodo ?? false,
     dueAt,
     formId: body.formId ?? null,
+    ccDartmouth: body.ccDartmouth ?? false,
     allMembers: body.allMembers ?? false,
     groupIds,
     userIds,

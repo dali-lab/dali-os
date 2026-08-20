@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { interpolate, bodyToHtml, renderEmail } from "~/lib/email";
+import {
+  interpolate,
+  bodyToHtml,
+  renderEmail,
+  sanitizeRichEmailHtml,
+  htmlToPlainText,
+} from "~/lib/email";
 
 describe("interpolate", () => {
   it("replaces every {{firstName}} occurrence", () => {
@@ -108,6 +114,77 @@ describe("bodyToHtml", () => {
     const out = bodyToHtml('<a href="javascript:alert(1)">click</a>');
     expect(out).not.toContain("javascript:");
     expect(out).not.toContain("<a ");
+  });
+});
+
+describe("sanitizeRichEmailHtml", () => {
+  it("keeps allowed formatting and link tags", () => {
+    const out = sanitizeRichEmailHtml(
+      "<p><strong>Hi</strong> <em>there</em></p><ul><li>one</li></ul><h2>Head</h2>",
+    );
+    expect(out).toContain("<strong>Hi</strong>");
+    expect(out).toContain("<em>there</em>");
+    expect(out).toContain("<li>one</li>");
+    expect(out).toContain("<h2>Head</h2>");
+  });
+
+  it("keeps http/https/mailto links and forces safe target/rel", () => {
+    const out = sanitizeRichEmailHtml('<a href="https://example.com">x</a>');
+    expect(out).toContain('href="https://example.com"');
+    expect(out).toContain('target="_blank"');
+    expect(out).toContain('rel="noopener noreferrer nofollow"');
+    expect(sanitizeRichEmailHtml('<a href="mailto:a@b.com">m</a>')).toContain(
+      'href="mailto:a@b.com"',
+    );
+  });
+
+  it("strips javascript: and data: URLs from links", () => {
+    expect(sanitizeRichEmailHtml('<a href="javascript:alert(1)">x</a>')).not.toContain(
+      "javascript:",
+    );
+    expect(sanitizeRichEmailHtml('<a href="data:text/html,x">x</a>')).not.toContain("data:");
+  });
+
+  it("strips scripts, images, and event handlers", () => {
+    const out = sanitizeRichEmailHtml(
+      '<p onclick="alert(1)">hi</p><script>alert(2)</script><img src=x onerror="alert(3)">',
+    );
+    expect(out).not.toContain("<script");
+    expect(out).not.toContain("<img");
+    expect(out).not.toContain("onclick");
+    expect(out).not.toContain("onerror");
+    expect(out).not.toContain("alert(");
+  });
+});
+
+describe("htmlToPlainText", () => {
+  it("flattens links to 'label (url)'", () => {
+    expect(htmlToPlainText('<p>See <a href="https://x.com">the page</a>.</p>')).toBe(
+      "See the page (https://x.com).",
+    );
+  });
+
+  it("omits the url when the label already is the url", () => {
+    expect(htmlToPlainText('<a href="https://x.com">https://x.com</a>')).toBe("https://x.com");
+  });
+
+  it("renders list items as bullet lines and separates paragraphs", () => {
+    const out = htmlToPlainText("<p>Intro</p><ul><li>one</li><li>two</li></ul>");
+    expect(out).toContain("Intro");
+    expect(out).toContain("• one");
+    expect(out).toContain("• two");
+  });
+
+  it("decodes common entities and strips remaining tags", () => {
+    expect(htmlToPlainText("<p>a &amp; <strong>b</strong> &lt;c&gt;</p>")).toBe("a & b <c>");
+  });
+
+  it("drops script content entirely — never survives the plain-text extraction", () => {
+    const out = htmlToPlainText("<p>hi<script>alert(1)</script>bye</p>");
+    expect(out).not.toContain("<script");
+    expect(out).not.toContain("alert(1)");
+    expect(out).toContain("hi");
+    expect(out).toContain("bye");
   });
 });
 
