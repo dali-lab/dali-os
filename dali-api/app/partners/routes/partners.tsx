@@ -15,16 +15,17 @@ import { canViewStaffing, isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
-import { AreaPillNav } from "~/components/AreaPillNav";
+import { UnderlineTabButtons } from "~/components/AreaPillNav";
 import { ViewToggle, useViewPreference } from "~/components/ViewToggle";
 import { buttonClasses } from "~/components/ui/Button";
 import { FileText, LayoutGrid, Plus } from "lucide-react";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { cn } from "~/lib/cn";
 import { useFeatureFlag } from "~/components/FeatureFlags";
-import { PartnersNavTabs } from "../components/PartnersNavTabs";
 
-export const handle = { areaPills: true };
+// areaSubnav (not areaPills): this page renders its own UnderlineTabButtons row
+// unconditionally, so it reserves the flush top spacing regardless of the flag.
+export const handle = { areaSubnav: true };
 
 export const meta: Route.MetaFunction = () => [{ title: "Partners · DALI OS" }];
 
@@ -123,6 +124,7 @@ export async function action({ request }: Route.ActionArgs) {
 export default function PartnersOrganizations() {
   const { rows, canEdit } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
+  const navigate = useNavigate();
   const [creating, setCreating] = useState(false);
   const [query, setQuery] = useState("");
   const [view, setView] = useViewPreference("dali:view:partners", "list");
@@ -139,13 +141,23 @@ export default function PartnersOrganizations() {
 
   return (
     <div className="flex flex-col gap-4">
-      <AreaPillNav
+      <UnderlineTabButtons
+        label="Partners"
         items={[
-          { label: "Hub", to: "/partners", active: true, icon: LayoutGrid },
-          { label: "Applications", to: "/partners/applications", icon: FileText },
+          {
+            label: "Organizations",
+            icon: LayoutGrid,
+            active: true,
+            onClick: () => navigate("/partners"),
+          },
+          {
+            label: "Pipeline",
+            icon: FileText,
+            active: false,
+            onClick: () => navigate("/partners/applications"),
+          },
         ]}
       />
-      <PartnersNavTabs active="organizations" />
       <header className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1

@@ -9,7 +9,15 @@ import {
   useSubmit,
 } from "react-router";
 import { Select, type SelectOption } from "~/components/ui/floating";
-import { Pencil, Calendar } from "lucide-react";
+import {
+  Pencil,
+  Calendar,
+  LayoutGrid,
+  ClipboardList,
+  Info,
+  FileText,
+} from "lucide-react";
+import { UnderlineTabButtons } from "~/components/AreaPillNav";
 import { buttonClasses } from "~/components/ui/Button";
 import { cn } from "~/lib/cn";
 import { Checkbox } from "~/components/ui/Checkbox";
@@ -814,6 +822,9 @@ export default function PartnerApplicationDetail() {
   // site — no view/edit mode toggle.
   const canEdit = canEditPerm;
   const actionData = useActionData<typeof action>();
+  const [tab, setTab] = useState<
+    "overview" | "evaluation" | "meetings" | "details" | "sow"
+  >("overview");
 
   const topBar = actionData?.error ? (
     <div className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-md px-3 py-2">
@@ -901,46 +912,128 @@ export default function PartnerApplicationDetail() {
     );
   }
 
-  // Flag on → 2-column record: a wide working body (identity → status
-  // progression → details → evaluation → meetings → decision) plus a sticky
-  // activity rail. A narrow rail (not a wide center column) keeps a sparse
-  // activity feed from leaving a hole, and gives the tall evaluation form full
-  // width. Doc-editor-heavy / long-form blocks stay full width below.
+  // Flag on → tabbed record (CRM convention): a top band holds identity + the
+  // stage stepper + advance/triage actions (always visible), and the body is
+  // tabbed so each heavy section gets full width. Overview (activity feed + key
+  // details) is the default, front-and-center, like every CRM record page.
+  const assignedMeeterName =
+    coreMembers.find((m) => m.userId === application.assignedMeeterId)?.name ??
+    null;
+  const expectedTotal = application.domains.reduce(
+    (s, d) => s + d.expectedMembers,
+    0,
+  );
+
+  const activityFeed = (
+    <PartnerActivityFeed
+      activities={activities}
+      actorNames={actorNames}
+      canEdit={canEdit}
+      headerActions={
+        canEdit ? (
+          <button
+            type="button"
+            onClick={() => setTab("meetings")}
+            className={buttonClasses("ghost", "sm")}
+          >
+            <Calendar className="w-3.5 h-3.5" /> Log meeting
+          </button>
+        ) : undefined
+      }
+    />
+  );
+
+  const keyFields = (
+    <section className="bg-card border border-border rounded-lg p-4">
+      <h2 className="text-sm font-semibold text-foreground mb-3">Key details</h2>
+      <dl className="flex flex-col gap-2.5">
+        <KeyRow
+          label="Partner"
+          value={application.partner?.name ?? application.applicant?.name ?? "—"}
+        />
+        <KeyRow
+          label="Target terms"
+          value={
+            application.targetTerms.length
+              ? application.targetTerms.map((t) => t.code).join(", ")
+              : "—"
+          }
+        />
+        <KeyRow
+          label="Assigned meeter"
+          value={assignedMeeterName ?? "Unassigned"}
+        />
+        <KeyRow label="Expected members" value={String(expectedTotal)} />
+        <KeyRow label="Source" value={application.source} />
+      </dl>
+    </section>
+  );
+
+  const TABS = [
+    { key: "overview", label: "Overview", icon: LayoutGrid },
+    { key: "evaluation", label: "Evaluation", icon: ClipboardList },
+    { key: "meetings", label: "Meetings", icon: Calendar },
+    { key: "details", label: "Details", icon: Info },
+    { key: "sow", label: "Statement of Work", icon: FileText },
+  ] as const;
+
   return (
     <div className="flex flex-col gap-4">
       {topBar}
-      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
-        <div className="flex min-w-0 flex-col gap-4">
-          {header}
-          {triageBar}
-          {details}
-          {evaluation}
-          {meetings}
-          {promoteBlock}
-        </div>
 
-        <div className="lg:sticky lg:top-4">
-          <PartnerActivityFeed
-            activities={activities}
-            actorNames={actorNames}
-            canEdit={canEdit}
-            headerActions={
-              canEdit ? (
-                <a
-                  href="#partner-meetings"
-                  className={buttonClasses("ghost", "sm")}
-                >
-                  <Calendar className="w-3.5 h-3.5" /> Log meeting
-                </a>
-              ) : undefined
-            }
-          />
-        </div>
+      {/* Top band — identity, stage progression, and triage/advance actions,
+          always visible above the tabs. */}
+      <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
+        {header}
+        {triageBar}
+        {application.status === "Accepted" && promoteBlock}
       </div>
 
-      {answers}
-      {domainScope}
-      {sow}
+      <UnderlineTabButtons
+        label="Record sections"
+        items={TABS.map((t) => ({
+          label: t.label,
+          icon: t.icon,
+          active: tab === t.key,
+          onClick: () => setTab(t.key),
+        }))}
+      />
+
+      {tab === "overview" && (
+        <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
+          <div className="min-w-0">{activityFeed}</div>
+          {keyFields}
+        </div>
+      )}
+      {tab === "evaluation" &&
+        (evaluation ?? (
+          <p className="text-sm text-muted-foreground">
+            You don't have permission to evaluate this application.
+          </p>
+        ))}
+      {tab === "meetings" &&
+        (meetings ?? (
+          <p className="text-sm text-muted-foreground">
+            You don't have permission to log meetings.
+          </p>
+        ))}
+      {tab === "details" && (
+        <div className="flex flex-col gap-4">
+          {details}
+          {domainScope}
+          {answers}
+        </div>
+      )}
+      {tab === "sow" && sow}
+    </div>
+  );
+}
+
+function KeyRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <dt className="text-xs text-muted-foreground shrink-0">{label}</dt>
+      <dd className="text-sm text-foreground text-right">{value}</dd>
     </div>
   );
 }
@@ -1116,11 +1209,7 @@ function TriageBar({
       );
       break;
     case "Accepted":
-      primary = (
-        <a href="#promote" className={buttonClasses("primary", "sm")}>
-          Promote to project →
-        </a>
-      );
+      // Promotion is handled by the PromoteBlock in the top band at this stage.
       break;
     case "Rejected":
       secondary.push(
@@ -1147,14 +1236,14 @@ function TriageBar({
         <p className="text-xs text-muted-foreground">
           Promoted to a project — this opportunity is complete.
         </p>
-      ) : (
+      ) : primary || secondary.length > 0 ? (
         <div className="flex flex-wrap items-center gap-2">
           {primary}
           {secondary.map((node, i) => (
             <span key={i}>{node}</span>
           ))}
         </div>
-      )}
+      ) : null}
 
       {/* Inline forms for actions that need extra input */}
       {showing === "offer-meeting" && (

@@ -34,11 +34,12 @@ import {
 import type { Question } from "~/types";
 import { listSelectableForms } from "~/projects/lib/form-slots";
 import { logPartnerActivity } from "../lib/partner-activity.server";
-import { AreaPillNav } from "~/components/AreaPillNav";
-import { PartnersNavTabs } from "../components/PartnersNavTabs";
+import { UnderlineTabButtons } from "~/components/AreaPillNav";
 import { ChevronRight, FileText, LayoutGrid } from "lucide-react";
 
-export const handle = { areaPills: true };
+// areaSubnav (not areaPills): this page renders its own UnderlineTabButtons row
+// unconditionally, so it reserves the flush top spacing regardless of the flag.
+export const handle = { areaSubnav: true };
 
 export const meta: Route.MetaFunction = () => [
   { title: "Partner Applications · DALI OS" },
@@ -251,6 +252,7 @@ export default function PartnersApplications() {
   const { rows, canEdit, requiredCells, formBinding, selectableForms } =
     useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
+  const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<Status | "all">("all");
   const [domainFilter, setDomainFilter] = useState<string>("all");
@@ -313,13 +315,23 @@ export default function PartnersApplications() {
 
   return (
     <div className="flex flex-col gap-4">
-      <AreaPillNav
+      <UnderlineTabButtons
+        label="Partners"
         items={[
-          { label: "Hub", to: "/partners", icon: LayoutGrid },
-          { label: "Applications", to: "/partners/applications", active: true, icon: FileText },
+          {
+            label: "Organizations",
+            icon: LayoutGrid,
+            active: false,
+            onClick: () => navigate("/partners"),
+          },
+          {
+            label: "Pipeline",
+            icon: FileText,
+            active: true,
+            onClick: () => navigate("/partners/applications"),
+          },
         ]}
       />
-      <PartnersNavTabs active="pipeline" />
       <header className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="font-heading text-2xl font-bold text-foreground">
