@@ -9,6 +9,7 @@ import {
   consumePartnerMagicLink,
   peekPartnerMagicLink,
 } from "~/partners/lib/magic-link.server";
+import { findOrLinkPartnerContact } from "~/partners/lib/partner-auth.server";
 
 export const meta: Route.MetaFunction = () => [
   { title: "DALI OS · Sign in" },
@@ -43,14 +44,30 @@ export async function action({ request }: Route.ActionArgs) {
     request,
   });
 
-  const partnerUser = await prisma.partnerUser.findUnique({
-    where: { userId },
-    select: { id: true },
+  // Provision/link the PartnerContact for this user (idempotent). We need
+  // the email to look up unlinked contacts by email (e.g. a Core-created
+  // inquiry contact). personalEmail is the authoritative partner email field.
+  const userRow = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { personalEmail: true },
   });
+  if (userRow?.personalEmail) {
+    const contact = await findOrLinkPartnerContact(userId, userRow.personalEmail);
+    await prisma.partnerContact.update({
+      where: { id: contact.id },
+      data: { authProvider: "MagicLink" },
+    });
+  }
+  // TODO(partner-crm): if personalEmail is null (edge case: user provisioned
+  // without one), the contact will be created lazily by requirePartnerAccount.
 
   const headers = new Headers();
   setSessionCookie(headers, session.rawId);
-  return redirect(partnerUser ? "/partner" : "/partner/onboarding", { headers });
+  // The requirePartnerAccount guard JIT-provisions contacts, so onboarding
+  // is optional — send authenticated partners straight to /partner.
+  const returnTo = new URL(request.url).searchParams.get("returnTo");
+  const dest = returnTo && returnTo.startsWith("/") ? returnTo : "/partner";
+  return redirect(dest, { headers });
 }
 
 export default function PartnerAuthVerify({

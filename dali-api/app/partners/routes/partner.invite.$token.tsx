@@ -46,8 +46,8 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const headers = new Headers();
   setSessionCookie(headers, session.rawId);
-  // Fresh accounts still need a name; onboarding renders its
-  // profile-completion variant when a PartnerUser row already exists.
+  // Fresh accounts still need a name; onboarding handles profile completion
+  // for PartnerContact-based accounts without a firstName set.
   return redirect(user?.firstName ? "/partner" : "/partner/onboarding", {
     headers,
   });

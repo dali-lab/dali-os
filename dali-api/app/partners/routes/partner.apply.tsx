@@ -7,7 +7,7 @@ import type { Route } from "./+types/partner.apply";
 import { prisma } from "~/lib/db";
 import { logAuditEvent } from "~/lib/audit";
 import { currentTerm } from "~/lib/roles";
-import { requirePartner } from "~/partners/lib/partner-auth.server";
+import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
 import { loadApplicationForm } from "~/partners/lib/application-form.server";
 import { validateAnswers } from "~/forms/lib/public-form";
 import { notifyFormSubmission } from "~/forms/lib/submission-notify.server";
@@ -28,7 +28,7 @@ export const meta: Route.MetaFunction = () => [
 ];
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const { auth } = await requirePartner(request);
+  const { auth } = await requirePartnerAccount(request);
   const current = await currentTerm();
   const [terms, domains, applicationForm] = await Promise.all([
     prisma.term.findMany({
@@ -79,7 +79,8 @@ function wrapChallenges(text: string) {
 }
 
 export async function action({ request }: Route.ActionArgs) {
-  const { auth, partnerUser } = await requirePartner(request);
+  const ctx = await requirePartnerAccount(request);
+  const { auth } = ctx;
   const form = await request.formData();
 
   const title = (form.get("title") as string | null)?.trim() ?? "";
@@ -152,7 +153,10 @@ export async function action({ request }: Route.ActionArgs) {
     // answers (see the seeded "Partner application questions" form).
     return tx.partnerApplication.create({
       data: {
-        partnerOrgId: partnerUser.partnerOrgId,
+        applicantContactId: ctx.contact.id,
+        partnerOrgId: null,
+        status: "ApplicationSubmitted",
+        source: "Form",
         title,
         formSubmissionId,
         targetTerms: {
@@ -179,7 +183,7 @@ export async function action({ request }: Route.ActionArgs) {
     action: "partner.application.submitted",
     userId: auth.user.sub,
     targetId: application.id,
-    metadata: { partnerOrgId: partnerUser.partnerOrgId },
+    metadata: { contactId: ctx.contact.id },
     request,
   });
   if (applicationForm) {

@@ -7,7 +7,7 @@ import {
   useLoaderData,
   useNavigate,
 } from "react-router";
-import { Select, type SelectOption } from "~/components/ui/floating";
+import { Select } from "~/components/ui/floating";
 import type { DragEndEvent } from "@dnd-kit/core";
 import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
 import type { Route } from "./+types/partners.applications";
@@ -79,7 +79,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (auth.user.type === "applicant") return redirect("/portal");
   if (!(await canViewStaffing(auth.user.sub))) return redirect("/");
 
-  const [applications, partnerOrgs, canEdit, roleRequests] =
+  const [applications, canEdit, roleRequests] =
     await Promise.all([
     prisma.partnerApplication.findMany({
       orderBy: [{ status: "asc" }, { createdAt: "desc" }],
@@ -89,6 +89,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         summary: true,
         status: true,
         partnerOrg: { select: { name: true, logoUrl: true } },
+        applicantContact: { select: { id: true, name: true, email: true } },
         formSubmission: {
           select: {
             answers: true,
@@ -107,10 +108,6 @@ export async function loader({ request }: Route.LoaderArgs) {
           },
         },
       },
-    }),
-    prisma.partnerOrg.findMany({
-      orderBy: { name: "asc" },
-      select: { id: true, name: true },
     }),
     isCore(auth.user.sub),
     // Required headcount = the slots staffing must fill, per term/domain.
@@ -141,10 +138,10 @@ export async function loader({ request }: Route.LoaderArgs) {
       id: a.id,
       title: a.title,
       status: a.status,
-      partnerName: a.partnerOrg.name,
+      partnerName: a.partnerOrg?.name ?? a.applicantContact?.name ?? "Unknown",
       excerpt: answerExcerpt ?? a.summary,
       // Uploaded logos are stored as S3 keys; presign for display.
-      partnerLogoUrl: await resolvePhotoUrl(a.partnerOrg.logoUrl),
+      partnerLogoUrl: await resolvePhotoUrl(a.partnerOrg?.logoUrl ?? null),
       targetTerms: a.targetTerms.map((t) => ({
         code: t.term.code,
         sortKey: t.term.sortKey,
@@ -180,7 +177,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     ? await Promise.all([getApplicationFormBinding(), listSelectableForms()])
     : [null, []];
 
-  return { rows, partnerOrgs, canEdit, requiredCells, formBinding, selectableForms };
+  return { rows, canEdit, requiredCells, formBinding, selectableForms };
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -206,26 +203,44 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   const title = (form.get("title") as string | null)?.trim() ?? "";
-  const partnerOrgId = (form.get("partnerOrgId") as string | null) ?? "";
+  const applicantName = (form.get("applicantName") as string | null)?.trim() ?? "";
+  const applicantEmail = (form.get("applicantEmail") as string | null)?.trim().toLowerCase() ?? "";
 
   if (!title) return { error: "A title is required." };
-  if (!partnerOrgId) return { error: "Select a partner." };
+  if (!applicantEmail || !applicantEmail.includes("@"))
+    return { error: "A valid applicant email is required." };
 
-  const partner = await prisma.partnerOrg.findUnique({
-    where: { id: partnerOrgId },
+  // Find or create a PartnerContact keyed on the lowercased email.
+  // Core-created records have no User account yet, so userId stays null.
+  const contact = await prisma.partnerContact.upsert({
+    where: { email: applicantEmail },
+    create: {
+      email: applicantEmail,
+      name: applicantName || (applicantEmail.split("@")[0] ?? applicantEmail),
+      userId: null,
+    },
+    update: {
+      // If a name is supplied and the contact has no name yet, fill it in.
+      ...(applicantName ? { name: applicantName } : {}),
+    },
     select: { id: true },
   });
-  if (!partner) return { error: "That partner no longer exists." };
 
   const created = await prisma.partnerApplication.create({
-    data: { title, partnerOrgId },
+    data: {
+      title,
+      applicantContactId: contact.id,
+      partnerOrgId: null,
+      status: "Inquiry",
+      source: "Manual",
+    },
     select: { id: true },
   });
   return redirect(`/partners/applications/${created.id}`);
 }
 
 export default function PartnersApplications() {
-  const { rows, partnerOrgs, canEdit, requiredCells, formBinding, selectableForms } =
+  const { rows, canEdit, requiredCells, formBinding, selectableForms } =
     useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const [query, setQuery] = useState("");
@@ -327,14 +342,22 @@ export default function PartnersApplications() {
               />
             </label>
             <label className="flex flex-col gap-1 text-xs">
-              <span className="text-muted-foreground">Partner</span>
-              <Select
-                name="partnerOrgId"
+              <span className="text-muted-foreground">Applicant email</span>
+              <input
+                name="applicantEmail"
+                type="email"
                 required
-                defaultValue=""
-                placeholder="Select a partner…"
-                options={partnerOrgs.map((p) => ({ value: p.id, label: p.name }))}
-                buttonClassName="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                placeholder="contact@company.com"
+                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="text-muted-foreground">Applicant name</span>
+              <input
+                name="applicantName"
+                type="text"
+                placeholder="Jane Smith (optional)"
+                className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-accent-coral/30"
               />
             </label>
           </div>
@@ -886,13 +909,9 @@ function ApplicationsBoard({
   const [error, setError] = useState<string | null>(null);
 
   const byStatus = useMemo(() => {
-    const map: Record<Status, ApplicationRow[]> = {
-      Submitted: [],
-      UnderReview: [],
-      OnHold: [],
-      Accepted: [],
-      Rejected: [],
-    };
+    const map = Object.fromEntries(
+      STATUSES.map((s) => [s, [] as ApplicationRow[]]),
+    ) as Record<Status, ApplicationRow[]>;
     for (const a of rows) map[a.status].push(a);
     return map;
   }, [rows]);

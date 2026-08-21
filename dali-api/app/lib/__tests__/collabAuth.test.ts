@@ -11,7 +11,7 @@ vi.mock("~/lib/db", () => ({
     task: { findUnique: vi.fn() },
     page: { findUnique: vi.fn() },
     partnerApplication: { findUnique: vi.fn() },
-    partnerUser: { findUnique: vi.fn() },
+    partnerContact: { findUnique: vi.fn() },
     instructorAssignment: { findFirst: vi.fn() },
     educationOffering: { findUnique: vi.fn() },
     educationApplication: { findFirst: vi.fn() },
@@ -259,26 +259,59 @@ describe("authorizeCollabDoc", () => {
     });
 
     it("allows Core", async () => {
-      mockPrisma.partnerApplication.findUnique.mockResolvedValue({ partnerOrgId: "org1" });
+      mockPrisma.partnerApplication.findUnique.mockResolvedValue({
+        applicantContactId: "cX",
+        partnerOrgId: "org1",
+      });
       (isCore as any).mockResolvedValue(true);
       expect(await authorizeCollabDoc("user1", "partnersow:app1:body")).toEqual(allowed());
     });
 
     it("allows a partner in the owning org", async () => {
-      mockPrisma.partnerApplication.findUnique.mockResolvedValue({ partnerOrgId: "org1" });
-      mockPrisma.partnerUser.findUnique.mockResolvedValue({ partnerOrgId: "org1" });
+      mockPrisma.partnerApplication.findUnique.mockResolvedValue({
+        applicantContactId: "cX",
+        partnerOrgId: "org1",
+      });
+      // contact cY is not the applicant but belongs to the owning org
+      mockPrisma.partnerContact.findUnique.mockResolvedValue({
+        id: "cY",
+        memberships: [{ orgId: "org1" }],
+      });
+      expect(await authorizeCollabDoc("user1", "partnersow:app1:body")).toEqual(allowed());
+    });
+
+    it("allows the owning applicant contact even with no org membership", async () => {
+      mockPrisma.partnerApplication.findUnique.mockResolvedValue({
+        applicantContactId: "cX",
+        partnerOrgId: null,
+      });
+      // contact IS the applicant
+      mockPrisma.partnerContact.findUnique.mockResolvedValue({
+        id: "cX",
+        memberships: [],
+      });
       expect(await authorizeCollabDoc("user1", "partnersow:app1:body")).toEqual(allowed());
     });
 
     it("rejects a partner from another org", async () => {
-      mockPrisma.partnerApplication.findUnique.mockResolvedValue({ partnerOrgId: "org1" });
-      mockPrisma.partnerUser.findUnique.mockResolvedValue({ partnerOrgId: "org2" });
+      mockPrisma.partnerApplication.findUnique.mockResolvedValue({
+        applicantContactId: "cX",
+        partnerOrgId: "org1",
+      });
+      // different contact, wrong org
+      mockPrisma.partnerContact.findUnique.mockResolvedValue({
+        id: "cY",
+        memberships: [{ orgId: "org2" }],
+      });
       expect(await authorizeCollabDoc("user1", "partnersow:app1:body")).toMatchObject(denied());
     });
 
     it("rejects non-partner non-Core users", async () => {
-      mockPrisma.partnerApplication.findUnique.mockResolvedValue({ partnerOrgId: "org1" });
-      mockPrisma.partnerUser.findUnique.mockResolvedValue(null);
+      mockPrisma.partnerApplication.findUnique.mockResolvedValue({
+        applicantContactId: "cX",
+        partnerOrgId: "org1",
+      });
+      mockPrisma.partnerContact.findUnique.mockResolvedValue(null);
       expect(await authorizeCollabDoc("user1", "partnersow:app1:body")).toMatchObject(denied());
     });
   });

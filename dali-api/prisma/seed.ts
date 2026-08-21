@@ -3037,7 +3037,7 @@ async function main() {
       title: "Lab sensor dashboard",
       partnerOrgId: "partner-thayer",
       targetTermIds: [term26X?.id],
-      status: "Submitted" as const,
+      status: "ApplicationSubmitted" as const,
       summary: "Real-time dashboard for shared lab equipment sensor data.",
       domains: [
         { domainId: "domain-eng", expectedMembers: 3, expectedChallenges: "Time-series ingestion + live dashboard." },
@@ -3045,10 +3045,25 @@ async function main() {
     },
   ];
   for (const a of partnerApplicationSeeds) {
+    // Account-first: every application is owned by a PartnerContact. Seed one
+    // per application (deterministic email) so re-seeding stays idempotent.
+    const applicant = await prisma.partnerContact.upsert({
+      where: { email: `${a.partnerOrgId}@seed.dali` },
+      update: {},
+      create: { email: `${a.partnerOrgId}@seed.dali`, name: `${a.title} contact` },
+      select: { id: true },
+    });
     await prisma.partnerApplication.upsert({
       where: { id: a.id },
       update: { title: a.title, partnerOrgId: a.partnerOrgId, status: a.status, summary: a.summary },
-      create: { id: a.id, title: a.title, partnerOrgId: a.partnerOrgId, status: a.status, summary: a.summary },
+      create: {
+        id: a.id,
+        title: a.title,
+        partnerOrgId: a.partnerOrgId,
+        applicantContactId: applicant.id,
+        status: a.status,
+        summary: a.summary,
+      },
     });
     // Replace the target-term set each run so re-seeding stays idempotent.
     const termIds = [...new Set(a.targetTermIds.filter((t): t is string => Boolean(t)))];

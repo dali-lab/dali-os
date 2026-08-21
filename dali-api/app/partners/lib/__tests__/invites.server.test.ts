@@ -4,7 +4,8 @@ vi.mock("~/lib/db", () => ({
   prisma: {
     user: { findFirst: vi.fn(), findUnique: vi.fn(), create: vi.fn() },
     dALIMember: { findUnique: vi.fn() },
-    partnerUser: { findUnique: vi.fn(), create: vi.fn() },
+    partnerContact: { findUnique: vi.fn(), upsert: vi.fn() },
+    partnerMembership: { create: vi.fn() },
     partnerInvite: {
       create: vi.fn(),
       updateMany: vi.fn(),
@@ -36,8 +37,10 @@ beforeEach(() => {
   mockPrisma.user.findUnique.mockResolvedValue({ firstName: "Ada", lastName: "L" });
   mockPrisma.user.create.mockResolvedValue({ id: "new-user" });
   mockPrisma.dALIMember.findUnique.mockResolvedValue(null);
-  mockPrisma.partnerUser.findUnique.mockResolvedValue(null);
-  mockPrisma.partnerUser.create.mockResolvedValue({ id: "pu1" });
+  // Default: contact has no membership in any org (multi-org: only same-org check)
+  mockPrisma.partnerContact.findUnique.mockResolvedValue({ memberships: [] });
+  mockPrisma.partnerContact.upsert.mockResolvedValue({ id: "contact1" });
+  mockPrisma.partnerMembership.create.mockResolvedValue({ id: "mem1" });
   mockPrisma.partnerInvite.updateMany.mockResolvedValue({ count: 0 });
   mockPrisma.partnerInvite.create.mockResolvedValue({
     id: "inv1",
@@ -61,24 +64,27 @@ describe("createPartnerInvite", () => {
     expect(mockPrisma.partnerInvite.create).not.toHaveBeenCalled();
   });
 
-  it("rejects invitees already in this org and in other orgs distinctly", async () => {
+  it("rejects invitees already a member of THIS org, allows members of other orgs", async () => {
     mockPrisma.user.findFirst.mockResolvedValue({
       id: "u1",
       daliEmail: null,
       dartmouthEmail: null,
       netId: null,
     });
-    mockPrisma.partnerUser.findUnique.mockResolvedValue({ partnerOrgId: "org1" });
+
+    // Already in org1 (the same org being invited to) → reject
+    mockPrisma.partnerContact.findUnique.mockResolvedValue({
+      memberships: [{ id: "mem1" }],
+    });
     let result = await createPartnerInvite(params);
     expect(result).toEqual({
       error: "That person is already a member of this organization",
     });
 
-    mockPrisma.partnerUser.findUnique.mockResolvedValue({ partnerOrgId: "org2" });
+    // In a different org only → multi-org is allowed, should proceed to invite
+    mockPrisma.partnerContact.findUnique.mockResolvedValue({ memberships: [] });
     result = await createPartnerInvite(params);
-    expect(result).toEqual({
-      error: "That person already belongs to another partner organization",
-    });
+    expect(result).toEqual({ ok: true });
   });
 
   it("supersedes pending invites and emails a link with the raw token", async () => {
@@ -113,22 +119,31 @@ describe("acceptPartnerInvite", () => {
     mockPrisma.partnerInvite.updateMany.mockResolvedValue({ count: 0 });
     const result = await acceptPartnerInvite("raw");
     expect(result).toHaveProperty("error");
-    expect(mockPrisma.partnerUser.create).not.toHaveBeenCalled();
+    expect(mockPrisma.partnerMembership.create).not.toHaveBeenCalled();
   });
 
-  it("creates the user and PartnerUser on success", async () => {
+  it("creates a PartnerContact (upsert) and PartnerMembership on success", async () => {
     mockPrisma.partnerInvite.updateMany.mockResolvedValue({ count: 1 });
     mockPrisma.partnerInvite.findUnique.mockResolvedValue(invite);
     const result = await acceptPartnerInvite("raw");
     expect(result).toEqual({ userId: "new-user", partnerOrgId: "org1" });
-    expect(mockPrisma.partnerUser.create).toHaveBeenCalledWith({
-      data: {
-        userId: "new-user",
-        partnerOrgId: "org1",
-        displayRole: "CTO",
-        authProvider: "MagicLink",
-      },
-    });
+    // Contact is upserted by email
+    expect(mockPrisma.partnerContact.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { email: invite.email },
+        create: expect.objectContaining({ email: invite.email }),
+      }),
+    );
+    // Membership is created linking the contact to the org
+    expect(mockPrisma.partnerMembership.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          contactId: "contact1",
+          orgId: "org1",
+          role: "CTO",
+        }),
+      }),
+    );
   });
 
   it("re-checks identity at accept time (invitee became a member)", async () => {
@@ -142,16 +157,16 @@ describe("acceptPartnerInvite", () => {
     });
     const result = await acceptPartnerInvite("raw");
     expect(result).toHaveProperty("error");
-    expect(mockPrisma.partnerUser.create).not.toHaveBeenCalled();
+    expect(mockPrisma.partnerMembership.create).not.toHaveBeenCalled();
   });
 
-  it("maps the one-org-per-user unique violation to a friendly error", async () => {
+  it("maps the already-member-of-this-org unique violation to a friendly error", async () => {
     mockPrisma.partnerInvite.updateMany.mockResolvedValue({ count: 1 });
     mockPrisma.partnerInvite.findUnique.mockResolvedValue(invite);
-    mockPrisma.partnerUser.create.mockRejectedValue({ code: "P2002" });
+    mockPrisma.partnerMembership.create.mockRejectedValue({ code: "P2002" });
     const result = await acceptPartnerInvite("raw");
     expect(result).toEqual({
-      error: "This account already belongs to a partner organization",
+      error: "This account is already a member of this organization",
     });
   });
 });

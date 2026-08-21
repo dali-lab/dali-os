@@ -8,7 +8,7 @@ import { McpForbiddenError, McpNotFoundError } from "../../registry";
 export const GET_PARTNER_APPLICATION_TOOL = {
   name: "get_partner_application",
   description:
-    "Get full details for a partner application, including partner org, target terms, domain scope, and whether a form submission is attached. Requires staffing-view access.",
+    "Get full details for a partner application, including applicant contact, partner org (if promoted), target terms, domain scope, and whether a form submission is attached. Requires staffing-view access.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -38,6 +38,7 @@ export async function runGetPartnerApplication(
       sowDocId: true,
       resultingProjectId: true,
       partnerOrg: { select: { id: true, name: true } },
+      applicantContact: { select: { id: true, name: true, email: true } },
       targetTerms: {
         orderBy: { term: { sortKey: "asc" } },
         select: { termId: true, term: { select: { code: true } } },
@@ -66,10 +67,17 @@ export async function runGetPartnerApplication(
     summary: application.summary,
     sowDocId: application.sowDocId,
     resultingProjectId: application.resultingProjectId,
-    partner: {
-      id: application.partnerOrg.id,
-      name: application.partnerOrg.name,
-    },
+    applicantContact: application.applicantContact
+      ? {
+          id: application.applicantContact.id,
+          name: application.applicantContact.name,
+          email: application.applicantContact.email,
+        }
+      : null,
+    // partnerOrg is set only once the application is promoted to a project.
+    partner: application.partnerOrg
+      ? { id: application.partnerOrg.id, name: application.partnerOrg.name }
+      : null,
     targetTerms: application.targetTerms.map((t) => ({
       termId: t.termId,
       code: t.term.code,

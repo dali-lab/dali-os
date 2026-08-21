@@ -27,11 +27,13 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!auth.ok) return {};
   if (auth.user.type === "member") return redirect("/");
   if (auth.user.type === "dartmouth") return redirect("/portal");
-  const partnerUser = await prisma.partnerUser.findUnique({
+  const partnerContact = await prisma.partnerContact.findUnique({
     where: { userId: auth.user.sub },
     select: { id: true },
   });
-  return redirect(partnerUser ? "/partner" : "/partner/onboarding");
+  // A contact row means they've been through at least one auth flow previously;
+  // the requirePartnerAccount guard will JIT-provision if anything is missing.
+  return redirect(partnerContact ? "/partner" : "/partner/onboarding");
 }
 
 export async function action({ request }: Route.ActionArgs) {

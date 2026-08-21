@@ -5,7 +5,7 @@ import { prisma } from "~/lib/db";
 import { parseSessionCookie } from "~/lib/cookies";
 import { getPresenceUser } from "~/lib/presence-user";
 import { termCodeLabel } from "~/lib/display";
-import { requirePartner } from "~/partners/lib/partner-auth.server";
+import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
 import {
   formAnswerRows,
   type FormAnswerRow,
@@ -16,6 +16,7 @@ import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import {
   PARTNER_APPLICATION_STATUS_LABELS,
   PARTNER_APPLICATION_STATUS_PILL,
+  PARTNER_EDITABLE_STATUSES,
   type PartnerApplicationStatus,
 } from "../lib/partner-application";
 
@@ -25,17 +26,13 @@ export const meta: Route.MetaFunction = ({ data }) => {
   return [{ title: t ? `${t} · DALI OS` : "Application · DALI OS" }];
 };
 
-// Partners may refine the pitch while it's still being considered; once a
-// decision lands the structured fields freeze (the SOW collab doc stays
-// live — it's co-owned with the lab).
-const PARTNER_EDITABLE_STATUSES = ["Submitted", "UnderReview"];
-
 export async function loader({ request, params }: Route.LoaderArgs) {
-  const { auth, partnerUser } = await requirePartner(request);
+  const ctx = await requirePartnerAccount(request);
+  const { auth } = ctx;
 
-  // Scoped by org — other orgs' applications 404, never 403.
+  // Scoped by contact — other contacts' applications 404, never 403.
   const application = await prisma.partnerApplication.findFirst({
-    where: { id: params.id, partnerOrgId: partnerUser.partnerOrgId },
+    where: { id: params.id, applicantContactId: ctx.contact.id },
     select: {
       id: true,
       title: true,
@@ -87,9 +84,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
-  const { partnerUser } = await requirePartner(request);
+  const ctx = await requirePartnerAccount(request);
   const application = await prisma.partnerApplication.findFirst({
-    where: { id: params.id, partnerOrgId: partnerUser.partnerOrgId },
+    where: { id: params.id, applicantContactId: ctx.contact.id },
     select: { id: true, status: true },
   });
   if (!application) throw new Response("Not found", { status: 404 });
@@ -109,12 +106,20 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 function StatusTimeline({ status }: { status: PartnerApplicationStatus }) {
+  // The three display stages of a partner-facing application lifecycle,
+  // mapped onto the CRM funnel statuses. "Submitted" is dead code (backfilled
+  // out of the DB); the new submitted status is ApplicationSubmitted.
   const terminal =
-    status === "Accepted" || status === "Rejected" || status === "OnHold";
-  const activeIndex = terminal ? 2 : status === "UnderReview" ? 1 : 0;
+    status === "Accepted" || status === "Rejected" || status === "Promoted";
+  const atReview =
+    status === "UnderReview" ||
+    status === "LearnMore" ||
+    status === "OnHold";
+  const activeIndex = terminal ? 2 : atReview ? 1 : 0;
+
   const steps: { label: string; pillStatus: PartnerApplicationStatus }[] = [
-    { label: "Submitted", pillStatus: "Submitted" },
-    { label: "Under review", pillStatus: "UnderReview" },
+    { label: PARTNER_APPLICATION_STATUS_LABELS["ApplicationSubmitted"], pillStatus: "ApplicationSubmitted" },
+    { label: PARTNER_APPLICATION_STATUS_LABELS["UnderReview"], pillStatus: "UnderReview" },
     {
       label: terminal ? PARTNER_APPLICATION_STATUS_LABELS[status] : "Decision",
       pillStatus: terminal ? status : "OnHold",
@@ -256,15 +261,18 @@ export default function PartnerApplicationDetail({
         <h2 className="font-heading font-semibold text-dark-blue">
           Statement of Work
         </h2>
-        {application.status !== "Submitted" && (
+        {application.status === "UnderReview" && (
           <p className="text-xs text-muted-foreground mt-0.5">
             Drafted together with the DALI team — edits sync live.
           </p>
         )}
         <div className="mt-3" />
-        {/* The SOW is a co-owned doc: it opens once the lab is actually in
-            the room (review has started), not the moment a pitch lands. */}
-        {application.status === "Submitted" ? (
+        {/* The SOW is a co-owned doc: it opens once the lab is actively
+            reviewing (UnderReview+), not the moment a pitch lands. */}
+        {(application.status === "ApplicationSubmitted" ||
+          application.status === "Inquiry" ||
+          application.status === "Triaged" ||
+          application.status === "Meeting") ? (
           <p className="text-sm text-muted-foreground bg-muted/30 rounded-lg px-4 py-3">
             This document opens when the lab starts reviewing your pitch —
             you'll draft the details here together with the DALI team.

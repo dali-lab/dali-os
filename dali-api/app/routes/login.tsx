@@ -46,11 +46,11 @@ export async function loader({ request }: Route.LoaderArgs) {
       return redirect(next ?? "/");
     }
     // Signed-in partners land in their portal, not the applicant one.
-    const partnerUser = await prisma.partnerUser.findUnique({
+    const partnerContact = await prisma.partnerContact.findUnique({
       where: { userId: auth.user.sub },
       select: { id: true },
     });
-    if (partnerUser) {
+    if (partnerContact) {
       return redirect("/partner");
     }
     return redirect("/portal");
