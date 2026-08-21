@@ -13,6 +13,7 @@
  *   signing:{documentId}:draft         SigningDocument body — prose (BlockNote)
  *   form:{formId}:draft                Form question list — structured Y.Array
  *   rubric:{rubricId}:draft            Rubric criteria list — structured Y.Array
+ *   milestone:{setId}:draft            Milestone entry list — structured Y.Array
  */
 
 export const PRESENCE_ROOM_PREFIX = "presence:";
@@ -47,4 +48,9 @@ export function formDraftName(formId: string): string {
 /** Structured draft room for a Rubric's criteria list (Y.Array). */
 export function rubricDraftName(rubricId: string): string {
   return `rubric:${rubricId}:draft`;
+}
+
+/** Structured draft room for a MilestoneSet's entry list (Y.Array). */
+export function milestoneDraftName(setId: string): string {
+  return `milestone:${setId}:draft`;
 }

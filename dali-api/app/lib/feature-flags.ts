@@ -119,6 +119,12 @@ export const FEATURE_FLAGS = [
     description:
       "Replace the Core ▸ Agreements Drive redirect with a compliance console: signing status across every agreement, one-click reminders to outstanding signers, and term-rollover activation. Authoring stays in the Drive. Default off; flip on for Core.",
   },
+  {
+    key: "milestones-v2",
+    label: "Milestones",
+    description:
+      "Versioned, Drive-authored milestone sets assigned per project each term and rendered on the project timeline (Core ▸ Milestones). Default off; flip on for Core first, then everyone.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];

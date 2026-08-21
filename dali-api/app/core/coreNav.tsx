@@ -63,6 +63,7 @@ const STANDALONE_LABELS: Record<string, string> = {
   "level-up": "Level Up",
   roles: "Roles & Permissions",
   domains: "Domains",
+  milestones: "Milestones",
   agreements: "Agreements",
 };
 

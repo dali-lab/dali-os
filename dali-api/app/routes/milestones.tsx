@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useLoaderData, useSubmit } from "react-router";
-import { ChevronLeft, ChevronRight, ImagePlus, Loader2, Plus, X } from "lucide-react";
+import { Link, useLoaderData, useSubmit } from "react-router";
+import { ChevronLeft, ChevronRight, ImagePlus, Loader2, Plus, Settings, X } from "lucide-react";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db";
-import { isAdmin, isCore, currentTerm } from "~/lib/roles";
+import { isAdmin, isCore, currentTerm, getUserRoles } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { cn } from "~/lib/cn";
 import { uploadFileToS3 } from "~/lib/upload-client";
 import { DOMAIN_COLORS, SWATCHES, type FieldFormat, type FormatMap } from "~/lib/term-timeline";
@@ -30,7 +31,14 @@ export async function loader({ request }: Route.LoaderArgs) {
     timeline.termId !== null &&
     ((await isCore(auth.user.sub, request)) || (await isAdmin(auth.user.sub)));
 
-  return { ...timeline, canEdit };
+  // The versioned, per-project milestone sets live at /core/milestones behind
+  // the milestones-v2 flag. Surface a link there for Core when it's on.
+  const roles = await getUserRoles(auth.user.sub, request);
+  const canManageSets =
+    (await isCore(auth.user.sub, request)) &&
+    (await isFeatureEnabled("milestones-v2", auth.user.sub, roles, request));
+
+  return { ...timeline, canEdit, canManageSets };
 }
 
 const WEEK_TEXT_FIELDS = ["title", "dates", "blurb"] as const;
@@ -227,7 +235,7 @@ function labWideOf(week: TimelineWeekView) {
 }
 
 export default function Milestones() {
-  const { weeks, domains, termLabel, canEdit } = useLoaderData<typeof loader>();
+  const { weeks, domains, termLabel, canEdit, canManageSets } = useLoaderData<typeof loader>();
   const submit = useSubmit();
 
   const [mode, setMode] = useState<Mode>("timeline");
@@ -329,6 +337,16 @@ export default function Milestones() {
             >
               {editing ? "Done editing" : "Edit content"}
             </button>
+          )}
+          {canManageSets && (
+            <Link
+              to="/core/milestones"
+              prefetch="intent"
+              className="inline-flex items-center gap-1.5 rounded-full border border-border px-4 py-2 text-[13px] font-semibold text-dark-blue transition-colors hover:border-accent-coral dark:text-foreground"
+            >
+              <Settings className="h-3.5 w-3.5" />
+              Manage sets
+            </Link>
           )}
         </div>
 

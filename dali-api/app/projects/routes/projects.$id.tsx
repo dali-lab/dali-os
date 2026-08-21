@@ -13,7 +13,7 @@ import {
   type ShouldRevalidateFunctionArgs,
 } from "react-router";
 import { Select, Menu } from "~/components/ui/floating";
-import { CalendarDays, CalendarPlus, CalendarX, Check, Globe, Handshake, History, Pencil, Pin, X, Settings, Folder, FolderInput, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink, MoreHorizontal, ExternalLink, Star } from "lucide-react";
+import { CalendarDays, CalendarPlus, CalendarX, Check, Globe, Handshake, History, Milestone, Pencil, Pin, X, Settings, Folder, FolderInput, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink, MoreHorizontal, ExternalLink, Star } from "lucide-react";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { MoveToDialog } from "~/components/sharing/MoveToDialog";
@@ -60,6 +60,9 @@ import {
   type EpicStatus,
   type StoryDependencyEdge,
 } from "../components/EpicsTimeline";
+import type { TimelineMilestoneMarker } from "~/lib/milestones";
+import { projectTimelineMilestones } from "~/lib/milestones.server";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import {
   EpicSprintManager,
   type EditableEpic,
@@ -1140,6 +1143,20 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // activityRows is already mapped to the final shape by the async IIFE in Stage 2.
   const recentActivity = activityRows;
 
+  // Milestone markers for the timeline lane (flag-gated; empty otherwise so the
+  // timeline is unchanged for anyone without milestones-v2). Core additionally
+  // gets a link to change this project's set on the assignment table.
+  const milestonesV2Enabled = await isFeatureEnabled(
+    "milestones-v2",
+    auth.user.sub,
+    roles,
+    request,
+  );
+  const timelineMilestones: TimelineMilestoneMarker[] = milestonesV2Enabled
+    ? await projectTimelineMilestones(project.id)
+    : [];
+  const canManageMilestones = core && milestonesV2Enabled;
+
   return {
     project: {
       id: project.id,
@@ -1206,6 +1223,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         startsAt: t.startDate.toISOString(),
         endsAt: t.endDate.toISOString(),
       })),
+    timelineMilestones,
+    canManageMilestones,
     tasks,
     boardOptions,
     taskCountsByEpic,
@@ -1539,6 +1558,8 @@ export default function ProjectDetail() {
     editableEpics,
     storyDependencies,
     timelineTerms,
+    timelineMilestones,
+    canManageMilestones,
     tasks,
     boardOptions,
     taskCountsByEpic,
@@ -1664,6 +1685,8 @@ export default function ProjectDetail() {
               editableEpics={editableEpics}
               storyDependencies={storyDependencies}
               timelineTerms={timelineTerms}
+              timelineMilestones={timelineMilestones}
+              canManageMilestones={canManageMilestones}
               terms={plannedTerms}
               taskCountsByEpic={taskCountsByEpic}
               canEdit={canEdit}
@@ -4309,6 +4332,8 @@ function PlanningTab({
   editableEpics,
   storyDependencies,
   timelineTerms,
+  timelineMilestones,
+  canManageMilestones,
   terms,
   taskCountsByEpic,
   canEdit,
@@ -4321,6 +4346,8 @@ function PlanningTab({
   editableEpics: EditableEpic[];
   storyDependencies: StoryDependencyEdge[];
   timelineTerms: TimelineTerm[];
+  timelineMilestones: TimelineMilestoneMarker[];
+  canManageMilestones: boolean;
   terms: { id: string; code: string }[];
   taskCountsByEpic: Record<string, { done: number; total: number }>;
   canEdit: boolean;
@@ -4330,6 +4357,18 @@ function PlanningTab({
 }) {
   return (
     <div className="flex flex-col gap-3">
+      {canManageMilestones && (
+        <div className="flex items-center justify-end">
+          <Link
+            to="/core/milestones/assign"
+            prefetch="intent"
+            className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <Milestone className="h-3.5 w-3.5" />
+            Milestones: assign in Core
+          </Link>
+        </div>
+      )}
       <EpicSprintManager
         projectId={projectId}
         epics={editableEpics}
@@ -4341,6 +4380,7 @@ function PlanningTab({
         timelineEpics={epics}
         storyDependencies={storyDependencies}
         timelineTerms={timelineTerms}
+        timelineMilestones={timelineMilestones}
         onTaskClick={onTaskClick}
       />
     </div>
