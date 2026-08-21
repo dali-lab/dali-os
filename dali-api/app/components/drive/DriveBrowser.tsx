@@ -564,6 +564,14 @@ export function DriveBrowser({
   // Items backing the current selection. In column view the selectable pool is
   // the union of items across the open columns; in list/grid it's the listing.
   const selectedItems = useMemo(() => {
+    if (searching) {
+      // In search the selectable pool is the flat hit list (across scopes), so
+      // the bulk bar and details pane act on the matched items — not the folder
+      // the viewer happened to be in when they started searching.
+      const pool = new Map<string, DriveItem>();
+      for (const h of hits) pool.set(h.item.id, h.item);
+      return [...pool.values()].filter((i) => selected.has(i.id));
+    }
     if (viewMode === "columns") {
       const pool = new Map<string, DriveItem>();
       for (const level of colSel.levels) {
@@ -573,7 +581,7 @@ export function DriveBrowser({
     }
     return listing.filter((i) => selected.has(i.id));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewMode, colSel, listing, selected]);
+  }, [searching, hits, viewMode, colSel, listing, selected]);
 
   // ── List/Grid Selection ────────────────────────────────────────────────────
   function selectOnly(id: string) {
@@ -659,9 +667,16 @@ export function DriveBrowser({
     } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
       e.preventDefault();
       setSelected(new Set(orderedIds));
-    } else if (e.key === "F2" && currentScope && activeId) {
-      const item = listing.find((i) => i.id === activeId);
-      if (item) getScopeActions(currentScope.id).onRename(item);
+    } else if (e.key === "F2" && activeId) {
+      // Rename the active row — resolve from the search hit (with its own scope)
+      // when searching, else from the current scope's listing.
+      if (searching) {
+        const hit = hits.find((h) => h.item.id === activeId);
+        if (hit) getScopeActions(hit.scope.id).onRename(hit.item);
+      } else if (currentScope) {
+        const item = listing.find((i) => i.id === activeId);
+        if (item) getScopeActions(currentScope.id).onRename(item);
+      }
     }
   }
 
@@ -727,7 +742,9 @@ export function DriveBrowser({
     setSort((prev) => (prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" }));
   }
 
-  const showBulk = !searching && !!currentScope && selected.size > 1;
+  // Bulk actions apply to a scope's listing AND to multi-selected search results
+  // (search offers the same interactions as browsing).
+  const showBulk = selected.size > 1 && (searching || !!currentScope);
 
   // ── Miller column handlers ─────────────────────────────────────────────────
 

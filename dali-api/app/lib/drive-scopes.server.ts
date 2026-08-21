@@ -68,6 +68,18 @@ function subtreeIds(items: DriveItem[], rootId: string): Set<string> {
   return out;
 }
 
+/** Items filed directly at a scoped root (`parentFolderId === rootId`) must
+ *  render at that scope's top level, where the root folder itself is not an item
+ *  (it IS the scope). Reparent them to null so they show at the root instead of
+ *  orphaning under a parent the scope doesn't list. Applies uniformly to the
+ *  Core/Hiring carve-out folders, docs, AND forms. Pure; `rootId` falsy = no-op. */
+export function liftRootChildren(items: DriveItem[], rootId: string | null | undefined): DriveItem[] {
+  if (!rootId) return items;
+  return items.map((it) =>
+    it.parentFolderId === rootId ? { ...it, parentFolderId: null } : it,
+  );
+}
+
 type WorkspaceOut = {
   key: string;
   label: string;
@@ -214,11 +226,10 @@ export async function loadDriveScopes({
   if (coreRoot) {
     const inCore = subtreeIds(labItems, coreRoot.id);
     labVisibleItems = labItems.filter((it) => !inCore.has(it.id));
-    coreItems = labItems
-      .filter((it) => it.id !== coreRoot.id && inCore.has(it.id))
-      .map((it) =>
-        it.parentFolderId === coreRoot.id ? { ...it, parentFolderId: null } : it,
-      );
+    coreItems = liftRootChildren(
+      labItems.filter((it) => it.id !== coreRoot.id && inCore.has(it.id)),
+      coreRoot.id,
+    );
     coreFolderIds = new Set([
       coreRoot.id,
       ...coreItems.filter((i) => i.type === "folder").map((i) => i.id),
@@ -231,11 +242,10 @@ export async function loadDriveScopes({
   if (hiringRoot) {
     const inHiring = subtreeIds(labVisibleItems, hiringRoot.id);
     const remaining = labVisibleItems.filter((it) => !inHiring.has(it.id));
-    hiringItems = labVisibleItems
-      .filter((it) => it.id !== hiringRoot.id && inHiring.has(it.id))
-      .map((it) =>
-        it.parentFolderId === hiringRoot.id ? { ...it, parentFolderId: null } : it,
-      );
+    hiringItems = liftRootChildren(
+      labVisibleItems.filter((it) => it.id !== hiringRoot.id && inHiring.has(it.id)),
+      hiringRoot.id,
+    );
     labVisibleItems = remaining;
     hiringFolderIds = new Set([
       hiringRoot.id,
@@ -275,8 +285,15 @@ export async function loadDriveScopes({
     });
   }
 
-  const coreForms = pickScopeForms(coreFolderIds, false, isCore);
-  const hiringForms = pickScopeForms(hiringFolderIds, false, labCanViewForms);
+  // Forms filed directly at the Core/Hiring root need the same root-lift as the
+  // folders/docs above — otherwise they orphan under the excluded root and never
+  // render at the scope root (the reason Core-filed forms showed in search but
+  // not in the Drive listing).
+  const coreForms = liftRootChildren(pickScopeForms(coreFolderIds, false, isCore), coreRoot?.id);
+  const hiringForms = liftRootChildren(
+    pickScopeForms(hiringFolderIds, false, labCanViewForms),
+    hiringRoot?.id,
+  );
   // Lab forms use the un-widened canViewForms gate (same as legacy).
   const labForms = pickScopeForms(labFolderIds, true, canViewForms);
   const projectForms = projectItemArrays.map((_, i) =>
