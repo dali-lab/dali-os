@@ -23,12 +23,13 @@ vi.mock("~/partners/lib/partner-access", () => ({
 
 vi.mock("~/lib/groups", () => ({
   resolveGroupMembers: vi.fn().mockResolvedValue([]),
+  listVisibleGroupsForUser: vi.fn().mockResolvedValue([]),
 }));
 
 import { prisma } from "~/lib/db";
 import { isCore, isProjectMember, isLabMember } from "~/lib/roles";
 import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
-import { resolveGroupMembers } from "~/lib/groups";
+import { resolveGroupMembers, listVisibleGroupsForUser } from "~/lib/groups";
 import { getPageAccess } from "../pageAccess.server";
 
 const mockPrisma = prisma as any;
@@ -40,6 +41,7 @@ beforeEach(() => {
   vi.mocked(isLabMember).mockResolvedValue(false);
   vi.mocked(partnerHasProjectAccess).mockResolvedValue(false);
   vi.mocked(resolveGroupMembers).mockResolvedValue([]);
+  vi.mocked(listVisibleGroupsForUser).mockResolvedValue([]);
   mockPrisma.groupDefinition.findMany.mockResolvedValue([]);
   mockPrisma.pageShare.findMany.mockResolvedValue([]);
   mockPrisma.pageShare.findFirst.mockResolvedValue(null);
