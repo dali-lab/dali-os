@@ -40,7 +40,11 @@ primary_region = "iad"
     port = 3002
     handlers = ["tls"]
 
+# Bumped from shared-cpu-1x/1gb: a single shared vCPU + Prisma's single-threaded
+# WASM query compiler serialized concurrent loaders (favorites group fan-out,
+# 60s jobs tick, notification polls) into multi-second TTFB under load. More
+# shared cores + RAM absorb the bursts; the loader N+1 fixes cut the work itself.
 [[vm]]
-  memory = "1gb"
+  memory = "2gb"
   cpu_kind = "shared"
-  cpus = 1
+  cpus = 4

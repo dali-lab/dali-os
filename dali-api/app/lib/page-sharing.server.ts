@@ -11,7 +11,7 @@
 // Nothing in this module authorises anything. Call it behind your own gate.
 
 import { prisma } from "~/lib/db";
-import { resolveGroupMembers } from "~/lib/groups";
+import { resolveGroupMembers, listVisibleGroupsForUser } from "~/lib/groups";
 import { cachedForRequest } from "~/lib/request-cache";
 import type { SharePrincipalType, SharePermission } from "~/generated/prisma/client";
 
@@ -47,29 +47,28 @@ export function permissionAtLeast(a: SharePermission, b: SharePermission): boole
  * sharing would quietly diverge from every other audience in the app.
  */
 export async function groupIdsForUser(userId: string, request?: Request): Promise<string[]> {
-  // Resolving this walks every active group's membership (resolveGroupMembers
-  // per group) — hundreds of ms with dozens of groups. It's purely per-user, but
-  // getPageAccess re-derives it once per page, so the sidebar Favorites/Recents
-  // read (dozens of pages) multiplied it into seconds of navigation TTFB. Memoize
-  // per navigation when a request is threaded through.
+  // Memoize per navigation when a request is threaded through: getPageAccess
+  // re-derives this once per page, so the sidebar Favorites/Recents read (dozens
+  // of pages) would otherwise repeat it per page.
   if (request) {
-    return cachedForRequest(request, `groupIdsForUser:${userId}`, () => computeGroupIdsForUser(userId));
+    return cachedForRequest(request, `groupIdsForUser:${userId}`, () =>
+      computeGroupIdsForUser(userId, request),
+    );
   }
-  return computeGroupIdsForUser(userId);
+  return computeGroupIdsForUser(userId, request);
 }
 
-async function computeGroupIdsForUser(userId: string): Promise<string[]> {
-  const groups = await prisma.groupDefinition.findMany({
-    where: { archivedAt: null },
-    select: { id: true },
-  });
-  const memberships = await Promise.all(
-    groups.map(async (g) => ({
-      id: g.id,
-      members: await resolveGroupMembers(g.id),
-    })),
-  );
-  return memberships.filter((g) => g.members.includes(userId)).map((g) => g.id);
+// Which non-archived groups this user belongs to. Delegates to
+// listVisibleGroupsForUser, which derives membership from the user's own
+// assignment data in a single batch — O(user's groups). The prior approach
+// resolved EVERY active group's full membership and filtered — O(all groups ×
+// members), a ~250-query fan-out that dominated navigation TTFB even once
+// memoized to once per request (perf review Aug 2026). Dropping manually-archived
+// groups (archivedAt set) preserves the old `where: { archivedAt: null }` gate:
+// an archived group's shares no longer grant access.
+async function computeGroupIdsForUser(userId: string, request?: Request): Promise<string[]> {
+  const groups = await listVisibleGroupsForUser(userId, request);
+  return groups.filter((g) => g.archivedAt == null).map((g) => g.id);
 }
 
 /** True when `userId` is on `pageId`'s share list, directly or via a group. */
