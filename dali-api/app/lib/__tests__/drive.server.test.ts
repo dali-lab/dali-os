@@ -19,7 +19,7 @@ vi.mock("~/lib/pageAccess.server", () => {
 
 import { prisma } from "~/lib/db";
 import { getPageAccess } from "~/lib/pageAccess.server";
-import { loadDriveScope } from "~/lib/drive.server";
+import { loadDriveScope, loadOrphanForms } from "~/lib/drive.server";
 
 const mockPrisma = prisma as unknown as {
   page: { findMany: ReturnType<typeof vi.fn> };
@@ -128,6 +128,41 @@ describe("loadDriveScope — Lab scope", () => {
 
     const items = await loadDriveScope({ userSub: "u1", scope: { kind: "Lab" } });
     expect(items.find((i) => i.id === "pg-secret")).toBeUndefined();
+  });
+});
+
+describe("loadOrphanForms — archived/deleted-folder safety-net", () => {
+  it("surfaces a form whose folder is gone at the General root, but not one in a live folder", async () => {
+    mockPrisma.form.findMany.mockResolvedValue([
+      { id: "orphan", name: "Stray", folderPageId: "gone-folder", updatedAt: new Date() },
+      { id: "kept", name: "Placed", folderPageId: "live-folder", updatedAt: new Date() },
+    ]);
+    // Only "live-folder" survives (non-archived, still exists); "gone-folder" was
+    // archived or deleted → not returned.
+    mockPrisma.page.findMany.mockResolvedValue([{ id: "live-folder" }]);
+
+    const items = await loadOrphanForms();
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      type: "form",
+      id: "orphan",
+      parentFolderId: null,
+      href: "/forms/edit/orphan",
+    });
+    // Only the archived/deleted-folder set is checked for liveness.
+    expect(mockPrisma.page.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ archivedAt: null }),
+      }),
+    );
+  });
+
+  it("returns nothing when there are no placed forms", async () => {
+    mockPrisma.form.findMany.mockResolvedValue([]);
+    const items = await loadOrphanForms();
+    expect(items).toEqual([]);
+    expect(mockPrisma.page.findMany).not.toHaveBeenCalled();
   });
 });
 

@@ -16,11 +16,10 @@ import {
 import { useState, useCallback, useEffect, useRef, useId, useMemo } from "react";
 import { requireAuth, redirectPartnerToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { getUserRoles, currentTerm } from "~/lib/roles";
+import { getUserRoles } from "~/lib/roles";
 import { prisma } from "~/lib/db";
 import { loadDriveScopes } from "~/lib/drive-scopes.server";
 import type { DriveTreeScope } from "~/lib/drive-scopes.server";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import type { DriveItem } from "~/lib/drive.server";
 import { resolveTermFilter } from "~/lib/terms";
 import { DriveBrowser } from "~/components/drive/DriveBrowser";
@@ -99,44 +98,29 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Hiring-drive gate — matches the "hiring" dynamic group (Core + domain leads
   // + cycle reviewers/interviewers) so the scope shows for exactly the people
   // the Hiring root is scoped to.
-  const [hiringReviewer, driveSpacesEnabled] = await Promise.all([
+  const hiringReviewer =
     roles.isCore || roles.isDomainLead || roles.isInterviewer
-      ? Promise.resolve(null) // already qualifies; skip the DB hit
-      : prisma.cycleReviewer.findFirst({
+      ? null // already qualifies; skip the DB hit
+      : await prisma.cycleReviewer.findFirst({
           where: { userId: auth.user.sub },
           select: { id: true },
-        }),
-    isFeatureEnabled("drive-spaces", auth.user.sub, roles, request),
-  ]);
+        });
   const hasHiringAccess =
     roles.isCore || roles.isDomainLead || roles.isInterviewer || hiringReviewer !== null;
 
-  // Term filter: when drive-spaces is on, the Projects and Education spaces are
-  // scoped to the selected term (matching the project hub pattern). My Drive /
-  // General / Core / Hiring are NOT term-filtered. When the flag is off we fall
-  // back to the legacy current-term query with no filter dropdown.
-  const termResult = driveSpacesEnabled
-    ? await resolveTermFilter(request)
-    : null;
-  // termId is null for "all terms" or when the flag is off and no current term exists.
-  const termId = driveSpacesEnabled
-    ? (termResult?.termId ?? null)
-    : null; // flag-off: no term filter (legacy behaviour)
-
-  // When the flag is off we still need to limit to the current term so legacy
-  // behaviour (project list scoped to current term) is preserved.
-  const legacyTermId = !driveSpacesEnabled
-    ? (await currentTerm(request))?.id ?? null
-    : null;
-  const effectiveTermId = driveSpacesEnabled ? termId : legacyTermId;
+  // Term filter: the Projects and Education spaces are scoped to the selected
+  // term (matching the project hub pattern). My Drive / General / Core / Hiring
+  // are NOT term-filtered. A null termId means "all terms" = no filter.
+  const termResult = await resolveTermFilter(request);
+  const termId = termResult?.termId ?? null;
 
   // Load only the project list needed to build Drive scopes — same access
   // filter as documents.hub: Core sees all projects; others see only projects
-  // they're staffed on. When the flag is on, term filter is applied only when
-  // a specific term is selected (null termId = "all" = no filter).
+  // they're staffed on. Term filter applies only when a specific term is
+  // selected (null termId = "all" = no filter).
   const rawProjects = await prisma.project.findMany({
     where: {
-      ...(effectiveTermId ? { projectTerms: { some: { termId: effectiveTermId } } } : {}),
+      ...(termId ? { projectTerms: { some: { termId } } } : {}),
       ...(roles.isCore ? {} : { assignments: { some: { userId: auth.user.sub } } }),
     },
     orderBy: [{ status: "asc" }, { name: "asc" }],
@@ -149,47 +133,43 @@ export async function loader({ request }: Route.LoaderArgs) {
     projectIconEmoji: p.iconEmoji,
   }));
 
-  // Education workspaces: only queried when the drive-spaces flag is on
-  // (Education space is a new addition). Access rule mirrors pageAccess.server:
-  // Core sees all offerings; instructors see offerings in the selected term;
-  // enrolled students (Approved application) see their enrolled offerings.
-  // When "all terms" is selected, no term filter is applied.
-  let educationWorkspaces: { key: string; label: string; kind: "education" }[] = [];
-  if (driveSpacesEnabled) {
-    const approvedOrInstructor = roles.isCore
-      ? // Core sees all offerings (term-filtered when a specific term is chosen).
-        await prisma.educationOffering.findMany({
-          where: termId
-            ? { instructors: { some: { termId } } }
-            : undefined,
-          orderBy: { title: "asc" },
-          select: { id: true, title: true },
-        })
-      : // Non-Core: union of (a) instructor offerings in the selected term and
-        // (b) offerings where the viewer has an Approved application.
-        await prisma.educationOffering.findMany({
-          where: {
-            OR: [
-              {
-                instructors: {
-                  some: {
-                    userId: auth.user.sub,
-                    ...(termId ? { termId } : {}),
-                  },
+  // Education workspaces. Access rule mirrors pageAccess.server: Core sees all
+  // offerings; instructors see offerings in the selected term; enrolled students
+  // (Approved application) see their enrolled offerings. When "all terms" is
+  // selected, no term filter is applied.
+  const approvedOrInstructor = roles.isCore
+    ? // Core sees all offerings (term-filtered when a specific term is chosen).
+      await prisma.educationOffering.findMany({
+        where: termId
+          ? { instructors: { some: { termId } } }
+          : undefined,
+        orderBy: { title: "asc" },
+        select: { id: true, title: true },
+      })
+    : // Non-Core: union of (a) instructor offerings in the selected term and
+      // (b) offerings where the viewer has an Approved application.
+      await prisma.educationOffering.findMany({
+        where: {
+          OR: [
+            {
+              instructors: {
+                some: {
+                  userId: auth.user.sub,
+                  ...(termId ? { termId } : {}),
                 },
               },
-              { applications: { some: { applicantUserId: auth.user.sub, status: "Approved" } } },
-            ],
-          },
-          orderBy: { title: "asc" },
-          select: { id: true, title: true },
-        });
-    educationWorkspaces = approvedOrInstructor.map((o) => ({
-      key: o.id,
-      label: o.title,
-      kind: "education" as const,
-    }));
-  }
+            },
+            { applications: { some: { applicantUserId: auth.user.sub, status: "Approved" } } },
+          ],
+        },
+        orderBy: { title: "asc" },
+        select: { id: true, title: true },
+      });
+  const educationWorkspaces = approvedOrInstructor.map((o) => ({
+    key: o.id,
+    label: o.title,
+    kind: "education" as const,
+  }));
 
   const driveScopes = await loadDriveScopes({
     userSub: auth.user.sub,
@@ -199,7 +179,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     canManageAgreements: userCanManageAgreements,
     isCore: roles.isCore,
     hasHiringAccess,
-    driveSpacesEnabled,
     request,
   });
 
@@ -207,7 +186,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     driveScopes,
     canViewForms: userCanViewForms,
     canManageAgreements: userCanManageAgreements,
-    // Term filter data — only populated when drive-spaces flag is on.
     terms: termResult?.terms ?? [],
     selectedTerm: termResult?.selected ?? "",
   };
@@ -987,7 +965,6 @@ export default function DriveHub() {
   const revalidator = useRevalidator();
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const templatesEnabled = useFeatureFlag("templates");
-  const driveSpacesEnabled = useFeatureFlag("drive-spaces");
   // Search is a client-side filter over already-loaded items, so it lives in
   // local state — keeping it out of the URL avoids a loader revalidation on
   // every keystroke. Scope/folder/type stay in the URL (linkable, back/forward).
@@ -1106,11 +1083,9 @@ export default function DriveHub() {
   // first. Managed types (agreement/rubric/emailTemplate) are filed
   // automatically and excluded. Files/forms use folderPageId and stay within the
   // Lab-workspace drives; docs/folders can also cross into projects.
-  // drive-spaces: email templates are now Drive-managed (rename/move/delete
-  // permitted). Agreements and rubrics remain placement-locked (kind-folders).
-  const NON_MOVABLE = new Set<DriveItem["type"]>(
-    driveSpacesEnabled ? ["agreement", "rubric"] : ["agreement", "rubric", "emailTemplate"],
-  );
+  // Email templates are Drive-managed (rename/move/delete permitted); agreements
+  // and rubrics remain placement-locked (kind-folders).
+  const NON_MOVABLE = new Set<DriveItem["type"]>(["agreement", "rubric"]);
   const moveDestinationsFor = useCallback(
     (item: DriveItem): DriveTreeScope[] =>
       driveScopes.filter((s) => {
@@ -1451,9 +1426,9 @@ export default function DriveHub() {
   // collapsing the old chip row into one compact control.
   const filterControl = (
     <div data-testid="drive-filter" className="flex items-center gap-2">
-      {/* Term filter: only shown when drive-spaces is on (Projects/Education are
-          term-scoped). My Drive / General / Core / Hiring are not term-filtered. */}
-      {driveSpacesEnabled && terms.length > 0 && (
+      {/* Term filter scopes the term-aware Projects/Education spaces. My Drive /
+          General / Core / Hiring are not term-filtered. */}
+      {terms.length > 0 && (
         <TermFilter terms={terms} selected={selectedTerm} />
       )}
       <Select<DriveTypeFilter>

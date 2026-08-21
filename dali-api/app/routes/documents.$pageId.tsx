@@ -11,7 +11,7 @@ import { isFavorited, recordPageVisit } from "~/lib/user-pages.server";
 import { canManageSharing } from "~/lib/page-share-access.server";
 import { normalizePageTypography } from "~/lib/page-typography";
 import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
-import { driveRootCrumbs } from "~/lib/drive-crumbs";
+import { driveRootCrumbs, workspaceDriveScope } from "~/lib/drive-crumbs";
 import { DocumentEditor } from "~/components/DocumentEditor";
 import { AttendanceChecklist, type AttendanceRow } from "~/components/AttendanceChecklist";
 import { CheckInPanel } from "~/components/CheckInPanel";
@@ -172,13 +172,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // folders resolve to lab/core/hiring via the folder chain.
   if (page.kind === "Folder") {
     const scope =
-      page.workspaceType === "Project"
-        ? "projects"
-        : page.workspaceType === "EducationOffering"
-          ? "education"
-          : page.workspaceType === "Member"
-            ? "mine"
-            : (await driveFolderCrumbs(page.id, auth.user.sub, request)).scope;
+      workspaceDriveScope(page.workspaceType) ??
+      (await driveFolderCrumbs(page.id, auth.user.sub, request)).scope;
     return redirect(`/drive?scope=${scope}&folder=${page.id}`);
   }
 

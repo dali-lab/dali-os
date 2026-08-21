@@ -624,9 +624,53 @@ export async function loadForms(
   }));
 }
 
+/** Load "orphaned" forms: forms placed in a folder that no longer resolves to a
+ *  live Drive folder because the folder was archived or deleted. The scoped
+ *  `loadForms` query drops them (their `folderPageId` isn't among any visible
+ *  scope's folders), so without this they vanish from the Drive while remaining
+ *  reachable via search. Surfaced at the General (Lab) root (`parentFolderId:
+ *  null`) so no placed form is ever lost.
+ *
+ *  ACCESS-SAFE: orphan-ness is GLOBAL — the folder is gone for everyone — not
+ *  viewer-specific, and form placement is organisation-only; it never gates who
+ *  may see or fill a form (see `loadForms`). So surfacing an orphan to any
+ *  `canViewForms` viewer widens nothing. */
+export async function loadOrphanForms(
+  linkedProcessMap?: Map<string, { label: string; href: string }>,
+): Promise<DriveItem[]> {
+  const placed = await prisma.form.findMany({
+    where: { folderPageId: { not: null } },
+    select: { id: true, name: true, folderPageId: true, updatedAt: true },
+  });
+  if (placed.length === 0) return [];
+  // A form is orphaned when its folderPageId has no live (non-archived, still
+  // existing) Page — one query resolves which of the referenced folders survive.
+  const referencedIds = [...new Set(placed.map((f) => f.folderPageId!))];
+  const liveIds = new Set(
+    (
+      await prisma.page.findMany({
+        where: { id: { in: referencedIds }, archivedAt: null },
+        select: { id: true },
+      })
+    ).map((p) => p.id),
+  );
+  return placed
+    .filter((f) => !liveIds.has(f.folderPageId!))
+    .map((f) => ({
+      type: "form" as const,
+      id: f.id,
+      title: f.name,
+      parentFolderId: null,
+      iconEmoji: null,
+      updatedAt: f.updatedAt,
+      href: `/forms/edit/${f.id}`,
+      linkedProcess: linkedProcessMap?.get(f.id) ?? null,
+    }));
+}
+
 /**
  * Build a map of item-id → `{ label, href }` for every Drive item that is
- * process-bound. Called once per Drive load (flag ON) and the result is
+ * process-bound. Called once per Drive load and the result is
  * passed down into the individual `load*` functions.
  *
  * Resolved linkages:
@@ -816,8 +860,8 @@ export interface LoadDriveScopeOptions {
   preloadedForms?: DriveItem[];
   /**
    * Signal ②: pre-built map of item-id → process linkage, built once per Drive
-   * load by `buildLinkedProcessMap()` when the `drive-spaces` flag is ON.
-   * When omitted (flag OFF or non-managed scopes) no pills are rendered.
+   * load by `buildLinkedProcessMap()`. When omitted (non-managed scopes) no
+   * process pills are rendered.
    */
   linkedProcessMap?: Map<string, { label: string; href: string }>;
 }
