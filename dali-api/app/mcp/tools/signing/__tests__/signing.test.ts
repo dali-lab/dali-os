@@ -370,6 +370,7 @@ describe("sign_document", () => {
       isMember: true,
       isNewMember: false,
       isMentor: false,
+      isActiveThisTerm: false,
     });
     // Mentors resolver returns false for non-mentors.
     vi.mocked(AUDIENCE_RESOLVERS.Mentors.includes).mockReturnValue(false);
@@ -386,6 +387,7 @@ describe("sign_document", () => {
       isMember: true,
       isNewMember: false,
       isMentor: false,
+      isActiveThisTerm: false,
     });
     vi.mocked(AUDIENCE_RESOLVERS.Members.includes).mockReturnValue(true);
     vi.mocked(recordSignature).mockResolvedValue({ ok: true });
@@ -412,6 +414,7 @@ describe("sign_document", () => {
       isMember: true,
       isNewMember: false,
       isMentor: false,
+      isActiveThisTerm: false,
     });
     vi.mocked(AUDIENCE_RESOLVERS.Members.includes).mockReturnValue(true);
     vi.mocked(recordSignature).mockResolvedValue({
@@ -640,7 +643,8 @@ describe("manage_agreement", () => {
     expect(mockPrisma.signingDocument.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: "d1" },
-        data: { gateScope: "App", audience: "Mentors", cadence: "PerTerm" },
+        // Setting a non-Group audience clears any stale target group.
+        data: { gateScope: "App", audience: "Mentors", audienceGroupId: null, cadence: "PerTerm" },
       }),
     );
     expect(result).toEqual({ ok: true });

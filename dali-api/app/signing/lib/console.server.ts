@@ -35,6 +35,10 @@ export interface ConsoleAgreement {
   draftPending: boolean; // newest version is an unpublished draft
   latestPublishedVersionId: string | null;
   needsActivation: boolean; // enforced + published, but no binding in force for the current scope
+  // Names who'd be asked to sign if activated now (the current-scope audience).
+  // Set only when needsActivation; null for a non-enumerable audience. Feeds the
+  // "send to who" confirm before putting a version in force.
+  pendingRecipients: string[] | null;
   bindings: ConsoleBinding[];
 }
 
@@ -94,7 +98,7 @@ export async function getAgreementsOverview(): Promise<AgreementsOverview> {
     let hasCurrentBinding = false;
 
     for (const b of doc.bindings) {
-      const audience = await rosterFor(doc.audience, b.termId ?? undefined);
+      const audience = await rosterFor(doc.audience, b.termId ?? undefined, doc.audienceGroupId);
       const roster = computeRoster(audience, b);
       // App- and cycle-scoped bindings (termId null) are always "current"; a
       // term-scoped binding is current only for the active term. Prior-term
@@ -127,6 +131,18 @@ export async function getAgreementsOverview(): Promise<AgreementsOverview> {
       published.length > 0 &&
       !hasCurrentBinding;
 
+    // Who activation would ask to sign right now: the audience for the scope an
+    // activate targets (current term for PerTerm, lab-wide otherwise). No binding
+    // exists yet, so nobody has signed — the whole audience is pending.
+    let pendingRecipients: string[] | null = null;
+    if (needsActivation) {
+      const scopeTermId = doc.cadence === "PerTerm" ? (currentTermId ?? undefined) : undefined;
+      const audience = await rosterFor(doc.audience, scopeTermId, doc.audienceGroupId);
+      pendingRecipients = audience
+        ? audience.map((p) => `${p.firstName} ${p.lastName}`.trim()).sort()
+        : null;
+    }
+
     agreements.push({
       id: doc.id,
       name: doc.name,
@@ -139,6 +155,7 @@ export async function getAgreementsOverview(): Promise<AgreementsOverview> {
       draftPending: !!newest && !newest.publishedAt,
       latestPublishedVersionId: published[0]?.id ?? null,
       needsActivation,
+      pendingRecipients,
       bindings,
     });
   }

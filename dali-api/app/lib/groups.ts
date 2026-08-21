@@ -62,6 +62,27 @@ async function resolveTermMembers(termId: string): Promise<string[]> {
   return [...set];
 }
 
+// Boolean form of the term group's membership rule (resolveTermMembers above):
+// is this user "active in term T"? A single existence check for the signing
+// gate, which asks it per request. Keep the OR branches in sync with
+// resolveTermMembers.
+export async function isUserActiveInTerm(userId: string, termId: string): Promise<boolean> {
+  const hit = await prisma.user.findFirst({
+    where: {
+      id: userId,
+      OR: [
+        { projectAssignments: { some: { termId } } },
+        { coreAssignments: { some: { termId } } },
+        { instructorAssignments: { some: { termId } } },
+        { mentorshipPairsAsMentor: { some: { termId } } },
+        { mentorshipPairsAsMentee: { some: { termId } } },
+      ],
+    },
+    select: { id: true },
+  });
+  return hit !== null;
+}
+
 /**
  * A project group is the people staffed on it *now*, not everyone who ever was.
  *

@@ -51,23 +51,24 @@ export function computeRoster(
   return { signed, outstanding };
 }
 
-// Per-request memo of AUDIENCE_RESOLVERS[audience].listMembers({ termId }).
-// Many bindings share an audience+term (e.g. every termly agreement resolves
-// the same mentor/member roster for the current term), and each listMembers is
-// a DB round-trip — so the console resolves each (audience, termId) once.
+// Per-request memo of AUDIENCE_RESOLVERS[audience].listMembers(...). Many
+// bindings share an audience+term (e.g. every termly agreement resolves the same
+// mentor/member roster for the current term), and each listMembers is a DB
+// round-trip — so the console resolves each (audience, termId, group) once.
 // Returns null for non-enumerable audiences without querying.
 export function makeAudienceRosterCache() {
   const cache = new Map<string, Promise<AudiencePerson[] | null>>();
   return (
     audience: SigningAudience,
     termId: string | undefined,
+    audienceGroupId?: string | null,
   ): Promise<AudiencePerson[] | null> => {
     const resolver = AUDIENCE_RESOLVERS[audience];
     if (!resolver.enumerable) return Promise.resolve(null);
-    const key = `${audience}:${termId ?? ""}`;
+    const key = `${audience}:${termId ?? ""}:${audienceGroupId ?? ""}`;
     let hit = cache.get(key);
     if (!hit) {
-      hit = resolver.listMembers({ termId });
+      hit = resolver.listMembers({ termId, audienceGroupId });
       cache.set(key, hit);
     }
     return hit;
