@@ -35,6 +35,7 @@ import type { Question } from "~/types";
 import { listSelectableForms } from "~/projects/lib/form-slots";
 import { logPartnerActivity } from "../lib/partner-activity.server";
 import { AreaPillNav } from "~/components/AreaPillNav";
+import { PartnersNavTabs } from "../components/PartnersNavTabs";
 import { ChevronRight, FileText, LayoutGrid } from "lucide-react";
 
 export const handle = { areaPills: true };
@@ -318,6 +319,7 @@ export default function PartnersApplications() {
           { label: "Applications", to: "/partners/applications", active: true, icon: FileText },
         ]}
       />
+      <PartnersNavTabs active="pipeline" />
       <header className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="font-heading text-2xl font-bold text-foreground">

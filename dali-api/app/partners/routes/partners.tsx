@@ -22,6 +22,7 @@ import { FileText, LayoutGrid, Plus } from "lucide-react";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { cn } from "~/lib/cn";
 import { useFeatureFlag } from "~/components/FeatureFlags";
+import { PartnersNavTabs } from "../components/PartnersNavTabs";
 
 export const handle = { areaPills: true };
 
@@ -144,6 +145,7 @@ export default function PartnersOrganizations() {
           { label: "Applications", to: "/partners/applications", icon: FileText },
         ]}
       />
+      <PartnersNavTabs active="organizations" />
       <header className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1
