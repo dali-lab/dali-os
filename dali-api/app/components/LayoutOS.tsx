@@ -36,6 +36,7 @@ import {
   pinnedNavItems,
   activeSubtabHref,
   hasSubnavRow,
+  isPinnedActive,
   visibleAreas,
   visibleSubtabs,
   type NavArea,
@@ -138,7 +139,11 @@ export function LayoutOS({
   } = useShellNav(tabless)
 
   const [focusedTabUrl, setFocusedTabUrl] = useState<string | null>(null)
-  const path = focusedTabUrl ?? location.pathname
+  // The live url, query included — the nav matchers trim it themselves, but they
+  // need the query to tell a Core deep-link into the Drive (/drive?type=agreement)
+  // from the plain Drive pin. In tab mode the focused-tab url already carries it;
+  // in tabless mode location.pathname would drop it, so append the search.
+  const path = focusedTabUrl ?? location.pathname + location.search
   const [collapsed, setCollapsed] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [lastAreaKey, setLastAreaKey] = useState('projects')
@@ -264,7 +269,7 @@ export function LayoutOS({
     tabClickProps({ url: area.hubPath, label: area.label }).onClick(e)
   }
 
-  const pinnedLabel = pinned.find((i) => path === i.href || path.startsWith(i.href + '/'))?.label
+  const pinnedLabel = pinned.find((i) => isPinnedActive(path, i.href, navFlags))?.label
   const initialTabLabel = path.startsWith('/notifications')
     ? 'My Tasks'
     : path.startsWith('/calendar')
@@ -487,7 +492,7 @@ export function LayoutOS({
           </button>
           {pinned.map((item) => {
             const Icon = item.icon
-            const active = path === item.href || path.startsWith(item.href + '/')
+            const active = isPinnedActive(path, item.href, navFlags)
             return (
               <button
                 key={item.href}
