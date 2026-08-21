@@ -279,11 +279,21 @@ export async function action({ request, params }: Route.ActionArgs) {
       gateScope?: SigningGateScope;
       audience?: SigningAudience;
       cadence?: SigningCadence;
+      audienceGroupId?: string | null;
     } = {};
     if (KINDS.includes(kind)) data.kind = kind;
     if (SCOPES.includes(gateScope)) data.gateScope = gateScope;
     if (AUDIENCES.includes(audience)) data.audience = audience;
     if (CADENCES.includes(cadence)) data.cadence = cadence;
+    // Group targeting: an explicit groupId pins a fixed group; its absence (the
+    // one-click "Active this term" pill) means the binding's term group. Any
+    // non-Group audience clears the stored group so it can't linger.
+    if (data.audience === "Group") {
+      const groupId = (formData.get("audienceGroupId") as string | null)?.trim();
+      data.audienceGroupId = groupId ? groupId : null;
+    } else if (data.audience !== undefined) {
+      data.audienceGroupId = null;
+    }
     if (Object.keys(data).length === 0) return { error: "No valid changes to save." };
     await prisma.signingDocument.update({ where: { id: params.id }, data });
     await logAuditEvent({

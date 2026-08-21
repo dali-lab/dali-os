@@ -6,6 +6,7 @@
 
 import { prisma } from "~/lib/db";
 import { currentTerm, isLabMentor } from "~/lib/roles";
+import { isUserActiveInTerm, resolveGroupMembers } from "~/lib/groups";
 import { isNewMemberCohort } from "~/hiring/lib/new-member-cohort.server";
 import { AUDIENCE_RESOLVERS } from "./audiences";
 
@@ -14,6 +15,9 @@ export interface SignerCohorts {
   // A member of the current incoming cohort (latest General/Fellowship hires).
   isNewMember: boolean;
   isMentor: boolean;
+  // Active/staffed in the current term (the term group's membership rule).
+  // Gates the term-group Group audience so off-term members aren't required.
+  isActiveThisTerm: boolean;
 }
 
 export async function getSignerCohorts(userId: string): Promise<SignerCohorts> {
@@ -27,13 +31,15 @@ export async function getSignerCohorts(userId: string): Promise<SignerCohorts> {
   ]);
   // Full-time staff are exempt from signing obligations entirely (they also
   // skip the student onboarding flow).
-  if (u?.adminMembership?.isStaff) return { isMember: false, isNewMember: false, isMentor: false };
+  if (u?.adminMembership?.isStaff)
+    return { isMember: false, isNewMember: false, isMentor: false, isActiveThisTerm: false };
   const isMember = !!member && u?.membershipStatus !== "Alumni";
-  const [isMentor, isNewMember] = await Promise.all([
+  const [isMentor, isNewMember, isActiveThisTerm] = await Promise.all([
     isLabMentor(userId, term?.id),
     isMember ? isNewMemberCohort(userId) : Promise.resolve(false),
+    term ? isUserActiveInTerm(userId, term.id) : Promise.resolve(false),
   ]);
-  return { isMember, isNewMember, isMentor };
+  return { isMember, isNewMember, isMentor, isActiveThisTerm };
 }
 
 export interface OutstandingBinding {
@@ -47,7 +53,7 @@ export interface OutstandingBinding {
 // Every app-enforced binding this user still owes a member signature on.
 export async function listOutstandingBindings(userId: string): Promise<OutstandingBinding[]> {
   const cohorts = await getSignerCohorts(userId);
-  if (!cohorts.isMember && !cohorts.isMentor) return [];
+  if (!cohorts.isMember && !cohorts.isMentor && !cohorts.isActiveThisTerm) return [];
 
   const bindings = await prisma.signingBinding.findMany({
     where: {
@@ -57,7 +63,9 @@ export async function listOutstandingBindings(userId: string): Promise<Outstandi
     select: {
       id: true,
       versionId: true,
-      document: { select: { id: true, name: true, audience: true, kind: true } },
+      document: {
+        select: { id: true, name: true, audience: true, audienceGroupId: true, kind: true },
+      },
       signatures: {
         where: { signerUserId: userId, roleKey: "member" },
         select: { versionId: true },
@@ -65,9 +73,28 @@ export async function listOutstandingBindings(userId: string): Promise<Outstandi
     },
   });
 
+  // Which fixed target groups this signer belongs to (term-group Group audiences
+  // gate on the isActiveThisTerm cohort flag instead, so they need no lookup).
+  // Resolved once here to keep the includes() check below synchronous.
+  const fixedGroupIds = [
+    ...new Set(
+      bindings
+        .filter((b) => b.document.audience === "Group" && b.document.audienceGroupId)
+        .map((b) => b.document.audienceGroupId as string),
+    ),
+  ];
+  const userGroupIds = new Set<string>();
+  for (const gid of fixedGroupIds) {
+    if ((await resolveGroupMembers(gid)).includes(userId)) userGroupIds.add(gid);
+  }
+
   const out: OutstandingBinding[] = [];
   for (const b of bindings) {
-    if (!AUDIENCE_RESOLVERS[b.document.audience].includes(cohorts)) continue;
+    const inAudience = AUDIENCE_RESOLVERS[b.document.audience].includes(cohorts, {
+      audienceGroupId: b.document.audienceGroupId,
+      userGroupIds,
+    });
+    if (!inAudience) continue;
     const signed = b.signatures.some((s) => s.versionId === b.versionId);
     if (signed) continue;
     out.push({

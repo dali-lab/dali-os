@@ -24,6 +24,7 @@ export const AUDIENCES: SigningAudience[] = [
   "Members",
   "Mentors",
   "HiringParticipants",
+  "Group",
 ];
 export const CADENCES: SigningCadence[] = ["Once", "PerTerm", "PerCycle"];
 
@@ -50,6 +51,7 @@ export const AUDIENCE_OPTIONS: ConfigOption[] = [
   { value: "Members", label: "Members (returning, not new)" },
   { value: "Mentors", label: "Mentors" },
   { value: "HiringParticipants", label: "Hiring participants" },
+  { value: "Group", label: "Active this term (staffed)" },
 ];
 
 export const CADENCE_OPTIONS: ConfigOption[] = [
@@ -77,6 +79,7 @@ export const AUDIENCE_SHORT: Record<string, string> = {
   Members: "Members",
   Mentors: "Mentors",
   HiringParticipants: "Hiring",
+  Group: "Active this term",
 };
 export const CADENCE_SHORT: Record<string, string> = {
   Once: "Once",
