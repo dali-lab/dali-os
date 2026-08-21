@@ -75,7 +75,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (intent !== "sign") return null;
 
   const binding = await prisma.signingBinding.findFirst({
-    where: { cycleId, document: { kind: "Confidentiality" } },
+    where: { cycleId, document: { gateScope: "HiringCycle" } },
     select: { id: true, versionId: true },
   });
   if (!binding) {

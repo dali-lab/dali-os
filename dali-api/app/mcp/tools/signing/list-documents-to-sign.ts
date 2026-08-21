@@ -8,7 +8,7 @@ import type { McpTool, McpCtx } from "../../registry";
 export const LIST_DOCUMENTS_TO_SIGN_TOOL = {
   name: "list_documents_to_sign",
   description:
-    "List the lab agreements the caller still needs to sign. Returns outstanding bindings (documentId, documentName, kind, versionId) the caller is in the audience for but hasn't signed yet.",
+    "List the lab agreements the caller still needs to sign. Returns outstanding bindings (documentId, documentName, versionId) the caller is in the audience for but hasn't signed yet.",
   inputSchema: {
     type: "object" as const,
     properties: {},

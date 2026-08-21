@@ -35,11 +35,9 @@ import { ALL_SIGNING_VARIABLES } from "~/lib/signing-variables";
 import { formatDateTime, fullName, UNKNOWN_LABEL } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import {
-  KIND_OPTIONS,
   SCOPE_OPTIONS,
   AUDIENCE_OPTIONS,
   CADENCE_OPTIONS,
-  KIND_SHORT,
   SCOPE_SHORT,
   AUDIENCE_SHORT,
   CADENCE_SHORT,
@@ -356,7 +354,7 @@ export function SigningDocumentDetail() {
   // immediately. On success the action redirects back here and the loader
   // reruns, so the pill reflects the new value.
   async function changeConfig(
-    field: "kind" | "gateScope" | "audience" | "cadence",
+    field: "gateScope" | "audience" | "cadence",
     value: string,
   ) {
     if (value === document[field]) return;
@@ -373,16 +371,9 @@ export function SigningDocumentDetail() {
     submit({ intent: "update", [field]: value }, { method: "post" });
   }
 
-  // Editable config pills (kind / enforcement / audience / cadence) + read-only slug.
+  // Editable config pills (enforcement / audience / cadence) + read-only slug.
   const metaBadges = (
     <>
-      <ConfigPill
-        label="Kind"
-        value={KIND_SHORT[document.kind] ?? document.kind}
-        selected={document.kind}
-        options={KIND_OPTIONS}
-        onSelect={(v) => changeConfig("kind", v)}
-      />
       <ConfigPill
         label="Enforcement"
         value={SCOPE_SHORT[document.gateScope] ?? document.gateScope}

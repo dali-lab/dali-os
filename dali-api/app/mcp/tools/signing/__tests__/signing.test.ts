@@ -276,7 +276,6 @@ describe("get_signed_document", () => {
     const result = await runGetSignedDocument(ctx(), { bindingId: "b1" });
     expect(result.signatureId).toBe("sig1");
     expect(result.documentName).toBe("Member Agreement");
-    expect(result.documentKind).toBe("MemberAgreement");
     expect(result.versionNumber).toBe(2);
     expect(result.signedAt).toBe("2026-08-01T12:00:00.000Z");
     expect(result.typedName).toBe("Alice Smith");
@@ -458,7 +457,6 @@ describe("manage_agreement", () => {
       expect.objectContaining({
         data: expect.objectContaining({
           name: "Lab Agreement",
-          kind: "General",
           gateScope: "None",
           audience: "Manual",
           cadence: "Once",
@@ -476,7 +474,6 @@ describe("manage_agreement", () => {
     const result = await runManageAgreement(ctx(), {
       action: "create",
       name: "Membership Agreement",
-      kind: "MemberAgreement",
       gateScope: "App",
       audience: "Members",
       cadence: "PerTerm",
@@ -484,7 +481,6 @@ describe("manage_agreement", () => {
     expect(mockPrisma.signingDocument.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          kind: "MemberAgreement",
           gateScope: "App",
           audience: "Members",
           cadence: "PerTerm",
@@ -650,7 +646,7 @@ describe("manage_agreement", () => {
     expect(result).toEqual({ ok: true });
   });
 
-  it("updates the kind on an existing document", async () => {
+  it("updates the cadence on an existing document", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
     mockPrisma.signingDocument.findUnique.mockResolvedValue({ id: "d1" });
     mockPrisma.signingDocument.update.mockResolvedValue({ id: "d1" });
@@ -658,12 +654,12 @@ describe("manage_agreement", () => {
     await runManageAgreement(ctx(), {
       action: "update",
       documentId: "d1",
-      kind: "MentorshipAgreement",
+      cadence: "PerTerm",
     });
     expect(mockPrisma.signingDocument.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: "d1" },
-        data: { kind: "MentorshipAgreement" },
+        data: { cadence: "PerTerm" },
       }),
     );
   });

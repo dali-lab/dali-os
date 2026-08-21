@@ -2008,7 +2008,7 @@ async function main() {
   // ── Confidentiality agreement (Fall 2026) ────────────────────────────────
   // Bind a signed agreement to the active cycle so domain leads and the hiring
   // lead can access confidentiality-gated pages in E2E tests. Confidentiality
-  // is now a SigningDocument (kind Confidentiality) bound to the cycle via a
+  // is now a SigningDocument (gateScope HiringCycle) bound to the cycle via a
   // SigningBinding and signed as a SigningSignature (roleKey "member").
   await prisma.signingDocument.upsert({
     where: { id: "ca-fall-2026" },
@@ -2017,7 +2017,6 @@ async function main() {
       id: "ca-fall-2026",
       name: "Fall 2026 Hiring Confidentiality Agreement",
       slug: "confidentiality-ca-fall-2026",
-      kind: "Confidentiality",
       gateScope: "HiringCycle",
       audience: "HiringParticipants",
     },
