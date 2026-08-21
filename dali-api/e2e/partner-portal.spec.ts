@@ -83,6 +83,7 @@ test.describe('internal Organizations pages (Core)', () => {
     // the fix-it tooling for exactly this kind of record surgery.
     const suffix = randomBytes(4).toString('hex');
     const userId = `e2e-move-user-${suffix}`;
+    const contactId = `e2e-move-contact-${suffix}`;
     const emptyOrgId = `e2e-empty-org-${suffix}`;
     await withDb(async (c) => {
       await c.query(
@@ -90,10 +91,17 @@ test.describe('internal Organizations pages (Core)', () => {
          VALUES ($1, $2, 'Movey', 'Tester', now())`,
         [userId, `movey-${suffix}@example.com`],
       );
+      // Account-first: the person is a PartnerContact, org membership a
+      // PartnerMembership.
       await c.query(
-        `INSERT INTO "PartnerUser" (id, "userId", "partnerOrgId", "authProvider")
-         VALUES ($1, $2, 'partner-tuck-school', 'MagicLink')`,
-        [`e2e-move-pu-${suffix}`, userId],
+        `INSERT INTO "PartnerContact" (id, name, email, "userId")
+         VALUES ($1, 'Movey Tester', $2, $3)`,
+        [contactId, `movey-${suffix}@example.com`, userId],
+      );
+      await c.query(
+        `INSERT INTO "PartnerMembership" (id, "contactId", "orgId")
+         VALUES ($1, $2, 'partner-tuck-school')`,
+        [`e2e-move-m-${suffix}`, contactId],
       );
       await c.query(
         `INSERT INTO "PartnerOrg" (id, name) VALUES ($1, $2)`,
@@ -134,7 +142,8 @@ test.describe('internal Organizations pages (Core)', () => {
       await expect(page.getByText(`Empty Husk ${suffix}`)).toHaveCount(0);
     } finally {
       await withDb(async (c) => {
-        await c.query(`DELETE FROM "PartnerUser" WHERE "userId" = $1`, [userId]);
+        await c.query(`DELETE FROM "PartnerMembership" WHERE "contactId" = $1`, [contactId]);
+        await c.query(`DELETE FROM "PartnerContact" WHERE id = $1`, [contactId]);
         await c.query(`DELETE FROM "User" WHERE id = $1`, [userId]);
         await c.query(`DELETE FROM "PartnerOrg" WHERE id = $1`, [emptyOrgId]);
       });
@@ -268,35 +277,26 @@ test.describe('partner self-signup', () => {
     ).toBeVisible();
   });
 
-  test('magic link → onboarding → apply → status', async ({ page }) => {
+  test('magic link → account-first apply (no org) → status', async ({ page }) => {
     const email = `e2e-partner-${Date.now()}@example.com`;
     const raw = await insertMagicToken(email);
 
     // GET landing must not consume the token; POST does.
     await page.goto(`/partner/auth/verify?token=${raw}`);
     await page.getByRole('button', { name: 'Continue to DALI OS' }).click();
-    await expect(page).toHaveURL(/\/partner\/onboarding/);
+    // Account-first: no org gate — the account is provisioned and lands
+    // straight on the portal home (org is created later, at promotion).
+    await expect(page).toHaveURL(/\/partner$/);
+    await expect(page.getByRole('heading', { name: /Welcome/ })).toBeVisible();
 
-    // The no-org landing owns the org concepts: invite guidance is shown,
-    // and creating an organization is an explicit step.
-    await expect(page.getByText(/Joining a team that's already here/)).toBeVisible();
-    await page.getByRole('button', { name: 'Set up a new organization' }).click();
-    await page.getByLabel('First name').fill('Emery');
-    await page.getByLabel('Last name').fill('Example');
-    await page.getByLabel('Organization name').fill('Example Robotics');
-    await page.getByRole('button', { name: 'Continue' }).click();
-    await expect(
-      page.getByRole('heading', { name: 'Welcome, Emery' }),
-    ).toBeVisible();
-
-    // Submit a pitch and land on its status page.
+    // Apply with NO organization — the person/account is the primitive.
     await page.goto('/partner/apply');
     await page.getByLabel('Project title').fill('Warehouse robot dashboard');
     await page.getByRole('button', { name: 'Submit application' }).click();
     await expect(
       page.getByRole('heading', { name: 'Warehouse robot dashboard' }),
     ).toBeVisible();
-    await expect(page.getByText('Submitted', { exact: true })).toBeVisible();
+    await expect(page.getByText('Application submitted').first()).toBeVisible();
   });
 });
 

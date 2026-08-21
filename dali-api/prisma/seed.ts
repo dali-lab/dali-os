@@ -3710,13 +3710,14 @@ async function main() {
         }
       }
 
-      // PartnerUser: one external contact on the Tuck partner org.
+      // Account-first: one external PartnerContact (the person) with a
+      // PartnerMembership in the Tuck org. PartnerUser is retired.
       const tuck = await prisma.partnerOrg.findUnique({
         where: { id: "partner-tuck-school" },
         select: { id: true },
       });
       if (tuck) {
-        const partnerContact = await prisma.user.upsert({
+        const partnerUserRow = await prisma.user.upsert({
           where: { personalEmail: "partner.tuck@example.com" },
           update: { firstName: "Pat", lastName: "Tuck" },
           create: {
@@ -3725,21 +3726,30 @@ async function main() {
             lastName: "Tuck",
           },
         });
-        const tuckContact = await prisma.partnerUser.upsert({
-          where: { userId: partnerContact.id },
-          update: { partnerOrgId: tuck.id },
+        const tuckContact = await prisma.partnerContact.upsert({
+          where: { email: "partner.tuck@example.com" },
+          update: { userId: partnerUserRow.id, name: "Pat Tuck", authProvider: "MagicLink" },
           create: {
-            userId: partnerContact.id,
-            partnerOrgId: tuck.id,
-            displayRole: "Program Sponsor",
+            email: "partner.tuck@example.com",
+            userId: partnerUserRow.id,
+            name: "Pat Tuck",
             authProvider: "MagicLink",
+          },
+        });
+        const tuckMembership = await prisma.partnerMembership.upsert({
+          where: { contactId_orgId: { contactId: tuckContact.id, orgId: tuck.id } },
+          update: { role: "Program Sponsor" },
+          create: {
+            contactId: tuckContact.id,
+            orgId: tuck.id,
+            role: "Program Sponsor",
           },
         });
         // Self-signup sets the founder as primary contact; mirror that so the
         // seeded org shows the "Primary contact" badge in settings.
         await prisma.partnerOrg.update({
           where: { id: tuck.id },
-          data: { primaryContactId: tuckContact.id },
+          data: { primaryContactId: tuckMembership.id },
         });
 
         // A pending teammate invite with a deterministic token so E2E can
@@ -3772,7 +3782,7 @@ async function main() {
         select: { id: true },
       });
       if (hood) {
-        const hoodContact = await prisma.user.upsert({
+        const hoodUser = await prisma.user.upsert({
           where: { personalEmail: "partner.hood@example.com" },
           update: { firstName: "Harper", lastName: "Hood" },
           create: {
@@ -3781,14 +3791,23 @@ async function main() {
             lastName: "Hood",
           },
         });
-        await prisma.partnerUser.upsert({
-          where: { userId: hoodContact.id },
-          update: { partnerOrgId: hood.id },
+        const hoodContact = await prisma.partnerContact.upsert({
+          where: { email: "partner.hood@example.com" },
+          update: { userId: hoodUser.id, name: "Harper Hood", authProvider: "MagicLink" },
           create: {
-            userId: hoodContact.id,
-            partnerOrgId: hood.id,
-            displayRole: "Curator",
+            email: "partner.hood@example.com",
+            userId: hoodUser.id,
+            name: "Harper Hood",
             authProvider: "MagicLink",
+          },
+        });
+        await prisma.partnerMembership.upsert({
+          where: { contactId_orgId: { contactId: hoodContact.id, orgId: hood.id } },
+          update: { role: "Curator" },
+          create: {
+            contactId: hoodContact.id,
+            orgId: hood.id,
+            role: "Curator",
           },
         });
       }
