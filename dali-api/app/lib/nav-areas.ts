@@ -68,6 +68,11 @@ export type SubTab = {
   icon: LucideIcon;
   // Omitted => always visible to anyone who can see the area.
   gate?: (r: RoleFlags) => boolean;
+  // Path subtree this tab owns for active-area / highlight matching, when its
+  // `href` links elsewhere (e.g. an Agreements tab that deep-links into the
+  // Drive but whose editor still lives under /admin/agreements). Defaults to
+  // `href`.
+  matchPrefix?: string;
 };
 
 export type NavArea = {
@@ -298,9 +303,9 @@ function adminSubtabsFor(flags: Partial<FeatureFlagMap>): SubTab[] {
   ];
 }
 
-// When drive-spaces is on the card-grid lists for agreements and email
-// templates are retired; their sidebar entries deep-link directly into the
-// Drive folder. The rest of the area (editors, create action) stays intact.
+// The card-grid lists for agreements and email templates are retired; their
+// sidebar entries deep-link directly into the Drive folder. The rest of the
+// area (editors, create action) stays intact.
 function applyDriveSpacesSubstitutions(
   areas: NavArea[],
   agreementsConsole: boolean,
@@ -311,11 +316,14 @@ function applyDriveSpacesSubstitutions(
       ...a,
       subtabs: a.subtabs.map((t) => {
         // Core ▸ Agreements → Drive filtered to agreements, unless the console
-        // flag keeps the dedicated /admin/agreements compliance page.
+        // flag keeps the dedicated /admin/agreements compliance page. The tab
+        // keeps owning /admin/agreements for highlighting (its editor lives
+        // there) even though the link now points at the Drive.
         if (t.href === "/admin/agreements")
-          return agreementsConsole ? t : { ...t, href: "/drive?type=agreement" };
+          return agreementsConsole ? t : { ...t, href: "/drive?type=agreement", matchPrefix: t.href };
         // Core ▸ Communications email templates → Drive filtered to email templates.
-        if (t.href === "/core/communications/email") return { ...t, href: "/drive?type=emailTemplate" };
+        if (t.href === "/core/communications/email")
+          return { ...t, href: "/drive?type=emailTemplate", matchPrefix: t.href };
         return t;
       }),
     };
@@ -329,11 +337,9 @@ export function areasFor(flags: Partial<FeatureFlagMap> = {}): NavArea[] {
     if (a.key === "admin") return { ...a, subtabs: adminSubtabsFor(flags) };
     return a;
   });
-  // drive-spaces: deep-link agreements + email templates directly into Drive
-  // (agreements stays on its console page when that flag is on).
-  if (flags["drive-spaces"])
-    return applyDriveSpacesSubstitutions(base, !!flags["agreements-console"]);
-  return base;
+  // Deep-link agreements + email templates directly into Drive (agreements stays
+  // on its console page when the agreements-console flag is on).
+  return applyDriveSpacesSubstitutions(base, !!flags["agreements-console"]);
 }
 
 /**
@@ -384,10 +390,11 @@ export function areaForPath(
   let bestLen = -1;
   for (const a of areas) {
     for (const t of a.subtabs) {
-      const matches = p === t.href || p.startsWith(t.href + "/");
-      if (matches && t.href.length > bestLen) {
+      const match = t.matchPrefix ?? t.href;
+      const matches = p === match || p.startsWith(match + "/");
+      if (matches && match.length > bestLen) {
         best = a;
-        bestLen = t.href.length;
+        bestLen = match.length;
       }
     }
     const hubMatches = p === a.hubPath || p.startsWith(a.hubPath + "/");
@@ -406,10 +413,15 @@ export function areaForPath(
 export function activeSubtabHref(area: NavArea, path: string): string | undefined {
   const p = pathnameOf(path);
   let best: string | undefined;
+  let bestLen = -1;
   for (const t of area.subtabs) {
     const isHub = t.href === area.hubPath;
-    const matches = isHub ? p === t.href : p === t.href || p.startsWith(t.href + "/");
-    if (matches && (best === undefined || t.href.length > best.length)) best = t.href;
+    const match = t.matchPrefix ?? t.href;
+    const matches = isHub ? p === t.href : p === match || p.startsWith(match + "/");
+    if (matches && match.length > bestLen) {
+      best = t.href;
+      bestLen = match.length;
+    }
   }
   return best;
 }

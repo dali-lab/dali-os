@@ -33,6 +33,44 @@ const TREE: Record<string, any> = {
     parentPageId: null,
     systemKey: null,
   },
+  // Folders in the non-Lab workspaces — the scope comes from workspaceType.
+  projfolder: {
+    id: "projfolder",
+    title: "Sprint Docs",
+    iconEmoji: null,
+    parentPageId: null,
+    systemKey: null,
+    workspaceType: "Project",
+    archivedAt: null,
+  },
+  edufolder: {
+    id: "edufolder",
+    title: "Forms",
+    iconEmoji: null,
+    parentPageId: null,
+    systemKey: null,
+    workspaceType: "EducationOffering",
+    archivedAt: null,
+  },
+  memfolder: {
+    id: "memfolder",
+    title: "Private Notes",
+    iconEmoji: null,
+    parentPageId: null,
+    systemKey: null,
+    workspaceType: "Member",
+    archivedAt: null,
+  },
+  // An archived Lab folder — its items are orphaned, so the crumb collapses.
+  archived: {
+    id: "archived",
+    title: "Old Stuff",
+    iconEmoji: null,
+    parentPageId: null,
+    systemKey: null,
+    workspaceType: "Lab",
+    archivedAt: new Date("2026-01-01"),
+  },
 };
 
 const grant = { canView: true, canEdit: true, canComment: true, canResolve: true };
@@ -79,6 +117,35 @@ describe("driveFolderCrumbs access filtering", () => {
     const crumbs = await driveFolderCrumbs(null, "anyone");
 
     expect(crumbs).toEqual({ scope: "lab", folders: [] });
+    expect(getPageAccess).not.toHaveBeenCalled();
+  });
+});
+
+describe("driveFolderCrumbs workspace scope", () => {
+  beforeEach(() => vi.mocked(getPageAccess).mockResolvedValue(grant as any));
+
+  it("maps a Project-workspace folder to the projects scope", async () => {
+    const crumbs = await driveFolderCrumbs("projfolder", "member");
+    expect(crumbs.scope).toBe("projects");
+    expect(crumbs.folders).toEqual([{ id: "projfolder", title: "Sprint Docs", iconEmoji: null }]);
+  });
+
+  it("maps an EducationOffering-workspace folder to the education scope", async () => {
+    const crumbs = await driveFolderCrumbs("edufolder", "member");
+    expect(crumbs.scope).toBe("education");
+    expect(crumbs.folders).toEqual([{ id: "edufolder", title: "Forms", iconEmoji: null }]);
+  });
+
+  it("maps a Member-workspace folder to the mine scope", async () => {
+    const crumbs = await driveFolderCrumbs("memfolder", "owner");
+    expect(crumbs.scope).toBe("mine");
+    expect(crumbs.folders).toEqual([{ id: "memfolder", title: "Private Notes", iconEmoji: null }]);
+  });
+
+  it("collapses an archived leaf folder to the General root (orphan)", async () => {
+    const crumbs = await driveFolderCrumbs("archived", "anyone");
+    expect(crumbs).toEqual({ scope: "lab", folders: [] });
+    // Orphan collapse happens before any access resolution.
     expect(getPageAccess).not.toHaveBeenCalled();
   });
 });
